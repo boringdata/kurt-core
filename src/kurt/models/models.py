@@ -1,0 +1,117 @@
+"""Kurt SQLModel database schemas."""
+
+from datetime import datetime
+from enum import Enum
+from typing import Optional
+from uuid import UUID, uuid4
+
+from sqlalchemy import Column, JSON
+from sqlmodel import Field, SQLModel
+
+
+class IngestionStatus(str, Enum):
+    """Status of document content ingestion."""
+
+    NOT_FETCHED = "NOT_FETCHED"
+    FETCHED = "FETCHED"
+    ERROR = "ERROR"
+
+
+class SourceType(str, Enum):
+    """Source type for document content."""
+
+    URL = "URL"
+    FILE_UPLOAD = "FILE_UPLOAD"
+    API = "API"
+
+
+class ContentType(str, Enum):
+    """Content type classification for documents."""
+
+    REFERENCE = "reference"
+    TUTORIAL = "tutorial"
+    GUIDE = "guide"
+    BLOG = "blog"
+    PRODUCT_PAGE = "product_page"
+    SOLUTION_PAGE = "solution_page"
+    HOMEPAGE = "homepage"
+    CASE_STUDY = "case_study"
+    EVENT = "event"
+    INFO = "info"
+    LANDING_PAGE = "landing_page"
+    OTHER = "other"
+
+class Document(SQLModel, table=True):
+    """Document metadata."""
+
+    __tablename__ = "documents"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    title: Optional[str] = None
+    source_type: SourceType
+    source_url: Optional[str] = Field(default=None, unique=True, index=True)
+    content_path: Optional[str] = None  # Path to markdown file in local mode
+    ingestion_status: IngestionStatus = Field(default=IngestionStatus.NOT_FETCHED)
+
+    content_hash: Optional[str] = None
+    description: Optional[str] = None
+    author: Optional[list] = Field(default=None, sa_column=Column(JSON))
+    published_date: Optional[datetime] = None
+
+    # Discovery metadata
+    is_chronological: Optional[bool] = Field(default=None)  # Whether content is time-sensitive (blog, release notes)
+    discovery_method: Optional[str] = Field(default=None)  # How document was discovered (sitemap, blogroll, manual)
+    discovery_url: Optional[str] = Field(default=None)  # Source URL where document was discovered (e.g., blogroll page)
+
+    # Indexing metadata (moved from DocumentMetadata table)
+    indexed_with_hash: Optional[str] = Field(default=None, index=True)  # Content hash when last indexed
+    indexed_with_git_commit: Optional[str] = Field(default=None, index=True)  # Git commit hash when last indexed
+
+    content_type: Optional[ContentType] = Field(default=None, index=True)  # Content type classification
+    primary_topics: Optional[list] = Field(default=None, sa_column=Column(JSON))  # Main topics covered
+    tools_technologies: Optional[list] = Field(default=None, sa_column=Column(JSON))  # Tools/techs mentioned
+
+    has_code_examples: bool = Field(default=False)  # Contains code blocks
+    has_step_by_step_procedures: bool = Field(default=False)  # Step-by-step instructions
+    has_narrative_structure: bool = Field(default=False)  # Uses storytelling
+
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class TopicCluster(SQLModel, table=True):
+    """Topic cluster extracted from documents."""
+
+    __tablename__ = "topic_clusters"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    name: str = Field(index=True)  # Topic name
+    description: Optional[str] = None  # Topic description
+
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class DocumentClusterEdge(SQLModel, table=True):
+    """Junction table linking documents to topic clusters."""
+
+    __tablename__ = "document_cluster_edges"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    document_id: UUID = Field(foreign_key="documents.id", index=True)
+    cluster_id: UUID = Field(foreign_key="topic_clusters.id", index=True)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class Entity(SQLModel, table=True):
+    """Entity extracted from documents."""
+
+    __tablename__ = "entities"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    name: str = Field(index=True)  # Entity canonical name
+    entity_type: str = Field(index=True)  # Entity type (ProductFeature, Topic, etc.)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
