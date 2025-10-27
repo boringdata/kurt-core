@@ -9,6 +9,7 @@ from kurt.commands.cms import cms
 from kurt.commands.document import document
 from kurt.commands.index import index
 from kurt.commands.ingest import ingest
+from kurt.commands.research import research
 from kurt.config import config_exists, create_config, get_config_file_path
 from kurt.database import init_database
 
@@ -91,6 +92,7 @@ main.add_command(cluster)
 main.add_command(document)
 main.add_command(index)
 main.add_command(ingest)
+main.add_command(research)
 
 
 if __name__ == "__main__":
