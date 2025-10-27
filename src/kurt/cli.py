@@ -5,6 +5,7 @@ from rich.console import Console
 
 from kurt import __version__
 from kurt.commands.cluster import cluster
+from kurt.commands.cms import cms
 from kurt.commands.document import document
 from kurt.commands.index import index
 from kurt.commands.ingest import ingest
@@ -85,10 +86,11 @@ def init(project_path: str, db_path: str):
 
 
 # Register command groups
-main.add_command(document)
-main.add_command(ingest)
-main.add_command(index)
+main.add_command(cms)
 main.add_command(cluster)
+main.add_command(document)
+main.add_command(index)
+main.add_command(ingest)
 
 
 if __name__ == "__main__":
