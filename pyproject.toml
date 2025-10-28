@@ -17,6 +17,7 @@ dependencies = [
     "dspy>=2.5.0",
     "requests>=2.31.0",
     "pyyaml>=6.0.0",
+    "feedparser>=6.0.0",
 ]
 
 [project.optional-dependencies]
