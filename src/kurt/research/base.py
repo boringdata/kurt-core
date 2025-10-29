@@ -5,14 +5,15 @@ All research adapters (Perplexity, Tavily, etc.) implement this interface.
 """
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, asdict
-from typing import List, Dict, Any, Optional
+from dataclasses import asdict, dataclass
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
 class Citation:
     """A citation/source from research."""
+
     title: str
     url: str
     snippet: Optional[str] = None
@@ -27,6 +28,7 @@ class Citation:
 @dataclass
 class ResearchResult:
     """Result from a research query."""
+
     id: str
     query: str
     answer: str  # The synthesized research report
@@ -41,7 +43,7 @@ class ResearchResult:
         """Convert to dictionary for JSON serialization."""
         data = asdict(self)
         # Convert citations to list of dicts
-        data['citations'] = [c.to_dict() for c in self.citations]
+        data["citations"] = [c.to_dict() for c in self.citations]
         return data
 
     def to_markdown(self) -> str:
@@ -50,7 +52,7 @@ class ResearchResult:
         frontmatter_lines = [
             "---",
             f"research_id: {self.id}",
-            f"research_query: \"{self.query}\"",
+            f'research_query: "{self.query}"',
             f"research_source: {self.source}",
         ]
 
@@ -69,7 +71,7 @@ class ResearchResult:
         if self.citations:
             frontmatter_lines.append("citations:")
             for i, citation in enumerate(self.citations, 1):
-                frontmatter_lines.append(f"  - title: \"{citation.title}\"")
+                frontmatter_lines.append(f'  - title: "{citation.title}"')
                 frontmatter_lines.append(f"    url: {citation.url}")
                 if citation.published_date:
                     frontmatter_lines.append(f"    published: {citation.published_date}")
@@ -77,15 +79,7 @@ class ResearchResult:
         frontmatter_lines.append("---")
 
         # Body: research report with inline citation references
-        body_lines = [
-            "",
-            f"# {self.query}",
-            "",
-            self.answer,
-            "",
-            "## Sources",
-            ""
-        ]
+        body_lines = ["", f"# {self.query}", "", self.answer, "", "## Sources", ""]
 
         # List sources
         for i, citation in enumerate(self.citations, 1):
@@ -111,12 +105,7 @@ class ResearchAdapter(ABC):
         pass
 
     @abstractmethod
-    def search(
-        self,
-        query: str,
-        recency: Optional[str] = None,
-        **kwargs
-    ) -> ResearchResult:
+    def search(self, query: str, recency: Optional[str] = None, **kwargs) -> ResearchResult:
         """
         Execute research query.
 

@@ -4,10 +4,6 @@ Shared test fixtures for Kurt tests.
 Provides isolated temporary project setup for running tests.
 """
 
-import os
-import tempfile
-from pathlib import Path
-
 import pytest
 
 

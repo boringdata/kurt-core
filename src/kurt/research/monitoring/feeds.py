@@ -4,10 +4,12 @@ RSS/Atom feed monitoring adapter.
 Uses feedparser to parse feeds.
 """
 
-import feedparser
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import List, Optional
 from urllib.parse import urlparse
+
+import feedparser
+
 from kurt.research.monitoring.models import Signal
 
 
@@ -23,7 +25,7 @@ class FeedAdapter:
         feed_url: str,
         since: Optional[datetime] = None,
         keywords: Optional[List[str]] = None,
-        limit: int = 50
+        limit: int = 50,
     ) -> List[Signal]:
         """
         Get entries from an RSS/Atom feed.
@@ -41,18 +43,20 @@ class FeedAdapter:
             # Parse feed
             feed = feedparser.parse(feed_url)
 
-            if feed.bozo and hasattr(feed, 'bozo_exception'):
+            if feed.bozo and hasattr(feed, "bozo_exception"):
                 raise Exception(f"Failed to parse feed: {feed.bozo_exception}")
 
             signals = []
             for entry in feed.entries[:limit]:
                 # Parse published date
                 published = None
-                if hasattr(entry, 'published_parsed') and entry.published_parsed:
+                if hasattr(entry, "published_parsed") and entry.published_parsed:
                     from time import mktime
+
                     published = datetime.fromtimestamp(mktime(entry.published_parsed))
-                elif hasattr(entry, 'updated_parsed') and entry.updated_parsed:
+                elif hasattr(entry, "updated_parsed") and entry.updated_parsed:
                     from time import mktime
+
                     published = datetime.fromtimestamp(mktime(entry.updated_parsed))
 
                 # Filter by date if provided
@@ -61,31 +65,31 @@ class FeedAdapter:
 
                 # Get summary/description
                 summary = None
-                if hasattr(entry, 'summary'):
+                if hasattr(entry, "summary"):
                     summary = entry.summary[:500]
-                elif hasattr(entry, 'description'):
+                elif hasattr(entry, "description"):
                     summary = entry.description[:500]
 
                 # Extract domain from feed or entry link
                 domain = None
-                if hasattr(entry, 'link'):
+                if hasattr(entry, "link"):
                     domain = urlparse(entry.link).netloc
-                elif hasattr(feed.feed, 'link'):
+                elif hasattr(feed.feed, "link"):
                     domain = urlparse(feed.feed.link).netloc
 
                 # Create signal
                 signal = Signal(
                     signal_id=f"feed_{hash(entry.link if hasattr(entry, 'link') else entry.title)}",
                     source="rss",
-                    title=entry.title if hasattr(entry, 'title') else "Untitled",
-                    url=entry.link if hasattr(entry, 'link') else feed_url,
+                    title=entry.title if hasattr(entry, "title") else "Untitled",
+                    url=entry.link if hasattr(entry, "link") else feed_url,
                     snippet=summary,
                     timestamp=published or datetime.now(),
-                    author=entry.author if hasattr(entry, 'author') else None,
+                    author=entry.author if hasattr(entry, "author") else None,
                     score=0,  # RSS feeds don't have scores
                     comment_count=0,
                     domain=domain,
-                    keywords=[]
+                    keywords=[],
                 )
 
                 # Filter by keywords if provided
@@ -95,9 +99,10 @@ class FeedAdapter:
                 # Track which keywords matched
                 if keywords:
                     signal.keywords = [
-                        kw for kw in keywords
-                        if kw.lower() in signal.title.lower() or
-                           (signal.snippet and kw.lower() in signal.snippet.lower())
+                        kw
+                        for kw in keywords
+                        if kw.lower() in signal.title.lower()
+                        or (signal.snippet and kw.lower() in signal.snippet.lower())
                     ]
 
                 signals.append(signal)
@@ -107,11 +112,7 @@ class FeedAdapter:
         except Exception as e:
             raise Exception(f"Failed to fetch feed {feed_url}: {e}")
 
-    def get_multi_feed_entries(
-        self,
-        feed_urls: List[str],
-        **kwargs
-    ) -> List[Signal]:
+    def get_multi_feed_entries(self, feed_urls: List[str], **kwargs) -> List[Signal]:
         """
         Get entries from multiple feeds.
 
@@ -148,23 +149,17 @@ class FeedAdapter:
         try:
             feed = feedparser.parse(feed_url)
 
-            if feed.bozo and hasattr(feed, 'bozo_exception'):
-                return {
-                    "valid": False,
-                    "error": str(feed.bozo_exception)
-                }
+            if feed.bozo and hasattr(feed, "bozo_exception"):
+                return {"valid": False, "error": str(feed.bozo_exception)}
 
             return {
                 "valid": True,
-                "title": feed.feed.title if hasattr(feed.feed, 'title') else None,
-                "description": feed.feed.description if hasattr(feed.feed, 'description') else None,
-                "link": feed.feed.link if hasattr(feed.feed, 'link') else None,
+                "title": feed.feed.title if hasattr(feed.feed, "title") else None,
+                "description": feed.feed.description if hasattr(feed.feed, "description") else None,
+                "link": feed.feed.link if hasattr(feed.feed, "link") else None,
                 "entry_count": len(feed.entries),
-                "last_updated": feed.feed.updated if hasattr(feed.feed, 'updated') else None
+                "last_updated": feed.feed.updated if hasattr(feed.feed, "updated") else None,
             }
 
         except Exception as e:
-            return {
-                "valid": False,
-                "error": str(e)
-            }
+            return {"valid": False, "error": str(e)}

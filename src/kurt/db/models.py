@@ -5,7 +5,7 @@ from enum import Enum
 from typing import Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, JSON
+from sqlalchemy import JSON, Column
 from sqlmodel import Field, SQLModel
 
 
@@ -41,6 +41,7 @@ class ContentType(str, Enum):
     LANDING_PAGE = "landing_page"
     OTHER = "other"
 
+
 class Document(SQLModel, table=True):
     """Document metadata."""
 
@@ -59,17 +60,33 @@ class Document(SQLModel, table=True):
     published_date: Optional[datetime] = None
 
     # Discovery metadata
-    is_chronological: Optional[bool] = Field(default=None)  # Whether content is time-sensitive (blog, release notes)
-    discovery_method: Optional[str] = Field(default=None)  # How document was discovered (sitemap, blogroll, manual)
-    discovery_url: Optional[str] = Field(default=None)  # Source URL where document was discovered (e.g., blogroll page)
+    is_chronological: Optional[bool] = Field(
+        default=None
+    )  # Whether content is time-sensitive (blog, release notes)
+    discovery_method: Optional[str] = Field(
+        default=None
+    )  # How document was discovered (sitemap, blogroll, manual)
+    discovery_url: Optional[str] = Field(
+        default=None
+    )  # Source URL where document was discovered (e.g., blogroll page)
 
     # Indexing metadata (moved from DocumentMetadata table)
-    indexed_with_hash: Optional[str] = Field(default=None, index=True)  # Content hash when last indexed
-    indexed_with_git_commit: Optional[str] = Field(default=None, index=True)  # Git commit hash when last indexed
+    indexed_with_hash: Optional[str] = Field(
+        default=None, index=True
+    )  # Content hash when last indexed
+    indexed_with_git_commit: Optional[str] = Field(
+        default=None, index=True
+    )  # Git commit hash when last indexed
 
-    content_type: Optional[ContentType] = Field(default=None, index=True)  # Content type classification
-    primary_topics: Optional[list] = Field(default=None, sa_column=Column(JSON))  # Main topics covered
-    tools_technologies: Optional[list] = Field(default=None, sa_column=Column(JSON))  # Tools/techs mentioned
+    content_type: Optional[ContentType] = Field(
+        default=None, index=True
+    )  # Content type classification
+    primary_topics: Optional[list] = Field(
+        default=None, sa_column=Column(JSON)
+    )  # Main topics covered
+    tools_technologies: Optional[list] = Field(
+        default=None, sa_column=Column(JSON)
+    )  # Tools/techs mentioned
 
     has_code_examples: bool = Field(default=False)  # Contains code blocks
     has_step_by_step_procedures: bool = Field(default=False)  # Step-by-step instructions

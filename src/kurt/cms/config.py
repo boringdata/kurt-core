@@ -7,7 +7,7 @@ This file stores sensitive CMS API tokens and should be gitignored.
 
 import json
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any, Dict
 
 from kurt.config import load_config
 
@@ -59,7 +59,7 @@ def load_cms_config() -> Dict[str, Any]:
         )
 
     try:
-        with open(config_path, 'r') as f:
+        with open(config_path, "r") as f:
             config = json.load(f)
     except json.JSONDecodeError as e:
         raise ValueError(f"Invalid JSON in CMS config file: {config_path}\n{e}")
@@ -79,7 +79,7 @@ def save_cms_config(config: Dict[str, Any]) -> None:
     # Ensure .kurt directory exists
     config_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with open(config_path, 'w') as f:
+    with open(config_path, "w") as f:
         json.dump(config, f, indent=2)
 
 
@@ -129,32 +129,41 @@ def create_template_config(platform: str, overwrite: bool = False) -> Path:
 
     # Load existing config or create new
     if config_path.exists():
-        with open(config_path, 'r') as f:
+        with open(config_path, "r") as f:
             config = json.load(f)
     else:
         config = {}
 
     # Add platform template if not exists
     if platform == "sanity":
-        config.setdefault("sanity", {
-            "project_id": "YOUR_PROJECT_ID",
-            "dataset": "production",
-            "token": "YOUR_READ_TOKEN",
-            "write_token": "YOUR_WRITE_TOKEN",
-            "base_url": "https://yoursite.com"
-        })
+        config.setdefault(
+            "sanity",
+            {
+                "project_id": "YOUR_PROJECT_ID",
+                "dataset": "production",
+                "token": "YOUR_READ_TOKEN",
+                "write_token": "YOUR_WRITE_TOKEN",
+                "base_url": "https://yoursite.com",
+            },
+        )
     elif platform == "contentful":
-        config.setdefault("contentful", {
-            "space_id": "YOUR_SPACE_ID",
-            "access_token": "YOUR_ACCESS_TOKEN",
-            "environment": "master"
-        })
+        config.setdefault(
+            "contentful",
+            {
+                "space_id": "YOUR_SPACE_ID",
+                "access_token": "YOUR_ACCESS_TOKEN",
+                "environment": "master",
+            },
+        )
     elif platform == "wordpress":
-        config.setdefault("wordpress", {
-            "site_url": "https://yoursite.com",
-            "username": "YOUR_USERNAME",
-            "app_password": "YOUR_APP_PASSWORD"
-        })
+        config.setdefault(
+            "wordpress",
+            {
+                "site_url": "https://yoursite.com",
+                "username": "YOUR_USERNAME",
+                "app_password": "YOUR_APP_PASSWORD",
+            },
+        )
 
     save_cms_config(config)
     return config_path

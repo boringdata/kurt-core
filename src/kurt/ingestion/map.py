@@ -15,7 +15,7 @@ Key Functions:
 
 import re
 from datetime import datetime
-from urllib.parse import urlparse, urljoin
+from urllib.parse import urljoin, urlparse
 
 import dspy
 import httpx
@@ -24,8 +24,8 @@ from dspy import ChainOfThought, Signature
 from pydantic import BaseModel, Field
 from trafilatura.sitemaps import sitemap_search
 
-from kurt.database import get_session
-from kurt.models.models import Document, IngestionStatus, SourceType
+from kurt.db.database import get_session
+from kurt.db.models import Document, IngestionStatus, SourceType
 
 
 def normalize_url(url: str) -> str:
@@ -108,7 +108,7 @@ def map_sitemap(
     from sqlmodel import select
 
     # Import fetch functions here to avoid circular imports
-    from kurt.ingest_fetch import fetch_document
+    from kurt.ingestion.fetch import fetch_document
 
     urls = sitemap_search(url)
 
@@ -129,14 +129,16 @@ def map_sitemap(
 
         if existing_doc:
             # Skip if already exists
-            created_docs.append({
-                "document_id": existing_doc.id,
-                "url": existing_doc.source_url,
-                "title": existing_doc.title,
-                "status": existing_doc.ingestion_status.value,
-                "created": False,
-                "fetched": False,
-            })
+            created_docs.append(
+                {
+                    "document_id": existing_doc.id,
+                    "url": existing_doc.source_url,
+                    "title": existing_doc.title,
+                    "status": existing_doc.ingestion_status.value,
+                    "created": False,
+                    "fetched": False,
+                }
+            )
             continue
 
         # Generate title from URL
@@ -180,7 +182,7 @@ def map_sitemap(
 
     # Optionally discover additional posts from blogroll/changelog pages
     if discover_blogrolls:
-        print(f"\n--- Discovering blogroll/changelog pages ---")
+        print("\n--- Discovering blogroll/changelog pages ---")
         sitemap_urls = [doc["url"] for doc in created_docs]
         blogroll_docs = map_blogrolls(
             sitemap_urls,
@@ -236,17 +238,13 @@ class ExtractedPost(BaseModel):
     date: str | None = Field(
         default=None, description="Published date in ISO format (YYYY-MM-DD) if found"
     )
-    excerpt: str | None = Field(
-        default=None, description="Brief excerpt or description"
-    )
+    excerpt: str | None = Field(default=None, description="Brief excerpt or description")
 
 
 class ChronologicalContentExtraction(BaseModel):
     """Collection of extracted posts from a chronological content page."""
 
-    posts: list[ExtractedPost] = Field(
-        description="List of posts extracted from the page"
-    )
+    posts: list[ExtractedPost] = Field(description="List of posts extracted from the page")
 
 
 class ExtractChronologicalContentSignature(Signature):
@@ -255,9 +253,7 @@ class ExtractChronologicalContentSignature(Signature):
     content: str = dspy.InputField(
         desc="HTML or markdown content of a blogroll, release notes, or changelog page"
     )
-    base_url: str = dspy.InputField(
-        desc="Base URL of the page for resolving relative links"
-    )
+    base_url: str = dspy.InputField(desc="Base URL of the page for resolving relative links")
     extraction: ChronologicalContentExtraction = dspy.OutputField(
         desc="Extracted posts with URLs, titles, dates, and excerpts"
     )
@@ -273,9 +269,7 @@ class BlogrollCandidate(BaseModel):
     priority: int = Field(
         description="Priority score 1-10, where 10 is highest priority (main indexes, changelogs)"
     )
-    reasoning: str = Field(
-        description="Brief explanation of why this URL is a good candidate"
-    )
+    reasoning: str = Field(description="Brief explanation of why this URL is a good candidate")
 
 
 class BlogrollCandidateList(BaseModel):
@@ -289,12 +283,8 @@ class BlogrollCandidateList(BaseModel):
 class IdentifyBlogrollCandidatesSignature(Signature):
     """Identify URLs from a sitemap that are most likely to contain chronological content listings."""
 
-    urls_sample: str = dspy.InputField(
-        desc="Pre-filtered URLs from the sitemap to analyze"
-    )
-    base_domain: str = dspy.InputField(
-        desc="The base domain being analyzed (e.g., 'getdbt.com')"
-    )
+    urls_sample: str = dspy.InputField(desc="Pre-filtered URLs from the sitemap to analyze")
+    base_domain: str = dspy.InputField(desc="The base domain being analyzed (e.g., 'getdbt.com')")
     candidates: BlogrollCandidateList = dspy.OutputField(
         desc="List of ALL candidate URLs that match criteria for scraping chronological content"
     )
@@ -391,7 +381,7 @@ def identify_blogroll_candidates(
                 continue
 
             # 3. Pagination pages (we auto-follow pagination anyway)
-            if re.match(r'.*/page/\d+$', path):
+            if re.match(r".*/page/\d+$", path):
                 continue
 
             # 4. Individual blog posts (deep paths under /blog/)
@@ -408,8 +398,15 @@ def identify_blogroll_candidates(
 
             # 6. Common individual post patterns in URL
             individual_post_keywords = [
-                "announcing-", "introducing-", "guide-to-", "how-to-", "what-is-",
-                "tutorial-", "-guide-to-", "-how-to-", "understanding-"
+                "announcing-",
+                "introducing-",
+                "guide-to-",
+                "how-to-",
+                "what-is-",
+                "tutorial-",
+                "-guide-to-",
+                "-how-to-",
+                "understanding-",
             ]
             if any(keyword in last_segment for keyword in individual_post_keywords):
                 continue
@@ -486,12 +483,14 @@ Pre-filtered URLs ({len(pre_filtered)} total):
         for candidate in result.candidates.candidates[:max_candidates]:
             normalized = normalize_url(candidate.url)
             if normalized not in seen_urls:
-                candidates.append({
-                    "url": normalized,
-                    "type": candidate.type,
-                    "priority": candidate.priority,
-                    "reasoning": candidate.reasoning,
-                })
+                candidates.append(
+                    {
+                        "url": normalized,
+                        "type": candidate.type,
+                        "priority": candidate.priority,
+                        "reasoning": candidate.reasoning,
+                    }
+                )
                 seen_urls.add(normalized)
 
         # Sort by priority (highest first)
@@ -684,9 +683,13 @@ def _find_next_page_link(html: str, current_url: str, base_url: str) -> str | No
     next_link = None
 
     # Strategy 1: Look for <a rel="next" href="...">
-    match = re.search(r'<a[^>]*\srel=["\']next["\'][^>]*\shref=["\']([^"\']+)["\']', html, re.IGNORECASE)
+    match = re.search(
+        r'<a[^>]*\srel=["\']next["\'][^>]*\shref=["\']([^"\']+)["\']', html, re.IGNORECASE
+    )
     if not match:
-        match = re.search(r'<a[^>]*\shref=["\']([^"\']+)["\'][^>]*\srel=["\']next["\']', html, re.IGNORECASE)
+        match = re.search(
+            r'<a[^>]*\shref=["\']([^"\']+)["\'][^>]*\srel=["\']next["\']', html, re.IGNORECASE
+        )
 
     if match:
         next_link = match.group(1)
@@ -698,7 +701,7 @@ def _find_next_page_link(html: str, current_url: str, base_url: str) -> str | No
         matches = re.finditer(pattern, html, re.IGNORECASE | re.DOTALL)
         for match in matches:
             link_text = match.group(2)
-            if re.search(r'(next|older|→|›|»)', link_text, re.IGNORECASE):
+            if re.search(r"(next|older|→|›|»)", link_text, re.IGNORECASE):
                 next_link = match.group(1)
                 break
 
@@ -707,7 +710,7 @@ def _find_next_page_link(html: str, current_url: str, base_url: str) -> str | No
         match = re.search(
             r'<a[^>]*\sclass=["\'][^"\']*(?:next|pagination-next)[^"\']*["\'][^>]*\shref=["\']([^"\']+)["\']',
             html,
-            re.IGNORECASE
+            re.IGNORECASE,
         )
         if match:
             next_link = match.group(1)

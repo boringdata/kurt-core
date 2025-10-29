@@ -6,63 +6,85 @@ This file stores project-specific settings like database path and project root.
 """
 
 from pathlib import Path
-from typing import Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 
 class KurtConfig(BaseModel):
     """Kurt project configuration."""
 
-    KURT_PROJECT_PATH: str = Field(
-        default=".",
-        description="Path to the Kurt project root"
-    )
-    KURT_DB: str = Field(
+    PATH_DB: str = Field(
         default=".kurt/kurt.sqlite",
-        description="Path to the SQLite database file (relative to project path)"
+        description="Path to the SQLite database file (relative to kurt.config location)",
     )
-    source_path: str = Field(
+    PATH_SOURCES: str = Field(
         default="sources",
-        description="Path to store fetched content (relative to project path)"
+        description="Path to store fetched content (relative to kurt.config location)",
     )
-    LLM_MODEL_DOC_PROCESSING: str = Field(
+    PATH_PROJECTS: str = Field(
+        default="projects",
+        description="Path to store project-specific content (relative to kurt.config location)",
+    )
+    PATH_RULES: str = Field(
+        default="rules",
+        description="Path to store rules and configurations (relative to kurt.config location)",
+    )
+    INDEXING_LLM_MODEL: str = Field(
         default="openai/gpt-4o-mini",
-        description="LLM model for document processing (metadata extraction, classification)"
+        description="LLM model for indexing documents (metadata extraction, classification)",
+    )
+    INGESTION_FETCH_ENGINE: str = Field(
+        default="trafilatura",
+        description="Fetch engine for content ingestion: 'firecrawl' or 'trafilatura'",
     )
 
-    @field_validator("KURT_PROJECT_PATH")
-    @classmethod
-    def validate_project_path(cls, v: str) -> str:
-        """Ensure project path exists."""
-        path = Path(v).resolve()
-        if not path.exists():
-            raise ValueError(f"Project path does not exist: {path}")
-        return str(path)
+    def _get_project_root(self) -> Path:
+        """Get project root directory (where kurt.config is located) - internal use."""
+        return get_config_file_path().parent
 
     def get_absolute_db_path(self) -> Path:
         """Get absolute path to database file."""
-        project_path = Path(self.KURT_PROJECT_PATH).resolve()
-        db_path = Path(self.KURT_DB)
+        project_root = self._get_project_root()
+        db_path = Path(self.PATH_DB)
 
-        # If DB path is relative, resolve it relative to project path
+        # If DB path is relative, resolve it relative to project root
         if not db_path.is_absolute():
-            return project_path / db_path
+            return project_root / db_path
         return db_path
 
     def get_db_directory(self) -> Path:
         """Get the .kurt directory path."""
         return self.get_absolute_db_path().parent
 
-    def get_absolute_source_path(self) -> Path:
-        """Get absolute path to source content directory."""
-        project_path = Path(self.KURT_PROJECT_PATH).resolve()
-        source_path = Path(self.source_path)
+    def get_absolute_sources_path(self) -> Path:
+        """Get absolute path to sources content directory."""
+        project_root = self._get_project_root()
+        sources_path = Path(self.PATH_SOURCES)
 
-        # If source path is relative, resolve it relative to project path
-        if not source_path.is_absolute():
-            return project_path / source_path
-        return source_path
+        # If sources path is relative, resolve it relative to project root
+        if not sources_path.is_absolute():
+            return project_root / sources_path
+        return sources_path
+
+    def get_absolute_projects_path(self) -> Path:
+        """Get absolute path to projects directory."""
+        project_root = self._get_project_root()
+        projects_path = Path(self.PATH_PROJECTS)
+
+        # If projects path is relative, resolve it relative to project root
+        if not projects_path.is_absolute():
+            return project_root / projects_path
+        return projects_path
+
+    def get_absolute_rules_path(self) -> Path:
+        """Get absolute path to rules directory."""
+        project_root = self._get_project_root()
+        rules_path = Path(self.PATH_RULES)
+
+        # If rules path is relative, resolve it relative to project root
+        if not rules_path.is_absolute():
+            return project_root / rules_path
+        return rules_path
 
 
 def get_config_file_path() -> Path:
@@ -97,16 +119,16 @@ def load_config() -> KurtConfig:
 
     # Parse config file
     config_data = {}
-    with open(config_file, 'r') as f:
+    with open(config_file, "r") as f:
         for line in f:
             line = line.strip()
             # Skip empty lines and comments
-            if not line or line.startswith('#'):
+            if not line or line.startswith("#"):
                 continue
 
             # Parse key=value
-            if '=' in line:
-                key, value = line.split('=', 1)
+            if "=" in line:
+                key, value = line.split("=", 1)
                 key = key.strip()
                 value = value.strip().strip('"').strip("'")  # Remove quotes
                 config_data[key] = value
@@ -115,25 +137,30 @@ def load_config() -> KurtConfig:
 
 
 def create_config(
-    project_path: str = ".",
     db_path: str = ".kurt/kurt.sqlite",
-    source_path: str = "sources"
+    sources_path: str = "sources",
+    projects_path: str = "projects",
+    rules_path: str = "rules",
 ) -> KurtConfig:
     """
-    Create a new kurt.config configuration file.
+    Create a new kurt.config configuration file in the current directory.
+
+    The project root is determined by the location of kurt.config.
 
     Args:
-        project_path: Path to the Kurt project root
-        db_path: Path to the SQLite database (relative to project_path)
-        source_path: Path to store fetched content (relative to project_path)
+        db_path: Path to the SQLite database (relative to kurt.config location)
+        sources_path: Path to store fetched content (relative to kurt.config location)
+        projects_path: Path to store project-specific content (relative to kurt.config location)
+        rules_path: Path to store rules and configurations (relative to kurt.config location)
 
     Returns:
         KurtConfig instance
     """
     config = KurtConfig(
-        KURT_PROJECT_PATH=project_path,
-        KURT_DB=db_path,
-        source_path=source_path
+        PATH_DB=db_path,
+        PATH_SOURCES=sources_path,
+        PATH_PROJECTS=projects_path,
+        PATH_RULES=rules_path,
     )
 
     config_file = get_config_file_path()
@@ -142,13 +169,15 @@ def create_config(
     config_file.parent.mkdir(parents=True, exist_ok=True)
 
     # Write config file
-    with open(config_file, 'w') as f:
+    with open(config_file, "w") as f:
         f.write("# Kurt Project Configuration\n")
         f.write("# This file is auto-generated by 'kurt init'\n\n")
-        f.write(f'KURT_PROJECT_PATH="{config.KURT_PROJECT_PATH}"\n')
-        f.write(f'KURT_DB="{config.KURT_DB}"\n')
-        f.write(f'source_path="{config.source_path}"\n')
-        f.write(f'LLM_MODEL_DOC_PROCESSING="{config.LLM_MODEL_DOC_PROCESSING}"\n')
+        f.write(f'PATH_DB="{config.PATH_DB}"\n')
+        f.write(f'PATH_SOURCES="{config.PATH_SOURCES}"\n')
+        f.write(f'PATH_PROJECTS="{config.PATH_PROJECTS}"\n')
+        f.write(f'PATH_RULES="{config.PATH_RULES}"\n')
+        f.write(f'INDEXING_LLM_MODEL="{config.INDEXING_LLM_MODEL}"\n')
+        f.write(f'INGESTION_FETCH_ENGINE="{config.INGESTION_FETCH_ENGINE}"\n')
 
     return config
 
@@ -170,3 +199,24 @@ def get_config_or_default() -> KurtConfig:
     else:
         # Return default config (without creating file)
         return KurtConfig()
+
+
+def update_config(config: KurtConfig) -> None:
+    """
+    Update the kurt.config file with new configuration values.
+
+    Args:
+        config: KurtConfig instance to save
+    """
+    config_file = get_config_file_path()
+
+    # Write updated config
+    with open(config_file, "w") as f:
+        f.write("# Kurt Project Configuration\n")
+        f.write("# This file is auto-generated by 'kurt init'\n\n")
+        f.write(f'PATH_DB="{config.PATH_DB}"\n')
+        f.write(f'PATH_SOURCES="{config.PATH_SOURCES}"\n')
+        f.write(f'PATH_PROJECTS="{config.PATH_PROJECTS}"\n')
+        f.write(f'PATH_RULES="{config.PATH_RULES}"\n')
+        f.write(f'INDEXING_LLM_MODEL="{config.INDEXING_LLM_MODEL}"\n')
+        f.write(f'INGESTION_FETCH_ENGINE="{config.INGESTION_FETCH_ENGINE}"\n')

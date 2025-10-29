@@ -15,8 +15,8 @@ from uuid import UUID
 
 from sqlmodel import select
 
-from kurt.database import get_session
-from kurt.models.models import Document, IngestionStatus
+from kurt.db.database import get_session
+from kurt.db.models import Document, IngestionStatus
 
 
 def list_documents(
@@ -171,7 +171,6 @@ def delete_document(document_id: str, delete_content: bool = False) -> dict:
         # Delete document and content file
         result = delete_document("550e8400", delete_content=True)
     """
-    from pathlib import Path
 
     from kurt.config import load_config
 
@@ -216,7 +215,7 @@ def delete_document(document_id: str, delete_content: bool = False) -> dict:
     if delete_content and content_path:
         try:
             config = load_config()
-            source_base = config.get_absolute_source_path()
+            source_base = config.get_absolute_sources_path()
             full_path = source_base / content_path
 
             if full_path.exists():

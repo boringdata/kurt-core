@@ -4,9 +4,11 @@ Reddit monitoring adapter.
 Uses Reddit's JSON API (no authentication required for public content).
 """
 
-import requests
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import List, Optional
+
+import requests
+
 from kurt.research.monitoring.models import Signal
 
 
@@ -18,9 +20,7 @@ class RedditAdapter:
     def __init__(self):
         """Initialize Reddit adapter."""
         # Set user agent to avoid rate limiting
-        self.headers = {
-            "User-Agent": "Kurt/1.0 (Research monitoring tool)"
-        }
+        self.headers = {"User-Agent": "Kurt/1.0 (Research monitoring tool)"}
 
     def get_subreddit_posts(
         self,
@@ -29,7 +29,7 @@ class RedditAdapter:
         sort: str = "hot",
         limit: int = 25,
         keywords: Optional[List[str]] = None,
-        min_score: int = 0
+        min_score: int = 0,
     ) -> List[Signal]:
         """
         Get posts from a subreddit.
@@ -50,7 +50,7 @@ class RedditAdapter:
 
         params = {
             "limit": min(limit, 100),
-            "t": timeframe  # Time filter (for "top" sort)
+            "t": timeframe,  # Time filter (for "top" sort)
         }
 
         try:
@@ -72,13 +72,15 @@ class RedditAdapter:
                     source="reddit",
                     title=post_data.get("title", ""),
                     url=f"https://reddit.com{post_data.get('permalink', '')}",
-                    snippet=post_data.get("selftext", "")[:500] if post_data.get("selftext") else None,
+                    snippet=post_data.get("selftext", "")[:500]
+                    if post_data.get("selftext")
+                    else None,
                     timestamp=datetime.fromtimestamp(post_data.get("created_utc", 0)),
                     author=post_data.get("author"),
                     score=post_data.get("score", 0),
                     comment_count=post_data.get("num_comments", 0),
                     subreddit=subreddit,
-                    keywords=[]
+                    keywords=[],
                 )
 
                 # Filter by keywords if provided
@@ -88,9 +90,10 @@ class RedditAdapter:
                 # Track which keywords matched
                 if keywords:
                     signal.keywords = [
-                        kw for kw in keywords
-                        if kw.lower() in signal.title.lower() or
-                           (signal.snippet and kw.lower() in signal.snippet.lower())
+                        kw
+                        for kw in keywords
+                        if kw.lower() in signal.title.lower()
+                        or (signal.snippet and kw.lower() in signal.snippet.lower())
                     ]
 
                 signals.append(signal)
@@ -100,11 +103,7 @@ class RedditAdapter:
         except requests.RequestException as e:
             raise Exception(f"Failed to fetch Reddit data: {e}")
 
-    def get_multi_subreddit_posts(
-        self,
-        subreddits: List[str],
-        **kwargs
-    ) -> List[Signal]:
+    def get_multi_subreddit_posts(self, subreddits: List[str], **kwargs) -> List[Signal]:
         """
         Get posts from multiple subreddits.
 
@@ -134,7 +133,7 @@ class RedditAdapter:
         query: str,
         timeframe: str = "week",
         sort: str = "relevance",
-        limit: int = 25
+        limit: int = 25,
     ) -> List[Signal]:
         """
         Search within a subreddit.
@@ -156,7 +155,7 @@ class RedditAdapter:
             "restrict_sr": "on",  # Restrict to this subreddit
             "sort": sort,
             "t": timeframe,
-            "limit": min(limit, 100)
+            "limit": min(limit, 100),
         }
 
         try:
@@ -173,13 +172,15 @@ class RedditAdapter:
                     source="reddit",
                     title=post_data.get("title", ""),
                     url=f"https://reddit.com{post_data.get('permalink', '')}",
-                    snippet=post_data.get("selftext", "")[:500] if post_data.get("selftext") else None,
+                    snippet=post_data.get("selftext", "")[:500]
+                    if post_data.get("selftext")
+                    else None,
                     timestamp=datetime.fromtimestamp(post_data.get("created_utc", 0)),
                     author=post_data.get("author"),
                     score=post_data.get("score", 0),
                     comment_count=post_data.get("num_comments", 0),
                     subreddit=subreddit,
-                    keywords=[query]
+                    keywords=[query],
                 )
 
                 signals.append(signal)

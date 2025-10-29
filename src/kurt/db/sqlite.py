@@ -54,7 +54,6 @@ class SQLiteClient(DatabaseClient):
         Creates .kurt directory and initializes database with all tables.
         """
         # Import models to register them with SQLModel
-        from kurt.models.models import Document, DocumentClusterEdge, Entity, TopicCluster
 
         # Ensure .kurt directory exists
         kurt_dir = self.ensure_kurt_directory()
@@ -92,8 +91,8 @@ class SQLiteClient(DatabaseClient):
         for table_name in sorted(tables_created):
             console.print(f"  • {table_name}")
 
-        console.print(f"\n[green]✓[/green] Database initialized successfully")
-        console.print(f"[dim]Mode: local (SQLite)[/dim]")
+        console.print("\n[green]✓[/green] Database initialized successfully")
+        console.print("[dim]Mode: local (SQLite)[/dim]")
         console.print(f"[dim]Location: {db_path}[/dim]")
 
     def get_session(self) -> Session:

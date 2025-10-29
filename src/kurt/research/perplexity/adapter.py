@@ -7,10 +7,11 @@ Uses Perplexity's chat completions API for research queries.
 import time
 import uuid
 from datetime import datetime
-from typing import Dict, Any, Optional, List
+from typing import Any, Dict, Optional
+
 import requests
 
-from kurt.research.base import ResearchAdapter, ResearchResult, Citation
+from kurt.research.base import Citation, ResearchAdapter, ResearchResult
 
 
 class PerplexityAdapter(ResearchAdapter):
@@ -29,11 +30,11 @@ class PerplexityAdapter(ResearchAdapter):
         - max_tokens: Max response tokens
         - temperature: Response temperature
         """
-        self.api_key = config['api_key']
-        self.default_model = config.get('default_model', 'sonar-reasoning')
-        self.default_recency = config.get('default_recency', 'day')
-        self.max_tokens = config.get('max_tokens', 4000)
-        self.temperature = config.get('temperature', 0.2)
+        self.api_key = config["api_key"]
+        self.default_model = config.get("default_model", "sonar-reasoning")
+        self.default_recency = config.get("default_recency", "day")
+        self.max_tokens = config.get("max_tokens", 4000)
+        self.temperature = config.get("temperature", 0.2)
 
     def test_connection(self) -> bool:
         """Test if Perplexity API connection is working."""
@@ -46,11 +47,7 @@ class PerplexityAdapter(ResearchAdapter):
             return False
 
     def search(
-        self,
-        query: str,
-        recency: Optional[str] = None,
-        model: Optional[str] = None,
-        **kwargs
+        self, query: str, recency: Optional[str] = None, model: Optional[str] = None, **kwargs
     ) -> ResearchResult:
         """
         Execute research query via Perplexity API.
@@ -67,18 +64,10 @@ class PerplexityAdapter(ResearchAdapter):
         start_time = time.time()
 
         # Build request
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
+        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
 
         # Map recency to search_recency_filter
-        recency_map = {
-            "hour": "hour",
-            "day": "day",
-            "week": "week",
-            "month": "month"
-        }
+        recency_map = {"hour": "hour", "day": "day", "week": "week", "month": "month"}
         search_recency = recency_map.get(recency or self.default_recency, "day")
 
         payload = {
@@ -86,19 +75,16 @@ class PerplexityAdapter(ResearchAdapter):
             "messages": [
                 {
                     "role": "system",
-                    "content": "You are a helpful research assistant. Provide comprehensive, well-researched answers with citations."
+                    "content": "You are a helpful research assistant. Provide comprehensive, well-researched answers with citations.",
                 },
-                {
-                    "role": "user",
-                    "content": query
-                }
+                {"role": "user", "content": query},
             ],
             "max_tokens": self.max_tokens,
             "temperature": self.temperature,
             "search_recency_filter": search_recency,
             "return_citations": True,
             "return_images": False,
-            "search_domain_filter": kwargs.get('domains', [])
+            "search_domain_filter": kwargs.get("domains", []),
         }
 
         # Make request
@@ -106,25 +92,23 @@ class PerplexityAdapter(ResearchAdapter):
             self.API_URL,
             headers=headers,
             json=payload,
-            timeout=120  # 2 minute timeout for long research
+            timeout=120,  # 2 minute timeout for long research
         )
 
         response.raise_for_status()
         data = response.json()
 
         # Extract response
-        answer = data['choices'][0]['message']['content']
+        answer = data["choices"][0]["message"]["content"]
 
         # Extract citations
         citations = []
-        if 'citations' in data:
-            for i, cite_url in enumerate(data['citations'], 1):
+        if "citations" in data:
+            for i, cite_url in enumerate(data["citations"], 1):
                 # Try to get title from the content if available
                 # Perplexity includes citation markers like [1], [2] in the text
                 citation = Citation(
-                    title=f"Source {i}",
-                    url=cite_url,
-                    domain=self._extract_domain(cite_url)
+                    title=f"Source {i}", url=cite_url, domain=self._extract_domain(cite_url)
                 )
                 citations.append(citation)
 
@@ -143,17 +127,15 @@ class PerplexityAdapter(ResearchAdapter):
             model=model or self.default_model,
             timestamp=datetime.now(),
             response_time_seconds=response_time,
-            metadata={
-                'recency': search_recency,
-                'model': model or self.default_model
-            }
+            metadata={"recency": search_recency, "model": model or self.default_model},
         )
 
     def _extract_domain(self, url: str) -> str:
         """Extract domain from URL."""
         try:
             from urllib.parse import urlparse
+
             parsed = urlparse(url)
             return parsed.netloc
-        except:
+        except Exception:
             return url

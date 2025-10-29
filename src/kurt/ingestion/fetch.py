@@ -2,10 +2,14 @@
 Content fetching and storage functions for Kurt.
 
 This module handles downloading and storing document content:
-- Fetching content from URLs using trafilatura
+- Fetching content from URLs using Firecrawl or Trafilatura
 - Extracting metadata (title, author, dates, description)
 - Storing content as markdown files
 - Batch async fetching for performance
+
+Fetch Engine Selection:
+- If FIRECRAWL_API_KEY is set in environment → use Firecrawl
+- Otherwise → use Trafilatura (fallback)
 
 Key Functions:
 - add_document: Create document record (NOT_FETCHED status)
@@ -14,15 +18,160 @@ Key Functions:
 """
 
 import asyncio
+import os
 from pathlib import Path
 from urllib.parse import urlparse
 from uuid import UUID
 
 import trafilatura
+from dotenv import load_dotenv
 
 from kurt.config import KurtConfig, load_config
-from kurt.database import get_session
-from kurt.models.models import Document, IngestionStatus, SourceType
+from kurt.db.database import get_session
+from kurt.db.models import Document, IngestionStatus, SourceType
+
+# Load environment variables from .env file
+load_dotenv()
+
+
+def _get_fetch_engine(override: str = None) -> str:
+    """
+    Determine which fetch engine to use based on configuration and API key availability.
+
+    Priority:
+    1. If override is specified → use override (if valid)
+    2. If INGESTION_FETCH_ENGINE is 'firecrawl' AND FIRECRAWL_API_KEY is set → use Firecrawl
+    3. Otherwise → use Trafilatura (fallback)
+
+    Args:
+        override: Optional engine override ('firecrawl' or 'trafilatura')
+
+    Returns:
+        'firecrawl' if configured and API key available, otherwise 'trafilatura'
+    """
+    # Handle override
+    if override:
+        override = override.lower()
+        if override == "firecrawl":
+            firecrawl_api_key = os.getenv("FIRECRAWL_API_KEY")
+            if not firecrawl_api_key or firecrawl_api_key == "your_firecrawl_api_key_here":
+                raise ValueError(
+                    "Cannot use Firecrawl: FIRECRAWL_API_KEY not set or invalid.\n"
+                    "Add your API key to .env file or use --fetch-engine=trafilatura"
+                )
+            return "firecrawl"
+        elif override == "trafilatura":
+            return "trafilatura"
+        else:
+            raise ValueError(
+                f"Invalid fetch engine: {override}. Must be 'firecrawl' or 'trafilatura'"
+            )
+
+    # Use config default
+    try:
+        config = load_config()
+        default_engine = config.INGESTION_FETCH_ENGINE.lower()
+    except Exception:
+        # If config fails to load, default to trafilatura
+        default_engine = "trafilatura"
+
+    # Check if Firecrawl is requested
+    if default_engine == "firecrawl":
+        firecrawl_api_key = os.getenv("FIRECRAWL_API_KEY")
+
+        # Verify API key is set and valid (not a placeholder)
+        if firecrawl_api_key and firecrawl_api_key != "your_firecrawl_api_key_here":
+            return "firecrawl"
+
+    # Default to trafilatura
+    return "trafilatura"
+
+
+def _fetch_with_firecrawl(url: str) -> tuple[str, dict]:
+    """
+    Fetch content using Firecrawl API.
+
+    Args:
+        url: URL to fetch
+
+    Returns:
+        Tuple of (content_markdown, metadata_dict)
+
+    Raises:
+        Exception: If fetch fails
+    """
+    from firecrawl import FirecrawlApp
+
+    api_key = os.getenv("FIRECRAWL_API_KEY")
+    if not api_key:
+        raise ValueError("FIRECRAWL_API_KEY not set in environment")
+
+    app = FirecrawlApp(api_key=api_key)
+
+    # Scrape the URL and get markdown
+    result = app.scrape_url(url, params={"formats": ["markdown", "html"]})
+
+    if not result or "markdown" not in result:
+        raise ValueError(f"Firecrawl failed to extract content from: {url}")
+
+    content = result["markdown"]
+
+    # Extract metadata from Firecrawl response
+    metadata = result.get("metadata", {})
+
+    return content, metadata
+
+
+def _fetch_with_trafilatura(url: str) -> tuple[str, dict]:
+    """
+    Fetch content using Trafilatura.
+
+    Args:
+        url: URL to fetch
+
+    Returns:
+        Tuple of (content_markdown, metadata_dict)
+
+    Raises:
+        ValueError: If fetch fails
+    """
+    # Download content
+    downloaded = trafilatura.fetch_url(url)
+    if not downloaded:
+        raise ValueError(f"Failed to download: {url}")
+
+    # Extract metadata using trafilatura
+    metadata = trafilatura.extract_metadata(
+        downloaded,
+        default_url=url,
+        extensive=True,  # More comprehensive metadata extraction
+    )
+
+    # Extract content as markdown
+    content = trafilatura.extract(
+        downloaded,
+        output_format="markdown",
+        include_tables=True,
+        include_links=True,
+        url=url,  # Helps with metadata extraction
+        with_metadata=True,  # Include metadata in extraction
+    )
+
+    if not content:
+        raise ValueError(f"No content extracted from: {url}")
+
+    # Convert trafilatura metadata to dict
+    metadata_dict = {}
+    if metadata:
+        metadata_dict = {
+            "title": metadata.title,
+            "author": metadata.author,
+            "date": metadata.date,
+            "description": metadata.description,
+            "fingerprint": metadata.fingerprint,
+        }
+
+    return content, metadata_dict
 
 
 def _create_content_path(url: str, config: KurtConfig) -> Path:
@@ -67,7 +216,7 @@ def _create_content_path(url: str, config: KurtConfig) -> Path:
         path = path + ".md"
 
     # Build full path: source_path/domain/path
-    source_base = config.get_absolute_source_path()
+    source_base = config.get_absolute_sources_path()
     content_path = source_base / domain / path
 
     return content_path
@@ -120,15 +269,16 @@ def add_document(url: str, title: str = None) -> UUID:
     return doc.id
 
 
-def fetch_document(identifier: str) -> dict:
+def fetch_document(identifier: str, fetch_engine: str = None) -> dict:
     """
     Fetch content for document (by ID or URL).
 
     If identifier is a URL and document doesn't exist, creates it first.
-    Downloads content using trafilatura and updates ingestion_status.
+    Downloads content using the specified fetch engine or config default.
 
     Args:
         identifier: Document UUID or source URL
+        fetch_engine: Optional engine override ('firecrawl' or 'trafilatura')
 
     Returns:
         dict with keys:
@@ -146,6 +296,9 @@ def fetch_document(identifier: str) -> dict:
 
         # Fetch by URL (creates if doesn't exist)
         result = fetch_document("https://example.com/page1")
+
+        # Fetch using specific engine
+        result = fetch_document("https://example.com/page1", fetch_engine="firecrawl")
 
         # Returns: {'document_id': UUID(...), 'title': 'Page 1', ...}
     """
@@ -176,59 +329,45 @@ def fetch_document(identifier: str) -> dict:
     doc.ingestion_status = IngestionStatus.FETCHED  # Will set to ERROR if fails
 
     try:
-        # Download content
-        downloaded = trafilatura.fetch_url(doc.source_url)
-        if not downloaded:
-            raise ValueError(f"Failed to download: {doc.source_url}")
+        # Determine which fetch engine to use
+        engine = _get_fetch_engine(override=fetch_engine)
 
-        # Extract metadata using trafilatura
-        metadata = trafilatura.extract_metadata(
-            downloaded,
-            default_url=doc.source_url,
-            extensive=True,  # More comprehensive metadata extraction
-        )
-
-        # Extract content as markdown
-        content = trafilatura.extract(
-            downloaded,
-            output_format="markdown",
-            include_tables=True,
-            include_links=True,
-            url=doc.source_url,  # Helps with metadata extraction
-            with_metadata=True,  # Include metadata in extraction
-        )
-
-        if not content:
-            raise ValueError(f"No content extracted from: {doc.source_url}")
+        # Fetch content using appropriate engine
+        if engine == "firecrawl":
+            content, metadata_dict = _fetch_with_firecrawl(doc.source_url)
+        else:
+            content, metadata_dict = _fetch_with_trafilatura(doc.source_url)
 
         # Update document with extracted metadata
-        if metadata:
+        if metadata_dict:
             # Title (prefer metadata title over URL-derived title)
-            if metadata.title:
-                doc.title = metadata.title
+            if metadata_dict.get("title"):
+                doc.title = metadata_dict["title"]
 
             # Content hash (fingerprint for deduplication)
-            if metadata.fingerprint:
-                doc.content_hash = metadata.fingerprint
+            if metadata_dict.get("fingerprint"):
+                doc.content_hash = metadata_dict["fingerprint"]
 
             # Description
-            if metadata.description:
-                doc.description = metadata.description
+            if metadata_dict.get("description"):
+                doc.description = metadata_dict["description"]
 
             # Author(s) - convert to list if single author
-            if metadata.author:
-                if isinstance(metadata.author, str):
-                    doc.author = [metadata.author]
+            author = metadata_dict.get("author")
+            if author:
+                if isinstance(author, str):
+                    doc.author = [author]
                 else:
-                    doc.author = list(metadata.author) if metadata.author else None
+                    doc.author = list(author) if author else None
 
             # Published date
-            if metadata.date:
+            date_str = metadata_dict.get("date")
+            if date_str:
                 # metadata.date is a string in YYYY-MM-DD format
                 from datetime import datetime
 
                 try:
-                    doc.published_date = datetime.fromisoformat(metadata.date)
+                    doc.published_date = datetime.fromisoformat(date_str)
                 except (ValueError, AttributeError):
                     # If parsing fails, store as None
                     doc.published_date = None
@@ -246,7 +385,7 @@ def fetch_document(identifier: str) -> dict:
             f.write(content)
 
         # Store relative path in document
-        source_base = config.get_absolute_source_path()
+        source_base = config.get_absolute_sources_path()
         doc.content_path = str(content_path.relative_to(source_base))
         doc.ingestion_status = IngestionStatus.FETCHED
 
@@ -273,13 +412,15 @@ def fetch_document(identifier: str) -> dict:
         raise e
 
 
-async def _fetch_one_async(doc_id: str, semaphore: asyncio.Semaphore) -> dict:
+async def _fetch_one_async(
+    doc_id: str, semaphore: asyncio.Semaphore, fetch_engine: str = None
+) -> dict:
     """Fetch single document with concurrency control."""
     async with semaphore:
         try:
             # Run sync fetch_document in executor to avoid blocking
             loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(None, fetch_document, doc_id)
+            result = await loop.run_in_executor(None, fetch_document, doc_id, fetch_engine)
             return {"success": True, **result}
         except Exception as e:
             return {
@@ -292,6 +433,7 @@ async def _fetch_one_async(doc_id: str, semaphore: asyncio.Semaphore) -> dict:
 def fetch_documents_batch(
     document_ids: list[str],
     max_concurrent: int = 5,
+    fetch_engine: str = None,
 ) -> list[dict]:
     """
     Fetch multiple documents in parallel using async HTTP.
@@ -299,6 +441,7 @@ def fetch_documents_batch(
     Args:
         document_ids: List of document UUIDs or URLs to fetch
         max_concurrent: Maximum number of concurrent downloads (default: 5)
+        fetch_engine: Optional engine override ('firecrawl' or 'trafilatura')
 
     Returns:
         List of results, one per document:
@@ -315,14 +458,25 @@ def fetch_documents_batch(
             "660e9500-f30c-52e5-b827-557766551111",
         ], max_concurrent=10)
 
+        # Fetch using specific engine
+        results = fetch_documents_batch(doc_ids, fetch_engine="firecrawl")
+
         # Check results
         successful = [r for r in results if r["success"]]
         failed = [r for r in results if not r["success"]]
     """
+    # Show warning if using Trafilatura for large batch
+    engine = _get_fetch_engine(override=fetch_engine)
+    if engine == "trafilatura" and len(document_ids) > 10:
+        print("\n⚠️  Warning: Fetching large volumes with Trafilatura may encounter rate limits.")
+        print("   For better reliability with large batches, consider using Firecrawl:")
+        print('   1. Update kurt.config: INGESTION_FETCH_ENGINE="firecrawl"')
+        print("   2. Add FIRECRAWL_API_KEY to your .env file")
+        print("   Get your API key at: https://firecrawl.dev\n")
 
     async def _batch_fetch():
         semaphore = asyncio.Semaphore(max_concurrent)
-        tasks = [_fetch_one_async(doc_id, semaphore) for doc_id in document_ids]
+        tasks = [_fetch_one_async(doc_id, semaphore, fetch_engine) for doc_id in document_ids]
         return await asyncio.gather(*tasks)
 
     return asyncio.run(_batch_fetch())

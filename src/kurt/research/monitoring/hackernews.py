@@ -4,9 +4,11 @@ Hacker News monitoring adapter.
 Uses HN's Algolia API for search and the official Firebase API for top stories.
 """
 
-import requests
 from datetime import datetime, timedelta
 from typing import List, Optional
+
+import requests
+
 from kurt.research.monitoring.models import Signal
 
 
@@ -21,10 +23,7 @@ class HackerNewsAdapter:
         pass
 
     def get_top_stories(
-        self,
-        limit: int = 30,
-        keywords: Optional[List[str]] = None,
-        min_score: int = 0
+        self, limit: int = 30, keywords: Optional[List[str]] = None, min_score: int = 0
     ) -> List[Signal]:
         """
         Get current top stories from Hacker News front page.
@@ -47,8 +46,7 @@ class HackerNewsAdapter:
             try:
                 # Fetch story details
                 story_response = requests.get(
-                    f"{self.FIREBASE_URL}/item/{story_id}.json",
-                    timeout=5
+                    f"{self.FIREBASE_URL}/item/{story_id}.json", timeout=5
                 )
                 story_response.raise_for_status()
                 story = story_response.json()
@@ -65,13 +63,14 @@ class HackerNewsAdapter:
                     signal_id=f"hn_{story.get('id')}",
                     source="hackernews",
                     title=story.get("title", ""),
-                    url=story.get("url") or f"https://news.ycombinator.com/item?id={story.get('id')}",
+                    url=story.get("url")
+                    or f"https://news.ycombinator.com/item?id={story.get('id')}",
                     snippet=story.get("text", "")[:500] if story.get("text") else None,
                     timestamp=datetime.fromtimestamp(story.get("time", 0)),
                     author=story.get("by"),
                     score=story.get("score", 0),
                     comment_count=story.get("descendants", 0),
-                    keywords=[]
+                    keywords=[],
                 )
 
                 # Filter by keywords if provided
@@ -80,10 +79,7 @@ class HackerNewsAdapter:
 
                 # Track which keywords matched
                 if keywords:
-                    signal.keywords = [
-                        kw for kw in keywords
-                        if kw.lower() in signal.title.lower()
-                    ]
+                    signal.keywords = [kw for kw in keywords if kw.lower() in signal.title.lower()]
 
                 signals.append(signal)
 
@@ -99,7 +95,7 @@ class HackerNewsAdapter:
         timeframe: str = "week",
         sort: str = "relevance",
         limit: int = 30,
-        min_score: int = 0
+        min_score: int = 0,
     ) -> List[Signal]:
         """
         Search Hacker News using Algolia API.
@@ -121,19 +117,21 @@ class HackerNewsAdapter:
             "week": 604800,
             "month": 2592000,
             "year": 31536000,
-            "all": None
+            "all": None,
         }
 
         # Build search params
         params = {
             "query": query,
             "tags": "story",  # Only stories, not comments
-            "hitsPerPage": limit
+            "hitsPerPage": limit,
         }
 
         # Add time filter if not "all"
         if timeframe != "all" and timeframe in timeframe_seconds:
-            timestamp = int((datetime.now() - timedelta(seconds=timeframe_seconds[timeframe])).timestamp())
+            timestamp = int(
+                (datetime.now() - timedelta(seconds=timeframe_seconds[timeframe])).timestamp()
+            )
             params["numericFilters"] = f"created_at_i>{timestamp}"
 
         # Sort by date if requested
@@ -157,13 +155,14 @@ class HackerNewsAdapter:
                     signal_id=f"hn_{hit.get('objectID')}",
                     source="hackernews",
                     title=hit.get("title", ""),
-                    url=hit.get("url") or f"https://news.ycombinator.com/item?id={hit.get('objectID')}",
+                    url=hit.get("url")
+                    or f"https://news.ycombinator.com/item?id={hit.get('objectID')}",
                     snippet=hit.get("story_text", "")[:500] if hit.get("story_text") else None,
                     timestamp=datetime.fromtimestamp(hit.get("created_at_i", 0)),
                     author=hit.get("author"),
                     score=hit.get("points", 0),
                     comment_count=hit.get("num_comments", 0),
-                    keywords=[query]
+                    keywords=[query],
                 )
 
                 signals.append(signal)
@@ -174,10 +173,7 @@ class HackerNewsAdapter:
             raise Exception(f"Failed to search Hacker News: {e}")
 
     def get_recent(
-        self,
-        hours: int = 24,
-        keywords: Optional[List[str]] = None,
-        min_score: int = 10
+        self, hours: int = 24, keywords: Optional[List[str]] = None, min_score: int = 10
     ) -> List[Signal]:
         """
         Get recent stories from the last N hours.
@@ -196,7 +192,7 @@ class HackerNewsAdapter:
         params = {
             "tags": "story",
             "numericFilters": f"created_at_i>{timestamp}",
-            "hitsPerPage": 100
+            "hitsPerPage": 100,
         }
 
         url = f"{self.ALGOLIA_URL}/search_by_date"
@@ -216,13 +212,14 @@ class HackerNewsAdapter:
                     signal_id=f"hn_{hit.get('objectID')}",
                     source="hackernews",
                     title=hit.get("title", ""),
-                    url=hit.get("url") or f"https://news.ycombinator.com/item?id={hit.get('objectID')}",
+                    url=hit.get("url")
+                    or f"https://news.ycombinator.com/item?id={hit.get('objectID')}",
                     snippet=hit.get("story_text", "")[:500] if hit.get("story_text") else None,
                     timestamp=datetime.fromtimestamp(hit.get("created_at_i", 0)),
                     author=hit.get("author"),
                     score=hit.get("points", 0),
                     comment_count=hit.get("num_comments", 0),
-                    keywords=[]
+                    keywords=[],
                 )
 
                 # Filter by keywords if provided
@@ -231,10 +228,7 @@ class HackerNewsAdapter:
 
                 # Track which keywords matched
                 if keywords:
-                    signal.keywords = [
-                        kw for kw in keywords
-                        if kw.lower() in signal.title.lower()
-                    ]
+                    signal.keywords = [kw for kw in keywords if kw.lower() in signal.title.lower()]
 
                 signals.append(signal)
 
