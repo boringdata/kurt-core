@@ -7,7 +7,7 @@ from typing import Optional
 import dspy
 from pydantic import BaseModel
 
-from kurt.models.models import ContentType
+from kurt.db.models import ContentType
 
 logger = logging.getLogger(__name__)
 
@@ -77,13 +77,43 @@ def extract_document_metadata(document_id: str, extractor=None, force: bool = Fa
     Raises:
         ValueError: If document not found or not FETCHED
     """
+    from uuid import UUID
+
+    from sqlmodel import select
+
     from kurt.config import get_config_or_default, load_config
-    from kurt.database import get_session
-    from kurt.document import get_document
+    from kurt.db.database import get_session
+    from kurt.db.models import Document
     from kurt.utils import calculate_content_hash, get_git_commit_hash
 
-    # Get document
-    doc = get_document(document_id)
+    # Get session first (use same session throughout to avoid attachment issues)
+    session = get_session()
+
+    # Get document using this session
+    try:
+        doc_uuid = UUID(document_id)
+        doc = session.get(Document, doc_uuid)
+        if not doc:
+            raise ValueError(f"Document not found: {document_id}")
+    except ValueError:
+        # Try partial UUID match
+        if len(document_id) < 8:
+            raise ValueError(f"Document ID too short (minimum 8 characters): {document_id}")
+
+        stmt = select(Document)
+        docs = session.exec(stmt).all()
+        partial_lower = document_id.lower().replace("-", "")
+        matches = [d for d in docs if str(d.id).replace("-", "").startswith(partial_lower)]
+
+        if len(matches) == 0:
+            raise ValueError(f"Document not found: {document_id}")
+        elif len(matches) > 1:
+            raise ValueError(
+                f"Ambiguous document ID '{document_id}' matches {len(matches)} documents. "
+                f"Please provide more characters."
+            )
+
+        doc = matches[0]
 
     if doc.ingestion_status.value != "FETCHED":
         raise ValueError(
@@ -95,7 +125,7 @@ def extract_document_metadata(document_id: str, extractor=None, force: bool = Fa
         raise ValueError(f"Document {doc.id} has no content_path")
 
     config = load_config()
-    source_base = config.get_absolute_source_path()
+    source_base = config.get_absolute_sources_path()
     content_file = source_base / doc.content_path
 
     if not content_file.exists():
@@ -129,7 +159,7 @@ def extract_document_metadata(document_id: str, extractor=None, force: bool = Fa
     if extractor is None:
         # Single document mode - configure DSPy here
         llm_config = get_config_or_default()
-        lm = dspy.LM(llm_config.LLM_MODEL_DOC_PROCESSING)
+        lm = dspy.LM(llm_config.INDEXING_LLM_MODEL)
         dspy.configure(lm=lm)
         extractor = dspy.ChainOfThought(ExtractMetadata)
 
@@ -145,8 +175,7 @@ def extract_document_metadata(document_id: str, extractor=None, force: bool = Fa
     # Get git commit hash for content_file
     git_commit_hash = get_git_commit_hash(content_file)
 
-    # Update document with extracted metadata
-    session = get_session()
+    # Update document with extracted metadata (session already obtained at start of function)
     doc.indexed_with_hash = current_content_hash
     doc.indexed_with_git_commit = git_commit_hash
     doc.content_type = metadata_output.content_type
@@ -233,7 +262,7 @@ async def batch_extract_document_metadata(
 
     # Configure DSPy once in main thread (before spawning workers)
     llm_config = get_config_or_default()
-    lm = dspy.LM(llm_config.LLM_MODEL_DOC_PROCESSING)
+    lm = dspy.LM(llm_config.INDEXING_LLM_MODEL)
     dspy.configure(lm=lm)
     extractor = dspy.ChainOfThought(ExtractMetadata)
 
@@ -266,10 +295,12 @@ async def batch_extract_document_metadata(
 
     for doc_id, outcome in completed:
         if isinstance(outcome, Exception):
-            errors.append({
-                "document_id": doc_id,
-                "error": str(outcome),
-            })
+            errors.append(
+                {
+                    "document_id": doc_id,
+                    "error": str(outcome),
+                }
+            )
         else:
             if outcome.get("skipped", False):
                 skipped_count += 1

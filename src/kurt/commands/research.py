@@ -1,18 +1,15 @@
 """Research integration CLI commands."""
 
-import click
 import json
+from datetime import datetime
 from pathlib import Path
+from typing import Optional
+
+import click
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
-from typing import Optional
-from datetime import datetime
 
-from kurt.research.config import (
-    research_config_exists,
-    source_configured,
-    get_source_config
-)
+from kurt.research.config import get_source_config, source_configured
 
 console = Console()
 
@@ -23,6 +20,7 @@ def get_adapter(source: str):
 
     if source == "perplexity":
         from kurt.research.perplexity import PerplexityAdapter
+
         return PerplexityAdapter(config)
     elif source == "tavily":
         raise NotImplementedError("Tavily support coming soon")
@@ -41,11 +39,17 @@ def research():
 @research.command("search")
 @click.argument("query")
 @click.option("--source", default="perplexity", help="Research source (perplexity, tavily, exa)")
-@click.option("--recency", type=click.Choice(["hour", "day", "week", "month"]), help="Time filter for results")
+@click.option(
+    "--recency", type=click.Choice(["hour", "day", "week", "month"]), help="Time filter for results"
+)
 @click.option("--model", help="Override default model")
 @click.option("--save", is_flag=True, help="Save results to sources/research/")
-@click.option("--output", type=click.Choice(["markdown", "json"]), default="markdown", help="Output format")
-def search_cmd(query: str, source: str, recency: Optional[str], model: Optional[str], save: bool, output: str):
+@click.option(
+    "--output", type=click.Choice(["markdown", "json"]), default="markdown", help="Output format"
+)
+def search_cmd(
+    query: str, source: str, recency: Optional[str], model: Optional[str], save: bool, output: str
+):
     """
     Execute research query.
 
@@ -58,8 +62,8 @@ def search_cmd(query: str, source: str, recency: Optional[str], model: Optional[
         # Check if source is configured
         if not source_configured(source):
             console.print(f"[red]Error:[/red] {source.capitalize()} not configured")
-            console.print(f"Add your API key to .kurt/research-config.json")
-            console.print(f"See .kurt/README.md for setup instructions")
+            console.print("Add your API key to .kurt/research-config.json")
+            console.print("See .kurt/README.md for setup instructions")
             raise click.Abort()
 
         adapter = get_adapter(source)
@@ -73,16 +77,12 @@ def search_cmd(query: str, source: str, recency: Optional[str], model: Optional[
             SpinnerColumn(),
             TextColumn("[cyan]Analyzing sources..."),
             console=console,
-            transient=True
+            transient=True,
         ) as progress:
             progress.add_task("research", total=None)
 
             # Execute search (this will block while API processes)
-            result = adapter.search(
-                query=query,
-                recency=recency,
-                model=model
-            )
+            result = adapter.search(query=query, recency=recency, model=model)
 
         # Display results
         console.print()
@@ -114,13 +114,13 @@ def search_cmd(query: str, source: str, recency: Optional[str], model: Optional[
             # Generate filename
             date_str = datetime.now().strftime("%Y-%m-%d")
             # Sanitize query for filename
-            safe_query = "".join(c if c.isalnum() or c in (' ', '-') else '' for c in query)
-            safe_query = safe_query.replace(' ', '-').lower()[:50]
+            safe_query = "".join(c if c.isalnum() or c in (" ", "-") else "" for c in query)
+            safe_query = safe_query.replace(" ", "-").lower()[:50]
             filename = f"{date_str}-{safe_query}.md"
             filepath = sources_dir / filename
 
             # Save as markdown
-            with open(filepath, 'w') as f:
+            with open(filepath, "w") as f:
                 f.write(result.to_markdown())
 
             console.print()
@@ -148,11 +148,13 @@ def list_cmd(limit: int):
 
         if not sources_dir.exists():
             console.print("[yellow]No research results found[/yellow]")
-            console.print(f"Run: [cyan]kurt research search \"your query\" --save[/cyan]")
+            console.print('Run: [cyan]kurt research search "your query" --save[/cyan]')
             return
 
         # Find all markdown files
-        md_files = sorted(sources_dir.glob("**/*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
+        md_files = sorted(
+            sources_dir.glob("**/*.md"), key=lambda p: p.stat().st_mtime, reverse=True
+        )
 
         if not md_files:
             console.print("[yellow]No research results found[/yellow]")
@@ -163,23 +165,24 @@ def list_cmd(limit: int):
         for filepath in md_files[:limit]:
             # Read frontmatter to get metadata
             try:
-                with open(filepath, 'r') as f:
+                with open(filepath, "r") as f:
                     content = f.read()
-                    if content.startswith('---'):
+                    if content.startswith("---"):
                         import yaml
-                        parts = content.split('---', 2)
+
+                        parts = content.split("---", 2)
                         if len(parts) >= 3:
                             frontmatter = yaml.safe_load(parts[1])
-                            query = frontmatter.get('research_query', filepath.stem)
-                            date = frontmatter.get('research_date', '')
-                            sources_count = frontmatter.get('sources_count', 0)
+                            query = frontmatter.get("research_query", filepath.stem)
+                            date = frontmatter.get("research_date", "")
+                            sources_count = frontmatter.get("sources_count", 0)
 
                             console.print(f"[cyan]{filepath.name}[/cyan]")
                             console.print(f"  Query: {query}")
                             console.print(f"  Date: {str(date)[:10] if date else 'unknown'}")
                             console.print(f"  Sources: {sources_count}")
                             console.print()
-            except Exception as e:
+            except Exception:
                 console.print(f"[yellow]Could not read:[/yellow] {filepath.name}")
                 console.print()
 
@@ -204,35 +207,40 @@ def get_cmd(filename: str):
         sources_dir = Path("sources/research")
 
         # Add .md extension if not present
-        if not filename.endswith('.md'):
+        if not filename.endswith(".md"):
             filename = f"{filename}.md"
 
         filepath = sources_dir / filename
 
         if not filepath.exists():
             console.print(f"[red]Error:[/red] Research result not found: {filename}")
-            console.print(f"Run [cyan]kurt research list[/cyan] to see available results")
+            console.print("Run [cyan]kurt research list[/cyan] to see available results")
             raise click.Abort()
 
         # Read and display
-        with open(filepath, 'r') as f:
+        with open(filepath, "r") as f:
             content = f.read()
 
         # Parse frontmatter and display
-        if content.startswith('---'):
+        if content.startswith("---"):
             import yaml
-            parts = content.split('---', 2)
+
+            parts = content.split("---", 2)
             if len(parts) >= 3:
                 frontmatter = yaml.safe_load(parts[1])
                 body = parts[2].strip()
 
-                console.print(f"[bold cyan]Research Result[/bold cyan]")
+                console.print("[bold cyan]Research Result[/bold cyan]")
                 console.print(f"[dim]File: {filename}[/dim]\n")
 
                 console.print(f"[bold]Query:[/bold] {frontmatter.get('research_query', 'N/A')}")
-                console.print(f"[bold]Date:[/bold] {str(frontmatter.get('research_date', 'N/A'))[:19]}")
+                console.print(
+                    f"[bold]Date:[/bold] {str(frontmatter.get('research_date', 'N/A'))[:19]}"
+                )
                 console.print(f"[bold]Source:[/bold] {frontmatter.get('research_source', 'N/A')}")
-                console.print(f"[bold]Sources:[/bold] {frontmatter.get('sources_count', 0)} citations")
+                console.print(
+                    f"[bold]Sources:[/bold] {frontmatter.get('sources_count', 0)} citations"
+                )
                 console.print()
 
                 console.print(body)
@@ -246,13 +254,31 @@ def get_cmd(filename: str):
 
 @research.command("reddit")
 @click.option("--subreddit", "-s", required=True, help="Subreddit name (e.g., dataengineering)")
-@click.option("--timeframe", "-t", type=click.Choice(["hour", "day", "week", "month"]), default="day", help="Time filter")
-@click.option("--sort", type=click.Choice(["hot", "new", "top", "rising"]), default="hot", help="Sort order")
+@click.option(
+    "--timeframe",
+    "-t",
+    type=click.Choice(["hour", "day", "week", "month"]),
+    default="day",
+    help="Time filter",
+)
+@click.option(
+    "--sort", type=click.Choice(["hot", "new", "top", "rising"]), default="hot", help="Sort order"
+)
 @click.option("--limit", type=int, default=25, help="Maximum posts to fetch")
 @click.option("--keywords", help="Comma-separated keywords to filter by")
 @click.option("--min-score", type=int, default=0, help="Minimum score threshold")
-@click.option("--output", type=click.Choice(["table", "json"]), default="table", help="Output format")
-def reddit_cmd(subreddit: str, timeframe: str, sort: str, limit: int, keywords: Optional[str], min_score: int, output: str):
+@click.option(
+    "--output", type=click.Choice(["table", "json"]), default="table", help="Output format"
+)
+def reddit_cmd(
+    subreddit: str,
+    timeframe: str,
+    sort: str,
+    limit: int,
+    keywords: Optional[str],
+    min_score: int,
+    output: str,
+):
     """
     Monitor Reddit for trending discussions.
 
@@ -280,7 +306,7 @@ def reddit_cmd(subreddit: str, timeframe: str, sort: str, limit: int, keywords: 
             sort=sort,
             limit=limit,
             keywords=keyword_list,
-            min_score=min_score
+            min_score=min_score,
         )
 
         if not signals:
@@ -296,6 +322,7 @@ def reddit_cmd(subreddit: str, timeframe: str, sort: str, limit: int, keywords: 
             print(json.dumps([s.to_dict() for s in signals], indent=2, default=str))
         else:
             from rich.table import Table
+
             table = Table(show_header=True)
             table.add_column("#", style="dim", width=4)
             table.add_column("Title", style="cyan", no_wrap=False, max_width=60)
@@ -309,12 +336,12 @@ def reddit_cmd(subreddit: str, timeframe: str, sort: str, limit: int, keywords: 
                     signal.title[:60] + "..." if len(signal.title) > 60 else signal.title,
                     str(signal.score),
                     str(signal.comment_count),
-                    f"{signal.relevance_score:.2f}"
+                    f"{signal.relevance_score:.2f}",
                 )
 
             console.print(table)
             console.print()
-            console.print(f"[dim]Use --output json to see full details including URLs[/dim]")
+            console.print("[dim]Use --output json to see full details including URLs[/dim]")
 
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
@@ -322,12 +349,22 @@ def reddit_cmd(subreddit: str, timeframe: str, sort: str, limit: int, keywords: 
 
 
 @research.command("hackernews")
-@click.option("--timeframe", "-t", type=click.Choice(["hour", "day", "week", "month"]), default="day", help="Time filter")
+@click.option(
+    "--timeframe",
+    "-t",
+    type=click.Choice(["hour", "day", "week", "month"]),
+    default="day",
+    help="Time filter",
+)
 @click.option("--keywords", help="Comma-separated keywords to filter by")
 @click.option("--min-score", type=int, default=10, help="Minimum score threshold")
 @click.option("--limit", type=int, default=30, help="Maximum stories to fetch")
-@click.option("--output", type=click.Choice(["table", "json"]), default="table", help="Output format")
-def hackernews_cmd(timeframe: str, keywords: Optional[str], min_score: int, limit: int, output: str):
+@click.option(
+    "--output", type=click.Choice(["table", "json"]), default="table", help="Output format"
+)
+def hackernews_cmd(
+    timeframe: str, keywords: Optional[str], min_score: int, limit: int, output: str
+):
     """
     Monitor Hacker News for trending tech discussions.
 
@@ -350,17 +387,10 @@ def hackernews_cmd(timeframe: str, keywords: Optional[str], min_score: int, limi
             console.print(f"[dim]Keywords: {', '.join(keyword_list)}[/dim]")
 
         # Map timeframe to hours
-        timeframe_hours = {
-            "hour": 1,
-            "day": 24,
-            "week": 168,
-            "month": 720
-        }
+        timeframe_hours = {"hour": 1, "day": 24, "week": 168, "month": 720}
 
         signals = adapter.get_recent(
-            hours=timeframe_hours[timeframe],
-            keywords=keyword_list,
-            min_score=min_score
+            hours=timeframe_hours[timeframe], keywords=keyword_list, min_score=min_score
         )
 
         # Apply limit
@@ -379,6 +409,7 @@ def hackernews_cmd(timeframe: str, keywords: Optional[str], min_score: int, limi
             print(json.dumps([s.to_dict() for s in signals], indent=2, default=str))
         else:
             from rich.table import Table
+
             table = Table(show_header=True)
             table.add_column("#", style="dim", width=4)
             table.add_column("Title", style="cyan", no_wrap=False, max_width=60)
@@ -392,12 +423,12 @@ def hackernews_cmd(timeframe: str, keywords: Optional[str], min_score: int, limi
                     signal.title[:60] + "..." if len(signal.title) > 60 else signal.title,
                     str(signal.score),
                     str(signal.comment_count),
-                    f"{signal.relevance_score:.2f}"
+                    f"{signal.relevance_score:.2f}",
                 )
 
             console.print(table)
             console.print()
-            console.print(f"[dim]Use --output json to see full details including URLs[/dim]")
+            console.print("[dim]Use --output json to see full details including URLs[/dim]")
 
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
@@ -409,8 +440,12 @@ def hackernews_cmd(timeframe: str, keywords: Optional[str], min_score: int, limi
 @click.option("--since", help="Only show entries since (e.g., '7 days', '24 hours')")
 @click.option("--keywords", help="Comma-separated keywords to filter by")
 @click.option("--limit", type=int, default=50, help="Maximum entries to fetch")
-@click.option("--output", type=click.Choice(["table", "json"]), default="table", help="Output format")
-def feeds_cmd(feed_url: str, since: Optional[str], keywords: Optional[str], limit: int, output: str):
+@click.option(
+    "--output", type=click.Choice(["table", "json"]), default="table", help="Output format"
+)
+def feeds_cmd(
+    feed_url: str, since: Optional[str], keywords: Optional[str], limit: int, output: str
+):
     """
     Monitor RSS/Atom feeds for new content.
 
@@ -420,8 +455,9 @@ def feeds_cmd(feed_url: str, since: Optional[str], keywords: Optional[str], limi
         kurt research feeds https://airbyte.com/blog/rss.xml --keywords "connector" --output json
     """
     try:
-        from kurt.research.monitoring.feeds import FeedAdapter
         from datetime import timedelta
+
+        from kurt.research.monitoring.feeds import FeedAdapter
 
         adapter = FeedAdapter()
 
@@ -451,10 +487,7 @@ def feeds_cmd(feed_url: str, since: Optional[str], keywords: Optional[str], limi
             console.print(f"[dim]Keywords: {', '.join(keyword_list)}[/dim]")
 
         signals = adapter.get_feed_entries(
-            feed_url=feed_url,
-            since=since_dt,
-            keywords=keyword_list,
-            limit=limit
+            feed_url=feed_url, since=since_dt, keywords=keyword_list, limit=limit
         )
 
         if not signals:
@@ -470,6 +503,7 @@ def feeds_cmd(feed_url: str, since: Optional[str], keywords: Optional[str], limi
             print(json.dumps([s.to_dict() for s in signals], indent=2, default=str))
         else:
             from rich.table import Table
+
             table = Table(show_header=True)
             table.add_column("#", style="dim", width=4)
             table.add_column("Title", style="cyan", no_wrap=False, max_width=50)
@@ -481,12 +515,14 @@ def feeds_cmd(feed_url: str, since: Optional[str], keywords: Optional[str], limi
                     str(i),
                     signal.title[:50] + "..." if len(signal.title) > 50 else signal.title,
                     signal.timestamp.strftime("%Y-%m-%d %H:%M") if signal.timestamp else "Unknown",
-                    signal.domain or "N/A"
+                    signal.domain or "N/A",
                 )
 
             console.print(table)
             console.print()
-            console.print(f"[dim]Use --output json to see full details including URLs and snippets[/dim]")
+            console.print(
+                "[dim]Use --output json to see full details including URLs and snippets[/dim]"
+            )
 
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
@@ -496,7 +532,9 @@ def feeds_cmd(feed_url: str, since: Optional[str], keywords: Optional[str], limi
 @research.command("monitor")
 @click.argument("project_path")
 @click.option("--save/--no-save", default=True, help="Save signals to project")
-@click.option("--output", type=click.Choice(["summary", "json"]), default="summary", help="Output format")
+@click.option(
+    "--output", type=click.Choice(["summary", "json"]), default="summary", help="Output format"
+)
 def monitor_cmd(project_path: str, save: bool, output: str):
     """
     Run monitoring for a project based on its monitoring-config.yaml.
@@ -507,24 +545,25 @@ def monitor_cmd(project_path: str, save: bool, output: str):
         kurt research monitor projects/my-project --output json
     """
     try:
-        from kurt.research.monitoring.config import (
-            load_monitoring_config,
-            get_enabled_sources,
-            validate_monitoring_config,
-            get_project_signals_dir,
-            monitoring_config_exists
-        )
-        from kurt.research.monitoring.reddit import RedditAdapter
-        from kurt.research.monitoring.hackernews import HackerNewsAdapter
-        from kurt.research.monitoring.feeds import FeedAdapter
-        from pathlib import Path
         from datetime import datetime, timedelta
+        from pathlib import Path
+
+        from kurt.research.monitoring.config import (
+            get_enabled_sources,
+            get_project_signals_dir,
+            load_monitoring_config,
+            monitoring_config_exists,
+            validate_monitoring_config,
+        )
+        from kurt.research.monitoring.feeds import FeedAdapter
+        from kurt.research.monitoring.hackernews import HackerNewsAdapter
+        from kurt.research.monitoring.reddit import RedditAdapter
 
         # Check if monitoring config exists
         if not monitoring_config_exists(project_path):
             console.print(f"[red]Error:[/red] No monitoring config found in {project_path}")
-            console.print(f"Create monitoring-config.yaml in your project directory")
-            console.print(f"See projects/.monitoring-config-template.yaml for example")
+            console.print("Create monitoring-config.yaml in your project directory")
+            console.print("See projects/.monitoring-config-template.yaml for example")
             raise click.Abort()
 
         # Load config
@@ -559,7 +598,9 @@ def monitor_cmd(project_path: str, save: bool, output: str):
             timeframe = reddit_config.get("timeframe", "day")
 
             if subreddits:
-                console.print(f"[cyan]→[/cyan] Monitoring Reddit: {', '.join(f'r/{s}' for s in subreddits)}")
+                console.print(
+                    f"[cyan]→[/cyan] Monitoring Reddit: {', '.join(f'r/{s}' for s in subreddits)}"
+                )
                 adapter = RedditAdapter()
 
                 for subreddit in subreddits:
@@ -568,14 +609,16 @@ def monitor_cmd(project_path: str, save: bool, output: str):
                             subreddit=subreddit,
                             timeframe=timeframe,
                             keywords=keywords if keywords else None,
-                            min_score=min_score
+                            min_score=min_score,
                         )
                         # Associate with project
                         for signal in signals:
                             signal.project = project_name
                         all_signals.extend(signals)
                     except Exception as e:
-                        console.print(f"  [yellow]Warning: Failed to fetch r/{subreddit}: {e}[/yellow]")
+                        console.print(
+                            f"  [yellow]Warning: Failed to fetch r/{subreddit}: {e}[/yellow]"
+                        )
 
         # Monitor Hacker News
         if "hackernews" in enabled_sources:
@@ -584,21 +627,16 @@ def monitor_cmd(project_path: str, save: bool, output: str):
             min_score = hn_config.get("min_score", 50)
             timeframe = hn_config.get("timeframe", "day")
 
-            console.print(f"[cyan]→[/cyan] Monitoring Hacker News")
+            console.print("[cyan]→[/cyan] Monitoring Hacker News")
             adapter = HackerNewsAdapter()
 
-            timeframe_hours = {
-                "hour": 1,
-                "day": 24,
-                "week": 168,
-                "month": 720
-            }
+            timeframe_hours = {"hour": 1, "day": 24, "week": 168, "month": 720}
 
             try:
                 signals = adapter.get_recent(
                     hours=timeframe_hours[timeframe],
                     keywords=keywords if keywords else None,
-                    min_score=min_score
+                    min_score=min_score,
                 )
                 # Associate with project
                 for signal in signals:
@@ -632,21 +670,27 @@ def monitor_cmd(project_path: str, save: bool, output: str):
 
                 for feed_info in feed_urls:
                     feed_url = feed_info.get("url") if isinstance(feed_info, dict) else feed_info
-                    feed_name = feed_info.get("name", feed_url) if isinstance(feed_info, dict) else feed_url
-                    feed_keywords = feed_info.get("keywords", []) if isinstance(feed_info, dict) else []
+                    feed_name = (
+                        feed_info.get("name", feed_url) if isinstance(feed_info, dict) else feed_url
+                    )
+                    feed_keywords = (
+                        feed_info.get("keywords", []) if isinstance(feed_info, dict) else []
+                    )
 
                     try:
                         signals = adapter.get_feed_entries(
                             feed_url=feed_url,
                             since=since_dt,
-                            keywords=feed_keywords if feed_keywords else None
+                            keywords=feed_keywords if feed_keywords else None,
                         )
                         # Associate with project
                         for signal in signals:
                             signal.project = project_name
                         all_signals.extend(signals)
                     except Exception as e:
-                        console.print(f"  [yellow]Warning: Failed to fetch {feed_name}: {e}[/yellow]")
+                        console.print(
+                            f"  [yellow]Warning: Failed to fetch {feed_name}: {e}[/yellow]"
+                        )
 
         # Sort by relevance
         all_signals.sort(key=lambda s: s.relevance_score, reverse=True)
@@ -665,7 +709,7 @@ def monitor_cmd(project_path: str, save: bool, output: str):
             signal_file = signals_dir / f"{date_str}-signals.json"
 
             # Save as JSON
-            with open(signal_file, 'w') as f:
+            with open(signal_file, "w") as f:
                 json.dump([s.to_dict() for s in all_signals], f, indent=2, default=str)
 
             console.print(f"[green]✓ Saved signals to:[/green] {signal_file}")
@@ -680,6 +724,7 @@ def monitor_cmd(project_path: str, save: bool, output: str):
             console.print()
 
             from rich.table import Table
+
             table = Table(show_header=True)
             table.add_column("#", style="dim", width=4)
             table.add_column("Source", style="blue", width=8)
@@ -691,7 +736,7 @@ def monitor_cmd(project_path: str, save: bool, output: str):
                 source_display = {
                     "reddit": f"r/{signal.subreddit}" if signal.subreddit else "reddit",
                     "hackernews": "HN",
-                    "rss": signal.domain[:15] if signal.domain else "RSS"
+                    "rss": signal.domain[:15] if signal.domain else "RSS",
                 }.get(signal.source, signal.source)
 
                 table.add_row(
@@ -699,7 +744,7 @@ def monitor_cmd(project_path: str, save: bool, output: str):
                     source_display,
                     signal.title[:50] + "..." if len(signal.title) > 50 else signal.title,
                     str(signal.score),
-                    f"{signal.relevance_score:.2f}"
+                    f"{signal.relevance_score:.2f}",
                 )
 
             console.print(table)
@@ -707,7 +752,7 @@ def monitor_cmd(project_path: str, save: bool, output: str):
             if len(all_signals) > 10:
                 console.print()
                 console.print(f"[dim]... and {len(all_signals) - 10} more signals[/dim]")
-                console.print(f"[dim]Use --output json to see all signals[/dim]")
+                console.print("[dim]Use --output json to see all signals[/dim]")
 
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")

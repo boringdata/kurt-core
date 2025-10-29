@@ -6,13 +6,14 @@ operations across different content management systems.
 """
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, asdict
-from typing import List, Dict, Any, Optional
+from dataclasses import asdict, dataclass
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
 class CMSDocument:
     """Unified document representation across all CMSs."""
+
     id: str
     title: str
     content: str  # Markdown or HTML
@@ -31,22 +32,22 @@ class CMSDocument:
     def to_frontmatter(self) -> Dict[str, Any]:
         """Convert to YAML frontmatter format for markdown files."""
         frontmatter = {
-            'title': self.title,
-            'cms_id': self.id,
-            'cms_type': self.content_type,
-            'status': self.status,
+            "title": self.title,
+            "cms_id": self.id,
+            "cms_type": self.content_type,
+            "status": self.status,
         }
 
         if self.url:
-            frontmatter['url'] = self.url
+            frontmatter["url"] = self.url
         if self.author:
-            frontmatter['author'] = self.author
+            frontmatter["author"] = self.author
         if self.published_date:
-            frontmatter['published_date'] = self.published_date
+            frontmatter["published_date"] = self.published_date
         if self.last_modified:
-            frontmatter['last_modified'] = self.last_modified
+            frontmatter["last_modified"] = self.last_modified
         if self.metadata:
-            frontmatter['cms_metadata'] = self.metadata
+            frontmatter["cms_metadata"] = self.metadata
 
         return frontmatter
 
@@ -70,7 +71,7 @@ class CMSAdapter(ABC):
         query: Optional[str] = None,
         filters: Optional[Dict[str, Any]] = None,
         content_type: Optional[str] = None,
-        limit: int = 100
+        limit: int = 100,
     ) -> List[CMSDocument]:
         """
         Search CMS content.
@@ -119,7 +120,7 @@ class CMSAdapter(ABC):
         title: str,
         content_type: str,
         metadata: Optional[Dict[str, Any]] = None,
-        document_id: Optional[str] = None
+        document_id: Optional[str] = None,
     ) -> Dict[str, str]:
         """
         Create or update draft in CMS.

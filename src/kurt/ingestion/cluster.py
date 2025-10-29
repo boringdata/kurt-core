@@ -27,7 +27,9 @@ class TopicClusterOutput(BaseModel):
     """A single topic cluster identified from the page collection."""
 
     name: str = Field(description="Name of the topic cluster")
-    description: str = Field(description="Brief explanation of what this topic encompasses (1-2 sentences)")
+    description: str = Field(
+        description="Brief explanation of what this topic encompasses (1-2 sentences)"
+    )
     example_urls: list[str] = Field(description="3-5 representative URLs from this cluster")
 
 
@@ -57,8 +59,12 @@ class ComputeClusters(dspy.Signature):
        - Balanced in size (avoid one massive cluster and several tiny ones)
     """
 
-    pages: list[PageMetadata] = dspy.InputField(description="List of pages with URL, title, and description metadata")
-    clusters: list[TopicClusterOutput] = dspy.OutputField(description="5-10 distinct topic clusters")
+    pages: list[PageMetadata] = dspy.InputField(
+        description="List of pages with URL, title, and description metadata"
+    )
+    clusters: list[TopicClusterOutput] = dspy.OutputField(
+        description="5-10 distinct topic clusters"
+    )
 
 
 # ============================================================================
@@ -102,9 +108,9 @@ def compute_topic_clusters(
         ValueError: If no documents found or no filtering criteria provided
     """
     from kurt.config import get_config_or_default
-    from kurt.database import get_session
+    from kurt.db.database import get_session
+    from kurt.db.models import DocumentClusterEdge, TopicCluster
     from kurt.document import list_documents
-    from kurt.models.models import DocumentClusterEdge, TopicCluster
 
     # Validate input
     if not url_prefix and not url_contains:
@@ -134,16 +140,14 @@ def compute_topic_clusters(
 
     # Run DSPy clustering
     config = get_config_or_default()
-    lm = dspy.LM(config.LLM_MODEL_DOC_PROCESSING)
+    lm = dspy.LM(config.INDEXING_LLM_MODEL)
     dspy.configure(lm=lm)
 
     clusterer = dspy.ChainOfThought(ComputeClusters)
     result = clusterer(pages=pages)
     clusters = result.clusters
 
-    logger.info(
-        f"Identified {len(clusters)} clusters from {len(pages)} pages"
-    )
+    logger.info(f"Identified {len(clusters)} clusters from {len(pages)} pages")
 
     # Persist clusters to database
     session = get_session()
@@ -151,11 +155,7 @@ def compute_topic_clusters(
     edge_count = 0
 
     # Create URL to document_id mapping for fast lookup (normalized URLs)
-    url_to_doc_id = {
-        normalize_url(doc.source_url): doc.id
-        for doc in docs
-        if doc.source_url
-    }
+    url_to_doc_id = {normalize_url(doc.source_url): doc.id for doc in docs if doc.source_url}
 
     for cluster_data in clusters:
         # Create TopicCluster record
@@ -181,7 +181,9 @@ def compute_topic_clusters(
                 session.add(edge)
                 edge_count += 1
             else:
-                logger.warning(f"URL not found in documents: {example_url} (normalized: {normalized_url})")
+                logger.warning(
+                    f"URL not found in documents: {example_url} (normalized: {normalized_url})"
+                )
 
     session.commit()
 

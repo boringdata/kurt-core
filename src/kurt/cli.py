@@ -1,56 +1,110 @@
 """Kurt CLI - Main command-line interface."""
 
+from pathlib import Path
+
 import click
 from rich.console import Console
 
 from kurt import __version__
-from kurt.commands.cluster import cluster
 from kurt.commands.cms import cms
-from kurt.commands.document import document
-from kurt.commands.index import index
-from kurt.commands.ingest import ingest
+from kurt.commands.content import content
+from kurt.commands.migrate import migrate
 from kurt.commands.research import research
 from kurt.config import config_exists, create_config, get_config_file_path
-from kurt.database import init_database
+from kurt.db.database import init_database
 
 console = Console()
 
 
 @click.group()
 @click.version_option(version=__version__, prog_name="kurt")
-def main():
+@click.pass_context
+def main(ctx):
     """
     Kurt - Document intelligence CLI tool.
 
     Transform documents into structured knowledge graphs.
     """
-    pass
+    # Skip migration check for init and migrate commands
+    if ctx.invoked_subcommand in ["init", "migrate"]:
+        return
+
+    # Check if project is initialized
+    if not config_exists():
+        return  # Let commands handle "not initialized" error
+
+    # Check for pending migrations
+    try:
+        from kurt.db.migrations.utils import (
+            apply_migrations,
+            check_migrations_needed,
+            get_pending_migrations,
+        )
+
+        if check_migrations_needed():
+            pending = get_pending_migrations()
+            console.print()
+            console.print("[yellow]⚠ Database migrations are pending[/yellow]")
+            console.print(f"[dim]{len(pending)} migration(s) need to be applied[/dim]")
+            console.print()
+            console.print("[dim]Run [cyan]kurt migrate apply[/cyan] to update your database[/dim]")
+            console.print("[dim]Or run [cyan]kurt migrate status[/cyan] to see details[/dim]")
+            console.print()
+
+            # Ask if user wants to apply now
+            from rich.prompt import Confirm
+
+            if Confirm.ask("[bold]Apply migrations now?[/bold]", default=False):
+                success = apply_migrations(auto_confirm=True)
+                if not success:
+                    raise click.Abort()
+            else:
+                console.print(
+                    "[yellow]⚠ Proceeding without migration. Some features may not work.[/yellow]"
+                )
+                console.print()
+    except ImportError:
+        # Migration system not available (shouldn't happen but handle gracefully)
+        pass
+    except Exception:
+        # Don't block CLI if migration check fails
+        pass
 
 
 @main.command()
 @click.option(
-    "--project-path",
-    default=".",
-    help="Path to the Kurt project root (default: current directory)"
-)
-@click.option(
     "--db-path",
     default=".kurt/kurt.sqlite",
-    help="Path to database file relative to project path (default: .kurt/kurt.sqlite)"
+    help="Path to database file relative to current directory (default: .kurt/kurt.sqlite)",
 )
-def init(project_path: str, db_path: str):
+@click.option(
+    "--sources-path",
+    default="sources",
+    help="Path to store fetched content relative to current directory (default: sources)",
+)
+@click.option(
+    "--projects-path",
+    default="projects",
+    help="Path to store project-specific content relative to current directory (default: projects)",
+)
+@click.option(
+    "--rules-path",
+    default="rules",
+    help="Path to store rules and configurations relative to current directory (default: rules)",
+)
+def init(db_path: str, sources_path: str, projects_path: str, rules_path: str):
     """
-    Initialize a new Kurt project.
+    Initialize a new Kurt project in the current directory.
 
     Creates:
-    - .kurt configuration file with project settings
+    - kurt.config file with project settings
     - .kurt/ directory
     - SQLite database with all tables
 
     Example:
         kurt init
-        kurt init --project-path /path/to/project
         kurt init --db-path custom/path/db.sqlite
+        kurt init --sources-path my_sources --projects-path my_projects
     """
     console.print("[bold green]Initializing Kurt project...[/bold green]\n")
 
@@ -64,22 +118,48 @@ def init(project_path: str, db_path: str):
                 console.print("[dim]Keeping existing configuration[/dim]")
                 return
 
-        # Step 1: Create .kurt configuration file
+        # Step 1: Create kurt.config configuration file
         console.print("[dim]Creating configuration file...[/dim]")
-        config = create_config(project_path=project_path, db_path=db_path)
+        config = create_config(
+            db_path=db_path,
+            sources_path=sources_path,
+            projects_path=projects_path,
+            rules_path=rules_path,
+        )
         config_file = get_config_file_path()
         console.print(f"[green]✓[/green] Created config: {config_file}")
-        console.print(f"[dim]  KURT_PROJECT_PATH={config.KURT_PROJECT_PATH}[/dim]")
-        console.print(f"[dim]  KURT_DB={config.KURT_DB}[/dim]")
+        console.print(f"[dim]  PATH_DB={config.PATH_DB}[/dim]")
+        console.print(f"[dim]  PATH_SOURCES={config.PATH_SOURCES}[/dim]")
+        console.print(f"[dim]  PATH_PROJECTS={config.PATH_PROJECTS}[/dim]")
+        console.print(f"[dim]  PATH_RULES={config.PATH_RULES}[/dim]")
 
-        # Step 2: Initialize database
+        # Step 2: Create .env.example file
+        console.print()
+        console.print("[dim]Creating .env.example file...[/dim]")
+        env_example_path = Path.cwd() / ".env.example"
+        env_example_content = """# Kurt Environment Variables
+# Copy this file to .env and fill in your API keys
+
+# Firecrawl API Key (optional - for web scraping)
+# Get your API key from: https://firecrawl.dev
+# If not set, Kurt will use Trafilatura for web scraping
+FIRECRAWL_API_KEY=your_firecrawl_api_key_here
+
+# OpenAI API Key (required for LLM-based features)
+OPENAI_API_KEY=your_openai_api_key_here
+"""
+        with open(env_example_path, "w") as f:
+            f.write(env_example_content)
+        console.print("[green]✓[/green] Created .env.example")
+
+        # Step 3: Initialize database
         console.print()
         init_database()
 
         console.print("\n[bold]Next steps:[/bold]")
-        console.print("  1. Discover and add URLs: [cyan]kurt ingest map https://example.com[/cyan]")
-        console.print("  2. Fetch content: [cyan]kurt ingest fetch <doc-id>[/cyan]")
-        console.print("  3. Or add single URL: [cyan]kurt ingest add https://example.com/page[/cyan]")
+        console.print("  1. Copy .env.example to .env and add your API keys")
+        console.print("  2. Open Claude Code")
+        console.print("  3. Run [cyan]/create-project[/cyan] command")
 
     except Exception as e:
         console.print(f"[bold red]Error:[/bold red] {e}")
@@ -88,10 +168,8 @@ def init(project_path: str, db_path: str):
 
 # Register command groups
 main.add_command(cms)
-main.add_command(cluster)
-main.add_command(document)
-main.add_command(index)
-main.add_command(ingest)
+main.add_command(content)
+main.add_command(migrate)
 main.add_command(research)
 
 

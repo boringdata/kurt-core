@@ -24,7 +24,7 @@ from uuid import uuid4
 
 import pytest
 
-from kurt.clustering import TopicClusterOutput, compute_topic_clusters
+from kurt.ingestion.cluster import TopicClusterOutput, compute_topic_clusters
 
 
 class MockDSpyResult:
@@ -37,7 +37,7 @@ class MockDSpyResult:
 @pytest.fixture
 def mock_documents():
     """Create mock documents for testing."""
-    from kurt.models.models import Document, SourceType
+    from kurt.db.models import Document, SourceType
 
     return [
         Document(
@@ -84,7 +84,7 @@ def mock_clusters():
     ]
 
 
-@patch("kurt.database.get_session")
+@patch("kurt.db.database.get_session")
 @patch("kurt.document.list_documents")
 @patch("dspy.ChainOfThought")
 @patch("dspy.configure")
@@ -102,7 +102,7 @@ def test_compute_clusters_success(
 ):
     """Test successful cluster computation."""
     # Setup mocks
-    mock_config.return_value.LLM_MODEL_DOC_PROCESSING = "openai/gpt-4o-mini"
+    mock_config.return_value.INDEXING_LLM_MODEL = "openai/gpt-4o-mini"
     mock_list_docs.return_value = mock_documents
 
     # Mock DSPy clustering
@@ -129,7 +129,7 @@ def test_compute_clusters_success(
     mock_db_session.commit.assert_called_once()
 
 
-@patch("kurt.database.get_session")
+@patch("kurt.db.database.get_session")
 @patch("kurt.document.list_documents")
 @patch("dspy.ChainOfThought")
 @patch("dspy.configure")
@@ -147,7 +147,7 @@ def test_compute_clusters_url_normalization(
 ):
     """Test URL normalization handles case and trailing slashes."""
     # Setup mocks
-    mock_config.return_value.LLM_MODEL_DOC_PROCESSING = "openai/gpt-4o-mini"
+    mock_config.return_value.INDEXING_LLM_MODEL = "openai/gpt-4o-mini"
     mock_list_docs.return_value = mock_documents
 
     # Mock DSPy clustering with URLs that need normalization

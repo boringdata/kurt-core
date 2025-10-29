@@ -2,9 +2,10 @@
 Monitoring configuration management for project-based research.
 """
 
-import yaml
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Any, Dict, List
+
+import yaml
 
 
 def get_monitoring_config_path(project_path: str) -> Path:
@@ -44,7 +45,7 @@ def load_monitoring_config(project_path: str) -> Dict[str, Any]:
         )
 
     try:
-        with open(config_path, 'r') as f:
+        with open(config_path, "r") as f:
             config = yaml.safe_load(f)
     except yaml.YAMLError as e:
         raise ValueError(f"Invalid YAML in monitoring config: {config_path}\n{e}")

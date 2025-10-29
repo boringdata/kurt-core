@@ -8,7 +8,7 @@ The architecture supports future expansion to other databases (PostgreSQL, etc.)
 without changing application code.
 
 Usage:
-    from kurt.database import get_database_client
+    from kurt.db.database import get_database_client
 
     # Get the database client (currently SQLite)
     db = get_database_client()
@@ -20,7 +20,7 @@ Usage:
     session = db.get_session()
 
 Or use convenience functions:
-    from kurt.database import init_database, get_session
+    from kurt.db.database import init_database, get_session
 
     init_database()
     session = get_session()
@@ -39,9 +39,19 @@ def init_database() -> None:
     Initialize the Kurt database.
 
     Creates .kurt/kurt.sqlite and all necessary tables.
+    Also stamps the database with the current Alembic schema version.
     """
     db = get_database_client()
     db.init_database()
+
+    # Initialize Alembic version tracking
+    try:
+        from kurt.db.migrations.utils import initialize_alembic
+
+        initialize_alembic()
+    except Exception as e:
+        # Don't fail database initialization if Alembic setup fails
+        print(f"Warning: Could not initialize migration tracking: {e}")
 
 
 def get_session() -> Session:

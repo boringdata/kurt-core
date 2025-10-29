@@ -6,7 +6,7 @@ Loads research API credentials from .kurt/research-config.json.
 
 import json
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict
 
 from kurt.config import load_config
 
@@ -57,7 +57,7 @@ def load_research_config() -> Dict[str, Any]:
         )
 
     try:
-        with open(config_path, 'r') as f:
+        with open(config_path, "r") as f:
             config = json.load(f)
     except json.JSONDecodeError as e:
         raise ValueError(f"Invalid JSON in research config file: {config_path}\n{e}")
@@ -89,8 +89,8 @@ def get_source_config(source: str) -> Dict[str, Any]:
 
     # Check for placeholder API key
     source_config = config[source]
-    api_key = source_config.get('api_key', '')
-    if 'YOUR_' in api_key or 'PLACEHOLDER' in api_key:
+    api_key = source_config.get("api_key", "")
+    if "YOUR_" in api_key or "PLACEHOLDER" in api_key:
         raise ValueError(
             f"API key not configured for '{source}'.\n"
             f"Edit .kurt/research-config.json and add your API key.\n"
@@ -124,10 +124,10 @@ def source_configured(source: str) -> bool:
             return False
 
         source_config = config[source]
-        api_key = source_config.get('api_key', '')
+        api_key = source_config.get("api_key", "")
 
         # Check for placeholder values
-        if 'YOUR_' in api_key or 'PLACEHOLDER' in api_key or not api_key:
+        if "YOUR_" in api_key or "PLACEHOLDER" in api_key or not api_key:
             return False
 
         return True

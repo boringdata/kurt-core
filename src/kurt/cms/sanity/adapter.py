@@ -5,9 +5,10 @@ Provides interface to Sanity.io CMS using GROQ queries via HTTP API.
 """
 
 import re
-import requests
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin
+
+import requests
 
 from kurt.cms.base import CMSAdapter, CMSDocument
 
@@ -27,38 +28,44 @@ class SanityAdapter(CMSAdapter):
         - use_cdn: Whether to use CDN (default: False)
         - base_url: Website base URL for constructing document URLs (optional)
         """
-        self.project_id = config['project_id']
-        self.dataset = config['dataset']
-        self.token = config.get('token')
-        self.write_token = config.get('write_token')
-        self.use_cdn = config.get('use_cdn', False)
-        self.base_url = config.get('base_url', '')
+        self.project_id = config["project_id"]
+        self.dataset = config["dataset"]
+        self.token = config.get("token")
+        self.write_token = config.get("write_token")
+        self.use_cdn = config.get("use_cdn", False)
+        self.base_url = config.get("base_url", "")
 
         # Field mappings from onboarding
-        self.mappings = config.get('content_type_mappings', {})
+        self.mappings = config.get("content_type_mappings", {})
 
         # Build API URL
         if self.use_cdn:
-            self.api_url = f"https://{self.project_id}.apicdn.sanity.io/v2021-10-21/data/query/{self.dataset}"
+            self.api_url = (
+                f"https://{self.project_id}.apicdn.sanity.io/v2021-10-21/data/query/{self.dataset}"
+            )
         else:
-            self.api_url = f"https://{self.project_id}.api.sanity.io/v2021-10-21/data/query/{self.dataset}"
+            self.api_url = (
+                f"https://{self.project_id}.api.sanity.io/v2021-10-21/data/query/{self.dataset}"
+            )
 
         # Mutation API URL (for creating/updating documents)
-        self.mutation_url = f"https://{self.project_id}.api.sanity.io/v2021-10-21/data/mutate/{self.dataset}"
+        self.mutation_url = (
+            f"https://{self.project_id}.api.sanity.io/v2021-10-21/data/mutate/{self.dataset}"
+        )
 
     def _query(self, groq_query: str) -> Any:
         """Execute GROQ query against Sanity API."""
         headers = {}
         if self.token:
-            headers['Authorization'] = f'Bearer {self.token}'
+            headers["Authorization"] = f"Bearer {self.token}"
 
-        params = {'query': groq_query}
+        params = {"query": groq_query}
 
         response = requests.get(self.api_url, params=params, headers=headers)
         response.raise_for_status()
 
         data = response.json()
-        return data.get('result')
+        return data.get("result")
 
     def _mutate(self, mutations: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Execute mutations (create/update) against Sanity API."""
@@ -66,11 +73,11 @@ class SanityAdapter(CMSAdapter):
             raise ValueError("Write token required for mutations")
 
         headers = {
-            'Authorization': f'Bearer {self.write_token}',
-            'Content-Type': 'application/json'
+            "Authorization": f"Bearer {self.write_token}",
+            "Content-Type": "application/json",
         }
 
-        payload = {'mutations': mutations}
+        payload = {"mutations": mutations}
 
         response = requests.post(self.mutation_url, json=payload, headers=headers)
         response.raise_for_status()
@@ -92,7 +99,7 @@ class SanityAdapter(CMSAdapter):
         query: Optional[str] = None,
         filters: Optional[Dict[str, Any]] = None,
         content_type: Optional[str] = None,
-        limit: int = 100
+        limit: int = 100,
     ) -> List[CMSDocument]:
         """
         Search using GROQ query.
@@ -116,8 +123,7 @@ class SanityAdapter(CMSAdapter):
             # Escape quotes in query
             escaped_query = query.replace('"', '\\"')
             groq_filters.append(
-                f'(title match "*{escaped_query}*" || '
-                f'pt::text(body) match "*{escaped_query}*")'
+                f'(title match "*{escaped_query}*" || ' f'pt::text(body) match "*{escaped_query}*")'
             )
 
         if filters:
@@ -125,10 +131,10 @@ class SanityAdapter(CMSAdapter):
                 if isinstance(value, list):
                     # Array contains
                     groq_filters.append(f'"{value[0]}" in {key}[]')
-                elif isinstance(value, str) and value.startswith('>'):
+                elif isinstance(value, str) and value.startswith(">"):
                     # Greater than comparison
                     groq_filters.append(f'{key} > "{value[1:]}"')
-                elif isinstance(value, str) and value.startswith('<'):
+                elif isinstance(value, str) and value.startswith("<"):
                     # Less than comparison
                     groq_filters.append(f'{key} < "{value[1:]}"')
                 else:
@@ -225,7 +231,7 @@ class SanityAdapter(CMSAdapter):
         title: str,
         content_type: str,
         metadata: Optional[Dict[str, Any]] = None,
-        document_id: Optional[str] = None
+        document_id: Optional[str] = None,
     ) -> Dict[str, str]:
         """
         Create draft in Sanity.
@@ -253,48 +259,39 @@ class SanityAdapter(CMSAdapter):
         # Add metadata fields
         if metadata:
             # Handle special fields
-            if 'slug' in metadata and isinstance(metadata['slug'], str):
-                doc_data['slug'] = {
-                    "_type": "slug",
-                    "current": metadata['slug']
-                }
-            if 'author' in metadata:
-                doc_data['author'] = {
-                    "_type": "reference",
-                    "_ref": metadata['author']
-                }
-            if 'categories' in metadata:
-                doc_data['categories'] = [
+            if "slug" in metadata and isinstance(metadata["slug"], str):
+                doc_data["slug"] = {"_type": "slug", "current": metadata["slug"]}
+            if "author" in metadata:
+                doc_data["author"] = {"_type": "reference", "_ref": metadata["author"]}
+            if "categories" in metadata:
+                doc_data["categories"] = [
                     {"_type": "reference", "_ref": cat_id, "_key": cat_id}
-                    for cat_id in metadata['categories']
+                    for cat_id in metadata["categories"]
                 ]
-            if 'tags' in metadata:
-                doc_data['tags'] = metadata['tags']
-            if 'seo' in metadata:
-                doc_data['seo'] = metadata['seo']
+            if "tags" in metadata:
+                doc_data["tags"] = metadata["tags"]
+            if "seo" in metadata:
+                doc_data["seo"] = metadata["seo"]
 
         try:
             if document_id:
                 # Update existing as draft
-                clean_id = document_id.replace('drafts.', '')
+                clean_id = document_id.replace("drafts.", "")
                 draft_id = f"drafts.{clean_id}"
-                doc_data['_id'] = draft_id
+                doc_data["_id"] = draft_id
 
-                mutations = [{'createOrReplace': doc_data}]
+                mutations = [{"createOrReplace": doc_data}]
             else:
                 # Create new draft
-                mutations = [{'create': doc_data}]
+                mutations = [{"create": doc_data}]
 
             result = self._mutate(mutations)
-            created_id = result['results'][0]['id']
+            created_id = result["results"][0]["id"]
 
             # Build draft URL
             draft_url = self._build_draft_url(created_id, content_type)
 
-            return {
-                'draft_id': created_id,
-                'draft_url': draft_url
-            }
+            return {"draft_id": created_id, "draft_url": draft_url}
 
         except Exception as e:
             print(f"Draft creation error: {e}")
@@ -315,23 +312,17 @@ class SanityAdapter(CMSAdapter):
 
         try:
             result = self._query(groq_query)
-            types = result.get('types', [])
+            types = result.get("types", [])
 
             # Filter out system types
-            content_types = [
-                t for t in types
-                if not t.startswith('sanity.')
-            ]
+            content_types = [t for t in types if not t.startswith("sanity.")]
 
             # Get counts for each type
             type_info = []
             for type_name in content_types:
                 count_query = f'count(*[_type == "{type_name}"])'
                 count = self._query(count_query)
-                type_info.append({
-                    'name': type_name,
-                    'count': count
-                })
+                type_info.append({"name": type_name, "count": count})
 
             return type_info
 
@@ -360,13 +351,9 @@ class SanityAdapter(CMSAdapter):
             print(f"Error fetching example document: {e}")
             raise
 
-    def _to_cms_document(
-        self,
-        doc: Dict,
-        include_content: bool = True
-    ) -> CMSDocument:
+    def _to_cms_document(self, doc: Dict, include_content: bool = True) -> CMSDocument:
         """Convert Sanity document to unified CMSDocument using field mappings."""
-        content_type = doc['_type']
+        content_type = doc["_type"]
 
         # Get field mappings for this content type
         content_field = self._get_content_field(content_type)
@@ -388,7 +375,7 @@ class SanityAdapter(CMSAdapter):
                     content = str(content_data)
 
         # Extract title using configured field
-        title = str(self._extract_field_value(doc, title_field) or '')
+        title = str(self._extract_field_value(doc, title_field) or "")
 
         # Build URL from slug using configured field
         url = None
@@ -409,38 +396,38 @@ class SanityAdapter(CMSAdapter):
                 metadata[key] = value
 
                 # Map to standard fields
-                if key == 'author':
+                if key == "author":
                     author = value
-                elif key == 'published_date':
+                elif key == "published_date":
                     published_date = value
-                elif key == 'last_modified':
+                elif key == "last_modified":
                     last_modified = value
 
         # Add standard system fields if not in mappings
         if not published_date:
-            published_date = doc.get('publishedAt')
+            published_date = doc.get("publishedAt")
         if not last_modified:
-            last_modified = doc.get('_updatedAt')
+            last_modified = doc.get("_updatedAt")
 
         # Add slug to metadata
         slug_value = self._extract_field_value(doc, slug_field)
         if slug_value:
-            metadata['slug'] = slug_value
+            metadata["slug"] = slug_value
 
         # Add system fields
-        metadata['created_at'] = doc.get('_createdAt')
+        metadata["created_at"] = doc.get("_createdAt")
 
         return CMSDocument(
-            id=doc['_id'],
+            id=doc["_id"],
             title=title,
             content=content,
             content_type=content_type,
-            status=doc.get('status', 'published'),
+            status=doc.get("status", "published"),
             url=url,
             author=author,
             published_date=published_date,
             last_modified=last_modified,
-            metadata=metadata
+            metadata=metadata,
         )
 
     def _sanity_blocks_to_markdown(self, blocks: List[Dict]) -> str:
@@ -451,69 +438,69 @@ class SanityAdapter(CMSAdapter):
         markdown_lines = []
 
         for block in blocks:
-            block_type = block.get('_type', 'block')
+            block_type = block.get("_type", "block")
 
-            if block_type == 'block':
+            if block_type == "block":
                 # Standard text block
-                style = block.get('style', 'normal')
-                children = block.get('children', [])
+                style = block.get("style", "normal")
+                children = block.get("children", [])
 
                 # Build text from children
                 text_parts = []
                 for child in children:
-                    text = child.get('text', '')
-                    marks = child.get('marks', [])
+                    text = child.get("text", "")
+                    marks = child.get("marks", [])
 
                     # Apply marks
                     for mark in marks:
-                        if mark == 'strong':
+                        if mark == "strong":
                             text = f"**{text}**"
-                        elif mark == 'em':
+                        elif mark == "em":
                             text = f"*{text}*"
-                        elif mark == 'code':
+                        elif mark == "code":
                             text = f"`{text}`"
 
                     text_parts.append(text)
 
-                line_text = ''.join(text_parts)
+                line_text = "".join(text_parts)
 
                 # Apply block style
-                if style == 'h1':
+                if style == "h1":
                     markdown_lines.append(f"# {line_text}")
-                elif style == 'h2':
+                elif style == "h2":
                     markdown_lines.append(f"## {line_text}")
-                elif style == 'h3':
+                elif style == "h3":
                     markdown_lines.append(f"### {line_text}")
-                elif style == 'h4':
+                elif style == "h4":
                     markdown_lines.append(f"#### {line_text}")
-                elif style == 'blockquote':
+                elif style == "blockquote":
                     markdown_lines.append(f"> {line_text}")
                 else:
                     markdown_lines.append(line_text)
 
-                markdown_lines.append('')  # Empty line after block
+                markdown_lines.append("")  # Empty line after block
 
-            elif block_type == 'code':
+            elif block_type == "code":
                 # Code block
-                code = block.get('code', '')
-                language = block.get('language', '')
+                code = block.get("code", "")
+                language = block.get("language", "")
                 markdown_lines.append(f"```{language}")
                 markdown_lines.append(code)
                 markdown_lines.append("```")
-                markdown_lines.append('')
+                markdown_lines.append("")
 
-            elif block_type == 'image':
+            elif block_type == "image":
                 # Image reference
-                alt = block.get('alt', '')
+                alt = block.get("alt", "")
                 markdown_lines.append(f"![{alt}](sanity-image-{block.get('_key', 'unknown')})")
-                markdown_lines.append('')
+                markdown_lines.append("")
 
-        return '\n'.join(markdown_lines).strip()
+        return "\n".join(markdown_lines).strip()
 
     def _markdown_to_sanity_blocks(self, markdown: str) -> List[Dict]:
         """Convert markdown to Sanity portable text blocks."""
         blocks = []
-        lines = markdown.split('\n')
+        lines = markdown.split("\n")
         current_paragraph = []
 
         i = 0
@@ -523,62 +510,64 @@ class SanityAdapter(CMSAdapter):
             # Empty line - end current paragraph
             if not line:
                 if current_paragraph:
-                    blocks.append(self._create_text_block(' '.join(current_paragraph)))
+                    blocks.append(self._create_text_block(" ".join(current_paragraph)))
                     current_paragraph = []
                 i += 1
                 continue
 
             # Headings
-            if line.startswith('# '):
+            if line.startswith("# "):
                 if current_paragraph:
-                    blocks.append(self._create_text_block(' '.join(current_paragraph)))
+                    blocks.append(self._create_text_block(" ".join(current_paragraph)))
                     current_paragraph = []
-                blocks.append(self._create_text_block(line[2:], style='h1'))
+                blocks.append(self._create_text_block(line[2:], style="h1"))
                 i += 1
                 continue
-            elif line.startswith('## '):
+            elif line.startswith("## "):
                 if current_paragraph:
-                    blocks.append(self._create_text_block(' '.join(current_paragraph)))
+                    blocks.append(self._create_text_block(" ".join(current_paragraph)))
                     current_paragraph = []
-                blocks.append(self._create_text_block(line[3:], style='h2'))
+                blocks.append(self._create_text_block(line[3:], style="h2"))
                 i += 1
                 continue
-            elif line.startswith('### '):
+            elif line.startswith("### "):
                 if current_paragraph:
-                    blocks.append(self._create_text_block(' '.join(current_paragraph)))
+                    blocks.append(self._create_text_block(" ".join(current_paragraph)))
                     current_paragraph = []
-                blocks.append(self._create_text_block(line[4:], style='h3'))
+                blocks.append(self._create_text_block(line[4:], style="h3"))
                 i += 1
                 continue
 
             # Code blocks
-            if line.startswith('```'):
+            if line.startswith("```"):
                 if current_paragraph:
-                    blocks.append(self._create_text_block(' '.join(current_paragraph)))
+                    blocks.append(self._create_text_block(" ".join(current_paragraph)))
                     current_paragraph = []
 
                 language = line[3:].strip()
                 code_lines = []
                 i += 1
-                while i < len(lines) and not lines[i].startswith('```'):
+                while i < len(lines) and not lines[i].startswith("```"):
                     code_lines.append(lines[i])
                     i += 1
 
-                blocks.append({
-                    '_type': 'code',
-                    '_key': f"code_{len(blocks)}",
-                    'language': language,
-                    'code': '\n'.join(code_lines)
-                })
+                blocks.append(
+                    {
+                        "_type": "code",
+                        "_key": f"code_{len(blocks)}",
+                        "language": language,
+                        "code": "\n".join(code_lines),
+                    }
+                )
                 i += 1
                 continue
 
             # Blockquote
-            if line.startswith('> '):
+            if line.startswith("> "):
                 if current_paragraph:
-                    blocks.append(self._create_text_block(' '.join(current_paragraph)))
+                    blocks.append(self._create_text_block(" ".join(current_paragraph)))
                     current_paragraph = []
-                blocks.append(self._create_text_block(line[2:], style='blockquote'))
+                blocks.append(self._create_text_block(line[2:], style="blockquote"))
                 i += 1
                 continue
 
@@ -588,16 +577,16 @@ class SanityAdapter(CMSAdapter):
 
         # Add remaining paragraph
         if current_paragraph:
-            blocks.append(self._create_text_block(' '.join(current_paragraph)))
+            blocks.append(self._create_text_block(" ".join(current_paragraph)))
 
         return blocks
 
-    def _create_text_block(self, text: str, style: str = 'normal') -> Dict:
+    def _create_text_block(self, text: str, style: str = "normal") -> Dict:
         """Create a Sanity text block with inline formatting."""
         children = []
 
         # Split by formatting marks
-        parts = re.split(r'(\*\*.*?\*\*|\*.*?\*|`.*?`)', text)
+        parts = re.split(r"(\*\*.*?\*\*|\*.*?\*|`.*?`)", text)
 
         for part in parts:
             if not part:
@@ -606,36 +595,33 @@ class SanityAdapter(CMSAdapter):
             marks = []
 
             # Bold
-            if part.startswith('**') and part.endswith('**'):
+            if part.startswith("**") and part.endswith("**"):
                 part = part[2:-2]
-                marks.append('strong')
+                marks.append("strong")
             # Italic
-            elif part.startswith('*') and part.endswith('*'):
+            elif part.startswith("*") and part.endswith("*"):
                 part = part[1:-1]
-                marks.append('em')
+                marks.append("em")
             # Code
-            elif part.startswith('`') and part.endswith('`'):
+            elif part.startswith("`") and part.endswith("`"):
                 part = part[1:-1]
-                marks.append('code')
+                marks.append("code")
 
-            children.append({
-                '_type': 'span',
-                '_key': f"span_{len(children)}",
-                'text': part,
-                'marks': marks
-            })
+            children.append(
+                {"_type": "span", "_key": f"span_{len(children)}", "text": part, "marks": marks}
+            )
 
         return {
-            '_type': 'block',
-            '_key': f"block_{id(text)}",
-            'style': style,
-            'children': children,
-            'markDefs': []
+            "_type": "block",
+            "_key": f"block_{id(text)}",
+            "style": style,
+            "children": children,
+            "markDefs": [],
         }
 
     def _build_draft_url(self, draft_id: str, content_type: str) -> str:
         """Build Sanity Studio URL for viewing draft."""
-        clean_id = draft_id.replace('drafts.', '')
+        clean_id = draft_id.replace("drafts.", "")
         return (
             f"https://www.sanity.io/manage/personal/"
             f"{self.project_id}/desk/{content_type};{clean_id}"
@@ -644,22 +630,22 @@ class SanityAdapter(CMSAdapter):
     def _get_content_field(self, content_type: str) -> str:
         """Get configured content field name for this type."""
         mapping = self.mappings.get(content_type, {})
-        return mapping.get('content_field', 'body')
+        return mapping.get("content_field", "body")
 
     def _get_title_field(self, content_type: str) -> str:
         """Get configured title field name for this type."""
         mapping = self.mappings.get(content_type, {})
-        return mapping.get('title_field', 'title')
+        return mapping.get("title_field", "title")
 
     def _get_slug_field(self, content_type: str) -> str:
         """Get configured slug field name for this type."""
         mapping = self.mappings.get(content_type, {})
-        return mapping.get('slug_field', 'slug.current')
+        return mapping.get("slug_field", "slug.current")
 
     def _get_metadata_fields(self, content_type: str) -> Dict[str, str]:
         """Get configured metadata field mappings for this type."""
         mapping = self.mappings.get(content_type, {})
-        return mapping.get('metadata_fields', {})
+        return mapping.get("metadata_fields", {})
 
     def _extract_field_value(self, doc: Dict, field_path: str) -> Any:
         """
@@ -676,8 +662,8 @@ class SanityAdapter(CMSAdapter):
             return None
 
         # Handle reference resolution
-        if '->' in field_path:
-            base_path, ref_field = field_path.split('->', 1)
+        if "->" in field_path:
+            base_path, ref_field = field_path.split("->", 1)
             base_value = self._extract_field_value(doc, base_path)
 
             if not base_value:
@@ -697,13 +683,13 @@ class SanityAdapter(CMSAdapter):
                 return None
 
         # Handle array notation
-        if field_path.endswith('[]'):
+        if field_path.endswith("[]"):
             base_path = field_path[:-2]
             value = self._extract_field_value(doc, base_path)
             return value if isinstance(value, list) else []
 
         # Handle nested fields
-        parts = field_path.split('.')
+        parts = field_path.split(".")
         current = doc
 
         for part in parts:

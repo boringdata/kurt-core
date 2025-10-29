@@ -1,7 +1,7 @@
-from enum import Enum
 from typing import Optional
 
 from pydantic import BaseModel, Field
+
 
 class ProductFeature(BaseModel):
     """Product feature entity."""
@@ -12,6 +12,7 @@ class ProductFeature(BaseModel):
 
     model_config = {"extra": "forbid"}  # Override EntityNode config for OpenAI compatibility
 
+
 class Topic(BaseModel):
     """Topic entity."""
 
@@ -20,6 +21,7 @@ class Topic(BaseModel):
     description: Optional[str] = Field(None, description="Description of the topic")
 
     model_config = {"extra": "forbid"}  # Override EntityNode config for OpenAI compatibility
+
 
 entity_types = {
     "ProductFeature": ProductFeature,

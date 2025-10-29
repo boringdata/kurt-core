@@ -1,19 +1,20 @@
 """CMS integration CLI commands."""
 
-import click
 import json
 from pathlib import Path
+from typing import Optional
+
+import click
 from rich.console import Console
 from rich.table import Table
-from typing import Optional
 
 from kurt.cms.config import (
     cms_config_exists,
-    load_cms_config,
-    save_cms_config,
-    get_platform_config,
     create_template_config,
-    platform_configured
+    get_platform_config,
+    load_cms_config,
+    platform_configured,
+    save_cms_config,
 )
 
 console = Console()
@@ -25,6 +26,7 @@ def get_adapter(platform: str):
 
     if platform == "sanity":
         from kurt.cms.sanity import SanityAdapter
+
         return SanityAdapter(config)
     elif platform == "contentful":
         raise NotImplementedError("Contentful support coming soon")
@@ -45,8 +47,12 @@ def cms():
 @click.option("--query", "-q", help="Text search query")
 @click.option("--content-type", "-t", help="Filter by content type")
 @click.option("--limit", type=int, default=20, help="Maximum results (default: 20)")
-@click.option("--output", type=click.Choice(["table", "json", "list"]), default="table", help="Output format")
-def search_cmd(platform: str, query: Optional[str], content_type: Optional[str], limit: int, output: str):
+@click.option(
+    "--output", type=click.Choice(["table", "json", "list"]), default="table", help="Output format"
+)
+def search_cmd(
+    platform: str, query: Optional[str], content_type: Optional[str], limit: int, output: str
+):
     """
     Search CMS content.
 
@@ -101,13 +107,15 @@ def search_cmd(platform: str, query: Optional[str], content_type: Optional[str],
                     doc.title[:50],
                     doc.content_type,
                     doc.status,
-                    str(doc.last_modified)[:10] if doc.last_modified else ""
+                    str(doc.last_modified)[:10] if doc.last_modified else "",
                 )
 
             console.print(table)
 
         console.print(f"\n[green]✓[/green] Found {len(results)} documents")
-        console.print(f"[yellow]Tip:[/yellow] Fetch content with: [cyan]kurt cms fetch --id <document-id>[/cyan]")
+        console.print(
+            "[yellow]Tip:[/yellow] Fetch content with: [cyan]kurt cms fetch --id <document-id>[/cyan]"
+        )
 
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
@@ -118,7 +126,12 @@ def search_cmd(platform: str, query: Optional[str], content_type: Optional[str],
 @click.option("--platform", default="sanity", help="CMS platform")
 @click.option("--id", "document_id", required=True, help="Document ID to fetch")
 @click.option("--output-dir", type=click.Path(), help="Output directory for markdown file")
-@click.option("--output-format", type=click.Choice(["markdown", "json"]), default="markdown", help="Output format")
+@click.option(
+    "--output-format",
+    type=click.Choice(["markdown", "json"]),
+    default="markdown",
+    help="Output format",
+)
 def fetch_cmd(platform: str, document_id: str, output_dir: Optional[str], output_format: str):
     """
     Fetch document content from CMS.
@@ -155,7 +168,9 @@ def fetch_cmd(platform: str, document_id: str, output_dir: Optional[str], output
             import yaml
 
             frontmatter = doc.to_frontmatter()
-            markdown_content = f"---\n{yaml.dump(frontmatter, default_flow_style=False)}---\n\n{doc.content}"
+            markdown_content = (
+                f"---\n{yaml.dump(frontmatter, default_flow_style=False)}---\n\n{doc.content}"
+            )
 
             if output_dir:
                 # Save to file
@@ -163,11 +178,11 @@ def fetch_cmd(platform: str, document_id: str, output_dir: Optional[str], output
                 output_path.mkdir(parents=True, exist_ok=True)
 
                 # Generate filename from slug or title
-                slug = doc.metadata.get('slug', doc.title)
-                filename = f"{slug}.md".replace('/', '-')
+                slug = doc.metadata.get("slug", doc.title)
+                filename = f"{slug}.md".replace("/", "-")
                 filepath = output_path / filename
 
-                with open(filepath, 'w') as f:
+                with open(filepath, "w") as f:
                     f.write(markdown_content)
 
                 console.print(f"\n[green]✓ Saved to:[/green] {filepath}")
@@ -177,7 +192,9 @@ def fetch_cmd(platform: str, document_id: str, output_dir: Optional[str], output
                 print(markdown_content)
 
         if not output_dir:
-            console.print(f"\n[yellow]Tip:[/yellow] Save to file with: [cyan]--output-dir sources/cms/{platform}/[/cyan]")
+            console.print(
+                f"\n[yellow]Tip:[/yellow] Save to file with: [cyan]--output-dir sources/cms/{platform}/[/cyan]"
+            )
 
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
@@ -218,13 +235,12 @@ def types_cmd(platform: str):
         table.add_column("Documents", justify="right")
 
         for type_info in types:
-            table.add_row(
-                type_info['name'],
-                str(type_info['count'])
-            )
+            table.add_row(type_info["name"], str(type_info["count"]))
 
         console.print(table)
-        console.print(f"\n[yellow]Tip:[/yellow] Configure field mappings with: [cyan]kurt cms onboard[/cyan]")
+        console.print(
+            "\n[yellow]Tip:[/yellow] Configure field mappings with: [cyan]kurt cms onboard[/cyan]"
+        )
 
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
@@ -256,7 +272,7 @@ def onboard_cmd(platform: str):
         console.print("[yellow]Please fill in your CMS credentials:[/yellow]")
         console.print(f"  1. Open: [cyan]{config_path}[/cyan]")
         console.print(f"  2. Replace placeholder values with your {platform} credentials")
-        console.print(f"  3. Run this command again: [cyan]kurt cms onboard[/cyan]")
+        console.print("  3. Run this command again: [cyan]kurt cms onboard[/cyan]")
         console.print()
         console.print("[dim]Note: This file is gitignored and won't be committed.[/dim]")
         return
@@ -297,23 +313,25 @@ def onboard_cmd(platform: str):
         table.add_column("Documents", justify="right")
 
         for idx, type_info in enumerate(types, 1):
-            table.add_row(str(idx), type_info['name'], str(type_info['count']))
+            table.add_row(str(idx), type_info["name"], str(type_info["count"]))
 
         console.print(table)
         console.print()
 
         # Interactive selection
         console.print("[bold]Select content types to configure:[/bold]")
-        console.print("[dim]Enter numbers separated by commas (e.g., 1,3,5) or 'all' for all types[/dim]")
+        console.print(
+            "[dim]Enter numbers separated by commas (e.g., 1,3,5) or 'all' for all types[/dim]"
+        )
 
         selection = console.input("\n[cyan]Your selection:[/cyan] ").strip()
 
-        if selection.lower() == 'all':
-            selected_types = [t['name'] for t in types]
+        if selection.lower() == "all":
+            selected_types = [t["name"] for t in types]
         else:
             try:
-                indices = [int(x.strip()) - 1 for x in selection.split(',')]
-                selected_types = [types[i]['name'] for i in indices if 0 <= i < len(types)]
+                indices = [int(x.strip()) - 1 for x in selection.split(",")]
+                selected_types = [types[i]["name"] for i in indices if 0 <= i < len(types)]
             except (ValueError, IndexError):
                 console.print("[red]Invalid selection[/red]")
                 raise click.Abort()
@@ -322,7 +340,9 @@ def onboard_cmd(platform: str):
             console.print("[yellow]No types selected[/yellow]")
             return
 
-        console.print(f"\n[green]Selected {len(selected_types)} types:[/green] {', '.join(selected_types)}")
+        console.print(
+            f"\n[green]Selected {len(selected_types)} types:[/green] {', '.join(selected_types)}"
+        )
         console.print()
 
         # Configure field mappings for each type
@@ -330,10 +350,10 @@ def onboard_cmd(platform: str):
         if platform not in config_data:
             config_data[platform] = {}
 
-        if 'content_type_mappings' not in config_data[platform]:
-            config_data[platform]['content_type_mappings'] = {}
+        if "content_type_mappings" not in config_data[platform]:
+            config_data[platform]["content_type_mappings"] = {}
 
-        mappings = config_data[platform]['content_type_mappings']
+        mappings = config_data[platform]["content_type_mappings"]
 
         for content_type in selected_types:
             console.print(f"\n[bold cyan]Configuring: {content_type}[/bold cyan]")
@@ -343,7 +363,7 @@ def onboard_cmd(platform: str):
                 example_doc = adapter.get_example_document(content_type)
 
                 # Get field names (excluding system fields)
-                available_fields = [k for k in example_doc.keys() if not k.startswith('_')]
+                available_fields = [k for k in example_doc.keys() if not k.startswith("_")]
 
                 console.print(f"\n[green]✓ Found {len(available_fields)} fields[/green]")
                 console.print("[dim]Available fields:[/dim]")
@@ -354,20 +374,20 @@ def onboard_cmd(platform: str):
 
                 # Smart defaults
                 content_field_default = None
-                if 'content_body_portable' in available_fields:
-                    content_field_default = 'content_body_portable'
-                elif 'content_body_mdx' in available_fields:
-                    content_field_default = 'content_body_mdx'
-                elif 'body' in available_fields:
-                    content_field_default = 'body'
-                elif 'content' in available_fields:
-                    content_field_default = 'content'
+                if "content_body_portable" in available_fields:
+                    content_field_default = "content_body_portable"
+                elif "content_body_mdx" in available_fields:
+                    content_field_default = "content_body_mdx"
+                elif "body" in available_fields:
+                    content_field_default = "body"
+                elif "content" in available_fields:
+                    content_field_default = "content"
 
-                title_field_default = 'title' if 'title' in available_fields else None
-                slug_field_default = 'slug.current' if 'slug' in available_fields else None
+                title_field_default = "title" if "title" in available_fields else None
+                slug_field_default = "slug.current" if "slug" in available_fields else None
 
                 # Ask for content field
-                console.print(f"\n[bold]Which field contains the main content?[/bold]")
+                console.print("\n[bold]Which field contains the main content?[/bold]")
                 if content_field_default:
                     console.print(f"[dim](Press Enter for: {content_field_default})[/dim]")
                 content_field = console.input("[cyan]Content field:[/cyan] ").strip()
@@ -375,7 +395,7 @@ def onboard_cmd(platform: str):
                     content_field = content_field_default
 
                 # Ask for title field
-                console.print(f"\n[bold]Which field contains the title?[/bold]")
+                console.print("\n[bold]Which field contains the title?[/bold]")
                 if title_field_default:
                     console.print(f"[dim](Press Enter for: {title_field_default})[/dim]")
                 title_field = console.input("[cyan]Title field:[/cyan] ").strip()
@@ -383,7 +403,7 @@ def onboard_cmd(platform: str):
                     title_field = title_field_default
 
                 # Ask for slug field
-                console.print(f"\n[bold]Which field contains the URL slug?[/bold]")
+                console.print("\n[bold]Which field contains the URL slug?[/bold]")
                 if slug_field_default:
                     console.print(f"[dim](Press Enter for: {slug_field_default})[/dim]")
                 slug_field = console.input("[cyan]Slug field:[/cyan] ").strip()
@@ -392,11 +412,11 @@ def onboard_cmd(platform: str):
 
                 # Save mapping
                 mappings[content_type] = {
-                    'enabled': True,
-                    'content_field': content_field,
-                    'title_field': title_field,
-                    'slug_field': slug_field,
-                    'metadata_fields': {}
+                    "enabled": True,
+                    "content_field": content_field,
+                    "title_field": title_field,
+                    "slug_field": slug_field,
+                    "metadata_fields": {},
                 }
 
                 console.print(f"\n[green]✓ Configured {content_type}[/green]")
@@ -415,9 +435,15 @@ def onboard_cmd(platform: str):
         console.print("[green]✓ Onboarding complete! Configuration saved.[/green]")
         console.print()
         console.print("[bold]Next steps:[/bold]")
-        console.print(f"  1. Search content: [cyan]kurt cms search --content-type {selected_types[0]}[/cyan]")
-        console.print(f"  2. Fetch document: [cyan]kurt cms fetch --id <document-id> --output-dir sources/cms/{platform}/[/cyan]")
-        console.print(f"  3. Import to Kurt: [cyan]kurt cms import --source-dir sources/cms/{platform}/[/cyan]")
+        console.print(
+            f"  1. Search content: [cyan]kurt cms search --content-type {selected_types[0]}[/cyan]"
+        )
+        console.print(
+            f"  2. Fetch document: [cyan]kurt cms fetch --id <document-id> --output-dir sources/cms/{platform}/[/cyan]"
+        )
+        console.print(
+            f"  3. Import to Kurt: [cyan]kurt cms import --source-dir sources/cms/{platform}/[/cyan]"
+        )
 
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
@@ -426,7 +452,12 @@ def onboard_cmd(platform: str):
 
 @cms.command("import")
 @click.option("--platform", default="sanity", help="CMS platform")
-@click.option("--source-dir", required=True, type=click.Path(exists=True), help="Directory containing markdown files from CMS")
+@click.option(
+    "--source-dir",
+    required=True,
+    type=click.Path(exists=True),
+    help="Directory containing markdown files from CMS",
+)
 def import_cmd(platform: str, source_dir: str):
     """
     Import CMS markdown files to Kurt database.
@@ -436,8 +467,9 @@ def import_cmd(platform: str, source_dir: str):
     Example:
         kurt cms import --source-dir sources/cms/sanity/
     """
-    from kurt.ingest_fetch import add_document, fetch_document
     from pathlib import Path
+
+    from kurt.ingestion.fetch import add_document
 
     try:
         import yaml
@@ -458,17 +490,19 @@ def import_cmd(platform: str, source_dir: str):
         for md_file in md_files:
             try:
                 # Read file
-                with open(md_file, 'r') as f:
+                with open(md_file, "r") as f:
                     content = f.read()
 
                 # Parse frontmatter
-                if content.startswith('---'):
-                    parts = content.split('---', 2)
+                if content.startswith("---"):
+                    parts = content.split("---", 2)
                     if len(parts) >= 3:
                         frontmatter = yaml.safe_load(parts[1])
-                        markdown_content = parts[2].strip()
+                        # markdown_content = parts[2].strip()  # Not used yet
                     else:
-                        console.print(f"[yellow]⚠[/yellow] Skipping {md_file.name}: Invalid frontmatter")
+                        console.print(
+                            f"[yellow]⚠[/yellow] Skipping {md_file.name}: Invalid frontmatter"
+                        )
                         skipped += 1
                         continue
                 else:
@@ -477,17 +511,19 @@ def import_cmd(platform: str, source_dir: str):
                     continue
 
                 # Get CMS metadata
-                cms_id = frontmatter.get('cms_id')
-                title = frontmatter.get('title', md_file.stem)
-                url = frontmatter.get('url')
+                # cms_id = frontmatter.get("cms_id")  # Not used yet
+                title = frontmatter.get("title", md_file.stem)
+                url = frontmatter.get("url")
 
                 if not url:
-                    console.print(f"[yellow]⚠[/yellow] Skipping {md_file.name}: No URL in frontmatter")
+                    console.print(
+                        f"[yellow]⚠[/yellow] Skipping {md_file.name}: No URL in frontmatter"
+                    )
                     skipped += 1
                     continue
 
                 # Add/update document
-                doc_id = add_document(url, title)
+                add_document(url, title)
 
                 # Update with content (using fetch_document infrastructure)
                 # For now, just show what would be imported
@@ -500,7 +536,7 @@ def import_cmd(platform: str, source_dir: str):
                 errors += 1
 
         # Summary
-        console.print(f"\n[bold]Import Summary:[/bold]")
+        console.print("\n[bold]Import Summary:[/bold]")
         console.print(f"  [green]Imported:[/green] {imported}")
         if skipped > 0:
             console.print(f"  [yellow]Skipped:[/yellow] {skipped}")
@@ -508,8 +544,8 @@ def import_cmd(platform: str, source_dir: str):
             console.print(f"  [red]Errors:[/red] {errors}")
 
         if imported > 0:
-            console.print(f"\n[yellow]Note:[/yellow] Documents added to database with CMS metadata.")
-            console.print(f"Run [cyan]kurt document list[/cyan] to see imported documents.")
+            console.print("\n[yellow]Note:[/yellow] Documents added to database with CMS metadata.")
+            console.print("Run [cyan]kurt document list[/cyan] to see imported documents.")
 
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
@@ -518,10 +554,18 @@ def import_cmd(platform: str, source_dir: str):
 
 @cms.command("publish")
 @click.option("--platform", default="sanity", help="CMS platform")
-@click.option("--file", "filepath", required=True, type=click.Path(exists=True), help="Markdown file to publish")
+@click.option(
+    "--file",
+    "filepath",
+    required=True,
+    type=click.Path(exists=True),
+    help="Markdown file to publish",
+)
 @click.option("--id", "document_id", help="CMS document ID to update (creates new if omitted)")
 @click.option("--content-type", help="Content type for new documents")
-def publish_cmd(platform: str, filepath: str, document_id: Optional[str], content_type: Optional[str]):
+def publish_cmd(
+    platform: str, filepath: str, document_id: Optional[str], content_type: Optional[str]
+):
     """
     Publish markdown file to CMS as draft.
 
@@ -540,25 +584,25 @@ def publish_cmd(platform: str, filepath: str, document_id: Optional[str], conten
             raise click.Abort()
 
         # Read markdown file
-        with open(filepath, 'r') as f:
+        with open(filepath, "r") as f:
             content = f.read()
 
         # Parse frontmatter
         title = None
         metadata = {}
 
-        if content.startswith('---'):
-            parts = content.split('---', 2)
+        if content.startswith("---"):
+            parts = content.split("---", 2)
             if len(parts) >= 3:
                 frontmatter = yaml.safe_load(parts[1])
                 markdown_content = parts[2].strip()
 
-                title = frontmatter.get('title')
-                document_id = document_id or frontmatter.get('cms_id')
-                content_type = content_type or frontmatter.get('cms_type')
+                title = frontmatter.get("title")
+                document_id = document_id or frontmatter.get("cms_id")
+                content_type = content_type or frontmatter.get("cms_type")
 
                 # Extract metadata
-                for key in ['slug', 'author', 'tags', 'categories', 'seo']:
+                for key in ["slug", "author", "tags", "categories", "seo"]:
                     if key in frontmatter:
                         metadata[key] = frontmatter[key]
             else:
@@ -567,11 +611,13 @@ def publish_cmd(platform: str, filepath: str, document_id: Optional[str], conten
             markdown_content = content
 
         if not title:
-            title = Path(filepath).stem.replace('-', ' ').title()
+            title = Path(filepath).stem.replace("-", " ").title()
 
         # Validate requirements
         if not document_id and not content_type:
-            console.print("[red]Error:[/red] Must provide either --id (to update) or --content-type (to create)")
+            console.print(
+                "[red]Error:[/red] Must provide either --id (to update) or --content-type (to create)"
+            )
             raise click.Abort()
 
         # Get adapter
@@ -590,10 +636,10 @@ def publish_cmd(platform: str, filepath: str, document_id: Optional[str], conten
             title=title,
             content_type=content_type,
             metadata=metadata,
-            document_id=document_id
+            document_id=document_id,
         )
 
-        console.print(f"\n[green]✓ Draft published successfully![/green]")
+        console.print("\n[green]✓ Draft published successfully![/green]")
         console.print(f"  Draft ID: [cyan]{result['draft_id']}[/cyan]")
         console.print(f"  Draft URL: [link]{result['draft_url']}[/link]")
         console.print()
