@@ -195,6 +195,11 @@ def extract_document_metadata(document_id: str, extractor=None, force: bool = Fa
 
     logger.info(f"Updated document {doc.id} with extracted metadata")
 
+    # Sync frontmatter to file after database update
+    from kurt.db.metadata_sync import write_frontmatter_to_file
+
+    write_frontmatter_to_file(doc)
+
     return {
         "document_id": str(doc.id),
         "title": doc.title,

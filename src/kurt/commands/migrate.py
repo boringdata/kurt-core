@@ -46,3 +46,20 @@ def status():
         kurt migrate status
     """
     show_migration_status()
+
+
+@migrate.command()
+def init():
+    """
+    Initialize Alembic for an existing database.
+
+    Use this command when you have an existing database that was created
+    before migrations were added. This will mark the database as being
+    at the current schema version without running migrations.
+
+    Example:
+        kurt migrate init
+    """
+    from kurt.db.migrations.utils import initialize_alembic
+
+    initialize_alembic()

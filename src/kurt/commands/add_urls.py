@@ -81,6 +81,8 @@ def handle_url_add(
                 fetch_result = result["fetch_result"]
                 console.print(f"[green]✓[/green] Fetched: {fetch_result['title']}")
                 console.print(f"  Content: {fetch_result['content_length']} characters")
+                if fetch_result.get("content_path"):
+                    console.print(f"  Path: {fetch_result['content_path']}")
 
             if result["indexed"]:
                 index_result = result["index_result"]

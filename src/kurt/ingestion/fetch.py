@@ -24,14 +24,20 @@ from urllib.parse import urlparse
 from uuid import UUID
 
 import trafilatura
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 
 from kurt.config import KurtConfig, load_config
 from kurt.db.database import get_session
 from kurt.db.models import Document, IngestionStatus, SourceType
 
 # Load environment variables from .env file
-load_dotenv()
+# Search from current working directory upwards
+dotenv_path = find_dotenv(usecwd=True)
+if dotenv_path:
+    load_dotenv(dotenv_path, override=False)
+else:
+    # If no .env found from cwd, try the default search (from module location)
+    load_dotenv(override=False)
 
 
 def _get_fetch_engine(override: str = None) -> str:
@@ -108,16 +114,18 @@ def _fetch_with_firecrawl(url: str) -> tuple[str, dict]:
 
     app = FirecrawlApp(api_key=api_key)
 
-    # Scrape the URL and get markdown
-    result = app.scrape_url(url, params={"formats": ["markdown", "html"]})
+    # Scrape the URL and get markdown using the v2 API
+    result = app.scrape(url, formats=["markdown", "html"])
 
-    if not result or "markdown" not in result:
+    if not result or not hasattr(result, "markdown"):
         raise ValueError(f"Firecrawl failed to extract content from: {url}")
 
-    content = result["markdown"]
+    content = result.markdown
 
     # Extract metadata from Firecrawl response
-    metadata = result.get("metadata", {})
+    metadata = {}
+    if hasattr(result, "metadata") and result.metadata:
+        metadata = result.metadata if isinstance(result.metadata, dict) else {}
 
     return content, metadata
 
@@ -269,7 +277,7 @@ def add_document(url: str, title: str = None) -> UUID:
     return doc.id
 
 
-def fetch_document(identifier: str, fetch_engine: str = None) -> dict:
+def fetch_document(identifier: str | UUID, fetch_engine: str = None) -> dict:
     """
     Fetch content for document (by ID or URL).
 
@@ -277,7 +285,7 @@ def fetch_document(identifier: str, fetch_engine: str = None) -> dict:
     Downloads content using the specified fetch engine or config default.
 
     Args:
-        identifier: Document UUID or source URL
+        identifier: Document UUID (as string or UUID object) or source URL
         fetch_engine: Optional engine override ('firecrawl' or 'trafilatura')
 
     Returns:
@@ -291,8 +299,11 @@ def fetch_document(identifier: str, fetch_engine: str = None) -> dict:
         ValueError: If document not found or download fails
 
     Example:
-        # Fetch by ID
+        # Fetch by ID (string)
         result = fetch_document("550e8400-e29b-41d4-a716-446655440000")
+
+        # Fetch by ID (UUID object)
+        result = fetch_document(UUID("550e8400-e29b-41d4-a716-446655440000"))
 
         # Fetch by URL (creates if doesn't exist)
         result = fetch_document("https://example.com/page1")
@@ -309,20 +320,24 @@ def fetch_document(identifier: str, fetch_engine: str = None) -> dict:
 
     # Try to find document
     try:
-        # Try as UUID first
-        doc_id = UUID(identifier)
+        # If already a UUID object, use it directly; otherwise try to parse as UUID
+        if isinstance(identifier, UUID):
+            doc_id = identifier
+        else:
+            doc_id = UUID(identifier)
+
         doc = session.get(Document, doc_id)
         if not doc:
             raise ValueError(f"Document not found: {identifier}")
 
-    except ValueError:
+    except (ValueError, AttributeError):
         # Not a UUID, treat as URL
         stmt = select(Document).where(Document.source_url == identifier)
         doc = session.exec(stmt).first()
 
         if not doc:
             # Create new document for this URL
-            doc_id = add_document(identifier)
+            doc_id = add_document(str(identifier))
             doc = session.get(Document, doc_id)
 
     # Update status to indicate we're fetching
