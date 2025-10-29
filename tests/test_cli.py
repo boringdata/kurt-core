@@ -42,19 +42,60 @@ def test_init_command(isolated_cli_runner):
     assert config_file.exists()
 
 
-@pytest.mark.skip(reason="Requires database setup - integration test")
-def test_document_list(isolated_cli_runner):
-    """Test document list command in isolated temp project."""
-    runner, project_dir = isolated_cli_runner
-    result = runner.invoke(main, ["document", "list"])
-    # Command should run without error (may return empty list)
-    assert result.exit_code == 0
+def test_all_commands_registered(runner):
+    """Test that all commands are properly registered and have Click decorators.
+
+    This smoke test catches issues where commands are imported but not decorated
+    with @click.command() or @click.group(), which causes AttributeError at startup.
+    """
+    # Test main command help works
+    result = runner.invoke(main, ["--help"])
+    assert result.exit_code == 0, f"Main help failed: {result.output}"
+
+    # Test that all expected top-level commands are registered
+    expected_commands = ["init", "cms", "content", "migrate", "project", "research", "status"]
+    for cmd in expected_commands:
+        assert cmd in result.output, f"Command '{cmd}' not found in main help"
+
+    # Test each command group's help to ensure they're properly decorated
+    command_groups = {
+        "cms": ["search", "fetch", "types", "onboard", "import", "publish"],
+        "content": ["add", "list", "stats", "cluster", "fetch"],
+        "migrate": ["status", "apply"],
+        "project": ["status"],
+        "research": [],  # research might not have subcommands
+    }
+
+    for group, subcommands in command_groups.items():
+        result = runner.invoke(main, [group, "--help"])
+        assert result.exit_code == 0, f"Command group '{group}' failed: {result.output}"
+
+        for subcmd in subcommands:
+            assert subcmd in result.output, f"Subcommand '{group} {subcmd}' not found in help"
+
+    # Test standalone commands
+    standalone_commands = ["status"]
+    for cmd in standalone_commands:
+        result = runner.invoke(main, [cmd, "--help"])
+        assert result.exit_code == 0, f"Command '{cmd}' help failed: {result.output}"
 
 
-@pytest.mark.skip(reason="Requires database setup - integration test")
-def test_workspace_list(isolated_cli_runner):
-    """Test workspace list command in isolated temp project."""
-    runner, project_dir = isolated_cli_runner
-    result = runner.invoke(main, ["workspace", "list"])
-    # Command should run without error (may return empty list)
-    assert result.exit_code == 0
+def test_content_stats_help(runner):
+    """Test that 'content stats' command is properly registered."""
+    result = runner.invoke(main, ["content", "stats", "--help"])
+    assert result.exit_code == 0, f"'content stats' help failed: {result.output}"
+    assert "Show content statistics" in result.output or "statistics" in result.output.lower()
+
+
+def test_status_help(runner):
+    """Test that 'status' command is properly registered."""
+    result = runner.invoke(main, ["status", "--help"])
+    assert result.exit_code == 0, f"'status' help failed: {result.output}"
+    assert "status" in result.output.lower()
+
+
+def test_project_status_help(runner):
+    """Test that 'project status' command is properly registered."""
+    result = runner.invoke(main, ["project", "status", "--help"])
+    assert result.exit_code == 0, f"'project status' help failed: {result.output}"
+    assert "status" in result.output.lower()

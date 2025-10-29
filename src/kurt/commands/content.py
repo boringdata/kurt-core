@@ -253,6 +253,8 @@ def fetch(
             console.print(f"[green]✓ Fetched:[/green] {result['title']}")
             console.print(f"  Document ID: [cyan]{result['document_id']}[/cyan]")
             console.print(f"  Content: {result['content_length']} characters")
+            if result.get("content_path"):
+                console.print(f"  Path: {result['content_path']}")
             console.print(f"  Status: [green]{result['status']}[/green]")
         except ValueError as e:
             console.print(f"[red]Error:[/red] {e}")
@@ -506,6 +508,13 @@ def index(
                     error_count += 1
                     logger.exception(f"Failed to index document {doc.id}")
 
+        # Process any pending metadata sync queue items
+        # (handles SQL/agent updates that bypassed normal indexing)
+        from kurt.db.metadata_sync import process_metadata_sync_queue
+
+        queue_result = process_metadata_sync_queue()
+        queue_synced = queue_result["processed"]
+
         # Summary
         console.print("\n[bold]Summary:[/bold]")
         console.print(f"  Indexed: {indexed_count}")
@@ -513,6 +522,8 @@ def index(
             console.print(f"  Skipped: {skipped_count}")
         if error_count > 0:
             console.print(f"  Errors: {error_count}")
+        if queue_synced > 0:
+            console.print(f"  Queue synced: {queue_synced}")
 
     except Exception as e:
         console.print(f"[bold red]Error:[/bold red] {e}")
@@ -904,4 +915,41 @@ def cluster_command(
     except Exception as e:
         console.print(f"[bold red]Error:[/bold red] {e}")
         logger.exception("Failed to compute clusters")
+        raise click.Abort()
+
+
+# ============================================================================
+# Metadata Sync Command
+# ============================================================================
+
+
+@content.command("sync-metadata")
+def sync_metadata():
+    """Process metadata sync queue and update file frontmatter.
+
+    This command processes any pending metadata changes that were made via
+    direct SQL updates or external tools, and writes the updated metadata
+    as YAML frontmatter to the corresponding markdown files.
+    """
+    from kurt.db.metadata_sync import process_metadata_sync_queue
+
+    try:
+        console.print("[cyan]Processing metadata sync queue...[/cyan]")
+        result = process_metadata_sync_queue()
+
+        if result["processed"] == 0:
+            console.print("[dim]No pending metadata updates.[/dim]")
+        else:
+            console.print(
+                f"[green]✓[/green] Synced frontmatter for {result['processed']} document(s)"
+            )
+
+        if result["errors"]:
+            console.print(f"\n[yellow]⚠[/yellow]  {len(result['errors'])} error(s):")
+            for error in result["errors"]:
+                console.print(f"  • Document {error['document_id']}: {error['error']}")
+
+    except Exception as e:
+        console.print(f"[bold red]Error:[/bold red] {e}")
+        logger.exception("Failed to process metadata sync queue")
         raise click.Abort()

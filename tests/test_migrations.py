@@ -130,7 +130,7 @@ class TestPendingMigrations:
 
     def test_get_pending_migrations_structure(self):
         """Test that pending migrations return correct structure."""
-        # Test using the ScriptDirectory mock since Alembic's iterate_revisions
+        # Test using the ScriptDirectory mock since Alembic's walk_revisions
         # has complex logic that's hard to test without a real migration environment
         with (
             patch("kurt.db.migrations.utils.get_current_version") as mock_version,
@@ -146,7 +146,7 @@ class TestPendingMigrations:
 
             # Mock the script directory to return our mock revision
             mock_script = MagicMock()
-            mock_script.iterate_revisions.return_value = [mock_rev]
+            mock_script.walk_revisions.return_value = [mock_rev]
             mock_script_dir.from_config.return_value = mock_script
 
             pending = get_pending_migrations()
@@ -196,7 +196,7 @@ class TestMigrationHistory:
 
             # Mock the script directory to return our mock revision
             mock_script = MagicMock()
-            mock_script.iterate_revisions.return_value = [mock_rev]
+            mock_script.walk_revisions.return_value = [mock_rev]
             mock_script_dir.from_config.return_value = mock_script
 
             history = get_migration_history()
@@ -451,3 +451,98 @@ class TestIntegration:
 
         assert result is True
         mock_confirm.assert_called_once()
+
+
+class TestRealMigrationFiles:
+    """Integration tests using actual migration files from the project."""
+
+    def test_get_pending_migrations_with_real_files_no_db(self, test_config):
+        """Test getting pending migrations with real migration files and no database."""
+        # This should return all migrations since database is not initialized
+        pending = get_pending_migrations()
+
+        # Should return a list of tuples
+        assert isinstance(pending, list)
+        # Should have at least the initial migration
+        assert len(pending) >= 1
+
+        # Check structure
+        for revision, description in pending:
+            assert isinstance(revision, str)
+            assert isinstance(description, str)
+            assert len(revision) > 0
+            assert len(description) > 0
+
+    def test_get_migration_history_with_real_files_no_db(self, test_config):
+        """Test getting migration history with real files but no database."""
+        # Should return empty list when database is not initialized
+        history = get_migration_history()
+        assert history == []
+
+    def test_check_migrations_needed_with_real_files(self, test_config):
+        """Test checking if migrations are needed with real migration files."""
+        # Should return True since database is not initialized
+        needs_migration = check_migrations_needed()
+        assert needs_migration is True
+
+    def test_pending_migrations_after_init(self, initialized_db):
+        """Test that pending migrations work correctly after database initialization."""
+        tmp_path, db_path, engine = initialized_db
+
+        # Initialize Alembic to mark database as being at head
+        initialize_alembic()
+
+        # Now there should be no pending migrations
+        pending = get_pending_migrations()
+        assert isinstance(pending, list)
+
+        # Get migration history - should include applied migrations
+        history = get_migration_history()
+        assert isinstance(history, list)
+        # Should have at least one migration
+        assert len(history) >= 1
+
+
+class TestCLICommands:
+    """Test CLI commands for migrations."""
+
+    def test_migrate_status_command(self, test_config):
+        """Test 'kurt migrate status' command."""
+        from click.testing import CliRunner
+
+        from kurt.commands.migrate import migrate
+
+        runner = CliRunner()
+        result = runner.invoke(migrate, ["status"])
+
+        # Should succeed even without database
+        assert result.exit_code == 0
+        # Should show pending migrations
+        assert "Pending" in result.output or "pending" in result.output
+
+    def test_migrate_apply_help(self):
+        """Test 'kurt migrate apply --help' command."""
+        from click.testing import CliRunner
+
+        from kurt.commands.migrate import migrate
+
+        runner = CliRunner()
+        result = runner.invoke(migrate, ["apply", "--help"])
+
+        # Should show help text
+        assert result.exit_code == 0
+        assert "Apply pending database migrations" in result.output
+        assert "--auto-confirm" in result.output
+
+    def test_migrate_init_help(self):
+        """Test 'kurt migrate init --help' command."""
+        from click.testing import CliRunner
+
+        from kurt.commands.migrate import migrate
+
+        runner = CliRunner()
+        result = runner.invoke(migrate, ["init", "--help"])
+
+        # Should show help text
+        assert result.exit_code == 0
+        assert "Initialize Alembic" in result.output or "existing database" in result.output

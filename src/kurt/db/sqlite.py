@@ -1,5 +1,6 @@
 """SQLite database client for local mode."""
 
+import logging
 import os
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from kurt.config import get_config_or_default
 from kurt.db.base import DatabaseClient
 
 console = Console()
+logger = logging.getLogger(__name__)
 
 
 class SQLiteClient(DatabaseClient):
@@ -100,6 +102,7 @@ class SQLiteClient(DatabaseClient):
         if not self._engine:
             db_url = self.get_database_url()
             self._engine = create_engine(db_url, echo=False)
+
         return Session(self._engine)
 
     def check_database_exists(self) -> bool:

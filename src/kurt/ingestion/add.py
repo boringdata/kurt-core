@@ -118,7 +118,7 @@ def add_single_page(
     # Index if needed
     if needs_index and index and fetch:  # Can only index if fetched
         index_result = asyncio.run(
-            batch_extract_document_metadata([doc_id], max_concurrent=1, force=False)
+            batch_extract_document_metadata([str(doc_id)], max_concurrent=1, force=False)
         )
         if index_result["succeeded"] > 0:
             result["indexed"] = True

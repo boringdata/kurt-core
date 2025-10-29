@@ -75,9 +75,23 @@ def get_pending_migrations() -> List[Tuple[str, str]]:
 
     # Get all revisions from current to head
     pending = []
-    for rev in script.iterate_revisions(current_rev or "base", "head"):
-        if rev.revision != current_rev:
+
+    if current_rev is None:
+        # No migrations applied yet - get all migrations from base to head
+        for rev in script.walk_revisions(base="base", head="heads"):
             pending.append((rev.revision, rev.doc or "No description"))
+    else:
+        # Get migrations between current and head
+        try:
+            for rev in script.iterate_revisions(current_rev, "heads"):
+                if rev.revision != current_rev:
+                    pending.append((rev.revision, rev.doc or "No description"))
+        except Exception:
+            # If iterate_revisions fails, fall back to walking all revisions
+            # and filtering out the current one
+            for rev in script.walk_revisions(base="base", head="heads"):
+                if rev.revision != current_rev:
+                    pending.append((rev.revision, rev.doc or "No description"))
 
     # Reverse to show in chronological order
     return list(reversed(pending))
@@ -98,11 +112,15 @@ def get_migration_history() -> List[Tuple[str, str, Optional[str]]]:
         return []
 
     history = []
-    for rev in script.iterate_revisions("base", current_rev):
+    # Walk all revisions and collect those up to current_rev
+    for rev in script.walk_revisions(base="base", head="heads"):
         if rev.revision:
             # We don't track applied_at in standard Alembic, so it's None
             # You could add a custom table to track this if needed
             history.append((rev.revision, rev.doc or "No description", None))
+            # Stop when we reach the current revision
+            if rev.revision == current_rev:
+                break
 
     return list(reversed(history))
 

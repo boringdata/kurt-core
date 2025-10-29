@@ -1,5 +1,6 @@
 """Kurt SQLModel database schemas."""
 
+import logging
 from datetime import datetime
 from enum import Enum
 from typing import Optional
@@ -7,6 +8,8 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import JSON, Column
 from sqlmodel import Field, SQLModel
+
+logger = logging.getLogger(__name__)
 
 
 class IngestionStatus(str, Enum):
@@ -132,3 +135,46 @@ class Entity(SQLModel, table=True):
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class MetadataSyncQueue(SQLModel, table=True):
+    """Queue for documents that need metadata sync.
+
+    This table can be used as a backup mechanism when metadata is updated
+    directly via SQL (e.g., by agents, scripts, or database tools).
+
+    Currently, sync happens automatically after Python indexing operations,
+    but this queue can be manually populated and processed if needed.
+
+    Database Trigger:
+        A SQLite trigger automatically populates this table when document
+        metadata changes. See migration: 002_metadata_sync
+        Trigger name: documents_metadata_sync_trigger
+    """
+
+    __tablename__ = "metadata_sync_queue"
+
+    id: int = Field(default=None, primary_key=True)
+    document_id: UUID = Field(index=True)  # Document that needs sync
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+# ============================================================================
+# Metadata Sync
+# ============================================================================
+#
+# NOTE: Metadata sync functionality is in kurt.db.metadata_sync
+#
+# Architecture:
+#   1. Direct sync: write_frontmatter_to_file() called after Python indexing
+#   2. Queue backup: MetadataSyncQueue + trigger for SQL updates
+#
+# Database Trigger (see migration 002_metadata_sync):
+#   - Trigger: documents_metadata_sync_trigger
+#   - Fires: AFTER UPDATE on documents (when metadata fields change)
+#   - Action: Inserts document_id into metadata_sync_queue
+#
+# Functions (in kurt.db.metadata_sync):
+#   - write_frontmatter_to_file() - writes YAML frontmatter to markdown files
+#   - remove_frontmatter() - removes existing frontmatter
+#   - process_metadata_sync_queue() - processes queued sync operations
