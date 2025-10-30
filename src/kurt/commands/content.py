@@ -8,6 +8,8 @@ from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 from rich.table import Table
 
+from kurt.telemetry.decorators import track_command
+
 console = Console()
 logger = logging.getLogger(__name__)
 
@@ -64,6 +66,7 @@ def content():
     type=click.Choice(["firecrawl", "trafilatura"], case_sensitive=False),
     help="Fetch engine to use (overrides config default) [URLs only]",
 )
+@track_command
 def add(
     source: str,
     fetch_only: bool,
@@ -186,6 +189,7 @@ def add(
     type=click.Choice(["firecrawl", "trafilatura"], case_sensitive=False),
     help="Fetch engine to use (overrides config default)",
 )
+@track_command
 def fetch(
     identifier: str,
     url_prefix: str,
@@ -369,6 +373,7 @@ def fetch(
     is_flag=True,
     help="Re-index documents even if already indexed",
 )
+@track_command
 def index(
     doc_id: str, url_starts_with: str, url_prefix: str, url_contains: str, all: bool, force: bool
 ):
@@ -565,6 +570,7 @@ def index(
     default="table",
     help="Output format",
 )
+@track_command
 def list_documents_cmd(
     status: str,
     url_starts_with: str,
@@ -672,6 +678,7 @@ def list_documents_cmd(
     default="pretty",
     help="Output format",
 )
+@track_command
 def get_document_cmd(document_id: str, format: str):
     """
     Get document metadata by ID.
@@ -737,6 +744,7 @@ def get_document_cmd(document_id: str, format: str):
     is_flag=True,
     help="Skip confirmation prompt",
 )
+@track_command
 def delete_document_cmd(document_id: str, delete_content: bool, yes: bool):
     """
     Delete content from your project.
@@ -789,6 +797,7 @@ def delete_document_cmd(document_id: str, delete_content: bool, yes: bool):
 
 
 @content.command("stats")
+@track_command
 def stats_cmd():
     """
     Show document statistics.
@@ -841,6 +850,7 @@ def stats_cmd():
     default="table",
     help="Output format",
 )
+@track_command
 def cluster_command(
     url_starts_with: str,
     url_prefix: str,
@@ -924,6 +934,7 @@ def cluster_command(
 
 
 @content.command("sync-metadata")
+@track_command
 def sync_metadata():
     """Process metadata sync queue and update file frontmatter.
 

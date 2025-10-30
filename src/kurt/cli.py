@@ -12,8 +12,10 @@ from kurt.commands.migrate import migrate
 from kurt.commands.project import project
 from kurt.commands.research import research
 from kurt.commands.status import status
+from kurt.commands.telemetry import telemetry
 from kurt.config import config_exists, create_config, get_config_file_path
 from kurt.db.database import init_database
+from kurt.telemetry.decorators import track_command
 
 console = Console()
 
@@ -94,6 +96,7 @@ def main(ctx):
     default="rules",
     help="Path to store rules and configurations relative to current directory (default: rules)",
 )
+@track_command
 def init(db_path: str, sources_path: str, projects_path: str, rules_path: str):
     """
     Initialize a new Kurt project in the current directory.
@@ -175,6 +178,7 @@ main.add_command(migrate)
 main.add_command(project)
 main.add_command(research)
 main.add_command(status)
+main.add_command(telemetry)
 
 
 if __name__ == "__main__":

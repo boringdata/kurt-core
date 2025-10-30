@@ -10,6 +10,7 @@ from rich.console import Console
 from kurt.config import config_exists, load_config
 from kurt.db.database import get_session
 from kurt.db.models import Document, IngestionStatus
+from kurt.telemetry.decorators import track_command
 
 console = Console()
 
@@ -250,6 +251,7 @@ def generate_status_markdown() -> str:
     is_flag=True,
     help="Output in Claude Code hook format (systemMessage + additionalContext)",
 )
+@track_command
 def status(format: str, hook_cc: bool):
     """
     Show comprehensive Kurt project status.

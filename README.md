@@ -223,6 +223,54 @@ sqlite3 .kurt/kurt.sqlite "
 "
 ```
 
+## Telemetry
+
+Kurt collects anonymous usage analytics to help us understand how the tool is used and improve it. We take privacy seriously.
+
+### What We Collect
+
+- **Command usage**: Which commands are run (e.g., `kurt content add`)
+- **Execution metrics**: Timing and success/failure rates
+- **Environment**: OS, Python version, Kurt version
+- **Machine ID**: Anonymous identifier (UUID, not tied to personal info)
+
+### What We DON'T Collect
+
+- Personal information (names, emails, etc.)
+- File paths or URLs
+- Command arguments or user data
+- Any sensitive information
+
+### How to Opt-Out
+
+Disable telemetry using any of these methods:
+
+```bash
+# 1. Use the CLI command
+kurt telemetry disable
+
+# 2. Set environment variable (universal)
+export DO_NOT_TRACK=1
+
+# 3. Set Kurt-specific environment variable
+export KURT_TELEMETRY_DISABLED=1
+```
+
+Check telemetry status:
+
+```bash
+kurt telemetry status
+```
+
+### Privacy
+
+All telemetry is:
+- **Anonymous**: No personal information collected
+- **Transparent**: Clearly documented what we collect
+- **Optional**: Easy to opt-out
+- **Non-blocking**: Never slows down CLI commands
+- **Secure**: Uses PostHog cloud (SOC 2 compliant)
+
 ## License
 
 MIT
