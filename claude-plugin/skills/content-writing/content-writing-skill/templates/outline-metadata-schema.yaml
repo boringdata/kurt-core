@@ -1,0 +1,75 @@
+# Outline Metadata Schema (Streamlined)
+# Use this schema when creating outlines to ensure actionable lineage tracking
+
+---
+content_type: outline
+project: [project-name]
+asset_name: [asset-name]
+created_date: [YYYY-MM-DD]
+
+# Project Context
+project_brief: /projects/[project-name]/project.md
+
+# Rules to Apply
+rules:
+  style: /rules/style/[style-file].md
+  structure: /rules/structure/[structure-file].md
+  persona: /rules/personas/[persona-file].md
+  publisher: /rules/publisher/publisher-profile.md
+
+# Source Documents
+ground_truth_sources:
+  - path: /sources/[domain]/[doc1].md
+    purpose: "Brief explanation of why this source is used"
+  - path: /sources/[domain]/[doc2].md
+    purpose: "Brief explanation of why this source is used"
+
+existing_content:
+  - url: [original-url]
+    purpose: "What to learn from existing content"
+
+# Update Patterns (Project-Specific)
+# For projects with defined transformation patterns (optional)
+update_patterns:
+  - id: [pattern-id]
+    description: "What this pattern does"
+    sections: [list of section names]
+
+# Objective
+primary_objective: "[specific goal for this content]"
+success_metric: "[how success will be measured]"
+
+# Section-Source Mapping
+sections:
+  [section-1-name]:
+    sources: [list of ground truth source paths]
+    existing: [list of existing content URLs]
+    patterns: [list of pattern IDs, or [] if none]
+    reasoning: "[why this section is structured this way]"
+
+  [section-2-name]:
+    sources: [list of source paths]
+    existing: [list of URLs]
+    patterns: [list of pattern IDs, or [] if none]
+    reasoning: "[why this section is structured this way]"
+
+---
+
+# USAGE NOTES:
+#
+# STREAMLINED VERSION - removed bloat:
+# ❌ Removed: word_count per section (too granular, always changes)
+# ❌ Removed: planned_compliance (aspirational, not actual lineage)
+# ❌ Removed: content_depth, target_audience (redundant with persona)
+# ❌ Removed: style_voice details (already in style guide file)
+#
+# WHAT REMAINS (the useful parts):
+# ✅ Basic identity and context
+# ✅ Rules that will be applied
+# ✅ Source documents with purposes
+# ✅ Update patterns (if project-specific)
+# ✅ Objective and success metric
+# ✅ Section-to-source mapping with reasoning
+#
+# Key principle: Keep metadata that's ACTIONABLE and QUERYABLE
+# Remove metadata that's SUBJECTIVE or REDUNDANT

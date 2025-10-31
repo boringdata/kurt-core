@@ -110,15 +110,17 @@ def _fetch_with_firecrawl(url: str) -> tuple[str, dict]:
 
     api_key = os.getenv("FIRECRAWL_API_KEY")
     if not api_key:
-        raise ValueError("FIRECRAWL_API_KEY not set in environment")
+        raise ValueError("[Firecrawl] FIRECRAWL_API_KEY not set in environment")
 
-    app = FirecrawlApp(api_key=api_key)
-
-    # Scrape the URL and get markdown using the v2 API
-    result = app.scrape(url, formats=["markdown", "html"])
+    try:
+        app = FirecrawlApp(api_key=api_key)
+        # Scrape the URL and get markdown using the v2 API
+        result = app.scrape(url, formats=["markdown", "html"])
+    except Exception as e:
+        raise ValueError(f"[Firecrawl] API error: {type(e).__name__}: {str(e)}") from e
 
     if not result or not hasattr(result, "markdown"):
-        raise ValueError(f"Firecrawl failed to extract content from: {url}")
+        raise ValueError(f"[Firecrawl] No content extracted from: {url}")
 
     content = result.markdown
 
@@ -144,9 +146,12 @@ def _fetch_with_trafilatura(url: str) -> tuple[str, dict]:
         ValueError: If fetch fails
     """
     # Download content
-    downloaded = trafilatura.fetch_url(url)
-    if not downloaded:
-        raise ValueError(f"Failed to download: {url}")
+    try:
+        downloaded = trafilatura.fetch_url(url)
+        if not downloaded:
+            raise ValueError(f"[Trafilatura] Failed to download (no content returned): {url}")
+    except Exception as e:
+        raise ValueError(f"[Trafilatura] Download error: {type(e).__name__}: {str(e)}") from e
 
     # Extract metadata using trafilatura
     metadata = trafilatura.extract_metadata(
@@ -166,7 +171,9 @@ def _fetch_with_trafilatura(url: str) -> tuple[str, dict]:
     )
 
     if not content:
-        raise ValueError(f"No content extracted from: {url}")
+        raise ValueError(
+            f"[Trafilatura] No content extracted (page might be empty or paywall blocked): {url}"
+        )
 
     # Convert trafilatura metadata to dict
     metadata_dict = {}
@@ -495,3 +502,154 @@ def fetch_documents_batch(
         return await asyncio.gather(*tasks)
 
     return asyncio.run(_batch_fetch())
+
+
+def fetch_content(
+    include_pattern: str = None,
+    urls: str = None,
+    ids: str = None,
+    in_cluster: str = None,
+    with_status: str = None,
+    exclude: str = None,
+    limit: int = None,
+    concurrency: int = 5,
+    engine: str = None,
+    skip_index: bool = False,
+    refetch: bool = False,
+) -> dict:
+    """
+    High-level fetch function with filtering, validation, and orchestration.
+
+    This function handles all the business logic for fetching documents:
+    - Filter selection and validation
+    - Database query building
+    - Glob pattern matching
+    - Document count warnings
+    - Batch fetching orchestration
+
+    Args:
+        include_pattern: Glob pattern matching source_url or content_path
+        urls: Comma-separated list of source URLs
+        ids: Comma-separated list of document IDs
+        in_cluster: Cluster name to fetch from
+        with_status: Status filter (NOT_FETCHED | FETCHED | ERROR)
+        exclude: Glob pattern to exclude
+        limit: Max documents to process
+        concurrency: Parallel requests (default: 5)
+        engine: Fetch engine (trafilatura | firecrawl)
+        skip_index: Skip LLM indexing
+        refetch: Include already FETCHED documents
+
+    Returns:
+        dict with:
+            - docs: List of Document objects to fetch
+            - doc_ids: List of document IDs
+            - total: Total count
+            - warnings: List of warning messages
+            - errors: List of error messages
+
+    Raises:
+        ValueError: If no filter is provided or invalid parameters
+    """
+    from fnmatch import fnmatch
+
+    from sqlmodel import select
+
+    from kurt.db.database import get_session
+    from kurt.db.models import Document, IngestionStatus
+
+    # Validate: at least one filter required
+    if not (include_pattern or urls or ids or in_cluster or with_status):
+        raise ValueError(
+            "Requires at least ONE filter: --include, --urls, --ids, --in-cluster, or --with-status"
+        )
+
+    warnings = []
+    errors = []
+
+    session = get_session()
+
+    # Build query based on filters
+    stmt = select(Document)
+
+    # Filter by IDs
+    if ids:
+        from uuid import UUID
+
+        doc_ids = [UUID(id.strip()) for id in ids.split(",")]
+        stmt = stmt.where(Document.id.in_(doc_ids))
+
+    # Filter by URLs
+    if urls:
+        url_list = [url.strip() for url in urls.split(",")]
+        stmt = stmt.where(Document.source_url.in_(url_list))
+
+    # Filter by cluster (JOIN with edges and clusters tables)
+    if in_cluster:
+        from kurt.db.models import DocumentClusterEdge, TopicCluster
+
+        stmt = (
+            stmt.join(DocumentClusterEdge, Document.id == DocumentClusterEdge.document_id)
+            .join(TopicCluster, DocumentClusterEdge.cluster_id == TopicCluster.id)
+            .where(TopicCluster.name.ilike(f"%{in_cluster}%"))
+        )
+
+    # Count total documents before status filter (to track excluded FETCHED docs)
+    docs_before_status_filter = list(session.exec(stmt).all())
+
+    # Filter by status (default: exclude FETCHED unless --refetch or --with-status FETCHED)
+    if with_status:
+        stmt = stmt.where(Document.ingestion_status == IngestionStatus[with_status])
+    elif not refetch:
+        # Default: exclude FETCHED documents
+        stmt = stmt.where(Document.ingestion_status != IngestionStatus.FETCHED)
+
+    docs = list(session.exec(stmt).all())
+
+    # Apply include/exclude patterns (glob matching on source_url or content_path)
+    if include_pattern:
+        docs = [
+            d
+            for d in docs
+            if (d.source_url and fnmatch(d.source_url, include_pattern))
+            or (d.content_path and fnmatch(d.content_path, include_pattern))
+        ]
+
+    if exclude:
+        docs = [
+            d
+            for d in docs
+            if not (
+                (d.source_url and fnmatch(d.source_url, exclude))
+                or (d.content_path and fnmatch(d.content_path, exclude))
+            )
+        ]
+
+    # Apply limit
+    if limit:
+        docs = docs[:limit]
+
+    # Warn if >100 docs
+    if len(docs) > 100:
+        warnings.append(f"About to fetch {len(docs)} documents")
+
+    # Calculate estimated cost
+    estimated_cost = len(docs) * 0.005 if not skip_index else 0
+
+    # Count excluded FETCHED documents (only if we applied the default filter)
+    excluded_fetched_count = 0
+    if not with_status and not refetch:
+        fetched_docs = [
+            d for d in docs_before_status_filter if d.ingestion_status == IngestionStatus.FETCHED
+        ]
+        excluded_fetched_count = len(fetched_docs)
+
+    return {
+        "docs": docs,
+        "doc_ids": [str(doc.id) for doc in docs],
+        "total": len(docs),
+        "warnings": warnings,
+        "errors": errors,
+        "estimated_cost": estimated_cost,
+        "excluded_fetched_count": excluded_fetched_count,
+    }

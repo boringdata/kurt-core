@@ -2,6 +2,7 @@
 
 import hashlib
 import logging
+import os
 import subprocess
 from pathlib import Path
 from typing import Optional
@@ -120,3 +121,27 @@ def get_file_content_hash(file_path: Path, algorithm: str = "sha256") -> str:
 
     content = file_path.read_text(encoding="utf-8")
     return calculate_content_hash(content, algorithm)
+
+
+def should_force(force_flag: bool) -> bool:
+    """
+    Check if force mode should be enabled.
+
+    Returns True if either the force_flag parameter is True OR
+    the KURT_FORCE environment variable is set to "1".
+
+    Args:
+        force_flag: The --force flag value from CLI
+
+    Returns:
+        True if force mode should be enabled, False otherwise
+
+    Example:
+        # Via CLI flag
+        should_force(force=True)  # Returns: True
+
+        # Via environment variable
+        os.environ["KURT_FORCE"] = "1"
+        should_force(force=False)  # Returns: True
+    """
+    return force_flag or os.getenv("KURT_FORCE") == "1"

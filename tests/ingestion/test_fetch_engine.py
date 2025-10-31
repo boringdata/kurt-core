@@ -214,7 +214,8 @@ class TestFetchDocumentsBatchWithEngine:
 
             # Mock asyncio.run to avoid actually running async code
             with patch("kurt.ingestion.fetch.asyncio.run") as mock_run:
-                mock_run.return_value = []
+                # Properly consume the coroutine to avoid RuntimeWarning
+                mock_run.side_effect = lambda coro: (coro.close(), [])[1]
 
                 fetch_documents_batch(["doc1", "doc2"])
 
@@ -230,7 +231,8 @@ class TestFetchDocumentsBatchWithEngine:
 
             # Mock asyncio.run to avoid actually running async code
             with patch("kurt.ingestion.fetch.asyncio.run") as mock_run:
-                mock_run.return_value = []
+                # Properly consume the coroutine to avoid RuntimeWarning
+                mock_run.side_effect = lambda coro: (coro.close(), [])[1]
 
                 fetch_documents_batch(["doc1", "doc2"], fetch_engine="firecrawl")
 
@@ -246,7 +248,8 @@ class TestFetchDocumentsBatchWithEngine:
 
             # Mock asyncio.run to avoid actually running async code
             with patch("kurt.ingestion.fetch.asyncio.run") as mock_run:
-                mock_run.return_value = []
+                # Properly consume the coroutine to avoid RuntimeWarning
+                mock_run.side_effect = lambda coro: (coro.close(), [])[1]
 
                 # Create batch of 15 documents (>10 threshold)
                 doc_ids = [f"doc{i}" for i in range(15)]
@@ -266,7 +269,8 @@ class TestFetchDocumentsBatchWithEngine:
 
             # Mock asyncio.run to avoid actually running async code
             with patch("kurt.ingestion.fetch.asyncio.run") as mock_run:
-                mock_run.return_value = []
+                # Properly consume the coroutine to avoid RuntimeWarning
+                mock_run.side_effect = lambda coro: (coro.close(), [])[1]
 
                 # Create batch of 5 documents (<10 threshold)
                 doc_ids = [f"doc{i}" for i in range(5)]
@@ -285,7 +289,8 @@ class TestFetchDocumentsBatchWithEngine:
 
             # Mock asyncio.run to avoid actually running async code
             with patch("kurt.ingestion.fetch.asyncio.run") as mock_run:
-                mock_run.return_value = []
+                # Properly consume the coroutine to avoid RuntimeWarning
+                mock_run.side_effect = lambda coro: (coro.close(), [])[1]
 
                 # Create batch of 20 documents (>10 threshold)
                 doc_ids = [f"doc{i}" for i in range(20)]

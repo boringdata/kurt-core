@@ -1,0 +1,5 @@
+# Claude Code Agent SDK for agent interaction
+claude-agent-sdk>=0.1.6
+
+# Additional utilities
+pydantic>=2.0.0

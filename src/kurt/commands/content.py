@@ -5,7 +5,6 @@ import logging
 
 import click
 from rich.console import Console
-from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 from rich.table import Table
 
 console = Console()
@@ -24,340 +23,22 @@ def content():
 
 
 # ============================================================================
-# Ingestion Commands: add, fetch, index
+# NOTE: The 'fetch' command has been moved to root level (kurt fetch)
+# Old location: kurt content fetch
+# New location: kurt fetch
+#
+# This aligns with CLI-SPEC.md where fetch is a root-level command alongside
+# map and cluster-urls in the primary workflow: map → cluster-urls → fetch
 # ============================================================================
-
-
-@content.command("add")
-@click.argument("source")
-@click.option("--fetch-only", is_flag=True, help="Discover + fetch only (skip indexing)")
-@click.option(
-    "--discover-only", is_flag=True, help="Discover only (skip fetch & index) [URLs only]"
-)
-@click.option("--dry-run", is_flag=True, help="Preview what would be added (no DB changes)")
-@click.option(
-    "--url-contains", type=str, help="Filter: only include URLs containing this string [URLs only]"
-)
-@click.option(
-    "--url-starts-with",
-    type=str,
-    help="Filter: only include URLs starting with this prefix [URLs only]",
-)
-@click.option("--limit", type=int, help="Maximum number of pages/files to process")
-@click.option("--force", is_flag=True, help="Skip confirmation for large batches")
-@click.option(
-    "--max-concurrent", type=int, default=5, help="Max parallel downloads (default: 5) [URLs only]"
-)
-@click.option(
-    "--discover-dates",
-    is_flag=True,
-    help="Discover publish dates from blogroll/changelog pages [URLs only]",
-)
-@click.option(
-    "--max-blogrolls",
-    type=int,
-    default=10,
-    help="Maximum blogroll pages to scrape (default: 10) [URLs only]",
-)
-@click.option(
-    "--fetch-engine",
-    type=click.Choice(["firecrawl", "trafilatura"], case_sensitive=False),
-    help="Fetch engine to use (overrides config default) [URLs only]",
-)
-def add(
-    source: str,
-    fetch_only: bool,
-    discover_only: bool,
-    dry_run: bool,
-    url_contains: str,
-    url_starts_with: str,
-    limit: int,
-    force: bool,
-    max_concurrent: int,
-    discover_dates: bool,
-    max_blogrolls: int,
-    fetch_engine: str,
-):
-    """
-    Add content from URLs or local files to Kurt (discover + fetch + index in one command).
-
-    Automatically detects source type:
-    - URLs: http://, https://
-    - Files: ./file.md, /path/to/file.md (must be .md)
-    - Directories: ./docs/, /path/to/docs/ (processes all .md files recursively)
-
-    Examples:
-        # Add from URL (single page)
-        kurt content add https://example.com/blog/my-post
-
-        # Add from URL (entire site, auto-detects from sitemap)
-        kurt content add https://example.com
-
-        # Add single markdown file
-        kurt content add ./article.md
-
-        # Add directory of markdown files
-        kurt content add ./documents/
-
-        # Add with filters (URLs only)
-        kurt content add https://example.com --url-contains "/blog/2024/"
-
-        # Add without indexing (save LLM costs)
-        kurt content add https://example.com --fetch-only
-        kurt content add ./documents/ --fetch-only
-
-        # Preview without adding
-        kurt content add https://example.com --dry-run
-        kurt content add ./documents/ --dry-run
-    """
-    from kurt.commands.add_files import handle_file_add
-    from kurt.commands.add_urls import handle_url_add
-    from kurt.ingestion.source_detection import detect_source_type
-
-    # Detect source type
-    source_type = detect_source_type(source)
-
-    # Route to appropriate handler
-    if source_type in ["file", "directory"]:
-        # Validate that URL-specific options aren't used
-        url_specific_options = {
-            "discover_only": discover_only,
-            "url_contains": url_contains,
-            "url_starts_with": url_starts_with,
-            "max_concurrent": max_concurrent != 5,  # Changed from default
-            "discover_dates": discover_dates,
-            "max_blogrolls": max_blogrolls != 10,  # Changed from default
-            "fetch_engine": fetch_engine,
-        }
-
-        active_url_options = [k for k, v in url_specific_options.items() if v]
-        if active_url_options:
-            console.print(
-                f"[red]Error:[/red] The following options are only valid for URLs: {', '.join('--' + k.replace('_', '-') for k in active_url_options)}"
-            )
-            raise click.Abort()
-
-        # Handle file/directory
-        handle_file_add(
-            source=source,
-            fetch_only=fetch_only,
-            dry_run=dry_run,
-            limit=limit,
-            force=force,
-        )
-    else:
-        # Handle URL
-        handle_url_add(
-            url=source,
-            fetch_only=fetch_only,
-            discover_only=discover_only,
-            dry_run=dry_run,
-            url_contains=url_contains,
-            url_starts_with=url_starts_with,
-            limit=limit,
-            force=force,
-            max_concurrent=max_concurrent,
-            discover_dates=discover_dates,
-            max_blogrolls=max_blogrolls,
-            fetch_engine=fetch_engine,
-        )
-
-
-@content.command("fetch")
-@click.argument("identifier", required=False)
-@click.option(
-    "--url-prefix", help="Batch: Fetch URLs starting with this prefix (alias for --url-starts-with)"
-)
-@click.option("--url-starts-with", help="Batch: Fetch URLs starting with this prefix")
-@click.option("--url-contains", help="Batch: Fetch URLs containing this string")
-@click.option("--all", "fetch_all", is_flag=True, help="Batch: Fetch all documents with status")
-@click.option(
-    "--status",
-    type=click.Choice(["NOT_FETCHED", "ERROR"]),
-    default="NOT_FETCHED",
-    help="Batch: Filter by status (default: NOT_FETCHED)",
-)
-@click.option(
-    "--max-concurrent", type=int, default=5, help="Batch: Max parallel downloads (default: 5)"
-)
-@click.option("--force", is_flag=True, help="Re-fetch even if already fetched")
-@click.option(
-    "--fetch-engine",
-    type=click.Choice(["firecrawl", "trafilatura"], case_sensitive=False),
-    help="Fetch engine to use (overrides config default)",
-)
-def fetch(
-    identifier: str,
-    url_prefix: str,
-    url_starts_with: str,
-    url_contains: str,
-    fetch_all: bool,
-    status: str,
-    max_concurrent: int,
-    force: bool,
-    fetch_engine: str,
-):
-    """
-    Fetch content from URLs.
-
-    Single document mode (provide identifier):
-        kurt content fetch <doc-id>          # By document ID
-        kurt content fetch <url>             # By URL (creates if needed)
-
-    Batch mode (use filters):
-        kurt content fetch --url-starts-with https://example.com/blog/
-        kurt content fetch --url-contains tutorial
-        kurt content fetch --all             # All NOT_FETCHED docs
-        kurt content fetch --status ERROR    # Retry failed fetches
-
-    Examples:
-        # Fetch single document
-        kurt content fetch 44ea066e
-
-        # Fetch all unfetched documents
-        kurt content fetch --all
-
-        # Fetch documents from specific section
-        kurt content fetch --url-starts-with https://example.com/blog/
-
-        # Retry failed fetches
-        kurt content fetch --status ERROR --force
-
-        # Fetch with more parallelism
-        kurt content fetch --all --max-concurrent 10
-
-        # Use specific fetch engine
-        kurt content fetch --all --fetch-engine firecrawl
-    """
-    from sqlmodel import select
-
-    from kurt.db.database import get_session
-    from kurt.db.models import Document, IngestionStatus
-    from kurt.ingestion.fetch import fetch_document, fetch_documents_batch
-
-    # Handle url_prefix as alias for url_starts_with
-    if url_prefix and not url_starts_with:
-        url_starts_with = url_prefix
-
-    # Single document mode
-    if identifier:
-        if url_starts_with or url_contains or fetch_all:
-            console.print(
-                "[red]Error:[/red] Cannot use identifier with batch options (--url-starts-with, --url-contains, --all)"
-            )
-            raise click.Abort()
-
-        try:
-            console.print(f"[cyan]Fetching content for:[/cyan] {identifier}\n")
-            result = fetch_document(identifier, fetch_engine=fetch_engine)
-            console.print(f"[green]✓ Fetched:[/green] {result['title']}")
-            console.print(f"  Document ID: [cyan]{result['document_id']}[/cyan]")
-            console.print(f"  Content: {result['content_length']} characters")
-            if result.get("content_path"):
-                console.print(f"  Path: {result['content_path']}")
-            console.print(f"  Status: [green]{result['status']}[/green]")
-        except ValueError as e:
-            console.print(f"[red]Error:[/red] {e}")
-            raise click.Abort()
-        except Exception as e:
-            console.print(f"[red]Error:[/red] {e}")
-            console.print("\n[yellow]Document marked as ERROR status[/yellow]")
-            raise click.Abort()
-        return
-
-    # Batch mode
-    if not (url_starts_with or url_contains or fetch_all):
-        console.print("[red]Error:[/red] Provide either:")
-        console.print("  - An identifier: [cyan]kurt content fetch <doc-id>[/cyan]")
-        console.print("  - Batch filters: [cyan]kurt content fetch --url-starts-with <url>[/cyan]")
-        console.print("  - Fetch all: [cyan]kurt content fetch --all[/cyan]")
-        raise click.Abort()
-
-    try:
-        # Build query
-        session = get_session()
-
-        # Start with base query
-        stmt = select(Document)
-
-        # Apply status filter unless force=True
-        if not force:
-            stmt = stmt.where(Document.ingestion_status == IngestionStatus[status])
-
-        # Apply URL filters
-        if url_starts_with:
-            stmt = stmt.where(Document.source_url.startswith(url_starts_with))
-        if url_contains:
-            stmt = stmt.where(Document.source_url.contains(url_contains))
-
-        docs = session.exec(stmt).all()
-
-        if not docs:
-            if force:
-                filter_desc = url_starts_with or url_contains or "matching filters"
-                console.print(f"[yellow]No documents found for:[/yellow] {filter_desc}")
-            else:
-                filter_desc = url_starts_with or url_contains or f"all {status}"
-                console.print(f"[yellow]No {status} documents found for:[/yellow] {filter_desc}")
-            return
-
-        doc_ids = [str(doc.id) for doc in docs]
-        console.print(
-            f"[cyan]Fetching {len(doc_ids)} documents with {max_concurrent} parallel downloads...[/cyan]\n"
-        )
-
-        # Fetch in parallel with progress bar
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
-            console=console,
-        ) as progress:
-            task = progress.add_task("Fetching...", total=len(doc_ids))
-
-            results = fetch_documents_batch(
-                doc_ids, max_concurrent=max_concurrent, fetch_engine=fetch_engine
-            )
-
-            progress.update(task, completed=len(doc_ids))
-
-        # Summary
-        successful = [r for r in results if r["success"]]
-        failed = [r for r in results if not r["success"]]
-
-        console.print(f"\n[green]✓ Success:[/green] {len(successful)}/{len(results)} documents")
-        if failed:
-            console.print(f"[red]✗ Failed:[/red] {len(failed)} documents")
-            for r in failed[:5]:  # Show first 5 errors
-                console.print(
-                    f"  [dim]{r.get('document_id', 'unknown')}: {r.get('error', 'Unknown error')}[/dim]"
-                )
-            if len(failed) > 5:
-                console.print(f"  [dim]... and {len(failed) - 5} more[/dim]")
-
-    except Exception as e:
-        console.print(f"[red]Error:[/red] {e}")
-        raise click.Abort()
 
 
 @content.command("index")
 @click.argument("doc-id", required=False)
 @click.option(
-    "--url-starts-with",
+    "--include",
+    "include_pattern",
     type=str,
-    help="Index all documents matching URL prefix (e.g., https://example.com/blog/)",
-)
-@click.option(
-    "--url-prefix",
-    type=str,
-    help="Alias for --url-starts-with",
-    hidden=True,
-)
-@click.option(
-    "--url-contains",
-    type=str,
-    help="Index all documents where URL contains substring (e.g., tutorial)",
+    help="Index documents matching glob pattern (source_url or content_path)",
 )
 @click.option(
     "--all",
@@ -369,9 +50,7 @@ def fetch(
     is_flag=True,
     help="Re-index documents even if already indexed",
 )
-def index(
-    doc_id: str, url_starts_with: str, url_prefix: str, url_contains: str, all: bool, force: bool
-):
+def index(doc_id: str, include_pattern: str, all: bool, force: bool):
     """
     Extract metadata from document(s).
 
@@ -385,61 +64,35 @@ def index(
         # Index single document
         kurt content index 44ea066e
 
-        # Index all documents from URL prefix
-        kurt content index --url-starts-with https://example.com/blog/
-
-        # Index all documents containing "tutorial"
-        kurt content index --url-contains tutorial
+        # Index all documents matching pattern
+        kurt content index --include "*/docs/*"
 
         # Index all un-indexed documents
         kurt content index --all
 
         # Re-index already indexed documents
-        kurt content index --url-starts-with https://example.com --force
+        kurt content index --include "*/docs/*" --force
     """
-    from kurt.db.models import IngestionStatus
-    from kurt.document import get_document, list_documents
+    from kurt.document import list_documents_for_indexing
     from kurt.ingestion.index import batch_extract_document_metadata, extract_document_metadata
 
-    # Handle url_prefix as alias for url_starts_with
-    if url_prefix and not url_starts_with:
-        url_starts_with = url_prefix
-
     try:
-        # Determine which documents to index
-        documents = []
-
-        if doc_id:
-            # Single document mode
-            try:
-                doc = get_document(doc_id)
-                if not doc:
-                    console.print(f"[red]Document not found: {doc_id}[/red]")
-                    raise click.Abort()
-                documents = [doc]
-            except ValueError as e:
-                console.print(f"[red]Error: {e}[/red]")
-                raise click.Abort()
-
-        elif url_starts_with or url_contains or all:
-            # Batch mode - get matching documents
-            docs = list_documents(
-                status=IngestionStatus.FETCHED,
-                url_prefix=url_starts_with,
-                url_contains=url_contains,
-                limit=None,  # No limit for indexing
+        # Get documents to index using service layer function
+        try:
+            documents = list_documents_for_indexing(
+                doc_id=doc_id,
+                include_pattern=include_pattern,
+                all_flag=all,
             )
-
-            if not docs:
-                console.print("[yellow]No documents found matching criteria[/yellow]")
-                return
-
-            documents = docs
-
-        else:
-            console.print("[red]Error: Provide either <doc-id> or filtering options[/red]")
-            console.print("Use --help for examples")
+        except ValueError as e:
+            console.print(f"[red]Error: {e}[/red]")
+            if "Must provide either" in str(e):
+                console.print("Use --help for examples")
             raise click.Abort()
+
+        if not documents:
+            console.print("[yellow]No documents found matching criteria[/yellow]")
+            return
 
         console.print(f"[bold]Indexing {len(documents)} document(s)...[/bold]\n")
 
@@ -537,72 +190,72 @@ def index(
 
 @content.command("list")
 @click.option(
-    "--status",
+    "--with-status",
     type=click.Choice(["NOT_FETCHED", "FETCHED", "ERROR"], case_sensitive=False),
-    help="Filter by ingestion status",
+    help="Filter by ingestion status (NOT_FETCHED | FETCHED | ERROR)",
 )
 @click.option(
-    "--url-starts-with",
+    "--include",
+    "include_pattern",
     type=str,
-    help="Filter by URL prefix (e.g., https://example.com)",
+    help="Filter by URL/path pattern (glob matching source_url or content_path)",
 )
 @click.option(
-    "--url-prefix",
+    "--in-cluster",
     type=str,
-    help="Alias for --url-starts-with",
-    hidden=True,
+    help="Filter by cluster name",
 )
 @click.option(
-    "--url-contains",
+    "--with-content-type",
     type=str,
-    help="Filter by URL substring (e.g., blog)",
+    help="Filter by content type (tutorial | guide | blog | etc)",
 )
-@click.option("--limit", type=int, help="Maximum number of documents to show")
-@click.option("--offset", type=int, default=0, help="Number of documents to skip")
+@click.option(
+    "--max-depth",
+    type=int,
+    help="Filter by maximum URL depth (e.g., example.com/a/b has depth 2)",
+)
+@click.option("--limit", type=int, help="Limit number of results")
+@click.option("--offset", type=int, default=0, help="Number of documents to skip (for pagination)")
 @click.option(
     "--format",
+    "output_format",
     type=click.Choice(["table", "json"], case_sensitive=False),
     default="table",
-    help="Output format",
+    help="Output format for AI agents",
 )
 def list_documents_cmd(
-    status: str,
-    url_starts_with: str,
-    url_prefix: str,
-    url_contains: str,
+    with_status: str,
+    include_pattern: str,
+    in_cluster: str,
+    with_content_type: str,
+    max_depth: int,
     limit: int,
     offset: int,
-    format: str,
+    output_format: str,
 ):
     """
     List all your documents.
 
     Examples:
         kurt content list
-        kurt content list --status FETCHED
-        kurt content list --url-starts-with https://example.com
-        kurt content list --url-contains blog
-        kurt content list --url-starts-with https://example.com --url-contains article
-        kurt content list --limit 10
-        kurt content list --format json
+        kurt content list --with-status FETCHED
+        kurt content list --include "*/docs/*"
+        kurt content list --in-cluster "Tutorials"
+        kurt content list --with-content-type tutorial
+        kurt content list --max-depth 2
+        kurt content list --limit 20 --format json
     """
-    from kurt.db.models import IngestionStatus
-    from kurt.document import list_documents
-
-    # Handle url_prefix as alias for url_starts_with
-    if url_prefix and not url_starts_with:
-        url_starts_with = url_prefix
+    from kurt.document import list_content
 
     try:
-        # Convert status string to enum if provided
-        status_filter = None
-        if status:
-            status_filter = IngestionStatus(status)
-
-        docs = list_documents(
-            status=status_filter,
-            url_prefix=url_starts_with,
-            url_contains=url_contains,
+        # Call ingestion layer function
+        docs = list_content(
+            with_status=with_status,
+            include_pattern=include_pattern,
+            in_cluster=in_cluster,
+            with_content_type=with_content_type,
+            max_depth=max_depth,
             limit=limit,
             offset=offset,
         )
@@ -611,7 +264,8 @@ def list_documents_cmd(
             console.print("[yellow]No documents found[/yellow]")
             return
 
-        if format == "json":
+        # Output formatting (presentation layer - stays in command)
+        if output_format == "json":
             import json
 
             print(json.dumps(docs, indent=2, default=str))
@@ -621,7 +275,30 @@ def list_documents_cmd(
             table.add_column("ID", style="cyan", no_wrap=True)
             table.add_column("Title", style="white")
             table.add_column("Status", style="green")
+            table.add_column("Depth", style="magenta", justify="right")
+            table.add_column("Count", style="yellow", justify="right")
             table.add_column("URL", style="dim")
+
+            # Calculate child counts for each document (from entire database, not just filtered results)
+            from kurt.document import list_content
+            from kurt.utils.url_utils import get_url_depth
+
+            # Get ALL documents to calculate accurate child counts
+            all_docs = list_content()
+
+            # Build a map of URL -> child count
+            child_counts = {}
+            for doc in docs:
+                if doc.source_url:
+                    # Count how many docs in the entire database have URLs that start with this URL
+                    count = sum(
+                        1
+                        for d in all_docs
+                        if d.source_url
+                        and d.source_url != doc.source_url
+                        and d.source_url.startswith(doc.source_url.rstrip("/") + "/")
+                    )
+                    child_counts[doc.source_url] = count
 
             for doc in docs:
                 # Truncate title and URL for display
@@ -636,6 +313,12 @@ def list_documents_cmd(
                     else doc.source_url
                 )
 
+                # Calculate URL depth
+                depth = get_url_depth(doc.source_url)
+
+                # Get child count
+                child_count = child_counts.get(doc.source_url, 0)
+
                 # Color status
                 status_str = doc.ingestion_status.value
                 if status_str == "FETCHED":
@@ -649,6 +332,8 @@ def list_documents_cmd(
                     str(doc.id)[:8] + "...",
                     title,
                     status_display,
+                    str(depth),
+                    str(child_count),
                     url or "N/A",
                 )
 
@@ -656,7 +341,7 @@ def list_documents_cmd(
 
             # Show tip for getting full details
             console.print(
-                "\n[dim]Tip: Use [cyan]kurt content get-metadata <id>[/cyan] for full details[/dim]"
+                "\n[dim]Tip: Use [cyan]kurt content get <id>[/cyan] for full details[/dim]"
             )
 
     except Exception as e:
@@ -664,7 +349,7 @@ def list_documents_cmd(
         raise click.Abort()
 
 
-@content.command("get-metadata")
+@content.command("get")
 @click.argument("document_id")
 @click.option(
     "--format",
@@ -677,8 +362,8 @@ def get_document_cmd(document_id: str, format: str):
     Get document metadata by ID.
 
     Examples:
-        kurt content get-metadata 550e8400-e29b-41d4-a716-446655440000
-        kurt content get-metadata 550e8400 --format json
+        kurt content get 550e8400-e29b-41d4-a716-446655440000
+        kurt content get 550e8400 --format json
     """
     from kurt.document import get_document
 
@@ -733,18 +418,18 @@ def get_document_cmd(document_id: str, format: str):
     help="Also delete content file from filesystem",
 )
 @click.option(
-    "--yes",
+    "--force",
     is_flag=True,
     help="Skip confirmation prompt",
 )
-def delete_document_cmd(document_id: str, delete_content: bool, yes: bool):
+def delete_document_cmd(document_id: str, delete_content: bool, force: bool):
     """
     Delete content from your project.
 
     Examples:
         kurt content delete 550e8400-e29b-41d4-a716-446655440000
         kurt content delete 550e8400 --delete-content
-        kurt content delete 550e8400 --yes
+        kurt content delete 550e8400 --force
     """
     from kurt.document import delete_document, get_document
 
@@ -762,7 +447,7 @@ def delete_document_cmd(document_id: str, delete_content: bool, yes: bool):
             console.print("  [red]Content file will also be deleted[/red]")
 
         # Confirm deletion
-        if not yes:
+        if not force:
             confirm = console.input("\n[bold]Are you sure? (y/N):[/bold] ")
             if confirm.lower() != "y":
                 console.print("[dim]Cancelled[/dim]")
@@ -789,24 +474,45 @@ def delete_document_cmd(document_id: str, delete_content: bool, yes: bool):
 
 
 @content.command("stats")
-def stats_cmd():
+@click.option(
+    "--include",
+    "include_pattern",
+    help="Filter stats by URL/path pattern (glob matching source_url or source_path)",
+)
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["table", "json"], case_sensitive=False),
+    default="table",
+    help="Output format",
+)
+def stats_cmd(include_pattern: str, output_format: str):
     """
     Show document statistics.
 
-    Example:
+    Examples:
         kurt content stats
+        kurt content stats --include "*docs.dagster.io*"
+        kurt content stats --format json
     """
     from kurt.document import get_document_stats
 
     try:
-        stats = get_document_stats()
+        stats = get_document_stats(include_pattern=include_pattern)
 
-        console.print("\n[bold cyan]Document Statistics[/bold cyan]")
-        console.print(f"[dim]{'─' * 40}[/dim]")
-        console.print(f"Total Documents:     [bold]{stats['total']}[/bold]")
-        console.print(f"  Not Fetched:       [yellow]{stats['not_fetched']}[/yellow]")
-        console.print(f"  Fetched:           [green]{stats['fetched']}[/green]")
-        console.print(f"  Error:             [red]{stats['error']}[/red]")
+        if output_format == "json":
+            import json
+
+            console.print(json.dumps(stats, indent=2))
+        else:
+            console.print("\n[bold cyan]Document Statistics[/bold cyan]")
+            console.print(f"[dim]{'─' * 40}[/dim]")
+            if include_pattern:
+                console.print(f"[dim]Filter: {include_pattern}[/dim]\n")
+            console.print(f"Total Documents:     [bold]{stats['total']}[/bold]")
+            console.print(f"  Not Fetched:       [yellow]{stats['not_fetched']}[/yellow]")
+            console.print(f"  Fetched:           [green]{stats['fetched']}[/green]")
+            console.print(f"  Error:             [red]{stats['error']}[/red]")
 
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
@@ -814,107 +520,96 @@ def stats_cmd():
 
 
 # ============================================================================
-# Clustering Commands: cluster
+# Clustering Commands: list-clusters
 # ============================================================================
 
+# NOTE: content cluster command has been REMOVED
+# Clustering is now at root level: `kurt cluster-urls`
+# See: src/kurt/commands/cluster_urls.py
 
-@content.command("cluster")
-@click.option(
-    "--url-starts-with",
-    type=str,
-    help="Compute clusters from documents matching URL prefix (e.g., https://example.com/blog/)",
-)
-@click.option(
-    "--url-prefix",
-    type=str,
-    help="Alias for --url-starts-with",
-    hidden=True,
-)
-@click.option(
-    "--url-contains",
-    type=str,
-    help="Compute clusters from documents where URL contains substring (e.g., tutorial)",
-)
+
+@content.command("list-clusters")
 @click.option(
     "--format",
+    "output_format",
     type=click.Choice(["table", "json"], case_sensitive=False),
     default="table",
-    help="Output format",
+    help="Output format for AI agents",
 )
-def cluster_command(
-    url_starts_with: str,
-    url_prefix: str,
-    url_contains: str,
-    format: str,
-):
+def list_clusters_cmd(output_format: str):
     """
-    Compute topic clusters from document metadata.
-
-    Uses LLM to analyze document URLs, titles, and descriptions to identify
-    5-10 distinct topic clusters. Creates TopicCluster records and links
-    documents to clusters via DocumentClusterEdge.
+    List all topic clusters with document counts.
 
     Examples:
-        # Compute clusters from all blog posts
-        kurt content cluster --url-starts-with https://example.com/blog/
-
-        # Compute clusters from tutorial documents
-        kurt content cluster --url-contains tutorial
-
-        # Output as JSON
-        kurt content cluster --url-starts-with https://example.com --format json
+        kurt content list-clusters
+        kurt content list-clusters --format json
     """
-    from kurt.ingestion.cluster import compute_topic_clusters
-
-    # Handle url_prefix as alias for url_starts_with
-    if url_prefix and not url_starts_with:
-        url_starts_with = url_prefix
+    from kurt.document import list_clusters
 
     try:
-        if not url_starts_with and not url_contains:
-            console.print("[red]Error: Provide either --url-starts-with or --url-contains[/red]")
-            raise click.Abort()
+        clusters = list_clusters()
 
-        console.print("[bold]Computing topic clusters...[/bold]\n")
+        if not clusters:
+            console.print("[yellow]No clusters found[/yellow]")
+            console.print(
+                "[dim]Tip: Run [cyan]kurt cluster-urls[/cyan] to create topic clusters[/dim]"
+            )
+            return
 
-        # Run clustering
-        result = compute_topic_clusters(
-            url_prefix=url_starts_with,
-            url_contains=url_contains,
-        )
-
-        # Display results
-        if format == "json":
+        # Output formatting
+        if output_format == "json":
             import json
 
-            console.print(json.dumps(result, indent=2))
-
+            output = [
+                {
+                    "id": str(cluster["id"]),
+                    "name": cluster["name"],
+                    "description": cluster["description"],
+                    "doc_count": cluster["doc_count"],
+                    "created_at": cluster["created_at"].isoformat(),
+                }
+                for cluster in clusters
+            ]
+            print(json.dumps(output, indent=2))
         else:
             # Table format
-            console.print(f"[green]✓[/green] Analyzed {result['total_pages']} documents")
-            console.print(f"[green]✓[/green] Created {len(result['clusters'])} clusters")
-            console.print(
-                f"[green]✓[/green] Created {result['edges_created']} document-cluster links\n"
-            )
-
-            table = Table(title=f"Topic Clusters ({len(result['clusters'])} total)")
-            table.add_column("Name", style="cyan", no_wrap=False)
+            table = Table(title=f"Topic Clusters ({len(clusters)} total)")
+            table.add_column("Name", style="cyan bold", no_wrap=False)
             table.add_column("Description", style="white", no_wrap=False)
-            table.add_column("Examples", style="dim", no_wrap=False)
+            table.add_column("Docs", style="green", justify="right")
+            table.add_column("Created", style="dim")
 
-            for cluster in result["clusters"]:
-                example_urls_str = "\n".join(cluster["example_urls"][:3])
+            for cluster in clusters:
+                # Truncate description if too long
+                description = (
+                    (cluster["description"][:60] + "...")
+                    if cluster["description"] and len(cluster["description"]) > 60
+                    else (cluster["description"] or "N/A")
+                )
+
+                # Format created_at
+                created = cluster["created_at"].strftime("%Y-%m-%d")
+
                 table.add_row(
                     cluster["name"],
-                    cluster["description"],
-                    example_urls_str,
+                    description,
+                    str(cluster["doc_count"]),
+                    created,
                 )
 
             console.print(table)
 
+            # Show tips
+            console.print(
+                '\n[dim]💡 Tip: Use [cyan]kurt content list --in-cluster "ClusterName"[/cyan] to see documents in a cluster[/dim]'
+            )
+            console.print(
+                '[dim]💡 Tip: Use [cyan]kurt fetch --in-cluster "ClusterName"[/cyan] to fetch documents from a cluster[/dim]'
+            )
+
     except Exception as e:
-        console.print(f"[bold red]Error:[/bold red] {e}")
-        logger.exception("Failed to compute clusters")
+        console.print(f"[red]Error:[/red] {e}")
+        logger.exception("Failed to list clusters")
         raise click.Abort()
 
 
@@ -924,18 +619,71 @@ def cluster_command(
 
 
 @content.command("sync-metadata")
-def sync_metadata():
+@click.option(
+    "--include",
+    "include_patterns",
+    multiple=True,
+    help="Sync specific URL/path pattern (glob matching source_url or source_path, repeatable)",
+)
+@click.option(
+    "--all",
+    is_flag=True,
+    help="Sync all documents (overrides --include)",
+)
+def sync_metadata(include_patterns: tuple, all: bool):
     """Process metadata sync queue and update file frontmatter.
 
     This command processes any pending metadata changes that were made via
     direct SQL updates or external tools, and writes the updated metadata
     as YAML frontmatter to the corresponding markdown files.
+
+    Examples:
+        # Sync specific pattern
+        kurt content sync-metadata --include "*docs.dagster.io*"
+
+        # Sync all documents
+        kurt content sync-metadata --all
     """
     from kurt.db.metadata_sync import process_metadata_sync_queue
+    from kurt.document import list_content
 
     try:
-        console.print("[cyan]Processing metadata sync queue...[/cyan]")
-        result = process_metadata_sync_queue()
+        # Determine which documents to sync
+        if all:
+            console.print("[cyan]Syncing metadata for all documents...[/cyan]")
+            docs = list_content(limit=None)
+        elif include_patterns:
+            console.print(
+                f"[cyan]Syncing metadata for documents matching: {', '.join(include_patterns)}[/cyan]"
+            )
+            # Combine results from all patterns
+            docs = []
+            for pattern in include_patterns:
+                pattern_docs = list_content(include_pattern=pattern, limit=None)
+                docs.extend(pattern_docs)
+            # Remove duplicates
+            seen = set()
+            unique_docs = []
+            for doc in docs:
+                if doc.id not in seen:
+                    seen.add(doc.id)
+                    unique_docs.append(doc)
+            docs = unique_docs
+        else:
+            console.print("[yellow]Error: Please specify --include <pattern> or --all[/yellow]")
+            console.print("\nExamples:")
+            console.print('  kurt content sync-metadata --include "*docs.dagster.io*"')
+            console.print("  kurt content sync-metadata --all")
+            return
+
+        if not docs:
+            console.print("[yellow]No documents found matching criteria[/yellow]")
+            return
+
+        console.print(f"[dim]Found {len(docs)} documents to sync...[/dim]\n")
+
+        # Process sync for these documents
+        result = process_metadata_sync_queue(document_ids=[str(doc.id) for doc in docs])
 
         if result["processed"] == 0:
             console.print("[dim]No pending metadata updates.[/dim]")
