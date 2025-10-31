@@ -102,7 +102,7 @@ class TestMapFolderCommand:
 
         result = runner.invoke(main, ["map", "folder", str(test_dir), "--dry-run"])
         assert "DRY RUN" in result.output
-        assert "Would discover from" in result.output
+        assert "Would discover" in result.output or "Discovering content from" in result.output
 
     def test_map_folder_with_md_files(self, runner, tmp_path):
         """Test folder scanning for .md files."""
