@@ -1,0 +1,19 @@
+{
+  "name": "kurt",
+  "description": "Kurt content management system with project workflows, CMS integration, content writing, and research capabilities",
+  "version": "1.0.0",
+  "author": {
+    "name": "Kurt Team"
+  },
+  "homepage": "https://github.com/boringdata/kurt-core",
+  "repository": "https://github.com/boringdata/kurt-core",
+  "license": "MIT",
+  "keywords": [
+    "content",
+    "cms",
+    "project-management",
+    "research",
+    "writing",
+    "kurt"
+  ]
+}

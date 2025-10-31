@@ -13,8 +13,11 @@ Key Functions:
 - extract_chronological_content: LLM-powered extraction of posts from HTML pages
 """
 
+import logging
 import re
 from datetime import datetime
+from fnmatch import fnmatch
+from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
 import dspy
@@ -22,10 +25,11 @@ import httpx
 import trafilatura
 from dspy import ChainOfThought, Signature
 from pydantic import BaseModel, Field
-from trafilatura.sitemaps import sitemap_search
 
 from kurt.db.database import get_session
 from kurt.db.models import Document, IngestionStatus, SourceType
+
+logger = logging.getLogger(__name__)
 
 
 def normalize_url(url: str) -> str:
@@ -60,6 +64,203 @@ def normalize_url(url: str) -> str:
 # ============================================================================
 
 
+def _discover_sitemap_urls(base_url: str) -> list[str]:
+    """
+    Discover sitemap URLs using httpx (reliable fetching).
+
+    Workflow:
+    1. Check robots.txt for sitemap location
+    2. Try common sitemap URLs (/sitemap.xml, /sitemap_index.xml)
+    3. Parse sitemap XML to extract URLs
+
+    Args:
+        base_url: Base URL to search for sitemaps
+
+    Returns:
+        List of URLs found in sitemap(s)
+
+    Raises:
+        ValueError: If no sitemap found or accessible
+    """
+    import xml.etree.ElementTree as ET
+    from urllib.parse import urlparse
+
+    parsed = urlparse(base_url)
+    base = f"{parsed.scheme}://{parsed.netloc}"
+
+    sitemap_urls = []
+
+    # Step 1: Check robots.txt
+    try:
+        response = httpx.get(f"{base}/robots.txt", timeout=10.0, follow_redirects=True)
+        if response.status_code == 200:
+            for line in response.text.split("\n"):
+                if line.lower().startswith("sitemap:"):
+                    sitemap_url = line.split(":", 1)[1].strip()
+                    sitemap_urls.append(sitemap_url)
+    except Exception:
+        pass  # robots.txt not found or not accessible
+
+    # Step 2: Try common sitemap locations
+    common_paths = ["/sitemap.xml", "/sitemap_index.xml", "/sitemap-index.xml"]
+    for path in common_paths:
+        if f"{base}{path}" not in sitemap_urls:
+            sitemap_urls.append(f"{base}{path}")
+
+    # Step 3: Fetch and parse sitemaps
+    all_urls = []
+
+    for sitemap_url in sitemap_urls:
+        try:
+            response = httpx.get(sitemap_url, timeout=30.0, follow_redirects=True)
+            if response.status_code != 200:
+                continue
+
+            # Parse XML
+            root = ET.fromstring(response.content)
+
+            # Check if it's a sitemap index (contains <sitemap> tags)
+            sitemaps = root.findall(".//{http://www.sitemaps.org/schemas/sitemap/0.9}sitemap")
+            if sitemaps:
+                # It's a sitemap index - recursively fetch child sitemaps
+                for sitemap in sitemaps:
+                    loc = sitemap.find("{http://www.sitemaps.org/schemas/sitemap/0.9}loc")
+                    if loc is not None and loc.text:
+                        child_sitemap_url = loc.text.strip()
+                        try:
+                            child_response = httpx.get(
+                                child_sitemap_url, timeout=30.0, follow_redirects=True
+                            )
+                            if child_response.status_code == 200:
+                                child_root = ET.fromstring(child_response.content)
+                                urls = child_root.findall(
+                                    ".//{http://www.sitemaps.org/schemas/sitemap/0.9}url"
+                                )
+                                for url_elem in urls:
+                                    loc_elem = url_elem.find(
+                                        "{http://www.sitemaps.org/schemas/sitemap/0.9}loc"
+                                    )
+                                    if loc_elem is not None and loc_elem.text:
+                                        all_urls.append(loc_elem.text.strip())
+                        except Exception:
+                            continue
+            else:
+                # It's a regular sitemap - extract URLs
+                urls = root.findall(".//{http://www.sitemaps.org/schemas/sitemap/0.9}url")
+                for url_elem in urls:
+                    loc = url_elem.find("{http://www.sitemaps.org/schemas/sitemap/0.9}loc")
+                    if loc is not None and loc.text:
+                        all_urls.append(loc.text.strip())
+
+            # If we found URLs, we're done
+            if all_urls:
+                return all_urls
+
+        except Exception:
+            continue  # Try next sitemap URL
+
+    # No sitemap found
+    if not all_urls:
+        raise ValueError(f"No sitemap found for {base_url}")
+
+    return all_urls
+
+
+def crawl_website(
+    homepage: str,
+    max_depth: int = 2,
+    max_pages: int = 100,
+    allow_external: bool = False,
+    include_patterns: tuple = (),
+    exclude_patterns: tuple = (),
+) -> list[str]:
+    """
+    Crawl a website using trafilatura's focused_crawler.
+
+    This is used as a fallback when no sitemap is found or when explicit
+    crawling is requested with --max-depth.
+
+    Args:
+        homepage: Starting URL for crawl
+        max_depth: Maximum crawl depth (approximate - trafilatura uses max_seen_urls)
+        max_pages: Maximum number of pages to discover
+        allow_external: If True, follow external links (outside domain)
+        include_patterns: Include URL patterns (glob)
+        exclude_patterns: Exclude URL patterns (glob)
+
+    Returns:
+        List of discovered URLs (strings)
+
+    Note:
+        - Trafilatura's focused_crawler doesn't have explicit depth control,
+          so we use max_seen_urls as a proxy for depth
+        - The crawler automatically respects robots.txt
+        - Navigation pages (archives, categories) are prioritized
+    """
+    from fnmatch import fnmatch
+    from urllib.parse import urlparse
+
+    from trafilatura.spider import focused_crawler
+
+    # Convert max_depth to max_seen_urls
+    # Depth 1 = ~10 URLs, Depth 2 = ~50 URLs, Depth 3+ = ~100+ URLs
+    depth_to_urls = {
+        1: 10,
+        2: 50,
+        3: 100,
+    }
+    max_seen_urls = depth_to_urls.get(max_depth, max_depth * 50) if max_depth else 100
+    max_seen_urls = min(max_seen_urls, max_pages)  # Respect max_pages limit
+
+    logger.info(f"Crawling {homepage} with max_seen_urls={max_seen_urls} (depth={max_depth})")
+
+    # Run focused crawler
+    to_visit, known_links = focused_crawler(
+        homepage=homepage,
+        max_seen_urls=max_seen_urls,
+        max_known_urls=max_pages,
+    )
+
+    # Convert to list
+    all_urls = list(known_links)
+
+    # Filter external links if not allowed
+    if not allow_external:
+        homepage_domain = urlparse(homepage).netloc
+        filtered_urls = []
+        for url in all_urls:
+            url_domain = urlparse(url).netloc
+            if url_domain == homepage_domain:
+                filtered_urls.append(url)
+        all_urls = filtered_urls
+        logger.info(f"Filtered to {len(all_urls)} internal URLs (allow_external=False)")
+
+    # Apply include/exclude patterns
+    if include_patterns:
+        filtered = []
+        for url in all_urls:
+            if any(fnmatch(url, pattern) for pattern in include_patterns):
+                filtered.append(url)
+        all_urls = filtered
+        logger.info(f"Applied include patterns: {len(all_urls)} URLs match")
+
+    if exclude_patterns:
+        filtered = []
+        for url in all_urls:
+            if not any(fnmatch(url, pattern) for pattern in exclude_patterns):
+                filtered.append(url)
+        all_urls = filtered
+        logger.info(f"Applied exclude patterns: {len(all_urls)} URLs remain")
+
+    # Apply final limit
+    if len(all_urls) > max_pages:
+        all_urls = all_urls[:max_pages]
+        logger.info(f"Limited to {max_pages} URLs")
+
+    logger.info(f"Crawling discovered {len(all_urls)} URLs")
+    return all_urls
+
+
 def map_sitemap(
     url: str,
     fetch_all: bool = False,
@@ -67,6 +268,8 @@ def map_sitemap(
     discover_blogrolls: bool = False,
     max_blogrolls: int = 10,
     llm_model: str = "openai/gpt-4o-mini",
+    include_patterns: tuple = (),
+    exclude_patterns: tuple = (),
 ) -> list[dict]:
     """
     Discover sitemap and create documents in database with NOT_FETCHED status.
@@ -110,10 +313,25 @@ def map_sitemap(
     # Import fetch functions here to avoid circular imports
     from kurt.ingestion.fetch import fetch_document
 
-    urls = sitemap_search(url)
+    # Use custom sitemap discovery (more reliable than trafilatura)
+    urls = _discover_sitemap_urls(url)
 
-    if not urls:
-        raise ValueError(f"No sitemap found for {url}")
+    # Apply filters
+    from fnmatch import fnmatch
+
+    if include_patterns:
+        filtered = []
+        for discovered_url in urls:
+            if any(fnmatch(discovered_url, pattern) for pattern in include_patterns):
+                filtered.append(discovered_url)
+        urls = filtered
+
+    if exclude_patterns:
+        filtered = []
+        for discovered_url in urls:
+            if not any(fnmatch(discovered_url, pattern) for pattern in exclude_patterns):
+                filtered.append(discovered_url)
+        urls = filtered
 
     # Apply limit to URL processing
     if limit:
@@ -873,3 +1091,399 @@ def map_blogrolls(
     print(f"  Existing: {sum(1 for d in all_documents if not d['created'])}")
 
     return all_documents
+
+
+def map_url_content(
+    url: str,
+    sitemap_path: str = None,
+    include_blogrolls: bool = False,
+    max_depth: int = None,
+    max_pages: int = 1000,
+    include_patterns: tuple = (),
+    exclude_patterns: tuple = (),
+    allow_external: bool = False,
+    dry_run: bool = False,
+    cluster_urls: bool = False,
+) -> dict:
+    """
+    High-level URL mapping function - discover content from web sources.
+
+    Handles:
+    - Sitemap detection and parsing
+    - Blogroll date extraction (optional)
+    - Crawling fallback if no sitemap
+    - Pattern filtering
+    - Document creation (NOT_FETCHED status)
+    - Optional clustering (if cluster_urls=True)
+
+    Args:
+        url: Base URL to map
+        sitemap_path: Override sitemap location
+        include_blogrolls: Enable LLM blogroll date extraction
+        max_depth: Crawl depth if no sitemap found
+        max_pages: Max pages to discover (default: 1000)
+        include_patterns: Include URL patterns (glob)
+        exclude_patterns: Exclude URL patterns (glob)
+        allow_external: Follow external links
+        dry_run: If True, discover URLs but don't save to database
+        cluster_urls: If True, automatically cluster documents after mapping
+
+    Returns:
+        dict with:
+            - discovered: List of discovered document dicts or URLs (if dry_run)
+            - total: Total count
+            - new: Count of new documents created (0 if dry_run)
+            - existing: Count of existing documents (0 if dry_run)
+            - method: Discovery method used (sitemap|blogrolls|crawl)
+            - dry_run: Boolean indicating if this was a dry run
+    """
+    from kurt.utils.url_utils import is_single_page_url
+
+    # DRY RUN MODE: Discover URLs without saving to database
+    if dry_run:
+        from kurt.ingestion.map import _discover_sitemap_urls
+
+        discovery_method = "sitemap"
+
+        # Discover URLs from sitemap or crawling
+        try:
+            # Note: sitemap_path parameter is not used by _discover_sitemap_urls yet
+            discovered_urls = _discover_sitemap_urls(url)
+        except Exception as e:
+            # Sitemap failed - try crawling if max_depth is specified
+            if max_depth is not None:
+                logger.info(
+                    f"Sitemap discovery failed in dry-run: {e}. Trying crawl with max_depth={max_depth}"
+                )
+                discovered_urls = crawl_website(
+                    homepage=url,
+                    max_depth=max_depth,
+                    max_pages=max_pages,
+                    allow_external=allow_external,
+                    include_patterns=include_patterns,
+                    exclude_patterns=exclude_patterns,
+                )
+                discovery_method = "crawl"
+            else:
+                # Fallback to single URL if discovery fails and no max_depth
+                discovered_urls = [url]
+
+        # Apply filters (if not already applied by crawl_website)
+        if discovery_method == "sitemap":
+            filtered_urls = []
+            for discovered_url in discovered_urls:
+                # Apply include patterns
+                if include_patterns:
+                    if not any(fnmatch(discovered_url, pattern) for pattern in include_patterns):
+                        continue
+
+                # Apply exclude patterns
+                if exclude_patterns:
+                    if any(fnmatch(discovered_url, pattern) for pattern in exclude_patterns):
+                        continue
+
+                filtered_urls.append(discovered_url)
+
+            # Apply limit
+            if max_pages:
+                filtered_urls = filtered_urls[:max_pages]
+        else:
+            # Crawling already applied filters
+            filtered_urls = discovered_urls
+
+        return {
+            "discovered": filtered_urls,  # Just URLs, not document objects
+            "total": len(filtered_urls),
+            "new": 0,  # Not saved
+            "existing": 0,  # Not checked
+            "method": discovery_method,
+            "dry_run": True,
+        }
+
+    # NORMAL MODE: Single page detection
+    if is_single_page_url(url):
+        # Single page - just create document
+        from kurt.ingestion.fetch import add_document
+
+        doc_id = add_document(url)
+        result = {
+            "discovered": [{"url": url, "doc_id": str(doc_id), "created": True}],
+            "total": 1,
+            "new": 1,
+            "existing": 0,
+            "method": "single_page",
+            "dry_run": False,
+        }
+
+        # Auto-cluster if requested (though clustering 1 page doesn't make sense)
+        if cluster_urls:
+            from kurt.ingestion.cluster import compute_topic_clusters
+
+            cluster_result = compute_topic_clusters()
+            result["clusters"] = cluster_result["clusters"]
+            result["cluster_count"] = len(cluster_result["clusters"])
+
+        return result
+
+    # NORMAL MODE: Multi-page discovery with filters
+    # Try sitemap first, fall back to crawling if requested and sitemap fails
+    docs = []
+    discovery_method = "sitemap"
+
+    try:
+        docs = map_sitemap(
+            url,
+            fetch_all=False,
+            discover_blogrolls=include_blogrolls,
+            max_blogrolls=50 if include_blogrolls else 10,
+            include_patterns=include_patterns,
+            exclude_patterns=exclude_patterns,
+            limit=max_pages,
+        )
+    except (ValueError, Exception) as e:
+        # Sitemap failed - fall back to crawling if max_depth is specified
+        if max_depth is not None:
+            logger.info(
+                f"Sitemap discovery failed: {e}. Falling back to crawling with max_depth={max_depth}"
+            )
+
+            # Use crawler to discover URLs
+            crawled_urls = crawl_website(
+                homepage=url,
+                max_depth=max_depth,
+                max_pages=max_pages,
+                allow_external=allow_external,
+                include_patterns=include_patterns,
+                exclude_patterns=exclude_patterns,
+            )
+
+            # Create documents for crawled URLs
+            from kurt.ingestion.fetch import add_document
+
+            for crawled_url in crawled_urls:
+                try:
+                    doc_id = add_document(crawled_url)
+                    docs.append(
+                        {
+                            "url": crawled_url,
+                            "doc_id": str(doc_id),
+                            "created": True,
+                        }
+                    )
+                except Exception as doc_err:
+                    logger.warning(f"Failed to create document for {crawled_url}: {doc_err}")
+
+            discovery_method = "crawl"
+        else:
+            # No max_depth specified and sitemap failed - re-raise the error
+            raise
+
+    new_count = sum(1 for d in docs if d.get("created", False))
+    existing_count = len(docs) - new_count
+
+    result = {
+        "discovered": docs,
+        "total": len(docs),
+        "new": new_count,
+        "existing": existing_count,
+        "method": discovery_method,
+        "dry_run": False,
+    }
+
+    # Auto-cluster if requested
+    if cluster_urls and len(docs) > 0:
+        from kurt.ingestion.cluster import compute_topic_clusters
+
+        cluster_result = compute_topic_clusters()
+        result["clusters"] = cluster_result["clusters"]
+        result["cluster_count"] = len(cluster_result["clusters"])
+
+    return result
+
+
+def _add_single_file_to_db(file_path: Path) -> dict:
+    """
+    Internal function: Add a single markdown file to the database.
+
+    Args:
+        file_path: Path to .md file
+
+    Returns:
+        Dict with keys: doc_id, created, skipped, reason (if skipped)
+    """
+    import shutil
+    from uuid import uuid4
+
+    from sqlmodel import select
+
+    from kurt.config import load_config
+    from kurt.utils.file_utils import compute_file_hash
+    from kurt.utils.source_detection import validate_file_extension
+
+    # Validate file
+    is_valid, error_msg = validate_file_extension(file_path)
+    if not is_valid:
+        raise ValueError(error_msg)
+
+    # Compute content hash
+    content_hash = compute_file_hash(file_path)
+
+    # Check if document already exists (by content hash)
+    session = get_session()
+    stmt = select(Document).where(Document.content_hash == content_hash)
+    existing_doc = session.exec(stmt).first()
+
+    if existing_doc:
+        return {
+            "doc_id": str(existing_doc.id),
+            "created": False,
+            "skipped": True,
+            "reason": "Content already exists",
+        }
+
+    # Copy file to sources directory
+    config = load_config()
+    sources_dir = config.get_absolute_sources_path()
+    target_path = sources_dir / file_path.name
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(file_path, target_path)
+    relative_content_path = str(target_path.relative_to(sources_dir))
+
+    # Read file content for title extraction
+    with open(file_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    # Extract title from first heading or filename
+    title = None
+    for line in content.split("\n"):
+        if line.startswith("# "):
+            title = line[2:].strip()
+            break
+    if not title:
+        title = file_path.stem.replace("-", " ").replace("_", " ").title()
+
+    # Create document record
+    doc = Document(
+        id=uuid4(),
+        title=title,
+        source_type=SourceType.FILE_UPLOAD,
+        source_url=f"file://{file_path.absolute()}",
+        content_path=relative_content_path,
+        ingestion_status=IngestionStatus.FETCHED,
+        content_hash=content_hash,
+    )
+
+    session.add(doc)
+    session.commit()
+    session.refresh(doc)
+
+    return {
+        "doc_id": str(doc.id),
+        "created": True,
+        "skipped": False,
+    }
+
+
+def map_folder_content(
+    folder_path: str,
+    include_patterns: tuple = (),
+    exclude_patterns: tuple = (),
+    dry_run: bool = False,
+    cluster_urls: bool = False,
+) -> dict:
+    """
+    High-level folder mapping function - discover content from local files.
+
+    Args:
+        folder_path: Path to folder to scan
+        include_patterns: Include file patterns (glob)
+        exclude_patterns: Exclude file patterns (glob)
+        dry_run: If True, discover files but don't save to database
+        cluster_urls: If True, automatically cluster documents after mapping
+
+    Returns:
+        dict with:
+            - discovered: List of file paths (strings if dry_run, dicts otherwise)
+            - total: Total count
+            - new: Count of new files (0 if dry_run)
+            - existing: Count of existing files (0 if dry_run)
+            - dry_run: Boolean indicating if this was a dry run
+            - clusters: List of clusters (if cluster_urls=True)
+            - cluster_count: Number of clusters (if cluster_urls=True)
+    """
+    from fnmatch import fnmatch
+
+    from kurt.utils.source_detection import discover_markdown_files
+
+    folder = Path(folder_path)
+    md_files = discover_markdown_files(folder, recursive=True)
+
+    # Apply filters
+    if include_patterns:
+        filtered = []
+        for file_path in md_files:
+            rel_path = str(file_path.relative_to(folder))
+            if any(fnmatch(rel_path, pattern) for pattern in include_patterns):
+                filtered.append(file_path)
+        md_files = filtered
+
+    if exclude_patterns:
+        filtered = []
+        for file_path in md_files:
+            rel_path = str(file_path.relative_to(folder))
+            if not any(fnmatch(rel_path, pattern) for pattern in exclude_patterns):
+                filtered.append(file_path)
+        md_files = filtered
+
+    # Handle dry-run mode
+    if dry_run:
+        # Return file paths as strings without saving to database
+        return {
+            "discovered": [str(file_path) for file_path in md_files],
+            "total": len(md_files),
+            "new": 0,
+            "existing": 0,
+            "dry_run": True,
+        }
+
+    # Add files to database (normal mode)
+    results = []
+    for file_path in md_files:
+        try:
+            result = _add_single_file_to_db(file_path)
+            results.append(
+                {
+                    "path": str(file_path),
+                    "doc_id": result["doc_id"],
+                    "created": result["created"],
+                }
+            )
+        except Exception as e:
+            results.append(
+                {
+                    "path": str(file_path),
+                    "error": str(e),
+                    "created": False,
+                }
+            )
+
+    new_count = sum(1 for r in results if r.get("created", False))
+    existing_count = len(results) - new_count
+
+    result_dict = {
+        "discovered": results,
+        "total": len(results),
+        "new": new_count,
+        "existing": existing_count,
+        "dry_run": False,
+    }
+
+    # Auto-cluster if requested
+    if cluster_urls and len(results) > 0:
+        from kurt.ingestion.cluster import compute_topic_clusters
+
+        cluster_result = compute_topic_clusters()
+        result_dict["clusters"] = cluster_result["clusters"]
+        result_dict["cluster_count"] = len(cluster_result["clusters"])
+
+    return result_dict
