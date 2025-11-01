@@ -565,6 +565,31 @@ def index(
     default="table",
     help="Output format",
 )
+@click.option(
+    "--with-analytics",
+    is_flag=True,
+    help="Include analytics data in results (shows traffic metrics)",
+)
+@click.option(
+    "--pageviews-30d-min",
+    type=int,
+    help="Filter by minimum pageviews (last 30 days)",
+)
+@click.option(
+    "--pageviews-30d-max",
+    type=int,
+    help="Filter by maximum pageviews (last 30 days)",
+)
+@click.option(
+    "--pageviews-trend",
+    type=click.Choice(["increasing", "stable", "decreasing"], case_sensitive=False),
+    help="Filter by traffic trend",
+)
+@click.option(
+    "--order-by",
+    type=click.Choice(["created_at", "pageviews_30d", "pageviews_60d", "trend_percentage"], case_sensitive=False),
+    help="Sort results by field (default: created_at)",
+)
 def list_documents_cmd(
     status: str,
     url_starts_with: str,
@@ -573,6 +598,11 @@ def list_documents_cmd(
     limit: int,
     offset: int,
     format: str,
+    with_analytics: bool,
+    pageviews_30d_min: int,
+    pageviews_30d_max: int,
+    pageviews_trend: str,
+    order_by: str,
 ):
     """
     List all your documents.
@@ -605,6 +635,11 @@ def list_documents_cmd(
             url_contains=url_contains,
             limit=limit,
             offset=offset,
+            with_analytics=with_analytics,
+            pageviews_30d_min=pageviews_30d_min,
+            pageviews_30d_max=pageviews_30d_max,
+            pageviews_trend=pageviews_trend,
+            order_by=order_by,
         )
 
         if not docs:
@@ -613,15 +648,63 @@ def list_documents_cmd(
 
         if format == "json":
             import json
+            from kurt.db.database import get_session
+            from kurt.db.models import DocumentAnalytics
 
-            print(json.dumps(docs, indent=2, default=str))
+            # Enrich with analytics data if requested
+            result = []
+            for doc in docs:
+                doc_dict = {
+                    "id": str(doc.id),
+                    "title": doc.title,
+                    "source_url": doc.source_url,
+                    "ingestion_status": doc.ingestion_status.value,
+                    "created_at": doc.created_at.isoformat() if doc.created_at else None,
+                }
+                if with_analytics:
+                    # Get analytics data
+                    session = get_session()
+                    analytics = session.query(DocumentAnalytics).filter(
+                        DocumentAnalytics.document_id == doc.id
+                    ).first()
+                    if analytics:
+                        doc_dict["analytics"] = {
+                            "pageviews_30d": analytics.pageviews_30d,
+                            "pageviews_60d": analytics.pageviews_60d,
+                            "pageviews_trend": analytics.pageviews_trend,
+                            "trend_percentage": analytics.trend_percentage,
+                            "unique_visitors_30d": analytics.unique_visitors_30d,
+                            "bounce_rate": analytics.bounce_rate,
+                        }
+                    else:
+                        doc_dict["analytics"] = None
+                result.append(doc_dict)
+            print(json.dumps(result, indent=2))
         else:
             # Create table
             table = Table(title=f"Documents ({len(docs)} shown)")
             table.add_column("ID", style="cyan", no_wrap=True)
             table.add_column("Title", style="white")
             table.add_column("Status", style="green")
+
+            # Add analytics columns if requested
+            if with_analytics:
+                table.add_column("Views (30d)", style="yellow", justify="right")
+                table.add_column("Trend", style="magenta")
+
             table.add_column("URL", style="dim")
+
+            # Fetch analytics data for all docs if needed
+            doc_analytics = {}
+            if with_analytics:
+                from kurt.db.database import get_session
+                from kurt.db.models import DocumentAnalytics
+                session = get_session()
+                doc_ids = [doc.id for doc in docs]
+                analytics_list = session.query(DocumentAnalytics).filter(
+                    DocumentAnalytics.document_id.in_(doc_ids)
+                ).all()
+                doc_analytics = {a.document_id: a for a in analytics_list}
 
             for doc in docs:
                 # Truncate title and URL for display
@@ -645,12 +728,36 @@ def list_documents_cmd(
                 else:
                     status_display = f"[yellow]{status_str}[/yellow]"
 
-                table.add_row(
+                # Build row
+                row = [
                     str(doc.id)[:8] + "...",
                     title,
                     status_display,
-                    url or "N/A",
-                )
+                ]
+
+                # Add analytics columns if requested
+                if with_analytics:
+                    analytics = doc_analytics.get(doc.id)
+                    if analytics:
+                        pageviews = f"{analytics.pageviews_30d:,}"
+                        trend_symbol = {
+                            "increasing": "↑",
+                            "stable": "→",
+                            "decreasing": "↓",
+                        }.get(analytics.pageviews_trend, "?")
+                        trend_color = {
+                            "increasing": "green",
+                            "stable": "yellow",
+                            "decreasing": "red",
+                        }.get(analytics.pageviews_trend, "white")
+                        trend_pct = f"{analytics.trend_percentage:+.0f}%" if analytics.trend_percentage else ""
+                        trend_display = f"[{trend_color}]{trend_symbol} {trend_pct}[/{trend_color}]"
+                        row.extend([pageviews, trend_display])
+                    else:
+                        row.extend(["-", "-"])
+
+                row.append(url or "N/A")
+                table.add_row(*row)
 
             console.print(table)
 
@@ -789,24 +896,62 @@ def delete_document_cmd(document_id: str, delete_content: bool, yes: bool):
 
 
 @content.command("stats")
-def stats_cmd():
+@click.option(
+    "--url-starts-with",
+    type=str,
+    help="Filter by URL prefix (e.g., https://docs.company.com)",
+)
+@click.option(
+    "--show-analytics",
+    is_flag=True,
+    help="Show analytics statistics (traffic distribution, percentiles)",
+)
+def stats_cmd(url_starts_with: str, show_analytics: bool):
     """
     Show document statistics.
 
-    Example:
+    Examples:
         kurt content stats
+        kurt content stats --url-starts-with https://docs.company.com
+        kurt content stats --show-analytics --url-starts-with https://docs.company.com
     """
-    from kurt.document import get_document_stats
+    from kurt.document import get_analytics_stats, get_document_stats
 
     try:
         stats = get_document_stats()
+        domain_label = url_starts_with if url_starts_with else "All Domains"
 
-        console.print("\n[bold cyan]Document Statistics[/bold cyan]")
+        console.print(f"\n[bold cyan]Document Statistics ({domain_label})[/bold cyan]")
         console.print(f"[dim]{'─' * 40}[/dim]")
         console.print(f"Total Documents:     [bold]{stats['total']}[/bold]")
         console.print(f"  Not Fetched:       [yellow]{stats['not_fetched']}[/yellow]")
         console.print(f"  Fetched:           [green]{stats['fetched']}[/green]")
         console.print(f"  Error:             [red]{stats['error']}[/red]")
+
+        # Show analytics statistics if requested
+        if show_analytics:
+            analytics_stats = get_analytics_stats(url_prefix=url_starts_with)
+
+            if analytics_stats['total_with_analytics'] > 0:
+                console.print(f"\n[bold cyan]Analytics Statistics[/bold cyan]")
+                console.print(f"[dim]{'─' * 40}[/dim]")
+                console.print(f"Documents with Analytics: [bold]{analytics_stats['total_with_analytics']}[/bold]")
+                console.print(f"\n[bold]Traffic Distribution (30d pageviews):[/bold]")
+                console.print(f"  Average:        {analytics_stats['avg_pageviews_30d']:,.1f} views/month")
+                console.print(f"  Median (p50):   {analytics_stats['median_pageviews_30d']:,} views/month")
+                console.print(f"  75th %ile:      {analytics_stats['p75_pageviews_30d']:,} views/month  [dim](HIGH traffic threshold)[/dim]")
+                console.print(f"  25th %ile:      {analytics_stats['p25_pageviews_30d']:,} views/month  [dim](LOW traffic threshold)[/dim]")
+
+                console.print(f"\n[bold]Traffic Categories:[/bold]")
+                cats = analytics_stats['traffic_categories']
+                total = analytics_stats['total_with_analytics']
+                console.print(f"  [red]ZERO traffic:[/red]    {cats['zero']:3d} pages ({cats['zero']/total*100:.0f}%)")
+                console.print(f"  [yellow]LOW traffic:[/yellow]     {cats['low']:3d} pages ({cats['low']/total*100:.0f}%)  [dim](≤ p25)[/dim]")
+                console.print(f"  [cyan]MEDIUM traffic:[/cyan]  {cats['medium']:3d} pages ({cats['medium']/total*100:.0f}%)  [dim](p25-p75)[/dim]")
+                console.print(f"  [green]HIGH traffic:[/green]    {cats['high']:3d} pages ({cats['high']/total*100:.0f}%)  [dim](> p75)[/dim]")
+            else:
+                console.print(f"\n[yellow]No analytics data available for this domain[/yellow]")
+                console.print(f"[dim]Run [cyan]kurt analytics onboard <domain>[/cyan] to enable analytics[/dim]")
 
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")

@@ -6,6 +6,7 @@ import click
 from rich.console import Console
 
 from kurt import __version__
+from kurt.commands.analytics import analytics
 from kurt.commands.cms import cms
 from kurt.commands.content import content
 from kurt.commands.migrate import migrate
@@ -169,6 +170,7 @@ OPENAI_API_KEY=your_openai_api_key_here
 
 
 # Register command groups
+main.add_command(analytics)
 main.add_command(cms)
 main.add_command(content)
 main.add_command(migrate)
