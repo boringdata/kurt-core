@@ -276,3 +276,167 @@ def map_folder(
 
         console.print(f"[dim]{traceback.format_exc()}[/dim]")
         raise click.Abort()
+
+
+@map_cmd.command("cms")
+@click.option(
+    "--platform",
+    type=click.Choice(["sanity", "contentful", "wordpress"]),
+    required=True,
+    help="CMS platform (sanity, contentful, wordpress)",
+)
+@click.option(
+    "--instance",
+    type=str,
+    help="Instance name (prod, staging, etc). Uses 'default' or first instance if not specified.",
+)
+@click.option(
+    "--content-type",
+    type=str,
+    help="Filter by content type",
+)
+@click.option(
+    "--status",
+    type=click.Choice(["draft", "published"]),
+    help="Filter by status (draft or published)",
+)
+@click.option(
+    "--limit",
+    type=int,
+    help="Maximum number of documents to discover",
+)
+@click.option(
+    "--cluster-urls",
+    is_flag=True,
+    help="Cluster discovered documents into topics (opt-in, uses LLM)",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Preview discovery without creating records",
+)
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["json", "text"]),
+    default="text",
+    help="Output format",
+)
+def map_cms(
+    platform: str,
+    instance: str,
+    content_type: str,
+    status: str,
+    limit: int,
+    cluster_urls: bool,
+    dry_run: bool,
+    output_format: str,
+):
+    """
+    Discover content from CMS (creates NOT_FETCHED documents, no download/LLM).
+
+    Examples:
+        # Discover all content from Sanity
+        kurt map cms --platform sanity --instance prod
+
+        # Discover and cluster
+        kurt map cms --platform sanity --instance prod --cluster-urls
+
+        # Discover specific content type
+        kurt map cms --platform sanity --content-type article
+
+        # Discover with filters
+        kurt map cms --platform sanity --status published --limit 100
+
+        # Preview without creating records
+        kurt map cms --platform sanity --dry-run
+    """
+    from kurt.cms.config import get_platform_config, list_platform_instances, platform_configured
+    from kurt.ingestion.map import map_cms_content
+
+    # Check if platform is configured
+    if not platform_configured(platform):
+        console.print(f"[red]Error:[/red] CMS platform '{platform}' is not configured.")
+        console.print(
+            f"\n[dim]Run 'kurt cms onboard --platform {platform}' to configure.[/dim]"
+        )
+        raise click.Abort()
+
+    # If no instance specified, get default/first instance
+    if not instance:
+        instances = list_platform_instances(platform)
+        instance = instances[0] if instances else "default"
+        if len(instances) > 1:
+            console.print(
+                f"[yellow]No instance specified. Using '{instance}'. "
+                f"Available: {', '.join(instances)}[/yellow]\n"
+            )
+
+    try:
+        # Display mode indicator
+        if dry_run:
+            console.print("[bold]DRY RUN - Preview only[/bold]\n")
+
+        console.print(
+            f"[cyan]Discovering content from:[/cyan] {platform}/{instance}\n"
+        )
+
+        # Call ingestion layer
+        result = map_cms_content(
+            platform=platform,
+            instance=instance,
+            content_type=content_type,
+            status=status,
+            limit=limit,
+            cluster_urls=cluster_urls,
+            dry_run=dry_run,
+        )
+
+        # Display results
+        if output_format == "json":
+            import json
+
+            console.print(json.dumps(result, indent=2, default=str))
+        else:
+            action = "Would discover" if result.get("dry_run") else "Discovered"
+            console.print(
+                f"[green]✓ {action} {result['total']} documents from {platform}/{instance}[/green]"
+            )
+
+            if not result.get("dry_run"):
+                console.print(f"  New: {result['new']}")
+                console.print(f"  Existing: {result['existing']}")
+
+            # Show sample documents
+            if result["discovered"]:
+                console.print("\n[bold]Sample documents:[/bold]")
+                for doc in result["discovered"][:5]:
+                    if isinstance(doc, dict):
+                        console.print(
+                            f"  • {doc.get('title', 'Untitled')} ({doc['content_type']})"
+                        )
+                    else:
+                        console.print(f"  • {doc}")
+                if len(result["discovered"]) > 5:
+                    console.print(
+                        f"  [dim]... and {len(result['discovered']) - 5} more[/dim]"
+                    )
+
+            # Show clustering message if enabled
+            if cluster_urls and not result.get("dry_run"):
+                console.print(
+                    f"\n[dim]💡 Documents will be clustered. View with: "
+                    f"[cyan]kurt cluster-urls[/cyan][/dim]"
+                )
+
+            # Show next steps
+            console.print(
+                f"\n[dim]💡 Next: Fetch content with [cyan]kurt fetch --include \"{platform}/{instance}/*\"[/cyan][/dim]"
+            )
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        import traceback
+
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        raise click.Abort()

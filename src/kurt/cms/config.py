@@ -7,7 +7,7 @@ This file stores sensitive CMS API tokens and should be gitignored.
 
 import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 from kurt.config import load_config
 
@@ -83,18 +83,25 @@ def save_cms_config(config: Dict[str, Any]) -> None:
         json.dump(config, f, indent=2)
 
 
-def get_platform_config(platform: str) -> Dict[str, Any]:
+def get_platform_config(platform: str, instance: Optional[str] = None) -> Dict[str, Any]:
     """
-    Get configuration for a specific CMS platform.
+    Get configuration for a specific CMS platform and instance.
+
+    Supports both flat structure (legacy) and named instances:
+    - Flat: {"sanity": {"project_id": "..."}}
+    - Named: {"sanity": {"prod": {"project_id": "..."}, "staging": {...}}}
 
     Args:
         platform: CMS platform name (e.g., 'sanity', 'contentful', 'wordpress')
+        instance: Instance name (e.g., 'prod', 'staging'). If not provided:
+                  - Flat structure: returns platform config directly
+                  - Named instances: returns first instance or 'default' if exists
 
     Returns:
         Platform-specific configuration dictionary
 
     Raises:
-        ValueError: If platform not configured
+        ValueError: If platform not configured or instance not found
     """
     config = load_cms_config()
 
@@ -105,7 +112,66 @@ def get_platform_config(platform: str) -> Dict[str, Any]:
             f"Run 'kurt cms onboard --platform {platform}' to configure."
         )
 
-    return config[platform]
+    platform_config = config[platform]
+
+    # Check if this is a flat structure (legacy) or named instances
+    # Flat structure has keys like "project_id", "dataset", etc.
+    # Named instances has keys that are instance names containing config dicts
+    is_flat = _is_flat_structure(platform_config)
+
+    if is_flat:
+        # Flat structure - return directly
+        if instance and instance != "default":
+            raise ValueError(
+                f"Platform '{platform}' uses flat configuration (no named instances).\n"
+                f"Instance parameter '{instance}' not supported for this config."
+            )
+        return platform_config
+
+    # Named instances structure
+    if instance:
+        if instance not in platform_config:
+            available = ", ".join(platform_config.keys())
+            raise ValueError(
+                f"Instance '{instance}' not found for platform '{platform}'.\n"
+                f"Available instances: {available}"
+            )
+        return platform_config[instance]
+
+    # No instance specified - return default or first instance
+    if "default" in platform_config:
+        return platform_config["default"]
+
+    # Return first instance
+    instances = list(platform_config.keys())
+    if not instances:
+        raise ValueError(f"No instances configured for platform '{platform}'")
+
+    return platform_config[instances[0]]
+
+
+def _is_flat_structure(config: Dict[str, Any]) -> bool:
+    """
+    Check if config is flat structure (legacy) or named instances.
+
+    Flat structure has config keys directly at root level.
+    Named instances has nested dicts where each key is an instance name.
+
+    Args:
+        config: Platform configuration dictionary
+
+    Returns:
+        True if flat structure, False if named instances
+    """
+    # Common config keys that indicate flat structure
+    flat_indicators = {
+        "project_id", "dataset", "token",  # Sanity
+        "space_id", "access_token", "environment",  # Contentful
+        "site_url", "username", "app_password",  # WordPress
+    }
+
+    # If any of these keys exist at root level, it's flat structure
+    return bool(flat_indicators & set(config.keys()))
 
 
 def create_template_config(platform: str, overwrite: bool = False) -> Path:
@@ -202,3 +268,33 @@ def platform_configured(platform: str) -> bool:
         return True
     except (FileNotFoundError, ValueError):
         return False
+
+
+def list_platform_instances(platform: str) -> List[str]:
+    """
+    List all instances for a platform.
+
+    Args:
+        platform: CMS platform name
+
+    Returns:
+        List of instance names, or ["default"] if flat structure
+
+    Raises:
+        ValueError: If platform not configured
+    """
+    config = load_cms_config()
+
+    if platform not in config:
+        raise ValueError(
+            f"No configuration found for CMS platform '{platform}'.\n"
+            f"Available platforms: {', '.join(config.keys())}"
+        )
+
+    platform_config = config[platform]
+
+    # Check structure
+    if _is_flat_structure(platform_config):
+        return ["default"]
+
+    return list(platform_config.keys())

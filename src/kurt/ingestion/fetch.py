@@ -189,6 +189,75 @@ def _fetch_with_trafilatura(url: str) -> tuple[str, dict]:
     return content, metadata_dict
 
 
+def _detect_source_type(source_url: str) -> tuple[str, dict]:
+    """
+    Detect if source URL is web (http/https) or CMS (platform/instance/schema/slug).
+
+    Args:
+        source_url: Source URL or CMS identifier
+
+    Returns:
+        Tuple of (source_type, parsed_data):
+            - source_type: 'web' or 'cms'
+            - parsed_data: For web: {'url': url}, For CMS: {'platform': ..., 'instance': ..., 'schema': ..., 'slug': ...}
+
+    Example:
+        >>> _detect_source_type("https://example.com/page")
+        ('web', {'url': 'https://example.com/page'})
+
+        >>> _detect_source_type("sanity/prod/article/vibe-coding-guide")
+        ('cms', {'platform': 'sanity', 'instance': 'prod', 'schema': 'article', 'slug': 'vibe-coding-guide'})
+    """
+    if source_url.startswith(('http://', 'https://')):
+        return 'web', {'url': source_url}
+
+    # Assume CMS format: platform/instance/schema/slug
+    parts = source_url.split('/', 3)
+    if len(parts) == 4:
+        return 'cms', {
+            'platform': parts[0],
+            'instance': parts[1],
+            'schema': parts[2],
+            'slug': parts[3]
+        }
+
+    # Also support legacy 3-part format for backward compatibility
+    if len(parts) == 3:
+        return 'cms', {
+            'platform': parts[0],
+            'instance': parts[1],
+            'schema': None,
+            'slug': parts[2]
+        }
+
+    raise ValueError(
+        f"Invalid source URL format: {source_url}. "
+        f"Expected either http(s):// URL or platform/instance/schema/slug format"
+    )
+
+
+def _create_cms_content_path(platform: str, instance: str, doc_id: str, config: KurtConfig) -> Path:
+    """
+    Create filesystem path for CMS content.
+
+    Args:
+        platform: CMS platform name (sanity, contentful, etc)
+        instance: Instance name (prod, staging, etc)
+        doc_id: Document ID
+        config: Kurt configuration
+
+    Returns:
+        Path object for content file
+
+    Example:
+        >>> _create_cms_content_path("sanity", "prod", "abc-123", config)
+        Path("sources/cms/sanity/prod/abc-123.md")
+    """
+    source_base = config.get_absolute_sources_path()
+    content_path = source_base / "cms" / platform / instance / f"{doc_id}.md"
+    return content_path
+
+
 def _create_content_path(url: str, config: KurtConfig) -> Path:
     """
     Create filesystem path for storing content.
@@ -235,6 +304,54 @@ def _create_content_path(url: str, config: KurtConfig) -> Path:
     content_path = source_base / domain / path
 
     return content_path
+
+
+def _fetch_from_cms(platform: str, instance: str, doc: Document) -> tuple[str, dict]:
+    """
+    Fetch content from CMS using appropriate adapter.
+
+    Args:
+        platform: CMS platform name
+        instance: Instance name
+        doc: Document object (must have cms_document_id field populated)
+
+    Returns:
+        Tuple of (markdown_content, metadata_dict)
+
+    Raises:
+        ValueError: If CMS fetch fails or cms_document_id is missing
+    """
+    from kurt.cms import get_adapter
+    from kurt.cms.config import get_platform_config
+
+    # Validate cms_document_id is present
+    if not doc.cms_document_id:
+        raise ValueError(
+            f"Document {doc.id} is missing cms_document_id field. "
+            f"This field is required to fetch from CMS. "
+            f"Document may have been created before cms_document_id migration."
+        )
+
+    try:
+        # Get CMS adapter
+        cms_config = get_platform_config(platform, instance)
+        adapter = get_adapter(platform, cms_config)
+
+        # Fetch document using CMS document ID (not the slug)
+        cms_document = adapter.fetch(doc.cms_document_id)
+
+        # Extract metadata
+        metadata_dict = {
+            'title': cms_document.title,
+            'author': cms_document.author,
+            'date': cms_document.published_date,
+            'description': cms_document.metadata.get('description') if cms_document.metadata else None,
+        }
+
+        return cms_document.content, metadata_dict
+
+    except Exception as e:
+        raise ValueError(f"Failed to fetch from {platform}/{instance} (cms_document_id: {doc.cms_document_id}): {e}")
 
 
 def add_document(url: str, title: str = None) -> UUID:
@@ -351,14 +468,24 @@ def fetch_document(identifier: str | UUID, fetch_engine: str = None) -> dict:
     doc.ingestion_status = IngestionStatus.FETCHED  # Will set to ERROR if fails
 
     try:
-        # Determine which fetch engine to use
-        engine = _get_fetch_engine(override=fetch_engine)
+        # Detect source type (web vs CMS)
+        source_type, parsed_data = _detect_source_type(doc.source_url)
 
-        # Fetch content using appropriate engine
-        if engine == "firecrawl":
-            content, metadata_dict = _fetch_with_firecrawl(doc.source_url)
+        if source_type == 'cms':
+            # Fetch from CMS using cms_document_id field
+            content, metadata_dict = _fetch_from_cms(
+                platform=parsed_data['platform'],
+                instance=parsed_data['instance'],
+                doc=doc
+            )
         else:
-            content, metadata_dict = _fetch_with_trafilatura(doc.source_url)
+            # Fetch from web using appropriate engine
+            engine = _get_fetch_engine(override=fetch_engine)
+
+            if engine == "firecrawl":
+                content, metadata_dict = _fetch_with_firecrawl(doc.source_url)
+            else:
+                content, metadata_dict = _fetch_with_trafilatura(doc.source_url)
 
         # Update document with extracted metadata
         if metadata_dict:
@@ -395,9 +522,20 @@ def fetch_document(identifier: str | UUID, fetch_engine: str = None) -> dict:
                     doc.published_date = None
 
         # Store content to filesystem
-        # Format: {project_root}/{source_path}/{domain}/{path}/page_name.md
         config = load_config()
-        content_path = _create_content_path(doc.source_url, config)
+
+        # Choose path based on source type
+        if source_type == 'cms':
+            # CMS: sources/cms/{platform}/{instance}/{cms_document_id}.md
+            content_path = _create_cms_content_path(
+                platform=parsed_data['platform'],
+                instance=parsed_data['instance'],
+                doc_id=doc.cms_document_id,
+                config=config
+            )
+        else:
+            # Web: sources/{domain}/{path}/page_name.md
+            content_path = _create_content_path(doc.source_url, config)
 
         # Create directory structure
         content_path.parent.mkdir(parents=True, exist_ok=True)

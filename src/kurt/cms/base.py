@@ -171,3 +171,26 @@ class CMSAdapter(ABC):
             Raw document dictionary showing all fields and structure
         """
         pass
+
+    @abstractmethod
+    def list_all(
+        self,
+        content_type: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Discover all documents in CMS (for bulk mapping).
+
+        Returns lightweight document metadata without full content.
+        Used by 'kurt map cms' for discovery phase.
+
+        Args:
+            content_type: Filter by content type (optional)
+            status: Filter by status (draft, published, etc.) (optional)
+            limit: Maximum number of documents to return (optional)
+
+        Returns:
+            List of dicts with: id, title, content_type, status, updated_at
+        """
+        pass
