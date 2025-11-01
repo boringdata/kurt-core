@@ -27,6 +27,10 @@ logger = logging.getLogger(__name__)
     help="FILTER: All documents with specified ingestion status (requires confirmation if >100 docs, use --force to skip)",
 )
 @click.option(
+    "--with-content-type",
+    help="FILTER: All documents with specified content type (tutorial | guide | blog | reference | etc)",
+)
+@click.option(
     "--exclude",
     help="REFINEMENT: Glob pattern matching source_url or content_path (works with any filter above)",
 )
@@ -80,6 +84,7 @@ def fetch_cmd(
     ids: str,
     in_cluster: str,
     with_status: str,
+    with_content_type: str,
     exclude: str,
     limit: int,
     concurrency: int,
@@ -98,7 +103,7 @@ def fetch_cmd(
     Progress tracking: shows processed/total, Ctrl+C graceful shutdown
 
     Requires at least ONE filter:
-      --include, --urls, --ids, --in-cluster, or --with-status
+      --include, --urls, --ids, --in-cluster, --with-status, or --with-content-type
 
     Examples:
         # Fetch by pattern
@@ -110,6 +115,9 @@ def fetch_cmd(
         # Fetch by cluster
         kurt fetch --in-cluster "Tutorials"
 
+        # Fetch by content type (after clustering)
+        kurt fetch --with-content-type tutorial
+
         # Fetch all NOT_FETCHED
         kurt fetch --with-status NOT_FETCHED
 
@@ -118,6 +126,9 @@ def fetch_cmd(
 
         # Fetch with exclusions
         kurt fetch --include "*/docs/*" --exclude "*/api/*"
+
+        # Combine filters
+        kurt fetch --with-content-type tutorial --include "*/docs/*"
 
         # Download only (skip LLM indexing to save costs)
         kurt fetch --with-status NOT_FETCHED --skip-index
@@ -135,6 +146,7 @@ def fetch_cmd(
             ids=ids,
             in_cluster=in_cluster,
             with_status=with_status,
+            with_content_type=with_content_type,
             exclude=exclude,
             limit=limit,
             concurrency=concurrency,

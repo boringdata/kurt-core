@@ -510,6 +510,7 @@ def fetch_content(
     ids: str = None,
     in_cluster: str = None,
     with_status: str = None,
+    with_content_type: str = None,
     exclude: str = None,
     limit: int = None,
     concurrency: int = 5,
@@ -533,6 +534,7 @@ def fetch_content(
         ids: Comma-separated list of document IDs
         in_cluster: Cluster name to fetch from
         with_status: Status filter (NOT_FETCHED | FETCHED | ERROR)
+        with_content_type: Content type filter (tutorial | guide | blog | etc)
         exclude: Glob pattern to exclude
         limit: Max documents to process
         concurrency: Parallel requests (default: 5)
@@ -559,9 +561,9 @@ def fetch_content(
     from kurt.db.models import Document, IngestionStatus
 
     # Validate: at least one filter required
-    if not (include_pattern or urls or ids or in_cluster or with_status):
+    if not (include_pattern or urls or ids or in_cluster or with_status or with_content_type):
         raise ValueError(
-            "Requires at least ONE filter: --include, --urls, --ids, --in-cluster, or --with-status"
+            "Requires at least ONE filter: --include, --urls, --ids, --in-cluster, --with-status, or --with-content-type"
         )
 
     warnings = []
@@ -593,6 +595,19 @@ def fetch_content(
             .join(TopicCluster, DocumentClusterEdge.cluster_id == TopicCluster.id)
             .where(TopicCluster.name.ilike(f"%{in_cluster}%"))
         )
+
+    # Filter by content type
+    if with_content_type:
+        from kurt.db.models import ContentType
+
+        try:
+            content_type_enum = ContentType(with_content_type.lower())
+            stmt = stmt.where(Document.content_type == content_type_enum)
+        except ValueError:
+            raise ValueError(
+                f"Invalid content type: {with_content_type}. "
+                f"Valid types: {', '.join([ct.value for ct in ContentType])}"
+            )
 
     # Count total documents before status filter (to track excluded FETCHED docs)
     docs_before_status_filter = list(session.exec(stmt).all())
