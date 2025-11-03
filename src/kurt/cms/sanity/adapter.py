@@ -162,6 +162,115 @@ class SanityAdapter(CMSAdapter):
             print(f"Search error: {e}")
             raise
 
+    def list_all(
+        self,
+        content_type: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Discover all documents in CMS (for bulk mapping).
+
+        Returns lightweight document metadata without full content.
+        Used by 'kurt map cms' for discovery phase.
+
+        Args:
+            content_type: Filter by _type (optional)
+            status: Filter by status (draft, published) (optional)
+            limit: Maximum number of documents to return (optional)
+
+        Returns:
+            List of dicts with: id, title, slug, description, content_type, status, updated_at
+        """
+        # Build GROQ filter conditions
+        groq_filters = []
+
+        # Exclude system documents
+        # Note: Can't use _id match filters with order() due to Sanity GROQ bug
+        # Instead, exclude by system document types
+        groq_filters.append('!(_type match "system.*")')
+        groq_filters.append('!(_type match "sanity.*")')
+
+        # Only include enabled content types from mappings
+        enabled_types = [
+            ct_name
+            for ct_name, ct_config in self.mappings.items()
+            if ct_config.get("enabled", True)
+        ]
+
+        if content_type:
+            # Filter to specific type if requested
+            groq_filters.append(f'_type == "{content_type}"')
+        elif enabled_types:
+            # Otherwise, only include enabled types
+            types_filter = " || ".join([f'_type == "{ct}"' for ct in enabled_types])
+            groq_filters.append(f"({types_filter})")
+
+        if status:
+            if status.lower() == "draft":
+                groq_filters.append('_id in path("drafts.**")')
+            elif status.lower() == "published":
+                groq_filters.append('!(_id in path("drafts.**"))')
+
+        filter_clause = " && ".join(groq_filters) if groq_filters else "true"
+
+        # Build dynamic field projections for slug and description
+        # Use select() to get the right field based on document type
+        slug_projection_cases = []
+        description_projection_cases = []
+
+        for ct_name, ct_config in self.mappings.items():
+            slug_field = ct_config.get("slug_field", "slug.current")
+            desc_field = ct_config.get("description_field", "description")
+
+            slug_projection_cases.append(f'_type == "{ct_name}" => {slug_field}')
+            description_projection_cases.append(f'_type == "{ct_name}" => {desc_field}')
+
+        # Build select statements with fallbacks
+        if slug_projection_cases:
+            slug_select = "select(" + ", ".join(slug_projection_cases) + ', "untitled")'
+        else:
+            slug_select = '"untitled"'
+
+        if description_projection_cases:
+            desc_select = "select(" + ", ".join(description_projection_cases) + ', null)'
+        else:
+            desc_select = 'null'
+
+        # GROQ query - lightweight metadata with dynamic field resolution
+        limit_clause = f"[0...{limit}]" if limit else ""
+        groq_query = f"""
+        *[{filter_clause}] | order(_updatedAt desc) {limit_clause} {{
+            _id,
+            _type,
+            _updatedAt,
+            title,
+            "slug": {slug_select},
+            "description": {desc_select},
+            "status": select(
+                _id in path("drafts.**") => "draft",
+                "published"
+            )
+        }}
+        """
+
+        try:
+            results = self._query(groq_query)
+            return [
+                {
+                    "id": doc["_id"],
+                    "title": doc.get("title", "Untitled"),
+                    "slug": doc.get("slug", "untitled"),
+                    "description": doc.get("description"),
+                    "content_type": doc["_type"],
+                    "status": doc.get("status", "published"),
+                    "updated_at": doc.get("_updatedAt"),
+                }
+                for doc in results
+            ]
+        except Exception as e:
+            raise
+
     def fetch(self, document_id: str) -> CMSDocument:
         """
         Fetch full document with content.

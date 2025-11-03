@@ -391,6 +391,26 @@ def onboard_cmd(platform: str):
                 title_field_default = "title" if "title" in available_fields else None
                 slug_field_default = "slug.current" if "slug" in available_fields else None
 
+                # Smart defaults for description
+                description_field_default = None
+                if "excerpt" in available_fields:
+                    description_field_default = "excerpt"
+                elif "summary" in available_fields:
+                    description_field_default = "summary"
+                elif "description" in available_fields:
+                    description_field_default = "description"
+
+                # Smart default for content type based on schema name
+                content_type_default = None
+                if content_type in ["article", "blog", "blogPost", "post"]:
+                    content_type_default = "article" if content_type == "article" else "blog"
+                elif content_type in ["tutorial", "guide", "howto"]:
+                    content_type_default = "tutorial"
+                elif content_type in ["reference", "glossary", "universeItem"]:
+                    content_type_default = "reference"
+                elif content_type in ["caseStudy", "case_study"]:
+                    content_type_default = "case_study"
+
                 # Ask for content field
                 console.print("\n[bold]Which field contains the main content?[/bold]")
                 if content_field_default:
@@ -415,12 +435,34 @@ def onboard_cmd(platform: str):
                 if not slug_field:
                     slug_field = slug_field_default
 
+                # Ask for description field
+                console.print("\n[bold]Which field contains a summary/description?[/bold]")
+                console.print("[dim](Used for topic clustering and content organization)[/dim]")
+                if description_field_default:
+                    console.print(f"[dim](Press Enter for: {description_field_default})[/dim]")
+                description_field = console.input("[cyan]Description field:[/cyan] ").strip()
+                if not description_field:
+                    description_field = description_field_default
+
+                # Ask for content type inference
+                console.print("\n[bold]What content type should be inferred from this schema?[/bold]")
+                console.print(
+                    "[dim]Options: article, blog, tutorial, guide, reference, case_study, landing_page, other[/dim]"
+                )
+                if content_type_default:
+                    console.print(f"[dim](Press Enter for: {content_type_default})[/dim]")
+                inferred_content_type = console.input("[cyan]Content type:[/cyan] ").strip()
+                if not inferred_content_type:
+                    inferred_content_type = content_type_default
+
                 # Save mapping
                 mappings[content_type] = {
                     "enabled": True,
                     "content_field": content_field,
                     "title_field": title_field,
                     "slug_field": slug_field,
+                    "description_field": description_field,
+                    "inferred_content_type": inferred_content_type,
                     "metadata_fields": {},
                 }
 
@@ -428,6 +470,8 @@ def onboard_cmd(platform: str):
                 console.print(f"  Content: [cyan]{content_field}[/cyan]")
                 console.print(f"  Title: [cyan]{title_field}[/cyan]")
                 console.print(f"  Slug: [cyan]{slug_field}[/cyan]")
+                console.print(f"  Description: [cyan]{description_field}[/cyan]")
+                console.print(f"  Content Type: [cyan]{inferred_content_type}[/cyan]")
 
             except Exception as e:
                 console.print(f"[yellow]⚠ Could not configure {content_type}: {e}[/yellow]")

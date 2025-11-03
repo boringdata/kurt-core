@@ -3,13 +3,13 @@
 import json
 import re
 from pathlib import Path
-from typing import Optional
 
 import click
 from rich.console import Console
 
 from kurt.config import load_config
 from kurt.telemetry.decorators import track_command
+from kurt.utils import extract_section
 
 console = Console()
 
@@ -28,40 +28,6 @@ def project():
 # ============================================================================
 # Project Status Command
 # ============================================================================
-
-
-def extract_section(content: str, header: str) -> Optional[str]:
-    """
-    Extract content between markdown headers.
-
-    Args:
-        content: Full markdown content
-        header: Header name (without ##)
-
-    Returns:
-        First non-empty line after the header, or None
-    """
-    # Find the header
-    pattern = rf"^## {re.escape(header)}\s*$"
-    lines = content.split("\n")
-
-    found = False
-    for line in lines:
-        if re.match(pattern, line):
-            found = True
-            continue
-
-        # If we found the header, return the first non-empty line
-        if found:
-            # Stop if we hit another header
-            if line.startswith("##"):
-                return None
-            # Return first non-empty line
-            stripped = line.strip()
-            if stripped:
-                return stripped
-
-    return None
 
 
 @project.command("status")

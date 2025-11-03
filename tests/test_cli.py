@@ -26,19 +26,26 @@ def test_cli_help(runner):
     assert "Document intelligence CLI tool" in result.output
 
 
-def test_init_command(isolated_cli_runner):
+def test_init_command(tmp_path, monkeypatch):
     """Test init command in isolated temp project."""
-    runner, project_dir = isolated_cli_runner
+    from click.testing import CliRunner
 
-    # Remove the config file created by tmp_project fixture
-    # so we can test init creating it
-    config_file = project_dir / "kurt.config"
-    if config_file.exists():
-        config_file.unlink()
+    # Create a completely fresh temp directory (no config, no migrations)
+    project_dir = tmp_path / "fresh-project"
+    project_dir.mkdir()
 
+    # Change to temp project directory
+    monkeypatch.chdir(project_dir)
+    monkeypatch.setenv("KURT_PROJECT_ROOT", str(project_dir))
+
+    runner = CliRunner()
     result = runner.invoke(main, ["init"])
-    assert result.exit_code == 0
+
+    assert result.exit_code == 0, f"Command failed: {result.output}"
     assert "Initializing Kurt project" in result.output
+
+    # Check that config was created
+    config_file = project_dir / "kurt.config"
     assert config_file.exists()
 
 
@@ -53,17 +60,29 @@ def test_all_commands_registered(runner):
     assert result.exit_code == 0, f"Main help failed: {result.output}"
 
     # Test that all expected top-level commands are registered
-    expected_commands = ["init", "cms", "content", "migrate", "project", "research", "status"]
+    expected_commands = [
+        "init",
+        "cms",
+        "content",
+        "fetch",
+        "migrate",
+        "project",
+        "research",
+        "status",
+        "map",
+        "cluster-urls",
+    ]
     for cmd in expected_commands:
         assert cmd in result.output, f"Command '{cmd}' not found in main help"
 
     # Test each command group's help to ensure they're properly decorated
     command_groups = {
         "cms": ["search", "fetch", "types", "onboard", "import", "publish"],
-        "content": ["add", "list", "stats", "cluster", "fetch"],
+        "content": ["list", "stats", "index", "delete", "sync-metadata"],  # fetch moved to root
         "migrate": ["status", "apply"],
         "project": ["status"],
         "research": [],  # research might not have subcommands
+        "map": ["url", "folder"],
     }
 
     for group, subcommands in command_groups.items():

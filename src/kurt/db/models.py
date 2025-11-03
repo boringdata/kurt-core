@@ -55,6 +55,9 @@ class Document(SQLModel, table=True):
     source_type: SourceType
     source_url: Optional[str] = Field(default=None, unique=True, index=True)
     content_path: Optional[str] = None  # Path to markdown file in local mode
+    cms_document_id: Optional[str] = Field(
+        default=None, index=True
+    )  # External CMS document ID (for fetching from CMS API)
     ingestion_status: IngestionStatus = Field(default=IngestionStatus.NOT_FETCHED)
 
     content_hash: Optional[str] = None

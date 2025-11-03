@@ -7,9 +7,12 @@ from rich.console import Console
 
 from kurt import __version__
 from kurt.commands.analytics import analytics
+from kurt.commands.cluster_urls import cluster_urls_cmd
 from kurt.commands.cms import cms
 from kurt.commands.content import content
 from kurt.commands.feedback import feedback
+from kurt.commands.fetch import fetch_cmd
+from kurt.commands.map import map_cmd
 from kurt.commands.migrate import migrate
 from kurt.commands.project import project
 from kurt.commands.research import research
@@ -163,10 +166,62 @@ OPENAI_API_KEY=your_openai_api_key_here
         console.print()
         init_database()
 
+        # Step 4: Install Kurt Claude Code plugin
+        console.print()
+        console.print("[dim]Installing Kurt plugin for Claude Code...[/dim]")
+
+        try:
+            import subprocess
+
+            # Get the path to the kurt-core directory
+            kurt_core_path = Path(__file__).parent.parent.parent.resolve()
+
+            # Add marketplace
+            result = subprocess.run(
+                ["claude", "plugin", "marketplace", "add", str(kurt_core_path)],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+            if result.returncode == 0:
+                console.print("[green]✓[/green] Added kurt-marketplace")
+
+                # Install plugin
+                result = subprocess.run(
+                    ["claude", "plugin", "install", "kurt"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+
+                if result.returncode == 0:
+                    console.print("[green]✓[/green] Installed kurt plugin")
+                else:
+                    console.print("[yellow]⚠[/yellow] Could not install kurt plugin")
+                    console.print(f"[dim]{result.stderr}[/dim]")
+            else:
+                console.print(
+                    "[yellow]⚠[/yellow] Could not add marketplace (Claude Code may not be installed)"
+                )
+                console.print("[dim]You can manually add it later with:[/dim]")
+                console.print(f"[dim]  claude plugin marketplace add {kurt_core_path}[/dim]")
+                console.print("[dim]  claude plugin install kurt[/dim]")
+
+        except FileNotFoundError:
+            console.print("[yellow]⚠[/yellow] Claude Code CLI not found")
+            console.print("[dim]Install Claude Code from: https://claude.ai/download[/dim]")
+            console.print(f"[dim]Then run: claude plugin marketplace add {kurt_core_path}[/dim]")
+            console.print("[dim]         claude plugin install kurt[/dim]")
+        except Exception as e:
+            console.print(f"[yellow]⚠[/yellow] Could not configure plugin: {e}")
+
         console.print("\n[bold]Next steps:[/bold]")
         console.print("  1. Copy .env.example to .env and add your API keys")
-        console.print("  2. Open Claude Code")
-        console.print("  3. Run [cyan]/create-project[/cyan] command")
+        console.print(
+            "  2. Verify plugin installation: [cyan]claude plugin marketplace list[/cyan]"
+        )
+        console.print("  3. Open Claude Code and run [cyan]/create-project[/cyan]")
 
     except Exception as e:
         console.print(f"[bold red]Error:[/bold red] {e}")
@@ -176,8 +231,11 @@ OPENAI_API_KEY=your_openai_api_key_here
 # Register command groups
 main.add_command(analytics)
 main.add_command(cms)
+main.add_command(cluster_urls_cmd)
 main.add_command(content)
 main.add_command(feedback)
+main.add_command(fetch_cmd, name="fetch")
+main.add_command(map_cmd, name="map")
 main.add_command(migrate)
 main.add_command(project)
 main.add_command(research)

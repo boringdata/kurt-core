@@ -1,0 +1,173 @@
+# Kurt Evaluation Framework Configuration
+#
+# This file defines default settings for running evaluation scenarios.
+# These settings can be overridden via CLI flags.
+
+# Safety Guardrails
+# -----------------
+# These limits prevent runaway scenarios from consuming excessive resources
+
+guardrails:
+  # Maximum number of tool calls allowed per scenario
+  max_tool_calls: 50
+
+  # Maximum execution time in seconds per scenario
+  max_duration_seconds: 300
+
+  # Maximum tokens to use per scenario (input + output)
+  max_tokens: 100000
+
+  # Maximum conversation turns for multi-turn scenarios
+  max_conversation_turns: 20
+
+
+# Workspace Management
+# --------------------
+# Controls how temporary workspaces are handled
+
+workspace:
+  # Preserve workspace on scenario failure (for debugging)
+  preserve_on_error: true
+
+  # Preserve workspace on successful completion
+  preserve_on_success: false
+
+  # Initialize Kurt database in all workspaces
+  init_kurt: true
+
+  # Install Claude plugin (.claude/ folder) in workspaces
+  install_claude_plugin: true
+
+
+# User Agent Configuration
+# ------------------------
+# Controls how the simulated user responds during multi-turn conversations
+
+user_agent:
+  # LLM provider for intelligent user responses: "openai" or "anthropic"
+  # - openai: uses gpt-4o-mini (fast, cheap)
+  # - anthropic: uses claude-3-5-haiku (fast, accurate)
+  llm_provider: openai
+
+  # Fallback to regex-based responses if LLM fails
+  fallback_to_regex: true
+
+  # Default response when no match is found
+  default_response: "yes"
+
+
+# SDK Configuration
+# -----------------
+# Claude Agent SDK settings
+
+sdk:
+  # Allowed tools for the agent
+  allowed_tools:
+    - Bash
+    - Read
+    - Write
+    - Edit
+    - Glob
+    - Grep
+    - Skill
+    - SlashCommand
+
+  # Permission mode: "bypassPermissions" or "promptUser"
+  permission_mode: bypassPermissions
+
+  # Where to load skills/commands from
+  setting_sources:
+    - user
+    - project
+
+
+# Output & Logging
+# ----------------
+# Controls verbosity and output format
+
+output:
+  # Print detailed agent responses and tool calls
+  verbose: true
+
+  # Save raw transcript to results
+  save_transcript: true
+
+  # Results directory (relative to eval/)
+  results_dir: results
+
+  # Colorized terminal output
+  use_colors: true
+
+
+# Scenario Discovery
+# ------------------
+# Where to find scenario definitions
+
+scenarios:
+  # Primary scenarios file (multi-scenario YAML)
+  scenarios_file: scenarios/scenarios.yaml
+
+  # Directory containing individual scenario files (.py, .yaml)
+  scenarios_dir: scenarios
+
+  # Support both .yaml and .yml extensions
+  yaml_extensions:
+    - .yaml
+    - .yml
+
+
+# Performance Tuning
+# ------------------
+# Advanced settings for optimization
+
+performance:
+  # Number of scenarios to run in parallel (experimental)
+  # Set to 1 for sequential execution (safer)
+  parallel_scenarios: 1
+
+  # Timeout for individual tool calls (seconds)
+  tool_timeout: 120
+
+  # Maximum response size from tools (characters)
+  max_tool_output: 30000
+
+
+# API Keys
+# --------
+# API keys are loaded from environment variables or .env files
+# DO NOT put actual keys in this config file!
+
+api_keys:
+  # ANTHROPIC_API_KEY - required for Claude agent
+  # Check locations (in order):
+  #   1. ANTHROPIC_API_KEY environment variable
+  #   2. ../kurt-demo/.env
+  #   3. eval/.env
+
+  # OPENAI_API_KEY - required if using openai for user agent
+  # ANTHROPIC_API_KEY - required if using anthropic for user agent
+
+  # Both are checked in eval/.env
+
+
+# Assertions
+# ----------
+# Default assertion settings
+
+assertions:
+  # Stop on first assertion failure
+  fail_fast: false
+
+  # Include detailed error messages
+  verbose_errors: true
+
+
+# Metadata
+# --------
+
+metadata:
+  # Framework version
+  version: "0.1.0"
+
+  # Last updated
+  updated: "2025-11-03"

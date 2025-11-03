@@ -110,15 +110,17 @@ def _fetch_with_firecrawl(url: str) -> tuple[str, dict]:
 
     api_key = os.getenv("FIRECRAWL_API_KEY")
     if not api_key:
-        raise ValueError("FIRECRAWL_API_KEY not set in environment")
+        raise ValueError("[Firecrawl] FIRECRAWL_API_KEY not set in environment")
 
-    app = FirecrawlApp(api_key=api_key)
-
-    # Scrape the URL and get markdown using the v2 API
-    result = app.scrape(url, formats=["markdown", "html"])
+    try:
+        app = FirecrawlApp(api_key=api_key)
+        # Scrape the URL and get markdown using the v2 API
+        result = app.scrape(url, formats=["markdown", "html"])
+    except Exception as e:
+        raise ValueError(f"[Firecrawl] API error: {type(e).__name__}: {str(e)}") from e
 
     if not result or not hasattr(result, "markdown"):
-        raise ValueError(f"Firecrawl failed to extract content from: {url}")
+        raise ValueError(f"[Firecrawl] No content extracted from: {url}")
 
     content = result.markdown
 
@@ -144,9 +146,12 @@ def _fetch_with_trafilatura(url: str) -> tuple[str, dict]:
         ValueError: If fetch fails
     """
     # Download content
-    downloaded = trafilatura.fetch_url(url)
-    if not downloaded:
-        raise ValueError(f"Failed to download: {url}")
+    try:
+        downloaded = trafilatura.fetch_url(url)
+        if not downloaded:
+            raise ValueError(f"[Trafilatura] Failed to download (no content returned): {url}")
+    except Exception as e:
+        raise ValueError(f"[Trafilatura] Download error: {type(e).__name__}: {str(e)}") from e
 
     # Extract metadata using trafilatura
     metadata = trafilatura.extract_metadata(
@@ -166,7 +171,9 @@ def _fetch_with_trafilatura(url: str) -> tuple[str, dict]:
     )
 
     if not content:
-        raise ValueError(f"No content extracted from: {url}")
+        raise ValueError(
+            f"[Trafilatura] No content extracted (page might be empty or paywall blocked): {url}"
+        )
 
     # Convert trafilatura metadata to dict
     metadata_dict = {}
@@ -180,6 +187,75 @@ def _fetch_with_trafilatura(url: str) -> tuple[str, dict]:
         }
 
     return content, metadata_dict
+
+
+def _detect_source_type(source_url: str) -> tuple[str, dict]:
+    """
+    Detect if source URL is web (http/https) or CMS (platform/instance/schema/slug).
+
+    Args:
+        source_url: Source URL or CMS identifier
+
+    Returns:
+        Tuple of (source_type, parsed_data):
+            - source_type: 'web' or 'cms'
+            - parsed_data: For web: {'url': url}, For CMS: {'platform': ..., 'instance': ..., 'schema': ..., 'slug': ...}
+
+    Example:
+        >>> _detect_source_type("https://example.com/page")
+        ('web', {'url': 'https://example.com/page'})
+
+        >>> _detect_source_type("sanity/prod/article/vibe-coding-guide")
+        ('cms', {'platform': 'sanity', 'instance': 'prod', 'schema': 'article', 'slug': 'vibe-coding-guide'})
+    """
+    if source_url.startswith(('http://', 'https://')):
+        return 'web', {'url': source_url}
+
+    # Assume CMS format: platform/instance/schema/slug
+    parts = source_url.split('/', 3)
+    if len(parts) == 4:
+        return 'cms', {
+            'platform': parts[0],
+            'instance': parts[1],
+            'schema': parts[2],
+            'slug': parts[3]
+        }
+
+    # Also support legacy 3-part format for backward compatibility
+    if len(parts) == 3:
+        return 'cms', {
+            'platform': parts[0],
+            'instance': parts[1],
+            'schema': None,
+            'slug': parts[2]
+        }
+
+    raise ValueError(
+        f"Invalid source URL format: {source_url}. "
+        f"Expected either http(s):// URL or platform/instance/schema/slug format"
+    )
+
+
+def _create_cms_content_path(platform: str, instance: str, doc_id: str, config: KurtConfig) -> Path:
+    """
+    Create filesystem path for CMS content.
+
+    Args:
+        platform: CMS platform name (sanity, contentful, etc)
+        instance: Instance name (prod, staging, etc)
+        doc_id: Document ID
+        config: Kurt configuration
+
+    Returns:
+        Path object for content file
+
+    Example:
+        >>> _create_cms_content_path("sanity", "prod", "abc-123", config)
+        Path("sources/cms/sanity/prod/abc-123.md")
+    """
+    source_base = config.get_absolute_sources_path()
+    content_path = source_base / "cms" / platform / instance / f"{doc_id}.md"
+    return content_path
 
 
 def _create_content_path(url: str, config: KurtConfig) -> Path:
@@ -228,6 +304,54 @@ def _create_content_path(url: str, config: KurtConfig) -> Path:
     content_path = source_base / domain / path
 
     return content_path
+
+
+def _fetch_from_cms(platform: str, instance: str, doc: Document) -> tuple[str, dict]:
+    """
+    Fetch content from CMS using appropriate adapter.
+
+    Args:
+        platform: CMS platform name
+        instance: Instance name
+        doc: Document object (must have cms_document_id field populated)
+
+    Returns:
+        Tuple of (markdown_content, metadata_dict)
+
+    Raises:
+        ValueError: If CMS fetch fails or cms_document_id is missing
+    """
+    from kurt.cms import get_adapter
+    from kurt.cms.config import get_platform_config
+
+    # Validate cms_document_id is present
+    if not doc.cms_document_id:
+        raise ValueError(
+            f"Document {doc.id} is missing cms_document_id field. "
+            f"This field is required to fetch from CMS. "
+            f"Document may have been created before cms_document_id migration."
+        )
+
+    try:
+        # Get CMS adapter
+        cms_config = get_platform_config(platform, instance)
+        adapter = get_adapter(platform, cms_config)
+
+        # Fetch document using CMS document ID (not the slug)
+        cms_document = adapter.fetch(doc.cms_document_id)
+
+        # Extract metadata
+        metadata_dict = {
+            'title': cms_document.title,
+            'author': cms_document.author,
+            'date': cms_document.published_date,
+            'description': cms_document.metadata.get('description') if cms_document.metadata else None,
+        }
+
+        return cms_document.content, metadata_dict
+
+    except Exception as e:
+        raise ValueError(f"Failed to fetch from {platform}/{instance} (cms_document_id: {doc.cms_document_id}): {e}")
 
 
 def add_document(url: str, title: str = None) -> UUID:
@@ -344,14 +468,24 @@ def fetch_document(identifier: str | UUID, fetch_engine: str = None) -> dict:
     doc.ingestion_status = IngestionStatus.FETCHED  # Will set to ERROR if fails
 
     try:
-        # Determine which fetch engine to use
-        engine = _get_fetch_engine(override=fetch_engine)
+        # Detect source type (web vs CMS)
+        source_type, parsed_data = _detect_source_type(doc.source_url)
 
-        # Fetch content using appropriate engine
-        if engine == "firecrawl":
-            content, metadata_dict = _fetch_with_firecrawl(doc.source_url)
+        if source_type == 'cms':
+            # Fetch from CMS using cms_document_id field
+            content, metadata_dict = _fetch_from_cms(
+                platform=parsed_data['platform'],
+                instance=parsed_data['instance'],
+                doc=doc
+            )
         else:
-            content, metadata_dict = _fetch_with_trafilatura(doc.source_url)
+            # Fetch from web using appropriate engine
+            engine = _get_fetch_engine(override=fetch_engine)
+
+            if engine == "firecrawl":
+                content, metadata_dict = _fetch_with_firecrawl(doc.source_url)
+            else:
+                content, metadata_dict = _fetch_with_trafilatura(doc.source_url)
 
         # Update document with extracted metadata
         if metadata_dict:
@@ -388,9 +522,20 @@ def fetch_document(identifier: str | UUID, fetch_engine: str = None) -> dict:
                     doc.published_date = None
 
         # Store content to filesystem
-        # Format: {project_root}/{source_path}/{domain}/{path}/page_name.md
         config = load_config()
-        content_path = _create_content_path(doc.source_url, config)
+
+        # Choose path based on source type
+        if source_type == 'cms':
+            # CMS: sources/cms/{platform}/{instance}/{cms_document_id}.md
+            content_path = _create_cms_content_path(
+                platform=parsed_data['platform'],
+                instance=parsed_data['instance'],
+                doc_id=doc.cms_document_id,
+                config=config
+            )
+        else:
+            # Web: sources/{domain}/{path}/page_name.md
+            content_path = _create_content_path(doc.source_url, config)
 
         # Create directory structure
         content_path.parent.mkdir(parents=True, exist_ok=True)
@@ -495,3 +640,169 @@ def fetch_documents_batch(
         return await asyncio.gather(*tasks)
 
     return asyncio.run(_batch_fetch())
+
+
+def fetch_content(
+    include_pattern: str = None,
+    urls: str = None,
+    ids: str = None,
+    in_cluster: str = None,
+    with_status: str = None,
+    with_content_type: str = None,
+    exclude: str = None,
+    limit: int = None,
+    concurrency: int = 5,
+    engine: str = None,
+    skip_index: bool = False,
+    refetch: bool = False,
+) -> dict:
+    """
+    High-level fetch function with filtering, validation, and orchestration.
+
+    This function handles all the business logic for fetching documents:
+    - Filter selection and validation
+    - Database query building
+    - Glob pattern matching
+    - Document count warnings
+    - Batch fetching orchestration
+
+    Args:
+        include_pattern: Glob pattern matching source_url or content_path
+        urls: Comma-separated list of source URLs
+        ids: Comma-separated list of document IDs
+        in_cluster: Cluster name to fetch from
+        with_status: Status filter (NOT_FETCHED | FETCHED | ERROR)
+        with_content_type: Content type filter (tutorial | guide | blog | etc)
+        exclude: Glob pattern to exclude
+        limit: Max documents to process
+        concurrency: Parallel requests (default: 5)
+        engine: Fetch engine (trafilatura | firecrawl)
+        skip_index: Skip LLM indexing
+        refetch: Include already FETCHED documents
+
+    Returns:
+        dict with:
+            - docs: List of Document objects to fetch
+            - doc_ids: List of document IDs
+            - total: Total count
+            - warnings: List of warning messages
+            - errors: List of error messages
+
+    Raises:
+        ValueError: If no filter is provided or invalid parameters
+    """
+    from fnmatch import fnmatch
+
+    from sqlmodel import select
+
+    from kurt.db.database import get_session
+    from kurt.db.models import Document, IngestionStatus
+
+    # Validate: at least one filter required
+    if not (include_pattern or urls or ids or in_cluster or with_status or with_content_type):
+        raise ValueError(
+            "Requires at least ONE filter: --include, --urls, --ids, --in-cluster, --with-status, or --with-content-type"
+        )
+
+    warnings = []
+    errors = []
+
+    session = get_session()
+
+    # Build query based on filters
+    stmt = select(Document)
+
+    # Filter by IDs
+    if ids:
+        from uuid import UUID
+
+        doc_ids = [UUID(id.strip()) for id in ids.split(",")]
+        stmt = stmt.where(Document.id.in_(doc_ids))
+
+    # Filter by URLs
+    if urls:
+        url_list = [url.strip() for url in urls.split(",")]
+        stmt = stmt.where(Document.source_url.in_(url_list))
+
+    # Filter by cluster (JOIN with edges and clusters tables)
+    if in_cluster:
+        from kurt.db.models import DocumentClusterEdge, TopicCluster
+
+        stmt = (
+            stmt.join(DocumentClusterEdge, Document.id == DocumentClusterEdge.document_id)
+            .join(TopicCluster, DocumentClusterEdge.cluster_id == TopicCluster.id)
+            .where(TopicCluster.name.ilike(f"%{in_cluster}%"))
+        )
+
+    # Filter by content type
+    if with_content_type:
+        from kurt.db.models import ContentType
+
+        try:
+            content_type_enum = ContentType(with_content_type.lower())
+            stmt = stmt.where(Document.content_type == content_type_enum)
+        except ValueError:
+            raise ValueError(
+                f"Invalid content type: {with_content_type}. "
+                f"Valid types: {', '.join([ct.value for ct in ContentType])}"
+            )
+
+    # Count total documents before status filter (to track excluded FETCHED docs)
+    docs_before_status_filter = list(session.exec(stmt).all())
+
+    # Filter by status (default: exclude FETCHED unless --refetch or --with-status FETCHED)
+    if with_status:
+        stmt = stmt.where(Document.ingestion_status == IngestionStatus[with_status])
+    elif not refetch:
+        # Default: exclude FETCHED documents
+        stmt = stmt.where(Document.ingestion_status != IngestionStatus.FETCHED)
+
+    docs = list(session.exec(stmt).all())
+
+    # Apply include/exclude patterns (glob matching on source_url or content_path)
+    if include_pattern:
+        docs = [
+            d
+            for d in docs
+            if (d.source_url and fnmatch(d.source_url, include_pattern))
+            or (d.content_path and fnmatch(d.content_path, include_pattern))
+        ]
+
+    if exclude:
+        docs = [
+            d
+            for d in docs
+            if not (
+                (d.source_url and fnmatch(d.source_url, exclude))
+                or (d.content_path and fnmatch(d.content_path, exclude))
+            )
+        ]
+
+    # Apply limit
+    if limit:
+        docs = docs[:limit]
+
+    # Warn if >100 docs
+    if len(docs) > 100:
+        warnings.append(f"About to fetch {len(docs)} documents")
+
+    # Calculate estimated cost
+    estimated_cost = len(docs) * 0.005 if not skip_index else 0
+
+    # Count excluded FETCHED documents (only if we applied the default filter)
+    excluded_fetched_count = 0
+    if not with_status and not refetch:
+        fetched_docs = [
+            d for d in docs_before_status_filter if d.ingestion_status == IngestionStatus.FETCHED
+        ]
+        excluded_fetched_count = len(fetched_docs)
+
+    return {
+        "docs": docs,
+        "doc_ids": [str(doc.id) for doc in docs],
+        "total": len(docs),
+        "warnings": warnings,
+        "errors": errors,
+        "estimated_cost": estimated_cost,
+        "excluded_fetched_count": excluded_fetched_count,
+    }
