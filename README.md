@@ -161,6 +161,79 @@ uv run ruff check src/
 uv run ruff format src/
 ```
 
+## Evaluation Framework
+
+Kurt includes an evaluation framework for testing agent behavior with automated scenarios. This framework allows you to:
+
+- Test real agent interactions with the Kurt CLI using the Claude Code SDK
+- Run scenarios in isolated temporary workspaces
+- Validate outcomes with assertions (file existence, database state, tool usage)
+- Track metrics (tool calls, timing, conversation turns)
+- Generate detailed results (JSON metrics + markdown transcripts)
+
+### Installation
+
+Install the `kurt-eval` CLI tool:
+
+```bash
+uv tool install -e .
+```
+
+### Quick Start
+
+```bash
+# List available scenarios
+kurt-eval list
+
+# Run a specific scenario
+kurt-eval run 1                    # By number
+kurt-eval run 03_project_no_sources  # By name
+
+# Run all scenarios
+kurt-eval run-all
+
+# Run with options
+kurt-eval run 3 --no-cleanup              # Preserve workspace
+kurt-eval run 3 --llm-provider anthropic  # Use Anthropic for user agent
+```
+
+### Scenario Definition
+
+Scenarios are defined in YAML format at [eval/scenarios/scenarios.yaml](eval/scenarios/scenarios.yaml). Each scenario specifies:
+
+- **initial_prompt**: Task given to the agent
+- **user_agent_prompt** (optional): Instructions for automated multi-turn conversations
+- **setup_commands** (optional): Bash commands run before the scenario
+- **assertions**: Validation conditions (file existence, database queries, tool usage)
+
+Example scenario:
+
+```yaml
+scenarios:
+  - name: 02_add_url
+    description: Initialize Kurt and add content from a URL
+    initial_prompt: >
+      Initialize a Kurt project, then add content from
+      https://docs.dagster.io/ using discovery only
+    assertions:
+      - type: FileExists
+        path: kurt.config
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) >= 500 FROM documents WHERE ingestion_status='NOT_FETCHED'
+```
+
+### Available Scenarios
+
+The framework includes scenarios for:
+- **01_basic_init**: Initialize a new Kurt project
+- **02_add_url**: Initialize and discover content from a URL
+- **03_project_no_sources**: Multi-turn project creation without sources
+- **04_project_with_sources**: Project creation with content fetching
+- **05_setup_foundations**: Complete foundation setup (init + discovery + rule extraction)
+- **06_preconfigured_project**: Test with pre-configured project structure
+
+See [eval/scenarios/scenarios.yaml](eval/scenarios/scenarios.yaml) for complete scenario definitions.
+
 ## Project Structure
 
 ```

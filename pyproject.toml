@@ -31,9 +31,14 @@ dev = [
     "ruff>=0.1.0",
     "pre-commit>=3.5.0",
 ]
+eval = [
+    "claude-agent-sdk>=0.1.6",
+    "pyyaml>=6.0.0",
+]
 
 [project.scripts]
 kurt = "kurt.cli:main"
+kurt-eval = "kurt_eval_cli:main"
 
 [build-system]
 requires = ["hatchling"]

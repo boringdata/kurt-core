@@ -33,6 +33,7 @@ class IsolatedWorkspace:
         init_kurt: bool = True,
         install_claude_plugin: bool = False,
         claude_plugin_source: Optional[Path] = None,
+        setup_commands: Optional[list] = None,
     ):
         """Initialize workspace.
 
@@ -42,6 +43,7 @@ class IsolatedWorkspace:
             init_kurt: If True, run 'kurt init' after creating workspace
             install_claude_plugin: If True, copy .claude/ config from source
             claude_plugin_source: Path to source .claude/ directory (defaults to kurt-demo)
+            setup_commands: Optional list of bash commands to run after initialization
         """
         self.temp_dir: Optional[Path] = None
         self.original_cwd: Optional[Path] = None
@@ -50,6 +52,7 @@ class IsolatedWorkspace:
         self.init_kurt = init_kurt
         self.install_claude_plugin = install_claude_plugin
         self.claude_plugin_source = claude_plugin_source
+        self.setup_commands = setup_commands
         self._setup_complete = False
 
     def setup(self) -> Path:
@@ -76,6 +79,10 @@ class IsolatedWorkspace:
         # Install Claude Code plugin
         if self.install_claude_plugin:
             self._install_claude_plugin()
+
+        # Run setup commands (if specified)
+        if self.setup_commands:
+            self._run_setup_commands()
 
         self._setup_complete = True
 
@@ -126,9 +133,9 @@ class IsolatedWorkspace:
         if self.claude_plugin_source:
             source_claude = self.claude_plugin_source
         else:
-            # Default: assume kurt-demo is sibling to kurt-core
+            # Default: use .claude from current project (kurt-core)
             kurt_core = Path(__file__).parent.parent.parent
-            source_claude = kurt_core.parent.parent / "kurt-demo" / ".claude"
+            source_claude = kurt_core / ".claude"
 
         if not source_claude.exists():
             print(f"⚠️  Claude plugin source not found: {source_claude}")
@@ -142,6 +149,12 @@ class IsolatedWorkspace:
             shutil.copytree(source_claude, dest_claude)
             print("✅ Claude Code plugin installed")
 
+            # Copy .env file from eval directory if it exists (for API keys)
+            eval_env = Path(__file__).parent.parent / ".env"  # eval/.env
+            if eval_env.exists():
+                shutil.copy(eval_env, self.temp_dir / ".env")
+                print("✅ .env copied from eval/")
+
             # Also copy .env.example if it exists
             source_env = source_claude.parent / ".env.example"
             if source_env.exists():
@@ -150,6 +163,44 @@ class IsolatedWorkspace:
 
         except Exception as e:
             print(f"⚠️  Failed to install Claude plugin: {e}")
+
+    def _run_setup_commands(self):
+        """Execute setup commands in the workspace."""
+        if not self.setup_commands:
+            return
+
+        print(f"🔧 Running {len(self.setup_commands)} setup command(s)...")
+
+        for i, cmd in enumerate(self.setup_commands, 1):
+            print(f"   [{i}/{len(self.setup_commands)}] {cmd}")
+            try:
+                result = subprocess.run(
+                    cmd,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=120,  # 2 minute timeout per command
+                    cwd=self.temp_dir,
+                )
+
+                if result.returncode == 0:
+                    print(f"   ✅ Command {i} succeeded")
+                    if result.stdout:
+                        # Print first few lines of output
+                        lines = result.stdout.strip().split("\n")[:3]
+                        for line in lines:
+                            print(f"      {line}")
+                else:
+                    print(f"   ⚠️  Command {i} exited with code {result.returncode}")
+                    if result.stderr:
+                        print(f"      stderr: {result.stderr[:200]}")
+
+            except subprocess.TimeoutExpired:
+                print(f"   ⚠️  Command {i} timed out after 120s")
+            except Exception as e:
+                print(f"   ⚠️  Command {i} failed: {e}")
+
+        print("✅ Setup commands completed")
 
     def teardown(self, had_error: bool = False):
         """Clean up the workspace.

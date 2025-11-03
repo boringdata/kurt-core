@@ -8,10 +8,25 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from .config import EvalConfig, get_config
 from .conversation import Scenario
 from .evaluator import assert_all
 from .metrics import MetricsCollector, collect_metrics, save_results
 from .workspace import IsolatedWorkspace
+
+
+# ANSI color codes for terminal output
+class Colors:
+    BLUE = "\033[94m"  # Agent messages
+    CYAN = "\033[96m"  # Tool calls
+    GREEN = "\033[92m"  # Success messages
+    YELLOW = "\033[93m"  # Warnings
+    RED = "\033[91m"  # Errors
+    MAGENTA = "\033[95m"  # User messages
+    RESET = "\033[0m"  # Reset to default
+    BOLD = "\033[1m"  # Bold text
+    DIM = "\033[2m"  # Dim text
+
 
 # Try to import Claude Code Agent SDK
 try:
@@ -54,29 +69,49 @@ class ScenarioRunner:
 
     def __init__(
         self,
-        preserve_on_error: bool = True,
-        preserve_on_success: bool = False,
-        verbose: bool = True,
-        max_tool_calls: int = 50,
-        max_duration_seconds: int = 300,
-        max_tokens: int = 100000,
+        config: Optional[EvalConfig] = None,
+        preserve_on_error: Optional[bool] = None,
+        preserve_on_success: Optional[bool] = None,
+        verbose: Optional[bool] = None,
+        max_tool_calls: Optional[int] = None,
+        max_duration_seconds: Optional[int] = None,
+        max_tokens: Optional[int] = None,
+        llm_provider: Optional[str] = None,
     ):
         """Initialize runner.
 
         Args:
-            preserve_on_error: Keep workspace on failures for debugging
-            preserve_on_success: Keep workspace even on successful completion
-            verbose: Print detailed output
-            max_tool_calls: Maximum number of tool calls allowed per scenario (default: 50)
-            max_duration_seconds: Maximum scenario execution time in seconds (default: 300)
-            max_tokens: Maximum tokens to use per scenario (default: 100000)
+            config: EvalConfig instance (uses global config if None)
+            preserve_on_error: Keep workspace on failures for debugging (overrides config)
+            preserve_on_success: Keep workspace even on successful completion (overrides config)
+            verbose: Print detailed output (overrides config)
+            max_tool_calls: Maximum number of tool calls allowed per scenario (overrides config)
+            max_duration_seconds: Maximum scenario execution time in seconds (overrides config)
+            max_tokens: Maximum tokens to use per scenario (overrides config)
+            llm_provider: LLM provider for user agent - "openai" or "anthropic" (overrides config)
         """
-        self.preserve_on_error = preserve_on_error
-        self.preserve_on_success = preserve_on_success
-        self.verbose = verbose
-        self.max_tool_calls = max_tool_calls
-        self.max_duration_seconds = max_duration_seconds
-        self.max_tokens = max_tokens
+        # Load config (global if not provided)
+        if config is None:
+            config = get_config()
+
+        # Apply settings from config with CLI overrides
+        self.preserve_on_error = (
+            preserve_on_error if preserve_on_error is not None else config.preserve_on_error
+        )
+        self.preserve_on_success = (
+            preserve_on_success if preserve_on_success is not None else config.preserve_on_success
+        )
+        self.verbose = verbose if verbose is not None else config.verbose
+        self.max_tool_calls = (
+            max_tool_calls if max_tool_calls is not None else config.max_tool_calls
+        )
+        self.max_duration_seconds = (
+            max_duration_seconds
+            if max_duration_seconds is not None
+            else config.max_duration_seconds
+        )
+        self.max_tokens = max_tokens if max_tokens is not None else config.max_tokens
+        self.llm_provider = llm_provider if llm_provider is not None else config.llm_provider
         self.raw_transcript = []  # Captures all printed output
 
         # Check SDK availability
@@ -190,6 +225,7 @@ class ScenarioRunner:
             preserve_always=self.preserve_on_success,
             init_kurt=True,  # Always init kurt
             install_claude_plugin=needs_claude,  # Always install by default
+            setup_commands=scenario.setup_commands,  # Pass setup commands from scenario
         )
         metrics_collector = MetricsCollector()
         had_error = False
@@ -198,6 +234,32 @@ class ScenarioRunner:
         try:
             # Setup workspace
             workspace.setup()
+
+            # Verify .claude folder installation (if needed)
+            if needs_claude:
+                self._log("\n🔍 Verifying .claude installation...")
+                claude_path = workspace.path / ".claude"
+                if claude_path.exists():
+                    skills_path = claude_path / "skills"
+                    commands_path = claude_path / "commands"
+
+                    skills_count = len(list(skills_path.iterdir())) if skills_path.exists() else 0
+                    commands_count = (
+                        len(list(commands_path.iterdir())) if commands_path.exists() else 0
+                    )
+
+                    self._log(f"   ✓ .claude folder exists at {claude_path}")
+                    self._log(f"   ✓ Skills: {skills_count} found")
+                    self._log(f"   ✓ Commands: {commands_count} found")
+
+                    # Stop scenario if no skills or commands are found
+                    if skills_count == 0 and commands_count == 0:
+                        raise RuntimeError(
+                            f".claude folder exists but contains no skills or commands. "
+                            f"Skills: {skills_count}, Commands: {commands_count}"
+                        )
+                else:
+                    raise RuntimeError(f".claude folder not found at {claude_path}")
 
             # Execute conversation with SDK (multi-turn by default)
             conversation = scenario.get_conversation()
@@ -333,8 +395,18 @@ class ScenarioRunner:
         # Configure SDK options
         options = ClaudeAgentOptions(
             cwd=str(workspace.path),
-            allowed_tools=["Bash", "Read", "Write", "Edit", "Glob", "Grep"],
+            allowed_tools=[
+                "Bash",
+                "Read",
+                "Write",
+                "Edit",
+                "Glob",
+                "Grep",
+                "Skill",
+                "SlashCommand",
+            ],
             permission_mode="bypassPermissions",
+            setting_sources=["user", "project"],  # Load skills and slash commands from filesystem
             system_prompt=f"""You are testing the Kurt CLI tool in an automated evaluation scenario.
 
 Current workspace: {workspace.path}
@@ -356,6 +428,8 @@ Execute commands as requested and report results concisely.""",
             # Create SDK client for multi-turn conversation session
             async with ClaudeSDKClient(options=options) as client:
                 current_message = message
+                conversation_history = []  # Track full conversation for user agent context
+                stop_reason = "max_turns_reached"  # Track why session ended
 
                 # Multi-turn conversation loop
                 for turn_num in range(1, max_turns + 1):
@@ -379,6 +453,7 @@ Execute commands as requested and report results concisely.""",
                             self._log(
                                 f"\n⚠️  GUARDRAIL: Max duration ({self.max_duration_seconds}s) exceeded!"
                             )
+                            stop_reason = f"max_duration_exceeded ({self.max_duration_seconds}s)"
                             await client.interrupt()
                             raise RuntimeError(
                                 f"Exceeded max duration of {self.max_duration_seconds}s"
@@ -411,6 +486,7 @@ Execute commands as requested and report results concisely.""",
                                 self._log(
                                     f"⚠️  GUARDRAIL: Max tokens ({self.max_tokens:,}) exceeded!"
                                 )
+                                stop_reason = f"max_tokens_exceeded ({self.max_tokens:,})"
                                 await client.interrupt()
                                 raise RuntimeError(f"Exceeded max tokens of {self.max_tokens:,}")
 
@@ -418,11 +494,11 @@ Execute commands as requested and report results concisely.""",
                             for block in msg.content:
                                 if isinstance(block, TextBlock):
                                     agent_text_response += block.text
-                                    self._log("\n  ┌─ 🤖 AGENT MESSAGE")
+                                    self._log(f"\n  {Colors.BLUE}┌─ 🤖 AGENT MESSAGE{Colors.RESET}")
                                     # Split long text into lines for better formatting
                                     for line in block.text.split("\n"):
-                                        self._log(f"  │ {line}")
-                                    self._log("  └─")
+                                        self._log(f"  {Colors.BLUE}│{Colors.RESET} {line}")
+                                    self._log(f"  {Colors.BLUE}└─{Colors.RESET}")
                                     metrics_collector.record_turn("agent", block.text)
 
                                 elif isinstance(block, ThinkingBlock):
@@ -438,6 +514,9 @@ Execute commands as requested and report results concisely.""",
                                         self._log(
                                             f"\n  ⚠️  GUARDRAIL: Max tool calls ({self.max_tool_calls}) exceeded!"
                                         )
+                                        stop_reason = (
+                                            f"max_tool_calls_exceeded ({self.max_tool_calls})"
+                                        )
                                         await client.interrupt()
                                         raise RuntimeError(
                                             f"Exceeded max of {self.max_tool_calls} tool calls"
@@ -449,15 +528,33 @@ Execute commands as requested and report results concisely.""",
                                     # Log tool use
                                     if tool_name == "Bash":
                                         cmd = tool_input.get("command", "")
-                                        self._log(f"\n  🔧 TOOL: {tool_name} → {cmd}")
+                                        self._log(
+                                            f"\n  {Colors.CYAN}🔧 TOOL:{Colors.RESET} {tool_name} → {cmd}"
+                                        )
                                     elif tool_name in ["Read", "Write", "Edit"]:
                                         file_path = tool_input.get("file_path", "")
-                                        self._log(f"\n  🔧 TOOL: {tool_name} → {file_path}")
+                                        self._log(
+                                            f"\n  {Colors.CYAN}🔧 TOOL:{Colors.RESET} {tool_name} → {file_path}"
+                                        )
                                     elif tool_name in ["Glob", "Grep"]:
                                         pattern = tool_input.get("pattern", "")
-                                        self._log(f"\n  🔧 TOOL: {tool_name} → {pattern}")
+                                        self._log(
+                                            f"\n  {Colors.CYAN}🔧 TOOL:{Colors.RESET} {tool_name} → {pattern}"
+                                        )
+                                    elif tool_name == "SlashCommand":
+                                        command = tool_input.get("command", "")
+                                        self._log(
+                                            f"\n  {Colors.CYAN}🔧 TOOL:{Colors.RESET} {tool_name} → {command}"
+                                        )
+                                    elif tool_name == "Skill":
+                                        skill = tool_input.get("command", "")
+                                        self._log(
+                                            f"\n  {Colors.CYAN}🔧 TOOL:{Colors.RESET} {tool_name} → {skill}"
+                                        )
                                     else:
-                                        self._log(f"\n  🔧 TOOL: {tool_name}")
+                                        self._log(
+                                            f"\n  {Colors.CYAN}🔧 TOOL:{Colors.RESET} {tool_name}"
+                                        )
 
                                     metrics_collector.record_tool_use(tool_name, tool_input)
 
@@ -470,33 +567,71 @@ Execute commands as requested and report results concisely.""",
                     if not self._is_agent_asking_question(agent_text_response):
                         # Agent completed task, end conversation
                         self._log("\n  ✅ TASK COMPLETE (no follow-up questions)")
+                        stop_reason = "task_complete"
                         break
 
                     # Agent is asking a question - check if we have a user agent to respond
                     if not user_agent:
                         self._log("\n  ⚠️  Agent asked question but no UserAgent available")
+                        stop_reason = "no_user_agent"
                         break
 
-                    # Generate automated user response
-                    current_message = user_agent.respond_to(
-                        agent_text_response, {"workspace": workspace.path, "turn": turn_num}
+                    # Record agent's message in history
+                    conversation_history.append(
+                        {"speaker": "agent", "message": agent_text_response}
                     )
-                    self._log("\n  ╭─ 🤖 AUTO-RESPONSE")
-                    self._log(f"  │ {current_message}")
-                    self._log("  ╰─")
+
+                    # Generate automated user response with conversation history
+                    current_message = user_agent.respond_to(
+                        agent_text_response,
+                        {
+                            "workspace": workspace.path,
+                            "turn": turn_num,
+                            "conversation_history": conversation_history,
+                        },
+                        use_llm=True,
+                        llm_provider=self.llm_provider,
+                    )
+
+                    # Record user's response in history
+                    conversation_history.append({"speaker": "user", "message": current_message})
+
+                    # Log the user agent's response with model info
+                    # Get model name based on provider
+                    if self.llm_provider == "openai":
+                        model_name = "gpt-4o-mini"
+                    elif self.llm_provider == "anthropic":
+                        model_name = "claude-3-5-haiku-20241022"
+                    else:
+                        model_name = self.llm_provider
+
+                    self._log(
+                        f"\n  {Colors.MAGENTA}┌─ 👤 USER AGENT RESPONSE ({model_name}){Colors.RESET}"
+                    )
+                    self._log(f"  {Colors.MAGENTA}│{Colors.RESET} {current_message}")
+                    self._log(f"  {Colors.MAGENTA}└─{Colors.RESET}")
                     metrics_collector.record_turn("user", current_message)
 
                 # Record final usage in metrics
                 metrics_collector.record_usage(cumulative_tokens, cumulative_cost)
 
-                # Log final summary
+                # Log final summary with stop reason
                 elapsed = time.time() - start_time
+
+                # Format stop reason for display
+                stop_reason_display = {
+                    "task_complete": "Task completed (no follow-up questions)",
+                    "no_user_agent": "Agent asked question but no UserAgent available",
+                    "max_turns_reached": f"Max turns reached ({max_turns})",
+                }.get(stop_reason, stop_reason)
+
                 self._log(f"\n{'╔'+'═'*68+'╗'}")
                 self._log("║ ✅ SESSION COMPLETE")
                 self._log(
                     f"║    Turns: {turn_num} | Tools: {total_tool_calls} | Duration: {elapsed:.1f}s"
                 )
                 self._log(f"║    Tokens: {cumulative_tokens:,} | Cost: ${cumulative_cost:.4f}")
+                self._log(f"║    Stop reason: {stop_reason_display}")
                 self._log(f"{'╚'+'═'*68+'╝'}")
 
         except Exception as e:
@@ -514,40 +649,70 @@ def run_scenario_by_name(
     max_duration_seconds: int = 300,
     max_tokens: int = 100000,
     preserve_workspace: bool = False,
+    llm_provider: str = "openai",
 ) -> Dict[str, Any]:
     """Load and run a scenario by name.
 
+    Supports both Python (.py) and YAML (.yaml/.yml) scenarios.
+
     Args:
-        scenario_name: Name of the scenario (without .py extension)
-        scenarios_dir: Directory containing scenario modules
+        scenario_name: Name of the scenario (without extension)
+        scenarios_dir: Directory containing scenario files
         max_tool_calls: Maximum tool calls allowed
         max_duration_seconds: Maximum execution time
         max_tokens: Maximum tokens to use
         preserve_workspace: If True, do not cleanup workspace after completion
+        llm_provider: LLM provider for user agent - "openai" or "anthropic" (default: "openai")
 
     Returns:
         Results dictionary
     """
-    # Import the scenario module
+    # Try scenarios.yaml first (multi-scenario file), then individual files
     import importlib.util
 
-    scenario_file = scenarios_dir / f"{scenario_name}.py"
+    from .yaml_loader import load_yaml_scenario
 
-    if not scenario_file.exists():
-        raise ValueError(f"Scenario not found: {scenario_file}")
+    # scenarios.yaml is in scenarios/
+    scenarios_yaml = scenarios_dir / "scenarios.yaml"
+    yaml_file = scenarios_dir / f"{scenario_name}.yaml"
+    yml_file = scenarios_dir / f"{scenario_name}.yml"
+    py_file = scenarios_dir / f"{scenario_name}.py"
 
-    spec = importlib.util.spec_from_file_location(scenario_name, scenario_file)
-    if spec is None or spec.loader is None:
-        raise ValueError(f"Could not load scenario: {scenario_file}")
+    scenario = None
 
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    # Try scenarios.yaml first
+    if scenarios_yaml.exists():
+        try:
+            scenario = load_yaml_scenario(scenarios_yaml, scenario_name=scenario_name)
+        except ValueError:
+            pass  # Scenario not in scenarios.yaml, try other files
 
-    # Get the create() function
-    if not hasattr(module, "create"):
-        raise ValueError(f"Scenario {scenario_name} must have a create() function")
+    # Try individual files if not found in scenarios.yaml
+    if scenario is None:
+        if yaml_file.exists():
+            scenario = load_yaml_scenario(yaml_file)
 
-    scenario = module.create()
+        elif yml_file.exists():
+            scenario = load_yaml_scenario(yml_file)
+
+        elif py_file.exists():
+            spec = importlib.util.spec_from_file_location(scenario_name, py_file)
+            if spec is None or spec.loader is None:
+                raise ValueError(f"Could not load scenario: {py_file}")
+
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+
+            if not hasattr(module, "create"):
+                raise ValueError(f"Scenario {scenario_name} must have a create() function")
+
+            scenario = module.create()
+
+        else:
+            raise ValueError(
+                f"Scenario not found: {scenario_name}\n"
+                f"  Tried: scenarios.yaml, {yaml_file.name}, {yml_file.name}, {py_file.name}"
+            )
 
     # Run it with guardrails
     runner = ScenarioRunner(
@@ -556,5 +721,6 @@ def run_scenario_by_name(
         max_tokens=max_tokens,
         preserve_on_error=True,  # Always preserve on error
         preserve_on_success=preserve_workspace,  # Preserve on success if requested
+        llm_provider=llm_provider,
     )
     return runner.run(scenario)

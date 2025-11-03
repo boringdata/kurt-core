@@ -43,6 +43,13 @@ class UserAgent:
         ...     context={}
         ... )
         >>> # Returns: "Write a blog post"
+
+    Or use a system prompt for more flexible behavior:
+        >>> user_agent = UserAgent(system_prompt='''
+        ...     You are a user creating a blog project.
+        ...     When asked about project name: respond "test-blog"
+        ...     When asked about goal: respond "Write a technical blog post"
+        ... ''')
     """
 
     # Pre-defined responses keyed by keywords
@@ -54,23 +61,43 @@ class UserAgent:
     # Default response if no match found
     default_response: str = "yes"
 
-    def respond_to(self, agent_message: str, context: Dict[str, Any]) -> str:
-        """Generate a response to an agent message.
+    # System prompt for LLM-based responses (alternative to keyword matching)
+    system_prompt: Optional[str] = None
+
+    def respond_to(
+        self,
+        agent_message: str,
+        context: Dict[str, Any],
+        use_llm: bool = True,
+        llm_provider: str = "openai",
+    ) -> str:
+        """Generate a response to an agent message using LLM.
 
         Args:
             agent_message: The message from the agent
             context: Current workspace context
+            use_llm: Always True (kept for backwards compatibility)
+            llm_provider: Which LLM provider to use - "openai" or "anthropic" (default: "openai")
 
         Returns:
             User response string
         """
-        # Try custom responder first
+        # Use LLM API for intelligent response (if system prompt is provided)
+        if self.system_prompt:
+            response = self._respond_with_llm(agent_message, context, llm_provider)
+            if not response:
+                raise RuntimeError(
+                    f"LLM user agent failed. Ensure API key is set in eval/.env for provider: {llm_provider}"
+                )
+            return response
+
+        # Try custom responder
         if self.custom_responder:
             response = self.custom_responder(agent_message, context)
             if response:
                 return response
 
-        # Try keyword matching
+        # Try keyword matching (simple fallback for scenarios without system_prompt)
         message_lower = agent_message.lower()
         for keyword, response in self.responses.items():
             if keyword.lower() in message_lower:
@@ -78,6 +105,31 @@ class UserAgent:
 
         # Fall back to default
         return self.default_response
+
+    def _respond_with_llm(
+        self, agent_message: str, context: Dict[str, Any], provider: str = "openai"
+    ) -> Optional[str]:
+        """Generate response using DSPy LLM.
+
+        This uses the system_prompt as instructions for how the user should behave,
+        and calls the configured LLM to generate contextually appropriate responses.
+
+        Args:
+            agent_message: The message from the agent
+            context: Current workspace context
+            provider: LLM provider - "openai" or "anthropic" (default: "openai")
+
+        Returns:
+            LLM-generated response string, or None if API fails
+        """
+        if not self.system_prompt:
+            return None
+
+        # Import DSPy user agent module
+        from .user_agent import respond_with_dspy
+
+        response = respond_with_dspy(agent_message, self.system_prompt, context, provider)
+        return response
 
     @staticmethod
     def simple(default: str = "yes") -> "UserAgent":
@@ -134,6 +186,9 @@ class Scenario:
 
     # Workspace setup options
     needs_claude_plugin: bool = True  # If True, installs .claude/ from kurt-demo (default: True)
+    setup_commands: Optional[List[str]] = (
+        None  # Optional bash commands to run during workspace setup
+    )
 
     def __post_init__(self):
         """Validate scenario definition."""

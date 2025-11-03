@@ -25,21 +25,23 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python eval/run_scenario.py 01_basic_init
-  python eval/run_scenario.py 02_status_check --no-cleanup
-  python eval/run_scenario.py --all
+  python eval/run_scenario.py 1                    # Run by ID
+  python eval/run_scenario.py 01_basic_init        # Run by name
+  python eval/run_scenario.py 2 --no-cleanup       # Preserve workspace
+  python eval/run_scenario.py --list               # List all scenarios
+  python eval/run_scenario.py --all                # Run all scenarios
 
-Available scenarios:
-  01_basic_init              - Initialize a new Kurt project
-  02_status_check            - Test kurt status command
-  03_interactive_project     - Multi-turn project creation
+Scenario IDs:
+  Use --list to see all scenarios with their IDs
 
 Debugging:
   Use --no-cleanup to preserve the workspace after completion
         """,
     )
 
-    parser.add_argument("scenario", nargs="?", help="Scenario name to run (without .py extension)")
+    parser.add_argument(
+        "scenario", nargs="?", help="Scenario ID (1, 2, ...) or name (01_basic_init, ...)"
+    )
 
     parser.add_argument("--all", action="store_true", help="Run all scenarios")
 
@@ -72,6 +74,14 @@ Debugging:
         help="Preserve workspace after scenario completes (do not clean up)",
     )
 
+    parser.add_argument(
+        "--llm-provider",
+        type=str,
+        default="openai",
+        choices=["openai", "anthropic"],
+        help="LLM provider for user agent responses (default: openai)",
+    )
+
     args = parser.parse_args()
 
     scenarios_dir = eval_dir / "scenarios"
@@ -80,11 +90,51 @@ Debugging:
     if args.list:
         print("\nAvailable scenarios:")
         print("=" * 60)
-        for scenario_file in sorted(scenarios_dir.glob("*.py")):
+
+        scenario_list = []  # (id, name, desc, type)
+        seen_names = set()
+
+        # Check scenarios.yaml
+        scenarios_yaml = scenarios_dir / "scenarios.yaml"
+        if scenarios_yaml.exists():
+            import yaml
+
+            with open(scenarios_yaml) as f:
+                data = yaml.safe_load(f)
+                if "scenarios" in data:
+                    for scenario in data["scenarios"]:
+                        name = scenario.get("name", "unnamed")
+                        desc = scenario.get("description", "")
+                        scenario_list.append((name, desc, "yaml"))
+                        seen_names.add(name)
+
+        # Collect individual scenario files (Python and YAML)
+        scenario_files = []
+        scenario_files.extend(scenarios_dir.glob("*.py"))
+        scenario_files.extend(scenarios_dir.glob("*.yaml"))
+        scenario_files.extend(scenarios_dir.glob("*.yml"))
+
+        # Remove duplicates and private scenarios
+        for scenario_file in sorted(scenario_files):
             if scenario_file.name.startswith("_"):
                 continue
             scenario_name = scenario_file.stem
-            print(f"  {scenario_name}")
+            if scenario_name in seen_names or scenario_name == "scenarios":
+                continue
+            seen_names.add(scenario_name)
+
+            # Show file type
+            ext = scenario_file.suffix
+            type_label = "yaml" if ext in [".yaml", ".yml"] else "py"
+            scenario_list.append((scenario_name, "", type_label))
+
+        # Print with IDs
+        for idx, (name, desc, type_label) in enumerate(scenario_list, start=1):
+            if desc:
+                print(f"  [{idx}] {name:<28} ({type_label}) - {desc}")
+            else:
+                print(f"  [{idx}] {name:<28} ({type_label})")
+
         print()
         return 0
 
@@ -135,14 +185,62 @@ Debugging:
         parser.print_help()
         return 1
 
+    # Resolve scenario name (could be numeric ID or name)
+    scenario_name = args.scenario
+
+    # Check if it's a numeric ID
+    if scenario_name.isdigit():
+        scenario_idx = int(scenario_name)
+
+        # Build scenario list (same as --list)
+        import yaml
+
+        scenario_list = []
+        seen_names = set()
+
+        scenarios_yaml = scenarios_dir / "scenarios.yaml"
+        if scenarios_yaml.exists():
+            with open(scenarios_yaml) as f:
+                data = yaml.safe_load(f)
+                if "scenarios" in data:
+                    for scenario in data["scenarios"]:
+                        name = scenario.get("name", "unnamed")
+                        scenario_list.append(name)
+                        seen_names.add(name)
+
+        scenario_files = []
+        scenario_files.extend(scenarios_dir.glob("*.py"))
+        scenario_files.extend(scenarios_dir.glob("*.yaml"))
+        scenario_files.extend(scenarios_dir.glob("*.yml"))
+
+        for scenario_file in sorted(scenario_files):
+            if scenario_file.name.startswith("_"):
+                continue
+            name = scenario_file.stem
+            if name in seen_names or name == "scenarios":
+                continue
+            seen_names.add(name)
+            scenario_list.append(name)
+
+        # Resolve ID to name
+        if scenario_idx < 1 or scenario_idx > len(scenario_list):
+            print(f"\n❌ Invalid scenario ID: {scenario_idx}")
+            print(f"   Available IDs: 1-{len(scenario_list)}")
+            print("\nRun with --list to see all scenarios")
+            return 1
+
+        scenario_name = scenario_list[scenario_idx - 1]
+        print(f"Running scenario [{scenario_idx}]: {scenario_name}\n")
+
     try:
         result = run_scenario_by_name(
-            args.scenario,
+            scenario_name,
             scenarios_dir,
             max_tool_calls=args.max_tools,
             max_duration_seconds=args.max_duration,
             max_tokens=args.max_tokens,
             preserve_workspace=args.no_cleanup,
+            llm_provider=args.llm_provider,
         )
         return 0 if result["passed"] else 1
     except Exception as e:

@@ -186,6 +186,121 @@ class ToolWasUsed(Assertion):
         return True
 
 
+class SlashCommandWasCalled(Assertion):
+    """Assert that a specific slash command was called during scenario execution.
+
+    This checks both that the SlashCommand tool was used AND that the specific
+    command name appears in the tool input.
+
+    Example:
+        >>> assertion = SlashCommandWasCalled("/create-project")
+        >>> assertion.evaluate(workspace, metrics)
+    """
+
+    def __init__(self, command_name: str):
+        """Initialize assertion.
+
+        Args:
+            command_name: Name of the slash command (e.g., '/create-project', 'create-project')
+        """
+        # Normalize command name (add / if missing)
+        self.command_name = command_name if command_name.startswith("/") else f"/{command_name}"
+
+    def evaluate(self, workspace: Any, metrics: Dict[str, Any]) -> bool:
+        # Check that SlashCommand tool was used
+        tool_usage = metrics.get("tool_usage", {})
+        slash_command_count = tool_usage.get("slashcommand", 0)
+
+        if slash_command_count == 0:
+            raise AssertionError(
+                f"SlashCommand tool was never used (expected command: {self.command_name})"
+            )
+
+        # Check that the specific command appears in conversation/tool calls
+        conversation = metrics.get("conversation", [])
+        tool_calls = metrics.get("tool_calls", [])
+
+        # Search in conversation
+        found_in_conversation = False
+        for msg in conversation:
+            text = str(msg.get("message") or msg.get("content", ""))
+            if self.command_name in text:
+                found_in_conversation = True
+                break
+
+        # Search in tool calls
+        found_in_tool_calls = False
+        for tool_call in tool_calls:
+            if tool_call.get("tool") == "SlashCommand":
+                tool_input = str(tool_call.get("input", ""))
+                if self.command_name in tool_input:
+                    found_in_tool_calls = True
+                    break
+
+        if not (found_in_conversation or found_in_tool_calls):
+            raise AssertionError(
+                f"Slash command '{self.command_name}' was not found in conversation or tool calls"
+            )
+
+        return True
+
+
+class SkillWasCalled(Assertion):
+    """Assert that a specific skill was called during scenario execution.
+
+    This checks both that the Skill tool was used AND that the specific
+    skill name appears in the tool input.
+
+    Example:
+        >>> assertion = SkillWasCalled("project-management")
+        >>> assertion.evaluate(workspace, metrics)
+    """
+
+    def __init__(self, skill_name: str):
+        """Initialize assertion.
+
+        Args:
+            skill_name: Name of the skill (e.g., 'project-management', 'content-writing')
+        """
+        self.skill_name = skill_name
+
+    def evaluate(self, workspace: Any, metrics: Dict[str, Any]) -> bool:
+        # Check that Skill tool was used
+        tool_usage = metrics.get("tool_usage", {})
+        skill_count = tool_usage.get("skill", 0)
+
+        if skill_count == 0:
+            raise AssertionError(f"Skill tool was never used (expected skill: {self.skill_name})")
+
+        # Check that the specific skill appears in conversation/tool calls
+        conversation = metrics.get("conversation", [])
+        tool_calls = metrics.get("tool_calls", [])
+
+        # Search in conversation
+        found_in_conversation = False
+        for msg in conversation:
+            text = str(msg.get("message") or msg.get("content", ""))
+            if self.skill_name in text:
+                found_in_conversation = True
+                break
+
+        # Search in tool calls
+        found_in_tool_calls = False
+        for tool_call in tool_calls:
+            if tool_call.get("tool") == "Skill":
+                tool_input = str(tool_call.get("input", ""))
+                if self.skill_name in tool_input:
+                    found_in_tool_calls = True
+                    break
+
+        if not (found_in_conversation or found_in_tool_calls):
+            raise AssertionError(
+                f"Skill '{self.skill_name}' was not found in conversation or tool calls"
+            )
+
+        return True
+
+
 class MetricEquals(Assertion):
     """Assert that a metric has a specific value.
 
@@ -217,6 +332,42 @@ class MetricEquals(Assertion):
         if value != self.expected_value:
             raise AssertionError(
                 f"Metric {self.metric_path}: expected {self.expected_value}, got {value}"
+            )
+
+        return True
+
+
+class MetricGreaterThan(Assertion):
+    """Assert that a metric is greater than a specific value.
+
+    Example:
+        >>> assertion = MetricGreaterThan("conversation.turns", 5)
+        >>> assertion.evaluate(workspace, metrics)
+    """
+
+    def __init__(self, metric_path: str, expected_value: Any):
+        """Initialize assertion.
+
+        Args:
+            metric_path: Dot-separated path to metric (e.g., 'conversation.turns')
+            expected_value: Minimum value (exclusive)
+        """
+        self.metric_path = metric_path
+        self.expected_value = expected_value
+
+    def evaluate(self, workspace: Any, metrics: Dict[str, Any]) -> bool:
+        # Navigate nested dictionary
+        keys = self.metric_path.split(".")
+        value = metrics
+        for key in keys:
+            if isinstance(value, dict) and key in value:
+                value = value[key]
+            else:
+                raise AssertionError(f"Metric path not found: {self.metric_path}")
+
+        if value <= self.expected_value:
+            raise AssertionError(
+                f"Metric {self.metric_path}: expected > {self.expected_value}, got {value}"
             )
 
         return True
@@ -264,6 +415,61 @@ class ConversationContains(Assertion):
 
             if target not in search_text:
                 raise AssertionError(f"Conversation does not contain text: {self.text}")
+
+        return True
+
+
+class SQLQueryAssertion(Assertion):
+    """Execute SQL query that returns a boolean (1/0) and assert it's true.
+
+    The SQL query must return 1 (true) or 0 (false). Use SQL expressions like:
+    - COUNT(*) > N
+    - EXISTS(...)
+    - CASE WHEN ... THEN 1 ELSE 0 END
+
+    Example:
+        >>> # Check at least 500 documents exist
+        >>> assertion = SQLQueryAssertion(
+        ...     "SELECT COUNT(*) >= 500 FROM documents WHERE ingestion_status='NOT_FETCHED'"
+        ... )
+        >>> assertion.evaluate(workspace, metrics)
+
+        >>> # Check no fetched documents exist
+        >>> assertion = SQLQueryAssertion(
+        ...     "SELECT COUNT(*) = 0 FROM documents WHERE ingestion_status='FETCHED'"
+        ... )
+        >>> assertion.evaluate(workspace, metrics)
+
+        >>> # Using CASE for complex logic
+        >>> assertion = SQLQueryAssertion(
+        ...     "SELECT CASE WHEN COUNT(*) BETWEEN 500 AND 1000 THEN 1 ELSE 0 END FROM documents"
+        ... )
+        >>> assertion.evaluate(workspace, metrics)
+    """
+
+    def __init__(self, query: str):
+        """Initialize assertion.
+
+        Args:
+            query: SQL query that returns 1 (true) or 0 (false)
+        """
+        self.query = query
+
+    def evaluate(self, workspace: Any, metrics: Dict[str, Any]) -> bool:
+        result = workspace.query_db(self.query)
+
+        if result is None:
+            raise AssertionError(f"SQL query returned no results: {self.query}")
+
+        # Convert to boolean: 1 = true, 0 = false
+        if result == 1:
+            return True
+        elif result == 0:
+            raise AssertionError(f"SQL assertion failed (returned 0):\n{self.query}")
+        else:
+            raise AssertionError(
+                f"SQL query must return 1 (true) or 0 (false), got: {result}\nQuery: {self.query}"
+            )
 
         return True
 
