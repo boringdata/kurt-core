@@ -8,6 +8,7 @@ from rich.console import Console
 from kurt import __version__
 from kurt.commands.cms import cms
 from kurt.commands.content import content
+from kurt.commands.feedback import feedback
 from kurt.commands.migrate import migrate
 from kurt.commands.project import project
 from kurt.commands.research import research
@@ -174,6 +175,7 @@ OPENAI_API_KEY=your_openai_api_key_here
 # Register command groups
 main.add_command(cms)
 main.add_command(content)
+main.add_command(feedback)
 main.add_command(migrate)
 main.add_command(project)
 main.add_command(research)
