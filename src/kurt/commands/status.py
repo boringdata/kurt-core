@@ -57,19 +57,51 @@ def status(format: str, hook_cc: bool):
     """
     # Check if Kurt is initialized
     if not config_exists():
+        # Auto-initialize when using --hook-cc flag
+        if hook_cc:
+            from kurt.config import create_config
+            from kurt.db.database import init_database
+
+            # Step 1: Create configuration
+            config = create_config()
+
+            # Step 2: Initialize database
+            init_database()
+
+            # Step 3: Apply migrations (if available)
+            try:
+                from kurt.db.migrations.utils import apply_migrations
+
+                apply_migrations(auto_confirm=True)
+            except Exception:
+                pass  # Continue if migrations fail
+
+            # Generate success message
+            message = (
+                "✨ **Kurt project initialized automatically**\n\n"
+                "Created:\n"
+                "- Configuration file: `kurt.config`\n"
+                "- Database: `.kurt/kurt.sqlite`\n"
+                "- Directories: `sources/`, `projects/`, `rules/`\n\n"
+                "You can now use Kurt commands. Try:\n"
+                "- `/create-project` to start a new content project\n"
+                "- `kurt content add <url>` to add content sources"
+            )
+            output = {
+                "systemMessage": message,
+                "additionalContext": message,
+            }
+            print(json.dumps(output, indent=2))
+            return
+
+        # Non-hook mode: show manual init message
         message = (
             "⚠ **Kurt project not initialized**\n\n"
             "You need to initialize Kurt before using it.\n\n"
             "Run: `kurt init`"
         )
 
-        if hook_cc:
-            output = {
-                "systemMessage": message,
-                "additionalContext": message,
-            }
-            print(json.dumps(output, indent=2))
-        elif format == "json":
+        if format == "json":
             output = {
                 "initialized": False,
                 "message": message,
@@ -85,19 +117,43 @@ def status(format: str, hook_cc: bool):
 
         # Check if database exists
         if not db_path.exists():
+            # Auto-initialize database when using --hook-cc flag
+            if hook_cc:
+                from kurt.db.database import init_database
+
+                # Initialize database
+                init_database()
+
+                # Apply migrations (if available)
+                try:
+                    from kurt.db.migrations.utils import apply_migrations
+
+                    apply_migrations(auto_confirm=True)
+                except Exception:
+                    pass  # Continue if migrations fail
+
+                # Generate success message
+                message = (
+                    "✨ **Database initialized automatically**\n\n"
+                    "Created:\n"
+                    "- Database: `.kurt/kurt.sqlite`\n\n"
+                    "You can now use Kurt commands."
+                )
+                output = {
+                    "systemMessage": message,
+                    "additionalContext": message,
+                }
+                print(json.dumps(output, indent=2))
+                return
+
+            # Non-hook mode: show manual init message
             message = (
                 "⚠ **Kurt project not fully initialized**\n\n"
                 "Config exists but database missing.\n\n"
                 "Run: `kurt init`"
             )
 
-            if hook_cc:
-                output = {
-                    "systemMessage": message,
-                    "additionalContext": message,
-                }
-                print(json.dumps(output, indent=2))
-            elif format == "json":
+            if format == "json":
                 output = {
                     "initialized": False,
                     "config_exists": True,
@@ -109,8 +165,19 @@ def status(format: str, hook_cc: bool):
                 console.print(f"[yellow]{message}[/yellow]")
             return
 
-        # Handle --hook-cc flag: generate markdown and wrap in hook format
+        # Handle --hook-cc flag: auto-apply migrations + generate status
         if hook_cc:
+            # Auto-apply any pending migrations
+            try:
+                migration_status = check_pending_migrations()
+                if migration_status["has_pending"]:
+                    from kurt.db.migrations.utils import apply_migrations
+
+                    apply_migrations(auto_confirm=True)
+            except Exception:
+                pass  # Continue if migration check/apply fails
+
+            # Generate status markdown
             markdown_output = generate_status_markdown()
             hook_output = {
                 "systemMessage": markdown_output,
