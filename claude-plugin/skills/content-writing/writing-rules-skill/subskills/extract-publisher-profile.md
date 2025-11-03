@@ -13,7 +13,7 @@ The parent skill provides:
 - `$PROJECT_PATH` - Full path to project directory (if applicable)
 - `$RULES_PUBLISHER` - `rules/publisher/publisher-profile.md`
 - `$EXISTING_RULES` - Existing publisher profile (if exists)
-- `$SOURCES_STATUS` - fetched|indexed status
+- `$SOURCES_STATUS` - fetched status (fetch includes indexing)
 - `$ARGUMENTS` - Subskill arguments
 
 ---

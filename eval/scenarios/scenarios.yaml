@@ -185,36 +185,41 @@ scenarios:
   - name: 04_project_with_sources
     description: Multi-turn conversation to create a project and fetch external sources
 
-    notes: |
-      Tests full project creation workflow including source discovery and fetching.
-      Uses FastAPI documentation (https://fastapi.tiangolo.com/) as source material.
-      Expected behavior:
-      - Create project structure
-      - Discover URLs from sitemap
-      - Fetch a subset of documents (3-5 pages to keep eval fast)
-      - Index fetched documents
-
     initial_prompt: run /create-project
 
     # User agent system prompt (defines how the user responds to questions)
     user_agent_prompt: |
-      You are a marketing manager at a SaaS startup that provides API development tools.
+      You are a content marketing manager at PostHog, the open-source product analytics platform.
 
-      Your company is launching a new FastAPI-based product feature next quarter. You need to
-      create marketing assets (blog posts, landing pages, email campaigns) to promote it to
-      developers.
+      ## Your Company Profile
+      - **Website:** https://posthog.com
+      - **Documentation:** https://posthog.com/docs
+      - **Blog:** https://posthog.com/blog
+      - **Handbook:** https://posthog.com/handbook
+      - **Target audience:** Product managers, engineers, and growth teams at startups and tech companies
+      - **Product:** Open-source product analytics, feature flags, A/B testing, and session replay
 
-      You want to gather source material from the official FastAPI documentation. This content
-      will serve as reference material and context for AI-assisted content generation by Kurt agent.
-      You're not trying to learn FastAPI yourself - you're collecting authoritative sources
-      that an AI can use to write technically-accurate, compelling marketing content.
+      ## Your Current Situation
+      PostHog is expanding its Python SDK capabilities and you're preparing content to help
+      developers integrate PostHog with their FastAPI applications. You need to create:
+      - Technical blog posts explaining the integration
+      - Updated documentation examples
+      - Developer onboarding guides
 
-      Your project details:
-      - Project name: "fastapi-marketing-launch"
-      - Goal: Create marketing content for our FastAPI-based product launch
-      - You want to write new marketing assets 
-      - Source: https://fastapi.tiangolo.com/ (keep it small, around 20 documents)
-      - This is your first project, so skip any foundation setup for now
+      Your content needs to be technically accurate and resonate with Python developers while
+      maintaining PostHog's distinctive voice (transparent, developer-first, slightly irreverent).
+
+      ## Your Goal with Kurt
+      You want to gather reference material from the official FastAPI documentation. This will
+      help you create technically-accurate content about integrating PostHog with FastAPI apps.
+      You're familiar with the basics but want authoritative sources to ensure accuracy.
+
+      ## Your Project Details
+      - Project name: "fastapi-integration-content"
+      - Goal: Create technical content for PostHog + FastAPI integration
+      - You want to write new content (blog posts and docs)
+      - Source: https://fastapi.tiangolo.com/ (keep it small, around 20 documents maximum)
+      - This is your first Kurt project, so skip any foundation setup for now
 
       Respond naturally to questions based on this context. Keep responses brief and conversational.
 
@@ -235,30 +240,30 @@ scenarios:
         path: .kurt/kurt.sqlite
 
       - type: FileExists
-        path: projects/fastapi-marketing-launch
+        path: projects/fastapi-integration-content
 
       - type: FileExists
-        path: projects/fastapi-marketing-launch/project.md
+        path: projects/fastapi-integration-content/project.md
 
       - type: FileExists
-        path: projects/fastapi-marketing-launch/sources
+        path: projects/fastapi-integration-content/sources
 
       - type: FileExists
-        path: projects/fastapi-marketing-launch/drafts
+        path: projects/fastapi-integration-content/drafts
 
       # Verify project.md contains expected content
       - type: FileContains
-        path: projects/fastapi-marketing-launch/project.md
-        content: fastapi-marketing-launch
+        path: projects/fastapi-integration-content/project.md
+        content: fastapi-integration-content
 
       - type: FileContains
-        path: projects/fastapi-marketing-launch/project.md
-        content: marketing
+        path: projects/fastapi-integration-content/project.md
+        content: integration
 
       # Verify project.md contains markdown header
       - type: FileContains
-        path: projects/fastapi-marketing-launch/project.md
-        content: "# fastapi-marketing-launch"
+        path: projects/fastapi-integration-content/project.md
+        content: "# fastapi-integration-content"
 
       # Verify content discovery happened - URLs discovered from FastAPI docs
       - type: SQLQueryAssertion

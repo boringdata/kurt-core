@@ -268,21 +268,22 @@ Extract all URLs/paths from:
 
 ### 5.2: Check Fetch Status for All Content
 
-For each URL in sources + targets:
+For URLs in sources + targets:
 
 ```bash
 # Check fetch status
-kurt content list --url <url>
+kurt content list --include "<url-pattern>"
+kurt content list --with-status NOT_FETCHED  # Show what's missing
 
 # Look for:
-# - status: FETCHED (good)
+# - status: FETCHED (good - includes indexing)
 # - status: NOT_FETCHED (needs fetch)
 # - status: ERROR (needs investigation)
 ```
 
-Display fetch status summary:
+Display status summary:
 ```
-Fetch Status:
+Content Status:
 
 Sources (8 total):
 ✓ 6 FETCHED
@@ -303,90 +304,39 @@ Targets (23 total):
 If any NOT_FETCHED content found:
 
 ```bash
-# Batch fetch by URL prefix if possible
-kurt content fetch --url-prefix https://docs.company.com/
+# Batch fetch by pattern (recommended - also indexes)
+kurt fetch --include "<url-pattern>"
 
-# Or fetch individual URLs
-kurt content fetch https://docs.company.com/page1
-kurt content fetch https://docs.company.com/page2
+# OR fetch specific URLs
+kurt fetch --urls "<url1>,<url2>"
+
+# OR fetch by cluster
+kurt fetch --in-cluster "ClusterName"
 ```
+
+**Note:** Fetch automatically indexes, no separate step needed.
 
 Show progress:
 ```
-Fetching missing content...
-✓ Fetched 2 sources
-✓ Fetched 8 targets
-All content now fetched.
+Fetching + indexing missing content...
+✓ Fetched + indexed 2 sources
+✓ Fetched + indexed 8 targets
+All content now ready for use.
 ```
 
-### 5.4: Check Index Status for All Content
+### 5.4: Final Content Status Summary
 
-**Critical:** Check if fetched content has been indexed (metadata extracted):
-
-```bash
-# Check if content has metadata
-kurt content get-metadata <url>
-
-# Look for extracted fields:
-# - title, author, published_date (frontmatter or extracted)
-# - topics, entities (LLM-extracted)
-# - indexed_at timestamp
-
-# If these are missing or null, content needs indexing
-```
-
-Display index status summary:
-```
-Index Status:
-
-Sources (8 total):
-✓ 3 INDEXED (metadata extracted)
-✗ 5 FETCHED but NOT INDEXED
-  - Missing topics/entities
-  - Need to run: kurt content index --url-prefix <prefix>
-
-Targets (23 total):
-✓ 5 INDEXED
-✗ 18 FETCHED but NOT INDEXED
-```
-
-### 5.5: Index All Fetched Content
-
-If any fetched but not indexed content found:
-
-```bash
-# Batch index by URL prefix (recommended)
-kurt content index --url-prefix https://docs.company.com/
-
-# Or index specific URLs
-kurt content index --url <url1> --url <url2>
-```
-
-Show progress:
-```
-Indexing content (extracting metadata + topics)...
-This may take 10-30 seconds depending on volume...
-
-✓ Indexed 5 sources
-✓ Indexed 18 targets
-All content now indexed and ready for analysis.
-```
-
-### 5.6: Final Content Status Summary
-
-After fetch + index complete:
+After fetch complete:
 
 ```
 ✅ Content Processing Complete
 
 Sources: 8 total
-  ✓ All fetched
-  ✓ All indexed
+  ✓ All fetched + indexed
   ✓ Ready for rule extraction
 
 Targets: 23 total
-  ✓ All fetched
-  ✓ All indexed
+  ✓ All fetched + indexed
   ✓ Ready for content work
 
 Next: Check rule coverage...
@@ -448,7 +398,7 @@ Based on the project intent and current status, recommend specific next actions.
    - Add to targets list
 
 3. Map doc structure via clusters (optional)
-   - Use: kurt content cluster
+   - Use: kurt cluster-urls
 
 4. Start updating
    - Use: content-writing-skill outline/draft

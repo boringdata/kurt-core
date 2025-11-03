@@ -308,14 +308,11 @@ STEP 1: Prepare Content
 
 Make sure you have content ingested into Kurt:
 
-  # Map content (discover URLs)
-  kurt content fetch https://your-company.com
+  # Map content (discover URLs + cluster)
+  kurt map url https://your-company.com --cluster-urls
 
-  # Fetch content (download to /sources/)
-  kurt content fetch --url-prefix https://your-company.com/
-
-  # Index content (extract metadata)
-  kurt content index --url-prefix https://your-company.com/
+  # Fetch content (download + index automatically)
+  kurt fetch --include https://your-company.com/
 
 STEP 2: Extract Foundation Rules
 ───────────────────────────────────────────────────────
@@ -426,14 +423,11 @@ Invoke: writing-rules-skill publisher --auto-discover
 ```
 First, you'll need to ingest content:
 
-  # Map your website
-  kurt content fetch https://your-company.com
+  # Map your website (discover + cluster)
+  kurt map url https://your-company.com --cluster-urls
 
-  # Fetch the content
-  kurt content fetch --url-prefix https://your-company.com/
-
-  # Index for metadata
-  kurt content index --url-prefix https://your-company.com/
+  # Fetch the content (download + index automatically)
+  kurt fetch --include https://your-company.com/
 
 Once that's done, run:
   writing-rules-skill publisher --auto-discover

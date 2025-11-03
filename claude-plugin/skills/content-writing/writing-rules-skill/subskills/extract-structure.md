@@ -13,7 +13,7 @@ The parent skill provides:
 - `$PROJECT_PATH` - Full path to project directory (if applicable)
 - `$RULES_STRUCTURE_DIR` - `rules/structure/`
 - `$EXISTING_RULES` - List of existing structure templates
-- `$SOURCES_STATUS` - fetched|indexed status
+- `$SOURCES_STATUS` - fetched status (fetch includes indexing)
 - `$ARGUMENTS` - Subskill arguments
 
 ---

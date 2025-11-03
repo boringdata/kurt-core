@@ -116,32 +116,51 @@ I'll use research-skill to refine this query conversationally before executing.
 
 See: `.claude/skills/research-skill/skill.md` - "Conversational Mode for Query Refinement"
 
-#### For Web Content → ingest-content-skill
+#### For Web Content → 2-Step Workflow
 
-**The ingest-content-skill owns map-then-fetch preview.**
+**Use kurt CLI's 2-step map-then-fetch workflow** (see README.md "Kurt CLI Workflows").
 
 **If user provided domain/URL:**
 ```
-I'll fetch content from: [domain]
+I'll ingest content from: [domain]
 
-Using map-then-fetch workflow:
-1. Map to discover URLs
-2. Show you what was found
-3. You approve which to fetch
+Using 2-step workflow:
+1. Map + Cluster: Discover URLs and organize into topics
+2. Review: Show you what was found
+3. Fetch: You approve which clusters/patterns to download
 ```
 
-**Invoke ingest-content-skill** which will:
-1. Map: `kurt content fetch <url> --discover-dates`
-2. Show discovered URLs (preview)
-3. Get user approval
-4. Fetch: `kurt content fetch --url-prefix <url>` (batched)
-5. Index: `kurt content index --url-prefix <url>` (batched)
+**Step 1: Map + Cluster**
+```bash
+# Map the website and cluster content
+kurt map url <url> --cluster-urls
+```
 
-**⚠️ CRITICAL: Always use batched operations**
-- `kurt content fetch --url-prefix` (not individual fetches)
-- `kurt content index --url-prefix` (not individual indexes)
+This discovers URLs, organizes into topic clusters, and classifies rough content types - all in one command.
 
-See: `.claude/skills/ingest-content-skill/skill.md` - "Integration with Iterative Source Gathering"
+**Step 2: Review Clusters**
+```bash
+# Show discovered clusters
+kurt cluster-urls --format table
+```
+
+Show user the clusters and ask which to fetch.
+
+**Step 3: Fetch Content**
+```bash
+# Fetch specific cluster(s)
+kurt fetch --in-cluster "ClusterName"
+
+# OR fetch by pattern
+kurt fetch --include "*/docs/*"
+```
+
+**⚠️ CRITICAL: Always use --cluster-urls during mapping**
+- Gives immediate topic organization
+- User can fetch selectively by cluster
+- No separate clustering step needed
+
+See: README.md "Kurt CLI Workflows" for detailed command reference
 
 #### For CMS Content → cms-interaction-skill
 

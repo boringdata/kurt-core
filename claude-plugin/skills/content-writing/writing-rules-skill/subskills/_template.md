@@ -50,15 +50,12 @@ Content must be **fetched + indexed** before extraction.
 ```
 ⚠️ Content not ready for {{RULE_TYPE}} extraction
 
-Sources must be:
-  ✓ Fetched (downloaded to /sources/)
-  ✓ Indexed (metadata extracted)
+Sources must be fetched (downloaded + indexed automatically).
 
 Current status: <status>
 
-Required actions:
-1. kurt content fetch --url-prefix <url>
-2. kurt content index --url-prefix <url>
+Required action:
+  kurt fetch --include <url>
 
 Once complete, retry: writing-rules-skill {{RULE_TYPE}} ...
 ```
@@ -371,7 +368,7 @@ Searched for: <URL patterns based on source_patterns>
 
 Options:
 a) Check if content is fetched: kurt content list --url-contains <pattern>
-b) Fetch content: kurt content fetch --url-prefix <url>
+b) Fetch content (includes indexing): kurt fetch --include <url>
 c) Try different type
 d) Use manual document selection
 ```

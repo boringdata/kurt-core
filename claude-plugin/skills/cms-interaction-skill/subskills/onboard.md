@@ -185,12 +185,23 @@ For each selected content type, configure:
 - Supports nested fields (e.g., `slug.current`)
 - Example: `slug.current`, `urlSlug`, `path`
 
-**4. Metadata Fields**
+**4. Description Field**
+- Which field contains a summary/excerpt for the content?
+- Used for topic clustering and content organization
+- Example: `excerpt`, `summary`, `description`, `meta.description`
+
+**5. Content Type Inference**
+- What content type should be inferred from this schema?
+- Skips LLM classification during mapping
+- Options: article, blog, tutorial, guide, reference, case_study, etc.
+- Example: `article` schema → `article` content type, `universeItem` → `reference`
+
+**6. Metadata Fields**
 - Select which fields to include as metadata
 - Tracks author, dates, tags, categories, etc.
 - Example: `author`, `publishedAt`, `tags`, `categories`
 
-**5. Reference Resolution**
+**7. Reference Resolution**
 - How to resolve reference fields?
 - Options: ID only, or resolve to specific field
 - Example: `author->name`, `categories[]->title`
@@ -266,6 +277,8 @@ The script adds `content_type_mappings` to cms-config.json:
         "content_field": "body",
         "title_field": "title",
         "slug_field": "slug.current",
+        "description_field": "excerpt",
+        "inferred_content_type": "article",
         "metadata_fields": {
           "author": "author->name",
           "published_date": "publishedAt",
@@ -279,6 +292,8 @@ The script adds `content_type_mappings` to cms-config.json:
         "content_field": "richText",
         "title_field": "headline",
         "slug_field": "urlSlug",
+        "description_field": "summary",
+        "inferred_content_type": "blog",
         "metadata_fields": {
           "author": "author.displayName",
           "published_date": "publishDate",

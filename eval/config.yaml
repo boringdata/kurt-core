@@ -38,6 +38,11 @@ workspace:
   # Install Claude plugin (.claude/ folder) in workspaces
   install_claude_plugin: true
 
+  # Path to source .claude/ directory to copy from
+  # Can be absolute or relative to kurt-core project root
+  # Defaults to kurt-core/.claude if not specified
+  claude_plugin_path: claude-plugin 
+
 
 # User Agent Configuration
 # ------------------------
@@ -141,8 +146,7 @@ api_keys:
   # ANTHROPIC_API_KEY - required for Claude agent
   # Check locations (in order):
   #   1. ANTHROPIC_API_KEY environment variable
-  #   2. ../kurt-demo/.env
-  #   3. eval/.env
+  #   2. eval/.env
 
   # OPENAI_API_KEY - required if using openai for user agent
   # ANTHROPIC_API_KEY - required if using anthropic for user agent

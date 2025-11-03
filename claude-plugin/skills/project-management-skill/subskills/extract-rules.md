@@ -68,18 +68,19 @@ The writing-rules-skill owns operational details (which documents to analyze, ho
 **Before any extraction**, verify content is ready:
 
 ```bash
-# Check indexed content count
-indexed_count=$(kurt content list --status INDEXED 2>/dev/null | wc -l | tr -d ' ')
+# Check fetched content count
+fetched_count=$(kurt content list --with-status FETCHED 2>/dev/null | wc -l | tr -d ' ')
 
-if [ "$indexed_count" -lt 10 ]; then
-  echo "⚠️  Need at least 10 indexed pages to extract rules"
-  echo "Currently have: $indexed_count indexed pages"
+if [ "$fetched_count" -lt 10 ]; then
+  echo "⚠️  Need at least 10 fetched pages to extract rules"
+  echo "Currently have: $fetched_count fetched pages"
   echo ""
-  echo "Please fetch and index more content first."
+  echo "Please map and fetch more content first."
+  echo "See README.md 'Kurt CLI Workflows' for details."
   exit 1
 fi
 
-echo "✓ Found $indexed_count indexed pages"
+echo "✓ Found $fetched_count fetched pages"
 echo "Ready for rule extraction"
 ```
 
@@ -87,7 +88,7 @@ echo "Ready for rule extraction"
 ```
 ⚠️ Not enough content for quality rule extraction
 
-Currently: $indexed_count indexed pages
+Currently: $fetched_count fetched pages
 Recommended: 10+ pages for foundation rules, 20+ for content-specific rules
 
 Would you like to:
@@ -105,19 +106,19 @@ Choose (a/b/c):
 Before proposing any extraction, analyze what content is available:
 
 ```bash
-# List all indexed documents
-kurt content list --status INDEXED --output json > indexed-content.json
+# List all fetched documents
+kurt content list --with-status FETCHED --format json > fetched-content.json
 
 # Analyze by domain
 echo "Content by domain:"
-cat indexed-content.json | jq -r '.[].url' | sed 's|https\?://||' | cut -d'/' -f1 | sort | uniq -c | sort -rn
+cat fetched-content.json | jq -r '.[].url' | sed 's|https\?://||' | cut -d'/' -f1 | sort | uniq -c | sort -rn
 
 # Analyze by date (if available)
 echo ""
 echo "Content date range:"
-cat indexed-content.json | jq -r '.[].published_date // "unknown"' | grep -v "unknown" | sort | head -1
+cat fetched-content.json | jq -r '.[].published_date // "unknown"' | grep -v "unknown" | sort | head -1
 echo "to"
-cat indexed-content.json | jq -r '.[].published_date // "unknown"' | grep -v "unknown" | sort | tail -1
+cat fetched-content.json | jq -r '.[].published_date // "unknown"' | grep -v "unknown" | sort | tail -1
 
 # Show content types/topics
 echo ""
@@ -469,7 +470,7 @@ Possible issues:
 - API rate limit or timeout
 
 Try:
-1. Re-index content: kurt content index --url-prefix <url>
+1. Re-fetch content (will re-index): kurt fetch --include "<url>/*" --refetch
 2. Add more source documents: project-management gather-sources
 3. Try different document set
 4. Skip for now and try later

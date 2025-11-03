@@ -120,38 +120,44 @@ Examples:
 
 **Wait for user input.**
 
-### 1.3: Delegate to ingest-content-skill
+### 1.3: Map + Fetch Organizational Content
 
-For each domain the user provides:
+For each domain the user provides, use the **2-step workflow** (see README.md "Kurt CLI Workflows"):
 
-**Use the Skill tool to invoke ingest-content-skill:**
-
-```
-I'll fetch content from: [domain]
-
-Using ingest-content-skill for Map → Fetch → Index workflow.
+**Step 1: Map + Cluster**
+```bash
+# Discover URLs and organize into topic clusters
+kurt map url <domain> --cluster-urls
 ```
 
-**Important:** Let ingest-content-skill handle all operational details:
-- Mapping (discovering URLs)
-- Fetching (downloading content)
-- Indexing (extracting metadata)
-- Progress reporting
-- Error handling
+This discovers all URLs, creates topic clusters, and classifies rough content types.
 
-After ingest completes, show summary:
+**Step 2: Review & Fetch**
+```bash
+# Review what was discovered
+kurt cluster-urls --format table
+
+# Fetch all content (organizational foundation needs everything)
+kurt fetch --include "<domain>/*"
+```
+
+For organizational foundation, we typically fetch everything since we need broad context.
+
+After mapping and fetching completes, show summary:
 
 ```
 ✅ Content Map Complete
 
-Mapped domains:
-- docs.yourcompany.com (50 pages)
-- blog.yourcompany.com (120 pages)
+Mapped + Fetched:
+- docs.yourcompany.com (50 pages, 8 topic clusters)
+- blog.yourcompany.com (120 pages, 12 topic clusters)
 
 Total: 170 pages indexed in /sources/
 
 Your organizational content is now queryable and ready for rule extraction.
 ```
+
+**See:** README.md "Kurt CLI Workflows" for detailed command reference
 
 ---
 
@@ -193,14 +199,14 @@ fi
 ### 2.2: If Core Rules Missing
 
 **Prerequisites check:**
-Content must be mapped/fetched/indexed before extracting rules.
+Content must be mapped and fetched before extracting rules.
 
 ```bash
 # Verify content exists for extraction
-content_count=$(kurt content list --status INDEXED 2>/dev/null | wc -l | tr -d ' ')
+content_count=$(kurt content list --with-status FETCHED 2>/dev/null | wc -l | tr -d ' ')
 if [ "$content_count" -lt 10 ]; then
-  echo "⚠️  Need at least 10 indexed pages to extract rules"
-  echo "Please complete content map first (Check 1)"
+  echo "⚠️  Need at least 10 fetched pages to extract rules"
+  echo "Please complete content map + fetch first (Check 1)"
 
   # Offer to do content map now
   ask_user_to_map_content
@@ -325,11 +331,11 @@ Skip this domain for now? (Y/n)
 
 Possible issues:
 - Not enough content to extract patterns
-- Content not indexed yet
+- Content not fetched yet
 - API rate limits
 
 Try:
-1. Verify content is indexed: kurt content list --status INDEXED
+1. Verify content is fetched: kurt content list --status FETCHED
 2. Wait and retry
 3. Continue without rules (can extract later)
 

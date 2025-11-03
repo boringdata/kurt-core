@@ -63,6 +63,7 @@ class EvalConfig:
                 "preserve_on_success": False,
                 "init_kurt": True,
                 "install_claude_plugin": True,
+                "claude_plugin_path": ".claude",
             },
             "user_agent": {
                 "llm_provider": "openai",
@@ -178,6 +179,11 @@ class EvalConfig:
     def install_claude_plugin(self) -> bool:
         """Get claude plugin installation setting."""
         return self.get("workspace.install_claude_plugin", True)
+
+    @property
+    def claude_plugin_path(self) -> str:
+        """Get claude plugin source path."""
+        return self.get("workspace.claude_plugin_path", ".claude")
 
     @property
     def llm_provider(self) -> str:

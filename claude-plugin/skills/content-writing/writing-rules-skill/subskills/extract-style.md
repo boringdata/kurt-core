@@ -14,28 +14,25 @@ The parent skill provides:
 - `$PROJECT_BRIEF` - Path to project.md (if applicable)
 - `$RULES_STYLE_DIR` - `rules/style/`
 - `$EXISTING_RULES` - List of existing style guides
-- `$SOURCES_STATUS` - fetched|indexed status
+- `$SOURCES_STATUS` - fetched status (fetch includes indexing)
 - `$ARGUMENTS` - Subskill arguments
 
 ---
 
 ## Prerequisites Check
 
-Content must be **fetched + indexed** before extraction.
+Content must be **fetched** before extraction (fetching automatically includes metadata indexing).
 
 **If $SOURCES_STATUS indicates not ready:**
 ```
 ⚠️ Content not ready for style extraction
 
-Sources must be:
-  ✓ Fetched (downloaded to /sources/)
-  ✓ Indexed (metadata extracted)
+Sources must be fetched (downloaded + indexed automatically).
 
 Current status: <status>
 
-Required actions:
-1. kurt content fetch --url-prefix <url>
-2. kurt content index --url-prefix <url>
+Required action:
+  kurt fetch --include <url>
 
 Once complete, retry: writing-rules-skill style ...
 ```
@@ -595,11 +592,11 @@ Searched for: <URL patterns>
 
 Options:
 a) Check if content is fetched: kurt content list --url-contains <pattern>
-b) Fetch content: kurt content fetch --url-prefix <url>
+b) Fetch content (includes indexing): kurt fetch --include <url>
 c) Try different style type
 d) Use manual document selection
 ```
 
 ---
 
-*This subskill is invoked by writing-rules-skill and requires content to be fetched + indexed before extraction.*
+*This subskill is invoked by writing-rules-skill and requires content to be fetched before extraction (fetching includes automatic indexing).*

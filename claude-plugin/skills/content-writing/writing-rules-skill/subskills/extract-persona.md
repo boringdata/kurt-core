@@ -13,7 +13,7 @@ The parent skill provides:
 - `$PROJECT_PATH` - Full path to project directory (if applicable)
 - `$RULES_PERSONAS_DIR` - `rules/personas/`
 - `$EXISTING_RULES` - List of existing personas
-- `$SOURCES_STATUS` - fetched|indexed status
+- `$SOURCES_STATUS` - fetched status (fetch includes indexing)
 - `$ARGUMENTS` - Subskill arguments
 
 ---

@@ -532,19 +532,14 @@ Custom rules are automatically discovered and used by content-writing-skill when
 
 ## Prerequisites
 
-All rule extraction requires content to be **fetched + indexed**:
+All rule extraction requires content to be **fetched** (fetching automatically includes indexing):
 
-1. **Fetch content** - Download to `/sources/`:
+1. **Fetch content** - Download + index automatically:
    ```bash
-   kurt content fetch --url-prefix <url>
+   kurt fetch --include <url>
    ```
 
-2. **Index content** - Extract metadata:
-   ```bash
-   kurt content index --url-prefix <url>
-   ```
-
-3. **Verify readiness**:
+2. **Verify readiness**:
    ```bash
    kurt content list --url-prefix <url> --status FETCHED
    kurt content get-metadata <url>  # Should show topics, entities
@@ -689,17 +684,14 @@ rules/
 
 ### "Sources not ready for extraction"
 
-**Problem:** Content hasn't been fetched or indexed yet
+**Problem:** Content hasn't been fetched yet
 **Solution:**
 ```bash
 # Check status
 kurt content list --url-prefix <url>
 
-# Fetch if needed
-kurt content fetch --url-prefix <url>
-
-# Index if needed
-kurt content index --url-prefix <url>
+# Fetch if needed (includes indexing automatically)
+kurt fetch --include <url>
 
 # Retry extraction
 writing-rules-skill <subskill> ...

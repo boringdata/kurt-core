@@ -112,6 +112,7 @@ class ScenarioRunner:
         )
         self.max_tokens = max_tokens if max_tokens is not None else config.max_tokens
         self.llm_provider = llm_provider if llm_provider is not None else config.llm_provider
+        self.config = config  # Store config for workspace setup
         self.raw_transcript = []  # Captures all printed output
 
         # Check SDK availability
@@ -129,8 +130,7 @@ class ScenarioRunner:
                 "The eval framework requires an Anthropic API key to test agent behavior.\n"
                 "Please provide the key via one of these methods:\n"
                 "  1. Set ANTHROPIC_API_KEY environment variable\n"
-                "  2. Add it to ../kurt-demo/.env\n"
-                "  3. Copy .env.example to .env and add your key\n\n"
+                "  2. Copy .env.example to .env and add your key\n\n"
                 "Get your API key from: https://console.anthropic.com/settings/keys\n"
             )
 
@@ -142,8 +142,7 @@ class ScenarioRunner:
 
         Checks in order:
         1. ANTHROPIC_API_KEY environment variable
-        2. ../kurt-demo/.env
-        3. eval/.env (local)
+        2. eval/.env (local)
 
         Returns:
             API key if found, None otherwise
@@ -152,20 +151,6 @@ class ScenarioRunner:
         api_key = os.getenv("ANTHROPIC_API_KEY")
         if api_key:
             return api_key
-
-        # Try to load from ../kurt-demo/.env
-        try:
-            kurt_demo_env = Path(__file__).parent.parent.parent.parent / "kurt-demo" / ".env"
-            if kurt_demo_env.exists():
-                with open(kurt_demo_env) as f:
-                    for line in f:
-                        line = line.strip()
-                        if line.startswith("ANTHROPIC_API_KEY="):
-                            key = line.split("=", 1)[1].strip().strip('"').strip("'")
-                            if key and key != "your-api-key-here":
-                                return key
-        except Exception:
-            pass
 
         # Try to load from local eval/.env
         try:
@@ -220,11 +205,22 @@ class ScenarioRunner:
         # Claude plugin is installed by default (can be disabled per scenario)
         needs_claude = getattr(scenario, "needs_claude_plugin", True)
 
+        # Resolve claude plugin source path
+        claude_source_path = None
+        if needs_claude:
+            plugin_path = Path(self.config.claude_plugin_path)
+            if not plugin_path.is_absolute():
+                # Resolve relative to kurt-core project root
+                kurt_core = Path(__file__).parent.parent.parent
+                plugin_path = kurt_core / plugin_path
+            claude_source_path = plugin_path
+
         workspace = IsolatedWorkspace(
             preserve_on_error=self.preserve_on_error,
             preserve_always=self.preserve_on_success,
             init_kurt=True,  # Always init kurt
             install_claude_plugin=needs_claude,  # Always install by default
+            claude_plugin_source=claude_source_path,  # Use path from config
             setup_commands=scenario.setup_commands,  # Pass setup commands from scenario
         )
         metrics_collector = MetricsCollector()
@@ -252,11 +248,11 @@ class ScenarioRunner:
                     self._log(f"   ✓ Skills: {skills_count} found")
                     self._log(f"   ✓ Commands: {commands_count} found")
 
-                    # Stop scenario if no skills or commands are found
-                    if skills_count == 0 and commands_count == 0:
+                    # Stop scenario if no commands are found
+                    if commands_count == 0:
                         raise RuntimeError(
-                            f".claude folder exists but contains no skills or commands. "
-                            f"Skills: {skills_count}, Commands: {commands_count}"
+                            f".claude folder exists but contains no commands. "
+                            f"Commands: {commands_count}, Skills: {skills_count}"
                         )
                 else:
                     raise RuntimeError(f".claude folder not found at {claude_path}")

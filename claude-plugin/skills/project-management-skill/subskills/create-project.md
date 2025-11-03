@@ -180,21 +180,17 @@ b) Skip for now (add later)
 
 2. **For existing content:**
    - Search in `/sources/` if already ingested
-   - **Check fetch + index status:**
+   - **Check fetch status:**
    ```bash
-   # Check if content is fetched
-   kurt content list --url <target-url>
+   # Check if content exists and is fetched
+   kurt content list --include "<target-url-pattern>"
 
-   # If NOT_FETCHED, fetch it:
-   kurt content fetch <target-url>
-
-   # Check if content is indexed (has metadata)
-   kurt content get-metadata <target-url>
-
-   # If not indexed, index it:
-   kurt content index --url <target-url>
+   # If NOT_FETCHED, fetch it (downloads + indexes atomically):
+   kurt fetch --include "<url-pattern>"
+   # OR
+   kurt fetch --urls "<url1>,<url2>"
    ```
-   - Or note URLs/paths to fetch/index later
+   - Or note URLs/paths to fetch later
 
 3. **For new content:**
    - Ask for planned file names
@@ -208,42 +204,18 @@ b) Skip for now (add later)
 
 ---
 
-## Step 4.5: Verify Fetch + Index Status
+## Step 4.5: Verify Fetch Status
 
-**Before proceeding to rule extraction**, verify that all sources and targets are fully processed.
+**Before proceeding to rule extraction**, verify that all sources and targets are fetched.
 
-### Check Sources
+### Check Sources & Targets
 
-For each source URL/path collected in Step 3:
-
-```bash
-# 1. Check fetch status
-kurt content list --url <source-url>
-
-# 2. If NOT_FETCHED, fetch it
-kurt content fetch <source-url>
-
-# 3. Check index status (look for extracted metadata)
-kurt content get-metadata <source-url>
-
-# 4. If not indexed (no topics/metadata), index it
-kurt content index --url <source-url>
-```
-
-### Check Targets
-
-For each target URL identified in Step 4:
+For URLs collected in Steps 3 & 4:
 
 ```bash
-# Same process as sources
-# 1. Check fetch status
-kurt content list --url <target-url>
-
-# 2. Fetch if needed
-kurt content fetch <target-url>
-
-# 3. Index if needed
-kurt content index --url <target-url>
+# Check fetch status
+kurt content list --include "<url-pattern>"
+kurt content list --with-status NOT_FETCHED  # Show what's not fetched yet
 ```
 
 ### Display Status Summary
@@ -252,41 +224,34 @@ kurt content index --url <target-url>
 Content Processing Status:
 
 Sources:
-✓ 5 fetched (files in /sources/)
-✓ 5 indexed (metadata extracted)
+✓ 5 fetched + indexed (ready for rule extraction)
 ✗ 2 not fetched yet
-✗ 3 fetched but not indexed
 
 Targets:
-✓ 10 fetched
-✗ 10 fetched but not indexed (need to run: kurt content index --url-prefix <prefix>)
+✓ 10 fetched + indexed
+✗ 5 not fetched yet
 
-Action needed:
-- Fetch 2 remaining sources
-- Index 3 sources + 10 targets
+Action needed: Fetch 7 remaining documents
 ```
 
-### Run Batch Operations
+### Fetch Remaining Content
 
-**Fetch remaining content:**
 ```bash
-kurt content fetch --url-prefix <common-prefix>
-```
+# Fetch by pattern (recommended for batch)
+kurt fetch --include "<url-pattern>"
 
-**Index all fetched content:**
-```bash
-# Index by URL prefix
-kurt content index --url-prefix <common-prefix>
+# OR fetch specific URLs
+kurt fetch --urls "<url1>,<url2>,<url3>"
 
-# Or index specific URLs
-kurt content index --url <url1> --url <url2>
+# OR fetch by cluster (if already clustered)
+kurt fetch --in-cluster "ClusterName"
 ```
 
 **Important:**
-- **Fetch first, then index** (indexing requires fetched content)
+- **Fetch automatically indexes** (atomic operation, no separate step needed)
 - **Batch operations are faster** than individual URLs
-- **Indexing is required** for rule extraction (needs content analysis)
-- **Wait for indexing to complete** before extracting rules
+- **Fetching + indexing is required** for rule extraction (needs content analysis)
+- See README.md "Kurt CLI Workflows" for detailed examples
 
 ---
 
