@@ -8,6 +8,7 @@ import click
 from rich.console import Console
 
 from kurt.config import load_config
+from kurt.telemetry.decorators import track_command
 from kurt.utils import extract_section
 
 console = Console()
@@ -36,6 +37,7 @@ def project():
     default="pretty",
     help="Output format",
 )
+@track_command
 def project_status(format: str):
     """
     Show status of all projects.

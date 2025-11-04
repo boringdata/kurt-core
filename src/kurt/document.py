@@ -13,10 +13,10 @@ These can be used directly by agents or wrapped by CLI commands.
 from typing import Optional
 from uuid import UUID
 
-from sqlmodel import select
+from sqlmodel import func, select
 
 from kurt.db.database import get_session
-from kurt.db.models import Document, IngestionStatus
+from kurt.db.models import Document, DocumentAnalytics, IngestionStatus
 
 
 def list_documents(
@@ -25,6 +25,12 @@ def list_documents(
     url_contains: Optional[str] = None,
     limit: Optional[int] = None,
     offset: int = 0,
+    # Analytics filters
+    with_analytics: bool = False,
+    pageviews_30d_min: Optional[int] = None,
+    pageviews_30d_max: Optional[int] = None,
+    pageviews_trend: Optional[str] = None,
+    order_by: Optional[str] = None,
 ) -> list[Document]:
     """
     List all documents with optional filtering.
@@ -35,9 +41,14 @@ def list_documents(
         url_contains: Filter by URL substring (e.g., "blog")
         limit: Maximum number of documents to return
         offset: Number of documents to skip (for pagination)
+        with_analytics: Include analytics data in results (LEFT JOIN)
+        pageviews_30d_min: Filter by minimum pageviews (last 30 days)
+        pageviews_30d_max: Filter by maximum pageviews (last 30 days)
+        pageviews_trend: Filter by trend ("increasing", "stable", "decreasing")
+        order_by: Sort results by field (created_at, pageviews_30d, pageviews_60d, trend_percentage)
 
     Returns:
-        List of Document objects
+        List of Document objects (with analytics data attached if with_analytics=True)
 
     Example:
         # List all documents
@@ -60,13 +71,34 @@ def list_documents(
 
         # Pagination: skip first 10, get next 10
         docs = list_documents(limit=10, offset=10)
+
+        # Filter by analytics (high-traffic pages)
+        docs = list_documents(with_analytics=True, pageviews_30d_min=500, order_by="pageviews_30d")
+
+        # Filter by traffic trend
+        docs = list_documents(with_analytics=True, pageviews_trend="decreasing")
     """
     session = get_session()
 
-    # Build query
-    stmt = select(Document)
+    # Determine if we need analytics JOIN
+    needs_analytics = (
+        with_analytics
+        or pageviews_30d_min is not None
+        or pageviews_30d_max is not None
+        or pageviews_trend is not None
+        or (order_by and order_by in ["pageviews_30d", "pageviews_60d", "trend_percentage"])
+    )
 
-    # Apply filters
+    # Build query
+    if needs_analytics:
+        # LEFT JOIN to include documents without analytics
+        stmt = select(Document).outerjoin(
+            DocumentAnalytics, Document.id == DocumentAnalytics.document_id
+        )
+    else:
+        stmt = select(Document)
+
+    # Apply basic filters
     if status:
         stmt = stmt.where(Document.ingestion_status == status)
     if url_prefix:
@@ -74,8 +106,27 @@ def list_documents(
     if url_contains:
         stmt = stmt.where(Document.source_url.contains(url_contains))
 
-    # Apply ordering (most recent first)
-    stmt = stmt.order_by(Document.created_at.desc())
+    # Apply analytics filters
+    if pageviews_30d_min is not None:
+        stmt = stmt.where(DocumentAnalytics.pageviews_30d >= pageviews_30d_min)
+    if pageviews_30d_max is not None:
+        stmt = stmt.where(DocumentAnalytics.pageviews_30d <= pageviews_30d_max)
+    if pageviews_trend:
+        stmt = stmt.where(DocumentAnalytics.pageviews_trend == pageviews_trend)
+
+    # Apply ordering
+    if order_by:
+        if order_by == "pageviews_30d":
+            stmt = stmt.order_by(DocumentAnalytics.pageviews_30d.desc())
+        elif order_by == "pageviews_60d":
+            stmt = stmt.order_by(DocumentAnalytics.pageviews_60d.desc())
+        elif order_by == "trend_percentage":
+            stmt = stmt.order_by(DocumentAnalytics.trend_percentage.desc())
+        elif order_by == "created_at":
+            stmt = stmt.order_by(Document.created_at.desc())
+    else:
+        # Default ordering (most recent first)
+        stmt = stmt.order_by(Document.created_at.desc())
 
     # Apply pagination
     if offset:
@@ -87,6 +138,7 @@ def list_documents(
     documents = session.exec(stmt).all()
 
     # Return Document objects directly
+    # Note: Analytics data is accessible via document.analytics relationship if loaded
     return list(documents)
 
 
@@ -260,8 +312,6 @@ def get_document_stats(include_pattern: Optional[str] = None) -> dict:
     """
     from fnmatch import fnmatch
 
-    from sqlmodel import func
-
     session = get_session()
 
     # Build base query with optional filtering
@@ -312,6 +362,15 @@ def get_document_stats(include_pattern: Optional[str] = None) -> dict:
         "fetched": fetched,
         "error": error,
     }
+
+
+# Analytics stats moved to telemetry module
+# For backwards compatibility, re-export it here
+def get_analytics_stats(include_pattern: Optional[str] = None) -> dict:
+    """Get analytics statistics (deprecated: use kurt.telemetry.analytics.get_analytics_stats)."""
+    from kurt.telemetry.analytics import get_analytics_stats as _get_analytics_stats
+
+    return _get_analytics_stats(include_pattern=include_pattern)
 
 
 def list_clusters() -> list[dict]:
@@ -377,6 +436,11 @@ def list_content(
     max_depth: int = None,
     limit: int = None,
     offset: int = 0,
+    with_analytics: bool = False,
+    order_by: str = None,
+    min_pageviews: int = None,
+    max_pageviews: int = None,
+    trend: str = None,
 ) -> list[Document]:
     """
     List documents with new explicit naming (for CLI-SPEC.md compliance).
@@ -391,9 +455,14 @@ def list_content(
         max_depth: Filter by maximum URL depth (e.g., 2 for example.com/a/b)
         limit: Maximum number of documents to return
         offset: Number of documents to skip (for pagination)
+        with_analytics: Include analytics data (pageviews, trends)
+        order_by: Sort by analytics metric (pageviews_30d | pageviews_60d | trend_percentage)
+        min_pageviews: Minimum pageviews_30d filter
+        max_pageviews: Maximum pageviews_30d filter
+        trend: Filter by trend (increasing | decreasing | stable)
 
     Returns:
-        List of Document objects
+        List of Document objects (with analytics dict attribute if with_analytics=True)
 
     Example:
         # List all documents
@@ -411,17 +480,27 @@ def list_content(
         # Filter by URL depth
         docs = list_content(max_depth=2)
 
+        # With analytics
+        docs = list_content(with_analytics=True, order_by="pageviews_30d", limit=10)
+        docs = list_content(with_analytics=True, trend="decreasing", min_pageviews=1000)
+
         # Combine filters
         docs = list_content(with_status="FETCHED", include_pattern="*/blog/*", max_depth=2)
     """
     from fnmatch import fnmatch
 
-    from kurt.db.models import DocumentClusterEdge, TopicCluster
+    from kurt.db.models import DocumentAnalytics, DocumentClusterEdge, TopicCluster
 
     session = get_session()
 
-    # Build query
-    stmt = select(Document)
+    # Build query with optional analytics join
+    if with_analytics:
+        # Select both Document and DocumentAnalytics
+        stmt = select(Document, DocumentAnalytics).outerjoin(
+            DocumentAnalytics, Document.id == DocumentAnalytics.document_id
+        )
+    else:
+        stmt = select(Document)
 
     # Apply cluster filter (JOIN with edges and clusters tables)
     if in_cluster:
@@ -443,8 +522,39 @@ def list_content(
         content_type_enum = ContentType(with_content_type.lower())
         stmt = stmt.where(Document.content_type == content_type_enum)
 
-    # Apply ordering (most recent first)
-    stmt = stmt.order_by(Document.created_at.desc())
+    # Apply analytics filters
+    if with_analytics:
+        if min_pageviews is not None:
+            stmt = stmt.where(
+                (DocumentAnalytics.pageviews_30d >= min_pageviews)
+                | (DocumentAnalytics.pageviews_30d.is_(None))
+            )
+        if max_pageviews is not None:
+            stmt = stmt.where(
+                (DocumentAnalytics.pageviews_30d <= max_pageviews)
+                | (DocumentAnalytics.pageviews_30d.is_(None))
+            )
+        if trend:
+            from kurt.db.models import TrendType
+
+            trend_enum = TrendType(trend.lower())
+            stmt = stmt.where(DocumentAnalytics.pageviews_trend == trend_enum)
+
+    # Apply ordering
+    if with_analytics and order_by:
+        # Order by analytics field
+        order_field_map = {
+            "pageviews_30d": DocumentAnalytics.pageviews_30d,
+            "pageviews_60d": DocumentAnalytics.pageviews_60d,
+            "trend_percentage": DocumentAnalytics.trend_percentage,
+        }
+        order_field = order_field_map.get(order_by)
+        if order_field is not None:
+            # NULL values last, then descending
+            stmt = stmt.order_by(order_field.desc().nullslast())
+    else:
+        # Default ordering (most recent first)
+        stmt = stmt.order_by(Document.created_at.desc())
 
     # Apply pagination
     if offset:
@@ -453,7 +563,30 @@ def list_content(
         stmt = stmt.limit(limit)
 
     # Execute query
-    documents = list(session.exec(stmt).all())
+    results = session.exec(stmt).all()
+
+    # Process results
+    if with_analytics:
+        # results is a list of tuples (Document, DocumentAnalytics or None)
+        documents = []
+        for doc, analytics in results:
+            # Attach analytics data as dict attribute
+            if analytics:
+                doc.analytics = {
+                    "pageviews_30d": analytics.pageviews_30d,
+                    "pageviews_60d": analytics.pageviews_60d,
+                    "pageviews_previous_30d": analytics.pageviews_previous_30d,
+                    "unique_visitors_30d": analytics.unique_visitors_30d,
+                    "pageviews_trend": analytics.pageviews_trend.value
+                    if analytics.pageviews_trend
+                    else None,
+                    "trend_percentage": analytics.trend_percentage,
+                }
+            else:
+                doc.analytics = None
+            documents.append(doc)
+    else:
+        documents = list(results)
 
     # Apply glob pattern filtering (post-query)
     if include_pattern:

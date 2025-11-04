@@ -191,6 +191,53 @@ def is_kurt_plugin_installed() -> bool:
         return False
 
 
+def get_stale_analytics_domains(threshold_days: int = 7) -> List[Dict[str, any]]:
+    """Get analytics domains with stale data (not synced recently).
+
+    Args:
+        threshold_days: Number of days after which analytics are considered stale
+
+    Returns:
+        List of dicts with domain, platform, and days_since_sync
+    """
+    try:
+        from datetime import datetime
+
+        from kurt.db.models import AnalyticsDomain
+
+        session = get_session()
+        domains = session.query(AnalyticsDomain).all()
+
+        if not domains:
+            return []
+
+        stale_domains = []
+        for domain in domains:
+            if domain.last_synced_at:
+                days_since_sync = (datetime.utcnow() - domain.last_synced_at).days
+                if days_since_sync > threshold_days:
+                    stale_domains.append(
+                        {
+                            "domain": domain.domain,
+                            "platform": domain.platform,
+                            "days_since_sync": days_since_sync,
+                        }
+                    )
+            else:
+                # Never synced
+                stale_domains.append(
+                    {
+                        "domain": domain.domain,
+                        "platform": domain.platform,
+                        "days_since_sync": None,
+                    }
+                )
+
+        return stale_domains
+    except Exception:
+        return []
+
+
 def generate_status_markdown() -> str:
     """Generate status output as markdown string."""
     output_lines = []
@@ -280,6 +327,26 @@ def generate_status_markdown() -> str:
     else:
         output_lines.append("⚠ **No projects created yet**")
         output_lines.append("- Create a project manually in the `projects/` directory\n")
+
+    # Analytics
+    stale_analytics = get_stale_analytics_domains(threshold_days=7)
+    if stale_analytics:
+        output_lines.append("## Analytics")
+        output_lines.append(f"📊 **{len(stale_analytics)} domain(s) have stale analytics data:**\n")
+
+        for domain_info in stale_analytics:
+            if domain_info["days_since_sync"] is None:
+                output_lines.append(f"- `{domain_info['domain']}`: Never synced")
+            else:
+                output_lines.append(
+                    f"- `{domain_info['domain']}`: {domain_info['days_since_sync']} days old"
+                )
+
+        output_lines.append(
+            "\n*Sync analytics for accurate content prioritization:*"
+        )
+        output_lines.append("- Sync all: `kurt analytics sync --all`")
+        output_lines.append("- Sync specific: `kurt analytics sync <domain>`\n")
 
     # Recommendations
     output_lines.append("---\n")

@@ -16,6 +16,7 @@ from kurt.cms.config import (
     platform_configured,
     save_cms_config,
 )
+from kurt.telemetry.decorators import track_command
 
 console = Console()
 
@@ -50,6 +51,7 @@ def cms():
 @click.option(
     "--output", type=click.Choice(["table", "json", "list"]), default="table", help="Output format"
 )
+@track_command
 def search_cmd(
     platform: str, query: Optional[str], content_type: Optional[str], limit: int, output: str
 ):
@@ -132,6 +134,7 @@ def search_cmd(
     default="markdown",
     help="Output format",
 )
+@track_command
 def fetch_cmd(platform: str, document_id: str, output_dir: Optional[str], output_format: str):
     """
     Fetch document content from CMS.
@@ -203,6 +206,7 @@ def fetch_cmd(platform: str, document_id: str, output_dir: Optional[str], output
 
 @cms.command("types")
 @click.option("--platform", default="sanity", help="CMS platform")
+@track_command
 def types_cmd(platform: str):
     """
     List available content types in CMS.
@@ -249,6 +253,7 @@ def types_cmd(platform: str):
 
 @cms.command("onboard")
 @click.option("--platform", default="sanity", help="CMS platform to configure")
+@track_command
 def onboard_cmd(platform: str):
     """
     Interactive CMS onboarding and configuration.
@@ -502,6 +507,7 @@ def onboard_cmd(platform: str):
     type=click.Path(exists=True),
     help="Directory containing markdown files from CMS",
 )
+@track_command
 def import_cmd(platform: str, source_dir: str):
     """
     Import CMS markdown files to Kurt database.
@@ -607,6 +613,7 @@ def import_cmd(platform: str, source_dir: str):
 )
 @click.option("--id", "document_id", help="CMS document ID to update (creates new if omitted)")
 @click.option("--content-type", help="Content type for new documents")
+@track_command
 def publish_cmd(
     platform: str, filepath: str, document_id: Optional[str], content_type: Optional[str]
 ):

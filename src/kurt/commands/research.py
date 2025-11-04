@@ -10,6 +10,7 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from kurt.research.config import get_source_config, source_configured
+from kurt.telemetry.decorators import track_command
 
 console = Console()
 
@@ -47,6 +48,7 @@ def research():
 @click.option(
     "--output", type=click.Choice(["markdown", "json"]), default="markdown", help="Output format"
 )
+@track_command
 def search_cmd(
     query: str, source: str, recency: Optional[str], model: Optional[str], save: bool, output: str
 ):
@@ -133,6 +135,7 @@ def search_cmd(
 
 @research.command("list")
 @click.option("--limit", type=int, default=20, help="Number of results to show")
+@track_command
 def list_cmd(limit: int):
     """
     List recent research results.
@@ -193,6 +196,7 @@ def list_cmd(limit: int):
 
 @research.command("get")
 @click.argument("filename")
+@track_command
 def get_cmd(filename: str):
     """
     Display a specific research result.
@@ -270,6 +274,7 @@ def get_cmd(filename: str):
 @click.option(
     "--output", type=click.Choice(["table", "json"]), default="table", help="Output format"
 )
+@track_command
 def reddit_cmd(
     subreddit: str,
     timeframe: str,
@@ -362,6 +367,7 @@ def reddit_cmd(
 @click.option(
     "--output", type=click.Choice(["table", "json"]), default="table", help="Output format"
 )
+@track_command
 def hackernews_cmd(
     timeframe: str, keywords: Optional[str], min_score: int, limit: int, output: str
 ):
@@ -443,6 +449,7 @@ def hackernews_cmd(
 @click.option(
     "--output", type=click.Choice(["table", "json"]), default="table", help="Output format"
 )
+@track_command
 def feeds_cmd(
     feed_url: str, since: Optional[str], keywords: Optional[str], limit: int, output: str
 ):
@@ -535,6 +542,7 @@ def feeds_cmd(
 @click.option(
     "--output", type=click.Choice(["summary", "json"]), default="summary", help="Output format"
 )
+@track_command
 def monitor_cmd(project_path: str, save: bool, output: str):
     """
     Run monitoring for a project based on its monitoring-config.yaml.

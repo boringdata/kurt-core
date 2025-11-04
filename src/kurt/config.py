@@ -37,6 +37,18 @@ class KurtConfig(BaseModel):
         default="trafilatura",
         description="Fetch engine for content ingestion: 'firecrawl' or 'trafilatura'",
     )
+    # Telemetry configuration
+    TELEMETRY_ENABLED: bool = Field(
+        default=True,
+        description="Enable telemetry collection (can be disabled via DO_NOT_TRACK or KURT_TELEMETRY_DISABLED env vars)",
+    )
+
+    # Analytics provider configurations (stored as extra fields with ANALYTICS_ prefix)
+    # These are dynamically added when onboarding analytics providers
+    # Example: ANALYTICS_POSTHOG_PROJECT_ID, ANALYTICS_POSTHOG_API_KEY
+    # We allow extra fields for analytics configurations
+    class Config:
+        extra = "allow"  # Allow additional fields for analytics configurations
 
     def _get_project_root(self) -> Path:
         """Get project root directory (where kurt.config is located) - internal use."""
@@ -178,6 +190,8 @@ def create_config(
         f.write(f'PATH_RULES="{config.PATH_RULES}"\n')
         f.write(f'INDEXING_LLM_MODEL="{config.INDEXING_LLM_MODEL}"\n')
         f.write(f'INGESTION_FETCH_ENGINE="{config.INGESTION_FETCH_ENGINE}"\n')
+        f.write("\n# Telemetry Configuration\n")
+        f.write(f'TELEMETRY_ENABLED="{config.TELEMETRY_ENABLED}"\n')
 
     return config
 
@@ -220,3 +234,12 @@ def update_config(config: KurtConfig) -> None:
         f.write(f'PATH_RULES="{config.PATH_RULES}"\n')
         f.write(f'INDEXING_LLM_MODEL="{config.INDEXING_LLM_MODEL}"\n')
         f.write(f'INGESTION_FETCH_ENGINE="{config.INGESTION_FETCH_ENGINE}"\n')
+        f.write("\n# Telemetry Configuration\n")
+        f.write(f'TELEMETRY_ENABLED="{config.TELEMETRY_ENABLED}"\n')
+
+        # Write analytics provider configurations (extra fields with ANALYTICS_ prefix)
+        analytics_fields = {k: v for k, v in config.__dict__.items() if k.startswith("ANALYTICS_")}
+        if analytics_fields:
+            f.write("\n# Analytics Provider Configurations\n")
+            for key, value in sorted(analytics_fields.items()):
+                f.write(f'{key}="{value}"\n')

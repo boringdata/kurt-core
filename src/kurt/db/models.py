@@ -181,3 +181,87 @@ class MetadataSyncQueue(SQLModel, table=True):
 #   - write_frontmatter_to_file() - writes YAML frontmatter to markdown files
 #   - remove_frontmatter() - removes existing frontmatter
 #   - process_metadata_sync_queue() - processes queued sync operations
+
+
+# ============================================================================
+# Analytics Integration
+# ============================================================================
+
+
+class AnalyticsDomain(SQLModel, table=True):
+    """Domains with analytics integration configured.
+
+    Tracks which source domains have analytics (e.g., PostHog) configured.
+    Analytics data is synced from the external platform and stored per-document.
+
+    Note: Credentials are stored in .kurt/analytics-config.json, not in the database.
+    This table only tracks domain registration and sync metadata.
+
+    See migration: 003_analytics
+    """
+
+    __tablename__ = "analytics_domains"
+
+    # Primary key
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+
+    # Domain name (e.g., "docs.company.com")
+    domain: str = Field(unique=True, index=True)
+
+    # Platform configuration (credentials in config file)
+    platform: str = "posthog"  # Platform type (posthog, ga4, plausible)
+
+    # Data availability
+    has_data: bool = Field(default=True)  # False if configured but no data synced yet
+
+    # Sync metadata
+    last_synced_at: Optional[datetime] = None
+    sync_period_days: int = 60  # Default sync period
+
+    # Timestamps
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class DocumentAnalytics(SQLModel, table=True):
+    """Analytics metrics synced from external platform (e.g., PostHog).
+
+    Stores traffic and engagement metrics for each document.
+    Metrics cover a 60-day rolling window split into two 30-day periods
+    for month-over-month trend analysis.
+
+    See migration: 003_analytics
+    """
+
+    __tablename__ = "document_analytics"
+
+    # Primary key and foreign key
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    document_id: UUID = Field(foreign_key="documents.id", index=True, unique=True)
+
+    # Traffic metrics - 60-day total
+    pageviews_60d: int = 0
+    unique_visitors_60d: int = 0
+
+    # Traffic metrics - Last 30 days
+    pageviews_30d: int = 0
+    unique_visitors_30d: int = 0
+
+    # Traffic metrics - Previous 30 days (days 31-60)
+    pageviews_previous_30d: int = 0
+    unique_visitors_previous_30d: int = 0
+
+    # Engagement metrics (session-based)
+    avg_session_duration_seconds: Optional[float] = None
+    bounce_rate: Optional[float] = None  # 0.0 to 1.0
+
+    # Computed trends (derived from 30d vs previous_30d)
+    pageviews_trend: str = "stable"  # "increasing", "stable", "decreasing"
+    trend_percentage: Optional[float] = None  # MoM change percentage
+
+    # Time window metadata
+    period_start: datetime  # Start of 60-day window
+    period_end: datetime  # End of 60-day window
+
+    # Sync metadata
+    synced_at: datetime = Field(default_factory=datetime.utcnow)
