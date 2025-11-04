@@ -224,6 +224,31 @@ def index(doc_id: str, include_pattern: str, all: bool, force: bool):
     default="table",
     help="Output format for AI agents",
 )
+@click.option(
+    "--with-analytics",
+    is_flag=True,
+    help="Include analytics data (pageviews, trends)",
+)
+@click.option(
+    "--order-by",
+    type=click.Choice(["pageviews_30d", "pageviews_60d", "trend_percentage"], case_sensitive=False),
+    help="Sort by analytics metric (requires --with-analytics)",
+)
+@click.option(
+    "--min-pageviews",
+    type=int,
+    help="Minimum pageviews_30d (requires --with-analytics)",
+)
+@click.option(
+    "--max-pageviews",
+    type=int,
+    help="Maximum pageviews_30d (requires --with-analytics)",
+)
+@click.option(
+    "--trend",
+    type=click.Choice(["increasing", "decreasing", "stable"], case_sensitive=False),
+    help="Filter by traffic trend (requires --with-analytics)",
+)
 def list_documents_cmd(
     with_status: str,
     include_pattern: str,
@@ -233,6 +258,11 @@ def list_documents_cmd(
     limit: int,
     offset: int,
     output_format: str,
+    with_analytics: bool,
+    order_by: str,
+    min_pageviews: int,
+    max_pageviews: int,
+    trend: str,
 ):
     """
     List all your documents.
@@ -245,10 +275,24 @@ def list_documents_cmd(
         kurt content list --with-content-type tutorial
         kurt content list --max-depth 2
         kurt content list --limit 20 --format json
+
+        # With analytics
+        kurt content list --with-analytics
+        kurt content list --with-analytics --order-by pageviews_30d --limit 10
+        kurt content list --with-analytics --trend decreasing --min-pageviews 1000
+        kurt content list --with-analytics --max-pageviews 0
     """
     from kurt.document import list_content
 
     try:
+        # Validate analytics flags
+        if not with_analytics and (order_by or min_pageviews or max_pageviews or trend):
+            console.print(
+                "[red]Error:[/red] Analytics flags (--order-by, --min-pageviews, "
+                "--max-pageviews, --trend) require --with-analytics"
+            )
+            raise click.Abort()
+
         # Call ingestion layer function
         docs = list_content(
             with_status=with_status,
@@ -258,6 +302,11 @@ def list_documents_cmd(
             max_depth=max_depth,
             limit=limit,
             offset=offset,
+            with_analytics=with_analytics,
+            order_by=order_by,
+            min_pageviews=min_pageviews,
+            max_pageviews=max_pageviews,
+            trend=trend,
         )
 
         if not docs:
@@ -275,6 +324,12 @@ def list_documents_cmd(
             table.add_column("ID", style="cyan", no_wrap=True)
             table.add_column("Title", style="white")
             table.add_column("Status", style="green")
+
+            # Add analytics columns if requested
+            if with_analytics:
+                table.add_column("Views (30d)", style="green", justify="right")
+                table.add_column("Trend", style="yellow", justify="center")
+
             table.add_column("Depth", style="magenta", justify="right")
             table.add_column("Count", style="yellow", justify="right")
             table.add_column("URL", style="dim")
@@ -328,14 +383,47 @@ def list_documents_cmd(
                 else:
                     status_display = f"[yellow]{status_str}[/yellow]"
 
-                table.add_row(
-                    str(doc.id)[:8] + "...",
-                    title,
-                    status_display,
-                    str(depth),
-                    str(child_count),
-                    url or "N/A",
-                )
+                # Build row based on whether analytics is included
+                if with_analytics:
+                    # Get analytics data (if present as dict in doc)
+                    analytics = getattr(doc, "analytics", None)
+
+                    if analytics:
+                        # Format pageviews with commas
+                        pageviews = analytics.get("pageviews_30d", 0) or 0
+                        pageviews_str = f"{pageviews:,}"
+
+                        # Trend symbol
+                        trend_value = analytics.get("pageviews_trend", "stable")
+                        trend_symbols = {
+                            "increasing": "↑",
+                            "decreasing": "↓",
+                            "stable": "→",
+                        }
+                        trend_str = trend_symbols.get(trend_value, "→")
+                    else:
+                        pageviews_str = "-"
+                        trend_str = "-"
+
+                    table.add_row(
+                        str(doc.id)[:8] + "...",
+                        title,
+                        status_display,
+                        pageviews_str,
+                        trend_str,
+                        str(depth),
+                        str(child_count),
+                        url or "N/A",
+                    )
+                else:
+                    table.add_row(
+                        str(doc.id)[:8] + "...",
+                        title,
+                        status_display,
+                        str(depth),
+                        str(child_count),
+                        url or "N/A",
+                    )
 
             console.print(table)
 
@@ -486,7 +574,12 @@ def delete_document_cmd(document_id: str, delete_content: bool, force: bool):
     default="table",
     help="Output format",
 )
-def stats_cmd(include_pattern: str, output_format: str):
+@click.option(
+    "--with-analytics",
+    is_flag=True,
+    help="Include analytics statistics (traffic distribution, trends)",
+)
+def stats_cmd(include_pattern: str, output_format: str, with_analytics: bool):
     """
     Show document statistics.
 
@@ -494,16 +587,27 @@ def stats_cmd(include_pattern: str, output_format: str):
         kurt content stats
         kurt content stats --include "*docs.dagster.io*"
         kurt content stats --format json
+        kurt content stats --with-analytics
+        kurt content stats --include "*docs.company.com*" --with-analytics
     """
-    from kurt.document import get_document_stats
+    from kurt.document import get_analytics_stats, get_document_stats
 
     try:
         stats = get_document_stats(include_pattern=include_pattern)
 
+        # Get analytics stats if requested
+        if with_analytics:
+            analytics_stats = get_analytics_stats(include_pattern=include_pattern)
+        else:
+            analytics_stats = None
+
         if output_format == "json":
             import json
 
-            console.print(json.dumps(stats, indent=2))
+            result = {"document_stats": stats}
+            if analytics_stats:
+                result["analytics_stats"] = analytics_stats
+            console.print(json.dumps(result, indent=2))
         else:
             console.print("\n[bold cyan]Document Statistics[/bold cyan]")
             console.print(f"[dim]{'─' * 40}[/dim]")
@@ -513,6 +617,59 @@ def stats_cmd(include_pattern: str, output_format: str):
             console.print(f"  Not Fetched:       [yellow]{stats['not_fetched']}[/yellow]")
             console.print(f"  Fetched:           [green]{stats['fetched']}[/green]")
             console.print(f"  Error:             [red]{stats['error']}[/red]")
+
+            # Show analytics stats if available
+            if analytics_stats:
+                console.print(f"\n[bold cyan]Traffic Statistics (30 days)[/bold cyan]")
+                console.print(f"[dim]{'─' * 40}[/dim]")
+
+                if analytics_stats["has_data"]:
+                    console.print(
+                        f"  Total Pageviews:   [bold]{analytics_stats['total_pageviews']:,}[/bold]"
+                    )
+                    console.print(f"  Average:           {analytics_stats['avg_pageviews']:.1f} views/page")
+                    console.print(f"  Median:            {analytics_stats['median_pageviews']:.0f} views/page")
+                    console.print(
+                        f"  P75 (HIGH):        {analytics_stats['p75_pageviews']:.0f} views"
+                    )
+                    console.print(
+                        f"  P25 (LOW):         {analytics_stats['p25_pageviews']:.0f} views"
+                    )
+
+                    console.print(f"\n[bold]Traffic Tiers:[/bold]")
+                    zero = analytics_stats["tier_counts"]["zero"]
+                    low = analytics_stats["tier_counts"]["low"]
+                    medium = analytics_stats["tier_counts"]["medium"]
+                    high = analytics_stats["tier_counts"]["high"]
+                    total_with_analytics = zero + low + medium + high
+
+                    if total_with_analytics > 0:
+                        console.print(
+                            f"  ZERO traffic:      {zero:3d} pages ({zero * 100 // total_with_analytics:2d}%)"
+                        )
+                        console.print(
+                            f"  LOW:               {low:3d} pages ({low * 100 // total_with_analytics:2d}%)"
+                        )
+                        console.print(
+                            f"  MEDIUM:            {medium:3d} pages ({medium * 100 // total_with_analytics:2d}%)"
+                        )
+                        console.print(
+                            f"  HIGH:              {high:3d} pages ({high * 100 // total_with_analytics:2d}%)"
+                        )
+
+                    console.print(f"\n[bold]Trends:[/bold]")
+                    inc = analytics_stats["trend_counts"]["increasing"]
+                    dec = analytics_stats["trend_counts"]["decreasing"]
+                    stable = analytics_stats["trend_counts"]["stable"]
+                    trend_total = inc + dec + stable
+
+                    if trend_total > 0:
+                        console.print(f"  Increasing ↑:      {inc} pages ({inc * 100 // trend_total}%)")
+                        console.print(f"  Stable →:          {stable} pages ({stable * 100 // trend_total}%)")
+                        console.print(f"  Decreasing ↓:      {dec} pages ({dec * 100 // trend_total}%)")
+                else:
+                    console.print("[yellow]No analytics data available[/yellow]")
+                    console.print("[dim]Run [cyan]kurt analytics sync[/cyan] to fetch data[/dim]")
 
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")

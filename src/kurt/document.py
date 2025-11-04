@@ -364,64 +364,74 @@ def get_document_stats(include_pattern: Optional[str] = None) -> dict:
     }
 
 
-def get_analytics_stats(url_prefix: Optional[str] = None) -> dict:
+def get_analytics_stats(include_pattern: Optional[str] = None) -> dict:
     """
     Get analytics statistics with percentile-based traffic thresholds.
 
-    Calculates traffic distribution for the given domain and returns
+    Calculates traffic distribution and returns
     percentile thresholds for categorizing pages as HIGH/MEDIUM/LOW/ZERO traffic.
 
     Args:
-        url_prefix: Optional URL prefix to scope stats (e.g., "https://docs.company.com")
+        include_pattern: Optional glob pattern to filter documents
 
     Returns:
         Dictionary with analytics statistics:
-            - total_with_analytics: int
-            - total_zero_traffic: int
-            - avg_pageviews_30d: float
-            - median_pageviews_30d: int
-            - p75_pageviews_30d: int (75th percentile - HIGH traffic threshold)
-            - p25_pageviews_30d: int (25th percentile - LOW traffic threshold)
-            - traffic_categories: dict with counts per category
+            - has_data: bool
+            - total_pageviews: int
+            - avg_pageviews: float
+            - median_pageviews: float
+            - p75_pageviews: float (75th percentile - HIGH threshold)
+            - p25_pageviews: float (25th percentile - LOW threshold)
+            - tier_counts: dict with zero/low/medium/high counts
+            - trend_counts: dict with increasing/decreasing/stable counts
 
     Example:
-        stats = get_analytics_stats(url_prefix="https://docs.company.com")
-        print(f"HIGH traffic threshold (p75): {stats['p75_pageviews_30d']} views/month")
-        print(f"Pages with ZERO traffic: {stats['total_zero_traffic']}")
+        stats = get_analytics_stats(include_pattern="*docs.company.com*")
+        print(f"HIGH traffic threshold (p75): {stats['p75_pageviews']} views/month")
     """
+    from fnmatch import fnmatch
+
+    from kurt.db.models import TrendType
+
     session = get_session()
 
     # Build query for documents with analytics
-    stmt = (
-        select(DocumentAnalytics)
-        .join(Document, Document.id == DocumentAnalytics.document_id)
-    )
+    stmt = select(DocumentAnalytics).join(Document, Document.id == DocumentAnalytics.document_id)
 
-    if url_prefix:
-        stmt = stmt.where(Document.source_url.startswith(url_prefix))
+    all_analytics = session.exec(stmt).all()
 
-    analytics = session.exec(stmt).all()
+    # Apply glob filtering if provided
+    if include_pattern:
+        # Need to get the documents to apply glob
+        filtered_analytics = []
+        for analytics in all_analytics:
+            doc = session.get(Document, analytics.document_id)
+            if doc and (
+                (doc.source_url and fnmatch(doc.source_url, include_pattern))
+                or (doc.content_path and fnmatch(str(doc.content_path), include_pattern))
+            ):
+                filtered_analytics.append(analytics)
+        analytics = filtered_analytics
+    else:
+        analytics = list(all_analytics)
 
     if not analytics:
         return {
-            "total_with_analytics": 0,
-            "total_zero_traffic": 0,
-            "avg_pageviews_30d": 0,
-            "median_pageviews_30d": 0,
-            "p75_pageviews_30d": 0,
-            "p25_pageviews_30d": 0,
-            "traffic_categories": {
-                "zero": 0,
-                "low": 0,
-                "medium": 0,
-                "high": 0,
-            },
+            "has_data": False,
+            "total_pageviews": 0,
+            "avg_pageviews": 0,
+            "median_pageviews": 0,
+            "p75_pageviews": 0,
+            "p25_pageviews": 0,
+            "tier_counts": {"zero": 0, "low": 0, "medium": 0, "high": 0},
+            "trend_counts": {"increasing": 0, "decreasing": 0, "stable": 0},
         }
 
     # Extract pageviews and sort
-    pageviews = [a.pageviews_30d for a in analytics]
+    pageviews = [a.pageviews_30d or 0 for a in analytics]
     pageviews_sorted = sorted(pageviews)
     total = len(pageviews_sorted)
+    total_pageviews = sum(pageviews)
 
     # Count zero traffic pages
     zero_traffic = sum(1 for pv in pageviews if pv == 0)
@@ -431,19 +441,24 @@ def get_analytics_stats(url_prefix: Optional[str] = None) -> dict:
 
     if not pageviews_nonzero:
         # All pages have zero traffic
+        trend_counts = {
+            "increasing": sum(
+                1 for a in analytics if a.pageviews_trend == TrendType.increasing
+            ),
+            "decreasing": sum(
+                1 for a in analytics if a.pageviews_trend == TrendType.decreasing
+            ),
+            "stable": sum(1 for a in analytics if a.pageviews_trend == TrendType.stable),
+        }
         return {
-            "total_with_analytics": total,
-            "total_zero_traffic": zero_traffic,
-            "avg_pageviews_30d": 0,
-            "median_pageviews_30d": 0,
-            "p75_pageviews_30d": 0,
-            "p25_pageviews_30d": 0,
-            "traffic_categories": {
-                "zero": zero_traffic,
-                "low": 0,
-                "medium": 0,
-                "high": 0,
-            },
+            "has_data": True,
+            "total_pageviews": 0,
+            "avg_pageviews": 0,
+            "median_pageviews": 0,
+            "p75_pageviews": 0,
+            "p25_pageviews": 0,
+            "tier_counts": {"zero": zero_traffic, "low": 0, "medium": 0, "high": 0},
+            "trend_counts": trend_counts,
         }
 
     # Calculate statistics
@@ -463,25 +478,29 @@ def get_analytics_stats(url_prefix: Optional[str] = None) -> dict:
     p75 = percentile(pageviews_nonzero, 75)
 
     # Categorize pages using percentiles
-    # ZERO: 0 views
-    # LOW: >0 and <= p25
-    # MEDIUM: >p25 and <= p75
-    # HIGH: >p75
-    categories = {
+    tier_counts = {
         "zero": zero_traffic,
         "low": sum(1 for pv in pageviews_nonzero if pv <= p25),
         "medium": sum(1 for pv in pageviews_nonzero if p25 < pv <= p75),
         "high": sum(1 for pv in pageviews_nonzero if pv > p75),
     }
 
+    # Count trends
+    trend_counts = {
+        "increasing": sum(1 for a in analytics if a.pageviews_trend == TrendType.increasing),
+        "decreasing": sum(1 for a in analytics if a.pageviews_trend == TrendType.decreasing),
+        "stable": sum(1 for a in analytics if a.pageviews_trend == TrendType.stable),
+    }
+
     return {
-        "total_with_analytics": total,
-        "total_zero_traffic": zero_traffic,
-        "avg_pageviews_30d": round(avg, 1),
-        "median_pageviews_30d": median,
-        "p75_pageviews_30d": p75,
-        "p25_pageviews_30d": p25,
-        "traffic_categories": categories,
+        "has_data": True,
+        "total_pageviews": total_pageviews,
+        "avg_pageviews": round(avg, 1),
+        "median_pageviews": median,
+        "p75_pageviews": p75,
+        "p25_pageviews": p25,
+        "tier_counts": tier_counts,
+        "trend_counts": trend_counts,
     }
 
 
@@ -548,6 +567,11 @@ def list_content(
     max_depth: int = None,
     limit: int = None,
     offset: int = 0,
+    with_analytics: bool = False,
+    order_by: str = None,
+    min_pageviews: int = None,
+    max_pageviews: int = None,
+    trend: str = None,
 ) -> list[Document]:
     """
     List documents with new explicit naming (for CLI-SPEC.md compliance).
@@ -562,9 +586,14 @@ def list_content(
         max_depth: Filter by maximum URL depth (e.g., 2 for example.com/a/b)
         limit: Maximum number of documents to return
         offset: Number of documents to skip (for pagination)
+        with_analytics: Include analytics data (pageviews, trends)
+        order_by: Sort by analytics metric (pageviews_30d | pageviews_60d | trend_percentage)
+        min_pageviews: Minimum pageviews_30d filter
+        max_pageviews: Maximum pageviews_30d filter
+        trend: Filter by trend (increasing | decreasing | stable)
 
     Returns:
-        List of Document objects
+        List of Document objects (with analytics dict attribute if with_analytics=True)
 
     Example:
         # List all documents
@@ -582,17 +611,27 @@ def list_content(
         # Filter by URL depth
         docs = list_content(max_depth=2)
 
+        # With analytics
+        docs = list_content(with_analytics=True, order_by="pageviews_30d", limit=10)
+        docs = list_content(with_analytics=True, trend="decreasing", min_pageviews=1000)
+
         # Combine filters
         docs = list_content(with_status="FETCHED", include_pattern="*/blog/*", max_depth=2)
     """
     from fnmatch import fnmatch
 
-    from kurt.db.models import DocumentClusterEdge, TopicCluster
+    from kurt.db.models import DocumentAnalytics, DocumentClusterEdge, TopicCluster
 
     session = get_session()
 
-    # Build query
-    stmt = select(Document)
+    # Build query with optional analytics join
+    if with_analytics:
+        # Select both Document and DocumentAnalytics
+        stmt = select(Document, DocumentAnalytics).outerjoin(
+            DocumentAnalytics, Document.id == DocumentAnalytics.document_id
+        )
+    else:
+        stmt = select(Document)
 
     # Apply cluster filter (JOIN with edges and clusters tables)
     if in_cluster:
@@ -614,8 +653,39 @@ def list_content(
         content_type_enum = ContentType(with_content_type.lower())
         stmt = stmt.where(Document.content_type == content_type_enum)
 
-    # Apply ordering (most recent first)
-    stmt = stmt.order_by(Document.created_at.desc())
+    # Apply analytics filters
+    if with_analytics:
+        if min_pageviews is not None:
+            stmt = stmt.where(
+                (DocumentAnalytics.pageviews_30d >= min_pageviews)
+                | (DocumentAnalytics.pageviews_30d.is_(None))
+            )
+        if max_pageviews is not None:
+            stmt = stmt.where(
+                (DocumentAnalytics.pageviews_30d <= max_pageviews)
+                | (DocumentAnalytics.pageviews_30d.is_(None))
+            )
+        if trend:
+            from kurt.db.models import TrendType
+
+            trend_enum = TrendType(trend.lower())
+            stmt = stmt.where(DocumentAnalytics.pageviews_trend == trend_enum)
+
+    # Apply ordering
+    if with_analytics and order_by:
+        # Order by analytics field
+        order_field_map = {
+            "pageviews_30d": DocumentAnalytics.pageviews_30d,
+            "pageviews_60d": DocumentAnalytics.pageviews_60d,
+            "trend_percentage": DocumentAnalytics.trend_percentage,
+        }
+        order_field = order_field_map.get(order_by)
+        if order_field is not None:
+            # NULL values last, then descending
+            stmt = stmt.order_by(order_field.desc().nullslast())
+    else:
+        # Default ordering (most recent first)
+        stmt = stmt.order_by(Document.created_at.desc())
 
     # Apply pagination
     if offset:
@@ -624,7 +694,28 @@ def list_content(
         stmt = stmt.limit(limit)
 
     # Execute query
-    documents = list(session.exec(stmt).all())
+    results = session.exec(stmt).all()
+
+    # Process results
+    if with_analytics:
+        # results is a list of tuples (Document, DocumentAnalytics or None)
+        documents = []
+        for doc, analytics in results:
+            # Attach analytics data as dict attribute
+            if analytics:
+                doc.analytics = {
+                    "pageviews_30d": analytics.pageviews_30d,
+                    "pageviews_60d": analytics.pageviews_60d,
+                    "pageviews_previous_30d": analytics.pageviews_previous_30d,
+                    "unique_visitors_30d": analytics.unique_visitors_30d,
+                    "pageviews_trend": analytics.pageviews_trend.value if analytics.pageviews_trend else None,
+                    "trend_percentage": analytics.trend_percentage,
+                }
+            else:
+                doc.analytics = None
+            documents.append(doc)
+    else:
+        documents = list(results)
 
     # Apply glob pattern filtering (post-query)
     if include_pattern:
