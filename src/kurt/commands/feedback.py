@@ -9,7 +9,6 @@ from kurt.telemetry.feedback_tracker import (
     track_improvement_executed,
     track_improvement_suggested,
     track_improvement_validated,
-    track_workflow_phase_rated,
 )
 
 console = Console()
@@ -23,7 +22,7 @@ def feedback():
 
 @feedback.command("log-submission")
 @click.option("--type", "feedback_type", required=True,
-              type=click.Choice(["content_quality", "project_plan", "workflow_retrospective"]),
+              type=click.Choice(["content_quality", "project_plan"]),
               help="Type of feedback loop")
 @click.option("--rating", required=True, type=int, help="User rating (1-5)")
 @click.option("--has-comment", is_flag=True, default=False, help="Whether user provided text feedback")
@@ -33,7 +32,6 @@ def feedback():
               help="Category of identified issue")
 @click.option("--skill", "skill_name", help="Name of skill being rated")
 @click.option("--operation", help="Operation being rated")
-@click.option("--workflow-used", is_flag=True, default=False, help="Whether project used workflow")
 @click.option("--has-analytics", is_flag=True, default=False, help="Whether analytics configured")
 @click.option("--execution-count", type=int, default=1, help="Nth execution of operation")
 @click.option("--prompted", is_flag=True, default=False, help="Whether automatic prompt or explicit request")
@@ -46,7 +44,6 @@ def log_submission(
     issue_category: str,
     skill_name: str,
     operation: str,
-    workflow_used: bool,
     has_analytics: bool,
     execution_count: int,
     prompted: bool,
@@ -68,7 +65,6 @@ def log_submission(
         issue_category=issue_category,
         skill_name=skill_name,
         operation=operation,
-        workflow_used=workflow_used,
         has_analytics=has_analytics,
         execution_count=execution_count,
         prompted=prompted,
@@ -79,13 +75,13 @@ def log_submission(
 
 @feedback.command("log-suggestion")
 @click.option("--feedback-type", required=True,
-              type=click.Choice(["content_quality", "project_plan", "workflow_retrospective"]),
+              type=click.Choice(["content_quality", "project_plan"]),
               help="Type of feedback loop")
 @click.option("--issue-category", required=True,
               type=click.Choice(["tone", "structure", "info", "tasks", "timeline", "phase_usefulness"]),
               help="Issue that triggered suggestion")
 @click.option("--improvement-type", required=True,
-              type=click.Choice(["update_rule", "update_workflow", "update_config", "extract_new_rule"]),
+              type=click.Choice(["update_rule", "update_config", "extract_new_rule"]),
               help="Type of improvement suggested")
 @click.option("--user-response", required=True,
               type=click.Choice(["accepted", "rejected", "dismissed"]),
@@ -128,7 +124,7 @@ def log_suggestion(
 
 @feedback.command("log-improvement")
 @click.option("--type", "improvement_type", required=True,
-              type=click.Choice(["update_rule", "update_workflow", "update_config", "extract_new_rule"]),
+              type=click.Choice(["update_rule", "update_config", "extract_new_rule"]),
               help="Type of improvement")
 @click.option("--command", required=True, help="High-level command executed")
 @click.option("--success", required=True, type=bool, help="Whether command succeeded")
@@ -172,7 +168,7 @@ def log_improvement(
 @feedback.command("log-validation")
 @click.option("--improvement-id", required=True, help="UUID of improvement being validated")
 @click.option("--improvement-type", required=True,
-              type=click.Choice(["update_rule", "update_workflow", "update_config", "extract_new_rule"]),
+              type=click.Choice(["update_rule", "update_config", "extract_new_rule"]),
               help="Type of improvement")
 @click.option("--days-since", required=True, type=int, help="Days since improvement")
 @click.option("--issue-resolved", required=True, type=bool, help="Whether issue was resolved")
@@ -208,54 +204,9 @@ def log_validation(
     console.print(f"[dim]✓ Logged improvement validation: {event_id}[/dim]")
 
 
-@feedback.command("log-phase-rating")
-@click.option("--phase-type", required=True, help="Generic phase type")
-@click.option("--phase-position", required=True, type=int, help="Position in workflow (1-indexed)")
-@click.option("--total-phases", required=True, type=int, help="Total phases in workflow")
-@click.option("--rating", required=True, type=int, help="Usefulness rating (1-5)")
-@click.option("--duration-accurate", required=True, type=bool, help="Whether duration estimate was accurate")
-@click.option("--tasks-complete", required=True, type=bool, help="Whether all tasks were relevant")
-@click.option("--suggested-change", is_flag=True, default=False, help="Whether user suggested change")
-@click.option("--change-type", help="Type of suggested change")
-@click.option("--event-id", required=True, help="UUID of phase rating event")
-def log_phase_rating(
-    phase_type: str,
-    phase_position: int,
-    total_phases: int,
-    rating: int,
-    duration_accurate: bool,
-    tasks_complete: bool,
-    suggested_change: bool,
-    change_type: str,
-    event_id: str,
-):
-    """
-    Log a workflow phase rating event.
-
-    This is called by the Claude Code feedback-skill during workflow retrospectives.
-
-    Example:
-        kurt feedback log-phase-rating --phase-type planning --phase-position 1 \\
-            --total-phases 5 --rating 4 --duration-accurate true --tasks-complete true \\
-            --event-id mno345
-    """
-    track_workflow_phase_rated(
-        phase_type=phase_type,
-        phase_position=phase_position,
-        total_phases=total_phases,
-        usefulness_rating=rating,
-        duration_accurate=duration_accurate,
-        tasks_complete=tasks_complete,
-        suggested_change=suggested_change,
-        change_type=change_type,
-    )
-
-    console.print(f"[dim]✓ Logged phase rating: {event_id}[/dim]")
-
-
 @feedback.command("log-loop-completed")
 @click.option("--feedback-type", required=True,
-              type=click.Choice(["content_quality", "project_plan", "workflow_retrospective"]),
+              type=click.Choice(["content_quality", "project_plan"]),
               help="Type of feedback loop")
 @click.option("--loop-duration-days", required=True, type=int, help="Days from feedback to validation")
 @click.option("--suggestions-made", required=True, type=int, help="Number of suggestions offered")

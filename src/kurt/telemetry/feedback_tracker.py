@@ -8,9 +8,9 @@ from typing import Literal, Optional
 from kurt.telemetry.config import is_telemetry_enabled
 from kurt.telemetry.tracker import track_event
 
-FeedbackType = Literal["content_quality", "project_plan", "workflow_retrospective"]
+FeedbackType = Literal["content_quality", "project_plan"]
 IssueCategory = Literal["tone", "structure", "info", "tasks", "timeline", "phase_usefulness"]
-ImprovementType = Literal["update_rule", "update_workflow", "update_config", "extract_new_rule"]
+ImprovementType = Literal["update_rule", "update_config", "extract_new_rule"]
 
 
 def track_feedback_submitted(
@@ -21,7 +21,6 @@ def track_feedback_submitted(
     issue_category: Optional[IssueCategory] = None,
     skill_name: Optional[str] = None,
     operation: Optional[str] = None,
-    workflow_used: bool = False,
     has_analytics: bool = False,
     execution_count: int = 1,
     prompted: bool = False,
@@ -36,7 +35,6 @@ def track_feedback_submitted(
         issue_category: Category of identified issue
         skill_name: Name of skill being rated
         operation: Operation being rated
-        workflow_used: Whether project used workflow
         has_analytics: Whether analytics configured
         execution_count: Nth execution of operation
         prompted: Whether automatic prompt or explicit request
@@ -52,7 +50,6 @@ def track_feedback_submitted(
         "issue_category": issue_category,
         "skill_name": skill_name,
         "operation": operation,
-        "workflow_used": workflow_used,
         "has_analytics": has_analytics,
         "execution_count": execution_count,
         "prompted": prompted,
@@ -170,47 +167,6 @@ def track_improvement_validated(
     properties = {k: v for k, v in properties.items() if v is not None}
 
     track_event("improvement_validated", properties)
-
-
-def track_workflow_phase_rated(
-    phase_type: str,
-    phase_position: int,
-    total_phases: int,
-    usefulness_rating: int,
-    duration_accurate: bool,
-    tasks_complete: bool,
-    suggested_change: bool = False,
-    change_type: Optional[str] = None,
-) -> None:
-    """Track workflow phase rating in retrospective.
-
-    Args:
-        phase_type: Generic phase type
-        phase_position: Position in workflow (1-indexed)
-        total_phases: Total phases in workflow
-        usefulness_rating: Rating (1-5)
-        duration_accurate: Whether duration estimate was accurate
-        tasks_complete: Whether all tasks were relevant
-        suggested_change: Whether user suggested change
-        change_type: Type of suggested change
-    """
-    if not is_telemetry_enabled():
-        return
-
-    properties = {
-        "phase_type": phase_type,
-        "phase_position": phase_position,
-        "total_phases": total_phases,
-        "usefulness_rating": usefulness_rating,
-        "duration_accurate": duration_accurate,
-        "tasks_complete": tasks_complete,
-        "suggested_change": suggested_change,
-        "change_type": change_type,
-    }
-
-    properties = {k: v for k, v in properties.items() if v is not None}
-
-    track_event("workflow_phase_rated", properties)
 
 
 def track_feedback_loop_completed(
