@@ -1027,13 +1027,15 @@ class TestContentStatsCommandExpanded:
         import json
 
         output = json.loads(result.output)
-        assert "total" in output
-        assert "fetched" in output
-        assert "not_fetched" in output
-        assert "error" in output
-        assert output["total"] == 2
-        assert output["fetched"] == 1
-        assert output["not_fetched"] == 1
+        assert "document_stats" in output
+        doc_stats = output["document_stats"]
+        assert "total" in doc_stats
+        assert "fetched" in doc_stats
+        assert "not_fetched" in doc_stats
+        assert "error" in doc_stats
+        assert doc_stats["total"] == 2
+        assert doc_stats["fetched"] == 1
+        assert doc_stats["not_fetched"] == 1
 
 
 # ============================================================================

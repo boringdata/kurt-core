@@ -1,7 +1,7 @@
 """Add analytics integration tables
 
 Revision ID: 003_analytics
-Revises: 002_metadata_sync
+Revises: 003_cms_document_id
 Create Date: 2025-10-30
 
 This migration adds:
@@ -18,7 +18,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "003_analytics"
-down_revision: Union[str, None] = "002_metadata_sync"
+down_revision: Union[str, None] = "003_cms_document_id"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -54,9 +54,7 @@ def upgrade() -> None:
         sa.Column("unique_visitors_30d", sa.Integer(), nullable=False, server_default="0"),
         # Traffic metrics - Previous 30 days (days 31-60)
         sa.Column("pageviews_previous_30d", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column(
-            "unique_visitors_previous_30d", sa.Integer(), nullable=False, server_default="0"
-        ),
+        sa.Column("unique_visitors_previous_30d", sa.Integer(), nullable=False, server_default="0"),
         # Engagement metrics
         sa.Column("avg_session_duration_seconds", sa.Float(), nullable=True),
         sa.Column("bounce_rate", sa.Float(), nullable=True),

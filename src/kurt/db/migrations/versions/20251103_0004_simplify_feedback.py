@@ -28,7 +28,7 @@ from sqlalchemy.engine import reflection
 
 # revision identifiers, used by Alembic.
 revision: str = "004_simplify_feedback"
-down_revision: Union[str, None] = "003_cms_document_id"
+down_revision: Union[str, None] = "003_analytics"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -109,15 +109,9 @@ def upgrade() -> None:
         )
 
     # Create indexes for the simplified feedback_events table
-    op.create_index(
-        "idx_feedback_created", "feedback_events", ["created_at"], unique=False
-    )
-    op.create_index(
-        "idx_feedback_category", "feedback_events", ["issue_category"], unique=False
-    )
-    op.create_index(
-        "idx_feedback_rating", "feedback_events", ["rating"], unique=False
-    )
+    op.create_index("idx_feedback_created", "feedback_events", ["created_at"], unique=False)
+    op.create_index("idx_feedback_category", "feedback_events", ["issue_category"], unique=False)
+    op.create_index("idx_feedback_rating", "feedback_events", ["rating"], unique=False)
 
 
 def downgrade() -> None:

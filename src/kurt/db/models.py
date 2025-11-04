@@ -202,8 +202,11 @@ class AnalyticsDomain(SQLModel, table=True):
 
     __tablename__ = "analytics_domains"
 
-    # Primary key: domain name (e.g., "docs.company.com")
-    domain: str = Field(primary_key=True)
+    # Primary key
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+
+    # Domain name (e.g., "docs.company.com")
+    domain: str = Field(unique=True, index=True)
 
     # Platform configuration (credentials in config file)
     platform: str = "posthog"  # Platform type (posthog, ga4, plausible)

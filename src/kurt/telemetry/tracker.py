@@ -9,7 +9,6 @@ import threading
 from typing import Any, Optional
 
 from kurt import __version__
-
 from kurt.telemetry.config import (
     POSTHOG_API_KEY,
     POSTHOG_HOST,
@@ -48,7 +47,7 @@ def _get_posthog_client():
         try:
             import posthog
 
-            # Configure PostHog
+            # Configure PostHog (hardcoded for CLI telemetry)
             posthog.project_api_key = POSTHOG_API_KEY
             posthog.host = POSTHOG_HOST
 

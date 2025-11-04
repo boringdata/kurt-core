@@ -590,7 +590,8 @@ def stats_cmd(include_pattern: str, output_format: str, with_analytics: bool):
         kurt content stats --with-analytics
         kurt content stats --include "*docs.company.com*" --with-analytics
     """
-    from kurt.document import get_analytics_stats, get_document_stats
+    from kurt.document import get_document_stats
+    from kurt.telemetry.analytics import get_analytics_stats
 
     try:
         stats = get_document_stats(include_pattern=include_pattern)
@@ -620,15 +621,19 @@ def stats_cmd(include_pattern: str, output_format: str, with_analytics: bool):
 
             # Show analytics stats if available
             if analytics_stats:
-                console.print(f"\n[bold cyan]Traffic Statistics (30 days)[/bold cyan]")
+                console.print("\n[bold cyan]Traffic Statistics (30 days)[/bold cyan]")
                 console.print(f"[dim]{'─' * 40}[/dim]")
 
                 if analytics_stats["has_data"]:
                     console.print(
                         f"  Total Pageviews:   [bold]{analytics_stats['total_pageviews']:,}[/bold]"
                     )
-                    console.print(f"  Average:           {analytics_stats['avg_pageviews']:.1f} views/page")
-                    console.print(f"  Median:            {analytics_stats['median_pageviews']:.0f} views/page")
+                    console.print(
+                        f"  Average:           {analytics_stats['avg_pageviews']:.1f} views/page"
+                    )
+                    console.print(
+                        f"  Median:            {analytics_stats['median_pageviews']:.0f} views/page"
+                    )
                     console.print(
                         f"  P75 (HIGH):        {analytics_stats['p75_pageviews']:.0f} views"
                     )
@@ -636,7 +641,7 @@ def stats_cmd(include_pattern: str, output_format: str, with_analytics: bool):
                         f"  P25 (LOW):         {analytics_stats['p25_pageviews']:.0f} views"
                     )
 
-                    console.print(f"\n[bold]Traffic Tiers:[/bold]")
+                    console.print("\n[bold]Traffic Tiers:[/bold]")
                     zero = analytics_stats["tier_counts"]["zero"]
                     low = analytics_stats["tier_counts"]["low"]
                     medium = analytics_stats["tier_counts"]["medium"]
@@ -657,16 +662,22 @@ def stats_cmd(include_pattern: str, output_format: str, with_analytics: bool):
                             f"  HIGH:              {high:3d} pages ({high * 100 // total_with_analytics:2d}%)"
                         )
 
-                    console.print(f"\n[bold]Trends:[/bold]")
+                    console.print("\n[bold]Trends:[/bold]")
                     inc = analytics_stats["trend_counts"]["increasing"]
                     dec = analytics_stats["trend_counts"]["decreasing"]
                     stable = analytics_stats["trend_counts"]["stable"]
                     trend_total = inc + dec + stable
 
                     if trend_total > 0:
-                        console.print(f"  Increasing ↑:      {inc} pages ({inc * 100 // trend_total}%)")
-                        console.print(f"  Stable →:          {stable} pages ({stable * 100 // trend_total}%)")
-                        console.print(f"  Decreasing ↓:      {dec} pages ({dec * 100 // trend_total}%)")
+                        console.print(
+                            f"  Increasing ↑:      {inc} pages ({inc * 100 // trend_total}%)"
+                        )
+                        console.print(
+                            f"  Stable →:          {stable} pages ({stable * 100 // trend_total}%)"
+                        )
+                        console.print(
+                            f"  Decreasing ↓:      {dec} pages ({dec * 100 // trend_total}%)"
+                        )
                 else:
                     console.print("[yellow]No analytics data available[/yellow]")
                     console.print("[dim]Run [cyan]kurt analytics sync[/cyan] to fetch data[/dim]")

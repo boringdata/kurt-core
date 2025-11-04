@@ -8,7 +8,13 @@ All telemetry is:
 - Non-blocking (never slows down CLI commands)
 """
 
+from kurt.telemetry.analytics import get_analytics_stats
 from kurt.telemetry.config import is_telemetry_enabled, set_telemetry_enabled
 from kurt.telemetry.tracker import track_event
 
-__all__ = ["is_telemetry_enabled", "set_telemetry_enabled", "track_event"]
+__all__ = [
+    "is_telemetry_enabled",
+    "set_telemetry_enabled",
+    "track_event",
+    "get_analytics_stats",
+]

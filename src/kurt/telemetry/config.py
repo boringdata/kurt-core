@@ -1,35 +1,27 @@
 """Telemetry configuration and opt-out management."""
 
-import json
 import os
 import uuid
 from pathlib import Path
 from typing import Optional
 
-# PostHog configuration
-POSTHOG_API_KEY = "phc_your_api_key_here"  # Replace with actual key
+# PostHog configuration (hardcoded for CLI telemetry)
+# Note: This is different from analytics config in .kurt/analytics-config.json
+# which is for tracking user website analytics (e.g., docs site pageviews)
+POSTHOG_API_KEY = "phc_N5KayyK6mLeh4U2hrdAxbhyaLN31E2q41OKv9DbWEGf"
 POSTHOG_HOST = "https://us.i.posthog.com"  # US region
 
 
 def get_telemetry_dir() -> Path:
-    """Get the directory for telemetry configuration.
+    """Get the directory for telemetry-specific files (machine_id).
 
     Returns:
-        Path to ~/.kurt directory
+        Path to ~/.kurt directory for machine ID storage
     """
     home = Path.home()
     telemetry_dir = home / ".kurt"
     telemetry_dir.mkdir(exist_ok=True)
     return telemetry_dir
-
-
-def get_telemetry_config_path() -> Path:
-    """Get the path to telemetry configuration file.
-
-    Returns:
-        Path to telemetry.json
-    """
-    return get_telemetry_dir() / "telemetry.json"
 
 
 def get_machine_id() -> str:
@@ -77,7 +69,7 @@ def is_telemetry_enabled() -> bool:
     Telemetry is disabled if:
     1. DO_NOT_TRACK environment variable is set
     2. KURT_TELEMETRY_DISABLED environment variable is set
-    3. User has explicitly disabled via config file
+    3. User has explicitly disabled via kurt.config (TELEMETRY_ENABLED=False)
 
     Returns:
         True if telemetry should be collected
@@ -90,40 +82,40 @@ def is_telemetry_enabled() -> bool:
     if os.getenv("KURT_TELEMETRY_DISABLED"):
         return False
 
-    # Check user config file
-    config_path = get_telemetry_config_path()
-    if config_path.exists():
-        try:
-            config = json.loads(config_path.read_text())
-            return config.get("enabled", True)
-        except (json.JSONDecodeError, KeyError):
-            # If config is malformed, default to enabled
-            return True
+    # Check user config file (kurt.config)
+    try:
+        from kurt.config import get_config_or_default
 
-    # Default: enabled (with first-run notice shown by CLI)
-    return True
+        config = get_config_or_default()
+        return config.TELEMETRY_ENABLED
+    except Exception:
+        # If config can't be loaded, default to enabled
+        return True
 
 
 def set_telemetry_enabled(enabled: bool) -> None:
-    """Enable or disable telemetry.
+    """Enable or disable telemetry by updating kurt.config.
 
     Args:
         enabled: Whether to enable telemetry
     """
-    config_path = get_telemetry_config_path()
+    from kurt.config import config_exists, get_config_or_default, update_config
 
-    # Load existing config or create new one
-    config = {}
-    if config_path.exists():
-        try:
-            config = json.loads(config_path.read_text())
-        except json.JSONDecodeError:
-            config = {}
+    # Get or create config
+    config = get_config_or_default()
 
-    config["enabled"] = enabled
+    # Update telemetry setting
+    config.TELEMETRY_ENABLED = enabled
 
-    # Write config
-    config_path.write_text(json.dumps(config, indent=2))
+    # Save config
+    if config_exists():
+        update_config(config)
+    else:
+        # If no config exists, we can't save telemetry preference
+        # User should run 'kurt init' first
+        raise RuntimeError(
+            "No kurt.config found. Run 'kurt init' to initialize a Kurt project first."
+        )
 
 
 def get_telemetry_status() -> dict:
@@ -133,22 +125,31 @@ def get_telemetry_status() -> dict:
         Dictionary with telemetry status information
     """
     enabled = is_telemetry_enabled()
-    config_path = get_telemetry_config_path()
 
     # Determine why telemetry is disabled (if it is)
     disabled_reason: Optional[str] = None
-    if not enabled:
-        if os.getenv("DO_NOT_TRACK"):
-            disabled_reason = "DO_NOT_TRACK environment variable"
-        elif os.getenv("KURT_TELEMETRY_DISABLED"):
-            disabled_reason = "KURT_TELEMETRY_DISABLED environment variable"
-        elif config_path.exists():
-            disabled_reason = f"User config ({config_path})"
+    config_path: Optional[str] = None
+
+    try:
+        from kurt.config import config_exists, get_config_file_path
+
+        if config_exists():
+            config_path = str(get_config_file_path())
+
+        if not enabled:
+            if os.getenv("DO_NOT_TRACK"):
+                disabled_reason = "DO_NOT_TRACK environment variable"
+            elif os.getenv("KURT_TELEMETRY_DISABLED"):
+                disabled_reason = "KURT_TELEMETRY_DISABLED environment variable"
+            elif config_path:
+                disabled_reason = f"TELEMETRY_ENABLED=False in {config_path}"
+    except Exception:
+        config_path = "No kurt.config found"
 
     return {
         "enabled": enabled,
         "disabled_reason": disabled_reason,
-        "config_path": str(config_path),
+        "config_path": config_path,
         "machine_id": get_machine_id() if enabled else None,
         "is_ci": is_ci_environment(),
     }
