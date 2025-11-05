@@ -33,6 +33,17 @@ def test_db_with_triggers(temp_project_dir, monkeypatch):
     db_dir.mkdir(parents=True, exist_ok=True)
     sources_dir.mkdir(parents=True, exist_ok=True)
 
+    # Change to temp directory and create config
+    import os
+    original_cwd = Path.cwd()
+    os.chdir(temp_project_dir)
+
+    # Use create_config to generate kurt.config file
+    from kurt.config import create_config
+    create_config()
+
+    monkeypatch.setattr("os.getcwd", lambda: str(temp_project_dir))
+
     # Mock the config to use temp directories
     monkeypatch.setenv("KURT_PROJECT_ROOT", str(temp_project_dir))
 
@@ -74,9 +85,13 @@ def test_db_with_triggers(temp_project_dir, monkeypatch):
     # Get a session
     session = Session(engine)
 
-    yield session, sources_dir
-
-    session.close()
+    try:
+        yield session, sources_dir
+    finally:
+        session.close()
+        # Restore original working directory
+        import os
+        os.chdir(original_cwd)
 
 
 def test_frontmatter_sync_on_index(test_db_with_triggers):
