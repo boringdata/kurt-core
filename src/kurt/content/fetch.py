@@ -46,14 +46,15 @@ def _get_fetch_engine(override: str = None) -> str:
 
     Priority:
     1. If override is specified → use override (if valid)
-    2. If INGESTION_FETCH_ENGINE is 'firecrawl' AND FIRECRAWL_API_KEY is set → use Firecrawl
-    3. Otherwise → use Trafilatura (fallback)
+    2. Use INGESTION_FETCH_ENGINE from kurt.config
+    3. If config engine is 'firecrawl' but no API key → fall back to trafilatura
+    4. Default to trafilatura if config not found
 
     Args:
-        override: Optional engine override ('firecrawl' or 'trafilatura')
+        override: Optional engine override ('firecrawl', 'trafilatura', or 'httpx')
 
     Returns:
-        'firecrawl' if configured and API key available, otherwise 'trafilatura'
+        Engine name: 'firecrawl', 'trafilatura', or 'httpx'
     """
     # Handle override
     if override:
@@ -73,24 +74,29 @@ def _get_fetch_engine(override: str = None) -> str:
                 )
         return override
 
-    # Use config default
+    # Priority 2: Use configured engine from kurt.config
     try:
         config = load_config()
-        default_engine = config.INGESTION_FETCH_ENGINE.lower()
+        configured_engine = config.INGESTION_FETCH_ENGINE.lower()
+
+        # Validate configured engine
+        if configured_engine not in KurtConfig.VALID_FETCH_ENGINES:
+            # Invalid engine in config - fall back to default
+            return KurtConfig.DEFAULT_FETCH_ENGINE
+
+        # If Firecrawl is configured, verify API key is available
+        if configured_engine == "firecrawl":
+            firecrawl_api_key = os.getenv("FIRECRAWL_API_KEY")
+            if not firecrawl_api_key or firecrawl_api_key == "your_firecrawl_api_key_here":
+                # Silently fall back to trafilatura if Firecrawl configured but no API key
+                return KurtConfig.DEFAULT_FETCH_ENGINE
+
+        # Return the configured engine (httpx, trafilatura, or firecrawl with valid API key)
+        return configured_engine
+
     except Exception:
-        # If config fails to load, use default from KurtConfig
-        default_engine = KurtConfig.DEFAULT_FETCH_ENGINE
-
-    # Check if Firecrawl is requested
-    if default_engine == "firecrawl":
-        firecrawl_api_key = os.getenv("FIRECRAWL_API_KEY")
-
-        # Verify API key is set and valid (not a placeholder)
-        if firecrawl_api_key and firecrawl_api_key != "your_firecrawl_api_key_here":
-            return "firecrawl"
-
-    # Default to trafilatura
-    return KurtConfig.DEFAULT_FETCH_ENGINE
+        # Priority 3: Config file not found or failed to load → use default
+        return KurtConfig.DEFAULT_FETCH_ENGINE
 
 
 def _fetch_with_firecrawl(url: str) -> tuple[str, dict]:
@@ -130,6 +136,71 @@ def _fetch_with_firecrawl(url: str) -> tuple[str, dict]:
         metadata = result.metadata if isinstance(result.metadata, dict) else {}
 
     return content, metadata
+
+
+def _fetch_with_httpx(url: str) -> tuple[str, dict]:
+    """
+    Fetch content using httpx + trafilatura extraction (bypasses trafilatura's fetch).
+
+    This engine uses httpx for HTTP requests (which respects proxy patching)
+    and trafilatura only for HTML extraction/conversion to markdown.
+
+    Args:
+        url: URL to fetch
+
+    Returns:
+        Tuple of (content_markdown, metadata_dict)
+
+    Raises:
+        ValueError: If fetch fails
+    """
+    import httpx
+
+    # Download content with httpx (respects proxy patches)
+    try:
+        response = httpx.get(url, follow_redirects=True, timeout=30.0)
+        response.raise_for_status()
+        downloaded = response.text
+    except Exception as e:
+        raise ValueError(f"[httpx] Download error: {type(e).__name__}: {str(e)}") from e
+
+    if not downloaded:
+        raise ValueError(f"[httpx] Failed to download (no content returned): {url}")
+
+    # Extract metadata using trafilatura (but not for fetching)
+    metadata = trafilatura.extract_metadata(
+        downloaded,
+        default_url=url,
+        extensive=True,
+    )
+
+    # Extract content as markdown
+    content = trafilatura.extract(
+        downloaded,
+        output_format="markdown",
+        include_tables=True,
+        include_links=True,
+        url=url,
+        with_metadata=True,
+    )
+
+    if not content:
+        raise ValueError(
+            f"[httpx] No content extracted (page might be empty or paywall blocked): {url}"
+        )
+
+    # Convert trafilatura metadata to dict
+    metadata_dict = {}
+    if metadata:
+        metadata_dict = {
+            "title": metadata.title,
+            "author": metadata.author,
+            "date": metadata.date,
+            "description": metadata.description,
+            "fingerprint": metadata.fingerprint,
+        }
+
+    return content, metadata_dict
 
 
 def _fetch_with_trafilatura(url: str) -> tuple[str, dict]:
@@ -484,6 +555,8 @@ def fetch_document(identifier: str | UUID, fetch_engine: str = None) -> dict:
 
             if engine == "firecrawl":
                 content, metadata_dict = _fetch_with_firecrawl(doc.source_url)
+            elif engine == "httpx":
+                content, metadata_dict = _fetch_with_httpx(doc.source_url)
             else:
                 content, metadata_dict = _fetch_with_trafilatura(doc.source_url)
 

@@ -56,7 +56,7 @@ class IsolatedWorkspace:
         self.claude_plugin_source = claude_plugin_source
         self.setup_commands = setup_commands
         self.use_http_mocks = use_http_mocks
-        self.mock_client = None
+        self.mock_server = None
         self._setup_complete = False
 
     def setup(self) -> Path:
@@ -73,6 +73,9 @@ class IsolatedWorkspace:
 
         # Change to temp directory
         os.chdir(self.temp_dir)
+
+        # Disable telemetry for eval scenarios
+        os.environ["KURT_TELEMETRY_DISABLED"] = "1"
 
         print(f"📁 Workspace created: {self.temp_dir}")
 
@@ -97,13 +100,23 @@ class IsolatedWorkspace:
         return self.temp_dir
 
     def _setup_http_mocks(self):
-        """Setup HTTP mocking to use local mock data instead of real requests."""
+        """Setup HTTP mocking using a local HTTP server as proxy."""
         try:
-            from eval.mock_http import create_mock_client
+            from eval.framework.mock_server import create_mock_server
 
-            self.mock_client = create_mock_client()
-            self.mock_client.start()
-            print("✅ HTTP mocking enabled (requests + httpx patched)")
+            # Start mock HTTP server
+            self.mock_server = create_mock_server(port=8765)
+            self.mock_server.start()
+
+            # Set HTTP_PROXY environment variable for HTTP URLs only
+            # httpx respects this automatically when making requests
+            # Note: Only set HTTP_PROXY, not HTTPS_PROXY, since our mock URLs use http://
+            os.environ['HTTP_PROXY'] = "http://127.0.0.1:8765"
+            os.environ['http_proxy'] = "http://127.0.0.1:8765"
+
+            print("✅ HTTP mocking enabled via proxy server")
+            print(f"   Proxy: http://127.0.0.1:8765")
+            print(f"   HTTP_PROXY environment variable set (HTTP only)")
         except Exception as e:
             print(f"⚠️  Failed to setup HTTP mocks: {e}")
             print("   Scenarios will make real HTTP requests")
@@ -125,6 +138,10 @@ class IsolatedWorkspace:
 
                 # Create standard directories (sources/, rules/, projects/)
                 self._create_standard_directories()
+
+                # Configure httpx fetch engine for eval scenarios (works with proxy mocking)
+                if self.use_http_mocks:
+                    self._configure_httpx_engine()
             else:
                 print(f"⚠️  kurt init exited with code {result.returncode}")
                 if result.stderr:
@@ -146,6 +163,40 @@ class IsolatedWorkspace:
             dir_path.mkdir(exist_ok=True)
 
         print("✅ Created sources/, rules/, projects/ directories")
+
+    def _configure_httpx_engine(self):
+        """Configure Kurt to use httpx fetch engine (works with proxy mocking)."""
+        if not self.temp_dir:
+            return
+
+        config_path = self.temp_dir / "kurt.config"
+        if not config_path.exists():
+            print("⚠️  kurt.config not found, cannot set fetch engine")
+            return
+
+        try:
+            # Read existing config
+            config_content = config_path.read_text()
+
+            # Replace INGESTION_FETCH_ENGINE value
+            if "INGESTION_FETCH_ENGINE" in config_content:
+                # Update existing value
+                import re
+                config_content = re.sub(
+                    r'INGESTION_FETCH_ENGINE\s*=\s*["\']?[^"\'\n]+["\']?',
+                    'INGESTION_FETCH_ENGINE = "httpx"',
+                    config_content
+                )
+            else:
+                # Add new value at the end
+                config_content += '\nINGESTION_FETCH_ENGINE = "httpx"\n'
+
+            # Write back
+            config_path.write_text(config_content)
+            print("✅ Configured Kurt to use httpx fetch engine")
+
+        except Exception as e:
+            print(f"⚠️  Failed to configure httpx engine: {e}")
 
     def _install_claude_plugin(self):
         """Copy .claude/ directory from source to workspace."""
@@ -170,10 +221,18 @@ class IsolatedWorkspace:
             print("✅ Claude Code plugin installed")
 
             # Copy .env file from eval directory if it exists (for API keys)
+            # Filter out FIRECRAWL_API_KEY to force httpx engine usage in eval scenarios
             eval_env = Path(__file__).parent.parent / ".env"  # eval/.env
             if eval_env.exists():
-                shutil.copy(eval_env, self.temp_dir / ".env")
-                print("✅ .env copied from eval/")
+                env_content = eval_env.read_text()
+                # Remove FIRECRAWL_API_KEY lines (commented or not)
+                filtered_lines = [
+                    line for line in env_content.splitlines()
+                    if not line.strip().startswith('FIRECRAWL_API_KEY') and
+                    not line.strip().startswith('# FIRECRAWL_API_KEY')
+                ]
+                (self.temp_dir / ".env").write_text('\n'.join(filtered_lines) + '\n')
+                print("✅ .env copied from eval/ (FIRECRAWL_API_KEY filtered out)")
 
             # Also copy .env.example if it exists
             source_env = source_claude.parent / ".env.example"
@@ -231,9 +290,18 @@ class IsolatedWorkspace:
         if not self._setup_complete:
             return
 
-        # Stop HTTP mocking
-        if self.mock_client:
-            self.mock_client.stop()
+        # Stop HTTP mock server and clean up environment
+        if self.mock_server:
+            self.mock_server.stop()
+
+            # Remove HTTP_PROXY environment variables
+            for key in ['HTTP_PROXY', 'http_proxy']:
+                if key in os.environ:
+                    del os.environ[key]
+
+        # Clean up telemetry env var
+        if "KURT_TELEMETRY_DISABLED" in os.environ:
+            del os.environ["KURT_TELEMETRY_DISABLED"]
 
         # Return to original directory
         if self.original_cwd:

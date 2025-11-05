@@ -45,22 +45,26 @@ def _get_posthog_client():
             return _posthog_client
 
         try:
-            import posthog
+            from posthog import Posthog
 
-            # Configure PostHog (hardcoded for CLI telemetry)
-            posthog.project_api_key = POSTHOG_API_KEY
-            posthog.host = POSTHOG_HOST
-
-            # Disable debug mode in production
-            posthog.debug = os.getenv("KURT_TELEMETRY_DEBUG", "").lower() == "true"
-
-            # Set sync mode to False for non-blocking operation
-            posthog.sync_mode = False
+            # Create PostHog client instance (not using module-level API)
+            client = Posthog(
+                project_api_key=POSTHOG_API_KEY,
+                host=POSTHOG_HOST,
+                debug=os.getenv("KURT_TELEMETRY_DEBUG", "").lower() == "true",
+                sync_mode=False,
+            )
 
             # Register shutdown hook to flush events
-            atexit.register(posthog.shutdown)
+            def _shutdown():
+                try:
+                    client.shutdown()
+                except Exception as e:
+                    logger.debug(f"Error in PostHog shutdown: {e}")
 
-            _posthog_client = posthog
+            atexit.register(_shutdown)
+
+            _posthog_client = client
             return _posthog_client
 
         except Exception as e:

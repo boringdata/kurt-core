@@ -174,6 +174,8 @@ def save_results(
 ):
     """Save scenario results to JSON and transcript to Markdown.
 
+    Also automatically generates training data for DSPy optimization.
+
     Args:
         scenario_name: Name of the scenario
         run_metrics: Metrics from the scenario run (tools, conversation, timing)
@@ -216,6 +218,23 @@ def save_results(
     else:
         print(f"📊 Metrics saved: {json_filepath}")
         print("⚠️  No transcript available")
+
+    # Generate training data for DSPy optimization
+    try:
+        from .training_data import save_training_data
+
+        training_dir = output_dir.parent / "training_data"
+        training_file = save_training_data(
+            scenario_name=scenario_name,
+            run_metrics=run_metrics,
+            workspace_metrics=workspace_metrics,
+            training_dir=training_dir,
+            passed=passed,
+            error=error,
+        )
+        print(f"🎓 Training data saved: {training_file}")
+    except Exception as e:
+        print(f"⚠️  Failed to save training data: {e}")
 
     return json_filepath
 

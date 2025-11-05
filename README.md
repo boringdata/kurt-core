@@ -60,7 +60,7 @@ Kurt collects anonymous usage analytics to help us understand how the tool is us
 
 ### What We Collect
 
-- **Command usage**: Which commands are run (e.g., `kurt content add`)
+- **Command usage**: Which commands are run (e.g., `kurt content list`)
 - **Execution metrics**: Timing and success/failure rates
 - **Environment**: OS, Python version, Kurt version
 - **Machine ID**: Anonymous identifier (UUID, not tied to personal info)

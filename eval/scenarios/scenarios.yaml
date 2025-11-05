@@ -45,19 +45,21 @@ scenarios:
         expected_value: true
 
   # ========================================================================
-  # Scenario 02: Add Content from URL (Using Mocks)
+  # Scenario 02: Add Content from URL (Using Mock HTTP Server)
   # ========================================================================
   - name: 02_add_url
-    description: Initialize Kurt and add content from a URL using mock data
+    description: Initialize Kurt and discover/fetch content from mocked URL
 
     notes: |
-      Tests content discovery and fetching using mocked ACME Corp website.
+      Tests content discovery and fetching using mock HTTP server.
       Mock data includes sitemap with 6 URLs (home, about, pricing, 3 blog posts).
-      This scenario uses HTTP mocking - no real network requests!
+      HTTP requests are intercepted by local proxy server - no real network calls!
+      Uses HTTP (not HTTPS) to avoid SSL complications in testing.
+      The httpx fetch engine is automatically configured in kurt.config.
 
     initial_prompt: >
       Initialize a Kurt project, then discover and fetch content from
-      https://acme-corp.com/
+      http://acme-corp.com/
 
     assertions:
       - type: FileExists
@@ -76,11 +78,11 @@ scenarios:
 
       # Verify content discovery worked (ACME sitemap has 6 URLs)
       - type: SQLQueryAssertion
-        query: SELECT COUNT(*) >= 5 FROM documents WHERE source_url LIKE 'https://acme-corp.com/%'
+        query: SELECT COUNT(*) >= 5 FROM documents WHERE source_url LIKE 'http://acme-corp.com/%'
 
       # Check that documents were fetched
       - type: SQLQueryAssertion
-        query: SELECT COUNT(*) >= 3 FROM documents WHERE source_url LIKE 'https://acme-corp.com/%' AND ingestion_status='FETCHED'
+        query: SELECT COUNT(*) >= 3 FROM documents WHERE source_url LIKE 'http://acme-corp.com/%' AND ingestion_status='FETCHED'
 
   # ========================================================================
   # Scenario 03: Interactive Project Creation (No Sources)
@@ -193,8 +195,8 @@ scenarios:
       You are a content marketing manager at ACME Corp, the API management platform.
 
       ## Your Company Profile
-      - **Website:** https://acme-corp.com
-      - **Documentation:** https://docs.acme-corp.com
+      - **Website:** http://acme-corp.com
+      - **Documentation:** http://docs.acme-corp.com
       - **Target audience:** Software engineers, DevOps teams, API developers
       - **Product:** API management platform for deploying and scaling APIs
 
@@ -211,7 +213,7 @@ scenarios:
       - Project name: "api-scaling-content"
       - Goal: Create technical content about API best practices
       - You want to write new blog posts and guides
-      - Source: https://docs.acme-corp.com/ (gather the getting started guide and API reference)
+      - Source: http://docs.acme-corp.com/ (gather the getting started guide and API reference)
       - This is your first Kurt project, so skip any foundation setup for now
 
       Respond naturally to questions based on this context. Keep responses brief and conversational.
@@ -258,17 +260,17 @@ scenarios:
         path: projects/api-scaling-content/project.md
         content: "# api-scaling-content"
 
-      # Verify content discovery happened - URLs discovered from ACME docs (7 pages in sitemap)
+      # Verify content discovery happened - URLs discovered from ACME docs (6 pages in sitemap)
       - type: SQLQueryAssertion
-        query: SELECT COUNT(*) >= 5 FROM documents WHERE source_url LIKE 'https://docs.acme-corp.com/%'
+        query: SELECT COUNT(*) >= 5 FROM documents WHERE source_url LIKE 'http://docs.acme-corp.com/%'
 
       # Verify content was actually fetched (at least 3 documents)
       - type: SQLQueryAssertion
-        query: SELECT COUNT(*) >= 3 FROM documents WHERE source_url LIKE 'https://docs.acme-corp.com/%' AND ingestion_status='FETCHED'
+        query: SELECT COUNT(*) >= 3 FROM documents WHERE source_url LIKE 'http://docs.acme-corp.com/%' AND ingestion_status='FETCHED'
 
-      # Verify content was not over-fetched (max 7 docs in sitemap)
+      # Verify content was not over-fetched (max 6 docs in sitemap)
       - type: SQLQueryAssertion
-        query: SELECT COUNT(*) <= 7 FROM documents WHERE source_url LIKE 'https://docs.acme-corp.com/%' AND ingestion_status='FETCHED'
+        query: SELECT COUNT(*) <= 6 FROM documents WHERE source_url LIKE 'http://docs.acme-corp.com/%' AND ingestion_status='FETCHED'
 
       # Verify fetched documents have content stored
       - type: SQLQueryAssertion
@@ -276,7 +278,7 @@ scenarios:
           SELECT COUNT(*) >= 3
           FROM documents d
           JOIN document_versions v ON d.id = v.document_id
-          WHERE d.source_url LIKE 'https://docs.acme-corp.com/%'
+          WHERE d.source_url LIKE 'http://docs.acme-corp.com/%'
           AND v.content IS NOT NULL
           AND v.content != ''
 
@@ -314,7 +316,7 @@ scenarios:
       Setup Kurt foundations by doing the following:
 
       1. Initialize a Kurt project if needed
-      2. Discover and fetch content from https://acme-corp.com/ (the company blog with technical articles)
+      2. Discover and fetch content from http://acme-corp.com/ (the company blog with technical articles)
       3. After fetching completes, extract publisher profile rules using the writing-rules-skill
       4. Extract primary style rules using the writing-rules-skill
 
@@ -339,11 +341,11 @@ scenarios:
 
       # Verify content was discovered from ACME Corp (6 URLs in sitemap)
       - type: SQLQueryAssertion
-        query: SELECT COUNT(*) >= 5 FROM documents WHERE source_url LIKE 'https://acme-corp.com/%'
+        query: SELECT COUNT(*) >= 5 FROM documents WHERE source_url LIKE 'http://acme-corp.com/%'
 
       # Verify content WAS fetched (need content for rule extraction)
       - type: SQLQueryAssertion
-        query: SELECT COUNT(*) >= 3 FROM documents WHERE source_url LIKE 'https://acme-corp.com/%' AND ingestion_status='FETCHED'
+        query: SELECT COUNT(*) >= 3 FROM documents WHERE source_url LIKE 'http://acme-corp.com/%' AND ingestion_status='FETCHED'
 
       # Verify fetched documents have content
       - type: SQLQueryAssertion
@@ -351,7 +353,7 @@ scenarios:
           SELECT COUNT(*) >= 3
           FROM documents d
           JOIN document_versions v ON d.id = v.document_id
-          WHERE d.source_url LIKE 'https://acme-corp.com/%'
+          WHERE d.source_url LIKE 'http://acme-corp.com/%'
           AND v.content IS NOT NULL
           AND v.content != ''
 

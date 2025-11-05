@@ -47,9 +47,9 @@ logger = logging.getLogger(__name__)
 )
 @click.option(
     "--engine",
-    type=click.Choice(["firecrawl", "trafilatura"], case_sensitive=False),
-    default="trafilatura",
-    help="PROCESSING: Fetch engine (trafilatura=default/free, firecrawl=API)",
+    type=click.Choice(["firecrawl", "trafilatura", "httpx"], case_sensitive=False),
+    default=None,
+    help="PROCESSING: Fetch engine (defaults to kurt.config INGESTION_FETCH_ENGINE, trafilatura=free, firecrawl=API, httpx=httpx for fetching + trafilatura for extraction)",
 )
 @click.option(
     "--skip-index",
@@ -274,7 +274,16 @@ def fetch_cmd(
             return
 
     # Display fetch configuration
-    engine_display = "Trafilatura (free)" if engine == "trafilatura" else "Firecrawl (API)"
+    # Resolve engine (None means use default from config)
+    from kurt.content.fetch import _get_fetch_engine
+    resolved_engine = _get_fetch_engine(override=engine)
+
+    engine_displays = {
+        "trafilatura": "Trafilatura (free)",
+        "firecrawl": "Firecrawl (API)",
+        "httpx": "httpx (fetching) + trafilatura (extraction)"
+    }
+    engine_display = engine_displays.get(resolved_engine, f"{resolved_engine} (unknown)")
     console.print(
         f"[cyan]Fetching {len(doc_ids_to_fetch)} documents with {concurrency} parallel downloads[/cyan]"
     )
