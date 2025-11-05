@@ -23,7 +23,7 @@ class KurtConfig(BaseModel):
     DEFAULT_FETCH_ENGINE: ClassVar[str] = "trafilatura"
 
     # Acceptable values for validation
-    VALID_FETCH_ENGINES: ClassVar[list[str]] = ["trafilatura", "firecrawl"]
+    VALID_FETCH_ENGINES: ClassVar[list[str]] = ["trafilatura", "firecrawl", "httpx"]
 
     # Common DSPy LLM providers (for reference/validation - not exhaustive)
     # DSPy uses format: "provider/model-name"

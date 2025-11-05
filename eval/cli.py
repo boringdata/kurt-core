@@ -232,5 +232,205 @@ def run_all(filter, stop_on_failure, max_tool_calls, max_duration, llm_provider)
     sys.exit(0 if failed == 0 else 1)
 
 
+@main.group()
+def training():
+    """Manage training data for DSPy optimization."""
+    pass
+
+
+@training.command("stats")
+@click.argument("scenario", type=str, required=False)
+def training_stats(scenario):
+    """Show training data statistics.
+
+    If SCENARIO is provided, shows stats for that scenario.
+    Otherwise, shows stats for all scenarios.
+
+    Examples:
+      kurt-eval training stats
+      kurt-eval training stats 03_project_no_sources
+    """
+    from framework.training_data import TrainingDataCollector
+
+    training_dir = eval_dir / "training_data"
+    collector = TrainingDataCollector(training_dir)
+
+    if scenario:
+        # Show stats for specific scenario
+        stats = collector.get_dataset_stats(scenario)
+
+        if stats["total"] == 0:
+            click.secho(f"❌ No training data found for {scenario}", fg="red")
+            sys.exit(1)
+
+        click.echo(f"\n📊 Training Data Stats: {click.style(scenario, fg='cyan', bold=True)}\n")
+        click.echo(f"  Total examples:     {stats['total']}")
+        click.secho(f"  ✅ Passed:          {stats['passed']}", fg="green")
+        click.secho(f"  ❌ Failed:          {stats['failed']}", fg="red" if stats['failed'] > 0 else "white")
+        click.echo(f"  Pass rate:          {stats['pass_rate']:.1%}")
+        click.echo(f"  Avg tool calls:     {stats['avg_tool_calls']:.1f}")
+        click.echo(f"  Avg duration:       {stats['avg_duration_seconds']:.1f}s")
+
+        if stats['failure_types']:
+            click.echo(f"\n  Failure types:")
+            for failure_type, count in stats['failure_types'].items():
+                click.secho(f"    - {failure_type}: {count}", fg="yellow")
+
+        click.echo(f"\n  First example:      {stats['first_example']}")
+        click.echo(f"  Last example:       {stats['last_example']}")
+    else:
+        # Show stats for all scenarios
+        scenarios = collector.list_scenarios()
+
+        if not scenarios:
+            click.secho("❌ No training data found", fg="red")
+            sys.exit(1)
+
+        click.echo(f"\n📊 Training Data Overview ({len(scenarios)} scenarios)\n")
+
+        for scenario_name in sorted(scenarios):
+            stats = collector.get_dataset_stats(scenario_name)
+            pass_rate_color = "green" if stats['pass_rate'] >= 0.8 else "yellow" if stats['pass_rate'] >= 0.5 else "red"
+            pass_rate_str = f"{stats['pass_rate']:.1%}"
+
+            click.echo(f"  {click.style(scenario_name, fg='cyan')}")
+            click.echo(f"    Examples: {stats['total']} | Pass rate: {click.style(pass_rate_str, fg=pass_rate_color)}")
+
+
+@training.command("export")
+@click.argument("scenario", type=str)
+@click.option("--output", type=click.Path(), help="Output file path (default: copies the existing .jsonl)")
+@click.option("--filter-passed/--no-filter", default=True, help="Only include successful examples")
+@click.option("--limit", type=int, help="Maximum number of examples to export")
+@click.option("--format", type=click.Choice(["jsonl", "json"]), default="jsonl", help="Output format")
+def training_export(scenario, output, filter_passed, limit, format):
+    """Export training data (already in DSPy format).
+
+    Training data is stored natively in DSPy format, so this command
+    filters and copies the dataset.
+
+    Examples:
+      kurt-eval training export 03_project_no_sources
+      kurt-eval training export 03_project_no_sources --limit 50
+      kurt-eval training export 03_project_no_sources --output my_dataset.jsonl
+      kurt-eval training export 03_project_no_sources --format json
+    """
+    from framework.training_data import TrainingDataCollector
+    import json
+
+    training_dir = eval_dir / "training_data"
+    collector = TrainingDataCollector(training_dir)
+
+    # Load DSPy examples (already in DSPy format!)
+    dspy_examples = collector.load_dspy_dataset(
+        scenario_name=scenario,
+        filter_passed=filter_passed,
+        limit=limit,
+    )
+
+    if not dspy_examples:
+        click.secho(f"❌ No training data found for {scenario}", fg="red")
+        sys.exit(1)
+
+    # Determine output path
+    if output:
+        output_path = Path(output)
+    else:
+        ext = "json" if format == "json" else "jsonl"
+        output_path = training_dir / f"{scenario}_export.{ext}"
+
+    # Save in requested format
+    if format == "jsonl":
+        # JSONL format (one JSON per line) - standard for DSPy
+        with open(output_path, "w") as f:
+            for ex in dspy_examples:
+                json.dump(ex.toDict(), f)
+                f.write("\n")
+    else:
+        # JSON array format
+        with open(output_path, "w") as f:
+            json.dump([ex.toDict() for ex in dspy_examples], f, indent=2)
+
+    click.secho(f"✅ Exported {len(dspy_examples)} DSPy examples to {output_path}", fg="green")
+    click.echo(f"   Format: {format.upper()}")
+
+    # Show sample
+    if dspy_examples:
+        click.echo(f"\nSample example:")
+        sample = dspy_examples[0].toDict()
+        click.echo(f"  Prompt: {sample['prompt'][:100]}...")
+        click.echo(f"  Outcome: {'✅ Success' if sample['outcome']['success'] else '❌ Failed'}")
+        click.echo(f"\n💡 Ready to use with DSPy optimizers (MIPROv2, SIMBA, GEPA)")
+
+
+@training.command("view")
+@click.argument("scenario", type=str)
+@click.option("--index", type=int, default=0, help="Example index to view (default: 0 = latest)")
+@click.option("--filter-passed/--filter-failed", default=None, help="Filter by success/failure")
+def training_view(scenario, index, filter_passed):
+    """View a specific training example.
+
+    Examples:
+      kurt-eval training view 03_project_no_sources
+      kurt-eval training view 03_project_no_sources --index 5
+      kurt-eval training view 03_project_no_sources --filter-failed
+    """
+    from framework.training_data import TrainingDataCollector
+
+    training_dir = eval_dir / "training_data"
+    collector = TrainingDataCollector(training_dir)
+
+    # Load examples
+    examples = collector.load_dataset(
+        scenario_name=scenario,
+        filter_passed=filter_passed,
+    )
+
+    if not examples:
+        click.secho(f"❌ No training data found for {scenario}", fg="red")
+        sys.exit(1)
+
+    if index >= len(examples):
+        click.secho(f"❌ Index {index} out of range (only {len(examples)} examples)", fg="red")
+        sys.exit(1)
+
+    example = examples[index]
+
+    # Display example
+    status_color = "green" if example.passed else "red"
+    status_icon = "✅" if example.passed else "❌"
+
+    click.echo(f"\n{status_icon} Training Example #{index + 1}/{len(examples)}")
+    click.echo(f"{'='*70}")
+    click.secho(f"Status: {'PASSED' if example.passed else 'FAILED'}", fg=status_color, bold=True)
+    click.echo(f"Timestamp: {example.timestamp}")
+    click.echo(f"Duration: {example.timing.get('duration_seconds', 0):.1f}s")
+    click.echo(f"Tool calls: {len(example.tool_calls)}")
+    click.echo(f"Conversation turns: {len(example.conversation)}")
+
+    click.echo(f"\n📝 Initial Prompt:")
+    click.echo(f"  {example.initial_prompt}")
+
+    click.echo(f"\n🔧 Tool Sequence:")
+    for i, call in enumerate(example.tool_calls[:10], 1):  # Show first 10
+        tool_name = call.get("tool", "unknown")
+        click.echo(f"  {i}. {tool_name}")
+    if len(example.tool_calls) > 10:
+        click.echo(f"  ... and {len(example.tool_calls) - 10} more")
+
+    click.echo(f"\n💬 Conversation Preview:")
+    for turn in example.conversation[:5]:  # Show first 5 turns
+        speaker = turn.get("speaker", "unknown")
+        message = turn.get("message", "")[:100]
+        speaker_color = "magenta" if speaker == "user" else "blue"
+        click.secho(f"  {speaker.upper()}: {message}", fg=speaker_color)
+    if len(example.conversation) > 5:
+        click.echo(f"  ... {len(example.conversation) - 5} more turns")
+
+    if not example.passed and example.error:
+        click.echo(f"\n❌ Error:")
+        click.secho(f"  {example.error}", fg="red")
+
+
 if __name__ == "__main__":
     main()

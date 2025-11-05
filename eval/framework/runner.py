@@ -257,6 +257,10 @@ class ScenarioRunner:
                 else:
                     raise RuntimeError(f".claude folder not found at {claude_path}")
 
+            # Initialize metrics variables early to avoid UnboundLocalError in finally block
+            run_metrics = {}
+            workspace_metrics = {}
+
             # Execute conversation with SDK (multi-turn by default)
             conversation = scenario.get_conversation()
             for turn in conversation:
@@ -358,6 +362,10 @@ class ScenarioRunner:
             "should i",
             "can you provide",
             "let me know",
+            "[press enter",  # Input prompts like [Press Enter to skip]
+            "press enter to",
+            "[enter to",
+            "[skip",
         ]
         return any(ind in text_lower for ind in indicators)
 
@@ -388,6 +396,50 @@ class ScenarioRunner:
         cumulative_tokens = 0
         cumulative_cost = 0.0
 
+        # Define hook to capture tool results
+        from claude_agent_sdk.types import (
+            HookContext,
+            HookMatcher,
+            PostToolUseHookInput,
+            SyncHookJSONOutput,
+        )
+
+        async def post_tool_use_hook(
+            hook_input: PostToolUseHookInput, stdin: str | None, context: HookContext
+        ) -> SyncHookJSONOutput:
+            """Hook called after each tool execution to capture results."""
+            tool_response = hook_input.get("tool_response", "")
+
+            # Format the result based on tool type
+            if isinstance(tool_response, dict):
+                # For Bash tool: extract stdout/stderr
+                if "stdout" in tool_response or "stderr" in tool_response:
+                    stdout = tool_response.get("stdout", "")
+                    stderr = tool_response.get("stderr", "")
+                    result_text = stdout
+                    if stderr:
+                        result_text += f"\n{Colors.RED}stderr: {stderr}{Colors.RESET}"
+                else:
+                    # For other dict responses, format as JSON
+                    import json
+
+                    result_text = json.dumps(tool_response, indent=2)
+            else:
+                result_text = str(tool_response)
+
+            # Truncate if too long (unless verbose mode)
+            if not self.verbose and len(result_text) > 500:
+                result_text = result_text[:500] + f"\n{Colors.DIM}... (truncated){Colors.RESET}"
+
+            self._log(f"  {Colors.GREEN}  ✓ RESULT:{Colors.RESET}")
+            # Print result line by line for better formatting
+            for line in result_text.split("\n"):
+                self._log(f"  {Colors.DIM}  │{Colors.RESET} {line}")
+            self._log(f"  {Colors.DIM}  └─{Colors.RESET}")
+
+            # Return empty output (we're just logging, don't modify behavior)
+            return SyncHookJSONOutput()
+
         # Configure SDK options
         options = ClaudeAgentOptions(
             cwd=str(workspace.path),
@@ -403,6 +455,9 @@ class ScenarioRunner:
             ],
             permission_mode="bypassPermissions",
             setting_sources=["user", "project"],  # Load skills and slash commands from filesystem
+            hooks={
+                "PostToolUse": [HookMatcher(matcher=None, hooks=[post_tool_use_hook])]
+            },  # Hook to capture tool results
             system_prompt=f"""You are testing the Kurt CLI tool in an automated evaluation scenario.
 
 Current workspace: {workspace.path}
@@ -413,7 +468,8 @@ The Kurt project has already been initialized with:
 - sources/, rules/, projects/ (standard directories)
 
 Available Kurt commands:
-- kurt content add <url>: Add content from a URL
+- kurt map url <url>: Discover content from a URL
+- kurt fetch: Download discovered content
 - kurt content list: List all documents
 - kurt status: Show project status
 
@@ -423,6 +479,14 @@ Execute commands as requested and report results concisely.""",
         try:
             # Create SDK client for multi-turn conversation session
             async with ClaudeSDKClient(options=options) as client:
+                # Clear context at the start of each scenario to ensure clean state
+                self._log("\n🧹 Clearing Claude Code context for clean scenario start...")
+                await client.query("/clear")
+                # Consume the /clear response without logging it
+                async for _ in client.receive_response():
+                    pass
+                self._log("   ✓ Context cleared\n")
+
                 current_message = message
                 conversation_history = []  # Track full conversation for user agent context
                 stop_reason = "max_turns_reached"  # Track why session ended
@@ -553,11 +617,6 @@ Execute commands as requested and report results concisely.""",
                                         )
 
                                     metrics_collector.record_tool_use(tool_name, tool_input)
-
-                                elif isinstance(block, ToolResultBlock):
-                                    if self.verbose:
-                                        result_preview = str(block)[:150]
-                                        self._log(f"     ✓ Result: {result_preview}...")
 
                     # Turn complete - check if conversation should continue
                     if not self._is_agent_asking_question(agent_text_response):

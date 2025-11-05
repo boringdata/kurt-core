@@ -292,7 +292,8 @@ def generate_status_markdown() -> str:
             output_lines.append("")
     else:
         output_lines.append("⚠ **No documents ingested yet**")
-        output_lines.append("- Run: `kurt content add <url>` to add content\n")
+        output_lines.append("- Run: `kurt map url <url>` to discover content\n")
+        output_lines.append("- Then: `kurt fetch` to download content\n")
 
     # Clusters
     cluster_count = get_cluster_count()
@@ -355,7 +356,7 @@ def generate_status_markdown() -> str:
     if projects:
         output_lines.append("**You have existing projects.** Would you like to:")
         output_lines.append("- View project status: `kurt project status`")
-        output_lines.append("- Add more content: `kurt content add <url>`")
+        output_lines.append("- Add more content: `kurt map url <url>` then `kurt fetch`")
     elif doc_counts["total"] > 0 and cluster_count > 0:
         output_lines.append("**Content ingested and analyzed.** Consider:")
         output_lines.append("- Create a project in the `projects/` directory")
@@ -367,7 +368,8 @@ def generate_status_markdown() -> str:
         )
     else:
         output_lines.append("**Ready to start!** Choose an approach:")
-        output_lines.append("- Add content: `kurt content add <url>`")
+        output_lines.append("- Discover content: `kurt map url <url>`")
+        output_lines.append("- Download content: `kurt fetch`")
         output_lines.append("- Initialize: `kurt init` (if needed)")
 
     return "\n".join(output_lines)

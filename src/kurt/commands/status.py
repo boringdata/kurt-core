@@ -85,7 +85,7 @@ def status(format: str, hook_cc: bool):
                 "- Directories: `sources/`, `projects/`, `rules/`\n\n"
                 "You can now use Kurt commands. Try:\n"
                 "- `/create-project` to start a new content project\n"
-                "- `kurt content add <url>` to add content sources"
+                "- `kurt map url <url>` to discover content sources"
             )
             output = {
                 "systemMessage": message,
@@ -186,13 +186,12 @@ def status(format: str, hook_cc: bool):
             print(json.dumps(hook_output, indent=2))
             return
 
-        # Gather all status information
-        doc_counts = get_document_counts()
-        domains = get_documents_by_domain()
-        cluster_count = get_cluster_count()
-        projects = get_project_summaries()
-
         if format == "json":
+            # Gather all status information for JSON output
+            doc_counts = get_document_counts()
+            domains = get_documents_by_domain()
+            cluster_count = get_cluster_count()
+            projects = get_project_summaries()
             migration_status = check_pending_migrations()
             output = {
                 "initialized": True,
@@ -226,117 +225,11 @@ def status(format: str, hook_cc: bool):
             }
             print(json.dumps(output, indent=2))
         else:
-            # Pretty format
-            console.print("\n[bold cyan]Kurt Project Status[/bold cyan]")
-            console.print(f"[dim]{'─' * 60}[/dim]\n")
+            # Pretty format - use service layer to generate markdown, then render with Rich
+            from rich.markdown import Markdown
 
-            # Initialization status
-            console.print("[green]✓ Kurt project initialized[/green]")
-            console.print("- Config: [cyan]kurt.config[/cyan] found")
-            console.print(f"- Database: [cyan]{db_path}[/cyan] exists")
-
-            # Check for pending migrations
-            migration_status = check_pending_migrations()
-            if migration_status["has_pending"]:
-                console.print(
-                    f"\n[yellow]⚠ {migration_status['count']} pending database migration(s)[/yellow]"
-                )
-                console.print("- Run: [cyan]kurt migrate apply[/cyan] to update the database")
-                for migration_name in migration_status["migrations"]:
-                    console.print(f"  - [dim]{migration_name}[/dim]")
-            console.print()
-
-            # Claude Code integration status
-            console.print("[bold]Claude Code Integration[/bold]")
-            plugin_installed = is_kurt_plugin_installed()
-            if plugin_installed:
-                console.print("[green]✓ Kurt plugin installed[/green]")
-                console.print("- Claude Code can interact with Kurt")
-                console.print(
-                    "- [bold cyan]Agent: Check if you can see /create-project command[/bold cyan]\n"
-                )
-            else:
-                console.print("[yellow]⚠ Kurt plugin not detected[/yellow]")
-                console.print("- Install from Claude Code plugin marketplace")
-                console.print("- Use [cyan]/plugin[/cyan] command in Claude Code\n")
-
-            # Documents section
-            console.print("[bold]Documents[/bold]")
-            if doc_counts["total"] > 0:
-                console.print(f"Total documents ingested: [bold]{doc_counts['total']}[/bold]\n")
-
-                if domains:
-                    console.print("Documents by source:")
-                    for domain_info in domains[:10]:  # Show top 10
-                        console.print(
-                            f"- [cyan]{domain_info['domain']}[/cyan]: {domain_info['count']} documents"
-                        )
-                    if len(domains) > 10:
-                        console.print(f"[dim]... and {len(domains) - 10} more sources[/dim]")
-                    console.print()
-            else:
-                console.print("[yellow]⚠ No documents ingested yet[/yellow]")
-                console.print("- Run: [cyan]kurt content add <url>[/cyan] to add content\n")
-
-            # Clusters section
-            console.print("[bold]Topic Clusters[/bold]")
-            if cluster_count > 0:
-                console.print(f"[bold]{cluster_count}[/bold] topic clusters computed")
-                console.print(
-                    "- View with: [cyan]kurt content cluster --url-starts-with <url>[/cyan]\n"
-                )
-            else:
-                if doc_counts["total"] > 0:
-                    console.print("[yellow]⚠ No clusters computed yet[/yellow]")
-                    console.print(
-                        "- Run: [cyan]kurt content cluster --url-starts-with <url>[/cyan] to analyze content\n"
-                    )
-                else:
-                    console.print("[dim]No clusters (no documents to analyze)[/dim]\n")
-
-            # Projects section
-            console.print("[bold]Projects[/bold]")
-            if projects:
-                console.print(f"Found [bold]{len(projects)}[/bold] project(s):\n")
-
-                for proj in projects:
-                    console.print(f"### [cyan]{proj['name']}[/cyan]")
-                    if proj.get("title"):
-                        console.print(f"[bold]{proj['title']}[/bold]")
-                    if proj.get("goal"):
-                        console.print(f"- Goal: {proj['goal']}")
-                    if proj.get("intent"):
-                        console.print(f"- Intent: {proj['intent']}")
-                    console.print()
-            else:
-                console.print("[yellow]⚠ No projects created yet[/yellow]")
-                console.print(
-                    "- Create a project manually in the [cyan]projects/[/cyan] directory\n"
-                )
-
-            # Recommendations
-            console.print(f"[dim]{'─' * 60}[/dim]")
-            console.print("\n[bold]Recommended Next Steps[/bold]\n")
-
-            if projects:
-                console.print("[bold]You have existing projects.[/bold] Consider:")
-                console.print("- View project status: [cyan]kurt project status[/cyan]")
-                console.print("- Add more content: [cyan]kurt content add <url>[/cyan]")
-            elif doc_counts["total"] > 0 and cluster_count > 0:
-                console.print("[bold]Content ingested and analyzed.[/bold] Consider:")
-                console.print("- Create a project in the [cyan]projects/[/cyan] directory")
-                console.print("- View documents: [cyan]kurt content list[/cyan]")
-            elif doc_counts["total"] > 0:
-                console.print("[bold]Content ingested but not analyzed.[/bold] Next:")
-                console.print(
-                    "- Run: [cyan]kurt content cluster --url-starts-with <url>[/cyan] to discover topics"
-                )
-            else:
-                console.print("[bold]Ready to start![/bold] Choose an approach:")
-                console.print("- Add content: [cyan]kurt content add <url>[/cyan]")
-                console.print("- Initialize: [cyan]kurt init[/cyan] (if needed)")
-
-            console.print()
+            markdown_output = generate_status_markdown()
+            console.print(Markdown(markdown_output))
 
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")

@@ -68,13 +68,26 @@ class MockHTTPClient:
         if not mock_site_dir.exists():
             return
 
+        # URL mapping from sitemap to mock files
+        url_mappings = {
+            # ACME Corp blog posts
+            "blog/how-to-build-scalable-apis": "blog-post-1",
+            "blog/announcing-acme-2-0": "blog-post-2",
+            "blog/10-tips-for-developer-experience": "blog-post-3",
+        }
+
         for file in mock_site_dir.glob("*.md"):
-            # Convert filename to URL
-            # home.md -> https://acme-corp.com/home
-            # blog-post-1.md -> https://acme-corp.com/blog-post-1
             page_name = file.stem
+
+            # Direct mapping (e.g., home.md -> /home)
             url = f"https://{domain}/{page_name}"
             self.url_to_file[url] = file
+
+            # Check if this file has a custom URL mapping
+            for url_path, file_stem in url_mappings.items():
+                if page_name == file_stem:
+                    custom_url = f"https://{domain}/{url_path}"
+                    self.url_to_file[custom_url] = file
 
         # Load sitemap.xml if exists
         sitemap = mock_site_dir / "sitemap.xml"
@@ -206,44 +219,56 @@ class MockHTTPClient:
 
     def _patch_httpx(self):
         """Patch httpx library to use mock responses."""
-        # Store original httpx.get for later restoration
+        # Store originals for later restoration
         self._original_httpx_get = httpx.get
         self._original_httpx_client_get = httpx.Client.get
         self._original_httpx_async_client_get = httpx.AsyncClient.get
 
+        # Store reference to self for closures
+        mock_client = self
+
         # Create patched version
         def mock_httpx_get(url, **kwargs):
-            mock_data = self.get_mock_response(str(url))
+            mock_data = mock_client.get_mock_response(str(url))
             if mock_data:
+                # Create a mock request object
+                request = httpx.Request("GET", url)
                 return httpx.Response(
                     status_code=mock_data["status_code"],
                     headers=mock_data["headers"],
                     content=mock_data["content"].encode(),
+                    request=request,
                 )
             # Fall through to real request if no mock
-            return self._original_httpx_get(url, **kwargs)
+            return mock_client._original_httpx_get(url, **kwargs)
 
-        def mock_httpx_client_get(self, url, **kwargs):
-            mock_data = self.get_mock_response(str(url))
+        def mock_httpx_client_get(client_self, url, **kwargs):
+            mock_data = mock_client.get_mock_response(str(url))
             if mock_data:
+                # Create a mock request object
+                request = httpx.Request("GET", url)
                 return httpx.Response(
                     status_code=mock_data["status_code"],
                     headers=mock_data["headers"],
                     content=mock_data["content"].encode(),
+                    request=request,
                 )
             # Fall through to real request if no mock
-            return self._original_httpx_client_get(self, url, **kwargs)
+            return mock_client._original_httpx_client_get(client_self, url, **kwargs)
 
-        async def mock_httpx_async_client_get(self, url, **kwargs):
-            mock_data = self.get_mock_response(str(url))
+        async def mock_httpx_async_client_get(client_self, url, **kwargs):
+            mock_data = mock_client.get_mock_response(str(url))
             if mock_data:
+                # Create a mock request object
+                request = httpx.Request("GET", url)
                 return httpx.Response(
                     status_code=mock_data["status_code"],
                     headers=mock_data["headers"],
                     content=mock_data["content"].encode(),
+                    request=request,
                 )
             # Fall through to real request if no mock
-            return await self._original_httpx_async_client_get(self, url, **kwargs)
+            return await mock_client._original_httpx_async_client_get(client_self, url, **kwargs)
 
         # Apply patches
         httpx.get = mock_httpx_get
