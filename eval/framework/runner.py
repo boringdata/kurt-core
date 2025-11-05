@@ -76,6 +76,7 @@ class ScenarioRunner:
         max_tool_calls: Optional[int] = None,
         max_duration_seconds: Optional[int] = None,
         max_tokens: Optional[int] = None,
+        max_conversation_turns: Optional[int] = None,
         llm_provider: Optional[str] = None,
     ):
         """Initialize runner.
@@ -88,6 +89,7 @@ class ScenarioRunner:
             max_tool_calls: Maximum number of tool calls allowed per scenario (overrides config)
             max_duration_seconds: Maximum scenario execution time in seconds (overrides config)
             max_tokens: Maximum tokens to use per scenario (overrides config)
+            max_conversation_turns: Maximum conversation turns for multi-turn scenarios (overrides config)
             llm_provider: LLM provider for user agent - "openai" or "anthropic" (overrides config)
         """
         # Load config (global if not provided)
@@ -111,6 +113,11 @@ class ScenarioRunner:
             else config.max_duration_seconds
         )
         self.max_tokens = max_tokens if max_tokens is not None else config.max_tokens
+        self.max_conversation_turns = (
+            max_conversation_turns
+            if max_conversation_turns is not None
+            else config.max_conversation_turns
+        )
         self.llm_provider = llm_provider if llm_provider is not None else config.llm_provider
         self.config = config  # Store config for workspace setup
         self.raw_transcript = []  # Captures all printed output
@@ -273,7 +280,11 @@ class ScenarioRunner:
 
                     # Execute message using Claude Code SDK with multi-turn support
                     await self._execute_with_sdk(
-                        turn.message, workspace, metrics_collector, user_agent=scenario.user_agent
+                        turn.message,
+                        workspace,
+                        metrics_collector,
+                        user_agent=scenario.user_agent,
+                        max_turns=self.max_conversation_turns,
                     )
 
             # Finish timing

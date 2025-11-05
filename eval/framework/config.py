@@ -56,7 +56,7 @@ class EvalConfig:
                 "max_tool_calls": 50,
                 "max_duration_seconds": 300,
                 "max_tokens": 100000,
-                "max_conversation_turns": 10,
+                "max_conversation_turns": 20,
             },
             "workspace": {
                 "preserve_on_error": True,
@@ -67,8 +67,6 @@ class EvalConfig:
             },
             "user_agent": {
                 "llm_provider": "openai",
-                "fallback_to_regex": True,
-                "default_response": "yes",
             },
             "sdk": {
                 "allowed_tools": [
@@ -86,27 +84,16 @@ class EvalConfig:
             },
             "output": {
                 "verbose": True,
-                "save_transcript": True,
                 "results_dir": "results",
-                "use_colors": True,
             },
             "scenarios": {
                 "scenarios_file": "scenarios/scenarios.yaml",
                 "scenarios_dir": "scenarios",
                 "yaml_extensions": [".yaml", ".yml"],
             },
-            "performance": {
-                "parallel_scenarios": 1,
-                "tool_timeout": 120,
-                "max_tool_output": 30000,
-            },
-            "assertions": {
-                "fail_fast": False,
-                "verbose_errors": True,
-            },
             "metadata": {
                 "version": "0.1.0",
-                "updated": "2025-11-03",
+                "updated": "2025-11-05",
             },
         }
 
@@ -158,7 +145,7 @@ class EvalConfig:
     @property
     def max_conversation_turns(self) -> int:
         """Get maximum conversation turns."""
-        return self.get("guardrails.max_conversation_turns", 10)
+        return self.get("guardrails.max_conversation_turns", 20)
 
     @property
     def preserve_on_error(self) -> bool:
@@ -196,11 +183,6 @@ class EvalConfig:
         return self.get("output.verbose", True)
 
     @property
-    def save_transcript(self) -> bool:
-        """Get transcript saving setting."""
-        return self.get("output.save_transcript", True)
-
-    @property
     def results_dir(self) -> str:
         """Get results directory."""
         return self.get("output.results_dir", "results")
@@ -222,6 +204,21 @@ class EvalConfig:
     def setting_sources(self) -> list:
         """Get setting sources for SDK."""
         return self.get("sdk.setting_sources", ["user", "project"])
+
+    @property
+    def scenarios_file(self) -> str:
+        """Get scenarios file path."""
+        return self.get("scenarios.scenarios_file", "scenarios/scenarios.yaml")
+
+    @property
+    def scenarios_dir(self) -> str:
+        """Get scenarios directory path."""
+        return self.get("scenarios.scenarios_dir", "scenarios")
+
+    @property
+    def yaml_extensions(self) -> list:
+        """Get supported YAML file extensions."""
+        return self.get("scenarios.yaml_extensions", [".yaml", ".yml"])
 
     def merge_cli_args(self, **kwargs) -> "EvalConfig":
         """Create new config with CLI arguments merged in.
