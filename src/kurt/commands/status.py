@@ -15,6 +15,7 @@ from kurt.reporting.status import (
     get_documents_by_domain,
     get_project_summaries,
     is_kurt_plugin_installed,
+    profile_exists,
 )
 from kurt.telemetry.decorators import track_command
 
@@ -83,13 +84,16 @@ def status(format: str, hook_cc: bool):
                 "- Configuration file: `kurt.config`\n"
                 "- Database: `.kurt/kurt.sqlite`\n"
                 "- Directories: `sources/`, `projects/`, `rules/`\n\n"
-                "You can now use Kurt commands. Try:\n"
-                "- `/create-project` to start a new content project\n"
-                "- `kurt map url <url>` to discover content sources"
+                "🎯 **Get started:**\n"
+                "- Run: `/create-profile` to set up your organization's content profile\n"
+                "- Then: `/create-project` to start your first content project"
             )
             output = {
-                "systemMessage": message,
-                "additionalContext": message,
+                "systemMessage": "✨ Kurt project initialized! Run `/create-profile` to get started.",
+                "hookSpecificOutput": {
+                    "hookEventName": "SessionStart",
+                    "additionalContext": message,
+                }
             }
             print(json.dumps(output, indent=2))
             return
@@ -133,15 +137,32 @@ def status(format: str, hook_cc: bool):
                     pass  # Continue if migrations fail
 
                 # Generate success message
-                message = (
-                    "✨ **Database initialized automatically**\n\n"
-                    "Created:\n"
-                    "- Database: `.kurt/kurt.sqlite`\n\n"
-                    "You can now use Kurt commands."
-                )
+                # Check if profile exists to guide properly
+                has_profile = profile_exists()
+                if has_profile:
+                    message = (
+                        "✨ **Database initialized automatically**\n\n"
+                        "Created:\n"
+                        "- Database: `.kurt/kurt.sqlite`\n\n"
+                        "✓ Profile detected. Ready to create projects:\n"
+                        "- Run: `/create-project` to start a new content project"
+                    )
+                    user_msg = "✨ Database initialized! Run `/create-project` to start."
+                else:
+                    message = (
+                        "✨ **Database initialized automatically**\n\n"
+                        "Created:\n"
+                        "- Database: `.kurt/kurt.sqlite`\n\n"
+                        "🎯 **Get started:**\n"
+                        "- Run: `/create-profile` to set up your organization's content profile"
+                    )
+                    user_msg = "✨ Database initialized! Run `/create-profile` to get started."
                 output = {
-                    "systemMessage": message,
-                    "additionalContext": message,
+                    "systemMessage": user_msg,
+                    "hookSpecificOutput": {
+                        "hookEventName": "SessionStart",
+                        "additionalContext": message,
+                    }
                 }
                 print(json.dumps(output, indent=2))
                 return
@@ -179,9 +200,30 @@ def status(format: str, hook_cc: bool):
 
             # Generate status markdown
             markdown_output = generate_status_markdown()
+
+            # Create user-facing summary message
+            doc_counts = get_document_counts()
+            projects = get_project_summaries()
+            has_profile = profile_exists()
+
+            # Build concise status message for user
+            status_parts = []
+            status_parts.append("**Kurt Status:**")
+            status_parts.append(f"📄 Documents: {doc_counts['total']}")
+            status_parts.append(f"📁 Projects: {len(projects)}")
+            if has_profile:
+                status_parts.append("✓ Profile configured")
+            else:
+                status_parts.append("⚠ No profile (run `/create-profile`)")
+
+            user_message = " | ".join(status_parts)
+
             hook_output = {
-                "systemMessage": markdown_output,
-                "additionalContext": markdown_output,
+                "systemMessage": user_message,
+                "hookSpecificOutput": {
+                    "hookEventName": "SessionStart",
+                    "additionalContext": markdown_output,
+                }
             }
             print(json.dumps(hook_output, indent=2))
             return
