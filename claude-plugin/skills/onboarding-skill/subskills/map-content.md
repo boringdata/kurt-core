@@ -1,307 +1,301 @@
 # Map Content Subskill
 
-**Purpose:** Map and fetch content from sources captured in questionnaire
+**Purpose:** Map and fetch organizational content (websites, docs, blogs)
 **Parent Skill:** onboarding-skill
-**Input:** `.kurt/temp/onboarding-data.json`
-**Output:** Updates JSON with content statistics
+**Pattern:** Discover → Map → Fetch → Validate
+**Output:** Indexed content in Kurt database, updated profile.md
 
 ---
 
 ## Overview
 
-This subskill takes the sources from the questionnaire and:
-1. Maps content using `kurt map url`
-2. Optionally fetches content using `kurt fetch`
-3. Updates onboarding-data.json with content stats
+This subskill helps users add organizational content to Kurt:
+
+1. Ask for content URLs (or use provided URLs)
+2. Map content using `kurt map url`
+3. Display discovery summary
+4. Optionally fetch content
+5. Update profile.md with content stats
+
+**Key principles:**
+- Standalone operation (can be called from create-profile or update-profile)
+- Non-destructive (adds content without removing existing)
+- Validates each step before proceeding
 
 ---
 
-## Step 1: Load Sources from JSON
+## Progress Checklist
 
-```bash
-# Read sources from onboarding data
-COMPANY_WEBSITE=$(jq -r '.company_website // empty' .kurt/temp/onboarding-data.json)
-DOCS_URL=$(jq -r '.docs_url // empty' .kurt/temp/onboarding-data.json)
-RESEARCH_SOURCES=$(jq -r '.research_sources[]?' .kurt/temp/onboarding-data.json)
-CMS_PLATFORM=$(jq -r '.cms_platform // "none"' .kurt/temp/onboarding-data.json)
-CMS_CONFIGURED=$(jq -r '.cms_configured // false' .kurt/temp/onboarding-data.json)
+Copy this checklist and track your progress as you work:
 
-# Build list of all URLs to map
-URLS_TO_MAP=()
-[ -n "$COMPANY_WEBSITE" ] && URLS_TO_MAP+=("$COMPANY_WEBSITE")
-[ -n "$DOCS_URL" ] && URLS_TO_MAP+=("$DOCS_URL")
-while IFS= read -r url; do
-  [ -n "$url" ] && URLS_TO_MAP+=("$url")
-done <<< "$RESEARCH_SOURCES"
+- [ ] Check if URLs provided or need to ask user
+- [ ] Map each content source
+- [ ] Validate mapping succeeded
+- [ ] Show discovery summary
+- [ ] Ask if user wants to fetch now
+- [ ] Fetch content (if requested)
+- [ ] Validate fetch succeeded
+- [ ] Update profile.md with content stats
+
+---
+
+## Step 1: Get Content URLs
+
+Check if URLs were provided by calling subskill. If not, ask user:
+
 ```
+───────────────────────────────────────────────────────
+Map Content Sources
+───────────────────────────────────────────────────────
+
+Let's add your organizational content to Kurt.
+
+Please provide URLs for your content sources (one per line):
+- Company website
+- Documentation site
+- Blog
+- Other content sources
+
+Example:
+https://acme.com
+https://docs.acme.com
+https://acme.com/blog
+
+Enter URLs (or press Enter when done):
+```
+
+Wait for user input. Collect all non-empty lines as URLs.
+
+**Validation:** Verify at least one URL was provided
+
+If no URLs:
+```
+⚠️  No URLs provided
+
+Need at least one URL to map content.
+
+Would you like to:
+a) Try again
+b) Skip content mapping
+
+Choose: _
+```
+
+If try again: Return to beginning of Step 1.
+If skip: Exit with message "Skipped. Run /update-profile to add content later."
+
+Only proceed to Step 2 when at least one URL is validated.
 
 ---
 
 ## Step 2: Map Content Sources
 
+For each URL provided, map the content:
+
 ```
-───────────────────────────────────────────────────────
-Mapping Content Sources
-───────────────────────────────────────────────────────
-```
-
-**For each URL:**
-
-```bash
-for url in "${URLS_TO_MAP[@]}"; do
-  echo ""
-  echo "Discovering content from: $url"
-  echo ""
-
-  # Map URL with clustering
-  kurt map url "$url" --cluster-urls
-
-  if [ $? -eq 0 ]; then
-    echo "✓ Mapped successfully"
-  else
-    echo "⚠️  Failed to map: $url"
-    echo ""
-    echo "Options:"
-    echo "  a) Retry"
-    echo "  b) Skip this source"
-    echo "  c) Cancel mapping"
-    echo ""
-    read -p "Choose: " choice
-
-    case "$choice" in
-      a)
-        # Retry
-        kurt map url "$url" --cluster-urls
-        ;;
-      b)
-        # Skip
-        echo "Skipped: $url"
-        continue
-        ;;
-      c)
-        # Cancel
-        echo "Mapping cancelled"
-        exit 1
-        ;;
-    esac
-  fi
-done
+Discovering content from: {{URL}}
 ```
 
-**If CMS configured:**
+Run: `kurt map url {{URL}} --cluster-urls`
 
-```bash
-if [ "$CMS_CONFIGURED" = "true" ] && [ "$CMS_PLATFORM" != "none" ]; then
-  echo ""
-  echo "Mapping CMS content from: $CMS_PLATFORM"
-  echo ""
+**Validation:** Verify mapping succeeded
 
-  # Map CMS with clustering
-  kurt map cms --platform "$CMS_PLATFORM" --cluster-urls
+Check that:
+- Command executed without errors
+- New documents were discovered (check with `kurt content list`)
 
-  if [ $? -eq 0 ]; then
-    echo "✓ CMS content mapped"
-  else
-    echo "⚠️  Failed to map CMS content"
-  fi
-fi
+If mapping fails for a URL:
+```
+⚠️  Failed to map: {{URL}}
+
+Error: {{ERROR_MESSAGE}}
+
+Would you like to:
+a) Retry this URL
+b) Skip this URL and continue
+c) Cancel content mapping
+
+Choose: _
+```
+
+If retry: Retry mapping for this URL.
+If skip: Continue to next URL.
+If cancel: Exit with message "Content mapping cancelled."
+
+Only proceed to Step 3 when all URLs are processed (successfully or skipped).
+
+Display success for each URL:
+```
+✓ Mapped: {{URL}}
 ```
 
 ---
 
-## Step 3: Display Mapping Summary
+## Step 3: Display Discovery Summary
 
-```bash
-# Get content statistics
-TOTAL_MAPPED=$(kurt content list --with-status NOT_FETCHED | wc -l)
-CLUSTERS=$(kurt cluster-urls --format json | jq '. | length')
-```
+Get content statistics:
+- Total documents discovered: `kurt content list --with-status NOT_FETCHED | wc -l`
+- Existing fetched documents: `kurt content list --with-status FETCHED | wc -l`
+
+Display summary:
 
 ```
 ───────────────────────────────────────────────────────
 Content Discovery Summary
 ───────────────────────────────────────────────────────
 
-✓ Discovered {{TOTAL_MAPPED}} documents
-✓ Organized into {{CLUSTERS}} topic clusters
+✓ Discovered {{NEW_DOCS}} new documents
+{{#if EXISTING_DOCS > 0}}
+✓ You already have {{EXISTING_DOCS}} documents fetched
+{{/if}}
 
-{{#if COMPANY_WEBSITE}}
-  • {{COMPANY_WEBSITE}}: {{COMPANY_PAGES}} pages
-{{/if}}
-{{#if DOCS_URL}}
-  • {{DOCS_URL}}: {{DOCS_PAGES}} pages
-{{/if}}
-{{#each RESEARCH_SOURCES}}
-  • {{this}}: {{PAGES}} pages
-{{/each}}
-{{#if CMS_CONFIGURED}}
-  • CMS ({{CMS_PLATFORM}}): {{CMS_DOCS}} documents
-{{/if}}
+Documents by source:
+{{For each URL, show count if possible}}
 
 ───────────────────────────────────────────────────────
 
-Would you like to fetch this content now? (y/n):
+Would you like to fetch this content now?
+(Fetching downloads and indexes the content for analysis)
+
+Fetch now? (y/n):
 ```
 
-**Wait for user response**
+Wait for user response.
 
 ---
 
-## Step 4: Fetch Content (If User Confirms)
+## Step 4: Fetch Content (Optional)
 
-**If yes:**
+If user chose yes in Step 3:
 
 ```
 Fetching and indexing content...
 This may take a few minutes...
 ```
 
-```bash
-# Fetch all mapped content
-kurt fetch --with-status NOT_FETCHED
+Run: `kurt fetch --with-status NOT_FETCHED`
 
-if [ $? -eq 0 ]; then
-  FETCHED_COUNT=$(kurt content list --with-status FETCHED | wc -l)
-  echo ""
-  echo "✓ $FETCHED_COUNT documents fetched and indexed"
-  echo "✓ Content ready for analysis"
-  echo ""
+**Validation:** Verify fetch succeeded
 
-  # Update JSON
-  jq '.content_fetched = true' .kurt/temp/onboarding-data.json > .kurt/temp/onboarding-data.tmp.json
-  mv .kurt/temp/onboarding-data.tmp.json .kurt/temp/onboarding-data.json
-else
-  echo "⚠️  Some content failed to fetch"
-  echo ""
-  echo "You can retry later with: kurt fetch --with-status NOT_FETCHED"
-  echo ""
+Check that:
+- Command executed successfully
+- Documents status changed to FETCHED (verify with `kurt content list --with-status FETCHED`)
+- Count of fetched documents increased
 
-  # Update JSON with partial fetch
-  jq '.content_fetched = false' .kurt/temp/onboarding-data.json > .kurt/temp/onboarding-data.tmp.json
-  mv .kurt/temp/onboarding-data.tmp.json .kurt/temp/onboarding-data.json
-fi
-```
-
-**If no:**
-
-```
-Skipped. You can fetch content later with:
-  kurt fetch --with-status NOT_FETCHED
-```
-
-```bash
-# Update JSON
-jq '.content_fetched = false' .kurt/temp/onboarding-data.json > .kurt/temp/onboarding-data.tmp.json
-mv .kurt/temp/onboarding-data.tmp.json .kurt/temp/onboarding-data.json
-```
-
----
-
-## Step 5: Update JSON with Content Stats
-
-```bash
-# Get final stats
-TOTAL_DOCS=$(kurt content list | wc -l)
-FETCHED_DOCS=$(kurt content list --with-status FETCHED | wc -l)
-NOT_FETCHED_DOCS=$(kurt content list --with-status NOT_FETCHED | wc -l)
-
-# Update JSON with stats
-jq --arg total "$TOTAL_DOCS" \
-   --arg fetched "$FETCHED_DOCS" \
-   --arg not_fetched "$NOT_FETCHED_DOCS" \
-   '.content_stats = {
-     "total_documents": ($total | tonumber),
-     "fetched": ($fetched | tonumber),
-     "not_fetched": ($not_fetched | tonumber)
-   }' .kurt/temp/onboarding-data.json > .kurt/temp/onboarding-data.tmp.json
-
-mv .kurt/temp/onboarding-data.tmp.json .kurt/temp/onboarding-data.json
-```
-
----
-
-## Step 6: Return Control to Parent
-
-Return success. Parent skill (onboarding-skill) continues to next step (extract-foundation).
-
----
-
-## Error Handling
-
-**If kurt CLI not available:**
-```
-❌ Error: kurt CLI not found
-
-Please install kurt-core:
-  pip install kurt-core
-
-Then verify installation:
-  kurt --version
-```
-
-Exit with error code 1.
-
-**If kurt database not initialized:**
-```
-❌ Error: Kurt database not initialized
-
-Please run:
-  kurt init
-
-Then retry: /start
-```
-
-Exit with error code 1.
-
-**If all URLs fail to map:**
-```
-⚠️  No content could be mapped
-
-This might be because:
-  • URLs are inaccessible
-  • No sitemap found and crawling failed
-  • Network issues
-
-Options:
-  a) Retry with different URLs
-  b) Skip content mapping (add sources later)
-  c) Cancel onboarding
-
-Choose: _
-```
-
-**If fetch fails:**
+If fetch fails:
 ```
 ⚠️  Content fetch failed
 
 Error: {{ERROR_MESSAGE}}
 
-Options:
-  a) Retry fetch
-  b) Continue without fetching (can fetch later)
-  c) Cancel onboarding
+Would you like to:
+a) Retry fetch
+b) Skip - I'll fetch later with: kurt fetch
+c) Cancel
 
 Choose: _
 ```
 
----
+If retry: Return to beginning of Step 4 and try again.
+If skip: Continue to Step 5 with partial/no fetch.
+If cancel: Exit with message "Fetch cancelled."
 
-## Output Format
+Only proceed to Step 5 when fetch completes successfully or is skipped.
 
-Updates `.kurt/temp/onboarding-data.json` with:
+If fetch succeeded:
+```
+✓ {{FETCHED_COUNT}} documents fetched and indexed
+✓ Content ready for analysis
+```
 
-```json
-{
-  ...existing fields...,
-  "content_fetched": true,
-  "content_stats": {
-    "total_documents": 47,
-    "fetched": 47,
-    "not_fetched": 0
-  }
-}
+If user skipped:
+```
+Skipped. You can fetch content later with:
+  kurt fetch --with-status NOT_FETCHED
 ```
 
 ---
 
-*This subskill handles all content mapping and fetching using kurt CLI.*
+## Step 5: Update Profile
+
+Update the "Content Sources" section in `.kurt/profile.md`:
+
+Get current stats:
+- Total documents: `kurt content list | wc -l`
+- Fetched documents: `kurt content list --with-status FETCHED | wc -l`
+- Last updated: Current date
+
+Update profile.md:
+
+```markdown
+## Content Sources
+
+### Organizational Content
+{{LIST_OF_MAPPED_DOMAINS}}
+
+### Content Status
+- Total documents indexed: {{TOTAL_DOCS}}
+- Documents fetched: {{FETCHED_DOCS}}
+- Last updated: {{TODAY_DATE}}
+```
+
+Also update the `updated` date in the frontmatter.
+
+**Validation:** Verify profile.md was updated
+
+Check that:
+- Profile.md exists and is readable
+- Content Sources section was updated
+- Document counts are accurate
+- Updated date is current
+
+If validation fails:
+```
+⚠️  Failed to update profile.md
+
+Error: {{ERROR_MESSAGE}}
+
+The content was mapped successfully, but profile.md couldn't be updated.
+You can manually edit .kurt/profile.md to add the content stats.
+
+Continue anyway? (y/n):
+```
+
+If no: Exit with error.
+If yes: Continue to Step 6.
+
+Only proceed to Step 6 when profile update is validated or user chooses to continue.
+
+---
+
+## Step 6: Success Message
+
+Display completion summary:
+
+```
+═══════════════════════════════════════════════════════
+✅ Content Mapping Complete
+═══════════════════════════════════════════════════════
+
+Mapped: {{MAPPED_COUNT}} documents
+Fetched: {{FETCHED_COUNT}} documents
+{{#if SKIPPED_COUNT > 0}}
+Skipped: {{SKIPPED_COUNT}} URLs (failed to map)
+{{/if}}
+
+Your content is now available in Kurt.
+
+{{#if FETCHED_COUNT > 0}}
+Next steps:
+- Extract foundation rules: /update-profile → Foundation Rules
+- Create a project: /create-project
+{{else}}
+Next steps:
+- Fetch content: kurt fetch --with-status NOT_FETCHED
+- Then extract foundation rules: /update-profile → Foundation Rules
+{{/if}}
+```
+
+---
+
+*This subskill handles content discovery and ingestion with validation at each step.*

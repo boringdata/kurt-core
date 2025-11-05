@@ -1,479 +1,285 @@
 # Setup Analytics Subskill
 
-**Purpose:** Configure analytics for organizational domains (optional)
+**Purpose:** Configure analytics for traffic-based content prioritization (optional)
 **Parent Skill:** onboarding-skill
-**Input:** `.kurt/temp/onboarding-data.json`
-**Output:** Updates JSON with analytics configuration
+**Pattern:** Check content → Offer setup → Configure → Validate
+**Output:** Analytics configured in Kurt, updated profile.md
 
 ---
 
 ## Overview
 
-This subskill offers analytics setup for the domains discovered during content mapping:
-1. Detects which domains have content
-2. Offers analytics setup (PostHog) for each domain
-3. Tests connection and syncs initial data
-4. Updates onboarding-data.json with analytics config
+This subskill helps users connect analytics platforms (PostHog, Google Analytics, Plausible) to Kurt for traffic-based content insights:
 
-**Analytics is optional** - users can skip or set up later.
+1. Check if content is available (analytics needs content to track)
+2. Detect domains from content or ask user
+3. Explain benefits of analytics integration
+4. Configure analytics via `kurt:intelligence-skill`
+5. Update profile.md with analytics config
+
+**Key principles:**
+- Optional (can skip without blocking progress)
+- Standalone operation (callable from create-profile or update-profile)
+- Validates setup succeeded
+
+---
+
+## Progress Checklist
+
+Copy this checklist and track your progress as you work:
+
+- [ ] Check if content is available
+- [ ] Get domains to configure
+- [ ] Explain analytics benefits
+- [ ] Ask if user wants to set up analytics
+- [ ] Configure analytics (delegate to intelligence-skill)
+- [ ] Validate analytics connection
+- [ ] Update profile.md with config
 
 ---
 
 ## Step 1: Check Prerequisites
 
-```bash
-# Verify content has been mapped
-CONTENT_FETCHED=$(jq -r '.content_fetched // false' .kurt/temp/onboarding-data.json)
+**Validation:** Check if content has been fetched
 
-if [ "$CONTENT_FETCHED" != "true" ]; then
-  echo "⚠️  No content fetched yet. Skipping analytics setup."
-  echo ""
-  echo "You can set up analytics later with:"
-  echo "  kurt analytics onboard <domain>"
-  echo ""
+Run: `kurt content list --with-status FETCHED | wc -l`
 
-  # Update JSON and skip
-  jq '.analytics_configured = false | .analytics_skipped = true' .kurt/temp/onboarding-data.json > .kurt/temp/onboarding-data.tmp.json
-  mv .kurt/temp/onboarding-data.tmp.json .kurt/temp/onboarding-data.json
-
-  exit 0
-fi
+If no fetched content:
 ```
+⚠️  No content fetched yet
+
+Analytics works best with existing content.
+
+Would you like to:
+a) Map and fetch content first
+b) Skip analytics for now
+
+Choose: _
+```
+
+If (a): Exit and recommend user runs map-content first.
+If (b): Exit with message "Skipped. Run /update-profile to add analytics later."
+
+Only proceed to Step 2 when content is available.
 
 ---
 
-## Step 2: Detect Domains from Content
+## Step 2: Get Domains
 
-```bash
-# Get unique domains from fetched content
-DOMAINS=$(kurt content list --with-status FETCHED --format json | \
-  jq -r '.[] | .source_url' | \
-  sed -E 's|^https?://([^/]+).*|\1|' | \
-  sed 's/^www\.//' | \
-  sort -u)
+Detect domains from fetched content:
 
-# Count domains
-DOMAIN_COUNT=$(echo "$DOMAINS" | wc -l | tr -d ' ')
+Run: `kurt content list --with-status FETCHED --format json | jq -r '.[].source_url' | sed -E 's|^https?://([^/]+).*|\1|' | sed 's/^www\.//' | sort -u`
 
-if [ "$DOMAIN_COUNT" -eq 0 ]; then
-  echo "⚠️  No domains found in content. Skipping analytics."
-  jq '.analytics_configured = false | .analytics_skipped = true' .kurt/temp/onboarding-data.json > .kurt/temp/onboarding-data.tmp.json
-  mv .kurt/temp/onboarding-data.tmp.json .kurt/temp/onboarding-data.json
-  exit 0
-fi
+Display detected domains:
 ```
+Detected content from these domains:
+- {{DOMAIN_1}}
+- {{DOMAIN_2}}
+...
+```
+
+Ask user to confirm or modify:
+```
+Which domains would you like to configure analytics for?
+
+Enter domains (one per line, or press Enter to use all detected):
+```
+
+Wait for user input.
+
+**Validation:** Verify at least one domain was selected
+
+If no domains:
+```
+⚠️  No domains selected
+
+Would you like to:
+a) Try again
+b) Skip analytics
+
+Choose: _
+```
+
+If try again: Return to beginning of Step 2.
+If skip: Exit with message "Skipped analytics setup."
+
+Only proceed to Step 3 when at least one domain is validated.
 
 ---
 
-## Step 3: Offer Analytics Setup
+## Step 3: Explain Benefits
+
+Display analytics value proposition:
 
 ```
 ───────────────────────────────────────────────────────
-Analytics Integration (Optional)
+Analytics Integration
 ───────────────────────────────────────────────────────
-```
 
-**Explain benefits:**
+Kurt can integrate with web analytics to help you:
 
-```
-💡 Analytics Integration
+✓ Prioritize high-traffic pages for updates
+✓ Identify pages losing traffic (needs refresh)
+✓ Spot zero-traffic pages (potentially orphaned)
+✓ Make data-driven content decisions
 
-Kurt can integrate with PostHog web analytics to help you:
-  • Prioritize high-traffic pages for updates
-  • Identify pages losing traffic (needs refresh)
-  • Spot zero-traffic pages (potentially orphaned)
-  • Make data-driven content decisions
-
-Example: When updating tutorials, Kurt will prioritize the ones
+Example: When updating tutorials, Kurt prioritizes the ones
 getting the most traffic for maximum impact.
 
+Supported platforms: PostHog, Google Analytics, Plausible
+
 Setup takes ~2-3 minutes per domain.
+
+───────────────────────────────────────────────────────
+
+Would you like to set up analytics? (y/n):
 ```
 
-**Show detected domains:**
+Wait for user response.
 
-```
-We detected content from {{DOMAIN_COUNT}} domain(s):
-{{#each DOMAINS}}
-  • {{this}}
-{{/each}}
-
-Would you like to set up analytics? (Y/n):
-```
-
-**Wait for user response**
-
----
-
-## Step 4: Handle User Choice
-
-### If User Declines (n)
-
+If no:
 ```
 Skipped. You can set up analytics later with:
   kurt analytics onboard <domain>
-
-Continuing without analytics...
 ```
 
-```bash
-# Update JSON
-jq '.analytics_configured = false | .analytics_skipped = true | .analytics_domains = []' \
-  .kurt/temp/onboarding-data.json > .kurt/temp/onboarding-data.tmp.json
-mv .kurt/temp/onboarding-data.tmp.json .kurt/temp/onboarding-data.json
-```
+Exit.
 
-Return to parent skill.
-
-### If User Accepts (Y/yes)
-
-```
-Great! Let's set up analytics for your domains.
-```
-
-Continue to Step 5.
+If yes: Continue to Step 4.
 
 ---
 
-## Step 5: Configure Analytics for Each Domain
+## Step 4: Configure Analytics
+
+For each domain selected in Step 2:
 
 ```
-───────────────────────────────────────────────────────
-Configuring Analytics
-───────────────────────────────────────────────────────
+Setting up analytics for: {{DOMAIN}}
 ```
 
-**For each domain:**
+Delegate to `kurt:intelligence-skill` for analytics setup.
 
-```bash
-CONFIGURED_DOMAINS=()
+The intelligence-skill will:
+1. Ask for platform (PostHog, Google Analytics, Plausible)
+2. Request credentials
+3. Test connection
+4. Sync initial data
 
-for domain in $DOMAINS; do
-  echo ""
-  echo "Setting up analytics for: $domain"
-  echo ""
+**Validation:** Verify analytics was configured successfully
 
-  # Prompt for PostHog details
-  echo "Platform: PostHog (currently the only supported platform)"
-  echo ""
+After intelligence-skill returns, check that:
+- Analytics connection was established
+- Initial sync completed
+- Domain has analytics data (run: `kurt analytics summary {{DOMAIN}}`)
 
-  read -p "PostHog Project ID (phc_...): " PROJECT_ID
+If validation fails:
+```
+⚠️  Analytics setup failed for {{DOMAIN}}
 
-  # Validate project ID format
-  if [[ ! "$PROJECT_ID" =~ ^phc_ ]]; then
-    echo "⚠️  Invalid format. PostHog project IDs start with 'phc_'"
-    echo ""
-    echo "Options:"
-    echo "  a) Retry"
-    echo "  b) Skip this domain"
-    echo "  c) Skip all analytics"
-    echo ""
-    read -p "Choose: " choice
+Error: {{ERROR_MESSAGE}}
 
-    case "$choice" in
-      a)
-        # Retry this domain
-        continue
-        ;;
-      b)
-        # Skip this domain
-        echo "Skipped: $domain"
-        continue
-        ;;
-      c)
-        # Skip all
-        echo "Skipping all analytics setup"
-        break
-        ;;
-    esac
-  fi
+Would you like to:
+a) Retry this domain
+b) Skip this domain and continue
+c) Skip all remaining domains
 
-  read -sp "PostHog API Key (phx_...): " API_KEY
-  echo ""
+Choose: _
+```
 
-  # Validate API key format
-  if [[ ! "$API_KEY" =~ ^phx_ ]]; then
-    echo "⚠️  Invalid format. PostHog API keys start with 'phx_'"
-    echo ""
-    echo "Options:"
-    echo "  a) Retry"
-    echo "  b) Skip this domain"
-    echo ""
-    read -p "Choose: " choice
+If retry: Return to beginning of Step 4 for this domain.
+If skip domain: Continue to next domain.
+If skip all: Exit Step 4 loop.
 
-    case "$choice" in
-      a)
-        # Retry this domain
-        continue
-        ;;
-      b)
-        # Skip this domain
-        echo "Skipped: $domain"
-        continue
-        ;;
-    esac
-  fi
+Only proceed to Step 5 when all domains are processed (successfully or skipped).
 
-  echo ""
-  echo "Testing connection..."
-
-  # Run onboard command
-  kurt analytics onboard "https://$domain" \
-    --platform posthog \
-    --project-id "$PROJECT_ID" \
-    --api-key "$API_KEY"
-
-  if [ $? -eq 0 ]; then
-    echo "✓ Connected to PostHog"
-    echo ""
-
-    # Initial sync
-    echo "Syncing initial analytics data..."
-    kurt analytics sync "$domain"
-
-    if [ $? -eq 0 ]; then
-      echo "✓ Analytics configured for $domain"
-      CONFIGURED_DOMAINS+=("$domain")
-    else
-      echo "⚠️  Sync failed for $domain"
-      echo "You can retry later with: kurt analytics sync $domain"
-      # Still count as configured since connection works
-      CONFIGURED_DOMAINS+=("$domain")
-    fi
-  else
-    echo "❌ Failed to connect to PostHog"
-    echo ""
-    echo "Please check:"
-    echo "  • Project ID is correct"
-    echo "  • API key has read permissions"
-    echo "  • Network connection is working"
-    echo ""
-    echo "Options:"
-    echo "  a) Retry this domain"
-    echo "  b) Skip this domain"
-    echo "  c) Skip all remaining domains"
-    echo ""
-    read -p "Choose: " choice
-
-    case "$choice" in
-      a)
-        # Retry - will loop again
-        continue
-        ;;
-      b)
-        # Skip this domain
-        echo "Skipped: $domain"
-        continue
-        ;;
-      c)
-        # Skip all remaining
-        echo "Skipping remaining domains"
-        break
-        ;;
-    esac
-  fi
-
-  echo ""
-done
+Display success for each configured domain:
+```
+✓ Analytics configured for {{DOMAIN}}
 ```
 
 ---
 
-## Step 6: Display Analytics Summary
+## Step 5: Update Profile
 
-```bash
-CONFIGURED_COUNT=${#CONFIGURED_DOMAINS[@]}
+Update the "Analytics" section in `.kurt/profile.md`:
 
-if [ $CONFIGURED_COUNT -gt 0 ]; then
-  echo ""
-  echo "───────────────────────────────────────────────────────"
-  echo "Analytics Configuration Complete"
-  echo "───────────────────────────────────────────────────────"
-  echo ""
-  echo "✓ Configured analytics for $CONFIGURED_COUNT domain(s):"
+For each successfully configured domain, get stats:
+- Platform: From configuration
+- Last synced: `kurt analytics summary {{DOMAIN}} --format json | jq -r '.last_synced'`
+- Documents with data: `kurt analytics summary {{DOMAIN}} --format json | jq -r '.documents_with_data'`
+- Total pageviews (60d): `kurt analytics summary {{DOMAIN}} --format json | jq -r '.pageviews_60d_total'`
 
-  for domain in "${CONFIGURED_DOMAINS[@]}"; do
-    # Get stats for this domain
-    TOTAL_VIEWS=$(kurt analytics summary "$domain" --format json 2>/dev/null | jq -r '.pageviews_60d_total // 0')
-    DOCS_WITH_DATA=$(kurt analytics summary "$domain" --format json 2>/dev/null | jq -r '.documents_with_data // 0')
+Update profile.md:
 
-    echo "  • $domain"
-    echo "    - $DOCS_WITH_DATA documents with traffic data"
-    if [ "$TOTAL_VIEWS" -gt 0 ]; then
-      echo "    - $TOTAL_VIEWS pageviews (last 60 days)"
-    fi
-  done
+```markdown
+## Analytics
 
-  echo ""
-  echo "✓ Analytics data will help prioritize content updates"
-  echo "✓ Data auto-syncs when stale (>7 days)"
-  echo ""
-else
-  echo ""
-  echo "⚠️  No domains configured with analytics"
-  echo ""
-  echo "You can set up analytics later with:"
-  echo "  kurt analytics onboard <domain>"
-  echo ""
-fi
+Status: ✓ Analytics configured for {{COUNT}} domain(s)
+
+### Configured Domains
+
+**{{DOMAIN_1}}** ({{PLATFORM}})
+- Last synced: {{DATE}}
+- Documents with traffic data: {{DOC_COUNT}}
+- Total pageviews (60d): {{PAGEVIEWS}}
+
+**{{DOMAIN_2}}** ({{PLATFORM}})
+- Last synced: {{DATE}}
+- Documents with traffic data: {{DOC_COUNT}}
+- Total pageviews (60d): {{PAGEVIEWS}}
+```
+
+Also update the `updated` date in the frontmatter.
+
+**Validation:** Verify profile.md was updated
+
+Check that:
+- Profile.md exists and is readable
+- Analytics section was updated
+- All configured domains are listed
+- Updated date is current
+
+If validation fails:
+```
+⚠️  Failed to update profile.md
+
+Error: {{ERROR_MESSAGE}}
+
+Analytics was configured successfully, but profile.md couldn't be updated.
+You can manually edit .kurt/profile.md to add the analytics config.
+
+Continue anyway? (y/n):
+```
+
+If no: Exit with error.
+If yes: Continue to Step 6.
+
+Only proceed to Step 6 when profile update is validated or user chooses to continue.
+
+---
+
+## Step 6: Success Message
+
+Display completion summary:
+
+```
+═══════════════════════════════════════════════════════
+✅ Analytics Configuration Complete
+═══════════════════════════════════════════════════════
+
+Configured: {{CONFIGURED_COUNT}} domain(s)
+{{#if SKIPPED_COUNT > 0}}
+Skipped: {{SKIPPED_COUNT}} domain(s)
+{{/if}}
+
+Your analytics data is now available in Kurt.
+
+Next steps:
+- Analytics auto-syncs when data is stale (>7 days)
+- Extract foundation rules: /update-profile → Foundation Rules
+- Create a project: /create-project
 ```
 
 ---
 
-## Step 7: Update JSON with Analytics Config
-
-```bash
-# Build JSON array of configured domains
-DOMAINS_JSON="[]"
-for domain in "${CONFIGURED_DOMAINS[@]}"; do
-  # Get analytics metadata
-  PLATFORM="posthog"
-  LAST_SYNCED=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
-  # Get traffic stats if available
-  STATS=$(kurt analytics summary "$domain" --format json 2>/dev/null || echo '{}')
-  PAGEVIEWS_60D=$(echo "$STATS" | jq -r '.pageviews_60d_total // 0')
-  DOCS_WITH_DATA=$(echo "$STATS" | jq -r '.documents_with_data // 0')
-  P25=$(echo "$STATS" | jq -r '.p25_pageviews_30d // 0')
-  P75=$(echo "$STATS" | jq -r '.p75_pageviews_30d // 0')
-
-  # Add to array
-  DOMAINS_JSON=$(echo "$DOMAINS_JSON" | jq \
-    --arg domain "$domain" \
-    --arg platform "$PLATFORM" \
-    --arg last_synced "$LAST_SYNCED" \
-    --arg pageviews "$PAGEVIEWS_60D" \
-    --arg docs_with_data "$DOCS_WITH_DATA" \
-    --arg p25 "$P25" \
-    --arg p75 "$P75" \
-    '. + [{
-      "domain": $domain,
-      "platform": $platform,
-      "last_synced": $last_synced,
-      "pageviews_60d": ($pageviews | tonumber),
-      "documents_with_data": ($docs_with_data | tonumber),
-      "thresholds": {
-        "p25": ($p25 | tonumber),
-        "p75": ($p75 | tonumber)
-      }
-    }]')
-done
-
-# Update onboarding JSON
-jq \
-  --argjson domains "$DOMAINS_JSON" \
-  --arg configured "$([ $CONFIGURED_COUNT -gt 0 ] && echo 'true' || echo 'false')" \
-  '.analytics_configured = ($configured == "true") |
-   .analytics_skipped = false |
-   .analytics_domains = $domains' \
-  .kurt/temp/onboarding-data.json > .kurt/temp/onboarding-data.tmp.json
-
-mv .kurt/temp/onboarding-data.tmp.json .kurt/temp/onboarding-data.json
-```
-
----
-
-## Step 8: Return Control to Parent
-
-Return success. Parent skill (onboarding-skill) continues to next step (extract-foundation).
-
----
-
-## Error Handling
-
-**If kurt analytics command not available:**
-```
-❌ Error: Analytics commands not available
-
-Your kurt-core version may not support analytics.
-
-Please upgrade kurt-core:
-  pip install --upgrade kurt-core
-
-Then verify:
-  kurt analytics --help
-```
-
-Exit with error code 1.
-
-**If PostHog connection fails repeatedly:**
-```
-⚠️  Unable to connect to PostHog after multiple attempts
-
-Common issues:
-  • Incorrect project ID or API key
-  • Network connectivity problems
-  • PostHog service outage
-
-You can:
-  • Continue without analytics (skip)
-  • Set up analytics later: kurt analytics onboard <domain>
-  • Check PostHog status: https://status.posthog.com
-```
-
-User can choose to skip or cancel.
-
-**If sync fails but connection works:**
-```
-⚠️  Connection successful but initial sync failed
-
-This might be temporary. You can:
-  • Continue setup (retry sync later)
-  • Retry sync now
-  • Skip this domain
-
-Analytics will still be configured, but no data yet.
-```
-
----
-
-## Output Format
-
-Updates `.kurt/temp/onboarding-data.json` with:
-
-```json
-{
-  ...existing fields...,
-  "analytics_configured": true,
-  "analytics_skipped": false,
-  "analytics_domains": [
-    {
-      "domain": "docs.company.com",
-      "platform": "posthog",
-      "last_synced": "2025-11-02T12:00:00Z",
-      "pageviews_60d": 45234,
-      "documents_with_data": 221,
-      "thresholds": {
-        "p25": 45,
-        "p75": 890
-      }
-    },
-    {
-      "domain": "blog.company.com",
-      "platform": "posthog",
-      "last_synced": "2025-11-02T12:05:00Z",
-      "pageviews_60d": 12890,
-      "documents_with_data": 65,
-      "thresholds": {
-        "p25": 20,
-        "p75": 450
-      }
-    }
-  ]
-}
-```
-
----
-
-## Notes
-
-- **Optional step:** Users can skip entirely without blocking onboarding
-- **Per-domain:** Each domain gets its own PostHog configuration
-- **Validation:** Project ID and API key formats are validated
-- **Initial sync:** Runs immediately after setup to get baseline data
-- **Error recovery:** Multiple retry options if setup fails
-- **Future-proof:** Designed to support additional platforms (GA4, Plausible)
-
----
-
-*This subskill handles optional analytics setup during onboarding.*
+*This subskill handles optional analytics setup with validation at each step. Configuration is delegated to intelligence-skill.*

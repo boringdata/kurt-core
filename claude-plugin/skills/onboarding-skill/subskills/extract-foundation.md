@@ -1,303 +1,326 @@
 # Extract Foundation Subskill
 
-**Purpose:** Extract foundation rules (publisher, style, personas) from fetched content
+**Purpose:** Extract foundation rules (publisher profile, style guide, personas) from content
 **Parent Skill:** onboarding-skill
-**Input:** `.kurt/temp/onboarding-data.json`
-**Output:** Updates JSON with extracted rule paths
+**Pattern:** Check content → Extract rules → Validate → Update profile
+**Output:** Rule files in `rules/` directory, updated profile.md
 
 ---
 
 ## Overview
 
 This subskill extracts the core rules needed for consistent content creation:
-1. Publisher profile (company context)
-2. Style guide (writing voice)
+
+1. Publisher profile (company context and brand voice)
+2. Style guide (writing patterns and tone)
 3. Target personas (audience profiles)
 
+These "foundation rules" define your organization's content identity and are used across all projects.
+
+**Key principles:**
+- Optional (can skip and extract later)
+- Requires fetched content (minimum 5-10 documents recommended)
+- Delegates extraction logic to project-management-skill's extract-rules subskill
+- Validates extracted rules exist
+
 ---
 
-## Step 1: Check Content Status
+## Progress Checklist
 
-```bash
-# Check if content was fetched
-CONTENT_FETCHED=$(jq -r '.content_fetched' .kurt/temp/onboarding-data.json)
+Copy this checklist and track your progress as you work:
 
-if [ "$CONTENT_FETCHED" != "true" ]; then
-  echo "⚠️  Content not fetched yet"
-  echo ""
-  echo "Foundation rules require indexed content for extraction."
-  echo ""
-  echo "Options:"
-  echo "  a) Skip rule extraction (can extract later)"
-  echo "  b) Go back and fetch content"
-  echo "  c) Cancel onboarding"
-  echo ""
-  read -p "Choose: " choice
+- [ ] Check content is available (minimum 5 documents)
+- [ ] Explain what foundation rules are
+- [ ] Ask if user wants to extract rules
+- [ ] Delegate to extract-rules subskill
+- [ ] Validate rules were extracted
+- [ ] Update profile.md with rule paths
 
-  case "$choice" in
-    a)
-      # Skip extraction
-      jq '.rules_extracted.skipped = true' .kurt/temp/onboarding-data.json > .kurt/temp/onboarding-data.tmp.json
-      mv .kurt/temp/onboarding-data.tmp.json .kurt/temp/onboarding-data.json
-      exit 0
-      ;;
-    b)
-      # Invoke map-content again
-      echo "Returning to content fetching..."
-      exit 2  # Signal to parent to re-run map-content
-      ;;
-    c)
-      echo "Onboarding cancelled"
-      exit 1
-      ;;
-  esac
-fi
+---
 
-# Check minimum content requirement
-FETCHED_COUNT=$(jq -r '.content_stats.fetched' .kurt/temp/onboarding-data.json)
+## Step 1: Check Prerequisites
 
-if [ "$FETCHED_COUNT" -lt 3 ]; then
-  echo "⚠️  Insufficient content for reliable rule extraction"
-  echo ""
-  echo "Found: $FETCHED_COUNT documents"
-  echo "Recommended: 5-10 documents minimum"
-  echo ""
-  echo "Options:"
-  echo "  a) Continue anyway (rules may be less reliable)"
-  echo "  b) Add more content sources"
-  echo "  c) Skip rule extraction"
-  echo ""
-  read -p "Choose: " choice
+**Validation:** Check if sufficient content is available
 
-  case "$choice" in
-    a)
-      echo "Continuing with available content..."
-      ;;
-    b)
-      echo "Please add more content sources, then retry /start"
-      exit 1
-      ;;
-    c)
-      jq '.rules_extracted.skipped = true' .kurt/temp/onboarding-data.json > .kurt/temp/onboarding-data.tmp.json
-      mv .kurt/temp/onboarding-data.tmp.json .kurt/temp/onboarding-data.json
-      exit 0
-      ;;
-  esac
-fi
+Run: `kurt content list --with-status FETCHED | wc -l`
+
+If less than 5 documents:
+```
+⚠️  Insufficient content for reliable rule extraction
+
+Found: {{COUNT}} documents
+Recommended: 5-10 documents minimum
+
+Foundation rules work best with diverse content samples.
+
+Would you like to:
+a) Continue anyway (rules may be less reliable)
+b) Add more content first
+c) Skip rule extraction
+
+Choose: _
 ```
 
+If (a): Display warning and continue to Step 2.
+If (b): Exit and recommend user runs map-content to add more sources.
+If (c): Exit with message "Skipped. Run /update-profile to extract rules later."
+
+Only proceed to Step 2 when user accepts risk or has sufficient content.
+
 ---
 
-## Step 2-4: Extract Foundation Rules
+## Step 2: Explain Foundation Rules
 
-**Delegate to extract-rules subskill:**
+Display explanation:
 
 ```
 ───────────────────────────────────────────────────────
-Extracting Foundation Rules
+Extract Foundation Rules
 ───────────────────────────────────────────────────────
 
-Analyzing your content to extract:
-• Publisher profile (company context)
-• Primary voice (writing style)
-• Personas (audience profiles)
+Foundation rules capture your organization's content identity:
+
+✓ Publisher Profile - Company context, brand principles,
+  content goals (used across all content)
+
+✓ Style Guide - Writing voice, tone, formatting patterns
+  (ensures consistency)
+
+✓ Personas - Target audience profiles with goals, pain points,
+  and preferences (guides content strategy)
+
+These rules are extracted by analyzing your existing content
+and will be used for all future content projects.
+
+Extraction takes ~3-5 minutes.
+
+───────────────────────────────────────────────────────
+
+Would you like to extract foundation rules? (y/n):
 ```
 
-**Invoke:** `project-management extract-rules --foundation-only`
+Wait for user response.
 
-This delegates to the extract-rules subskill which will:
-1. Check prerequisites (content indexed)
-2. Show preview of documents to analyze
-3. Extract publisher profile
-4. Extract primary voice
-5. Extract personas
-6. Show summary of extracted rules
-
-**The extract-rules subskill owns the extraction logic and provides:**
-- Document preview before extraction
-- Progress reporting
-- Error handling
-- Retry logic
-
-**After extraction completes:**
-
-```bash
-# Get paths of extracted rules
-PUBLISHER_PATH=$(ls rules/publisher/publisher-profile.md 2>/dev/null)
-STYLE_FILES=$(ls rules/style/*.md 2>/dev/null)
-PERSONA_FILES=$(ls rules/personas/*.md 2>/dev/null)
-PERSONA_COUNT=$(echo "$PERSONA_FILES" | wc -l | tr -d ' ')
-
-# Update JSON with rule paths
-if [ -n "$PUBLISHER_PATH" ]; then
-  jq --arg path "$PUBLISHER_PATH" \
-     '.rules_extracted.publisher = {
-       "extracted": true,
-       "path": $path
-     }' .kurt/temp/onboarding-data.json > .kurt/temp/onboarding-data.tmp.json
-  mv .kurt/temp/onboarding-data.tmp.json .kurt/temp/onboarding-data.json
-else
-  jq '.rules_extracted.publisher = {
-    "extracted": false,
-    "error": "Extraction failed or skipped"
-  }' .kurt/temp/onboarding-data.json > .kurt/temp/onboarding-data.tmp.json
-  mv .kurt/temp/onboarding-data.tmp.json .kurt/temp/onboarding-data.json
-fi
-
-if [ -n "$STYLE_FILES" ]; then
-  STYLE_FILE=$(echo "$STYLE_FILES" | head -1)
-  STYLE_NAME=$(basename "$STYLE_FILE" .md)
-
-  jq --arg path "$STYLE_FILE" \
-     --arg name "$STYLE_NAME" \
-     '.rules_extracted.style = {
-       "extracted": true,
-       "path": $path,
-       "name": $name
-     }' .kurt/temp/onboarding-data.json > .kurt/temp/onboarding-data.tmp.json
-  mv .kurt/temp/onboarding-data.tmp.json .kurt/temp/onboarding-data.json
-else
-  jq '.rules_extracted.style = {
-    "extracted": false,
-    "error": "Extraction failed or skipped"
-  }' .kurt/temp/onboarding-data.json > .kurt/temp/onboarding-data.tmp.json
-  mv .kurt/temp/onboarding-data.tmp.json .kurt/temp/onboarding-data.json
-fi
-
-if [ "$PERSONA_COUNT" -gt 0 ]; then
-  PERSONAS_JSON=$(echo "$PERSONA_FILES" | jq -R -s 'split("\n") | map(select(length > 0))')
-
-  jq --argjson personas "$PERSONAS_JSON" \
-     --arg count "$PERSONA_COUNT" \
-     '.rules_extracted.personas = {
-       "extracted": true,
-       "count": ($count | tonumber),
-       "files": $personas
-     }' .kurt/temp/onboarding-data.json > .kurt/temp/onboarding-data.tmp.json
-  mv .kurt/temp/onboarding-data.tmp.json .kurt/temp/onboarding-data.json
-else
-  jq '.rules_extracted.personas = {
-    "extracted": false,
-    "error": "Extraction failed or skipped"
-  }' .kurt/temp/onboarding-data.json > .kurt/temp/onboarding-data.tmp.json
-  mv .kurt/temp/onboarding-data.tmp.json .kurt/temp/onboarding-data.json
-fi
+If no:
 ```
+Skipped. You can extract foundation rules later with:
+  /update-profile → Foundation Rules
+```
+
+Exit.
+
+If yes: Continue to Step 3.
 
 ---
 
-## Step 5: Summary
+## Step 3: Extract Rules
+
+Delegate to project-management-skill's extract-rules subskill:
+
+```
+Analyzing your content to extract foundation rules...
+```
+
+Read and execute the extract-rules subskill from project-management-skill with foundation-only mode.
+
+The extract-rules subskill will:
+1. Analyze fetched content
+2. Extract publisher profile
+3. Extract style guide
+4. Extract personas
+5. Create rule files in `rules/` directory
+6. Show preview and get user approval for each
+
+**Validation:** Verify rules were extracted
+
+After extract-rules returns, check that rule files exist:
+- Publisher: `rules/publisher/publisher-profile.md`
+- Style: Check for files in `rules/style/*.md`
+- Personas: Check for files in `rules/personas/*.md`
+
+Count extracted rules:
+- Publisher: exists (yes/no)
+- Style guides: count files
+- Personas: count files
+
+If no rules were extracted:
+```
+⚠️  No rules were extracted
+
+This might be because:
+- Extraction was cancelled
+- Content didn't have clear patterns
+- Insufficient content diversity
+
+Would you like to:
+a) Retry extraction
+b) Skip - I'll extract rules later
+
+Choose: _
+```
+
+If retry: Return to beginning of Step 3.
+If skip: Continue to Step 4 with no rules extracted.
+
+Only proceed to Step 4 when extraction completes (with or without rules).
+
+---
+
+## Step 4: Display Summary
+
+Show what was extracted:
 
 ```
 ───────────────────────────────────────────────────────
 Foundation Rules Extracted
 ───────────────────────────────────────────────────────
 
-{{#if PUBLISHER_EXTRACTED}}
+{{#if PUBLISHER_EXISTS}}
 ✓ Publisher Profile
   rules/publisher/publisher-profile.md
+{{else}}
+⚠ Publisher Profile - Not extracted
 {{/if}}
 
-{{#if STYLE_EXTRACTED}}
-✓ Style Guide ({{STYLE_TYPE}})
-  {{STYLE_PATH}}
+{{#if STYLE_COUNT > 0}}
+✓ Style Guide ({{STYLE_COUNT}} style{{STYLE_COUNT > 1 ? "s" : ""}})
+{{#each STYLE_FILES}}
+  {{this}}
+{{/each}}
+{{else}}
+⚠ Style Guide - Not extracted
 {{/if}}
 
-{{#if PERSONAS_EXTRACTED}}
-✓ Personas ({{PERSONA_COUNT}})
+{{#if PERSONA_COUNT > 0}}
+✓ Personas ({{PERSONA_COUNT}} persona{{PERSONA_COUNT > 1 ? "s" : ""}})
 {{#each PERSONA_FILES}}
   {{this}}
 {{/each}}
+{{else}}
+⚠ Personas - Not extracted
 {{/if}}
 
-{{#if ANY_FAILED}}
-⚠️  Some extractions failed
+{{#if ANY_MISSING}}
 
 You can extract missing rules later with:
-{{#if NOT PUBLISHER_EXTRACTED}}  writing-rules-skill publisher --auto-discover{{/if}}
-{{#if NOT STYLE_EXTRACTED}}  writing-rules-skill style --type corporate --auto-discover{{/if}}
-{{#if NOT PERSONAS_EXTRACTED}}  writing-rules-skill persona --audience-type all --auto-discover{{/if}}
+  /update-profile → Foundation Rules
 {{/if}}
 ```
 
 ---
 
-## Step 6: Return Control
+## Step 5: Update Profile
 
-Return success. Parent skill continues to create-profile step.
+Update the "Foundation Rules" section in `.kurt/profile.md`:
+
+For publisher profile:
+- If extracted: Show path and status
+- If not: Show "Not yet extracted" with instructions
+
+For style guides:
+- List each style file with path
+- If none: Show "None yet" with instructions
+
+For personas:
+- List each persona file with path
+- If none: Show "None yet" with instructions
+
+Update profile.md:
+
+```markdown
+## Foundation Rules
+
+### Publisher Profile
+{{#if PUBLISHER_EXISTS}}
+✓ Extracted
+
+File: rules/publisher/publisher-profile.md
+{{else}}
+Not yet extracted.
+
+Run: /update-profile → Foundation Rules
+{{/if}}
+
+### Style Guides
+{{#if STYLE_COUNT > 0}}
+Count: {{STYLE_COUNT}}
+
+{{#each STYLE_FILES}}
+- {{basename}} ({{path}})
+{{/each}}
+{{else}}
+None yet.
+
+Run: /update-profile → Foundation Rules
+{{/if}}
+
+### Personas
+{{#if PERSONA_COUNT > 0}}
+Count: {{PERSONA_COUNT}}
+
+{{#each PERSONA_FILES}}
+- {{basename}} ({{path}})
+{{/each}}
+{{else}}
+None yet.
+
+Run: /update-profile → Foundation Rules
+{{/if}}
+```
+
+Also update the `updated` date in the frontmatter.
+
+**Validation:** Verify profile.md was updated
+
+Check that:
+- Profile.md exists and is readable
+- Foundation Rules section was updated
+- Rule counts and paths are accurate
+- Updated date is current
+
+If validation fails:
+```
+⚠️  Failed to update profile.md
+
+Error: {{ERROR_MESSAGE}}
+
+Rules were extracted successfully, but profile.md couldn't be updated.
+You can manually edit .kurt/profile.md to add the rule paths.
+
+Continue anyway? (y/n):
+```
+
+If no: Exit with error.
+If yes: Continue to Step 6.
+
+Only proceed to Step 6 when profile update is validated or user chooses to continue.
 
 ---
 
-## Error Handling
+## Step 6: Success Message
 
-**If writing-rules-skill not available:**
+Display completion summary:
+
 ```
-❌ Error: writing-rules-skill not found
+═══════════════════════════════════════════════════════
+✅ Foundation Rules Extraction Complete
+═══════════════════════════════════════════════════════
 
-This skill should be available in .claude/skills/
+Extracted: {{TOTAL_EXTRACTED}} rule file(s)
+{{#if TOTAL_MISSING > 0}}
+Skipped: {{TOTAL_MISSING}} rule type(s)
+{{/if}}
 
-Check your Kurt plugin installation.
-```
+Your foundation rules are ready to use in projects.
 
-**If all extractions fail:**
-```
-⚠️  No rules could be extracted
-
-This might be because:
-  • Content is insufficient (need 5+ documents)
-  • Content is not indexed (need FETCHED status)
-  • Content doesn't have clear patterns
-
-Options:
-  a) Skip rule extraction (create profile without rules)
-  b) Add more content and retry
-  c) Cancel onboarding
-
-Choose: _
-```
-
-**If partial success:**
-```
-⚠️  Some rules extracted, but not all
-
-Extracted: {{SUCCESS_LIST}}
-Failed: {{FAILED_LIST}}
-
-Continue with partial extraction? (y/n):
+Next steps:
+- Review extracted rules in rules/ directory
+- Create your first project: /create-project
+{{#if ANY_MISSING}}
+- Extract missing rules: /update-profile → Foundation Rules
+{{/if}}
 ```
 
 ---
 
-## Output Format
-
-Updates `.kurt/temp/onboarding-data.json` with:
-
-```json
-{
-  ...existing fields...,
-  "rules_extracted": {
-    "publisher": {
-      "extracted": true,
-      "path": "rules/publisher/publisher-profile.md"
-    },
-    "style": {
-      "extracted": true,
-      "path": "rules/style/technical-developer-voice.md",
-      "name": "technical-developer-voice",
-      "type": "technical-docs"
-    },
-    "personas": {
-      "extracted": true,
-      "count": 2,
-      "files": [
-        "rules/personas/backend-engineer.md",
-        "rules/personas/platform-engineer.md"
-      ]
-    }
-  }
-}
-```
-
----
-
-*This subskill extracts foundation rules using the writing-rules-skill.*
+*This subskill handles foundation rules extraction by delegating to extract-rules subskill with validation at each step.*
