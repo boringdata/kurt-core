@@ -8,17 +8,5 @@
         }
       ]
     }
-  ],
-  "PostToolUse": [
-    {
-      "matcher": "Write",
-      "hooks": [
-        {
-          "type": "command",
-          "command": "bash .claude/scripts/auto-import-source.sh",
-          "timeout": 30
-        }
-      ]
-    }
   ]
 }
