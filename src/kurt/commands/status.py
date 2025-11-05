@@ -7,7 +7,7 @@ import click
 from rich.console import Console
 
 from kurt.config import config_exists, load_config
-from kurt.services.status_service import (
+from kurt.reporting.status import (
     check_pending_migrations,
     generate_status_markdown,
     get_cluster_count,

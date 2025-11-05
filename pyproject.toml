@@ -35,6 +35,8 @@ dev = [
 eval = [
     "claude-agent-sdk>=0.1.6",
     "pyyaml>=6.0.0",
+    "responses>=0.25.0",
+    "pytest-httpx>=0.30.0",
 ]
 
 [project.scripts]

@@ -9,6 +9,7 @@ from rich.console import Console
 from rich.table import Table
 
 from kurt.cms.config import (
+    add_platform_instance,
     cms_config_exists,
     create_template_config,
     get_platform_config,
@@ -21,9 +22,9 @@ from kurt.telemetry.decorators import track_command
 console = Console()
 
 
-def get_adapter(platform: str):
-    """Get CMS adapter instance for the specified platform."""
-    config = get_platform_config(platform)
+def get_adapter(platform: str, instance: Optional[str] = None):
+    """Get CMS adapter instance for the specified platform and instance."""
+    config = get_platform_config(platform, instance)
 
     if platform == "sanity":
         from kurt.cms.sanity import SanityAdapter
@@ -45,6 +46,7 @@ def cms():
 
 @cms.command("search")
 @click.option("--platform", default="sanity", help="CMS platform (sanity, contentful, wordpress)")
+@click.option("--instance", default=None, help="Instance name (uses default if not specified)")
 @click.option("--query", "-q", help="Text search query")
 @click.option("--content-type", "-t", help="Filter by content type")
 @click.option("--limit", type=int, default=20, help="Maximum results (default: 20)")
@@ -53,23 +55,23 @@ def cms():
 )
 @track_command
 def search_cmd(
-    platform: str, query: Optional[str], content_type: Optional[str], limit: int, output: str
+    platform: str, instance: Optional[str], query: Optional[str], content_type: Optional[str], limit: int, output: str
 ):
     """
     Search CMS content.
 
     Examples:
         kurt cms search --query "tutorial"
-        kurt cms search --content-type article --limit 50
+        kurt cms search --platform sanity --instance prod --content-type article --limit 50
         kurt cms search --query "quickstart" --output json
     """
     try:
-        if not platform_configured(platform):
-            console.print(f"[red]Error:[/red] {platform.capitalize()} not configured")
-            console.print(f"Run: [cyan]kurt cms onboard --platform {platform}[/cyan]")
+        if not platform_configured(platform, instance):
+            console.print(f"[red]Error:[/red] {platform.capitalize()}/{instance or 'default'} not configured")
+            console.print(f"Run: [cyan]kurt cms onboard --platform {platform} --instance {instance or 'default'}[/cyan]")
             raise click.Abort()
 
-        adapter = get_adapter(platform)
+        adapter = get_adapter(platform, instance)
 
         # Perform search
         console.print(f"[cyan]Searching {platform} CMS...[/cyan]")
@@ -126,6 +128,7 @@ def search_cmd(
 
 @cms.command("fetch")
 @click.option("--platform", default="sanity", help="CMS platform")
+@click.option("--instance", default=None, help="Instance name (uses default if not specified)")
 @click.option("--id", "document_id", required=True, help="Document ID to fetch")
 @click.option("--output-dir", type=click.Path(), help="Output directory for markdown file")
 @click.option(
@@ -135,7 +138,7 @@ def search_cmd(
     help="Output format",
 )
 @track_command
-def fetch_cmd(platform: str, document_id: str, output_dir: Optional[str], output_format: str):
+def fetch_cmd(platform: str, instance: Optional[str], document_id: str, output_dir: Optional[str], output_format: str):
     """
     Fetch document content from CMS.
 
@@ -143,16 +146,16 @@ def fetch_cmd(platform: str, document_id: str, output_dir: Optional[str], output
 
     Examples:
         kurt cms fetch --id abc123
-        kurt cms fetch --id abc123 --output-dir sources/cms/sanity/
+        kurt cms fetch --platform sanity --instance prod --id abc123 --output-dir sources/cms/sanity/
         kurt cms fetch --id abc123 --output-format json
     """
     try:
-        if not platform_configured(platform):
-            console.print(f"[red]Error:[/red] {platform.capitalize()} not configured")
-            console.print(f"Run: [cyan]kurt cms onboard --platform {platform}[/cyan]")
+        if not platform_configured(platform, instance):
+            console.print(f"[red]Error:[/red] {platform.capitalize()}/{instance or 'default'} not configured")
+            console.print(f"Run: [cyan]kurt cms onboard --platform {platform} --instance {instance or 'default'}[/cyan]")
             raise click.Abort()
 
-        adapter = get_adapter(platform)
+        adapter = get_adapter(platform, instance)
 
         # Fetch document
         console.print(f"[cyan]Fetching document:[/cyan] {document_id}")
@@ -206,8 +209,9 @@ def fetch_cmd(platform: str, document_id: str, output_dir: Optional[str], output
 
 @cms.command("types")
 @click.option("--platform", default="sanity", help="CMS platform")
+@click.option("--instance", default=None, help="Instance name (uses default if not specified)")
 @track_command
-def types_cmd(platform: str):
+def types_cmd(platform: str, instance: Optional[str]):
     """
     List available content types in CMS.
 
@@ -215,15 +219,15 @@ def types_cmd(platform: str):
 
     Example:
         kurt cms types
-        kurt cms types --platform contentful
+        kurt cms types --platform contentful --instance prod
     """
     try:
-        if not platform_configured(platform):
-            console.print(f"[red]Error:[/red] {platform.capitalize()} not configured")
-            console.print(f"Run: [cyan]kurt cms onboard --platform {platform}[/cyan]")
+        if not platform_configured(platform, instance):
+            console.print(f"[red]Error:[/red] {platform.capitalize()}/{instance or 'default'} not configured")
+            console.print(f"Run: [cyan]kurt cms onboard --platform {platform} --instance {instance or 'default'}[/cyan]")
             raise click.Abort()
 
-        adapter = get_adapter(platform)
+        adapter = get_adapter(platform, instance)
 
         console.print(f"[cyan]Fetching content types from {platform} CMS...[/cyan]\n")
 
@@ -253,8 +257,9 @@ def types_cmd(platform: str):
 
 @cms.command("onboard")
 @click.option("--platform", default="sanity", help="CMS platform to configure")
+@click.option("--instance", default="default", help="Instance name (default, prod, staging, etc)")
 @track_command
-def onboard_cmd(platform: str):
+def onboard_cmd(platform: str, instance: str):
     """
     Interactive CMS onboarding and configuration.
 
@@ -262,32 +267,34 @@ def onboard_cmd(platform: str):
 
     Example:
         kurt cms onboard
-        kurt cms onboard --platform contentful
+        kurt cms onboard --platform contentful --instance prod
     """
-    console.print(f"[bold green]CMS Onboarding: {platform.capitalize()}[/bold green]\n")
+    console.print(f"[bold green]CMS Onboarding: {platform.capitalize()} ({instance})[/bold green]\n")
 
-    # Check if config exists
-    if not cms_config_exists():
-        console.print("[yellow]No CMS configuration found.[/yellow]")
-        console.print("Creating configuration file...\n")
+    # Check if platform/instance configured
+    if not platform_configured(platform, instance):
+        console.print(f"[yellow]No configuration found for {platform}/{instance}.[/yellow]\n")
 
-        config_path = create_template_config(platform)
-        console.print(f"[green]✓ Created:[/green] {config_path}")
-        console.print()
-        console.print("[yellow]Please fill in your CMS credentials:[/yellow]")
-        console.print(f"  1. Open: [cyan]{config_path}[/cyan]")
-        console.print(f"  2. Replace placeholder values with your {platform} credentials")
-        console.print("  3. Run this command again: [cyan]kurt cms onboard[/cyan]")
-        console.print()
-        console.print("[dim]Note: This file is gitignored and won't be committed.[/dim]")
-        return
+        # Get template and prompt for values
+        template = create_template_config(platform, instance)
 
-    # Check if platform configured
-    if not platform_configured(platform):
-        config_path = create_template_config(platform, overwrite=False)
-        console.print(f"[yellow]{platform.capitalize()} not configured.[/yellow]")
-        console.print(f"Please fill in credentials in: [cyan]{config_path}[/cyan]")
-        return
+        console.print(f"[bold]Enter {platform.capitalize()} credentials:[/bold]\n")
+
+        # Prompt for each required field
+        instance_config = {}
+        for key, placeholder in template.items():
+            if key == "content_type_mappings":
+                continue  # Skip this for now, will be added during type discovery
+
+            value = console.input(f"  {key.replace('_', ' ').title()} [{placeholder}]: ").strip()
+            instance_config[key] = value if value else placeholder
+
+        # Save configuration
+        add_platform_instance(platform, instance, instance_config)
+
+        console.print(f"\n[green]✓ Configuration saved to kurt.config[/green]")
+        console.print("[dim]Note: CMS credentials are stored in kurt.config (not committed to git)[/dim]\n")
+        console.print("Testing connection...\n")
 
     # Test connection
     try:
@@ -352,13 +359,17 @@ def onboard_cmd(platform: str):
 
         # Configure field mappings for each type
         config_data = load_cms_config()
+
+        # Get current instance config
         if platform not in config_data:
             config_data[platform] = {}
+        if instance not in config_data[platform]:
+            config_data[platform][instance] = {}
 
-        if "content_type_mappings" not in config_data[platform]:
-            config_data[platform]["content_type_mappings"] = {}
+        if "content_type_mappings" not in config_data[platform][instance]:
+            config_data[platform][instance]["content_type_mappings"] = {}
 
-        mappings = config_data[platform]["content_type_mappings"]
+        mappings = config_data[platform][instance]["content_type_mappings"]
 
         for content_type in selected_types:
             console.print(f"\n[bold cyan]Configuring: {content_type}[/bold cyan]")
@@ -519,7 +530,7 @@ def import_cmd(platform: str, source_dir: str):
     """
     from pathlib import Path
 
-    from kurt.ingestion.fetch import add_document
+    from kurt.content.fetch import add_document
 
     try:
         import yaml
@@ -604,6 +615,7 @@ def import_cmd(platform: str, source_dir: str):
 
 @cms.command("publish")
 @click.option("--platform", default="sanity", help="CMS platform")
+@click.option("--instance", default=None, help="Instance name (uses default if not specified)")
 @click.option(
     "--file",
     "filepath",
@@ -615,7 +627,7 @@ def import_cmd(platform: str, source_dir: str):
 @click.option("--content-type", help="Content type for new documents")
 @track_command
 def publish_cmd(
-    platform: str, filepath: str, document_id: Optional[str], content_type: Optional[str]
+    platform: str, instance: Optional[str], filepath: str, document_id: Optional[str], content_type: Optional[str]
 ):
     """
     Publish markdown file to CMS as draft.
@@ -624,14 +636,14 @@ def publish_cmd(
 
     Examples:
         kurt cms publish --file draft.md --id abc123
-        kurt cms publish --file new-article.md --content-type article
+        kurt cms publish --platform sanity --instance prod --file new-article.md --content-type article
     """
     try:
         import yaml
 
-        if not platform_configured(platform):
-            console.print(f"[red]Error:[/red] {platform.capitalize()} not configured")
-            console.print(f"Run: [cyan]kurt cms onboard --platform {platform}[/cyan]")
+        if not platform_configured(platform, instance):
+            console.print(f"[red]Error:[/red] {platform.capitalize()}/{instance or 'default'} not configured")
+            console.print(f"Run: [cyan]kurt cms onboard --platform {platform} --instance {instance or 'default'}[/cyan]")
             raise click.Abort()
 
         # Read markdown file
@@ -672,7 +684,7 @@ def publish_cmd(
             raise click.Abort()
 
         # Get adapter
-        adapter = get_adapter(platform)
+        adapter = get_adapter(platform, instance)
 
         # Create/update draft
         console.print(f"[cyan]Publishing to {platform} CMS...[/cyan]")

@@ -1,103 +1,114 @@
 # CMS Search Subskill
 
-**Purpose:** Search CMS content with queries and filters  
-**Parent Skill:** cms-interaction  
-**Output:** List of matching documents (text or JSON format)
+**Purpose:** Search CMS content with queries and filters
+**Parent Skill:** cms-interaction
+**Output:** List of matching documents (table, list, or JSON format)
 
 ---
 
-## Context Received from Parent Skill
+## Overview
 
-The parent skill provides:
-- `$CMS_NAME` - CMS to search (default: sanity)
-- `$CMS_CONFIG_PATH` - Path to .kurt/cms-config.json
-- `$CONTENT_TYPE_MAPPINGS` - Configured content type mappings
-- `$ENABLED_TYPES` - List of enabled content types
-- `$SCRIPTS_DIR` - Path to scripts directory
-- `$ARGUMENTS` - CLI arguments for search (query, filters, etc.)
+This subskill orchestrates the `kurt cms search` command for ad-hoc CMS content exploration.
+
+**Use during:**
+- Project planning and research
+- Exploring what content exists
+- Finding specific documents by keyword
+- Quick content discovery
+
+**For systematic ingestion**, use `kurt map cms --cluster-urls` + `kurt fetch` instead (see project-management-skill).
 
 ---
 
-## Step 1: Parse Search Arguments
+## Step 1: Parse Search Parameters
 
-Extract from `$ARGUMENTS`:
+Identify search criteria from user request:
 
-**Required:**
-- None (can search all content)
-
-**Optional:**
+**Optional parameters:**
 - `--query "text"` - Search query across title and content
 - `--content-type article` - Filter to specific type
-- `--filter "key=value"` - CMS-specific filters
-- `--limit 100` - Maximum results (default: 100)
-- `--output json` - Output format (text or json)
-- `--test-connection` - Test CMS connection only
+- `--limit 20` - Maximum results (default: 20)
+- `--output table|list|json` - Output format (default: table)
 
 ---
 
-## Step 2: Execute Search Script
+## Step 2: Execute Search Command
 
-Run the search script with parsed arguments:
+Run the kurt CLI search command:
 
 ```bash
-python .claude/skills/cms-interaction-skill/scripts/cms_search.py \
-  --cms sanity \
-  [additional search arguments like --query, --filter, etc.]
+kurt cms search --platform sanity [options]
 ```
 
-**The script will:**
-1. Load config from $CMS_CONFIG_PATH
-2. Connect to CMS using credentials
-3. Build query using $ENABLED_TYPES only
-4. Apply filters and search query
-5. Extract metadata using field mappings
-6. Return results in requested format
+**Examples:**
 
----
-
-## Search Examples
-
-### Basic Text Search
-
+### Basic text search
 ```bash
-cms-interaction search --query "tutorial"
+kurt cms search --query "tutorial"
 ```
 
-Searches title and content fields for "tutorial".
-
-### Filter by Content Type
-
+### Filter by content type
 ```bash
-cms-interaction search --content-type article --limit 50
+kurt cms search --content-type article --limit 50
 ```
 
-Returns first 50 articles.
-
-### Advanced Filters (Sanity)
-
+### Multiple filters
 ```bash
-# By tags
-cms-interaction search --filter "tags=[tutorial]"
-
-# By date
-cms-interaction search --filter "publishedAt=>2024-01-01"
-
-# Multiple filters
-cms-interaction search \
+kurt cms search \
   --query "quickstart" \
   --content-type article \
-  --filter "tags=[tutorial]" \
-  --filter "publishedAt=>2024-01-01" \
   --limit 20
 ```
 
-### JSON Output for Piping
-
+### JSON output for piping
 ```bash
-cms-interaction search --query "tutorial" --output json > results.json
+kurt cms search --query "tutorial" --output json
+```
 
-# Then fetch
-cat results.json | cms-interaction fetch --from-stdin
+---
+
+## Output Formats
+
+### Table (default)
+```
+Search Results (23 documents)
+┌─────────────┬──────────────────┬─────────┬──────────┬────────────┐
+│ ID          │ Title            │ Type    │ Status   │ Modified   │
+├─────────────┼──────────────────┼─────────┼──────────┼────────────┤
+│ abc123...   │ Getting Started  │ article │ published│ 2024-11-01 │
+│ def456...   │ API Tutorial     │ guide   │ published│ 2024-10-28 │
+└─────────────┴──────────────────┴─────────┴──────────┴────────────┘
+```
+
+### List
+```bash
+kurt cms search --query "tutorial" --output list
+```
+```
+abc123 - Getting Started with Postgres
+  Type: article | Status: published
+  URL: https://docs.example.com/postgres-intro
+
+def456 - API Integration Tutorial
+  Type: guide | Status: published
+  URL: https://docs.example.com/api-tutorial
+```
+
+### JSON
+```bash
+kurt cms search --query "tutorial" --output json
+```
+```json
+[
+  {
+    "id": "abc123",
+    "title": "Getting Started with Postgres",
+    "content_type": "article",
+    "status": "published",
+    "url": "https://docs.example.com/postgres-intro",
+    "last_modified": "2024-11-01T10:00:00Z"
+  }
+]
 ```
 
 ---
@@ -113,14 +124,9 @@ Search results include:
 | `content_type` | CMS content type | ✅ |
 | `status` | draft/published | ✅ |
 | `url` | Public URL | If available |
-| `author` | Author name | If available |
-| `published_date` | Publish date | If available |
 | `last_modified` | Last update | If available |
-| `metadata.slug` | URL slug | If available |
-| `metadata.tags` | Tags array | If available |
-| `metadata.categories` | Categories | If available |
 
-**Note:** `content` field is empty for search results. Use `cms-interaction fetch` to get full content.
+**Note:** Full content is not included in search results. Use `kurt cms fetch --id <id>` to get full content.
 
 ---
 
@@ -128,32 +134,58 @@ Search results include:
 
 ✅ **Search successful** when:
 - Results returned matching criteria
-- Only enabled content types included
+- Only enabled content types included (from onboarding)
 - Metadata extracted using field mappings
-- JSON output valid (if --output json)
-- Connection test passes (if --test-connection)
+- Output formatted correctly
 
 ---
 
 ## Next Steps After Search
 
-```
-✅ Found 23 documents
+After reviewing search results:
 
-Next steps:
-  1. Review results
-  2. Fetch content: cat results.json | cms-interaction fetch --from-stdin
-  3. Or fetch specific: cms-interaction fetch --document-id <id>
-```
+1. **Fetch specific document:**
+   ```bash
+   kurt cms fetch --id <document-id> --output-dir sources/cms/sanity/
+   ```
+
+2. **Systematic ingestion:**
+   For bulk ingestion of all matching content, use the systematic workflow:
+   ```bash
+   kurt map cms --platform sanity --cluster-urls
+   kurt fetch --include "sanity/*"
+   ```
+
+3. **Export for processing:**
+   ```bash
+   kurt cms search --query "tutorial" --output json > search-results.json
+   ```
 
 ---
 
-## Filter Syntax (Sanity)
+## Common Search Patterns
 
-- `key=[value1,value2]` - Array contains any value
-- `key=>date` - Greater than (after date)
-- `key=<date` - Less than (before date)
-- `key=value` - Exact match
+### Find all articles
+```bash
+kurt cms search --content-type article --limit 100
+```
+
+### Find recent content
+```bash
+# Show recent documents (sorted by modified date)
+kurt cms search --limit 20
+```
+
+### Search specific keywords
+```bash
+kurt cms search --query "postgres database integration"
+```
+
+### Find unpublished drafts
+```bash
+# Note: Filtering by status may require CMS-specific GROQ queries
+kurt cms search --content-type article
+```
 
 ---
 
@@ -161,18 +193,31 @@ Next steps:
 
 ### "No results found"
 
-Try broader search:
+**Try broader search:**
 ```bash
-cms-interaction search --limit 10
+kurt cms search --limit 20
+```
+
+**Check enabled content types:**
+```bash
+kurt cms types --platform sanity
 ```
 
 ### "Connection failed"
 
-Verify credentials:
+**Verify credentials:**
 ```bash
-cms-interaction search --test-connection
+# Reconfigure if needed
+kurt cms onboard --platform sanity
+```
+
+### "Platform not configured"
+
+**Run onboarding:**
+```bash
+kurt cms onboard --platform sanity
 ```
 
 ---
 
-*For full search documentation, see the parent skill or scripts/cms_search.py --help*
+*For detailed documentation, see `kurt cms search --help` or the main SKILL.md file.*

@@ -15,7 +15,7 @@ project-management create-project
 The skill will guide you through:
 1. Understanding your project intent
 2. Getting project name and goal
-3. Checking organizational foundation (content map + core rules)
+3. Checking organizational onboarding (content map + core rules)
 4. Collecting project-specific sources (optional)
 5. Identifying target content (optional)
 6. Extracting project-specific rules (optional)

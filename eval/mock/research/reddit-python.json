@@ -1,0 +1,51 @@
+{
+  "kind": "Listing",
+  "data": {
+    "after": "t3_def456",
+    "dist": 25,
+    "children": [
+      {
+        "kind": "t3",
+        "data": {
+          "title": "Python 3.13 released with major performance improvements",
+          "author": "pythonista_pro",
+          "created_utc": 1730476800,
+          "score": 1542,
+          "num_comments": 287,
+          "url": "https://www.reddit.com/r/Python/comments/ghi/",
+          "selftext": "JIT compilation is finally here! Seeing 2-3x speedups in CPU-bound code. This is huge for ML workloads.",
+          "subreddit": "Python",
+          "upvote_ratio": 0.98
+        }
+      },
+      {
+        "kind": "t3",
+        "data": {
+          "title": "Best practices for structuring large Python projects?",
+          "author": "code_architect",
+          "created_utc": 1730390400,
+          "score": 823,
+          "num_comments": 156,
+          "url": "https://www.reddit.com/r/Python/comments/jkl/",
+          "selftext": "Working on a 100K+ LOC Python monorepo. Looking for advice on module organization, dependency management, and testing strategies.",
+          "subreddit": "Python",
+          "upvote_ratio": 0.94
+        }
+      },
+      {
+        "kind": "t3",
+        "data": {
+          "title": "FastAPI vs Django REST Framework in 2024",
+          "author": "api_developer",
+          "created_utc": 1730304000,
+          "score": 645,
+          "num_comments": 201,
+          "url": "https://www.reddit.com/r/Python/comments/mno/",
+          "selftext": "Comparing these two for a new microservices project. FastAPI's async support is tempting, but DRF has more mature ecosystem. Thoughts?",
+          "subreddit": "Python",
+          "upvote_ratio": 0.91
+        }
+      }
+    ]
+  }
+}

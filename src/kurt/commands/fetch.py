@@ -136,7 +136,7 @@ def fetch_cmd(
         # Dry-run to preview
         kurt fetch --with-status NOT_FETCHED --dry-run
     """
-    from kurt.ingestion.fetch import fetch_content, fetch_documents_batch
+    from kurt.content.fetch import fetch_content, fetch_documents_batch
 
     # Call ingestion layer for filtering and validation
     try:
@@ -311,7 +311,7 @@ def fetch_cmd(
             if not skip_index and successful:
                 import asyncio
 
-                from kurt.ingestion.index import batch_extract_document_metadata
+                from kurt.content.index import batch_extract_document_metadata
 
                 index_task = progress.add_task("Indexing with LLM...", total=len(successful))
 

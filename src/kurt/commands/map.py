@@ -101,7 +101,7 @@ def map_url(
         # Discover and cluster immediately
         kurt map url https://example.com --cluster-urls
     """
-    from kurt.ingestion.map import map_url_content
+    from kurt.content.map import map_url_content
 
     try:
         # Display mode indicator
@@ -216,7 +216,7 @@ def map_folder(
     """
     from pathlib import Path
 
-    from kurt.ingestion.map import map_folder_content
+    from kurt.content.map import map_folder_content
 
     folder = Path(path)
 
@@ -352,7 +352,7 @@ def map_cms(
         kurt map cms --platform sanity --dry-run
     """
     from kurt.cms.config import get_platform_config, list_platform_instances, platform_configured
-    from kurt.ingestion.map import map_cms_content
+    from kurt.content.map import map_cms_content
 
     # Check if platform is configured
     if not platform_configured(platform):

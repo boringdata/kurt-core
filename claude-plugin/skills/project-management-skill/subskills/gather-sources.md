@@ -8,13 +8,13 @@
 
 ## Overview
 
-This subskill coordinates source gathering across multiple domain skills:
+This subskill coordinates source gathering across multiple approaches:
 - **research-skill** - For AI-powered research queries (Perplexity)
-- **ingest-content-skill** - For web content (URLs/sitemaps)
+- **kurt CLI** - For web content (URLs/sitemaps) using `kurt map` and `kurt fetch`
 - **cms-interaction-skill** - For CMS content (Sanity)
 - **Local handling** - For pasted content/files
 
-Each domain skill owns its operational details. This subskill orchestrates the workflow.
+Domain skills and CLI commands own their operational details. This subskill orchestrates the workflow.
 
 ---
 
@@ -33,9 +33,9 @@ Each domain skill owns its operational details. This subskill orchestrates the w
 └─────────────────────────────────────────────────────┘
                        ↓
 ┌─────────────────────────────────────────────────────┐
-│ EXECUTION (Domain Skill Handles)                   │
+│ EXECUTION                                           │
 │ - research-skill: conversational refinement        │
-│ - ingest-content-skill: map-then-fetch             │
+│ - kurt CLI: map-then-fetch (kurt map + kurt fetch) │
 │ - cms-interaction-skill: search-then-fetch         │
 └─────────────────────────────────────────────────────┘
                        ↓

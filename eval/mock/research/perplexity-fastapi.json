@@ -1,0 +1,24 @@
+{
+  "id": "pplx-67890",
+  "model": "llama-3.1-sonar-large-128k-online",
+  "created": 1730462500,
+  "choices": [
+    {
+      "index": 0,
+      "finish_reason": "stop",
+      "message": {
+        "role": "assistant",
+        "content": "Here's a comprehensive overview of FastAPI based on recent sources:\n\n**What is FastAPI?**\nFastAPI is a modern, high-performance Python web framework for building APIs. It's built on Starlette (ASGI) and Pydantic, offering automatic API documentation, type checking, and async support.\n\n**Key Features:**\n1. **Fast**: One of the fastest Python frameworks (comparable to NodeJS and Go)\n2. **Type hints**: Uses Python type hints for validation and auto-docs\n3. **Async support**: Native async/await support for I/O operations\n4. **Auto documentation**: Automatic OpenAPI (Swagger) and ReDoc docs\n5. **Dependency injection**: Built-in DI system for clean code\n\n**Common Use Cases:**\n- RESTful APIs for web/mobile apps\n- Microservices architecture\n- Machine learning model serving\n- Real-time data streaming APIs\n\n**Getting Started:**\n```python\nfrom fastapi import FastAPI\napp = FastAPI()\n\n@app.get('/')\nasync def root():\n    return {'message': 'Hello World'}\n```\n\n**Ecosystem:**\n- Production deployment: Uvicorn, Gunicorn\n- ORMs: SQLAlchemy, Tortoise ORM\n- Testing: pytest with TestClient\n\nSources: [1] FastAPI documentation [2] Python Weekly discussions [3] Real Python tutorials"
+      },
+      "delta": {
+        "role": "assistant",
+        "content": ""
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 35,
+    "completion_tokens": 312,
+    "total_tokens": 347
+  }
+}

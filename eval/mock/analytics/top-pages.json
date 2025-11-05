@@ -1,0 +1,67 @@
+{
+  "query": "top_pages",
+  "period": "last_30_days",
+  "results": [
+    {
+      "source_url": "https://acme-corp.com/blog-post-1",
+      "title": "How to Build Scalable APIs",
+      "pageviews": 15420,
+      "unique_visitors": 12350,
+      "avg_time_on_page": 285,
+      "bounce_rate": 0.42,
+      "conversions": 234,
+      "rank": 1,
+      "trend": "up",
+      "change_percent": 15.3
+    },
+    {
+      "source_url": "https://docs.acme-corp.com/getting-started",
+      "title": "Getting Started with ACME",
+      "pageviews": 12890,
+      "unique_visitors": 10240,
+      "avg_time_on_page": 420,
+      "bounce_rate": 0.35,
+      "conversions": 567,
+      "rank": 2,
+      "trend": "up",
+      "change_percent": 22.1
+    },
+    {
+      "source_url": "https://acme-corp.com/pricing",
+      "title": "Pricing - ACME Corp",
+      "pageviews": 9876,
+      "unique_visitors": 8234,
+      "avg_time_on_page": 180,
+      "bounce_rate": 0.28,
+      "conversions": 892,
+      "rank": 3,
+      "trend": "stable",
+      "change_percent": 2.4
+    },
+    {
+      "source_url": "https://docs.acme-corp.com/api-reference",
+      "title": "API Reference",
+      "pageviews": 8543,
+      "unique_visitors": 6789,
+      "avg_time_on_page": 540,
+      "bounce_rate": 0.38,
+      "conversions": 156,
+      "rank": 4,
+      "trend": "up",
+      "change_percent": 8.7
+    },
+    {
+      "source_url": "https://acme-corp.com/blog-post-2",
+      "title": "Announcing ACME 2.0",
+      "pageviews": 7234,
+      "unique_visitors": 6123,
+      "avg_time_on_page": 195,
+      "bounce_rate": 0.45,
+      "conversions": 89,
+      "rank": 5,
+      "trend": "down",
+      "change_percent": -5.2
+    }
+  ],
+  "generated_at": "2024-11-01T10:00:00Z"
+}

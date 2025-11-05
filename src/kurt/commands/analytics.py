@@ -6,7 +6,7 @@ from datetime import datetime
 import click
 from rich.console import Console
 
-from kurt.services.analytics_service import AnalyticsService
+from kurt.analytics.service import AnalyticsService
 
 console = Console()
 

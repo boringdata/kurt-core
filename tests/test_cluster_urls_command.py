@@ -51,7 +51,7 @@ class TestClusterUrlsCommand:
         session.commit()
 
         # Mock to avoid slow API calls, but simulate API key error
-        with patch("kurt.ingestion.cluster.dspy.LM") as mock_lm:
+        with patch("kurt.content.cluster.dspy.LM") as mock_lm:
             mock_lm.side_effect = Exception("AuthenticationError: OpenAI API key required")
 
             # Run cluster-urls (should fail gracefully)
@@ -102,12 +102,12 @@ class TestClusterUrlsCommand:
         session.commit()
 
         # Mock the LLM clustering to avoid API calls
-        with patch("kurt.ingestion.cluster.dspy.LM"):
-            with patch("kurt.ingestion.cluster.dspy.ChainOfThought") as mock_cot:
+        with patch("kurt.content.cluster.dspy.LM"):
+            with patch("kurt.content.cluster.dspy.ChainOfThought") as mock_cot:
                 # Mock LLM to return clusters and classifications
                 from unittest.mock import MagicMock
 
-                from kurt.ingestion.cluster import ContentTypeClassification, TopicClusterOutput
+                from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
 
                 mock_clusterer = mock_cot.return_value
                 mock_result = MagicMock()
@@ -179,9 +179,9 @@ class TestClusterUrlsCommand:
         session.commit()
 
         # Mock LLM to avoid slow API calls
-        with patch("kurt.ingestion.cluster.dspy.LM"):
-            with patch("kurt.ingestion.cluster.dspy.ChainOfThought") as mock_cot:
-                from kurt.ingestion.cluster import ContentTypeClassification, TopicClusterOutput
+        with patch("kurt.content.cluster.dspy.LM"):
+            with patch("kurt.content.cluster.dspy.ChainOfThought") as mock_cot:
+                from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
 
                 mock_clusterer = mock_cot.return_value
                 mock_clusterer.return_value.clusters = [
@@ -227,9 +227,9 @@ class TestClusterUrlsCommand:
         session.commit()
 
         # Mock LLM to avoid slow API calls
-        with patch("kurt.ingestion.cluster.dspy.LM"):
-            with patch("kurt.ingestion.cluster.dspy.ChainOfThought") as mock_cot:
-                from kurt.ingestion.cluster import ContentTypeClassification, TopicClusterOutput
+        with patch("kurt.content.cluster.dspy.LM"):
+            with patch("kurt.content.cluster.dspy.ChainOfThought") as mock_cot:
+                from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
 
                 mock_clusterer = mock_cot.return_value
                 mock_clusterer.return_value.clusters = [
@@ -287,10 +287,10 @@ class TestClusterUrlsCommand:
         session.commit()
 
         # Mock the LLM clustering to avoid API calls
-        with patch("kurt.ingestion.cluster.dspy.LM"):
-            with patch("kurt.ingestion.cluster.dspy.ChainOfThought") as mock_cot:
+        with patch("kurt.content.cluster.dspy.LM"):
+            with patch("kurt.content.cluster.dspy.ChainOfThought") as mock_cot:
                 # Mock LLM to return clusters and classifications
-                from kurt.ingestion.cluster import ContentTypeClassification, TopicClusterOutput
+                from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
 
                 mock_clusterer = mock_cot.return_value
                 mock_clusterer.return_value.clusters = [
@@ -382,9 +382,9 @@ class TestClusterUrlsAdditionalOptions:
         session.commit()
 
         # Mock LLM for clustering
-        with patch("kurt.ingestion.cluster.dspy.LM"):
-            with patch("kurt.ingestion.cluster.dspy.ChainOfThought") as mock_cot:
-                from kurt.ingestion.cluster import ContentTypeClassification, TopicClusterOutput
+        with patch("kurt.content.cluster.dspy.LM"):
+            with patch("kurt.content.cluster.dspy.ChainOfThought") as mock_cot:
+                from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
 
                 mock_clusterer = mock_cot.return_value
                 mock_clusterer.return_value.clusters = [
@@ -436,9 +436,9 @@ class TestClusterUrlsAdditionalOptions:
         session.commit()
 
         # Mock clustering and classification (single LLM call)
-        with patch("kurt.ingestion.cluster.dspy.LM"):
-            with patch("kurt.ingestion.cluster.dspy.ChainOfThought") as mock_cot:
-                from kurt.ingestion.cluster import ContentTypeClassification, TopicClusterOutput
+        with patch("kurt.content.cluster.dspy.LM"):
+            with patch("kurt.content.cluster.dspy.ChainOfThought") as mock_cot:
+                from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
 
                 mock_processor = mock_cot.return_value
 
@@ -513,9 +513,9 @@ class TestClusterUrlsAdditionalOptions:
         session.commit()
 
         # Test WITHOUT --force (should refine existing clusters)
-        with patch("kurt.ingestion.cluster.dspy.LM"):
-            with patch("kurt.ingestion.cluster.dspy.ChainOfThought") as mock_cot:
-                from kurt.ingestion.cluster import (
+        with patch("kurt.content.cluster.dspy.LM"):
+            with patch("kurt.content.cluster.dspy.ChainOfThought") as mock_cot:
+                from kurt.content.cluster import (
                     ContentTypeClassification,
                     TopicClusterOutput,
                 )
@@ -551,9 +551,9 @@ class TestClusterUrlsAdditionalOptions:
                 assert len(call_kwargs["existing_clusters"]) == 1  # One existing cluster
 
         # Test WITH --force (should ignore existing clusters)
-        with patch("kurt.ingestion.cluster.dspy.LM"):
-            with patch("kurt.ingestion.cluster.dspy.ChainOfThought") as mock_cot:
-                from kurt.ingestion.cluster import ContentTypeClassification, TopicClusterOutput
+        with patch("kurt.content.cluster.dspy.LM"):
+            with patch("kurt.content.cluster.dspy.ChainOfThought") as mock_cot:
+                from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
 
                 mock_clusterer = mock_cot.return_value
                 mock_result = MagicMock()
@@ -611,9 +611,9 @@ class TestClusterUrlsAdditionalOptions:
         session.commit()
 
         # Mock LLM clustering
-        with patch("kurt.ingestion.cluster.dspy.LM"):
-            with patch("kurt.ingestion.cluster.dspy.ChainOfThought") as mock_cot:
-                from kurt.ingestion.cluster import ContentTypeClassification, TopicClusterOutput
+        with patch("kurt.content.cluster.dspy.LM"):
+            with patch("kurt.content.cluster.dspy.ChainOfThought") as mock_cot:
+                from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
 
                 mock_clusterer = mock_cot.return_value
                 mock_clusterer.return_value.clusters = [
@@ -665,11 +665,11 @@ class TestClusterUrlsAdditionalOptions:
         session.commit()
 
         # Mock LLM clustering (return minimal clusters to speed up test)
-        with patch("kurt.ingestion.cluster.dspy.LM"):
-            with patch("kurt.ingestion.cluster.dspy.ChainOfThought") as mock_cot:
+        with patch("kurt.content.cluster.dspy.LM"):
+            with patch("kurt.content.cluster.dspy.ChainOfThought") as mock_cot:
                 from unittest.mock import MagicMock
 
-                from kurt.ingestion.cluster import ContentTypeClassification, TopicClusterOutput
+                from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
 
                 # Create a side_effect that returns appropriate data for each batch
                 def batch_response(*args, **kwargs):
@@ -739,9 +739,9 @@ class TestClusterUrlsAdditionalOptions:
         session.commit()
 
         # Mock LLM clustering - return 2 clusters with specific example URLs
-        with patch("kurt.ingestion.cluster.dspy.LM"):
-            with patch("kurt.ingestion.cluster.dspy.ChainOfThought") as mock_cot:
-                from kurt.ingestion.cluster import ContentTypeClassification, TopicClusterOutput
+        with patch("kurt.content.cluster.dspy.LM"):
+            with patch("kurt.content.cluster.dspy.ChainOfThought") as mock_cot:
+                from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
 
                 mock_clusterer = mock_cot.return_value
 

@@ -1,0 +1,66 @@
+# Draft Metadata Schema (Streamlined)
+# Use this schema when creating drafts to ensure actionable lineage tracking
+
+---
+content_type: draft
+project: [project-name]
+asset_name: [asset-name]
+created_date: [YYYY-MM-DD]
+status: draft_complete
+based_on_outline: /projects/[project-name]/assets/[asset-name]-outline.md
+
+# Generation
+generation:
+  created_by: content-writing-skill/draft
+  created_at: [YYYY-MM-DDTHH:MM:SSZ]
+  session_id: [draft-session-unique-id]
+
+# Rules Applied
+rules:
+  style: /rules/style/[style-file].md
+  structure: /rules/structure/[structure-file].md
+  persona: /rules/personas/[persona-file].md
+  publisher: /rules/publisher/publisher-profile.md
+
+# Section Sources (Complete Inventory)
+# List ALL sections for queryability, even unchanged ones
+section_sources:
+  [section-1-name]:
+    ground_truth: [list of /sources/ paths, or [] if none]
+    existing_content: [list of URLs, or [] if none]
+    update_patterns: [list of pattern IDs, or [] if none]
+
+  [section-2-name]:
+    ground_truth: [list of /sources/ paths, or [] if none]
+    existing_content: [list of URLs, or [] if none]
+    update_patterns: [list of pattern IDs, or [] if none]
+
+  # Note: Sections with non-empty arrays will have inline comments
+  # Sections with all empty arrays are unchanged (no inline comment)
+
+---
+
+# USAGE NOTES:
+#
+# STREAMLINED VERSION - removed bloat:
+# ❌ Removed: rule_compliance section (subjective self-assessments like "95% adherence")
+# ❌ Removed: quality_metrics section (word counts calculable with wc, sections_list redundant)
+# ❌ Removed: completeness_check section (editorial commentary, not lineage)
+# ❌ Removed: specific_citations sub-field (use inline <!-- Source: --> comments instead)
+#
+# WHAT REMAINS (the useful parts):
+# ✅ Basic identity (project, asset, dates, status)
+# ✅ Generation metadata (created_by, created_at, session_id)
+# ✅ Rules applied (which guidelines were followed)
+# ✅ Section sources (THE KEY VALUE - complete source-to-section inventory)
+#
+# Key principles:
+# - YAML = complete queryable inventory of all sections
+# - Inline comments = explain changes (only for modified/new sections)
+# - Keep metadata ACTIONABLE and QUERYABLE
+# - Remove metadata that's SUBJECTIVE or REDUNDANT
+#
+# Querying examples:
+# grep "ground_truth:" file.md | grep -v "\[\]"  # Find modified sections
+# grep "update_patterns:" file.md | grep -v "\[\]"  # Find pattern applications
+# grep "<!-- SECTION:" file.md  # See inline comments (modified sections only)

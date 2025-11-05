@@ -130,18 +130,20 @@ def get_telemetry_status() -> dict:
     disabled_reason: Optional[str] = None
     config_path: Optional[str] = None
 
+    # Determine disabled reason (check env vars first, before trying to load config)
+    if not enabled:
+        if os.getenv("DO_NOT_TRACK"):
+            disabled_reason = "DO_NOT_TRACK environment variable"
+        elif os.getenv("KURT_TELEMETRY_DISABLED"):
+            disabled_reason = "KURT_TELEMETRY_DISABLED environment variable"
+
     try:
         from kurt.config import config_exists, get_config_file_path
 
         if config_exists():
             config_path = str(get_config_file_path())
-
-        if not enabled:
-            if os.getenv("DO_NOT_TRACK"):
-                disabled_reason = "DO_NOT_TRACK environment variable"
-            elif os.getenv("KURT_TELEMETRY_DISABLED"):
-                disabled_reason = "KURT_TELEMETRY_DISABLED environment variable"
-            elif config_path:
+            # If still no reason and config exists, check config file
+            if not enabled and not disabled_reason:
                 disabled_reason = f"TELEMETRY_ENABLED=False in {config_path}"
     except Exception:
         config_path = "No kurt.config found"
