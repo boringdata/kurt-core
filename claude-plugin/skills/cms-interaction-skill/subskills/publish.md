@@ -1,108 +1,58 @@
 # CMS Publish Subskill
 
-**Purpose:** Publish updated content to CMS as drafts (never auto-publishes)  
-**Parent Skill:** cms-interaction  
+**Purpose:** Publish updated content to CMS as drafts (never auto-publishes)
+**Parent Skill:** cms-interaction
 **Output:** Draft created in CMS with URL for manual review
 
 ---
 
-## Context Received from Parent Skill
+## Overview
 
-The parent skill provides:
-- `$CMS_NAME` - CMS to publish to (default: sanity)
-- `$CMS_CONFIG_PATH` - Path to .kurt/cms-config.json
-- `$CONTENT_TYPE_MAPPINGS` - Field mappings for publishing
-- `$SCRIPTS_DIR` - Path to scripts directory
-- `$ARGUMENTS` - CLI arguments (file, document ID, metadata, etc.)
+This subskill orchestrates the `kurt cms publish` command to push completed content back to CMS as draft documents.
+
+**Safety:** Always creates drafts, never auto-publishes. Requires manual review and publish in CMS interface.
 
 ---
 
-## Step 1: Parse Publish Arguments
+## Step 1: Parse Publish Parameters
 
-Extract from `$ARGUMENTS`:
+Identify parameters from user request:
 
 **Required:**
 - `--file draft.md` - Markdown file with YAML frontmatter
 
 **Update existing OR create new:**
-- `--document-id abc-123` - Update existing document as draft
-- `--create-new` - Create new document as draft
-
-**For new documents:**
-- `--content-type article` - Required
-- `--slug "url-slug"` - Optional (auto-generated if omitted)
+- `--id abc-123` - Update existing document as draft
+- OR provide `--content-type article` to create new document
 
 **Optional metadata:**
-- `--tags "tag1,tag2"` - Comma-separated tags
-- `--categories "cat-id-1,cat-id-2"` - Category IDs
-- `--author "author-id"` - Author reference ID
-- `--dry-run` - Preview without publishing
+- `--content-type article` - Required for new documents
 
 ---
 
-## Step 2: Execute Publish Script
+## Step 2: Execute Publish Command
 
-Run the publish script:
+Run the kurt CLI publish command:
 
 ```bash
-python .claude/skills/cms-interaction-skill/scripts/cms_publish.py \
-  --cms sanity \
-  [additional publish arguments like --file, --document-id, etc.]
+kurt cms publish --platform sanity --file <file> [options]
 ```
 
-**The script will:**
-1. Parse markdown + YAML frontmatter
-2. Convert markdown → CMS format
-3. Apply field mappings
-4. Create draft in CMS (never publishes)
-5. Return draft URL for review
-6. Remind user to publish manually
+**Examples:**
 
----
-
-## Publish Examples
-
-### Update Existing as Draft
-
+### Update existing document as draft
 ```bash
-cms-interaction publish \
+kurt cms publish \
   --file projects/my-project/drafts/quickstart-v2-draft.md \
-  --document-id abc-123
+  --id abc-123
 ```
 
-### Create New Document
-
+### Create new document
 ```bash
-cms-interaction publish \
+kurt cms publish \
   --file projects/new-content/drafts/postgres-guide.md \
-  --create-new \
-  --content-type article \
-  --slug "postgres-integration-guide" \
-  --tags "tutorial,postgres,database"
+  --content-type article
 ```
-
-### With Metadata Override
-
-```bash
-cms-interaction publish \
-  --file draft.md \
-  --document-id abc-123 \
-  --tags "tutorial,quickstart,v2" \
-  --slug "updated-quickstart-v2"
-```
-
-CLI arguments override frontmatter values.
-
-### Dry Run
-
-```bash
-cms-interaction publish \
-  --file draft.md \
-  --document-id abc-123 \
-  --dry-run
-```
-
-Preview without creating draft.
 
 ---
 
@@ -119,17 +69,33 @@ slug: updated-tutorial
 tags:
   - tutorial
   - quickstart
-author_id: author-ref-123
+author: author-ref-123
 ---
 
 # Updated Tutorial
 
-Content here...
+Content here with **markdown** formatting...
+
+## Section 1
+
+More content...
 ```
+
+**Frontmatter fields:**
+- `title` - Document title (required)
+- `cms_id` - CMS document ID (for updates)
+- `cms_type` - Content type (for new documents)
+- `slug` - URL slug (optional)
+- `tags` - Array of tags (optional)
+- `author` - Author reference ID (optional)
+
+**CLI arguments override frontmatter values.**
 
 ---
 
 ## Content Conversion
+
+The CLI automatically converts:
 
 ### Markdown → CMS Format
 
@@ -141,11 +107,12 @@ Content here...
 - ✅ Bold, italic, code
 - ✅ Code blocks
 - ✅ Blockquotes
-- ✅ Lists
+- ✅ Lists (ordered and unordered)
 
 **Limitations:**
 - Complex formatting may need CMS review
 - Custom components not supported
+- Images require manual handling in CMS
 
 ---
 
@@ -157,7 +124,7 @@ Content here...
 - Publishing replaces published with draft
 - Deleting draft leaves published unchanged
 
-**Draft URL:**
+**Draft URL format:**
 ```
 https://www.sanity.io/manage/personal/{project-id}/desk/{type};{id}
 ```
@@ -171,26 +138,24 @@ Opens Sanity Studio for review.
 ✅ **Publish successful** when:
 - Draft created in CMS
 - Draft URL returned
-- Metadata applied correctly
 - Content converted successfully
 - **Not** auto-published
-- User instructed to review
+- User instructed to review manually
 
 ---
 
 ## Output Example
 
 ```
-Reading: projects/tutorial-refresh/drafts/quickstart-v2-draft.md
+Publishing to sanity CMS...
+  Title: Getting Started with Postgres
+  Updating: abc-123
 
-Publishing to sanity...
+✓ Draft published successfully!
+  Draft ID: drafts.abc-123
+  Draft URL: https://www.sanity.io/manage/personal/proj123/desk/article;abc-123
 
-✓ Draft created successfully!
-
-Draft ID: drafts.abc-123
-Draft URL: https://www.sanity.io/manage/personal/project123/desk/article;abc-123
-
-IMPORTANT: Review and publish from CMS interface
+Note: Document created as draft. Publish from CMS Studio.
 ```
 
 ---
@@ -212,15 +177,42 @@ IMPORTANT: Review and publish from CMS interface
 
 ## Next Steps After Publish
 
-```
-✅ Draft created: drafts.abc-123
+After successful draft creation:
 
-Next steps:
-  1. Open draft URL in browser
-  2. Review changes in CMS
-  3. Edit if needed (in CMS)
-  4. Click "Publish" button when ready
-  5. Or discard draft if not needed
+1. **Open draft URL** in browser
+2. **Review changes** in CMS Studio
+3. **Edit if needed** (in CMS)
+4. **Click "Publish"** button when ready
+5. **Or discard draft** if not needed
+
+---
+
+## Common Publish Patterns
+
+### Update existing content
+```bash
+kurt cms publish \
+  --file drafts/tutorial-v2.md \
+  --id abc-123
+```
+
+### Create new article
+```bash
+kurt cms publish \
+  --file drafts/new-guide.md \
+  --content-type article
+```
+
+### Batch publish (via script)
+```bash
+for file in drafts/*.md; do
+  # Extract cms_id from frontmatter
+  id=$(yq eval '.cms_id' "$file")
+
+  if [ -n "$id" ]; then
+    kurt cms publish --file "$file" --id "$id"
+  fi
+done
 ```
 
 ---
@@ -229,7 +221,10 @@ Next steps:
 
 ### "Write token not configured"
 
-Add `write_token` to cms-config.json:
+**Cause:** No write token in config
+
+**Fix:**
+Add `write_token` to `.kurt/cms-config.json`:
 ```json
 {
   "sanity": {
@@ -238,19 +233,67 @@ Add `write_token` to cms-config.json:
 }
 ```
 
-Token needs `Editor` role.
+Token needs `Editor` role in Sanity.
 
 ### "Permission denied"
 
-Verify token has write permissions in CMS dashboard.
+**Cause:** Token lacks write permissions
+
+**Fix:**
+- Verify token has `Editor` role in CMS dashboard
+- Check token is for correct project/dataset
+- Generate new token if needed
 
 ### "Required field missing"
 
-Add required field to frontmatter or CLI:
+**Cause:** CMS schema requires field not in frontmatter
+
+**Fix:**
+Add required field to frontmatter:
+```yaml
+---
+title: "My Article"
+author: author-ref-id  # Add required fields
+---
+```
+
+### "Content type not found"
+
+**Cause:** Invalid content_type specified
+
+**Fix:**
+List available types:
 ```bash
---author "author-ref-id"
+kurt cms types --platform sanity
+```
+
+Then use valid type:
+```bash
+kurt cms publish --file draft.md --content-type article
 ```
 
 ---
 
-*For full publish documentation, see the parent skill or scripts/cms_publish.py --help*
+## Advanced Usage
+
+### Preview without publishing
+**Note:** Not yet implemented in CLI, coming soon.
+For now, review changes locally before publishing.
+
+### Custom metadata
+Add custom fields to frontmatter:
+```yaml
+---
+title: "My Article"
+seo:
+  meta_title: "SEO Title"
+  meta_description: "SEO description"
+custom_field: "custom value"
+---
+```
+
+Requires CMS schema to have these fields.
+
+---
+
+*For detailed documentation, see `kurt cms publish --help` or the main SKILL.md file.*

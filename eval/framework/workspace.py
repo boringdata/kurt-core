@@ -34,6 +34,7 @@ class IsolatedWorkspace:
         install_claude_plugin: bool = False,
         claude_plugin_source: Optional[Path] = None,
         setup_commands: Optional[list] = None,
+        use_http_mocks: bool = True,
     ):
         """Initialize workspace.
 
@@ -44,6 +45,7 @@ class IsolatedWorkspace:
             install_claude_plugin: If True, copy .claude/ config from source
             claude_plugin_source: Path to source .claude/ directory (defaults to kurt-demo)
             setup_commands: Optional list of bash commands to run after initialization
+            use_http_mocks: If True, patch HTTP clients to use mock data (default: True)
         """
         self.temp_dir: Optional[Path] = None
         self.original_cwd: Optional[Path] = None
@@ -53,6 +55,8 @@ class IsolatedWorkspace:
         self.install_claude_plugin = install_claude_plugin
         self.claude_plugin_source = claude_plugin_source
         self.setup_commands = setup_commands
+        self.use_http_mocks = use_http_mocks
+        self.mock_client = None
         self._setup_complete = False
 
     def setup(self) -> Path:
@@ -84,9 +88,25 @@ class IsolatedWorkspace:
         if self.setup_commands:
             self._run_setup_commands()
 
+        # Setup HTTP mocking (if enabled)
+        if self.use_http_mocks:
+            self._setup_http_mocks()
+
         self._setup_complete = True
 
         return self.temp_dir
+
+    def _setup_http_mocks(self):
+        """Setup HTTP mocking to use local mock data instead of real requests."""
+        try:
+            from eval.mock_http import create_mock_client
+
+            self.mock_client = create_mock_client()
+            self.mock_client.start()
+            print("✅ HTTP mocking enabled (requests + httpx patched)")
+        except Exception as e:
+            print(f"⚠️  Failed to setup HTTP mocks: {e}")
+            print("   Scenarios will make real HTTP requests")
 
     def _run_kurt_init(self):
         """Run 'kurt init' to initialize the project."""
@@ -210,6 +230,10 @@ class IsolatedWorkspace:
         """
         if not self._setup_complete:
             return
+
+        # Stop HTTP mocking
+        if self.mock_client:
+            self.mock_client.stop()
 
         # Return to original directory
         if self.original_cwd:

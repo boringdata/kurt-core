@@ -1,0 +1,37 @@
+{
+  "_id": "article-1",
+  "_type": "article",
+  "_rev": "v1-abc123",
+  "_createdAt": "2024-10-10T09:00:00Z",
+  "_updatedAt": "2024-10-15T10:00:00Z",
+  "title": "10 Best Practices for API Design",
+  "slug": {
+    "_type": "slug",
+    "current": "api-design-best-practices"
+  },
+  "author": {
+    "_ref": "author-1",
+    "_type": "reference"
+  },
+  "publishedAt": "2024-10-15T10:00:00Z",
+  "body": [
+    {
+      "_type": "block",
+      "style": "normal",
+      "children": [{"_type": "span", "text": "Designing great APIs is both an art and a science. Here are 10 best practices we've learned from building APIs at scale."}]
+    },
+    {
+      "_type": "block",
+      "style": "h2",
+      "children": [{"_type": "span", "text": "1. Use RESTful Conventions"}]
+    },
+    {
+      "_type": "block",
+      "style": "normal",
+      "children": [{"_type": "span", "text": "Follow REST principles: GET for reading, POST for creating, PUT/PATCH for updating, DELETE for removing."}]
+    }
+  ],
+  "excerpt": "Learn how to design APIs that developers love to use.",
+  "tags": ["api-design", "best-practices", "engineering"],
+  "featured": true
+}

@@ -74,7 +74,7 @@ def index(doc_id: str, include_pattern: str, all: bool, force: bool):
         kurt content index --include "*/docs/*" --force
     """
     from kurt.document import list_documents_for_indexing
-    from kurt.ingestion.index import batch_extract_document_metadata, extract_document_metadata
+    from kurt.content.index import batch_extract_document_metadata, extract_document_metadata
 
     try:
         # Get documents to index using service layer function

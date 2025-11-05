@@ -1,0 +1,35 @@
+{
+  "domain": "acme-corp.com",
+  "period": "last_30_days",
+  "summary": {
+    "total_pageviews": 54892,
+    "unique_visitors": 42150,
+    "avg_time_on_site": 245,
+    "bounce_rate": 0.45,
+    "conversion_rate": 0.034,
+    "total_conversions": 1432
+  },
+  "traffic_sources": {
+    "organic": 0.48,
+    "direct": 0.22,
+    "social": 0.18,
+    "referral": 0.12
+  },
+  "top_pages": 5,
+  "bottom_pages": 3,
+  "trending_pages": 3,
+  "declining_pages": 3,
+  "content_health": {
+    "excellent": 5,
+    "good": 8,
+    "needs_improvement": 3,
+    "poor": 2
+  },
+  "recommendations": [
+    "Update declining pages (3 pages identified)",
+    "Optimize bottom performers (3 pages with high bounce rates)",
+    "Promote trending content on social media",
+    "Create more content similar to top performers"
+  ],
+  "generated_at": "2024-11-01T10:00:00Z"
+}

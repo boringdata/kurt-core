@@ -1,0 +1,49 @@
+{
+  "query": "trending_pages",
+  "period": "last_7_days",
+  "results": [
+    {
+      "source_url": "https://docs.acme-corp.com/getting-started",
+      "title": "Getting Started with ACME",
+      "pageviews": 3245,
+      "growth_rate": 0.35,
+      "velocity": "accelerating",
+      "rank": 1,
+      "traffic_sources": {
+        "organic": 0.45,
+        "social": 0.30,
+        "direct": 0.15,
+        "referral": 0.10
+      }
+    },
+    {
+      "source_url": "https://acme-corp.com/blog-post-1",
+      "title": "How to Build Scalable APIs",
+      "pageviews": 2876,
+      "growth_rate": 0.28,
+      "velocity": "steady",
+      "rank": 2,
+      "traffic_sources": {
+        "organic": 0.52,
+        "social": 0.25,
+        "direct": 0.18,
+        "referral": 0.05
+      }
+    },
+    {
+      "source_url": "https://docs.acme-corp.com/api-reference",
+      "title": "API Reference",
+      "pageviews": 1923,
+      "growth_rate": 0.22,
+      "velocity": "steady",
+      "rank": 3,
+      "traffic_sources": {
+        "organic": 0.60,
+        "social": 0.10,
+        "direct": 0.20,
+        "referral": 0.10
+      }
+    }
+  ],
+  "generated_at": "2024-11-01T10:00:00Z"
+}

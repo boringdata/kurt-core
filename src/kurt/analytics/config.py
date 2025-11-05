@@ -8,7 +8,12 @@ Example: ANALYTICS_POSTHOG_PROJECT_ID=phc_abc123
 
 from typing import Dict
 
-from kurt.config import get_config_or_default, update_config
+from kurt.config import load_prefixed_config, save_prefixed_config
+
+# Analytics configs have 1 level: PROVIDER
+# Format: ANALYTICS_<PROVIDER>_<KEY>
+_PREFIX = "ANALYTICS"
+_LEVELS = 1
 
 
 def load_analytics_config() -> Dict[str, Dict[str, str]]:
@@ -33,24 +38,7 @@ def load_analytics_config() -> Dict[str, Dict[str, str]]:
     Raises:
         FileNotFoundError: If kurt.config doesn't exist
     """
-    config = get_config_or_default()
-
-    # Extract analytics fields (ANALYTICS_<PROVIDER>_<KEY>)
-    analytics_config: Dict[str, Dict[str, str]] = {}
-    for key, value in config.__dict__.items():
-        if key.startswith("ANALYTICS_"):
-            # Parse ANALYTICS_POSTHOG_PROJECT_ID -> provider=posthog, key=project_id
-            parts = key.split("_", 2)  # Split into [ANALYTICS, PROVIDER, KEY]
-            if len(parts) == 3:
-                _, provider, field = parts
-                provider = provider.lower()
-                field = field.lower()
-
-                if provider not in analytics_config:
-                    analytics_config[provider] = {}
-                analytics_config[provider][field] = value
-
-    return analytics_config
+    return load_prefixed_config(_PREFIX, _LEVELS)
 
 
 def save_analytics_config(analytics_config: Dict[str, Dict[str, str]]) -> None:
@@ -61,21 +49,7 @@ def save_analytics_config(analytics_config: Dict[str, Dict[str, str]]) -> None:
         analytics_config: Analytics configuration dictionary organized by provider
             Example: {"posthog": {"project_id": "phc_123", "api_key": "phx_456"}}
     """
-    config = get_config_or_default()
-
-    # Convert provider configs to ANALYTICS_<PROVIDER>_<KEY> format
-    # First, remove existing analytics fields
-    for key in list(config.__dict__.keys()):
-        if key.startswith("ANALYTICS_"):
-            delattr(config, key)
-
-    # Add new analytics fields
-    for provider, provider_config in analytics_config.items():
-        for key, value in provider_config.items():
-            field_name = f"ANALYTICS_{provider.upper()}_{key.upper()}"
-            setattr(config, field_name, value)
-
-    update_config(config)
+    save_prefixed_config(_PREFIX, analytics_config, _LEVELS)
 
 
 def get_platform_config(platform: str) -> Dict[str, str]:
@@ -94,11 +68,13 @@ def get_platform_config(platform: str) -> Dict[str, str]:
     config = load_analytics_config()
 
     if platform not in config:
-        available = ", ".join(config.keys()) if config else "none"
+        available = ", ".join(config.keys()) if config else "none configured"
         raise ValueError(
             f"No configuration found for analytics platform '{platform}'.\n"
             f"Available platforms: {available}\n"
-            f"Run 'kurt analytics onboard --platform {platform}' to configure."
+            f"\n"
+            f"To configure {platform}, run:\n"
+            f"  kurt analytics onboard --platform {platform}"
         )
 
     return config[platform]
@@ -125,11 +101,8 @@ def add_platform_config(platform: str, platform_config: Dict[str, str]) -> None:
 
 def analytics_config_exists() -> bool:
     """Check if any analytics configuration exists in kurt.config."""
-    try:
-        config = load_analytics_config()
-        return len(config) > 0
-    except Exception:
-        return False
+    from kurt.config import config_exists_for_prefix
+    return config_exists_for_prefix(_PREFIX, _LEVELS)
 
 
 def platform_configured(platform: str) -> bool:
@@ -143,17 +116,16 @@ def platform_configured(platform: str) -> bool:
         True if platform is configured and credentials look valid
     """
     try:
+        from kurt.config import get_nested_value, has_placeholder_values
+
         config = load_analytics_config()
-        if platform not in config:
+        platform_config = get_nested_value(config, [platform])
+
+        if not platform_config:
             return False
 
-        platform_config = config[platform]
-
         # Check for placeholder values
-        import json
-
-        config_str = json.dumps(platform_config)
-        if "YOUR_" in config_str or "PLACEHOLDER" in config_str:
+        if has_placeholder_values(platform_config):
             return False
 
         return True

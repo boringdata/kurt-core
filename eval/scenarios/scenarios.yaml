@@ -45,18 +45,19 @@ scenarios:
         expected_value: true
 
   # ========================================================================
-  # Scenario 02: Add Content from URL
+  # Scenario 02: Add Content from URL (Using Mocks)
   # ========================================================================
   - name: 02_add_url
-    description: Initialize Kurt and add content from a URL
+    description: Initialize Kurt and add content from a URL using mock data
 
     notes: |
-      Tests content discovery from docs.dagster.io (comprehensive sitemap with ~600 URLs).
-      Uses discovery-only mode to avoid network dependencies.
+      Tests content discovery and fetching using mocked ACME Corp website.
+      Mock data includes sitemap with 6 URLs (home, about, pricing, 3 blog posts).
+      This scenario uses HTTP mocking - no real network requests!
 
     initial_prompt: >
-      Initialize a Kurt project, then add content from
-      https://docs.dagster.io/ using discovery only
+      Initialize a Kurt project, then discover and fetch content from
+      https://acme-corp.com/
 
     assertions:
       - type: FileExists
@@ -73,13 +74,13 @@ scenarios:
         metric_path: files.db_exists
         expected_value: true
 
-      # Verify content discovery worked (dagster docs has ~600 pages)
+      # Verify content discovery worked (ACME sitemap has 6 URLs)
       - type: SQLQueryAssertion
-        query: SELECT COUNT(*) >= 500 FROM documents WHERE ingestion_status='NOT_FETCHED'
+        query: SELECT COUNT(*) >= 5 FROM documents WHERE source_url LIKE 'https://acme-corp.com/%'
 
-      # Check that NO documents were actually fetched
+      # Check that documents were fetched
       - type: SQLQueryAssertion
-        query: SELECT COUNT(*) = 0 FROM documents WHERE ingestion_status='FETCHED'
+        query: SELECT COUNT(*) >= 3 FROM documents WHERE source_url LIKE 'https://acme-corp.com/%' AND ingestion_status='FETCHED'
 
   # ========================================================================
   # Scenario 03: Interactive Project Creation (No Sources)
@@ -180,45 +181,37 @@ scenarios:
         tool_name: Write
 
   # ========================================================================
-  # Scenario 04: Interactive Project Creation with Sources
+  # Scenario 04: Interactive Project Creation with Sources (Using Mocks)
   # ========================================================================
   - name: 04_project_with_sources
-    description: Multi-turn conversation to create a project and fetch external sources
+    description: Multi-turn conversation to create a project and fetch external sources using mock data
 
     initial_prompt: run /create-project
 
     # User agent system prompt (defines how the user responds to questions)
     user_agent_prompt: |
-      You are a content marketing manager at PostHog, the open-source product analytics platform.
+      You are a content marketing manager at ACME Corp, the API management platform.
 
       ## Your Company Profile
-      - **Website:** https://posthog.com
-      - **Documentation:** https://posthog.com/docs
-      - **Blog:** https://posthog.com/blog
-      - **Handbook:** https://posthog.com/handbook
-      - **Target audience:** Product managers, engineers, and growth teams at startups and tech companies
-      - **Product:** Open-source product analytics, feature flags, A/B testing, and session replay
+      - **Website:** https://acme-corp.com
+      - **Documentation:** https://docs.acme-corp.com
+      - **Target audience:** Software engineers, DevOps teams, API developers
+      - **Product:** API management platform for deploying and scaling APIs
 
       ## Your Current Situation
-      PostHog is expanding its Python SDK capabilities and you're preparing content to help
-      developers integrate PostHog with their FastAPI applications. You need to create:
-      - Technical blog posts explaining the integration
-      - Updated documentation examples
-      - Developer onboarding guides
-
-      Your content needs to be technically accurate and resonate with Python developers while
-      maintaining PostHog's distinctive voice (transparent, developer-first, slightly irreverent).
+      You're preparing to write technical content about best practices for building scalable APIs.
+      You need to reference ACME's own documentation to ensure accuracy and consistency with
+      the product's features.
 
       ## Your Goal with Kurt
-      You want to gather reference material from the official FastAPI documentation. This will
-      help you create technically-accurate content about integrating PostHog with FastAPI apps.
-      You're familiar with the basics but want authoritative sources to ensure accuracy.
+      You want to gather reference material from ACME's technical documentation. This will
+      help you create blog posts and guides that align with ACME's product capabilities.
 
       ## Your Project Details
-      - Project name: "fastapi-integration-content"
-      - Goal: Create technical content for PostHog + FastAPI integration
-      - You want to write new content (blog posts and docs)
-      - Source: https://fastapi.tiangolo.com/ (keep it small, around 20 documents maximum)
+      - Project name: "api-scaling-content"
+      - Goal: Create technical content about API best practices
+      - You want to write new blog posts and guides
+      - Source: https://docs.acme-corp.com/ (gather the getting started guide and API reference)
       - This is your first Kurt project, so skip any foundation setup for now
 
       Respond naturally to questions based on this context. Keep responses brief and conversational.
@@ -240,42 +233,42 @@ scenarios:
         path: .kurt/kurt.sqlite
 
       - type: FileExists
-        path: projects/fastapi-integration-content
+        path: projects/api-scaling-content
 
       - type: FileExists
-        path: projects/fastapi-integration-content/project.md
+        path: projects/api-scaling-content/project.md
 
       - type: FileExists
-        path: projects/fastapi-integration-content/sources
+        path: projects/api-scaling-content/sources
 
       - type: FileExists
-        path: projects/fastapi-integration-content/drafts
+        path: projects/api-scaling-content/drafts
 
       # Verify project.md contains expected content
       - type: FileContains
-        path: projects/fastapi-integration-content/project.md
-        content: fastapi-integration-content
+        path: projects/api-scaling-content/project.md
+        content: api-scaling-content
 
       - type: FileContains
-        path: projects/fastapi-integration-content/project.md
-        content: integration
+        path: projects/api-scaling-content/project.md
+        content: API
 
       # Verify project.md contains markdown header
       - type: FileContains
-        path: projects/fastapi-integration-content/project.md
-        content: "# fastapi-integration-content"
+        path: projects/api-scaling-content/project.md
+        content: "# api-scaling-content"
 
-      # Verify content discovery happened - URLs discovered from FastAPI docs
+      # Verify content discovery happened - URLs discovered from ACME docs (7 pages in sitemap)
       - type: SQLQueryAssertion
-        query: SELECT COUNT(*) > 0 FROM documents WHERE source_url LIKE 'https://fastapi.tiangolo.com/%'
+        query: SELECT COUNT(*) >= 5 FROM documents WHERE source_url LIKE 'https://docs.acme-corp.com/%'
 
       # Verify content was actually fetched (at least 3 documents)
       - type: SQLQueryAssertion
-        query: SELECT COUNT(*) >= 3 FROM documents WHERE source_url LIKE 'https://fastapi.tiangolo.com/%' AND ingestion_status='FETCHED'
+        query: SELECT COUNT(*) >= 3 FROM documents WHERE source_url LIKE 'https://docs.acme-corp.com/%' AND ingestion_status='FETCHED'
 
-      # Verify content was not over-fetched (max 10 to be conservative)
+      # Verify content was not over-fetched (max 7 docs in sitemap)
       - type: SQLQueryAssertion
-        query: SELECT COUNT(*) <= 10 FROM documents WHERE source_url LIKE 'https://fastapi.tiangolo.com/%' AND ingestion_status='FETCHED'
+        query: SELECT COUNT(*) <= 7 FROM documents WHERE source_url LIKE 'https://docs.acme-corp.com/%' AND ingestion_status='FETCHED'
 
       # Verify fetched documents have content stored
       - type: SQLQueryAssertion
@@ -283,7 +276,7 @@ scenarios:
           SELECT COUNT(*) >= 3
           FROM documents d
           JOIN document_versions v ON d.id = v.document_id
-          WHERE d.source_url LIKE 'https://fastapi.tiangolo.com/%'
+          WHERE d.source_url LIKE 'https://docs.acme-corp.com/%'
           AND v.content IS NOT NULL
           AND v.content != ''
 
@@ -302,31 +295,30 @@ scenarios:
         expected_value: 12
 
   # ========================================================================
-  # Scenario 05: Setup Kurt Foundations
+  # Scenario 05: Setup Kurt Foundations (Using Mocks)
   # ========================================================================
   - name: 05_setup_foundations
-    description: Complete foundation setup - init, content discovery, and rule extraction
+    description: Complete foundation setup - init, content discovery, fetching, and rule extraction using mock data
 
     notes: |
       Tests the full foundation workflow that should happen before creating content:
       1. Initialize Kurt project
-      2. Discover content from organizational source (e.g., company blog)
+      2. Discover and fetch content from organizational source (ACME Corp blog)
       3. Extract publisher profile rules
       4. Extract primary style/voice rules
 
-      Uses discovery-only mode for speed (no actual fetching).
+      Uses mocked HTTP responses for fast, reproducible testing.
       This establishes the "organizational foundation" referenced in project workflows.
 
     initial_prompt: |
       Setup Kurt foundations by doing the following:
 
       1. Initialize a Kurt project if needed
-      2. Discover content from https://juhache.substack.com (use discovery only, don't fetch)
-      3. After discovery completes, extract publisher profile rules using the writing-rules-skill
+      2. Discover and fetch content from https://acme-corp.com/ (the company blog with technical articles)
+      3. After fetching completes, extract publisher profile rules using the writing-rules-skill
       4. Extract primary style rules using the writing-rules-skill
 
-      Use discovery only to keep this fast. The goal is to map available content and extract
-      foundational rules that would apply to all future content creation.
+      The goal is to fetch content and extract foundational rules that would apply to all future content creation.
 
     assertions:
       # Basic initialization
@@ -345,21 +337,23 @@ scenarios:
       - type: FileExists
         path: projects
 
-      # Verify content was discovered from source
+      # Verify content was discovered from ACME Corp (6 URLs in sitemap)
       - type: SQLQueryAssertion
-        query: SELECT COUNT(*) > 0 FROM documents WHERE source_url LIKE 'https://juhache.substack.com/%'
+        query: SELECT COUNT(*) >= 5 FROM documents WHERE source_url LIKE 'https://acme-corp.com/%'
 
-      # Verify content was NOT fetched (discovery only)
+      # Verify content WAS fetched (need content for rule extraction)
       - type: SQLQueryAssertion
-        query: SELECT COUNT(*) = 0 FROM documents WHERE source_url LIKE 'https://juhache.substack.com/%' AND ingestion_status='FETCHED'
+        query: SELECT COUNT(*) >= 3 FROM documents WHERE source_url LIKE 'https://acme-corp.com/%' AND ingestion_status='FETCHED'
 
-      # Verify all discovered documents are in NOT_FETCHED state
+      # Verify fetched documents have content
       - type: SQLQueryAssertion
         query: |
-          SELECT COUNT(*) = 0
-          FROM documents
-          WHERE source_url LIKE 'https://juhache.substack.com/%'
-          AND ingestion_status != 'NOT_FETCHED'
+          SELECT COUNT(*) >= 3
+          FROM documents d
+          JOIN document_versions v ON d.id = v.document_id
+          WHERE d.source_url LIKE 'https://acme-corp.com/%'
+          AND v.content IS NOT NULL
+          AND v.content != ''
 
       # Verify publisher profile rules were extracted
       - type: FileExists

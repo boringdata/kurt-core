@@ -1,0 +1,45 @@
+{
+  "result": [
+    {
+      "_id": "article-1",
+      "_type": "article",
+      "title": "10 Best Practices for API Design",
+      "slug": {"current": "api-design-best-practices"},
+      "author": {"_ref": "author-1", "name": "Sarah Chen"},
+      "publishedAt": "2024-10-15T10:00:00Z",
+      "excerpt": "Learn how to design APIs that developers love to use.",
+      "tags": ["api-design", "best-practices", "engineering"],
+      "featured": true,
+      "_createdAt": "2024-10-10T09:00:00Z",
+      "_updatedAt": "2024-10-15T10:00:00Z"
+    },
+    {
+      "_id": "article-2",
+      "_type": "article",
+      "title": "Scaling Your Microservices Architecture",
+      "slug": {"current": "scaling-microservices"},
+      "author": {"_ref": "author-2", "name": "Mike Rodriguez"},
+      "publishedAt": "2024-10-20T14:00:00Z",
+      "excerpt": "Strategies for scaling microservices to handle millions of requests.",
+      "tags": ["microservices", "scaling", "architecture"],
+      "featured": false,
+      "_createdAt": "2024-10-18T11:00:00Z",
+      "_updatedAt": "2024-10-20T14:00:00Z"
+    },
+    {
+      "_id": "article-3",
+      "_type": "article",
+      "title": "Introduction to Serverless Functions",
+      "slug": {"current": "intro-serverless-functions"},
+      "author": {"_ref": "author-1", "name": "Sarah Chen"},
+      "publishedAt": "2024-11-01T09:00:00Z",
+      "excerpt": "Get started with serverless computing and edge functions.",
+      "tags": ["serverless", "edge-computing", "tutorial"],
+      "featured": true,
+      "_createdAt": "2024-10-28T08:00:00Z",
+      "_updatedAt": "2024-11-01T09:00:00Z"
+    }
+  ],
+  "ms": 45,
+  "query": "*[_type == 'article'] | order(publishedAt desc)"
+}

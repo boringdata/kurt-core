@@ -64,12 +64,12 @@ def cluster_urls_cmd(
         # JSON output for AI agents
         kurt cluster-urls --format json
     """
-    from kurt.ingestion.cluster import compute_topic_clusters
+    from kurt.content.cluster import compute_topic_clusters
 
     try:
         # Check for existing clusters first
         from kurt.document import list_content
-        from kurt.services.clustering_service import get_existing_clusters_summary
+        from kurt.content.cluster import get_existing_clusters_summary
 
         # Get document count
         doc_count = len(list_content(include_pattern=include_pattern, limit=None))
@@ -177,7 +177,7 @@ def cluster_urls_cmd(
             table.add_column("Sample URLs", style="dim", no_wrap=False)
 
             # Get doc counts per cluster from service
-            from kurt.services.clustering_service import get_cluster_document_counts
+            from kurt.content.cluster import get_cluster_document_counts
 
             cluster_names = [cluster["name"] for cluster in result["clusters"]]
             doc_counts = get_cluster_document_counts(cluster_names)

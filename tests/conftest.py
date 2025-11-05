@@ -32,28 +32,21 @@ def tmp_project(monkeypatch, tmp_path):
     project_dir = tmp_path / "test-kurt-project"
     project_dir.mkdir()
 
-    sources_dir = project_dir / "sources"
-    sources_dir.mkdir()
+    # Create standard directories
+    (project_dir / "sources").mkdir()
+    (project_dir / "projects").mkdir()
+    (project_dir / "rules").mkdir()
 
-    # Create kurt.config
-    config_file = project_dir / "kurt.config"
-    config_content = f"""# Kurt Configuration
-# Auto-generated for testing
+    # Change to temp project directory first (so create_config writes to correct location)
+    monkeypatch.chdir(project_dir)
 
-# Source content storage path (relative to project root)
-SOURCE_PATH = "sources"
-
-# Database connection (SQLite for testing)
-DATABASE_URL = "sqlite:///{project_dir / '.kurt' / 'kurt.db'}"
-"""
-    config_file.write_text(config_content)
+    # Create kurt.config using new format
+    from kurt.config.base import create_config
+    create_config()
 
     # Create .kurt directory for database
     kurt_dir = project_dir / ".kurt"
     kurt_dir.mkdir()
-
-    # Change to temp project directory
-    monkeypatch.chdir(project_dir)
 
     # Set environment variable so Kurt finds this config
     monkeypatch.setenv("KURT_PROJECT_ROOT", str(project_dir))
@@ -80,28 +73,21 @@ def tmp_project_without_migrations(monkeypatch, tmp_path):
     project_dir = tmp_path / "test-kurt-project"
     project_dir.mkdir()
 
-    sources_dir = project_dir / "sources"
-    sources_dir.mkdir()
+    # Create standard directories
+    (project_dir / "sources").mkdir()
+    (project_dir / "projects").mkdir()
+    (project_dir / "rules").mkdir()
 
-    # Create kurt.config
-    config_file = project_dir / "kurt.config"
-    config_content = f"""# Kurt Configuration
-# Auto-generated for testing
+    # Change to temp project directory first
+    monkeypatch.chdir(project_dir)
 
-# Source content storage path (relative to project root)
-SOURCE_PATH = "sources"
-
-# Database connection (SQLite for testing)
-DATABASE_URL = "sqlite:///{project_dir / '.kurt' / 'kurt.db'}"
-"""
-    config_file.write_text(config_content)
+    # Create kurt.config using new format
+    from kurt.config.base import create_config
+    create_config()
 
     # Create .kurt directory for database
     kurt_dir = project_dir / ".kurt"
     kurt_dir.mkdir()
-
-    # Change to temp project directory
-    monkeypatch.chdir(project_dir)
 
     # Set environment variable so Kurt finds this config
     monkeypatch.setenv("KURT_PROJECT_ROOT", str(project_dir))
@@ -186,10 +172,10 @@ def mock_map_functions():
         Dict with mock functions for customization
     """
     with (
-        patch("kurt.ingestion.map._discover_sitemap_urls") as mock_sitemap,
-        patch("kurt.ingestion.map.identify_blogroll_candidates") as mock_blogroll,
-        patch("kurt.ingestion.map.extract_chronological_content") as mock_extract,
-        patch("kurt.ingestion.map.crawl_website") as mock_crawler,
+        patch("kurt.content.map._discover_sitemap_urls") as mock_sitemap,
+        patch("kurt.content.map.identify_blogroll_candidates") as mock_blogroll,
+        patch("kurt.content.map.extract_chronological_content") as mock_extract,
+        patch("kurt.content.map.crawl_website") as mock_crawler,
     ):
         # Default return values
         mock_sitemap.return_value = [

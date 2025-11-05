@@ -1,0 +1,46 @@
+{
+  "query": "bottom_pages",
+  "period": "last_30_days",
+  "results": [
+    {
+      "source_url": "https://docs.acme-corp.com/troubleshooting",
+      "title": "Troubleshooting",
+      "pageviews": 456,
+      "unique_visitors": 389,
+      "avg_time_on_page": 320,
+      "bounce_rate": 0.67,
+      "conversions": 12,
+      "rank": 1,
+      "trend": "down",
+      "change_percent": -15.3,
+      "issues": ["high bounce rate", "low conversions"]
+    },
+    {
+      "source_url": "https://acme-corp.com/blog-post-3",
+      "title": "10 Tips for Developer Experience",
+      "pageviews": 523,
+      "unique_visitors": 445,
+      "avg_time_on_page": 145,
+      "bounce_rate": 0.72,
+      "conversions": 8,
+      "rank": 2,
+      "trend": "down",
+      "change_percent": -22.4,
+      "issues": ["low engagement", "high bounce rate", "short time on page"]
+    },
+    {
+      "source_url": "https://docs.acme-corp.com/changelog",
+      "title": "Changelog",
+      "pageviews": 612,
+      "unique_visitors": 534,
+      "avg_time_on_page": 90,
+      "bounce_rate": 0.58,
+      "conversions": 5,
+      "rank": 3,
+      "trend": "stable",
+      "change_percent": -2.1,
+      "issues": ["low conversions", "short time on page"]
+    }
+  ],
+  "generated_at": "2024-11-01T10:00:00Z"
+}

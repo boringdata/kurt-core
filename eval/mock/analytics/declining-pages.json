@@ -1,0 +1,61 @@
+{
+  "query": "declining_pages",
+  "period": "last_30_days",
+  "results": [
+    {
+      "source_url": "https://acme-corp.com/blog-post-3",
+      "title": "10 Tips for Developer Experience",
+      "pageviews": 523,
+      "decline_rate": -0.22,
+      "velocity": "declining",
+      "rank": 1,
+      "possible_reasons": [
+        "Content outdated (published 3 months ago)",
+        "Low social shares",
+        "High bounce rate (72%)",
+        "Poor SEO ranking (dropped from page 1 to page 3)"
+      ],
+      "recommendations": [
+        "Update with 2024 examples",
+        "Add more visual content",
+        "Improve SEO optimization",
+        "Promote on social media"
+      ]
+    },
+    {
+      "source_url": "https://docs.acme-corp.com/troubleshooting",
+      "title": "Troubleshooting",
+      "pageviews": 456,
+      "decline_rate": -0.15,
+      "velocity": "declining",
+      "rank": 2,
+      "possible_reasons": [
+        "Platform improved (fewer errors)",
+        "Better documentation elsewhere",
+        "High bounce rate (67%)"
+      ],
+      "recommendations": [
+        "Add FAQ section",
+        "Include video tutorials",
+        "Link from error messages"
+      ]
+    },
+    {
+      "source_url": "https://acme-corp.com/blog-post-2",
+      "title": "Announcing ACME 2.0",
+      "pageviews": 7234,
+      "decline_rate": -0.05,
+      "velocity": "slowing",
+      "rank": 3,
+      "possible_reasons": [
+        "Announcement is old news (1 month ago)",
+        "Natural decline after launch spike"
+      ],
+      "recommendations": [
+        "Follow-up post with user stories",
+        "Case study showing ACME 2.0 impact"
+      ]
+    }
+  ],
+  "generated_at": "2024-11-01T10:00:00Z"
+}

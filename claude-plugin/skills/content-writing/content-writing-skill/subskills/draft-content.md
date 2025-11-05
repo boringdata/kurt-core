@@ -478,6 +478,54 @@ head -100 $ASSET_NAME-draft.md
 
 ---
 
+## Step 12: Feedback Collection (Optional - Every 5th Execution)
+
+Check if we should prompt for feedback:
+
+```bash
+# Get execution count from feedback database
+EXECUTION_COUNT=$(sqlite3 .kurt/kurt.sqlite "
+    SELECT COUNT(*) + 1 FROM feedback_events
+    WHERE operation = 'draft'
+    AND skill_name = 'content-writing-skill'
+" 2>/dev/null || echo "1")
+
+# Get feedback frequency from config
+FEEDBACK_FREQ=$(yq eval ".feedback.prompt_frequency" .kurt/feedback/feedback-config.yaml 2>/dev/null || echo "5")
+
+# Check if feedback is enabled
+FEEDBACK_ENABLED=$(yq eval ".feedback.enabled" .kurt/feedback/feedback-config.yaml 2>/dev/null || echo "true")
+
+# Prompt for feedback if enabled and it's time
+if [ "$FEEDBACK_ENABLED" = "true" ] && [ $((EXECUTION_COUNT % FEEDBACK_FREQ)) -eq 0 ]; then
+    echo ""
+    echo "───────────────────────────────────────────────────────"
+    echo ""
+    echo "Would you like to rate this draft? (Y/n): "
+    read -r FEEDBACK_RESPONSE
+
+    if [ "$FEEDBACK_RESPONSE" != "n" ] && [ "$FEEDBACK_RESPONSE" != "N" ]; then
+        # Invoke feedback skill
+        feedback-skill rate \
+            --asset-path "$PROJECT_PATH/drafts/$ASSET_NAME-draft.md" \
+            --asset-type "draft" \
+            --project-id "$PROJECT_NAME" \
+            --skill-name "content-writing-skill" \
+            --operation "draft" \
+            --execution-count "$EXECUTION_COUNT" \
+            --prompted true
+    fi
+fi
+```
+
+**Notes:**
+- Feedback prompts occur every 5th execution by default (configurable)
+- Users can skip the prompt without affecting workflow
+- Users can always rate explicitly later: `feedback-skill rate --asset-path <path>`
+- Feedback data helps improve writing rules over time
+
+---
+
 ## Error Handling
 
 **If outline not found and user chose to write without:**

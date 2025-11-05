@@ -40,6 +40,26 @@ Unified system for extracting writing rules AND managing the extensible rule typ
 - Entry: `writing-rules-skill <custom-type> --type <mode> --auto-discover`
 - Output: `rules/<custom-type>/<descriptive-name>.md`
 
+### Update Operations (Feedback-Driven)
+
+**style --update** - Update existing style rule based on recent feedback
+- Entry: `writing-rules-skill style --type <type> --update`
+- Requires: Existing style rule + recent tone/style feedback
+- Output: Updated style rule with backup
+- Subskill: `subskills/update-style.md`
+
+**structure --update** - Update existing structure template based on recent feedback
+- Entry: `writing-rules-skill structure --type <type> --update`
+- Requires: Existing structure template + recent structure/organization feedback
+- Output: Updated structure template with backup
+- Subskill: `subskills/update-structure.md`
+
+**persona --update** - Update existing persona based on recent feedback
+- Entry: `writing-rules-skill persona --audience-type <type> --update`
+- Requires: Existing persona + recent info/length/comprehension feedback
+- Output: Updated persona with backup
+- Subskill: `subskills/update-persona.md`
+
 ### Management Operations
 
 **list** - List all rule types (built-in + custom) with extraction status
@@ -72,9 +92,11 @@ Unified system for extracting writing rules AND managing the extensible rule typ
    - Project context (if available)
    - Source content status
    - Existing rules
+   - Feedback data (for update operations)
 3. **Route to subskill:**
    - Management ops → `subskills/manage-<operation>.md`
    - Extraction ops → `subskills/extract-<type>.md`
+   - Update ops (--update flag) → `subskills/update-<type>.md`
 4. **Pass context** - Provide all necessary info to subskill
 
 ### Preview Mode (Iterative Extraction)
@@ -128,16 +150,19 @@ When invoked from extract-rules subskill:
 
 **Called by:**
 - **extract-rules subskill** - Routes extraction requests here with preview mode
-- **check-foundation subskill** - For extracting core rules (publisher, primary voice, personas)
-- Direct invocation for rule extraction
+- **check-onboarding subskill** - For extracting core rules (publisher, primary voice, personas)
+- **feedback-skill patterns subskill** - Recommends update operations when patterns emerge
+- Direct invocation for rule extraction or updates
 
 **Delegates to:**
 - **Extraction subskills** - Type-specific extraction logic in `subskills/extract-<type>.md`
+- **Update subskills** - Feedback-driven updates in `subskills/update-<type>.md`
 - **Management subskills** - Registry operations in `subskills/manage-<operation>.md`
 
 **Works with:**
 - **project-management-skill** - Rules are referenced in project.md
 - **content-writing-skill** - Rules are applied during content creation
+- **feedback-skill** - Provides feedback data to drive rule updates
 
 ---
 
@@ -149,6 +174,8 @@ When invoked from extract-rules subskill:
 4. **Incremental by default** - Don't overwrite existing rules unless explicitly requested
 5. **Quality over quantity** - Need 3-5 documents minimum for reliable extraction
 6. **Type-specific extraction** - Each type has specialized extraction logic
+7. **Feedback-driven updates** - Use real user feedback to improve rules over time
+8. **User control** - Always show diff preview and get approval before updating rules
 
 ---
 
