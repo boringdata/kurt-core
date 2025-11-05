@@ -1,5 +1,5 @@
 ---
-name: project-management
+name: project-management-skill
 description: Manage Kurt projects - add sources/targets, update project.md, detect missing content, track progress. (project)
 ---
 

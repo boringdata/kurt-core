@@ -6,11 +6,7 @@ description: Update your existing team profile with selective changes (project)
 
 This command lets you update specific parts of your existing team profile.
 
-Use the Skill tool to invoke:
-
-```
-onboarding update-profile
-```
+Invoke the `kurt:onboarding-skill` and execute the **update-profile** operation following the instructions in the SKILL.md file.
 
 You can selectively update:
 - **Content map** - Add/remove organizational domains
@@ -21,5 +17,3 @@ You can selectively update:
 **Requires:** Existing profile (run `/create-profile` first if you haven't)
 
 The skill will show you a menu of update options and guide you through the selected changes.
-
-All orchestration logic lives in the skill. See `.claude/skills/onboarding-skill/SKILL.md` for details.

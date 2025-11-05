@@ -4,13 +4,9 @@ description: Create a new Kurt project with goals and structure (project)
 
 # Create New Kurt Project
 
-This command creates a new Kurt project by invoking the project-management skill.
+This command creates a new Kurt project.
 
-Use the Skill tool to invoke:
-
-```
-project-management create-project
-```
+Invoke the `kurt:project-management-skill` and execute the **create-project** operation following the instructions in the SKILL.md file.
 
 The skill will guide you through:
 1. Understanding your project intent
@@ -20,5 +16,3 @@ The skill will guide you through:
 5. Identifying target content (optional)
 6. Extracting project-specific rules (optional)
 7. Creating project structure and project.md
-
-All orchestration logic lives in the skill. See `.claude/skills/project-management-skill/subskills/create-project.md` for details.

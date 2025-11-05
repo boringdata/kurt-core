@@ -6,11 +6,7 @@ description: Create your team profile with organizational context and foundation
 
 This command runs the complete team onboarding process.
 
-Use the Skill tool to invoke:
-
-```
-onboarding create-profile
-```
+Invoke the `kurt:onboarding-skill` and execute the **create-profile** operation following the instructions in the SKILL.md file.
 
 The skill will guide you through:
 1. Capturing team context (company, goals, content types, personas)
@@ -22,5 +18,3 @@ The skill will guide you through:
 **Takes 10-15 minutes.** Required before creating projects.
 
 **If you already have a profile**, use `/update-profile` instead to make selective updates.
-
-All orchestration logic lives in the skill. See `.claude/skills/onboarding-skill/SKILL.md` for details.

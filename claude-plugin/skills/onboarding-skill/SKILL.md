@@ -1,5 +1,5 @@
 ---
-name: onboarding
+name: onboarding-skill
 description: One-time team setup that creates Kurt profile and foundation rules
 ---
 
@@ -30,7 +30,7 @@ This skill manages organizational onboarding through modular operations:
 ### create-profile
 Complete onboarding flow for new teams.
 
-**Entry:** `/create-profile` or `onboarding create-profile`
+**Entry:** `/create-profile` slash command
 
 **Flow:**
 1. Questionnaire - Capture team context
