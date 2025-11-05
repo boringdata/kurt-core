@@ -18,7 +18,7 @@ from kurt.commands.project import project
 from kurt.commands.research import research
 from kurt.commands.status import status
 from kurt.commands.telemetry import telemetry
-from kurt.config import config_exists, create_config, get_config_file_path
+from kurt.config.base import KurtConfig, config_file_exists, create_config, get_config_file_path
 from kurt.db.database import init_database
 from kurt.telemetry.decorators import track_command
 
@@ -39,7 +39,7 @@ def main(ctx):
         return
 
     # Check if project is initialized
-    if not config_exists():
+    if not config_file_exists():
         return  # Let commands handle "not initialized" error
 
     # Check for pending migrations
@@ -83,23 +83,23 @@ def main(ctx):
 @main.command()
 @click.option(
     "--db-path",
-    default=".kurt/kurt.sqlite",
-    help="Path to database file relative to current directory (default: .kurt/kurt.sqlite)",
+    default=KurtConfig.DEFAULT_DB_PATH,
+    help=f"Path to database file relative to current directory (default: {KurtConfig.DEFAULT_DB_PATH})",
 )
 @click.option(
     "--sources-path",
-    default="sources",
-    help="Path to store fetched content relative to current directory (default: sources)",
+    default=KurtConfig.DEFAULT_SOURCES_PATH,
+    help=f"Path to store fetched content relative to current directory (default: {KurtConfig.DEFAULT_SOURCES_PATH})",
 )
 @click.option(
     "--projects-path",
-    default="projects",
-    help="Path to store project-specific content relative to current directory (default: projects)",
+    default=KurtConfig.DEFAULT_PROJECTS_PATH,
+    help=f"Path to store project-specific content relative to current directory (default: {KurtConfig.DEFAULT_PROJECTS_PATH})",
 )
 @click.option(
     "--rules-path",
-    default="rules",
-    help="Path to store rules and configurations relative to current directory (default: rules)",
+    default=KurtConfig.DEFAULT_RULES_PATH,
+    help=f"Path to store rules and configurations relative to current directory (default: {KurtConfig.DEFAULT_RULES_PATH})",
 )
 @track_command
 def init(db_path: str, sources_path: str, projects_path: str, rules_path: str):
@@ -120,7 +120,7 @@ def init(db_path: str, sources_path: str, projects_path: str, rules_path: str):
 
     try:
         # Check if already initialized
-        if config_exists():
+        if config_file_exists():
             config_file = get_config_file_path()
             console.print(f"[yellow]Kurt project already initialized ({config_file})[/yellow]")
             overwrite = console.input("Reinitialize? (y/N): ")
