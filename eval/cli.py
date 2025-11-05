@@ -15,8 +15,10 @@ sys.path.insert(0, str(project_root))
 # Import from framework (works for both direct execution and module import)
 try:
     from .framework.runner import run_scenario_by_name  # Module import
+    from .framework.config import get_config  # Module import
 except ImportError:
     from framework.runner import run_scenario_by_name  # Direct execution
+    from framework.config import get_config  # Direct execution
 
 
 @click.group()
@@ -51,14 +53,15 @@ def run(scenario, no_cleanup, max_tool_calls, max_duration, max_tokens, llm_prov
       kurt-eval run 3 --no-cleanup
       kurt-eval run 3 --llm-provider anthropic
     """
-    scenarios_dir = eval_dir / "scenarios"
+    config = get_config()
+    scenarios_dir = eval_dir / config.scenarios_dir
 
     # Convert scenario number to ID if needed
     if scenario.isdigit():
         # Pad to 2 digits
         scenario_id = f"{int(scenario):02d}"
         # Find matching scenario in scenarios.yaml
-        scenarios_yaml = scenarios_dir / "scenarios.yaml"
+        scenarios_yaml = scenarios_dir / config.scenarios_file.split("/")[-1]
         if scenarios_yaml.exists():
             import yaml
 
@@ -155,8 +158,9 @@ def list(filter):
 )
 def run_all(filter, stop_on_failure, max_tool_calls, max_duration, llm_provider):
     """Run all evaluation scenarios."""
-    scenarios_yaml = eval_dir / "scenarios" / "scenarios.yaml"
-    scenarios_dir = eval_dir / "scenarios"
+    config = get_config()
+    scenarios_dir = eval_dir / config.scenarios_dir
+    scenarios_yaml = scenarios_dir / config.scenarios_file.split("/")[-1]
 
     if not scenarios_yaml.exists():
         click.secho("❌ No scenarios.yaml found", fg="red")

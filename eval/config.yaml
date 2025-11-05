@@ -54,12 +54,6 @@ user_agent:
   # - anthropic: uses claude-3-5-haiku (fast, accurate)
   llm_provider: openai
 
-  # Fallback to regex-based responses if LLM fails
-  fallback_to_regex: true
-
-  # Default response when no match is found
-  default_response: "yes"
-
 
 # SDK Configuration
 # -----------------
@@ -94,14 +88,8 @@ output:
   # Print detailed agent responses and tool calls
   verbose: true
 
-  # Save raw transcript to results
-  save_transcript: true
-
   # Results directory (relative to eval/)
   results_dir: results
-
-  # Colorized terminal output
-  use_colors: true
 
 
 # Scenario Discovery
@@ -121,20 +109,6 @@ scenarios:
     - .yml
 
 
-# Performance Tuning
-# ------------------
-# Advanced settings for optimization
-
-performance:
-  # Number of scenarios to run in parallel (experimental)
-  # Set to 1 for sequential execution (safer)
-  parallel_scenarios: 1
-
-  # Timeout for individual tool calls (seconds)
-  tool_timeout: 120
-
-  # Maximum response size from tools (characters)
-  max_tool_output: 30000
 
 
 # API Keys
@@ -154,16 +128,6 @@ api_keys:
   # Both are checked in eval/.env
 
 
-# Assertions
-# ----------
-# Default assertion settings
-
-assertions:
-  # Stop on first assertion failure
-  fail_fast: false
-
-  # Include detailed error messages
-  verbose_errors: true
 
 
 # Metadata
