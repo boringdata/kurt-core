@@ -65,7 +65,7 @@ def normalize_url(url: str) -> str:
 # ============================================================================
 
 
-def _discover_sitemap_urls(base_url: str) -> list[str]:
+def _discover_sitemap_urls(base_url: str, progress=None, task_id=None) -> list[str]:
     """
     Discover sitemap URLs using httpx (reliable fetching).
 
@@ -76,6 +76,8 @@ def _discover_sitemap_urls(base_url: str) -> list[str]:
 
     Args:
         base_url: Base URL to search for sitemaps
+        progress: Optional progress object for status updates
+        task_id: Optional task ID for progress updates
 
     Returns:
         List of URLs found in sitemap(s)
@@ -92,6 +94,9 @@ def _discover_sitemap_urls(base_url: str) -> list[str]:
     sitemap_urls = []
 
     # Step 1: Check robots.txt
+    if progress and task_id is not None:
+        progress.update(task_id, description="Checking robots.txt...")
+
     try:
         response = httpx.get(f"{base}/robots.txt", timeout=10.0, follow_redirects=True)
         if response.status_code == 200:
@@ -109,6 +114,9 @@ def _discover_sitemap_urls(base_url: str) -> list[str]:
             sitemap_urls.append(f"{base}{path}")
 
     # Step 3: Fetch and parse sitemaps
+    if progress and task_id is not None:
+        progress.update(task_id, description="Fetching sitemap...")
+
     all_urls = []
 
     for sitemap_url in sitemap_urls:
@@ -124,10 +132,20 @@ def _discover_sitemap_urls(base_url: str) -> list[str]:
             sitemaps = root.findall(".//{http://www.sitemaps.org/schemas/sitemap/0.9}sitemap")
             if sitemaps:
                 # It's a sitemap index - recursively fetch child sitemaps
-                for sitemap in sitemaps:
+                if progress and task_id is not None:
+                    progress.update(
+                        task_id, description=f"Parsing sitemap index ({len(sitemaps)} sitemaps)..."
+                    )
+
+                for idx, sitemap in enumerate(sitemaps):
                     loc = sitemap.find("{http://www.sitemaps.org/schemas/sitemap/0.9}loc")
                     if loc is not None and loc.text:
                         child_sitemap_url = loc.text.strip()
+                        if progress and task_id is not None:
+                            progress.update(
+                                task_id, description=f"Parsing sitemap {idx+1}/{len(sitemaps)}..."
+                            )
+
                         try:
                             child_response = httpx.get(
                                 child_sitemap_url, timeout=30.0, follow_redirects=True
@@ -143,10 +161,19 @@ def _discover_sitemap_urls(base_url: str) -> list[str]:
                                     )
                                     if loc_elem is not None and loc_elem.text:
                                         all_urls.append(loc_elem.text.strip())
+
+                                # Update progress with current count
+                                if progress and task_id is not None and len(all_urls) % 50 == 0:
+                                    progress.update(
+                                        task_id, description=f"Discovered {len(all_urls)} URLs..."
+                                    )
                         except Exception:
                             continue
             else:
                 # It's a regular sitemap - extract URLs
+                if progress and task_id is not None:
+                    progress.update(task_id, description="Parsing sitemap...")
+
                 urls = root.findall(".//{http://www.sitemaps.org/schemas/sitemap/0.9}url")
                 for url_elem in urls:
                     loc = url_elem.find("{http://www.sitemaps.org/schemas/sitemap/0.9}loc")
@@ -174,6 +201,8 @@ def crawl_website(
     allow_external: bool = False,
     include_patterns: tuple = (),
     exclude_patterns: tuple = (),
+    progress=None,
+    task_id=None,
 ) -> list[str]:
     """
     Crawl a website using trafilatura's focused_crawler.
@@ -188,6 +217,8 @@ def crawl_website(
         allow_external: If True, follow external links (outside domain)
         include_patterns: Include URL patterns (glob)
         exclude_patterns: Exclude URL patterns (glob)
+        progress: Optional progress object for status updates
+        task_id: Optional task ID for progress updates
 
     Returns:
         List of discovered URLs (strings)
@@ -213,20 +244,40 @@ def crawl_website(
     max_seen_urls = depth_to_urls.get(max_depth, max_depth * 50) if max_depth else 100
     max_seen_urls = min(max_seen_urls, max_pages)  # Respect max_pages limit
 
+    if progress and task_id is not None:
+        progress.update(
+            task_id,
+            description=f"Crawling website (max depth: {max_depth}, max pages: {max_pages})...",
+        )
+
     logger.info(f"Crawling {homepage} with max_seen_urls={max_seen_urls} (depth={max_depth})")
 
     # Run focused crawler
+    # Note: trafilatura's focused_crawler is blocking and doesn't provide progress callbacks
+    # We'll show status before and after
     to_visit, known_links = focused_crawler(
         homepage=homepage,
         max_seen_urls=max_seen_urls,
         max_known_urls=max_pages,
     )
 
+    # Show crawl completion
+    if progress and task_id is not None:
+        progress.update(
+            task_id,
+            description=f"Crawl complete - discovered {len(known_links)} URLs, filtering...",
+        )
+
     # Convert to list
     all_urls = list(known_links)
 
     # Filter external links if not allowed
     if not allow_external:
+        if progress and task_id is not None:
+            progress.update(
+                task_id, description=f"Filtering external URLs from {len(all_urls)} discovered..."
+            )
+
         homepage_domain = urlparse(homepage).netloc
         filtered_urls = []
         for url in all_urls:
@@ -238,6 +289,11 @@ def crawl_website(
 
     # Apply include/exclude patterns
     if include_patterns:
+        if progress and task_id is not None:
+            progress.update(
+                task_id, description=f"Applying include patterns to {len(all_urls)} URLs..."
+            )
+
         filtered = []
         for url in all_urls:
             if any(fnmatch(url, pattern) for pattern in include_patterns):
@@ -246,6 +302,11 @@ def crawl_website(
         logger.info(f"Applied include patterns: {len(all_urls)} URLs match")
 
     if exclude_patterns:
+        if progress and task_id is not None:
+            progress.update(
+                task_id, description=f"Applying exclude patterns to {len(all_urls)} URLs..."
+            )
+
         filtered = []
         for url in all_urls:
             if not any(fnmatch(url, pattern) for pattern in exclude_patterns):
@@ -257,6 +318,9 @@ def crawl_website(
     if len(all_urls) > max_pages:
         all_urls = all_urls[:max_pages]
         logger.info(f"Limited to {max_pages} URLs")
+
+    if progress and task_id is not None:
+        progress.update(task_id, description=f"Crawl discovered {len(all_urls)} URLs")
 
     logger.info(f"Crawling discovered {len(all_urls)} URLs")
     return all_urls
@@ -271,6 +335,8 @@ def map_sitemap(
     llm_model: str = KurtConfig.DEFAULT_INDEXING_LLM_MODEL,
     include_patterns: tuple = (),
     exclude_patterns: tuple = (),
+    progress=None,
+    task_id=None,
 ) -> list[dict]:
     """
     Discover sitemap and create documents in database with NOT_FETCHED status.
@@ -315,7 +381,7 @@ def map_sitemap(
     from kurt.content.fetch import fetch_document
 
     # Use custom sitemap discovery (more reliable than trafilatura)
-    urls = _discover_sitemap_urls(url)
+    urls = _discover_sitemap_urls(url, progress=progress, task_id=task_id)
 
     # Apply filters
     from fnmatch import fnmatch
@@ -341,7 +407,15 @@ def map_sitemap(
     session = get_session()
     created_docs = []
 
-    for discovered_url in urls:
+    # Update progress with total count
+    if progress and task_id is not None:
+        progress.update(task_id, description="Creating documents...", total=len(urls), completed=0)
+
+    # Batch size for commits (commit every N documents for better performance)
+    batch_size = 100
+    docs_to_add = []
+
+    for idx, discovered_url in enumerate(urls):
         # Check if document already exists
         stmt = select(Document).where(Document.source_url == discovered_url)
         existing_doc = session.exec(stmt).first()
@@ -358,49 +432,84 @@ def map_sitemap(
                     "fetched": False,
                 }
             )
-            continue
+        else:
+            # Generate title from URL
+            title = discovered_url.rstrip("/").split("/")[-1] or discovered_url
 
-        # Generate title from URL
-        title = discovered_url.rstrip("/").split("/")[-1] or discovered_url
+            # Create document
+            doc = Document(
+                title=title,
+                source_type=SourceType.URL,
+                source_url=discovered_url,
+                ingestion_status=IngestionStatus.NOT_FETCHED,
+                discovery_method="sitemap",
+                discovery_url=url,  # The sitemap URL
+            )
 
-        # Create document
-        doc = Document(
-            title=title,
-            source_type=SourceType.URL,
-            source_url=discovered_url,
-            ingestion_status=IngestionStatus.NOT_FETCHED,
-            discovery_method="sitemap",
-            discovery_url=url,  # The sitemap URL
-        )
+            session.add(doc)
+            docs_to_add.append((doc, discovered_url))
 
-        session.add(doc)
+            # Commit in batches for better performance
+            if len(docs_to_add) >= batch_size:
+                session.commit()
+                # Refresh all docs in batch
+                for added_doc, _ in docs_to_add:
+                    session.refresh(added_doc)
+                    doc_result = {
+                        "document_id": added_doc.id,
+                        "url": added_doc.source_url,
+                        "title": added_doc.title,
+                        "status": added_doc.ingestion_status.value,
+                        "created": True,
+                        "fetched": False,
+                    }
+                    created_docs.append(doc_result)
+                docs_to_add = []
+
+        # Update progress with more informative message
+        if progress and task_id is not None:
+            if (idx + 1) % 10 == 0 or idx == len(urls) - 1:
+                new_count = sum(1 for d in created_docs if d.get("created", False))
+                existing_count = len(created_docs) - new_count
+                progress.update(
+                    task_id,
+                    description=f"Creating documents... ({new_count} new, {existing_count} existing)",
+                    completed=idx + 1,
+                )
+
+    # Commit any remaining documents
+    if docs_to_add:
         session.commit()
-        session.refresh(doc)
+        for added_doc, _ in docs_to_add:
+            session.refresh(added_doc)
+            doc_result = {
+                "document_id": added_doc.id,
+                "url": added_doc.source_url,
+                "title": added_doc.title,
+                "status": added_doc.ingestion_status.value,
+                "created": True,
+                "fetched": False,
+            }
 
-        doc_result = {
-            "document_id": doc.id,
-            "url": doc.source_url,
-            "title": doc.title,
-            "status": doc.ingestion_status.value,
-            "created": True,
-            "fetched": False,
-        }
+            # Fetch content if requested
+            if fetch_all:
+                try:
+                    fetch_result = fetch_document(str(added_doc.id))
+                    doc_result["status"] = fetch_result["status"]
+                    doc_result["fetched"] = True
+                    doc_result["content_length"] = fetch_result["content_length"]
+                except Exception as e:
+                    # Continue on fetch errors
+                    doc_result["fetch_error"] = str(e)
 
-        # Fetch content if requested
-        if fetch_all:
-            try:
-                fetch_result = fetch_document(str(doc.id))
-                doc_result["status"] = fetch_result["status"]
-                doc_result["fetched"] = True
-                doc_result["content_length"] = fetch_result["content_length"]
-            except Exception as e:
-                # Continue on fetch errors
-                doc_result["fetch_error"] = str(e)
-
-        created_docs.append(doc_result)
+            created_docs.append(doc_result)
 
     # Optionally discover additional posts from blogroll/changelog pages
     if discover_blogrolls:
+        if progress and task_id is not None:
+            progress.update(
+                task_id, description="Discovering blogrolls...", completed=0, total=None
+            )
         print("\n--- Discovering blogroll/changelog pages ---")
         sitemap_urls = [doc["url"] for doc in created_docs]
         blogroll_docs = map_blogrolls(
@@ -409,6 +518,13 @@ def map_sitemap(
             max_blogrolls=max_blogrolls,
         )
         created_docs.extend(blogroll_docs)
+        if progress and task_id is not None:
+            progress.update(
+                task_id,
+                description="Discovery complete",
+                completed=len(created_docs),
+                total=len(created_docs),
+            )
 
     return created_docs
 
@@ -1105,6 +1221,7 @@ def map_url_content(
     allow_external: bool = False,
     dry_run: bool = False,
     cluster_urls: bool = False,
+    progress=None,
 ) -> dict:
     """
     High-level URL mapping function - discover content from web sources.
@@ -1146,10 +1263,22 @@ def map_url_content(
 
         discovery_method = "sitemap"
 
+        # Add progress task
+        task_id = None
+        if progress:
+            task_id = progress.add_task("Discovering URLs...", total=None)
+
         # Discover URLs from sitemap or crawling
         try:
             # Note: sitemap_path parameter is not used by _discover_sitemap_urls yet
-            discovered_urls = _discover_sitemap_urls(url)
+            discovered_urls = _discover_sitemap_urls(url, progress=progress, task_id=task_id)
+            if progress and task_id is not None:
+                progress.update(
+                    task_id,
+                    description="Discovery complete",
+                    completed=len(discovered_urls),
+                    total=len(discovered_urls),
+                )
         except Exception as e:
             # Sitemap failed - try crawling if max_depth is specified
             if max_depth is not None:
@@ -1163,7 +1292,13 @@ def map_url_content(
                     allow_external=allow_external,
                     include_patterns=include_patterns,
                     exclude_patterns=exclude_patterns,
+                    progress=progress,
+                    task_id=task_id,
                 )
+                if progress and task_id is not None:
+                    progress.update(
+                        task_id, completed=len(discovered_urls), total=len(discovered_urls)
+                    )
                 discovery_method = "crawl"
             else:
                 # Fallback to single URL if discovery fails and no max_depth
@@ -1220,9 +1355,23 @@ def map_url_content(
         if cluster_urls:
             from kurt.content.cluster import compute_topic_clusters
 
-            cluster_result = compute_topic_clusters()
+            if progress:
+                cluster_task = progress.add_task("Clustering documents...", total=None)
+
+                def progress_callback(message):
+                    progress.update(cluster_task, description=message)
+
+                cluster_result = compute_topic_clusters(progress_callback=progress_callback)
+            else:
+                cluster_result = compute_topic_clusters()
+
             result["clusters"] = cluster_result["clusters"]
             result["cluster_count"] = len(cluster_result["clusters"])
+
+            if progress:
+                progress.update(
+                    cluster_task, description="Clustering complete", completed=1, total=1
+                )
 
         return result
 
@@ -1230,6 +1379,11 @@ def map_url_content(
     # Try sitemap first, fall back to crawling if requested and sitemap fails
     docs = []
     discovery_method = "sitemap"
+
+    # Add progress task for discovery
+    task_id = None
+    if progress:
+        task_id = progress.add_task("Discovering URLs...", total=None)
 
     try:
         docs = map_sitemap(
@@ -1240,7 +1394,11 @@ def map_url_content(
             include_patterns=include_patterns,
             exclude_patterns=exclude_patterns,
             limit=max_pages,
+            progress=progress,
+            task_id=task_id,
         )
+        if progress and task_id is not None:
+            progress.update(task_id, completed=len(docs), total=len(docs))
     except (ValueError, Exception) as e:
         # Sitemap failed - fall back to crawling if max_depth is specified
         if max_depth is not None:
@@ -1256,12 +1414,22 @@ def map_url_content(
                 allow_external=allow_external,
                 include_patterns=include_patterns,
                 exclude_patterns=exclude_patterns,
+                progress=progress,
+                task_id=task_id,
             )
 
             # Create documents for crawled URLs
             from kurt.content.fetch import add_document
 
-            for crawled_url in crawled_urls:
+            if progress and task_id is not None:
+                progress.update(
+                    task_id,
+                    description="Creating documents...",
+                    total=len(crawled_urls),
+                    completed=0,
+                )
+
+            for idx, crawled_url in enumerate(crawled_urls):
                 try:
                     doc_id = add_document(crawled_url)
                     docs.append(
@@ -1274,10 +1442,26 @@ def map_url_content(
                 except Exception as doc_err:
                     logger.warning(f"Failed to create document for {crawled_url}: {doc_err}")
 
+                if progress and task_id is not None:
+                    progress.update(task_id, completed=idx + 1)
+
             discovery_method = "crawl"
         else:
-            # No max_depth specified and sitemap failed - re-raise the error
-            raise
+            # No max_depth specified and sitemap failed - provide helpful error message
+            from urllib.parse import urlparse
+
+            parsed = urlparse(url)
+            parsed.netloc.replace("www.", "")
+
+            raise ValueError(
+                f"No sitemap found for {url}\n"
+                f"\n"
+                f"To discover content from this site, use crawling with --max-depth:\n"
+                f"  kurt map url {url} --max-depth 3\n"
+                f"\n"
+                f"Or specify a custom sitemap location:\n"
+                f"  kurt map url {url} --sitemap-path /custom-sitemap.xml"
+            )
 
     new_count = sum(1 for d in docs if d.get("created", False))
     existing_count = len(docs) - new_count
@@ -1295,9 +1479,23 @@ def map_url_content(
     if cluster_urls and len(docs) > 0:
         from kurt.content.cluster import compute_topic_clusters
 
-        cluster_result = compute_topic_clusters()
+        if progress and task_id is not None:
+            progress.update(
+                task_id, description=f"Clustering {len(docs)} documents...", completed=0, total=None
+            )
+
+            def progress_callback(message):
+                progress.update(task_id, description=message)
+
+            cluster_result = compute_topic_clusters(progress_callback=progress_callback)
+        else:
+            cluster_result = compute_topic_clusters()
+
         result["clusters"] = cluster_result["clusters"]
         result["cluster_count"] = len(cluster_result["clusters"])
+
+        if progress and task_id is not None:
+            progress.update(task_id, description="Clustering complete", completed=1, total=1)
 
     return result
 
@@ -1391,6 +1589,7 @@ def map_folder_content(
     exclude_patterns: tuple = (),
     dry_run: bool = False,
     cluster_urls: bool = False,
+    progress=None,
 ) -> dict:
     """
     High-level folder mapping function - discover content from local files.
@@ -1438,6 +1637,13 @@ def map_folder_content(
 
     # Handle dry-run mode
     if dry_run:
+        # Update progress
+        task_id = None
+        if progress:
+            task_id = progress.add_task(
+                "Scanning files...", total=len(md_files), completed=len(md_files)
+            )
+
         # Return file paths as strings without saving to database
         return {
             "discovered": [str(file_path) for file_path in md_files],
@@ -1448,8 +1654,12 @@ def map_folder_content(
         }
 
     # Add files to database (normal mode)
+    task_id = None
+    if progress:
+        task_id = progress.add_task("Adding files to database...", total=len(md_files), completed=0)
+
     results = []
-    for file_path in md_files:
+    for idx, file_path in enumerate(md_files):
         try:
             result = _add_single_file_to_db(file_path)
             results.append(
@@ -1468,6 +1678,10 @@ def map_folder_content(
                 }
             )
 
+        # Update progress
+        if progress and task_id is not None:
+            progress.update(task_id, completed=idx + 1)
+
     new_count = sum(1 for r in results if r.get("created", False))
     existing_count = len(results) - new_count
 
@@ -1483,9 +1697,26 @@ def map_folder_content(
     if cluster_urls and len(results) > 0:
         from kurt.content.cluster import compute_topic_clusters
 
-        cluster_result = compute_topic_clusters()
+        if progress and task_id is not None:
+            progress.update(
+                task_id,
+                description=f"Clustering {len(results)} documents...",
+                completed=0,
+                total=None,
+            )
+
+            def progress_callback(message):
+                progress.update(task_id, description=message)
+
+            cluster_result = compute_topic_clusters(progress_callback=progress_callback)
+        else:
+            cluster_result = compute_topic_clusters()
+
         result_dict["clusters"] = cluster_result["clusters"]
         result_dict["cluster_count"] = len(cluster_result["clusters"])
+
+        if progress and task_id is not None:
+            progress.update(task_id, description="Clustering complete", completed=1, total=1)
 
     return result_dict
 
@@ -1498,6 +1729,7 @@ def map_cms_content(
     limit: int = None,
     cluster_urls: bool = False,
     dry_run: bool = False,
+    progress=None,
 ) -> dict:
     """
     High-level CMS mapping function - discover content from CMS platforms.
@@ -1534,12 +1766,18 @@ def map_cms_content(
     adapter = get_adapter(platform, cms_config)
 
     # Discover documents via CMS API
+    task_id = None
+    if progress:
+        task_id = progress.add_task("Fetching from CMS API...", total=None)
+
     try:
         cms_documents = adapter.list_all(
             content_type=content_type,
             status=status,
             limit=limit,
         )
+        if progress and task_id is not None:
+            progress.update(task_id, completed=len(cms_documents), total=len(cms_documents))
     except Exception as e:
         logger.error(f"CMS discovery failed: {e}")
         raise ValueError(f"Failed to discover documents from {platform}/{instance}: {e}")
@@ -1562,7 +1800,12 @@ def map_cms_content(
     results = []
     session = get_session()
 
-    for doc_meta in cms_documents:
+    if progress and task_id is not None:
+        progress.update(
+            task_id, description="Creating documents...", total=len(cms_documents), completed=0
+        )
+
+    for idx, doc_meta in enumerate(cms_documents):
         # Get schema/content_type name and slug
         schema = doc_meta.get("content_type")  # e.g., "article", "universeItem"
         slug = doc_meta.get("slug", "untitled")
@@ -1579,27 +1822,28 @@ def map_cms_content(
                 try:
                     # Import ContentType enum
                     from kurt.db.models import ContentType
+
                     # Convert string to enum (e.g., "article" -> ContentType.ARTICLE)
                     inferred_content_type = ContentType[inferred_content_type_str.upper()]
                 except (KeyError, AttributeError):
-                    logger.warning(f"Invalid content_type '{inferred_content_type_str}' for schema '{schema}'")
+                    logger.warning(
+                        f"Invalid content_type '{inferred_content_type_str}' for schema '{schema}'"
+                    )
 
         # Check if document already exists (by source_url)
-        existing_doc = (
-            session.query(Document)
-            .filter(Document.source_url == source_url)
-            .first()
-        )
+        existing_doc = session.query(Document).filter(Document.source_url == source_url).first()
 
         if existing_doc:
             # Document already mapped
-            results.append({
-                "url": source_url,
-                "doc_id": str(existing_doc.id),
-                "title": doc_meta.get("title"),
-                "content_type": schema,
-                "created": False,
-            })
+            results.append(
+                {
+                    "url": source_url,
+                    "doc_id": str(existing_doc.id),
+                    "title": doc_meta.get("title"),
+                    "content_type": schema,
+                    "created": False,
+                }
+            )
             continue
 
         # Create new document with all metadata
@@ -1616,15 +1860,21 @@ def map_cms_content(
         session.add(new_doc)
         session.commit()
 
-        results.append({
-            "url": source_url,
-            "doc_id": str(new_doc.id),
-            "title": doc_meta.get("title"),
-            "content_type": schema,
-            "created": True,
-        })
+        results.append(
+            {
+                "url": source_url,
+                "doc_id": str(new_doc.id),
+                "title": doc_meta.get("title"),
+                "content_type": schema,
+                "created": True,
+            }
+        )
 
         logger.info(f"Created NOT_FETCHED document: {source_url} (CMS ID: {cms_doc_id})")
+
+        # Update progress
+        if progress and task_id is not None:
+            progress.update(task_id, completed=idx + 1)
 
     session.close()
 
@@ -1645,8 +1895,25 @@ def map_cms_content(
     if cluster_urls and len(results) > 0:
         from kurt.content.cluster import compute_topic_clusters
 
-        cluster_result = compute_topic_clusters()
+        if progress and task_id is not None:
+            progress.update(
+                task_id,
+                description=f"Clustering {len(results)} documents...",
+                completed=0,
+                total=None,
+            )
+
+            def progress_callback(message):
+                progress.update(task_id, description=message)
+
+            cluster_result = compute_topic_clusters(progress_callback=progress_callback)
+        else:
+            cluster_result = compute_topic_clusters()
+
         result_dict["clusters"] = cluster_result["clusters"]
         result_dict["cluster_count"] = len(cluster_result["clusters"])
+
+        if progress and task_id is not None:
+            progress.update(task_id, description="Clustering complete", completed=1, total=1)
 
     return result_dict

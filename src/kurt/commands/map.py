@@ -2,6 +2,7 @@
 
 import click
 from rich.console import Console
+from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 
 console = Console()
 
@@ -69,6 +70,17 @@ def map_cmd():
     default="text",
     help="Output format for AI agents",
 )
+@click.option(
+    "--background",
+    is_flag=True,
+    help="Run as background workflow (non-blocking, useful for long crawls/clustering)",
+)
+@click.option(
+    "--priority",
+    type=int,
+    default=10,
+    help="Priority for background execution (1=highest, default=10)",
+)
 def map_url(
     url: str,
     sitemap_path: str,
@@ -81,6 +93,8 @@ def map_url(
     cluster_urls: bool,
     dry_run: bool,
     output_format: str,
+    background: bool,
+    priority: int,
 ):
     """
     Discover content from web sources (auto-detects sitemap, falls back to crawl).
@@ -104,25 +118,73 @@ def map_url(
     from kurt.content.map import map_url_content
 
     try:
-        # Display mode indicator
+        # Dry-run mode bypasses workflow system (no DB writes)
         if dry_run:
             console.print("[bold]DRY RUN - Preview only[/bold]\n")
+            console.print(f"[cyan]Discovering content from:[/cyan] {url}\n")
 
-        console.print(f"[cyan]Discovering content from:[/cyan] {url}\n")
+            result = map_url_content(
+                url=url,
+                sitemap_path=sitemap_path,
+                include_blogrolls=include_blogrolls,
+                max_depth=max_depth,
+                max_pages=max_pages,
+                allow_external=allow_external,
+                include_patterns=include_patterns,
+                exclude_patterns=exclude_patterns,
+                dry_run=True,
+                cluster_urls=False,  # No clustering in dry-run
+                progress=None,
+            )
+        else:
+            # Use workflow system for background mode only
+            # For foreground, use original function with progress UI
+            if background:
+                from kurt.workflows.cli_helpers import run_with_background_support
+                from kurt.workflows.map import map_url_workflow
 
-        # Call ingestion layer (handles dry-run and clustering logic)
-        result = map_url_content(
-            url=url,
-            sitemap_path=sitemap_path,
-            include_blogrolls=include_blogrolls,
-            max_depth=max_depth,
-            max_pages=max_pages,
-            allow_external=allow_external,
-            include_patterns=include_patterns,
-            exclude_patterns=exclude_patterns,
-            dry_run=dry_run,
-            cluster_urls=cluster_urls,
-        )
+                result = run_with_background_support(
+                    workflow_func=map_url_workflow,
+                    workflow_args={
+                        "url": url,
+                        "sitemap_path": sitemap_path,
+                        "include_blogrolls": include_blogrolls,
+                        "max_depth": max_depth,
+                        "max_pages": max_pages,
+                        "allow_external": allow_external,
+                        "include_patterns": include_patterns,
+                        "exclude_patterns": exclude_patterns,
+                        "cluster_urls": cluster_urls,
+                    },
+                    background=True,
+                    workflow_id=None,
+                    priority=priority,
+                )
+                return  # Background mode complete, exit early
+
+            # Foreground mode: use original function with progress UI
+            console.print(f"[cyan]Discovering content from:[/cyan] {url}\n")
+
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                console=console,
+            ) as progress:
+                result = map_url_content(
+                    url=url,
+                    sitemap_path=sitemap_path,
+                    include_blogrolls=include_blogrolls,
+                    max_depth=max_depth,
+                    max_pages=max_pages,
+                    allow_external=allow_external,
+                    include_patterns=include_patterns,
+                    exclude_patterns=exclude_patterns,
+                    dry_run=False,
+                    cluster_urls=cluster_urls,
+                    progress=progress,
+                )
 
         # Display results
         if output_format == "json":
@@ -235,13 +297,22 @@ def map_folder(
 
         console.print(f"[cyan]Discovering content from:[/cyan] {path}\n")
 
-        # Call ingestion layer (handles dry-run logic)
-        result = map_folder_content(
-            folder_path=path,
-            include_patterns=include_patterns,
-            exclude_patterns=exclude_patterns,
-            dry_run=dry_run,
-        )
+        # Create progress context
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            console=console,
+        ) as progress:
+            # Call ingestion layer (handles dry-run logic)
+            result = map_folder_content(
+                folder_path=path,
+                include_patterns=include_patterns,
+                exclude_patterns=exclude_patterns,
+                dry_run=dry_run,
+                progress=progress,
+            )
 
         # Display results
         if output_format == "json":
@@ -351,15 +422,13 @@ def map_cms(
         # Preview without creating records
         kurt map cms --platform sanity --dry-run
     """
-    from kurt.cms.config import get_platform_config, list_platform_instances, platform_configured
+    from kurt.cms.config import list_platform_instances, platform_configured
     from kurt.content.map import map_cms_content
 
     # Check if platform is configured
     if not platform_configured(platform):
         console.print(f"[red]Error:[/red] CMS platform '{platform}' is not configured.")
-        console.print(
-            f"\n[dim]Run 'kurt cms onboard --platform {platform}' to configure.[/dim]"
-        )
+        console.print(f"\n[dim]Run 'kurt cms onboard --platform {platform}' to configure.[/dim]")
         raise click.Abort()
 
     # If no instance specified, get default/first instance
@@ -377,20 +446,27 @@ def map_cms(
         if dry_run:
             console.print("[bold]DRY RUN - Preview only[/bold]\n")
 
-        console.print(
-            f"[cyan]Discovering content from:[/cyan] {platform}/{instance}\n"
-        )
+        console.print(f"[cyan]Discovering content from:[/cyan] {platform}/{instance}\n")
 
-        # Call ingestion layer
-        result = map_cms_content(
-            platform=platform,
-            instance=instance,
-            content_type=content_type,
-            status=status,
-            limit=limit,
-            cluster_urls=cluster_urls,
-            dry_run=dry_run,
-        )
+        # Create progress context
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            console=console,
+        ) as progress:
+            # Call ingestion layer
+            result = map_cms_content(
+                platform=platform,
+                instance=instance,
+                content_type=content_type,
+                status=status,
+                limit=limit,
+                cluster_urls=cluster_urls,
+                dry_run=dry_run,
+                progress=progress,
+            )
 
         # Display results
         if output_format == "json":
@@ -412,26 +488,22 @@ def map_cms(
                 console.print("\n[bold]Sample documents:[/bold]")
                 for doc in result["discovered"][:5]:
                     if isinstance(doc, dict):
-                        console.print(
-                            f"  • {doc.get('title', 'Untitled')} ({doc['content_type']})"
-                        )
+                        console.print(f"  • {doc.get('title', 'Untitled')} ({doc['content_type']})")
                     else:
                         console.print(f"  • {doc}")
                 if len(result["discovered"]) > 5:
-                    console.print(
-                        f"  [dim]... and {len(result['discovered']) - 5} more[/dim]"
-                    )
+                    console.print(f"  [dim]... and {len(result['discovered']) - 5} more[/dim]")
 
             # Show clustering message if enabled
             if cluster_urls and not result.get("dry_run"):
                 console.print(
-                    f"\n[dim]💡 Documents will be clustered. View with: "
-                    f"[cyan]kurt cluster-urls[/cyan][/dim]"
+                    "\n[dim]💡 Documents will be clustered. View with: "
+                    "[cyan]kurt cluster-urls[/cyan][/dim]"
                 )
 
             # Show next steps
             console.print(
-                f"\n[dim]💡 Next: Fetch content with [cyan]kurt fetch --include \"{platform}/{instance}/*\"[/cyan][/dim]"
+                f'\n[dim]💡 Next: Fetch content with [cyan]kurt fetch --include "{platform}/{instance}/*"[/cyan][/dim]'
             )
 
     except Exception as e:

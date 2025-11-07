@@ -148,6 +148,7 @@ def normalize_url(url: str) -> str:
 def compute_topic_clusters(
     include_pattern: Optional[str] = None,
     force: bool = False,
+    progress_callback=None,
 ) -> dict:
     """
     Compute topic clusters from a collection of documents.
@@ -159,6 +160,7 @@ def compute_topic_clusters(
         include_pattern: Glob pattern to filter documents (e.g., "*docs.dagster.io*", "*/blog/*")
                         If None, clusters ALL documents in database
         force: If False, raises error if documents are already clustered. If True, re-clusters anyway.
+        progress_callback: Optional callback function(message: str) to report progress
 
     Returns:
         Dictionary with clustering results:
@@ -176,6 +178,9 @@ def compute_topic_clusters(
     from kurt.document import list_content
 
     # Get matching documents (any status - we only need metadata)
+    if progress_callback:
+        progress_callback("Loading documents...")
+
     docs = list_content(
         include_pattern=include_pattern,
         limit=None,
@@ -184,7 +189,13 @@ def compute_topic_clusters(
     if not docs:
         raise ValueError("No documents found matching criteria")
 
+    if progress_callback:
+        progress_callback(f"Loaded {len(docs)} documents")
+
     session = get_session()
+
+    if progress_callback:
+        progress_callback("Checking existing clusters...")
 
     # Fetch existing clusters (for incremental clustering)
     # IMPORTANT: Only fetch clusters that are linked to documents in our filtered set
@@ -221,6 +232,10 @@ def compute_topic_clusters(
 
     if len(docs) > batch_size:
         logger.info(f"Processing {len(docs)} documents in batches of {batch_size}")
+        total_batches = (len(docs) + batch_size - 1) // batch_size
+
+        if progress_callback:
+            progress_callback(f"Processing in {total_batches} batches...")
 
         # Process in batches, each batch refines previous clusters
         current_clusters = existing_clusters
@@ -228,8 +243,13 @@ def compute_topic_clusters(
         for batch_num, i in enumerate(range(0, len(docs), batch_size), 1):
             batch_docs = docs[i : i + batch_size]
             logger.info(
-                f"Processing batch {batch_num}/{(len(docs) + batch_size - 1) // batch_size}: {len(batch_docs)} documents"
+                f"Processing batch {batch_num}/{total_batches}: {len(batch_docs)} documents"
             )
+
+            if progress_callback:
+                progress_callback(
+                    f"LLM analyzing batch {batch_num}/{total_batches} ({len(batch_docs)} docs)..."
+                )
 
             # Prepare page metadata for this batch
             batch_pages = []
@@ -265,6 +285,11 @@ def compute_topic_clusters(
                 f"Batch {batch_num}: {len(clusters)} clusters, {len(result.classifications)} classifications"
             )
 
+            if progress_callback:
+                progress_callback(
+                    f"Batch {batch_num}/{total_batches} complete → {len(clusters)} clusters identified"
+                )
+
         classifications = all_classifications
         logger.info(
             f"Completed batching: {len(clusters)} final clusters, {len(classifications)} total classifications"
@@ -273,6 +298,9 @@ def compute_topic_clusters(
     else:
         # Single batch processing (< 200 documents)
         logger.info(f"Processing {len(docs)} documents in single batch")
+
+        if progress_callback:
+            progress_callback(f"LLM analyzing {len(docs)} documents...")
 
         # Prepare page metadata for clustering
         pages = []
@@ -349,6 +377,9 @@ def compute_topic_clusters(
         )
 
     # Step 2: Create new clusters from LLM output
+    if progress_callback:
+        progress_callback(f"Creating {len(clusters)} topic clusters...")
+
     cluster_name_to_id = {}
 
     for cluster_data in clusters:
@@ -365,6 +396,9 @@ def compute_topic_clusters(
 
     # Persist content type classifications to database
     from kurt.db.models import ContentType, Document
+
+    if progress_callback:
+        progress_callback(f"Classifying {len(classifications)} documents...")
 
     classification_counts = {}
     classified_count = 0

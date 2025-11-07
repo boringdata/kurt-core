@@ -4,6 +4,7 @@ import logging
 
 import click
 from rich.console import Console
+from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 from rich.table import Table
 
 console = Console()
@@ -68,8 +69,8 @@ def cluster_urls_cmd(
 
     try:
         # Check for existing clusters first
-        from kurt.document import list_content
         from kurt.content.cluster import get_existing_clusters_summary
+        from kurt.document import list_content
 
         # Get document count
         doc_count = len(list_content(include_pattern=include_pattern, limit=None))
@@ -121,11 +122,29 @@ def cluster_urls_cmd(
         else:
             console.print()  # Just add spacing
 
-        # Run clustering with glob pattern (or None to cluster ALL documents)
-        result = compute_topic_clusters(
-            include_pattern=include_pattern,
-            force=force,
-        )
+        # Run clustering with progress tracking
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            console=console,
+        ) as progress:
+            task_id = progress.add_task("Starting clustering...", total=None)
+
+            def progress_callback(message):
+                progress.update(task_id, description=message)
+
+            # Run clustering with glob pattern (or None to cluster ALL documents)
+            result = compute_topic_clusters(
+                include_pattern=include_pattern,
+                force=force,
+                progress_callback=progress_callback,
+            )
+
+            progress.update(task_id, description="Clustering complete", completed=1, total=1)
+
+        console.print()  # Add spacing after progress bar
 
         # Display results
         if output_format == "json":
