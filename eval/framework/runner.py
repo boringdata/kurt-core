@@ -37,7 +37,6 @@ try:
         ResultMessage,
         TextBlock,
         ThinkingBlock,
-        ToolResultBlock,
         ToolUseBlock,
     )
 
@@ -630,17 +629,33 @@ Execute commands as requested and report results concisely.""",
                                     metrics_collector.record_tool_use(tool_name, tool_input)
 
                     # Turn complete - check if conversation should continue
-                    if not self._is_agent_asking_question(agent_text_response):
+                    # Use two-tier detection: heuristics + LLM fallback
+                    from .conversation_completion import should_continue_conversation
+
+                    should_continue, decision_reason = should_continue_conversation(
+                        agent_text_response,
+                        conversation_history,
+                        llm_provider=self.llm_provider,
+                        use_llm_fallback=True,  # Enable intelligent fallback
+                    )
+
+                    if not should_continue:
                         # Agent completed task, end conversation
-                        self._log("\n  ✅ TASK COMPLETE (no follow-up questions)")
+                        self._log("\n  ✅ TASK COMPLETE")
+                        self._log(f"     Reason: {decision_reason}")
                         stop_reason = "task_complete"
                         break
 
                     # Agent is asking a question - check if we have a user agent to respond
                     if not user_agent:
                         self._log("\n  ⚠️  Agent asked question but no UserAgent available")
+                        self._log(f"     Detection: {decision_reason}")
                         stop_reason = "no_user_agent"
                         break
+
+                    # Log why we're continuing
+                    self._log("\n  🔄 CONTINUING CONVERSATION")
+                    self._log(f"     Reason: {decision_reason}")
 
                     # Record agent's message in history
                     conversation_history.append(

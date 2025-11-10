@@ -12,7 +12,7 @@ guardrails:
   max_tool_calls: 50
 
   # Maximum execution time in seconds per scenario
-  max_duration_seconds: 300
+  max_duration_seconds: 500
 
   # Maximum tokens to use per scenario (input + output)
   max_tokens: 100000
@@ -53,6 +53,21 @@ user_agent:
   # - openai: uses gpt-4o-mini (fast, cheap)
   # - anthropic: uses claude-3-5-haiku (fast, accurate)
   llm_provider: openai
+
+
+# Conversation Completion Detection
+# ----------------------------------
+# Two-tier system for detecting when conversations should end
+
+conversation_detection:
+  # Enable LLM fallback for uncertain cases (recommended: true)
+  # When heuristics can't confidently determine if agent is asking a question,
+  # use LLM to intelligently analyze the conversation flow
+  use_llm_fallback: true
+
+  # LLM provider for completion detection (inherits from user_agent if not set)
+  # Uses same model as user agent by default
+  # llm_provider: openai
 
 
 # SDK Configuration

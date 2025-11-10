@@ -41,6 +41,7 @@ class TrainingExample:
         assertions_results: Optional[Dict[str, Any]] = None,
         timing: Optional[Dict[str, Any]] = None,
         error: Optional[str] = None,
+        skill_context: Optional[Dict[str, Any]] = None,
     ):
         """Initialize training example from scenario execution.
 
@@ -54,6 +55,7 @@ class TrainingExample:
             assertions_results: Detailed assertion results (which passed/failed)
             timing: Execution timing metrics
             error: Error message if scenario failed
+            skill_context: Skill files used during execution (paths, content, versions)
         """
         self.scenario_name = scenario_name
         self.initial_prompt = initial_prompt
@@ -64,6 +66,7 @@ class TrainingExample:
         self.assertions_results = assertions_results or {}
         self.timing = timing or {}
         self.error = error
+        self.skill_context = skill_context or {}
         self.timestamp = datetime.now().isoformat()
 
     def to_dspy_example(self) -> dspy.Example:
@@ -85,9 +88,7 @@ class TrainingExample:
 
         # Extract agent responses (for behavior cloning)
         agent_responses = [
-            turn["message"]
-            for turn in self.conversation
-            if turn.get("speaker") == "agent"
+            turn["message"] for turn in self.conversation if turn.get("speaker") == "agent"
         ]
 
         # Create outcome summary
@@ -109,22 +110,22 @@ class TrainingExample:
             # Inputs (what the agent receives)
             scenario=self.scenario_name,
             prompt=self.initial_prompt,
-
             # Outputs (what the agent should produce)
             tool_sequence=tool_sequence if self.passed else None,
             agent_responses=agent_responses if self.passed else None,
             final_state=self.workspace_state if self.passed else None,
-
             # Full execution trace (for analysis)
             conversation=self.conversation,
             tool_calls=self.tool_calls,
-
+            # Skill context (for DSPy optimization)
+            skill_context=self.skill_context,
             # Metadata
             outcome=outcome,
             timestamp=self.timestamp,
         )
 
         # Mark which fields are inputs vs outputs for DSPy optimization
+        # skill_context is metadata (tells DSPy which files to optimize)
         return example.with_inputs("scenario", "prompt")
 
     def _classify_failure(self) -> str:
@@ -176,6 +177,7 @@ class TrainingExample:
             assertions_results={},
             timing={"duration_seconds": data.get("outcome", {}).get("duration_seconds", 0)},
             error=data.get("outcome", {}).get("error"),
+            skill_context=data.get("skill_context", {}),
         )
 
     @classmethod

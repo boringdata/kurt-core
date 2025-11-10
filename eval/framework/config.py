@@ -54,7 +54,7 @@ class EvalConfig:
         return {
             "guardrails": {
                 "max_tool_calls": 50,
-                "max_duration_seconds": 300,
+                "max_duration_seconds": 500,
                 "max_tokens": 100000,
                 "max_conversation_turns": 20,
             },

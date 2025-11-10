@@ -51,3 +51,32 @@ cat eval/results/01_basic_init_*.md
 ## Available Scenarios
 
 See [scenarios/](scenarios/) directory for all scenario definitions.
+
+## Documentation
+
+- **[CONVERSATION_COMPLETION.md](CONVERSATION_COMPLETION.md)** - Two-tier conversation completion detection system
+  - How it detects when multi-turn conversations should end
+  - Heuristics + LLM fallback approach
+  - Configuration, testing, and troubleshooting
+
+## Multi-Turn Conversations
+
+The framework supports intelligent multi-turn conversations with automatic completion detection:
+
+```yaml
+- name: my_scenario
+  initial_prompt: run /create-project
+
+  user_agent_prompt: |
+    You are creating a blog project.
+    When asked for project name: respond "tech-blog"
+    When asked for goal: respond "Write technical articles"
+```
+
+The system automatically:
+- Detects when the agent is asking questions (continues conversation)
+- Detects when the task is complete (ends conversation)
+- Uses fast heuristics for obvious cases
+- Falls back to LLM for nuanced cases
+
+See [CONVERSATION_COMPLETION.md](CONVERSATION_COMPLETION.md) for details.

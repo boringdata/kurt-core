@@ -14,11 +14,11 @@ sys.path.insert(0, str(project_root))
 
 # Import from framework (works for both direct execution and module import)
 try:
-    from .framework.runner import run_scenario_by_name  # Module import
     from .framework.config import get_config  # Module import
+    from .framework.runner import run_scenario_by_name  # Module import
 except ImportError:
-    from framework.runner import run_scenario_by_name  # Direct execution
     from framework.config import get_config  # Direct execution
+    from framework.runner import run_scenario_by_name  # Direct execution
 
 
 @click.group()
@@ -30,9 +30,21 @@ def main():
 @main.command()
 @click.argument("scenario", type=str)
 @click.option("--no-cleanup", is_flag=True, help="Preserve workspace after completion")
-@click.option("--max-tool-calls", type=int, default=50, help="Maximum tool calls allowed")
-@click.option("--max-duration", type=int, default=300, help="Maximum duration in seconds")
-@click.option("--max-tokens", type=int, default=100000, help="Maximum tokens to use")
+@click.option(
+    "--max-tool-calls",
+    type=int,
+    default=None,
+    help="Maximum tool calls allowed (default: from config)",
+)
+@click.option(
+    "--max-duration",
+    type=int,
+    default=None,
+    help="Maximum duration in seconds (default: from config)",
+)
+@click.option(
+    "--max-tokens", type=int, default=None, help="Maximum tokens to use (default: from config)"
+)
 @click.option(
     "--llm-provider",
     type=click.Choice(["openai", "anthropic"]),
@@ -148,8 +160,18 @@ def list(filter):
 @main.command()
 @click.option("--filter", type=str, help="Filter scenarios by name pattern")
 @click.option("--stop-on-failure", is_flag=True, help="Stop running on first failure")
-@click.option("--max-tool-calls", type=int, default=50, help="Maximum tool calls allowed")
-@click.option("--max-duration", type=int, default=300, help="Maximum duration in seconds")
+@click.option(
+    "--max-tool-calls",
+    type=int,
+    default=None,
+    help="Maximum tool calls allowed (default: from config)",
+)
+@click.option(
+    "--max-duration",
+    type=int,
+    default=None,
+    help="Maximum duration in seconds (default: from config)",
+)
 @click.option(
     "--llm-provider",
     type=click.Choice(["openai", "anthropic"]),
@@ -270,14 +292,16 @@ def training_stats(scenario):
         click.echo(f"\n📊 Training Data Stats: {click.style(scenario, fg='cyan', bold=True)}\n")
         click.echo(f"  Total examples:     {stats['total']}")
         click.secho(f"  ✅ Passed:          {stats['passed']}", fg="green")
-        click.secho(f"  ❌ Failed:          {stats['failed']}", fg="red" if stats['failed'] > 0 else "white")
+        click.secho(
+            f"  ❌ Failed:          {stats['failed']}", fg="red" if stats["failed"] > 0 else "white"
+        )
         click.echo(f"  Pass rate:          {stats['pass_rate']:.1%}")
         click.echo(f"  Avg tool calls:     {stats['avg_tool_calls']:.1f}")
         click.echo(f"  Avg duration:       {stats['avg_duration_seconds']:.1f}s")
 
-        if stats['failure_types']:
-            click.echo(f"\n  Failure types:")
-            for failure_type, count in stats['failure_types'].items():
+        if stats["failure_types"]:
+            click.echo("\n  Failure types:")
+            for failure_type, count in stats["failure_types"].items():
                 click.secho(f"    - {failure_type}: {count}", fg="yellow")
 
         click.echo(f"\n  First example:      {stats['first_example']}")
@@ -294,19 +318,31 @@ def training_stats(scenario):
 
         for scenario_name in sorted(scenarios):
             stats = collector.get_dataset_stats(scenario_name)
-            pass_rate_color = "green" if stats['pass_rate'] >= 0.8 else "yellow" if stats['pass_rate'] >= 0.5 else "red"
+            pass_rate_color = (
+                "green"
+                if stats["pass_rate"] >= 0.8
+                else "yellow"
+                if stats["pass_rate"] >= 0.5
+                else "red"
+            )
             pass_rate_str = f"{stats['pass_rate']:.1%}"
 
             click.echo(f"  {click.style(scenario_name, fg='cyan')}")
-            click.echo(f"    Examples: {stats['total']} | Pass rate: {click.style(pass_rate_str, fg=pass_rate_color)}")
+            click.echo(
+                f"    Examples: {stats['total']} | Pass rate: {click.style(pass_rate_str, fg=pass_rate_color)}"
+            )
 
 
 @training.command("export")
 @click.argument("scenario", type=str)
-@click.option("--output", type=click.Path(), help="Output file path (default: copies the existing .jsonl)")
+@click.option(
+    "--output", type=click.Path(), help="Output file path (default: copies the existing .jsonl)"
+)
 @click.option("--filter-passed/--no-filter", default=True, help="Only include successful examples")
 @click.option("--limit", type=int, help="Maximum number of examples to export")
-@click.option("--format", type=click.Choice(["jsonl", "json"]), default="jsonl", help="Output format")
+@click.option(
+    "--format", type=click.Choice(["jsonl", "json"]), default="jsonl", help="Output format"
+)
 def training_export(scenario, output, filter_passed, limit, format):
     """Export training data (already in DSPy format).
 
@@ -319,8 +355,9 @@ def training_export(scenario, output, filter_passed, limit, format):
       kurt-eval training export 03_project_no_sources --output my_dataset.jsonl
       kurt-eval training export 03_project_no_sources --format json
     """
-    from framework.training_data import TrainingDataCollector
     import json
+
+    from framework.training_data import TrainingDataCollector
 
     training_dir = eval_dir / "training_data"
     collector = TrainingDataCollector(training_dir)
@@ -360,11 +397,11 @@ def training_export(scenario, output, filter_passed, limit, format):
 
     # Show sample
     if dspy_examples:
-        click.echo(f"\nSample example:")
+        click.echo("\nSample example:")
         sample = dspy_examples[0].toDict()
         click.echo(f"  Prompt: {sample['prompt'][:100]}...")
         click.echo(f"  Outcome: {'✅ Success' if sample['outcome']['success'] else '❌ Failed'}")
-        click.echo(f"\n💡 Ready to use with DSPy optimizers (MIPROv2, SIMBA, GEPA)")
+        click.echo("\n💡 Ready to use with DSPy optimizers (MIPROv2, SIMBA, GEPA)")
 
 
 @training.command("view")
@@ -412,17 +449,17 @@ def training_view(scenario, index, filter_passed):
     click.echo(f"Tool calls: {len(example.tool_calls)}")
     click.echo(f"Conversation turns: {len(example.conversation)}")
 
-    click.echo(f"\n📝 Initial Prompt:")
+    click.echo("\n📝 Initial Prompt:")
     click.echo(f"  {example.initial_prompt}")
 
-    click.echo(f"\n🔧 Tool Sequence:")
+    click.echo("\n🔧 Tool Sequence:")
     for i, call in enumerate(example.tool_calls[:10], 1):  # Show first 10
         tool_name = call.get("tool", "unknown")
         click.echo(f"  {i}. {tool_name}")
     if len(example.tool_calls) > 10:
         click.echo(f"  ... and {len(example.tool_calls) - 10} more")
 
-    click.echo(f"\n💬 Conversation Preview:")
+    click.echo("\n💬 Conversation Preview:")
     for turn in example.conversation[:5]:  # Show first 5 turns
         speaker = turn.get("speaker", "unknown")
         message = turn.get("message", "")[:100]
@@ -432,7 +469,7 @@ def training_view(scenario, index, filter_passed):
         click.echo(f"  ... {len(example.conversation) - 5} more turns")
 
     if not example.passed and example.error:
-        click.echo(f"\n❌ Error:")
+        click.echo("\n❌ Error:")
         click.secho(f"  {example.error}", fg="red")
 
 
