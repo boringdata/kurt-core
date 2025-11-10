@@ -785,3 +785,249 @@ class TestFetchWithMockedResponses:
                         assert result.exit_code == 0
                         assert "Continue?" not in result.output  # No confirmation prompt
                         assert mock_fetch.called  # Verify fetch was executed
+
+    def test_fetch_with_file_option(self, isolated_cli_runner):
+        """Test fetch with --file option for local file ingestion."""
+        runner, project_dir = isolated_cli_runner
+
+        from kurt.config import load_config
+        from kurt.db.database import get_session
+
+        session = get_session()
+        config = load_config()
+        sources_dir = config.get_absolute_sources_path()
+
+        # Create a test markdown file inside sources directory
+        test_file = sources_dir / "test_article.md"
+        test_file.parent.mkdir(parents=True, exist_ok=True)
+        test_file.write_text("# Test Article\n\nThis is test content.")
+
+        # Run fetch with --file option
+        # Note: Files are created with FETCHED status, so by default they're skipped
+        # We need --refetch to actually process them, or we can verify the document was created
+        result = runner.invoke(main, ["fetch", "--file", str(test_file), "--skip-index"])
+
+        # Check command succeeded (may show "already FETCHED" message)
+        assert result.exit_code == 0, f"Command failed: {result.output}"
+
+        # Should mention document creation
+        assert "Created" in result.output or "document" in result.output
+
+        # Verify document was created in database
+        from sqlmodel import select
+
+        from kurt.db.models import Document
+
+        stmt = select(Document).where(Document.content_path == "test_article.md")
+        doc = session.exec(stmt).first()
+
+        assert doc is not None, "Document should be created"
+        assert doc.title == "Test Article"  # Extracted from markdown heading
+        assert doc.source_type == SourceType.FILE_UPLOAD
+        assert doc.ingestion_status == IngestionStatus.FETCHED
+        assert doc.content_path == "test_article.md"
+
+    def test_fetch_with_files_option(self, isolated_cli_runner):
+        """Test fetch with --files option for multiple local files."""
+        runner, project_dir = isolated_cli_runner
+
+        from kurt.config import load_config
+        from kurt.db.database import get_session
+
+        session = get_session()
+        config = load_config()
+        sources_dir = config.get_absolute_sources_path()
+
+        # Create multiple test files inside sources directory
+        test_file1 = sources_dir / "article1.md"
+        test_file2 = sources_dir / "article2.md"
+
+        test_file1.parent.mkdir(parents=True, exist_ok=True)
+        test_file1.write_text("# First Article\n\nContent for first article.")
+        test_file2.write_text("# Second Article\n\nContent for second article.")
+
+        # Run fetch with --files option (comma-separated)
+        files_str = f"{test_file1},{test_file2}"
+        result = runner.invoke(main, ["fetch", "--files", files_str, "--skip-index"])
+
+        # Check command succeeded
+        assert result.exit_code == 0, f"Command failed: {result.output}"
+        # Should mention document creation
+        assert "Created 2 document" in result.output or "document" in result.output
+
+        # Verify both documents were created
+        from sqlmodel import select
+
+        from kurt.db.models import Document
+
+        stmt1 = select(Document).where(Document.content_path == "article1.md")
+        doc1 = session.exec(stmt1).first()
+
+        stmt2 = select(Document).where(Document.content_path == "article2.md")
+        doc2 = session.exec(stmt2).first()
+
+        assert doc1 is not None, "First document should be created"
+        assert doc2 is not None, "Second document should be created"
+        assert doc1.title == "First Article"
+        assert doc2.title == "Second Article"
+        assert doc1.source_type == SourceType.FILE_UPLOAD
+        assert doc2.source_type == SourceType.FILE_UPLOAD
+        assert doc1.ingestion_status == IngestionStatus.FETCHED
+        assert doc2.ingestion_status == IngestionStatus.FETCHED
+
+    def test_fetch_file_outside_sources_directory(self, isolated_cli_runner):
+        """Test fetch copies files outside sources/ to sources/local/."""
+        runner, project_dir = isolated_cli_runner
+
+        import tempfile
+        from pathlib import Path
+
+        from kurt.config import load_config
+        from kurt.db.database import get_session
+
+        session = get_session()
+        config = load_config()
+        sources_dir = config.get_absolute_sources_path()
+
+        # Create a temporary file OUTSIDE sources directory
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as tmp:
+            tmp.write("# External Article\n\nThis file is outside sources directory.")
+            tmp_path = Path(tmp.name)
+
+        try:
+            # Run fetch with external file
+            result = runner.invoke(main, ["fetch", "--file", str(tmp_path), "--skip-index"])
+
+            # Check command succeeded
+            assert result.exit_code == 0, f"Command failed: {result.output}"
+            assert "Copied" in result.output  # Should mention copying to sources/local/
+            assert "sources/local/" in result.output
+
+            # Verify file was copied to sources/local/
+            expected_copy = sources_dir / "local" / tmp_path.name
+            assert expected_copy.exists(), "File should be copied to sources/local/"
+
+            # Verify document was created with correct path
+            from sqlmodel import select
+
+            from kurt.db.models import Document
+
+            expected_content_path = f"local/{tmp_path.name}"
+            stmt = select(Document).where(Document.content_path == expected_content_path)
+            doc = session.exec(stmt).first()
+
+            assert doc is not None, "Document should be created"
+            assert doc.title == "External Article"
+            assert doc.source_type == SourceType.FILE_UPLOAD
+            assert doc.ingestion_status == IngestionStatus.FETCHED
+
+        finally:
+            # Clean up temporary file
+            if tmp_path.exists():
+                tmp_path.unlink()
+
+    def test_fetch_file_nonexistent(self, isolated_cli_runner):
+        """Test fetch with non-existent file returns error."""
+        runner, project_dir = isolated_cli_runner
+
+        # Run fetch with non-existent file
+        result = runner.invoke(
+            main, ["fetch", "--file", "/tmp/nonexistent_file.md", "--skip-index"]
+        )
+
+        # Check command shows error
+        assert "File not found" in result.output or "Error" in result.output
+
+    def test_fetch_file_title_from_filename(self, isolated_cli_runner):
+        """Test fetch extracts title from filename when no markdown heading."""
+        runner, project_dir = isolated_cli_runner
+
+        from kurt.config import load_config
+        from kurt.db.database import get_session
+
+        session = get_session()
+        config = load_config()
+        sources_dir = config.get_absolute_sources_path()
+
+        # Create a test file WITHOUT markdown heading
+        test_file = sources_dir / "my-article-title.md"
+        test_file.parent.mkdir(parents=True, exist_ok=True)
+        test_file.write_text("Just plain text without a heading.")
+
+        # Run fetch
+        result = runner.invoke(main, ["fetch", "--file", str(test_file), "--skip-index"])
+
+        # Check command succeeded
+        assert result.exit_code == 0, f"Command failed: {result.output}"
+
+        # Verify title was extracted from filename
+        from sqlmodel import select
+
+        from kurt.db.models import Document
+
+        stmt = select(Document).where(Document.content_path == "my-article-title.md")
+        doc = session.exec(stmt).first()
+
+        assert doc is not None
+        assert doc.title == "my-article-title"  # Filename without extension
+
+    def test_fetch_file_and_url_separate_calls(self, isolated_cli_runner):
+        """Test fetch with --file and --url in separate calls."""
+        runner, project_dir = isolated_cli_runner
+
+        from kurt.config import load_config
+        from kurt.db.database import get_session
+
+        session = get_session()
+        config = load_config()
+        sources_dir = config.get_absolute_sources_path()
+
+        # Create a test file
+        test_file = sources_dir / "local_article.md"
+        test_file.parent.mkdir(parents=True, exist_ok=True)
+        test_file.write_text("# Local Article\n\nLocal content.")
+
+        # First, fetch the file
+        result1 = runner.invoke(main, ["fetch", "--file", str(test_file), "--skip-index"])
+        assert result1.exit_code == 0, f"File fetch failed: {result1.output}"
+
+        # Then, fetch the URL with mocked trafilatura
+        with patch("trafilatura.fetch_url") as mock_fetch:
+            with patch("trafilatura.extract") as mock_extract:
+                with patch("trafilatura.extract_metadata") as mock_metadata:
+                    mock_fetch.return_value = "<html><body>URL content</body></html>"
+                    mock_extract.return_value = "URL content"
+                    mock_metadata.return_value = None
+
+                    result2 = runner.invoke(
+                        main,
+                        [
+                            "fetch",
+                            "--url",
+                            "https://example.com/article",
+                            "--engine",
+                            "trafilatura",
+                            "--skip-index",
+                        ],
+                    )
+                    assert result2.exit_code == 0, f"URL fetch failed: {result2.output}"
+
+        # Verify both documents were created
+        from sqlmodel import select
+
+        from kurt.db.models import Document
+
+        # Check file document
+        stmt_file = select(Document).where(Document.content_path == "local_article.md")
+        doc_file = session.exec(stmt_file).first()
+        assert doc_file is not None
+        assert doc_file.source_type == SourceType.FILE_UPLOAD
+        assert doc_file.title == "Local Article"
+        assert doc_file.ingestion_status == IngestionStatus.FETCHED
+
+        # Check URL document
+        stmt_url = select(Document).where(Document.source_url == "https://example.com/article")
+        doc_url = session.exec(stmt_url).first()
+        assert doc_url is not None
+        assert doc_url.source_type == SourceType.URL
+        assert doc_url.ingestion_status == IngestionStatus.FETCHED

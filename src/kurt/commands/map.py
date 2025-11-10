@@ -9,7 +9,18 @@ console = Console()
 
 @click.group()
 def map_cmd():
-    """Discover content (creates NOT_FETCHED documents, no download/LLM)."""
+    """
+    Discover content without downloading or using LLM.
+
+    \b
+    Creates NOT_FETCHED document records from:
+    - Web sitemaps or crawling (map url)
+    - Local folders (map folder)
+    - CMS platforms (map cms)
+
+    \b
+    Workflow: map → cluster-urls → fetch --in-cluster "ClusterName"
+    """
     pass
 
 
@@ -97,8 +108,20 @@ def map_url(
     priority: int,
 ):
     """
-    Discover content from web sources (auto-detects sitemap, falls back to crawl).
+    Discover URLs from web sources without downloading content.
 
+    \b
+    Discovery methods:
+    1. Sitemap (preferred): Auto-detects at /sitemap.xml
+    2. Crawling (fallback): Spiders the site if no sitemap found
+
+    \b
+    What it creates:
+    - Document records with status: NOT_FETCHED
+    - No content download, no LLM usage
+    - Fast discovery of entire site structure
+
+    \b
     Examples:
         # Discover from sitemap
         kurt map url https://example.com
@@ -264,8 +287,15 @@ def map_folder(
     output_format: str,
 ):
     """
-    Discover content from local folder (scans .md and .mdx only).
+    Discover markdown files from local folder.
 
+    \b
+    What it scans:
+    - Recursively finds .md and .mdx files
+    - Creates NOT_FETCHED document records
+    - No content reading or LLM usage
+
+    \b
     Examples:
         # Discover from folder
         kurt map folder ./docs

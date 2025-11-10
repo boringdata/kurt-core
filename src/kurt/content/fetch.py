@@ -279,27 +279,22 @@ def _detect_source_type(source_url: str) -> tuple[str, dict]:
         >>> _detect_source_type("sanity/prod/article/vibe-coding-guide")
         ('cms', {'platform': 'sanity', 'instance': 'prod', 'schema': 'article', 'slug': 'vibe-coding-guide'})
     """
-    if source_url.startswith(('http://', 'https://')):
-        return 'web', {'url': source_url}
+    if source_url.startswith(("http://", "https://")):
+        return "web", {"url": source_url}
 
     # Assume CMS format: platform/instance/schema/slug
-    parts = source_url.split('/', 3)
+    parts = source_url.split("/", 3)
     if len(parts) == 4:
-        return 'cms', {
-            'platform': parts[0],
-            'instance': parts[1],
-            'schema': parts[2],
-            'slug': parts[3]
+        return "cms", {
+            "platform": parts[0],
+            "instance": parts[1],
+            "schema": parts[2],
+            "slug": parts[3],
         }
 
     # Also support legacy 3-part format for backward compatibility
     if len(parts) == 3:
-        return 'cms', {
-            'platform': parts[0],
-            'instance': parts[1],
-            'schema': None,
-            'slug': parts[2]
-        }
+        return "cms", {"platform": parts[0], "instance": parts[1], "schema": None, "slug": parts[2]}
 
     raise ValueError(
         f"Invalid source URL format: {source_url}. "
@@ -413,16 +408,20 @@ def _fetch_from_cms(platform: str, instance: str, doc: Document) -> tuple[str, d
 
         # Extract metadata
         metadata_dict = {
-            'title': cms_document.title,
-            'author': cms_document.author,
-            'date': cms_document.published_date,
-            'description': cms_document.metadata.get('description') if cms_document.metadata else None,
+            "title": cms_document.title,
+            "author": cms_document.author,
+            "date": cms_document.published_date,
+            "description": cms_document.metadata.get("description")
+            if cms_document.metadata
+            else None,
         }
 
         return cms_document.content, metadata_dict
 
     except Exception as e:
-        raise ValueError(f"Failed to fetch from {platform}/{instance} (cms_document_id: {doc.cms_document_id}): {e}")
+        raise ValueError(
+            f"Failed to fetch from {platform}/{instance} (cms_document_id: {doc.cms_document_id}): {e}"
+        )
 
 
 def add_document(url: str, title: str = None) -> UUID:
@@ -542,12 +541,10 @@ def fetch_document(identifier: str | UUID, fetch_engine: str = None) -> dict:
         # Detect source type (web vs CMS)
         source_type, parsed_data = _detect_source_type(doc.source_url)
 
-        if source_type == 'cms':
+        if source_type == "cms":
             # Fetch from CMS using cms_document_id field
             content, metadata_dict = _fetch_from_cms(
-                platform=parsed_data['platform'],
-                instance=parsed_data['instance'],
-                doc=doc
+                platform=parsed_data["platform"], instance=parsed_data["instance"], doc=doc
             )
         else:
             # Fetch from web using appropriate engine
@@ -598,13 +595,13 @@ def fetch_document(identifier: str | UUID, fetch_engine: str = None) -> dict:
         config = load_config()
 
         # Choose path based on source type
-        if source_type == 'cms':
+        if source_type == "cms":
             # CMS: sources/cms/{platform}/{instance}/{cms_document_id}.md
             content_path = _create_cms_content_path(
-                platform=parsed_data['platform'],
-                instance=parsed_data['instance'],
+                platform=parsed_data["platform"],
+                instance=parsed_data["instance"],
                 doc_id=doc.cms_document_id,
-                config=config
+                config=config,
             )
         else:
             # Web: sources/{domain}/{path}/page_name.md
@@ -718,6 +715,7 @@ def fetch_documents_batch(
 def fetch_content(
     include_pattern: str = None,
     urls: str = None,
+    files: str = None,
     ids: str = None,
     in_cluster: str = None,
     with_status: str = None,
@@ -742,6 +740,7 @@ def fetch_content(
     Args:
         include_pattern: Glob pattern matching source_url or content_path
         urls: Comma-separated list of source URLs
+        files: Comma-separated list of local file paths (creates documents, skips fetch)
         ids: Comma-separated list of document IDs
         in_cluster: Cluster name to fetch from
         with_status: Status filter (NOT_FETCHED | FETCHED | ERROR)
@@ -772,9 +771,11 @@ def fetch_content(
     from kurt.db.models import Document, IngestionStatus
 
     # Validate: at least one filter required
-    if not (include_pattern or urls or ids or in_cluster or with_status or with_content_type):
+    if not (
+        include_pattern or urls or files or ids or in_cluster or with_status or with_content_type
+    ):
         raise ValueError(
-            "Requires at least ONE filter: --include, --urls, --ids, --in-cluster, --with-status, or --with-content-type"
+            "Requires at least ONE filter: --include, --url, --urls, --file, --files, --ids, --in-cluster, --with-status, or --with-content-type"
         )
 
     warnings = []
@@ -792,10 +793,117 @@ def fetch_content(
         doc_ids = [UUID(id.strip()) for id in ids.split(",")]
         stmt = stmt.where(Document.id.in_(doc_ids))
 
-    # Filter by URLs
+    # Filter by URLs (auto-create documents that don't exist)
     if urls:
         url_list = [url.strip() for url in urls.split(",")]
+
+        # Check which URLs already exist in database
+        existing_urls_stmt = select(Document).where(Document.source_url.in_(url_list))
+        existing_docs = list(session.exec(existing_urls_stmt).all())
+        existing_urls = {doc.source_url for doc in existing_docs}
+
+        # Auto-create documents for URLs that don't exist
+        new_urls = [url for url in url_list if url not in existing_urls]
+        if new_urls:
+            for url in new_urls:
+                add_document(url)
+            # Commit the new documents
+            session.commit()
+            warnings.append(f"Auto-created {len(new_urls)} document(s) for new URLs")
+
+        # Now filter for all URLs (including newly created ones)
         stmt = stmt.where(Document.source_url.in_(url_list))
+
+    # Handle local files (create documents, mark as FETCHED since content already exists)
+    if files:
+        from pathlib import Path
+
+        file_list = [f.strip() for f in files.split(",")]
+        config = load_config()
+        source_base = config.get_absolute_sources_path()
+
+        created_file_docs = []
+        for file_path_str in file_list:
+            file_path = Path(file_path_str).resolve()
+
+            # Validate file exists
+            if not file_path.exists():
+                errors.append(f"File not found: {file_path_str}")
+                continue
+
+            if not file_path.is_file():
+                errors.append(f"Not a file: {file_path_str}")
+                continue
+
+            # Check if document already exists for this file
+            # Try to find by content_path (relative to sources directory)
+            try:
+                relative_path = file_path.relative_to(source_base)
+                content_path_str = str(relative_path)
+            except ValueError:
+                # File is outside sources directory - copy it there
+                # Create a reasonable path structure
+                file_name = file_path.name
+                dest_path = source_base / "local" / file_name
+                dest_path.parent.mkdir(parents=True, exist_ok=True)
+
+                # Copy file content
+                import shutil
+
+                shutil.copy2(file_path, dest_path)
+
+                relative_path = dest_path.relative_to(source_base)
+                content_path_str = str(relative_path)
+                warnings.append(f"Copied {file_path.name} to sources/local/")
+
+            # Check if document exists
+            existing_stmt = select(Document).where(Document.content_path == content_path_str)
+            existing_doc = session.exec(existing_stmt).first()
+
+            if existing_doc:
+                created_file_docs.append(existing_doc)
+                continue
+
+            # Create new document
+            # Extract title from filename (without extension)
+            title = file_path.stem
+
+            # Read content to get a basic description
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                    # Use first line as description if it looks like a title
+                    first_line = content.split("\n")[0].strip()
+                    if first_line.startswith("#"):
+                        title = first_line.lstrip("#").strip()
+            except Exception:
+                content = None
+
+            new_doc = Document(
+                title=title,
+                source_type=SourceType.FILE_UPLOAD,
+                content_path=content_path_str,
+                ingestion_status=IngestionStatus.FETCHED,  # Already have the file
+            )
+
+            session.add(new_doc)
+            created_file_docs.append(new_doc)
+
+        # Commit file documents
+        if created_file_docs:
+            session.commit()
+            # Refresh to get IDs
+            for doc in created_file_docs:
+                session.refresh(doc)
+
+            new_file_count = len([d for d in created_file_docs if d.id])
+            if new_file_count > 0:
+                warnings.append(f"Created {new_file_count} document(s) for local files")
+
+        # Filter for these documents
+        if created_file_docs:
+            file_doc_ids = [doc.id for doc in created_file_docs if doc.id]
+            stmt = stmt.where(Document.id.in_(file_doc_ids))
 
     # Filter by cluster (JOIN with edges and clusters tables)
     if in_cluster:

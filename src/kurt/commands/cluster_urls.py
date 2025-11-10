@@ -36,22 +36,28 @@ def cluster_urls_cmd(
     output_format: str,
 ):
     """
-    Organize documents into topics AND classify content types (single LLM call).
+    Organize documents into topic clusters and classify content types.
 
-    INCREMENTAL CLUSTERING:
-    By default, refines existing clusters by passing them to the LLM, which can:
-    - Keep/refine valid clusters
-    - Split large clusters
-    - Merge similar clusters
-    - Add new clusters for new content
-    - Remove outdated clusters
+    \b
+    What it does:
+    - Groups documents by topic (using URLs only, no content needed)
+    - Classifies content types (tutorial, guide, blog, etc.)
+    - Works on ANY status: NOT_FETCHED, FETCHED, or ERROR
+    - Single LLM call for efficiency
 
-    Use --force to ignore existing clusters and create fresh.
+    \b
+    Incremental clustering (default):
+    - Refines existing clusters intelligently
+    - Keeps/refines valid clusters
+    - Splits large clusters or merges similar ones
+    - Adds clusters for new content
+    - Removes outdated clusters
+    Use --force to ignore existing clusters and start fresh.
 
-    Works on ANY status (NOT_FETCHED, FETCHED, ERROR) - no content needed.
+    \b
+    Workflow: map → cluster-urls → fetch --in-cluster "ClusterName"
 
-    Primary workflow: map → cluster-urls → fetch --in-cluster
-
+    \b
     Examples:
         # Refine existing clusters + classify content types
         kurt cluster-urls

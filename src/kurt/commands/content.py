@@ -18,7 +18,19 @@ logger = logging.getLogger(__name__)
 
 @click.group()
 def content():
-    """Manage content ingestion and documents."""
+    """
+    Manage documents and metadata.
+
+    \b
+    Available commands:
+    - list: View all documents with filters
+    - get: View single document details
+    - index: Extract metadata with LLM
+    - delete: Remove documents
+    - stats: View statistics
+    - list-clusters: View topic clusters
+    - sync-metadata: Update file frontmatter
+    """
     pass
 
 
@@ -52,14 +64,20 @@ def content():
 )
 def index(doc_id: str, include_pattern: str, all: bool, force: bool):
     """
-    Extract metadata from document(s).
+    Extract metadata from FETCHED documents using LLM analysis.
 
-    Runs LLM-based content analysis to extract:
-    - Content type (tutorial, guide, blog, etc.)
-    - Primary topics
-    - Tools/technologies mentioned
-    - Structural elements (code examples, step-by-step, narrative)
+    \b
+    What it extracts:
+    - Content type (tutorial, guide, blog, reference doc, etc.)
+    - Primary topics and themes
+    - Tools and technologies mentioned
+    - Structural elements (code examples, step-by-step instructions, etc.)
 
+    \b
+    Note: Only works on FETCHED documents (use 'kurt fetch' first).
+    Cost: ~$0.005 per document (OpenAI API).
+
+    \b
     Examples:
         # Index single document
         kurt content index 44ea066e
@@ -73,8 +91,8 @@ def index(doc_id: str, include_pattern: str, all: bool, force: bool):
         # Re-index already indexed documents
         kurt content index --include "*/docs/*" --force
     """
-    from kurt.document import list_documents_for_indexing
     from kurt.content.index import batch_extract_document_metadata, extract_document_metadata
+    from kurt.document import list_documents_for_indexing
 
     try:
         # Get documents to index using service layer function

@@ -18,7 +18,16 @@ logger = logging.getLogger(__name__)
     "include_pattern",
     help="FILTER: Glob pattern matching source_url or content_path (repeatable)",
 )
-@click.option("--urls", help="FILTER: Comma-separated list of source URLs")
+@click.option("--url", help="FILTER: Single source URL (auto-creates if doesn't exist)")
+@click.option(
+    "--urls", help="FILTER: Comma-separated list of source URLs (auto-creates if don't exist)"
+)
+@click.option(
+    "--file", "file_path", help="FILTER: Local file path to index (skips fetch, only indexes)"
+)
+@click.option(
+    "--files", "files_paths", help="FILTER: Comma-separated list of local file paths to index"
+)
 @click.option("--ids", help="FILTER: Comma-separated list of document IDs")
 @click.option("--in-cluster", help="FILTER: All documents in specified cluster")
 @click.option(
@@ -80,7 +89,10 @@ logger = logging.getLogger(__name__)
 )
 def fetch_cmd(
     include_pattern: str,
+    url: str,
     urls: str,
+    file_path: str,
+    files_paths: str,
     ids: str,
     in_cluster: str,
     with_status: str,
@@ -96,21 +108,40 @@ def fetch_cmd(
     output_format: str,
 ):
     """
-    Download + index content (atomic: fetch+index unless --skip-index).
+    Fetch and index content from URLs or local files.
 
-    Updates status: NOT_FETCHED → FETCHED or ERROR
-    Auto rate limiting: exponential backoff on 429/503 errors
-    Progress tracking: shows processed/total, Ctrl+C graceful shutdown
+    \b
+    What it does:
+    - Downloads content from web URLs using Trafilatura or Firecrawl
+    - Indexes local markdown/text files
+    - Extracts metadata with LLM (unless --skip-index)
+    - Auto-creates document records (no need to run 'kurt map' first)
+    - Updates document status: NOT_FETCHED → FETCHED or ERROR
 
-    Requires at least ONE filter:
-      --include, --urls, --ids, --in-cluster, --with-status, or --with-content-type
+    \b
+    Usage patterns:
+    1. Single URL:      kurt fetch --url "https://example.com/article"
+    2. Multiple URLs:   kurt fetch --urls "url1,url2,url3"
+    3. Local file:      kurt fetch --file "./docs/article.md"
+    4. Pattern match:   kurt fetch --include "*/docs/*"
+    5. By cluster:      kurt fetch --in-cluster "Tutorials"
 
+    \b
     Examples:
         # Fetch by pattern
         kurt fetch --include "*/docs/*"
 
-        # Fetch specific URLs
+        # Fetch single URL (auto-creates if doesn't exist)
+        kurt fetch --url "https://example.com/article"
+
+        # Fetch specific URLs (auto-creates if don't exist)
         kurt fetch --urls "https://example.com/page1,https://example.com/page2"
+
+        # Index local file (skips fetch, only indexes)
+        kurt fetch --file "./docs/article.md"
+
+        # Index multiple local files
+        kurt fetch --files "./docs/page1.md,./docs/page2.md"
 
         # Fetch by cluster
         kurt fetch --in-cluster "Tutorials"
@@ -138,11 +169,28 @@ def fetch_cmd(
     """
     from kurt.content.fetch import fetch_content, fetch_documents_batch
 
+    # Merge --url into --urls (--url is just convenience for single URL)
+    if url:
+        if urls:
+            # Combine --url with --urls
+            urls = f"{url},{urls}"
+        else:
+            urls = url
+
+    # Merge --file into --files (--file is just convenience for single file)
+    if file_path:
+        if files_paths:
+            # Combine --file with --files
+            files_paths = f"{file_path},{files_paths}"
+        else:
+            files_paths = file_path
+
     # Call ingestion layer for filtering and validation
     try:
         result = fetch_content(
             include_pattern=include_pattern,
             urls=urls,
+            files=files_paths,
             ids=ids,
             in_cluster=in_cluster,
             with_status=with_status,
@@ -155,12 +203,18 @@ def fetch_cmd(
             refetch=refetch,
         )
     except ValueError as e:
-        console.print(f"[red]Error:[/red] {e}")
-        console.print("\n[dim]Examples:[/dim]")
-        console.print("  kurt fetch --include '*/docs/*'")
-        console.print("  kurt fetch --in-cluster 'Tutorials'")
-        console.print("  kurt fetch --with-status NOT_FETCHED")
-        raise click.Abort()
+        # If no filter provided, show full help
+        if "Requires at least ONE filter" in str(e):
+            ctx = click.get_current_context()
+            click.echo(ctx.get_help())
+            ctx.exit()
+        else:
+            console.print(f"[red]Error:[/red] {e}")
+            console.print("\n[dim]Examples:[/dim]")
+            console.print("  kurt fetch --include '*/docs/*'")
+            console.print("  kurt fetch --in-cluster 'Tutorials'")
+            console.print("  kurt fetch --with-status NOT_FETCHED")
+            raise click.Abort()
 
     # Display warnings
     for warning in result["warnings"]:
@@ -276,12 +330,13 @@ def fetch_cmd(
     # Display fetch configuration
     # Resolve engine (None means use default from config)
     from kurt.content.fetch import _get_fetch_engine
+
     resolved_engine = _get_fetch_engine(override=engine)
 
     engine_displays = {
         "trafilatura": "Trafilatura (free)",
         "firecrawl": "Firecrawl (API)",
-        "httpx": "httpx (fetching) + trafilatura (extraction)"
+        "httpx": "httpx (fetching) + trafilatura (extraction)",
     }
     engine_display = engine_displays.get(resolved_engine, f"{resolved_engine} (unknown)")
     console.print(

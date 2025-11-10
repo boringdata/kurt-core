@@ -20,6 +20,11 @@ except ImportError:
     DBOS = None
     DBOS_AVAILABLE = False
 
+# Suppress DBOS logging
+import logging
+
+logging.getLogger("dbos").setLevel(logging.ERROR)
+
 # Global DBOS instance
 _dbos_initialized = False
 
@@ -59,12 +64,20 @@ def init_dbos(db_path: str | None = None) -> None:
     config = DBOSConfig(
         name="kurt",
         database_url=db_url,
+        log_level="ERROR",  # Suppress INFO/WARNING logs
+        run_admin_server=False,  # Disable admin server to avoid port conflicts
     )
 
     # Create DBOS instance and launch it
     try:
-        _dbos_instance = DBOS(config=config)
-        DBOS.launch()  # Launch the system database
+        import contextlib
+        import io
+
+        # Suppress DBOS stdout messages during initialization
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            _dbos_instance = DBOS(config=config)
+            DBOS.launch()  # Launch the system database
+
         _dbos_initialized = True
 
         # Register cleanup handler to shutdown DBOS properly
