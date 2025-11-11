@@ -17,25 +17,86 @@ def test_cli_imports():
 
 def test_command_imports():
     """Test that all command modules can be imported."""
-    commands = [
-        "cluster_urls",
-        "cms",
-        "content",
-        "fetch",
-        "map",
-        "migrate",
-        "project",
-        "research",
+    # Test top-level command modules
+    top_level_commands = [
         "status",
     ]
 
-    for cmd in commands:
+    for cmd in top_level_commands:
         try:
             __import__(f"kurt.commands.{cmd}")
         except ImportError as e:
             pytest.fail(f"Failed to import kurt.commands.{cmd}: {e}")
         except NameError as e:
             pytest.fail(f"NameError in kurt.commands.{cmd}: {e}")
+
+    # Test command groups
+    command_groups = [
+        "content",
+        "integrations",
+        "admin",
+    ]
+
+    for group in command_groups:
+        try:
+            __import__(f"kurt.commands.{group}")
+        except ImportError as e:
+            pytest.fail(f"Failed to import kurt.commands.{group}: {e}")
+        except NameError as e:
+            pytest.fail(f"NameError in kurt.commands.{group}: {e}")
+
+    # Test subcommands within content group
+    content_commands = [
+        "cluster",
+        "fetch",
+        "map_cmd",
+        "index",
+        "list_cmd",
+        "get",
+        "delete",
+        "stats",
+        "list_clusters",
+        "sync_metadata",
+    ]
+
+    for cmd in content_commands:
+        try:
+            __import__(f"kurt.commands.content.{cmd}")
+        except ImportError as e:
+            pytest.fail(f"Failed to import kurt.commands.content.{cmd}: {e}")
+        except NameError as e:
+            pytest.fail(f"NameError in kurt.commands.content.{cmd}: {e}")
+
+    # Test subcommands within integrations group
+    integration_commands = [
+        "analytics",
+        "cms",
+        "research",
+    ]
+
+    for cmd in integration_commands:
+        try:
+            __import__(f"kurt.commands.integrations.{cmd}")
+        except ImportError as e:
+            pytest.fail(f"Failed to import kurt.commands.integrations.{cmd}: {e}")
+        except NameError as e:
+            pytest.fail(f"NameError in kurt.commands.integrations.{cmd}: {e}")
+
+    # Test subcommands within admin group
+    admin_commands = [
+        "feedback",
+        "migrate",
+        "telemetry",
+        "project",
+    ]
+
+    for cmd in admin_commands:
+        try:
+            __import__(f"kurt.commands.admin.{cmd}")
+        except ImportError as e:
+            pytest.fail(f"Failed to import kurt.commands.admin.{cmd}: {e}")
+        except NameError as e:
+            pytest.fail(f"NameError in kurt.commands.admin.{cmd}: {e}")
 
 
 def test_utils_imports():

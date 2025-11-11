@@ -2,9 +2,7 @@
 
 import json
 
-import pytest
-
-from kurt.config.base import get_config_file_path, load_config
+from kurt.config.base import get_config_file_path
 from kurt.config.utils import (
     config_exists_for_prefix,
     get_available_keys,
@@ -197,18 +195,14 @@ class TestSavePrefixedConfig:
     def test_save_config_removes_old_fields(self, tmp_project):
         """Test saving config removes old fields for same prefix."""
         # Save initial config
-        save_prefixed_config("ANALYTICS", {
-            "posthog": {"old_key": "old_value"}
-        }, levels=1)
+        save_prefixed_config("ANALYTICS", {"posthog": {"old_key": "old_value"}}, levels=1)
 
         # Verify it exists
         loaded = load_prefixed_config("ANALYTICS", levels=1)
         assert "old_key" in loaded["posthog"]
 
         # Save new config (should remove old fields)
-        save_prefixed_config("ANALYTICS", {
-            "posthog": {"new_key": "new_value"}
-        }, levels=1)
+        save_prefixed_config("ANALYTICS", {"posthog": {"new_key": "new_value"}}, levels=1)
 
         # Verify old fields removed
         loaded = load_prefixed_config("ANALYTICS", levels=1)
@@ -218,18 +212,14 @@ class TestSavePrefixedConfig:
     def test_save_config_preserves_other_prefixes(self, tmp_project):
         """Test saving config preserves fields from other prefixes."""
         # Add CMS config
-        save_prefixed_config("CMS", {
-            "sanity": {"prod": {"project_id": "sanity123"}}
-        }, levels=2)
+        save_prefixed_config("CMS", {"sanity": {"prod": {"project_id": "sanity123"}}}, levels=2)
 
         # Verify CMS exists
         cms_config = load_prefixed_config("CMS", levels=2)
         assert cms_config["sanity"]["prod"]["project_id"] == "sanity123"
 
         # Save ANALYTICS config (should preserve CMS)
-        save_prefixed_config("ANALYTICS", {
-            "posthog": {"project_id": "phc_456"}
-        }, levels=1)
+        save_prefixed_config("ANALYTICS", {"posthog": {"project_id": "phc_456"}}, levels=1)
 
         # Verify both exist
         cms_config = load_prefixed_config("CMS", levels=2)
@@ -240,17 +230,19 @@ class TestSavePrefixedConfig:
     def test_save_config_updates_existing(self, tmp_project):
         """Test saving config updates existing fields."""
         # Save initial config
-        save_prefixed_config("ANALYTICS", {
-            "posthog": {"project_id": "phc_old123"}
-        }, levels=1)
+        save_prefixed_config("ANALYTICS", {"posthog": {"project_id": "phc_old123"}}, levels=1)
 
         # Update it
-        save_prefixed_config("ANALYTICS", {
-            "posthog": {
-                "project_id": "phc_new123",
-                "api_key": "phx_new456",
-            }
-        }, levels=1)
+        save_prefixed_config(
+            "ANALYTICS",
+            {
+                "posthog": {
+                    "project_id": "phc_new123",
+                    "api_key": "phx_new456",
+                }
+            },
+            levels=1,
+        )
 
         # Verify update
         loaded = load_prefixed_config("ANALYTICS", levels=1)
@@ -330,23 +322,11 @@ class TestNestedValueOperations:
 
         set_nested_value(config, ["sanity", "prod", "project_id"], "abc123")
 
-        assert config == {
-            "sanity": {
-                "prod": {
-                    "project_id": "abc123"
-                }
-            }
-        }
+        assert config == {"sanity": {"prod": {"project_id": "abc123"}}}
 
     def test_set_nested_value_updates_existing(self, tmp_project):
         """Test setting nested value updates existing value."""
-        config = {
-            "sanity": {
-                "prod": {
-                    "project_id": "old123"
-                }
-            }
-        }
+        config = {"sanity": {"prod": {"project_id": "old123"}}}
 
         set_nested_value(config, ["sanity", "prod", "project_id"], "new123")
 
@@ -375,9 +355,7 @@ class TestConfigExists:
 
     def test_config_exists_true(self, tmp_project):
         """Test config_exists_for_prefix when config exists."""
-        save_prefixed_config("ANALYTICS", {
-            "posthog": {"project_id": "phc_123"}
-        }, levels=1)
+        save_prefixed_config("ANALYTICS", {"posthog": {"project_id": "phc_123"}}, levels=1)
 
         assert config_exists_for_prefix("ANALYTICS", levels=1) is True
 
@@ -388,9 +366,7 @@ class TestConfigExists:
     def test_config_exists_empty_after_removal(self, tmp_project):
         """Test config_exists_for_prefix after all fields removed."""
         # Add config
-        save_prefixed_config("ANALYTICS", {
-            "posthog": {"project_id": "phc_123"}
-        }, levels=1)
+        save_prefixed_config("ANALYTICS", {"posthog": {"project_id": "phc_123"}}, levels=1)
 
         assert config_exists_for_prefix("ANALYTICS", levels=1) is True
 
@@ -469,9 +445,7 @@ class TestGetAvailableKeys:
                 "prod": {"key1": "val1"},
                 "staging": {"key2": "val2"},
             },
-            "contentful": {
-                "default": {"key3": "val3"}
-            }
+            "contentful": {"default": {"key3": "val3"}},
         }
 
         # Get all second-level keys across all platforms
@@ -566,19 +540,13 @@ class TestIntegration:
     def test_multiple_prefixes_isolation(self, tmp_project):
         """Test that multiple prefixes work independently."""
         # Save CMS config
-        save_prefixed_config("CMS", {
-            "sanity": {"prod": {"project_id": "cms123"}}
-        }, levels=2)
+        save_prefixed_config("CMS", {"sanity": {"prod": {"project_id": "cms123"}}}, levels=2)
 
         # Save Analytics config
-        save_prefixed_config("ANALYTICS", {
-            "posthog": {"project_id": "analytics456"}
-        }, levels=1)
+        save_prefixed_config("ANALYTICS", {"posthog": {"project_id": "analytics456"}}, levels=1)
 
         # Save Research config
-        save_prefixed_config("RESEARCH", {
-            "perplexity": {"api_key": "research789"}
-        }, levels=1)
+        save_prefixed_config("RESEARCH", {"perplexity": {"api_key": "research789"}}, levels=1)
 
         # Verify all exist
         assert config_exists_for_prefix("CMS", levels=2) is True
@@ -595,9 +563,9 @@ class TestIntegration:
         assert research["perplexity"]["api_key"] == "research789"
 
         # Update one shouldn't affect others
-        save_prefixed_config("ANALYTICS", {
-            "posthog": {"project_id": "updated_analytics"}
-        }, levels=1)
+        save_prefixed_config(
+            "ANALYTICS", {"posthog": {"project_id": "updated_analytics"}}, levels=1
+        )
 
         # CMS and Research should be unchanged
         cms_after = load_prefixed_config("CMS", levels=2)

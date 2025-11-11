@@ -18,6 +18,7 @@ Key Functions:
 """
 
 import asyncio
+import logging
 import os
 from pathlib import Path
 from urllib.parse import urlparse
@@ -29,6 +30,8 @@ from dotenv import find_dotenv, load_dotenv
 from kurt.config import KurtConfig, load_config
 from kurt.db.database import get_session
 from kurt.db.models import Document, IngestionStatus, SourceType
+
+logger = logging.getLogger(__name__)
 
 # Load environment variables from .env file
 # Search from current working directory upwards
@@ -387,8 +390,8 @@ def _fetch_from_cms(platform: str, instance: str, doc: Document) -> tuple[str, d
     Raises:
         ValueError: If CMS fetch fails or cms_document_id is missing
     """
-    from kurt.cms import get_adapter
-    from kurt.cms.config import get_platform_config
+    from kurt.integrations.cms import get_adapter
+    from kurt.integrations.cms.config import get_platform_config
 
     # Validate cms_document_id is present
     if not doc.cms_document_id:
@@ -695,11 +698,21 @@ def fetch_documents_batch(
         successful = [r for r in results if r["success"]]
         failed = [r for r in results if not r["success"]]
     """
+    # Log batch fetch start
+    logger.info(f"Starting batch fetch for {len(document_ids)} documents")
+    logger.info(f"  Concurrency: {max_concurrent}")
+
     # Show warning if using Trafilatura for large batch
     engine = _get_fetch_engine(override=fetch_engine)
+    logger.info(f"  Fetch engine: {engine}")
+
     if engine == "trafilatura" and len(document_ids) > 10:
-        print("\n⚠️  Warning: Fetching large volumes with Trafilatura may encounter rate limits.")
-        print("   For better reliability with large batches, consider using Firecrawl:")
+        warning_msg = (
+            "⚠️  Warning: Fetching large volumes with Trafilatura may encounter rate limits. "
+            "For better reliability with large batches, consider using Firecrawl."
+        )
+        logger.warning(warning_msg)
+        print(f"\n{warning_msg}")
         print('   1. Update kurt.config: INGESTION_FETCH_ENGINE="firecrawl"')
         print("   2. Add FIRECRAWL_API_KEY to your .env file")
         print("   Get your API key at: https://firecrawl.dev\n")
@@ -707,9 +720,27 @@ def fetch_documents_batch(
     async def _batch_fetch():
         semaphore = asyncio.Semaphore(max_concurrent)
         tasks = [_fetch_one_async(doc_id, semaphore, fetch_engine) for doc_id in document_ids]
-        return await asyncio.gather(*tasks)
+        results = await asyncio.gather(*tasks)
 
-    return asyncio.run(_batch_fetch())
+        # Log progress every 10 documents or at completion
+        successful_count = sum(1 for r in results if r["success"])
+        failed_count = len(results) - successful_count
+        logger.info(
+            f"Fetching complete: {successful_count} successful, {failed_count} failed [{len(results)}/{len(document_ids)}]"
+        )
+
+        return results
+
+    results = asyncio.run(_batch_fetch())
+
+    # Log final summary
+    successful = [r for r in results if r["success"]]
+    failed = [r for r in results if not r["success"]]
+    logger.info(f"✓ Fetched {len(successful)}/{len(results)} documents successfully")
+    if failed:
+        logger.info(f"  Failed: {len(failed)}")
+
+    return results
 
 
 def fetch_content(

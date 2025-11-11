@@ -42,6 +42,7 @@ def tmp_project(monkeypatch, tmp_path):
 
     # Create kurt.config using new format
     from kurt.config.base import create_config
+
     create_config()
 
     # Create .kurt directory for database
@@ -83,6 +84,7 @@ def tmp_project_without_migrations(monkeypatch, tmp_path):
 
     # Create kurt.config using new format
     from kurt.config.base import create_config
+
     create_config()
 
     # Create .kurt directory for database

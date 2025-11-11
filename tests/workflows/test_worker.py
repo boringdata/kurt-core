@@ -24,15 +24,38 @@ class TestWorkerArgumentParsing:
         """Worker should require workflow name and args."""
         import subprocess
         import sys
+        import tempfile
 
-        # Test by running the module with insufficient args
-        result = subprocess.run(
-            [sys.executable, "-m", "kurt.workflows._worker"], capture_output=True, text=True
-        )
+        # Create a temporary directory with minimal .kurt setup
+        with tempfile.TemporaryDirectory() as tmpdir:
+            import os
+            from pathlib import Path
 
-        # Should exit with code 1 due to insufficient args
-        assert result.returncode == 1
-        assert "Usage:" in result.stderr
+            # Create minimal .kurt directory structure
+            kurt_dir = Path(tmpdir) / ".kurt"
+            kurt_dir.mkdir()
+
+            # Create a minimal database file to avoid initialization errors
+            db_file = kurt_dir / "kurt.sqlite"
+            db_file.touch()
+
+            # Set environment to use this temp directory
+            env = os.environ.copy()
+            env["KURT_DB_PATH"] = str(db_file)
+
+            # Test by running the module with insufficient args
+            result = subprocess.run(
+                [sys.executable, "-m", "kurt.workflows._worker"],
+                capture_output=True,
+                text=True,
+                cwd=tmpdir,
+                env=env,
+            )
+
+            # Should exit with code 1 due to insufficient args
+            assert result.returncode == 1
+            # Check for usage message (case-insensitive since output uses lowercase)
+            assert "usage:" in result.stderr.lower()
 
     def test_worker_main_with_valid_args(self):
         """Worker should parse valid arguments correctly."""

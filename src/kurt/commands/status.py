@@ -6,8 +6,7 @@ from pathlib import Path
 import click
 from rich.console import Console
 
-from kurt.config import config_exists, load_config
-from kurt.reporting.status import (
+from kurt.admin.status import (
     check_pending_migrations,
     generate_status_markdown,
     get_cluster_count,
@@ -17,7 +16,8 @@ from kurt.reporting.status import (
     is_kurt_plugin_installed,
     profile_exists,
 )
-from kurt.telemetry.decorators import track_command
+from kurt.admin.telemetry.decorators import track_command
+from kurt.config import config_exists, load_config
 
 console = Console()
 
@@ -93,7 +93,7 @@ def status(format: str, hook_cc: bool):
                 "hookSpecificOutput": {
                     "hookEventName": "SessionStart",
                     "additionalContext": message,
-                }
+                },
             }
             print(json.dumps(output, indent=2))
             return
@@ -162,7 +162,7 @@ def status(format: str, hook_cc: bool):
                     "hookSpecificOutput": {
                         "hookEventName": "SessionStart",
                         "additionalContext": message,
-                    }
+                    },
                 }
                 print(json.dumps(output, indent=2))
                 return
@@ -223,7 +223,7 @@ def status(format: str, hook_cc: bool):
                 "hookSpecificOutput": {
                     "hookEventName": "SessionStart",
                     "additionalContext": markdown_output,
-                }
+                },
             }
             print(json.dumps(hook_output, indent=2))
             return
