@@ -126,8 +126,14 @@ def get_dbos():
 
 # Auto-initialize DBOS when module is imported (if available)
 # This ensures DBOS is ready for CLI commands
+# Gracefully skip if database doesn't exist yet (e.g., during kurt init)
 if DBOS_AVAILABLE:
-    init_dbos()
+    try:
+        init_dbos()
+    except Exception:
+        # Database may not exist yet (e.g., running kurt init)
+        # DBOS will be initialized on-demand later via get_dbos()
+        pass
 
 
 __all__ = ["init_dbos", "get_dbos", "DBOS", "DBOS_AVAILABLE"]

@@ -1,5 +1,6 @@
 """Kurt CLI - Main command-line interface."""
 
+import shutil
 from pathlib import Path
 
 import click
@@ -159,62 +160,74 @@ OPENAI_API_KEY=your_openai_api_key_here
         console.print()
         init_database()
 
-        # Step 4: Install Kurt Claude Code plugin
+        # Step 3.5: Copy Claude Code instruction files
         console.print()
-        console.print("[dim]Installing Kurt plugin for Claude Code...[/dim]")
-
+        console.print("[dim]Setting up Claude Code instruction files...[/dim]")
         try:
-            import subprocess
+            # Get the source plugin directory from the package
+            plugin_source = Path(__file__).parent / "claude_plugin"
 
-            # Get the path to the kurt-core directory
-            kurt_core_path = Path(__file__).parent.parent.parent.resolve()
+            if plugin_source.exists():
+                # Create .claude directory in current working directory
+                claude_dir = Path.cwd() / ".claude"
+                claude_dir.mkdir(exist_ok=True)
 
-            # Add marketplace
-            result = subprocess.run(
-                ["claude", "plugin", "marketplace", "add", str(kurt_core_path)],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-
-            if result.returncode == 0:
-                console.print("[green]✓[/green] Added kurt-marketplace")
-
-                # Install plugin
-                result = subprocess.run(
-                    ["claude", "plugin", "install", "kurt"],
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                )
-
-                if result.returncode == 0:
-                    console.print("[green]✓[/green] Installed kurt plugin")
+                # Check if CLAUDE.md exists and warn user
+                claude_md_dest = claude_dir / "CLAUDE.md"
+                if claude_md_dest.exists():
+                    console.print(
+                        "[yellow]⚠[/yellow] CLAUDE.md already exists and will be overwritten with latest Kurt instructions"
+                    )
+                    overwrite_claude = console.input("Overwrite CLAUDE.md? (y/N): ")
+                    if overwrite_claude.lower() != "y":
+                        console.print("[dim]Skipping CLAUDE.md update[/dim]")
+                        skip_claude_md = True
+                    else:
+                        skip_claude_md = False
                 else:
-                    console.print("[yellow]⚠[/yellow] Could not install kurt plugin")
-                    console.print(f"[dim]{result.stderr}[/dim]")
-            else:
-                console.print(
-                    "[yellow]⚠[/yellow] Could not add marketplace (Claude Code may not be installed)"
-                )
-                console.print("[dim]You can manually add it later with:[/dim]")
-                console.print(f"[dim]  claude plugin marketplace add {kurt_core_path}[/dim]")
-                console.print("[dim]  claude plugin install kurt[/dim]")
+                    skip_claude_md = False
 
-        except FileNotFoundError:
-            console.print("[yellow]⚠[/yellow] Claude Code CLI not found")
-            console.print("[dim]Install Claude Code from: https://claude.ai/download[/dim]")
-            console.print(f"[dim]Then run: claude plugin marketplace add {kurt_core_path}[/dim]")
-            console.print("[dim]         claude plugin install kurt[/dim]")
+                # Copy files individually to preserve user customizations
+                for item in plugin_source.iterdir():
+                    if item.name == "CLAUDE.md":
+                        # Copy CLAUDE.md to .claude/ (unless skipped)
+                        if not skip_claude_md:
+                            shutil.copy2(item, claude_dir / item.name)
+                    elif item.name in ["instructions", "hooks", "commands"]:
+                        # Copy directory contents individually, preserving user files
+                        dest_dir = claude_dir / item.name
+                        dest_dir.mkdir(exist_ok=True)
+                        for src_file in item.rglob("*"):
+                            if src_file.is_file():
+                                rel_path = src_file.relative_to(item)
+                                dest_file = dest_dir / rel_path
+                                dest_file.parent.mkdir(parents=True, exist_ok=True)
+                                shutil.copy2(src_file, dest_file)
+                    elif item.name == "kurt":
+                        # Copy kurt/ contents individually, preserving user files
+                        dest_dir = Path.cwd() / item.name
+                        dest_dir.mkdir(exist_ok=True)
+                        for src_file in item.rglob("*"):
+                            if src_file.is_file():
+                                rel_path = src_file.relative_to(item)
+                                dest_file = dest_dir / rel_path
+                                dest_file.parent.mkdir(parents=True, exist_ok=True)
+                                shutil.copy2(src_file, dest_file)
+
+                console.print("[green]✓[/green] Copied instruction files")
+                console.print(
+                    f"[dim]  .claude/CLAUDE.md, .claude/instructions/, .claude/hooks/, .claude/commands/[/dim]"
+                )
+                console.print(f"[dim]  kurt/templates/[/dim]")
+            else:
+                console.print("[yellow]⚠[/yellow] Plugin files not found in package")
         except Exception as e:
-            console.print(f"[yellow]⚠[/yellow] Could not configure plugin: {e}")
+            console.print(f"[yellow]⚠[/yellow] Could not copy instruction files: {e}")
 
         console.print("\n[bold]Next steps:[/bold]")
         console.print("  1. Copy .env.example to .env and add your API keys")
-        console.print(
-            "  2. Verify plugin installation: [cyan]claude plugin marketplace list[/cyan]"
-        )
-        console.print("  3. Open Claude Code and run [cyan]/create-project[/cyan]")
+        console.print("  2. Open Claude Code in this directory")
+        console.print("  3. Run [cyan]/create-project[/cyan] to start your first content project")
 
     except Exception as e:
         console.print(f"[bold red]Error:[/bold red] {e}")

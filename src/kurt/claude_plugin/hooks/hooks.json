@@ -1,0 +1,15 @@
+{
+  "description": "Kurt project status and initialization",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "kurt status --hook-cc"
+          }
+        ]
+      }
+    ]
+  }
+}
