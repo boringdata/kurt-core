@@ -6,22 +6,14 @@ import click
 from rich.console import Console
 
 from kurt import __version__
-from kurt.commands.analytics import analytics
-from kurt.commands.cluster_urls import cluster_urls_cmd
-from kurt.commands.cms import cms
+from kurt.admin.telemetry.decorators import track_command
+from kurt.commands.admin import admin
 from kurt.commands.content import content
-from kurt.commands.feedback import feedback
-from kurt.commands.fetch import fetch_cmd
-from kurt.commands.map import map_cmd
-from kurt.commands.migrate import migrate
-from kurt.commands.project import project
-from kurt.commands.research import research
+from kurt.commands.integrations import integrations
 from kurt.commands.status import status
-from kurt.commands.telemetry import telemetry
 from kurt.commands.workflows import workflows_group
 from kurt.config.base import KurtConfig, config_file_exists, create_config, get_config_file_path
 from kurt.db.database import init_database
-from kurt.telemetry.decorators import track_command
 
 console = Console()
 
@@ -230,18 +222,10 @@ OPENAI_API_KEY=your_openai_api_key_here
 
 
 # Register command groups
-main.add_command(analytics)
-main.add_command(cms)
-main.add_command(cluster_urls_cmd)
 main.add_command(content)
-main.add_command(feedback)
-main.add_command(fetch_cmd, name="fetch")
-main.add_command(map_cmd, name="map")
-main.add_command(migrate)
-main.add_command(project)
-main.add_command(research)
+main.add_command(integrations)
+main.add_command(admin)
 main.add_command(status)
-main.add_command(telemetry)
 main.add_command(workflows_group, name="workflows")
 
 

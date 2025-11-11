@@ -1,7 +1,8 @@
 """Tests for core configuration (base.py) using real config files."""
 
-import pytest
 from pathlib import Path
+
+import pytest
 
 from kurt.config.base import (
     KurtConfig,
@@ -152,7 +153,7 @@ class TestConfigFileOperations:
         assert 'PATH_DB=".kurt/kurt.sqlite"' in content
         assert 'PATH_SOURCES="sources"' in content
         # Boolean written without quotes
-        assert 'TELEMETRY_ENABLED=True' in content
+        assert "TELEMETRY_ENABLED=True" in content
 
     def test_create_config_custom(self, tmp_project):
         """Test creating config with custom values."""
@@ -286,7 +287,7 @@ class TestConfigFileOperations:
         config = load_config()
 
         # Add multiple prefixes via __pydantic_extra__
-        if not hasattr(config, '__pydantic_extra__'):
+        if not hasattr(config, "__pydantic_extra__"):
             config.__pydantic_extra__ = {}
 
         config.__pydantic_extra__["ANALYTICS_POSTHOG_API_KEY"] = "phx_123"
@@ -320,7 +321,7 @@ class TestConfigFileOperations:
         """Test that update_config handles custom prefixes (future extensibility)."""
         config = load_config()
 
-        if not hasattr(config, '__pydantic_extra__'):
+        if not hasattr(config, "__pydantic_extra__"):
             config.__pydantic_extra__ = {}
 
         # Add a custom prefix not in prefix_names dict
@@ -478,7 +479,7 @@ class TestEdgeCases:
     def test_config_with_unicode_values(self, tmp_project):
         """Test handling unicode in config values."""
         config = load_config()
-        if not hasattr(config, '__pydantic_extra__'):
+        if not hasattr(config, "__pydantic_extra__"):
             config.__pydantic_extra__ = {}
 
         # Add unicode value
@@ -492,20 +493,25 @@ class TestEdgeCases:
     def test_config_with_special_characters(self, tmp_project):
         """Test handling special characters in config values."""
         config = load_config()
-        if not hasattr(config, '__pydantic_extra__'):
+        if not hasattr(config, "__pydantic_extra__"):
             config.__pydantic_extra__ = {}
 
         # Add value with special chars
-        config.__pydantic_extra__["ANALYTICS_CUSTOM_URL"] = "https://example.com/path?foo=bar&baz=qux"
+        config.__pydantic_extra__["ANALYTICS_CUSTOM_URL"] = (
+            "https://example.com/path?foo=bar&baz=qux"
+        )
         update_config(config)
 
         loaded = load_config()
-        assert loaded.__pydantic_extra__["ANALYTICS_CUSTOM_URL"] == "https://example.com/path?foo=bar&baz=qux"
+        assert (
+            loaded.__pydantic_extra__["ANALYTICS_CUSTOM_URL"]
+            == "https://example.com/path?foo=bar&baz=qux"
+        )
 
     def test_config_with_very_long_values(self, tmp_project):
         """Test handling very long config values."""
         config = load_config()
-        if not hasattr(config, '__pydantic_extra__'):
+        if not hasattr(config, "__pydantic_extra__"):
             config.__pydantic_extra__ = {}
 
         # Add very long value (e.g., JWT token)
@@ -527,7 +533,7 @@ class TestEdgeCases:
         config_file.write_text(content + '\nCMS_TEST_KEY="value\nwith\nnewlines"\n')
 
         # Should still load without crashing
-        config = load_config()
+        load_config()  # Just verify it doesn't crash
         # The newline handling depends on implementation
         # At minimum, it shouldn't crash
 
@@ -546,6 +552,7 @@ class TestEdgeCases:
     def test_config_file_not_found_error_message(self, tmp_path):
         """Test error message when config file doesn't exist."""
         import os
+
         os.chdir(tmp_path)
 
         with pytest.raises(FileNotFoundError) as exc_info:
@@ -633,6 +640,7 @@ class TestValidateConfig:
 
         # Remove directories
         import shutil
+
         sources_path = config.get_absolute_sources_path()
         if sources_path.exists():
             shutil.rmtree(sources_path)

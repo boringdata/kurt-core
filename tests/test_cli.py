@@ -62,27 +62,31 @@ def test_all_commands_registered(runner):
     # Test that all expected top-level commands are registered
     expected_commands = [
         "init",
-        "cms",
+        "admin",
         "content",
-        "fetch",
-        "migrate",
-        "project",
-        "research",
+        "integrations",
         "status",
-        "map",
-        "cluster-urls",
+        "workflows",
     ]
     for cmd in expected_commands:
         assert cmd in result.output, f"Command '{cmd}' not found in main help"
 
     # Test each command group's help to ensure they're properly decorated
     command_groups = {
-        "cms": ["search", "fetch", "types", "onboard", "import", "publish"],
-        "content": ["list", "stats", "index", "delete", "sync-metadata"],  # fetch moved to root
-        "migrate": ["status", "apply"],
-        "project": ["status"],
-        "research": [],  # research might not have subcommands
-        "map": ["url", "folder"],
+        "content": [
+            "fetch",
+            "map",
+            "cluster",
+            "list",
+            "get",
+            "index",
+            "delete",
+            "stats",
+            "list-clusters",
+            "sync-metadata",
+        ],
+        "integrations": ["analytics", "cms", "research"],
+        "admin": ["feedback", "migrate", "telemetry", "project"],
     }
 
     for group, subcommands in command_groups.items():
@@ -114,7 +118,7 @@ def test_status_help(runner):
 
 
 def test_project_status_help(runner):
-    """Test that 'project status' command is properly registered."""
-    result = runner.invoke(main, ["project", "status", "--help"])
-    assert result.exit_code == 0, f"'project status' help failed: {result.output}"
+    """Test that 'admin project status' command is properly registered."""
+    result = runner.invoke(main, ["admin", "project", "status", "--help"])
+    assert result.exit_code == 0, f"'admin project status' help failed: {result.output}"
     assert "status" in result.output.lower()

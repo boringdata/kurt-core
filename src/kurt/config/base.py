@@ -270,7 +270,7 @@ def create_config(
         f.write(f'INGESTION_FETCH_ENGINE="{config.INGESTION_FETCH_ENGINE}"\n')
         f.write("\n# Telemetry Configuration\n")
         # Write boolean as True/False (not "True"/"False" string)
-        f.write(f'TELEMETRY_ENABLED={config.TELEMETRY_ENABLED}\n')
+        f.write(f"TELEMETRY_ENABLED={config.TELEMETRY_ENABLED}\n")
 
     return config
 
@@ -324,10 +324,10 @@ def update_config(config: KurtConfig) -> None:
         f.write(f'INGESTION_FETCH_ENGINE="{config.INGESTION_FETCH_ENGINE}"\n')
         f.write("\n# Telemetry Configuration\n")
         # Write boolean as True/False (not "True"/"False" string)
-        f.write(f'TELEMETRY_ENABLED={config.TELEMETRY_ENABLED}\n')
+        f.write(f"TELEMETRY_ENABLED={config.TELEMETRY_ENABLED}\n")
 
         # Write extra fields (analytics, CMS, etc.) - Pydantic v2 stores extra fields in __pydantic_extra__
-        extra_fields = getattr(config, '__pydantic_extra__', {})
+        extra_fields = getattr(config, "__pydantic_extra__", {})
 
         # Group extra fields by prefix (ANALYTICS_, CMS_, RESEARCH_, etc.)
         # This allows any integration to store config in the main file
@@ -378,8 +378,7 @@ def validate_config(config: KurtConfig) -> list[str]:
     db_dir = db_path.parent
     if not db_dir.exists():
         issues.append(
-            f"Database directory does not exist: {db_dir}\n"
-            f"Create it with: mkdir -p {db_dir}"
+            f"Database directory does not exist: {db_dir}\n" f"Create it with: mkdir -p {db_dir}"
         )
 
     # Check if sources directory exists

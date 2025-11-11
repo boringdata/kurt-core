@@ -173,9 +173,9 @@ def compute_topic_clusters(
         ValueError: If no documents found or if documents already clustered (without force=True)
     """
     from kurt.config import get_config_or_default
+    from kurt.content.document import list_content
     from kurt.db.database import get_session
     from kurt.db.models import DocumentClusterEdge, TopicCluster
-    from kurt.document import list_content
 
     # Get matching documents (any status - we only need metadata)
     if progress_callback:

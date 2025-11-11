@@ -32,6 +32,27 @@ from kurt.db.models import Document, IngestionStatus, SourceType
 
 logger = logging.getLogger(__name__)
 
+# Import centralized logging helper for workflows
+try:
+    from kurt.workflows.logging_utils import log_progress as _log_progress_helper
+
+    def _log_progress(message: str, progress=None, task_id=None, completed=None, total=None):
+        """Wrapper for centralized log_progress that passes our logger."""
+        _log_progress_helper(logger, message, progress, task_id, completed, total)
+
+except ImportError:
+    # Fallback if workflows module not available
+    def _log_progress(message: str, progress=None, task_id=None, completed=None, total=None):
+        """Fallback progress logger."""
+        log_msg = message
+        if completed is not None and total is not None:
+            log_msg = f"{message} [{completed}/{total}]"
+        elif completed is not None:
+            log_msg = f"{message} [completed: {completed}]"
+        logger.info(log_msg)
+        if progress and task_id is not None:
+            progress.update(task_id, description=message, completed=completed, total=total)
+
 
 def normalize_url(url: str) -> str:
     """
@@ -94,8 +115,7 @@ def _discover_sitemap_urls(base_url: str, progress=None, task_id=None) -> list[s
     sitemap_urls = []
 
     # Step 1: Check robots.txt
-    if progress and task_id is not None:
-        progress.update(task_id, description="Checking robots.txt...")
+    _log_progress("Checking robots.txt...", progress, task_id)
 
     try:
         response = httpx.get(f"{base}/robots.txt", timeout=10.0, follow_redirects=True)
@@ -114,8 +134,7 @@ def _discover_sitemap_urls(base_url: str, progress=None, task_id=None) -> list[s
             sitemap_urls.append(f"{base}{path}")
 
     # Step 3: Fetch and parse sitemaps
-    if progress and task_id is not None:
-        progress.update(task_id, description="Fetching sitemap...")
+    _log_progress("Fetching sitemap...", progress, task_id)
 
     all_urls = []
 
@@ -132,10 +151,9 @@ def _discover_sitemap_urls(base_url: str, progress=None, task_id=None) -> list[s
             sitemaps = root.findall(".//{http://www.sitemaps.org/schemas/sitemap/0.9}sitemap")
             if sitemaps:
                 # It's a sitemap index - recursively fetch child sitemaps
-                if progress and task_id is not None:
-                    progress.update(
-                        task_id, description=f"Parsing sitemap index ({len(sitemaps)} sitemaps)..."
-                    )
+                _log_progress(
+                    f"Parsing sitemap index ({len(sitemaps)} sitemaps)...", progress, task_id
+                )
 
                 for idx, sitemap in enumerate(sitemaps):
                     loc = sitemap.find("{http://www.sitemaps.org/schemas/sitemap/0.9}loc")
@@ -467,15 +485,16 @@ def map_sitemap(
                 docs_to_add = []
 
         # Update progress with more informative message
-        if progress and task_id is not None:
-            if (idx + 1) % 10 == 0 or idx == len(urls) - 1:
-                new_count = sum(1 for d in created_docs if d.get("created", False))
-                existing_count = len(created_docs) - new_count
-                progress.update(
-                    task_id,
-                    description=f"Creating documents... ({new_count} new, {existing_count} existing)",
-                    completed=idx + 1,
-                )
+        if (idx + 1) % 10 == 0 or idx == len(urls) - 1:
+            new_count = sum(1 for d in created_docs if d.get("created", False))
+            existing_count = len(created_docs) - new_count
+            _log_progress(
+                f"Creating documents... ({new_count} new, {existing_count} existing)",
+                progress,
+                task_id,
+                completed=idx + 1,
+                total=len(urls),
+            )
 
     # Commit any remaining documents
     if docs_to_add:
@@ -1475,6 +1494,22 @@ def map_url_content(
         "dry_run": False,
     }
 
+    # Log final summary
+    logger.info(f"✓ Discovered {len(docs)} pages")
+    logger.info(f"  New: {new_count}")
+    logger.info(f"  Existing: {existing_count}")
+    logger.info(f"  Method: {discovery_method}")
+
+    # Log sample URLs
+    if docs:
+        logger.info("")
+        logger.info("Sample URLs:")
+        for doc in docs[:5]:
+            url = doc.get("url", doc.get("path", "N/A"))
+            logger.info(f"  • {url}")
+        if len(docs) > 5:
+            logger.info(f"  ... and {len(docs) - 5} more")
+
     # Auto-cluster if requested
     if cluster_urls and len(docs) > 0:
         from kurt.content.cluster import compute_topic_clusters
@@ -1758,8 +1793,8 @@ def map_cms_content(
             - method: Discovery method (always "cms_api")
             - dry_run: Boolean indicating if this was a dry run
     """
-    from kurt.cms import get_adapter
-    from kurt.cms.config import get_platform_config
+    from kurt.integrations.cms import get_adapter
+    from kurt.integrations.cms.config import get_platform_config
 
     # Get CMS adapter
     cms_config = get_platform_config(platform, instance)

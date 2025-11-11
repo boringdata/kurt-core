@@ -17,10 +17,7 @@ from typing import Any, Dict, List, Optional
 from kurt.config.base import get_config_or_default, update_config
 
 
-def load_prefixed_config(
-    prefix: str,
-    levels: int = 2
-) -> Dict[str, Any]:
+def load_prefixed_config(prefix: str, levels: int = 2) -> Dict[str, Any]:
     """
     Load configuration for a specific prefix from kurt.config.
 
@@ -54,7 +51,7 @@ def load_prefixed_config(
     config = get_config_or_default()
 
     # Extract fields with the given prefix from __pydantic_extra__
-    extra_fields = getattr(config, '__pydantic_extra__', {})
+    extra_fields = getattr(config, "__pydantic_extra__", {})
     result: Dict[str, Any] = {}
 
     for key, value in extra_fields.items():
@@ -82,7 +79,7 @@ def load_prefixed_config(
                     current = current[level]
 
                 # Handle JSON-encoded nested structures
-                if isinstance(value, str) and (value.startswith('{') or value.startswith('[')):
+                if isinstance(value, str) and (value.startswith("{") or value.startswith("[")):
                     try:
                         current[field_key] = json.loads(value)
                     except json.JSONDecodeError:
@@ -93,11 +90,7 @@ def load_prefixed_config(
     return result
 
 
-def save_prefixed_config(
-    prefix: str,
-    config_data: Dict[str, Any],
-    levels: int = 2
-) -> None:
+def save_prefixed_config(prefix: str, config_data: Dict[str, Any], levels: int = 2) -> None:
     """
     Save configuration for a specific prefix to kurt.config.
 
@@ -126,7 +119,7 @@ def save_prefixed_config(
     config = get_config_or_default()
 
     # Initialize __pydantic_extra__ if not present
-    if not hasattr(config, '__pydantic_extra__'):
+    if not hasattr(config, "__pydantic_extra__"):
         config.__pydantic_extra__ = {}
 
     # Remove existing fields with this prefix (but preserve other prefixes)
@@ -175,9 +168,7 @@ def save_prefixed_config(
 
 
 def get_nested_value(
-    config_data: Dict[str, Any],
-    path: List[str],
-    default: Optional[Any] = None
+    config_data: Dict[str, Any], path: List[str], default: Optional[Any] = None
 ) -> Optional[Any]:
     """
     Get a value from a nested dictionary using a path.
@@ -205,11 +196,7 @@ def get_nested_value(
     return current
 
 
-def set_nested_value(
-    config_data: Dict[str, Any],
-    path: List[str],
-    value: Any
-) -> None:
+def set_nested_value(config_data: Dict[str, Any], path: List[str], value: Any) -> None:
     """
     Set a value in a nested dictionary using a path.
 
@@ -287,10 +274,7 @@ def has_placeholder_values(config_dict: Dict[str, Any]) -> bool:
     return "YOUR_" in config_str or "PLACEHOLDER" in config_str
 
 
-def get_available_keys(
-    config_data: Dict[str, Any],
-    level: int = 0
-) -> List[str]:
+def get_available_keys(config_data: Dict[str, Any], level: int = 0) -> List[str]:
     """
     Get all keys at a specific level of the config hierarchy.
 

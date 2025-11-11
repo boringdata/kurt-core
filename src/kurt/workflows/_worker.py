@@ -10,6 +10,8 @@ import os
 import sys
 import time
 
+from kurt.workflows.logging_utils import setup_workflow_logging
+
 
 def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: int = 10):
     """
@@ -90,6 +92,9 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
     os.dup2(log_fd, sys.stdout.fileno())
     os.dup2(log_fd, sys.stderr.fileno())
     os.close(log_fd)
+
+    # Configure Python logging to write to the log file
+    setup_workflow_logging(final_log_file)
 
     # Wait for workflow to complete by polling its status
     # This keeps the process alive AND the ThreadPoolExecutor running

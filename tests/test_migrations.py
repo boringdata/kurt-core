@@ -507,13 +507,13 @@ class TestCLICommands:
     """Test CLI commands for migrations."""
 
     def test_migrate_status_command(self, test_config):
-        """Test 'kurt migrate status' command."""
+        """Test 'kurt admin migrate status' command."""
         from click.testing import CliRunner
 
-        from kurt.commands.migrate import migrate
+        from kurt.commands.admin import admin
 
         runner = CliRunner()
-        result = runner.invoke(migrate, ["status"])
+        result = runner.invoke(admin, ["migrate", "status"])
 
         # Should succeed even without database
         assert result.exit_code == 0
@@ -521,13 +521,13 @@ class TestCLICommands:
         assert "Pending" in result.output or "pending" in result.output
 
     def test_migrate_apply_help(self):
-        """Test 'kurt migrate apply --help' command."""
+        """Test 'kurt admin migrate apply --help' command."""
         from click.testing import CliRunner
 
-        from kurt.commands.migrate import migrate
+        from kurt.commands.admin import admin
 
         runner = CliRunner()
-        result = runner.invoke(migrate, ["apply", "--help"])
+        result = runner.invoke(admin, ["migrate", "apply", "--help"])
 
         # Should show help text
         assert result.exit_code == 0
@@ -535,13 +535,13 @@ class TestCLICommands:
         assert "--auto-confirm" in result.output
 
     def test_migrate_init_help(self):
-        """Test 'kurt migrate init --help' command."""
+        """Test 'kurt admin migrate init --help' command."""
         from click.testing import CliRunner
 
-        from kurt.commands.migrate import migrate
+        from kurt.commands.admin import admin
 
         runner = CliRunner()
-        result = runner.invoke(migrate, ["init", "--help"])
+        result = runner.invoke(admin, ["migrate", "init", "--help"])
 
         # Should show help text
         assert result.exit_code == 0
