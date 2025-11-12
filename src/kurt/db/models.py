@@ -133,6 +133,30 @@ class DocumentClusterEdge(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class DocumentLinkType(str, Enum):
+    """Type of link relationship between documents."""
+
+    OUTBOUND = "outbound"  # Source doc links to target
+    RELATED = "related"  # Bidirectional related content
+
+
+class DocumentLink(SQLModel, table=True):
+    """Links between documents (internal references)."""
+
+    __tablename__ = "document_links"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    source_document_id: UUID = Field(foreign_key="documents.id", index=True)
+    target_document_id: UUID = Field(foreign_key="documents.id", index=True)
+    link_type: DocumentLinkType = Field(default=DocumentLinkType.OUTBOUND)
+
+    # Context about the link
+    anchor_text: Optional[str] = Field(default=None, max_length=500)
+    context: Optional[str] = Field(default=None, max_length=1000)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class Entity(SQLModel, table=True):
     """Entity extracted from documents."""
 

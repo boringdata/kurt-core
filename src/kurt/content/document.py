@@ -676,3 +676,291 @@ def list_documents_for_indexing(
 
     # Should never reach here due to initial validation
     raise ValueError("Must provide either doc_id, include_pattern, or all_flag=True")
+
+
+def get_document_links(
+    document_id: str,
+    direction: str = "outbound",
+) -> list[dict]:
+    """
+    Get links from or to a document.
+
+    Args:
+        document_id: Document UUID (full or partial, minimum 8 chars)
+        direction: "outbound" (links from doc) or "inbound" (links to doc)
+
+    Returns:
+        List of dicts with:
+            - link_id: UUID of the link
+            - source_doc_id: UUID of source document
+            - source_title: Title of source document
+            - target_doc_id: UUID of target document
+            - target_title: Title of target document
+            - anchor_text: Link anchor text
+            - context: Surrounding text context
+
+    Raises:
+        ValueError: If document not found or direction is invalid
+
+    Example:
+        # Get all outbound links from a document
+        links = get_document_links("550e8400", direction="outbound")
+        for link in links:
+            print(f"Links to: {link['target_title']}")
+
+        # Get all inbound links to a document
+        links = get_document_links("550e8400", direction="inbound")
+        for link in links:
+            print(f"Linked from: {link['source_title']}")
+    """
+    from kurt.db.models import DocumentLink
+
+    # Validate direction
+    if direction not in ["outbound", "inbound"]:
+        raise ValueError(f"Invalid direction: {direction}. Must be 'outbound' or 'inbound'")
+
+    # Get document (validates ID and handles partial UUIDs)
+    doc = get_document(document_id)
+
+    session = get_session()
+
+    # Build query based on direction
+    if direction == "outbound":
+        # Links from this document to others
+        stmt = (
+            select(DocumentLink, Document)
+            .where(DocumentLink.source_document_id == doc.id)
+            .join(Document, DocumentLink.target_document_id == Document.id)
+        )
+    else:
+        # Links to this document from others
+        stmt = (
+            select(DocumentLink, Document)
+            .where(DocumentLink.target_document_id == doc.id)
+            .join(Document, DocumentLink.source_document_id == Document.id)
+        )
+
+    results = session.exec(stmt).all()
+
+    # Format results
+    links = []
+    for link, linked_doc in results:
+        if direction == "outbound":
+            # linked_doc is the target
+            links.append(
+                {
+                    "link_id": str(link.id),
+                    "source_doc_id": str(doc.id),
+                    "source_title": doc.title,
+                    "target_doc_id": str(linked_doc.id),
+                    "target_title": linked_doc.title,
+                    "anchor_text": link.anchor_text,
+                    "context": link.context,
+                }
+            )
+        else:
+            # linked_doc is the source
+            links.append(
+                {
+                    "link_id": str(link.id),
+                    "source_doc_id": str(linked_doc.id),
+                    "source_title": linked_doc.title,
+                    "target_doc_id": str(doc.id),
+                    "target_title": doc.title,
+                    "anchor_text": link.anchor_text,
+                    "context": link.context,
+                }
+            )
+
+    return links
+
+
+def find_prerequisite_documents(document_id: str, max_depth: int = 2) -> list[dict]:
+    """
+    Find prerequisite documents by following inbound links.
+
+    Traverses the link graph to find documents that should be read before
+    the target document, based on internal link structure.
+
+    Args:
+        document_id: Document UUID (full or partial, minimum 8 chars)
+        max_depth: Maximum depth to traverse (default: 2)
+
+    Returns:
+        List of dicts with:
+            - doc_id: UUID of prerequisite document
+            - title: Document title
+            - depth: How many links away (1 = direct prerequisite)
+            - path: List of link anchor texts to reach this doc
+
+    Example:
+        # Find documents to read before this one
+        prereqs = find_prerequisite_documents("550e8400")
+        for prereq in prereqs:
+            print(f"Read first: {prereq['title']} (depth {prereq['depth']})")
+    """
+    from collections import deque
+
+    from kurt.db.models import DocumentLink
+
+    # Get starting document
+    doc = get_document(document_id)
+
+    session = get_session()
+
+    # BFS to find prerequisites
+    visited = {doc.id}
+    queue = deque([(doc.id, 0, [])])  # (doc_id, depth, path)
+    prerequisites = []
+
+    while queue:
+        current_id, depth, path = queue.popleft()
+
+        # Stop at max depth
+        if depth >= max_depth:
+            continue
+
+        # Get inbound links to current document
+        stmt = (
+            select(DocumentLink, Document)
+            .where(DocumentLink.target_document_id == current_id)
+            .join(Document, DocumentLink.source_document_id == Document.id)
+        )
+        results = session.exec(stmt).all()
+
+        for link, source_doc in results:
+            if source_doc.id not in visited:
+                visited.add(source_doc.id)
+                new_path = path + [link.anchor_text or source_doc.title]
+
+                prerequisites.append(
+                    {
+                        "doc_id": str(source_doc.id),
+                        "title": source_doc.title,
+                        "depth": depth + 1,
+                        "path": new_path,
+                    }
+                )
+
+                # Continue traversing
+                queue.append((source_doc.id, depth + 1, new_path))
+
+    # Sort by depth (closest prerequisites first)
+    prerequisites.sort(key=lambda x: x["depth"])
+
+    return prerequisites
+
+
+def find_related_documents(document_id: str, max_results: int = 10) -> list[dict]:
+    """
+    Find related documents based on bidirectional link analysis.
+
+    Uses a simple relevance scoring:
+    - Direct outbound links: 10 points
+    - Direct inbound links: 10 points
+    - Shared outbound targets: 5 points per shared link
+    - Shared inbound sources: 5 points per shared source
+
+    Args:
+        document_id: Document UUID (full or partial, minimum 8 chars)
+        max_results: Maximum number of related docs to return (default: 10)
+
+    Returns:
+        List of dicts with:
+            - doc_id: UUID of related document
+            - title: Document title
+            - relevance_score: Numeric score (higher = more related)
+            - relationship: Why it's related (e.g., "2 shared links")
+
+    Example:
+        # Find related documents
+        related = find_related_documents("550e8400", max_results=5)
+        for doc in related:
+            print(f"{doc['title']}: {doc['relationship']}")
+    """
+    from collections import defaultdict
+
+    from kurt.db.models import DocumentLink
+
+    # Get starting document
+    doc = get_document(document_id)
+
+    session = get_session()
+
+    # Score tracking: doc_id -> score
+    scores = defaultdict(int)
+    relationships = defaultdict(list)
+
+    # 1. Get direct outbound links (10 points each)
+    outbound_stmt = select(DocumentLink).where(DocumentLink.source_document_id == doc.id)
+    outbound_links = session.exec(outbound_stmt).all()
+    outbound_targets = {link.target_document_id for link in outbound_links}
+
+    for link in outbound_links:
+        scores[link.target_document_id] += 10
+        relationships[link.target_document_id].append("outbound link")
+
+    # 2. Get direct inbound links (10 points each)
+    inbound_stmt = select(DocumentLink).where(DocumentLink.target_document_id == doc.id)
+    inbound_links = session.exec(inbound_stmt).all()
+    inbound_sources = {link.source_document_id for link in inbound_links}
+
+    for link in inbound_links:
+        scores[link.source_document_id] += 10
+        relationships[link.source_document_id].append("inbound link")
+
+    # 3. Find docs with shared outbound targets (5 points per shared link)
+    if outbound_targets:
+        shared_outbound_stmt = select(DocumentLink).where(
+            DocumentLink.target_document_id.in_(outbound_targets),
+            DocumentLink.source_document_id != doc.id,
+        )
+        shared_outbound = session.exec(shared_outbound_stmt).all()
+
+        shared_counts = defaultdict(int)
+        for link in shared_outbound:
+            shared_counts[link.source_document_id] += 1
+
+        for doc_id, count in shared_counts.items():
+            scores[doc_id] += count * 5
+            relationships[doc_id].append(f"{count} shared outbound")
+
+    # 4. Find docs with shared inbound sources (5 points per shared source)
+    if inbound_sources:
+        shared_inbound_stmt = select(DocumentLink).where(
+            DocumentLink.source_document_id.in_(inbound_sources),
+            DocumentLink.target_document_id != doc.id,
+        )
+        shared_inbound = session.exec(shared_inbound_stmt).all()
+
+        shared_counts = defaultdict(int)
+        for link in shared_inbound:
+            shared_counts[link.target_document_id] += 1
+
+        for doc_id, count in shared_counts.items():
+            scores[doc_id] += count * 5
+            relationships[doc_id].append(f"{count} shared inbound")
+
+    # Get document details for top-scored docs
+    if not scores:
+        return []
+
+    # Sort by score
+    sorted_docs = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:max_results]
+
+    # Fetch document titles
+    related = []
+    for doc_id, score in sorted_docs:
+        doc_obj = session.get(Document, doc_id)
+        if doc_obj:
+            relationship_desc = ", ".join(relationships[doc_id])
+            related.append(
+                {
+                    "doc_id": str(doc_id),
+                    "title": doc_obj.title,
+                    "relevance_score": score,
+                    "relationship": relationship_desc,
+                }
+            )
+
+    return related

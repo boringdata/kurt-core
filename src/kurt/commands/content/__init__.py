@@ -10,6 +10,7 @@ from .index import index
 from .list_clusters import list_clusters_cmd
 from .list_cmd import list_documents_cmd
 from .map_cmd import map_cmd
+from .search import links_cmd, prerequisites_cmd, related_cmd, search_cmd
 from .stats import stats_cmd
 from .sync_metadata import sync_metadata
 
@@ -31,6 +32,10 @@ def content():
     - stats: View statistics
     - list-clusters: View topic clusters
     - sync-metadata: Update file frontmatter
+    - search: Search through document content
+    - links: Show links from/to a document
+    - prerequisites: Find prerequisite documents
+    - related: Find related documents
     """
     pass
 
@@ -46,3 +51,7 @@ content.add_command(delete_document_cmd, name="delete")
 content.add_command(stats_cmd, name="stats")
 content.add_command(list_clusters_cmd, name="list-clusters")
 content.add_command(sync_metadata, name="sync-metadata")
+content.add_command(search_cmd, name="search")
+content.add_command(links_cmd, name="links")
+content.add_command(prerequisites_cmd, name="prerequisites")
+content.add_command(related_cmd, name="related")

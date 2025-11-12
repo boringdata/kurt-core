@@ -29,7 +29,7 @@ from dotenv import find_dotenv, load_dotenv
 
 from kurt.config import KurtConfig, load_config
 from kurt.db.database import get_session
-from kurt.db.models import Document, IngestionStatus, SourceType
+from kurt.db.models import Document, DocumentLink, DocumentLinkType, IngestionStatus, SourceType
 
 logger = logging.getLogger(__name__)
 
@@ -427,6 +427,135 @@ def _fetch_from_cms(platform: str, instance: str, doc: Document) -> tuple[str, d
         )
 
 
+def extract_document_links(content: str, source_url: str) -> list[dict]:
+    """
+    Extract internal document links from markdown content.
+
+    Uses regex to find markdown links [text](url) and resolves relative URLs.
+    Only returns links that could potentially match other documents in the database.
+
+    Args:
+        content: Markdown content to extract links from
+        source_url: Source URL of the document (for resolving relative links)
+
+    Returns:
+        List of dicts with:
+            - url: Resolved absolute URL
+            - anchor_text: Link text
+            - context: Surrounding text (up to 100 chars before/after)
+
+    Example:
+        >>> content = "See [Getting Started](./getting-started) for details."
+        >>> extract_document_links(content, "https://example.com/docs/intro")
+        [{'url': 'https://example.com/docs/getting-started', 'anchor_text': 'Getting Started', ...}]
+    """
+    import re
+    from urllib.parse import urljoin, urlparse
+
+    # Regex for markdown links: [text](url)
+    # Matches: [anchor text](url) or [anchor text](url "title")
+    link_pattern = re.compile(r"\[([^\]]+)\]\(([^\)]+?)(?:\s+['\"]([^'\"]+)['\"])?\)")
+
+    links = []
+    parsed_source = urlparse(source_url)
+
+    for match in link_pattern.finditer(content):
+        anchor_text = match.group(1).strip()
+        link_url = match.group(2).strip()
+
+        # Skip non-HTTP links (anchors, mailto, etc.)
+        if link_url.startswith("#") or link_url.startswith("mailto:"):
+            continue
+
+        # Resolve relative URLs
+        if not link_url.startswith(("http://", "https://")):
+            # Relative URL - resolve against source URL
+            absolute_url = urljoin(source_url, link_url)
+        else:
+            absolute_url = link_url
+
+        # Only include links from the same domain (internal links)
+        parsed_link = urlparse(absolute_url)
+        if parsed_link.netloc != parsed_source.netloc:
+            continue
+
+        # Extract context (100 chars before and after)
+        match_start = match.start()
+        match_end = match.end()
+        context_start = max(0, match_start - 100)
+        context_end = min(len(content), match_end + 100)
+        context = content[context_start:context_end].strip()
+
+        links.append(
+            {
+                "url": absolute_url,
+                "anchor_text": anchor_text[:500],  # Truncate to max length
+                "context": context[:1000],  # Truncate to max length
+            }
+        )
+
+    return links
+
+
+def save_document_links(doc_id: UUID, links: list[dict]) -> int:
+    """
+    Save document links to database.
+
+    Deletes existing links for this document (on refetch) and creates new ones.
+    Only creates links where the target document exists in the database.
+
+    Args:
+        doc_id: Source document UUID
+        links: List of link dicts from extract_document_links()
+
+    Returns:
+        Number of links saved
+
+    Example:
+        >>> links = extract_document_links(content, url)
+        >>> count = save_document_links(doc_id, links)
+        >>> # Returns: 3 (saved 3 links)
+    """
+    from sqlmodel import select
+
+    session = get_session()
+
+    # Delete existing links for this document (on refetch)
+    existing_links = session.exec(
+        select(DocumentLink).where(DocumentLink.source_document_id == doc_id)
+    ).all()
+    for link in existing_links:
+        session.delete(link)
+
+    # Find which target URLs exist in database
+    target_urls = [link["url"] for link in links]
+    if not target_urls:
+        session.commit()
+        return 0
+
+    # Query for documents matching these URLs
+    target_docs_stmt = select(Document).where(Document.source_url.in_(target_urls))
+    target_docs = {doc.source_url: doc.id for doc in session.exec(target_docs_stmt).all()}
+
+    # Create links for URLs that match documents in database
+    saved_count = 0
+    for link in links:
+        target_url = link["url"]
+        if target_url in target_docs:
+            document_link = DocumentLink(
+                source_document_id=doc_id,
+                target_document_id=target_docs[target_url],
+                link_type=DocumentLinkType.OUTBOUND,
+                anchor_text=link["anchor_text"],
+                context=link["context"],
+            )
+            session.add(document_link)
+            saved_count += 1
+
+    session.commit()
+    return saved_count
+
+
 def add_document(url: str, title: str = None) -> UUID:
     """
     Create document record with NOT_FETCHED status.
@@ -634,6 +763,18 @@ def fetch_document(identifier: str | UUID, fetch_engine: str = None) -> dict:
 
         session.commit()
 
+        # Extract and save document links (after content is stored)
+        links_saved = 0
+        try:
+            if doc.source_url:  # Only for web/CMS documents with URLs
+                links = extract_document_links(content, doc.source_url)
+                links_saved = save_document_links(doc.id, links)
+                if links_saved > 0:
+                    logger.debug(f"Saved {links_saved} internal links for document {doc.id}")
+        except Exception as e:
+            # Don't fail the entire fetch if link extraction fails
+            logger.warning(f"Failed to extract links for document {doc.id}: {e}")
+
         return {
             "document_id": doc.id,
             "title": doc.title,
@@ -646,6 +787,8 @@ def fetch_document(identifier: str | UUID, fetch_engine: str = None) -> dict:
             "description": doc.description,
             "author": doc.author,
             "published_date": doc.published_date,
+            # Link tracking
+            "links_extracted": links_saved,
         }
 
     except Exception as e:
