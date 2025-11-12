@@ -86,7 +86,7 @@ Users can add or update format templates to Kurt following the process in `instr
 ## Research
 During project planning, writing, or just ad-hoc exploration, a user might need to conduct external research on the web (using Perplexity, by searching HackerNews / Reddit, accessing RSS feeds, websites, GitHub repos, etc). 
 
-This can be done using `kurt research` commands (see `kurt research --help` for a full list of available research sources). Some research sources, like Perplexity, will require a user to add an API key to their <kurt_config> file (`kurt.config`).
+This can be done using `kurt integrations research` commands (see `kurt integrations research --help` for a full list of available research sources). Some research sources, like Perplexity, will require a user to add an API key to their <kurt_config> file (`kurt.config`).
 
 If working within a project, the outputs of research should be written as .md files to the <project_subfolder> with references added to the <project_plan>. 
 
@@ -163,9 +163,31 @@ kurt integrations cms publish \
 Kurt can analyze the user's web analytics, to assist with project planning or ad-hoc analysis (currently supported analytics platforms: PostHog).
 
 1. Run `kurt analytics list` to see if the user has already configured the analytics platform for the domain they're referring to. If unsure, confirm with the user.
-2. If it hasn't yet been configured, run `kurt analytics onboard [domain] --platform` (run `kurt analytics onboard --help` for list of parameters) to configure a new analytics integration for a domain. 
+2. If it hasn't yet been configured, run `kurt analytics onboard [domain] --platform` (run `kurt analytics onboard --help` for list of parameters) to configure a new analytics integration for a domain.
 3. Once an analytics integration is configured, run `kurt analytics sync [domain]` with relevant additional paremeters at any time to return fresh data.
-4. Once data is synced, query analytics joined with content metadata by running `kurt content list --with-analytics` or `kurt content stats --with-analytics`. This is useful in project planning or analyzing the outcomes of content production after publishing.  
+4. Once data is synced, query analytics joined with content metadata by running `kurt content list --with-analytics` or `kurt content stats --with-analytics`. This is useful in project planning or analyzing the outcomes of content production after publishing.
+
+## Content Discovery & Source Research
+
+Kurt provides advanced capabilities for discovering, navigating, and analyzing content:
+
+### Finding Sources
+Use `instructions/find-sources.md` for discovering and retrieving content:
+- **Semantic search**: Full-text search through fetched documents
+- **Cluster navigation**: Browse content organized by topic
+- **Link analysis**: Find related docs, prerequisites, and dependencies
+- **Filtered retrieval**: Query by status, type, analytics, etc.
+
+### Deep Source Analysis
+Use `instructions/research-sources.md` for LLM-powered extraction during writing:
+- **Claim extraction**: Pull verifiable facts with evidence
+- **Entity extraction**: Identify products, technologies, concepts
+- **Takeaway extraction**: Summarize key points
+- **Competitive analysis**: Compare approaches and features
+- **Gap analysis**: Identify missing topics and coverage gaps
+
+These are invoked during project planning (see `instructions/add-project.md`) and
+referenced by format templates when deep analysis is needed.
 
 ## Kurt CLI reference
 [ Insert kurt CLI command docs + examples here - probably add this as a separate "command reference doc" ]

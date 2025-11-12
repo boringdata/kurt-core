@@ -153,7 +153,7 @@ def search_cmd(
     "--direction",
     type=click.Choice(["outbound", "inbound"], case_sensitive=False),
     default="outbound",
-    help="Link direction (outbound = from doc, inbound = to doc)",
+    help="Link direction: outbound (default) = links from doc, inbound = links to doc",
 )
 @click.option(
     "--format",
@@ -165,9 +165,12 @@ def links_cmd(document_id: str, direction: str, format: str):
     """
     Show links from or to a document.
 
+    Claude interprets anchor text to understand relationship types
+    (prerequisites, related content, examples, references).
+
     Examples:
-        kurt content links 550e8400
-        kurt content links 550e8400 --direction inbound
+        kurt content links 550e8400                    # Show outbound links (default)
+        kurt content links 550e8400 --direction inbound  # Show inbound links
         kurt content links 550e8400 --format json
     """
     from kurt.content.document import get_document_links
@@ -211,128 +214,3 @@ def links_cmd(document_id: str, direction: str, format: str):
         raise click.Abort()
 
 
-@click.command("prerequisites")
-@click.argument("document_id")
-@click.option(
-    "--max-depth",
-    type=int,
-    default=2,
-    help="Maximum link depth to traverse (default: 2)",
-)
-@click.option(
-    "--format",
-    type=click.Choice(["pretty", "json"], case_sensitive=False),
-    default="pretty",
-    help="Output format",
-)
-def prerequisites_cmd(document_id: str, max_depth: int, format: str):
-    """
-    Find prerequisite documents (docs to read first).
-
-    Traverses inbound links to find documents that should be read
-    before the target document.
-
-    Examples:
-        kurt content prerequisites 550e8400
-        kurt content prerequisites 550e8400 --max-depth 3
-        kurt content prerequisites 550e8400 --format json
-    """
-    from kurt.content.document import find_prerequisite_documents
-
-    try:
-        prereqs = find_prerequisite_documents(document_id, max_depth=max_depth)
-
-        if format == "json":
-            import json
-
-            print(json.dumps(prereqs, indent=2))
-        else:
-            if not prereqs:
-                console.print("\n[yellow]No prerequisite documents found[/yellow]")
-                return
-
-            console.print("\n[bold cyan]Prerequisite Documents[/bold cyan]")
-            console.print(f"[dim]{'─' * 60}[/dim]\n")
-
-            table = Table(show_header=True, header_style="bold magenta")
-            table.add_column("Depth", style="yellow", justify="center")
-            table.add_column("Title", style="cyan")
-            table.add_column("Path", style="dim")
-
-            for prereq in prereqs:
-                path_str = " → ".join(prereq["path"])
-                table.add_row(str(prereq["depth"]), prereq["title"], path_str[:50])
-
-            console.print(table)
-            console.print(f"\n[dim]Total: {len(prereqs)} prerequisites[/dim]")
-
-    except ValueError as e:
-        console.print(f"[red]Error:[/red] {e}")
-        raise click.Abort()
-    except Exception as e:
-        console.print(f"[red]Error:[/red] {e}")
-        raise click.Abort()
-
-
-@click.command("related")
-@click.argument("document_id")
-@click.option(
-    "--max-results",
-    type=int,
-    default=10,
-    help="Maximum number of related docs to show (default: 10)",
-)
-@click.option(
-    "--format",
-    type=click.Choice(["pretty", "json"], case_sensitive=False),
-    default="pretty",
-    help="Output format",
-)
-def related_cmd(document_id: str, max_results: int, format: str):
-    """
-    Find related documents based on link analysis.
-
-    Uses bidirectional link analysis to find documents related to
-    the target document.
-
-    Examples:
-        kurt content related 550e8400
-        kurt content related 550e8400 --max-results 20
-        kurt content related 550e8400 --format json
-    """
-    from kurt.content.document import find_related_documents
-
-    try:
-        related = find_related_documents(document_id, max_results=max_results)
-
-        if format == "json":
-            import json
-
-            print(json.dumps(related, indent=2))
-        else:
-            if not related:
-                console.print("\n[yellow]No related documents found[/yellow]")
-                return
-
-            console.print("\n[bold cyan]Related Documents[/bold cyan]")
-            console.print(f"[dim]{'─' * 60}[/dim]\n")
-
-            table = Table(show_header=True, header_style="bold magenta")
-            table.add_column("Score", style="yellow", justify="right")
-            table.add_column("Title", style="cyan")
-            table.add_column("Relationship", style="dim")
-
-            for doc in related:
-                table.add_row(
-                    str(doc["relevance_score"]), doc["title"], doc["relationship"][:40]
-                )
-
-            console.print(table)
-            console.print(f"\n[dim]Total: {len(related)} related documents[/dim]")
-
-    except ValueError as e:
-        console.print(f"[red]Error:[/red] {e}")
-        raise click.Abort()
-    except Exception as e:
-        console.print(f"[red]Error:[/red] {e}")
-        raise click.Abort()

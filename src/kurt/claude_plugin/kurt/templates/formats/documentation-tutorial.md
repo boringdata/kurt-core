@@ -63,6 +63,11 @@
 
 3. **Prerequisites info** - Setup guides, tool requirements
    - Find: `kurt content search "setup\|install\|getting-started"`
+   - After finding the tutorial doc, check what links TO it (prerequisites):
+     * `kurt content links <doc-id> --direction inbound`
+     * Look for anchor text like "Prerequisites", "Before you start", "Read this first"
+   - Or check what it links FROM (dependencies it mentions):
+     * `kurt content links <doc-id> --direction outbound`
    - Or provide: Installation guides, environment setup docs
 
 4. **Common errors** - Troubleshooting, known issues

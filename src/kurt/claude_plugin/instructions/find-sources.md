@@ -57,19 +57,19 @@ Navigate document relationships through internal links.
 
 ```bash
 # Show outbound links from a document
-kurt content links <doc-id>
+kurt content links <doc-id> --direction outbound
 
 # Show inbound links to a document
 kurt content links <doc-id> --direction inbound
-
-# Find prerequisites (documents to read first)
-kurt content prerequisites <doc-id> --max-depth 2
-
-# Find related documents
-kurt content related <doc-id> --max-results 10
 ```
 
 **Use when**: Finding prerequisite reading, discovering related content, understanding dependencies
+
+**How Claude interprets anchor text:**
+- "Prerequisites", "Read this first", "Before you start" → prerequisite docs
+- "See also", "Related", "Learn more about" → related content
+- "Example", "Try this", "Sample" → example docs
+- Other anchor text → general references
 
 ---
 
@@ -118,7 +118,7 @@ kurt content stats --include "*docs.example.com*"
 - Example: "Show me all tutorial content"
 
 **I have a document and want related ones** → Link-Based Discovery
-- Example: "What should users read before this doc?"
+- Example: "Show me links from this doc" → Check anchor text for relationships
 
 **I need specific filtering** → Direct Retrieval
 - Example: "Show all FETCHED docs from /docs/ that are tutorials"

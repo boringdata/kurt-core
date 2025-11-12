@@ -58,6 +58,11 @@ Use results to inform document selection and prioritization.
 
 7. Load in all <format_template> that will be used in the project.
 8. Gather sources: read each document <format_template> for instructions on how to gather sources. Use `instructions/find-sources.md` for discovering existing sources (semantic search, clusters, link analysis, filtered queries), or fetch new URLs using `kurt content fetch`.
+
+**Tip:** After finding a key document, discover connected content:
+- `kurt content links <doc-id> --direction outbound` - See what this doc links to
+- `kurt content links <doc-id> --direction inbound` - See what links to this doc
+- Interpret anchor text to understand relationships (prerequisites, examples, related content)
 9. Identify + perform research: based on the <format_template>, identify any research that must be performed before completing the project plan. Confirm with the user before performing that research.
 
 For deep source analysis (extracting claims, entities, competitive info, takeaways), see `instructions/research-sources.md` Part 1.

@@ -68,6 +68,10 @@
 
 3. **Real examples** - Customer stories, use cases, implementations
    - Find existing: `kurt content list --url-contains /customer`
+   - After finding key article, discover examples:
+     * `kurt content links <article-id> --direction outbound` to see examples it references
+     * `kurt content links <article-id> --direction inbound` to find articles that cite this as example
+     * Look for anchor text like "Case study", "Example", "Customer story"
    - Search discussions: `kurt integrations research reddit --query "[product/topic] experience"`
    - Or provide: Case study URLs, customer interview notes
 

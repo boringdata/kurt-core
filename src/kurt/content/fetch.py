@@ -29,7 +29,7 @@ from dotenv import find_dotenv, load_dotenv
 
 from kurt.config import KurtConfig, load_config
 from kurt.db.database import get_session
-from kurt.db.models import Document, DocumentLink, DocumentLinkType, IngestionStatus, SourceType
+from kurt.db.models import Document, DocumentLink, IngestionStatus, SourceType
 
 logger = logging.getLogger(__name__)
 
@@ -432,7 +432,8 @@ def extract_document_links(content: str, source_url: str) -> list[dict]:
     Extract internal document links from markdown content.
 
     Uses regex to find markdown links [text](url) and resolves relative URLs.
-    Only returns links that could potentially match other documents in the database.
+    Only returns internal links (same domain). Claude interprets anchor_text
+    to understand relationship types (prerequisites, related, examples).
 
     Args:
         content: Markdown content to extract links from
@@ -441,13 +442,12 @@ def extract_document_links(content: str, source_url: str) -> list[dict]:
     Returns:
         List of dicts with:
             - url: Resolved absolute URL
-            - anchor_text: Link text
-            - context: Surrounding text (up to 100 chars before/after)
+            - anchor_text: Link text (max 500 chars)
 
     Example:
         >>> content = "See [Getting Started](./getting-started) for details."
         >>> extract_document_links(content, "https://example.com/docs/intro")
-        [{'url': 'https://example.com/docs/getting-started', 'anchor_text': 'Getting Started', ...}]
+        [{'url': 'https://example.com/docs/getting-started', 'anchor_text': 'Getting Started'}]
     """
     import re
     from urllib.parse import urljoin, urlparse
@@ -479,18 +479,10 @@ def extract_document_links(content: str, source_url: str) -> list[dict]:
         if parsed_link.netloc != parsed_source.netloc:
             continue
 
-        # Extract context (100 chars before and after)
-        match_start = match.start()
-        match_end = match.end()
-        context_start = max(0, match_start - 100)
-        context_end = min(len(content), match_end + 100)
-        context = content[context_start:context_end].strip()
-
         links.append(
             {
                 "url": absolute_url,
                 "anchor_text": anchor_text[:500],  # Truncate to max length
-                "context": context[:1000],  # Truncate to max length
             }
         )
 
@@ -545,9 +537,7 @@ def save_document_links(doc_id: UUID, links: list[dict]) -> int:
             document_link = DocumentLink(
                 source_document_id=doc_id,
                 target_document_id=target_docs[target_url],
-                link_type=DocumentLinkType.OUTBOUND,
                 anchor_text=link["anchor_text"],
-                context=link["context"],
             )
             session.add(document_link)
             saved_count += 1
