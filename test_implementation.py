@@ -2,8 +2,6 @@
 Test scenarios for new features:
 - Link extraction and tracking
 - Semantic search
-- On-demand extraction
-- Content gap analysis
 
 Run from project root with: uv run python test_implementation.py
 """
@@ -370,136 +368,6 @@ def test_search_functionality(test_dir: Path):
 
 def test_extraction_functions(doc_ids: dict, test_dir: Path):
     """Test on-demand extraction functions."""
-    print("\n" + "=" * 60)
-    print("TEST 5: On-Demand Extraction")
-    print("=" * 60)
-
-    import os
-    os.chdir(test_dir)
-
-    # We need an LLM configured for this test
-    # Skip if no API key
-    import dspy
-    from kurt.config.base import get_config_or_default
-
-    try:
-        llm_config = get_config_or_default()
-        lm = dspy.LM(llm_config.INDEXING_LLM_MODEL)
-        print(f"✓ LLM configured: {llm_config.INDEXING_LLM_MODEL}")
-    except Exception as e:
-        print(f"⚠ No LLM configured - skipping extraction tests")
-        print(f"  (This is expected if ANTHROPIC_API_KEY not set)")
-        return True
-
-    from kurt.content.extract import (
-        extract_claims,
-        extract_entities,
-        extract_takeaways,
-    )
-
-    gs_id = str(doc_ids["getting-started"])
-
-    # Test 1: Extract claims
-    try:
-        print("\nTest 5.1: Extracting claims...")
-        claims = extract_claims(gs_id[:8])  # Use partial ID
-        print(f"✓ Extracted {len(claims)} claims")
-
-        if len(claims) > 0:
-            print(f"  Example: {claims[0].claim_text[:80]}...")
-    except Exception as e:
-        print(f"✗ Claim extraction failed: {e}")
-        return False
-
-    # Test 2: Extract entities
-    try:
-        print("\nTest 5.2: Extracting entities...")
-        entities = extract_entities(gs_id[:8])
-        print(f"✓ Extracted {len(entities)} entities")
-
-        if len(entities) > 0:
-            print(f"  Example: {entities[0].name} ({entities[0].entity_type})")
-    except Exception as e:
-        print(f"✗ Entity extraction failed: {e}")
-        return False
-
-    # Test 3: Extract takeaways
-    try:
-        print("\nTest 5.3: Extracting takeaways...")
-        takeaways = extract_takeaways(gs_id[:8], max_takeaways=3)
-        print(f"✓ Extracted {len(takeaways)} takeaways")
-
-        if len(takeaways) > 0:
-            print(f"  Example: {takeaways[0].takeaway[:80]}...")
-    except Exception as e:
-        print(f"✗ Takeaway extraction failed: {e}")
-        return False
-
-    return True
-
-
-def test_gap_analysis(test_dir: Path):
-    """Test content gap analysis."""
-    print("\n" + "=" * 60)
-    print("TEST 6: Content Gap Analysis")
-    print("=" * 60)
-
-    import os
-    os.chdir(test_dir)
-
-    # Check if LLM is configured
-    import dspy
-    from kurt.config.base import get_config_or_default
-
-    try:
-        llm_config = get_config_or_default()
-        lm = dspy.LM(llm_config.INDEXING_LLM_MODEL)
-        print(f"✓ LLM configured: {llm_config.INDEXING_LLM_MODEL}")
-    except Exception as e:
-        print(f"⚠ No LLM configured - skipping gap analysis tests")
-        print(f"  (This is expected if ANTHROPIC_API_KEY not set)")
-        return True
-
-    from kurt.content.gaps import analyze_content_gaps, analyze_topic_coverage
-
-    # Test 1: Analyze gaps
-    try:
-        print("\nTest 6.1: Analyzing content gaps...")
-        gaps = analyze_content_gaps(
-            include_pattern="*test.com*",
-            target_topics=["webhooks", "error handling", "rate limiting"],
-            audience="developers",
-        )
-        print(f"✓ Identified {len(gaps)} content gaps")
-
-        if len(gaps) > 0:
-            high_priority = [g for g in gaps if g.priority == "high"]
-            print(f"  High priority gaps: {len(high_priority)}")
-            if high_priority:
-                print(f"  Example: {high_priority[0].topic} - {high_priority[0].gap_type}")
-    except Exception as e:
-        print(f"✗ Gap analysis failed: {e}")
-        return False
-
-    # Test 2: Analyze topic coverage
-    try:
-        print("\nTest 6.2: Analyzing topic coverage...")
-        coverage = analyze_topic_coverage(
-            topics=["authentication", "API usage", "webhooks"],
-            include_pattern="*test.com*",
-        )
-        print(f"✓ Analyzed coverage for {len(coverage)} topics")
-
-        if len(coverage) > 0:
-            avg_score = sum(c.coverage_score for c in coverage) / len(coverage)
-            print(f"  Average coverage score: {avg_score:.1f}/10")
-            for cov in coverage:
-                print(f"  - {cov.topic}: {cov.coverage_score}/10")
-    except Exception as e:
-        print(f"✗ Coverage analysis failed: {e}")
-        return False
-
-    return True
 
 
 def cleanup(test_dir: Path):
@@ -545,14 +413,9 @@ def main():
         # Test 4: Semantic search
         results["Semantic Search"] = test_search_functionality(test_dir)
 
-        # Test 5: On-demand extraction
-        if success:
-            results["On-Demand Extraction"] = test_extraction_functions(doc_ids, test_dir)
-        else:
-            results["On-Demand Extraction"] = False
-
-        # Test 6: Gap analysis
-        results["Gap Analysis"] = test_gap_analysis(test_dir)
+        # Note: On-demand extraction and gap analysis are now handled by Claude
+        # directly via `kurt content get <doc-id>` and reading the content.
+        # See src/kurt/claude_plugin/instructions/research-sources.md
 
     except Exception as e:
         print(f"\n✗ FATAL ERROR: {e}")

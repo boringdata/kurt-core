@@ -44,10 +44,10 @@ We'll gather further details on these in the following steps, but cannot proceed
 
 If this is a content strategy project or user wants to understand coverage:
 
-See `instructions/research-sources.md` Part 2 for:
-- Gap analysis: Identify missing topics
-- Coverage analysis: Score depth of existing content (1-10)
-- Content suggestions: Generate ideas for what to write
+Use `instructions/find-sources.md` to discover existing content, then analyze:
+- **Gap analysis:** Identify missing topics by reviewing content inventory
+- **Coverage analysis:** Assess depth of existing content on key topics
+- **Content suggestions:** Generate ideas for what to write based on gaps
 
 Use results to inform document selection and prioritization.
 
@@ -63,9 +63,8 @@ Use results to inform document selection and prioritization.
 - `kurt content links <doc-id> --direction outbound` - See what this doc links to
 - `kurt content links <doc-id> --direction inbound` - See what links to this doc
 - Interpret anchor text to understand relationships (prerequisites, examples, related content)
-9. Identify + perform research: based on the <format_template>, identify any research that must be performed before completing the project plan. Confirm with the user before performing that research.
 
-For deep source analysis (extracting claims, entities, competitive info, takeaways), see `instructions/research-sources.md` Part 1.
+9. Identify + perform research: based on the <format_template>, identify any research that must be performed before completing the project plan. Confirm with the user before performing that research.
 10. Confirm with the user to review the <project_level_details> of the <project_plan> once you've reached a reasonable point of completeness.  Iterate with the user as needed, returning to any steps that need refinement.
 11. Populate the <project_tracking> and <project_level_details> sections of the <project_plan> based on what's been agreed to with the user in <project_level_details>.
 12. Ask the user if they'd like to proceed with executing the <project_plan>.  Follow the instructions in each <format_template> for each <project_tracking> step.

@@ -75,7 +75,7 @@
    - Search discussions: `kurt integrations research reddit --query "[product/topic] experience"`
    - Or provide: Case study URLs, customer interview notes
 
-**For advanced discovery/analysis**, see `instructions/find-sources.md` or `instructions/research-sources.md`
+**For advanced discovery/analysis**, see `instructions/find-sources.md`
 
 ---
 

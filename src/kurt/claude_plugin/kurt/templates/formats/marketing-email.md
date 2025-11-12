@@ -68,7 +68,7 @@
    - Search discussions: `kurt integrations research reddit --query "[persona] pain points"`
    - Or provide: Persona docs, customer research, survey results
 
-**For advanced discovery/analysis**, see `instructions/find-sources.md` or `instructions/research-sources.md`
+**For advanced discovery/analysis**, see `instructions/find-sources.md`
 
 ---
 

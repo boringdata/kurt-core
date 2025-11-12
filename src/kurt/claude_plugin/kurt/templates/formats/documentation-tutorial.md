@@ -74,7 +74,7 @@
    - Find: `kurt content search "troubleshoot\|error" --include "*/docs/*"`
    - Or provide: Support docs, known issues, debugging guides
 
-**For advanced discovery/analysis**, see `instructions/find-sources.md` or `instructions/research-sources.md`
+**For advanced discovery/analysis**, see `instructions/find-sources.md`
 
 ---
 

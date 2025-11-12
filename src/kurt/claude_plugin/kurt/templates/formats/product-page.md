@@ -79,7 +79,7 @@
 - `kurt content links <doc-id> --direction outbound` - See what features/products it references
 - `kurt content links <doc-id> --direction inbound` - See what pages link to this feature
 
-**For advanced discovery/analysis**, see `instructions/find-sources.md` or `instructions/research-sources.md`
+**For advanced discovery/analysis**, see `instructions/find-sources.md`
 
 ---
 
