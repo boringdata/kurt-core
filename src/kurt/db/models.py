@@ -58,6 +58,12 @@ class Document(SQLModel, table=True):
     cms_document_id: Optional[str] = Field(
         default=None, index=True
     )  # External CMS document ID (for fetching from CMS API)
+    cms_platform: Optional[str] = Field(
+        default=None, index=True
+    )  # CMS platform name (sanity, contentful, wordpress)
+    cms_instance: Optional[str] = Field(
+        default=None, index=True
+    )  # CMS instance name (prod, staging, default)
     ingestion_status: IngestionStatus = Field(default=IngestionStatus.NOT_FETCHED)
 
     content_hash: Optional[str] = None

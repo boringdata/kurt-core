@@ -1,8 +1,8 @@
 {
-  "description": "Kurt project status and initialization",
   "hooks": {
     "SessionStart": [
       {
+        "matcher": "",
         "hooks": [
           {
             "type": "command",

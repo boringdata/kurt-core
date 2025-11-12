@@ -110,14 +110,54 @@ At the end of a project planning or writing workflow, or if they're having troub
 
 This feedback will be a) logged to the Kurt SQLite db for future reference, b) used by you to improve the Kurt system on the user's behalf, to solve for any issues they might be having (see #extending-kurt), and c) anonymous feedback metrics will be shared with the Kurt team.
 
-## Publishing or searching from the CMS
-When a user requests to publish a document to their CMS or read assets from the CMS (currently supported CMSs: Sanity): 
+## Reading from or publishing to the CMS
 
-1. Check the <kurt_config> (`kurt.config`) for if the user has already configured the CMS they're referring to. If unsure which CMS they're referring to, confirm with the user.
-2. If the CMS hasn't yet been configured, run `kurt cms onboard --platform {{platform_name}}` to guide the user through setting it up.  Run `kurt cms --help` for a list of supported CMSs. 
-3. If the user's requested CMS isn't yet supported, ask if they'd like to setup the integration in the `kurt-core` repo.
-3. To search the CMSs content, use the `kurt cms search` command. This is often used when adding sources or gathering sources for a <project_plan>.
-4. To publish a document to a CMS, use the `kurt cms publish` command.  IMPORTANT! Kurt will only ever create drafts in the target CMS (for the user to publish themselves manually) - never publish a document to "live" status. 
+Kurt supports CMS integrations (Sanity, Contentful, WordPress) for reading and publishing content.
+
+### Detecting CMS Content
+
+When user shares content, check if it's from a CMS:
+
+**Auto-detection** (URL patterns):
+- Sanity Studio: `*.sanity.studio/*`
+- Contentful: `app.contentful.com/*`
+- WordPress: `*/wp-admin/*`
+
+**Natural language** (context cues):
+- User says: "from my CMS", "in Sanity", "our Contentful"
+- User profile may reference CMS from previous setup
+
+### Reading from CMS
+
+1. **Check configuration**: Run `kurt integrations cms status`
+   - If not configured: Guide through `kurt integrations cms onboard --platform {platform}`
+
+2. **Fetch content** (see `instructions/add-source.md` for full workflow):
+   - **Direct link**: User provides CMS URL → Extract ID → Map → Fetch
+   - **Search**: User describes content → Search CMS → User selects → Fetch
+   - **Bulk**: User wants "all articles" → Map content type → Fetch batch
+
+3. **Verify**: Run `kurt content list --with-status FETCHED` to confirm
+
+**Key insight**: The `kurt content fetch` command automatically uses CMS adapters and applies field mappings configured during onboarding. No manual extract/import workflow needed.
+
+### Publishing to CMS
+
+When user wants to publish a document:
+
+1. **Check configuration**: Ensure CMS is configured with write permissions
+2. **Publish as draft**: Run `kurt integrations cms publish --file {path} --content-type {type}`
+3. **IMPORTANT**: Kurt ONLY creates drafts, never publishes to live status
+4. **Confirm**: Show user the CMS URL where they can review and publish manually
+
+Example:
+```bash
+kurt integrations cms publish \
+  --file projects/1124-product-launch/web-page-v2.md \
+  --platform sanity \
+  --instance prod \
+  --content-type article
+``` 
 
 ## Analysis
 Kurt can analyze the user's web analytics, to assist with project planning or ad-hoc analysis (currently supported analytics platforms: PostHog).

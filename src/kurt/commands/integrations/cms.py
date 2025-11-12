@@ -747,3 +747,110 @@ def publish_cmd(
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
         raise click.Abort()
+
+
+@cms.command("status")
+@click.option("--check-health", is_flag=True, help="Test API connections (slower)")
+@track_command
+def status_cmd(check_health: bool):
+    """
+    Show configured CMS integrations.
+
+    Displays all configured CMS platforms, instances, and their status.
+    Use --check-health to test API connectivity.
+
+    Examples:
+        kurt integrations cms status
+        kurt integrations cms status --check-health
+    """
+    from kurt.db.database import get_session
+    from kurt.db.models import Document, IngestionStatus
+    from sqlmodel import func, select
+
+    try:
+        config = load_cms_config()
+
+        if not config:
+            console.print("[yellow]No CMS integrations configured[/yellow]\n")
+            console.print("Get started: [cyan]kurt integrations cms onboard --platform sanity[/cyan]")
+            return
+
+        console.print("[bold]CMS Integrations:[/bold]\n")
+
+        session = get_session()
+
+        for platform, instances in config.items():
+            for instance_name, instance_config in instances.items():
+                # Count documents for this platform/instance
+                total_stmt = (
+                    select(func.count(Document.id))
+                    .where(Document.cms_platform == platform)
+                    .where(Document.cms_instance == instance_name)
+                )
+                total = session.exec(total_stmt).one()
+
+                fetched_stmt = (
+                    select(func.count(Document.id))
+                    .where(Document.cms_platform == platform)
+                    .where(Document.cms_instance == instance_name)
+                    .where(Document.ingestion_status == IngestionStatus.FETCHED)
+                )
+                fetched = session.exec(fetched_stmt).one()
+
+                # Show config
+                console.print(f"[green]✓[/green] {platform.capitalize()} ({instance_name})")
+
+                # Platform-specific details
+                if platform == "sanity":
+                    project_id = instance_config.get("project_id")
+                    if project_id:
+                        console.print(f"  Project: {project_id}")
+                elif platform == "contentful":
+                    space_id = instance_config.get("space_id")
+                    if space_id:
+                        console.print(f"  Space: {space_id}")
+                elif platform == "wordpress":
+                    site_url = instance_config.get("site_url")
+                    if site_url:
+                        console.print(f"  Site: {site_url}")
+
+                # Content types
+                mappings = instance_config.get("content_type_mappings", {})
+                if mappings:
+                    types = [k for k, v in mappings.items() if v.get("enabled")]
+                    if types:
+                        console.print(
+                            f"  Content types: {len(types)} configured ({', '.join(types)})"
+                        )
+
+                # Document counts
+                console.print(f"  Documents: {total} mapped, {fetched} fetched")
+
+                # Health check if requested
+                if check_health:
+                    try:
+                        adapter = get_adapter(platform, instance_name)
+                        import time
+
+                        start = time.time()
+                        adapter.test_connection()
+                        elapsed = int((time.time() - start) * 1000)
+                        console.print(f"  [green]Connection: OK ({elapsed}ms)[/green]")
+                    except Exception as e:
+                        console.print(f"  [red]Connection: Failed - {e}[/red]")
+
+                console.print()
+
+        session.close()
+
+        # Show help if no documents mapped
+        total_docs_stmt = select(func.count(Document.id)).where(Document.cms_platform.isnot(None))
+        total_docs = session.exec(total_docs_stmt).one()
+
+        if total_docs == 0:
+            console.print("[yellow]Tip:[/yellow] Map CMS content with:")
+            console.print("  [cyan]kurt content map cms --platform sanity --instance prod[/cyan]\n")
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise click.Abort()

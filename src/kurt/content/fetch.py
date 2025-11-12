@@ -541,16 +541,26 @@ def fetch_document(identifier: str | UUID, fetch_engine: str = None) -> dict:
     doc.ingestion_status = IngestionStatus.FETCHED  # Will set to ERROR if fails
 
     try:
-        # Detect source type (web vs CMS)
-        source_type, parsed_data = _detect_source_type(doc.source_url)
-
-        if source_type == "cms":
-            # Fetch from CMS using cms_document_id field
+        # Check if this is a CMS document (using stored fields)
+        if doc.cms_platform and doc.cms_instance:
+            # CMS document - use stored platform/instance fields
             content, metadata_dict = _fetch_from_cms(
-                platform=parsed_data["platform"], instance=parsed_data["instance"], doc=doc
+                platform=doc.cms_platform, instance=doc.cms_instance, doc=doc
             )
         else:
-            # Fetch from web using appropriate engine
+            # Web URL - use web scraping engines
+            # First check if it looks like a CMS URL pattern (legacy check)
+            source_type, parsed_data = _detect_source_type(doc.source_url)
+
+            if source_type == "cms":
+                # CMS URL detected but missing platform/instance fields
+                # This shouldn't happen with new documents
+                raise ValueError(
+                    f"Document {doc.id} has CMS URL pattern but missing cms_platform/cms_instance fields. "
+                    f"URL: {doc.source_url}. Please recreate this document using 'kurt content map cms'."
+                )
+
+            # Standard web fetch
             engine = _get_fetch_engine(override=fetch_engine)
 
             if engine == "firecrawl":

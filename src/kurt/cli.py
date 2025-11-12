@@ -1,5 +1,6 @@
 """Kurt CLI - Main command-line interface."""
 
+import json
 import shutil
 from pathlib import Path
 
@@ -193,7 +194,27 @@ OPENAI_API_KEY=your_openai_api_key_here
                         # Copy CLAUDE.md to .claude/ (unless skipped)
                         if not skip_claude_md:
                             shutil.copy2(item, claude_dir / item.name)
-                    elif item.name in ["instructions", "hooks", "commands"]:
+                    elif item.name == "settings.json":
+                        # Merge settings.json with existing settings
+                        dest_settings = claude_dir / "settings.json"
+                        with open(item) as f:
+                            kurt_settings = json.load(f)
+
+                        if dest_settings.exists():
+                            # Load existing settings and merge
+                            with open(dest_settings) as f:
+                                existing_settings = json.load(f)
+                            # Merge hooks (Kurt's hooks take precedence)
+                            if "hooks" not in existing_settings:
+                                existing_settings["hooks"] = {}
+                            existing_settings["hooks"].update(kurt_settings.get("hooks", {}))
+                            with open(dest_settings, "w") as f:
+                                json.dump(existing_settings, f, indent=2)
+                        else:
+                            # Create new settings.json
+                            with open(dest_settings, "w") as f:
+                                json.dump(kurt_settings, f, indent=2)
+                    elif item.name in ["instructions", "commands"]:
                         # Copy directory contents individually, preserving user files
                         dest_dir = claude_dir / item.name
                         dest_dir.mkdir(exist_ok=True)
@@ -216,7 +237,7 @@ OPENAI_API_KEY=your_openai_api_key_here
 
                 console.print("[green]✓[/green] Copied instruction files")
                 console.print(
-                    f"[dim]  .claude/CLAUDE.md, .claude/instructions/, .claude/hooks/, .claude/commands/[/dim]"
+                    f"[dim]  .claude/CLAUDE.md, .claude/settings.json, .claude/instructions/, .claude/commands/[/dim]"
                 )
                 console.print(f"[dim]  kurt/templates/[/dim]")
             else:

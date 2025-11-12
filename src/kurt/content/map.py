@@ -1885,6 +1885,8 @@ def map_cms_content(
         new_doc = Document(
             source_url=source_url,
             cms_document_id=cms_doc_id,  # Store CMS ID for fetching
+            cms_platform=platform,  # Store platform for fetch routing
+            cms_instance=instance,  # Store instance for fetch routing
             source_type=SourceType.WEB,  # Use WEB type for now (CMS content is web-accessible)
             ingestion_status=IngestionStatus.NOT_FETCHED,
             title=doc_meta.get("title", "Untitled"),
