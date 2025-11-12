@@ -57,7 +57,7 @@
 **Types of information needed for marketing emails:**
 
 1. **Offer/Value details** - What you're promoting
-   - Find: `kurt content list | grep -i "<offer/product>"`
+   - Find: `kurt content search "<offer/product>"`
    - Or provide: Product details, offer terms, event information
 
 2. **Proof points** - Why recipient should act
@@ -67,6 +67,8 @@
 3. **Audience insights** - Who you're emailing
    - Search discussions: `kurt integrations research reddit --query "[persona] pain points"`
    - Or provide: Persona docs, customer research, survey results
+
+**For advanced discovery/analysis**, see `instructions/find-sources.md` or `instructions/research-sources.md`
 
 ---
 

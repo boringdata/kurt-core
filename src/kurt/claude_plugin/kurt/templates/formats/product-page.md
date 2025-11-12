@@ -57,7 +57,7 @@
 **Types of information needed for product pages:**
 
 1. **Product capabilities** - Features, specs, technical details
-   - Find: `kurt content list --url-contains /docs/ | grep -i "<product>"`
+   - Find: `kurt content list --url-contains /docs/`
    - Find: `kurt content list --url-contains /features`
    - Or provide: Product specs, feature lists, technical documentation
 
@@ -75,41 +75,19 @@
    - Find: `kurt content list | grep -i "use-case\|example"`
    - Or provide: Sales notes, customer stories, implementation examples
 
+**For advanced discovery/analysis**, see `instructions/find-sources.md` or `instructions/research-sources.md`
+
 ---
 
 ## Source Requirements
 
 **Before writing, gather these sources (documented in frontmatter):**
 
-### Discovery Using Clusters (Recommended)
-
-If content has been clustered, use topic clusters for intelligent discovery:
-
-```bash
-# See what clusters exist
-kurt content list-clusters
-
-# Find product-related clusters
-kurt content list --in-cluster "Product Features"
-kurt content list --in-cluster "Pricing & Plans"
-kurt content list --in-cluster "Customer Case Studies"
-
-# Fetch by cluster (if not already fetched)
-kurt content fetch --in-cluster "Product Features" --priority 1
-kurt content fetch --in-cluster "Customer Case Studies" --background
-```
-
-### Discovery Using URL Patterns (If Not Clustered)
-
 **Product documentation:**
 ```bash
-# Search for product features and capabilities
-kurt content list --url-contains /product | grep -i "<product-name>"
+kurt content list --url-contains /product
 kurt content list --url-contains /features
-kurt content list --url-contains /docs/ | grep -i "<product-name>"
-
-# If not fetched:
-kurt content fetch --urls "<product-doc-url>"
+kurt content list --url-contains /docs/
 ```
 
 **Pricing/plans info:**
@@ -123,13 +101,16 @@ kurt content list --url-contains /customer
 kurt content list --url-contains /testimon
 ```
 
-**If no clusters exist yet:**
+**If using clusters** (created with `--cluster-urls` during mapping):
 ```bash
-# Cluster existing content to organize by topic
-kurt content cluster --include "*example.com*"
+kurt content list-clusters
+kurt content list --in-cluster "Product Features"
+kurt content list --in-cluster "Customer Case Studies"
 ```
 
 **If insufficient sources: Ask user for product specs, competitive positioning, or customer proof**
+
+**For advanced discovery**, see `instructions/find-sources.md`
 
 ---
 

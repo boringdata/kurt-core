@@ -52,20 +52,24 @@
 **Types of information needed for tutorials:**
 
 1. **Technical specifications** - API docs, SDK references
-   - Find: `kurt content list --url-contains /api/ --url-contains /docs/`
+   - Find: `kurt content list --url-contains /api/`
+   - Find: `kurt content list --url-contains /docs/`
    - Or provide: Links to technical documentation
 
 2. **Working code examples** - Sample implementations, SDK examples
-   - Find: `kurt content list | grep -i "example\|sample\|quickstart"`
+   - Find: `kurt content search "example" --include "*/docs/*"`
+   - Find: `kurt content list --url-contains /example`
    - Or provide: GitHub repos, code samples, existing implementations
 
 3. **Prerequisites info** - Setup guides, tool requirements
-   - Find: `kurt content list | grep -i "setup\|install\|getting-started"`
+   - Find: `kurt content search "setup\|install\|getting-started"`
    - Or provide: Installation guides, environment setup docs
 
 4. **Common errors** - Troubleshooting, known issues
-   - Find: `kurt content list | grep -i "troubleshoot\|error\|faq"`
+   - Find: `kurt content search "troubleshoot\|error" --include "*/docs/*"`
    - Or provide: Support docs, known issues, debugging guides
+
+**For advanced discovery/analysis**, see `instructions/find-sources.md` or `instructions/research-sources.md`
 
 ---
 

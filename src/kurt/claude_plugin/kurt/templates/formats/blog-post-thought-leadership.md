@@ -54,7 +54,7 @@
 **Types of research that strengthen blog posts:**
 
 1. **Industry data/trends** - Statistics, market research, benchmarks
-   - Find existing: `kurt content list | grep -i "report\|research\|study"`
+   - Find existing: `kurt content search "report\|research\|study"`
    - Search Perplexity: `kurt integrations research search --query "latest [topic] trends in [industry] 2025"`
    - Search discussions: `kurt integrations research hackernews --query "[topic]"`
    - Search discussions: `kurt integrations research reddit --query "[topic]"`
@@ -70,6 +70,8 @@
    - Find existing: `kurt content list --url-contains /customer`
    - Search discussions: `kurt integrations research reddit --query "[product/topic] experience"`
    - Or provide: Case study URLs, customer interview notes
+
+**For advanced discovery/analysis**, see `instructions/find-sources.md` or `instructions/research-sources.md`
 
 ---
 

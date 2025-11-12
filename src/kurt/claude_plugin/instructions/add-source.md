@@ -288,6 +288,17 @@ Show summary: "Project now has {count} sources ({relevant_count} directly releva
 
 ---
 
+## Deep Source Analysis & Discovery
+
+After sources are fetched and indexed, use these instruction files for advanced workflows:
+
+- **Finding sources**: `instructions/find-sources.md` - Semantic search, cluster navigation, link analysis, filtered queries
+- **Deep analysis**: `instructions/research-sources.md` - Extract claims/entities/takeaways, gap analysis, coverage scoring
+
+These are typically used during project planning (see `instructions/add-project.md` steps 5.5, 8, 9) or referenced by format templates when deep source analysis is needed.
+
+---
+
 ## Examples
 
 **Example 1: User in Product Page Project**

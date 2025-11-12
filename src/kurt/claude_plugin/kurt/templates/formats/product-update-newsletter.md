@@ -61,7 +61,7 @@
 **Types of information needed for product newsletters:**
 
 1. **Product changes** - What shipped, what changed
-   - Find: `kurt content list | grep -i "changelog\|release\|update"`
+   - Find: `kurt content search "changelog\|release\|update"`
    - Find: `kurt content list --url-contains /docs/ | grep -i "version\|release"`
    - Or provide: Changelog, release notes, Jira/Linear completed tickets
 
@@ -71,6 +71,8 @@
 
 3. **User impact** - Why users should care
    - Or provide: Product manager notes, user research, feedback
+
+**For advanced discovery/analysis**, see `instructions/find-sources.md` or `instructions/research-sources.md`
 
 ---
 

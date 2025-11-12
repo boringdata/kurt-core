@@ -40,14 +40,27 @@ To create a new writing <project_plan> file (`projects/project-name/plan.md`) ba
 
 We'll gather further details on these in the following steps, but cannot proceed without a basic understanding of the user's intent with this project.
 
+5.5. [OPTIONAL] Assess content gaps
+
+If this is a content strategy project or user wants to understand coverage:
+
+See `instructions/research-sources.md` Part 2 for:
+- Gap analysis: Identify missing topics
+- Coverage analysis: Score depth of existing content (1-10)
+- Content suggestions: Generate ideas for what to write
+
+Use results to inform document selection and prioritization.
+
 6. Identify the document types from the user's request based on the available writing format templates in `kurt/templates/formats/` (<format_template>).  Note that a project will frequently require writing multiple <format_template> variants:
 
     **If matches an existing template** -> Confirm each selection with the user.
     **If doesn't match an existing template** -> Ask the user if they'd like to create a template (see `instructions/add-format-template.md`) or use the nearest match if one exists. Once complete, proceed to the next step.
 
 7. Load in all <format_template> that will be used in the project.
-8. Gather sources: read each document <format_template> for instructions on how to gather sources. Gather sources using `kurt content list` and other `kurt content` commands (run `kurt content --help` for more details), or fetch any additional URLs we might need using `kurt content fetch`.
-9. Identify + perform research: based on the <format_template>, identify any research that must be performed before completing the project plan.  Confirm with the user before performing that research.
+8. Gather sources: read each document <format_template> for instructions on how to gather sources. Use `instructions/find-sources.md` for discovering existing sources (semantic search, clusters, link analysis, filtered queries), or fetch new URLs using `kurt content fetch`.
+9. Identify + perform research: based on the <format_template>, identify any research that must be performed before completing the project plan. Confirm with the user before performing that research.
+
+For deep source analysis (extracting claims, entities, competitive info, takeaways), see `instructions/research-sources.md` Part 1.
 10. Confirm with the user to review the <project_level_details> of the <project_plan> once you've reached a reasonable point of completeness.  Iterate with the user as needed, returning to any steps that need refinement.
 11. Populate the <project_tracking> and <project_level_details> sections of the <project_plan> based on what's been agreed to with the user in <project_level_details>.
 12. Ask the user if they'd like to proceed with executing the <project_plan>.  Follow the instructions in each <format_template> for each <project_tracking> step.
