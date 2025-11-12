@@ -65,7 +65,7 @@
    - Or provide: Customer stats, testimonials, success metrics
 
 3. **Audience insights** - Who you're emailing
-   - Search discussions: `kurt research search --source reddit --query "[persona] pain points"`
+   - Search discussions: `kurt integrations research reddit --query "[persona] pain points"`
    - Or provide: Persona docs, customer research, survey results
 
 ---
@@ -82,7 +82,7 @@ kurt content list --url-contains /product
 kurt content list --url-contains /pricing
 
 # If not fetched:
-kurt fetch --urls "<url>"
+kurt content fetch --urls "<url>"
 ```
 
 **Supporting evidence:**

@@ -71,21 +71,22 @@ kurt content fetch --url {selected_urls} --priority 1
 
 **C. Bulk Import** (user wants "all articles", entire content type, or full CMS)
 
-User wants large import → map inline (need to see what exists), fetch in background:
+User wants large import → map WITH clustering, fetch in background:
 ```bash
-# Map inline (need to know what content exists)
+# Map + cluster in one command
 kurt content map cms --platform {platform} --instance {instance} \
-  --content-type {type}
+  --content-type {type} --cluster-urls
 
-# Then fetch relevant subset in background
-kurt content fetch --with-status NOT_FETCHED --priority 5 --background
+# Then fetch relevant clusters in background
+kurt content fetch --in-cluster "{relevant_cluster}" --priority 5 --background
 ```
 
-Tell user: "Mapped {count} {content_type} documents from {platform}. Fetching relevant ones in background for your {project_goal}."
+Tell user: "Mapped {count} {content_type} documents and created {cluster_count} topic clusters. Fetching {relevant_cluster} in background for your {project_goal}."
 
-**Project-aware fetch**: Based on project context, fetch only relevant subset:
-- Writing about specific topic → Fetch docs matching topic keywords
-- General reference → Keep mapped, fetch on-demand later
+**Why cluster CMS content?**
+- Groups articles by topic automatically
+- Enables fetching by theme instead of guessing URL patterns
+- Project-aware: Fetch "API Tutorials" cluster for tutorial project, skip "Blog Posts" cluster
 
 ---
 
@@ -138,15 +139,20 @@ kurt content fetch --include "{relevant_sections}" --background --priority 5
 Tell user: "Mapped {count} pages from {domain}. Fetching {relevant_sections} in background for your {project_goal}."
 
 **Large site (>200 pages)**:
-Map inline (need to know sections), fetch in background:
+Map inline WITH clustering, fetch in background:
 ```bash
-# Map inline (need to know what sections exist)
-kurt content map url {homepage_url}
+# Map + cluster in one command (LLM creates topic clusters automatically)
+kurt content map url {homepage_url} --cluster-urls
 
-# Then fetch relevant sections in background
-kurt content fetch --include "{relevant_sections}" --background --priority 10
+# Then fetch relevant clusters in background
+kurt content fetch --in-cluster "{cluster_name}" --background --priority 10
 ```
-Tell user: "Mapping {domain}... Found {count} pages. Fetching {relevant_sections} in background for your {project_goal}. Let's continue."
+Tell user: "Mapping {domain}... Found {count} pages and created {cluster_count} topic clusters. Fetching {relevant_cluster} in background for your {project_goal}. Let's continue."
+
+**Why cluster during map?**
+- Organizes content immediately for intelligent fetching
+- Clusters based on URL patterns, titles, descriptions (doesn't need FETCHED content)
+- Enables cluster-based source discovery later
 
 ### Step 3: Project-Aware Section Selection
 

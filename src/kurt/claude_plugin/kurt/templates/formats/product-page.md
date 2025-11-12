@@ -62,8 +62,8 @@
    - Or provide: Product specs, feature lists, technical documentation
 
 2. **Competitive differentiation** - How you compare to alternatives
-   - Search discussions: `kurt research search --source reddit --query "[product category] alternatives"`
-   - Search Perplexity: `kurt research query "[competitor] vs [product category] comparison"`
+   - Search discussions: `kurt integrations research reddit --query "[product category] alternatives"`
+   - Search Perplexity: `kurt integrations research search --query "[competitor] vs [product category] comparison"`
    - Or provide: Competitive analysis docs, positioning materials
 
 3. **Customer proof** - Testimonials, case studies, metrics
@@ -81,6 +81,26 @@
 
 **Before writing, gather these sources (documented in frontmatter):**
 
+### Discovery Using Clusters (Recommended)
+
+If content has been clustered, use topic clusters for intelligent discovery:
+
+```bash
+# See what clusters exist
+kurt content list-clusters
+
+# Find product-related clusters
+kurt content list --in-cluster "Product Features"
+kurt content list --in-cluster "Pricing & Plans"
+kurt content list --in-cluster "Customer Case Studies"
+
+# Fetch by cluster (if not already fetched)
+kurt content fetch --in-cluster "Product Features" --priority 1
+kurt content fetch --in-cluster "Customer Case Studies" --background
+```
+
+### Discovery Using URL Patterns (If Not Clustered)
+
 **Product documentation:**
 ```bash
 # Search for product features and capabilities
@@ -89,7 +109,7 @@ kurt content list --url-contains /features
 kurt content list --url-contains /docs/ | grep -i "<product-name>"
 
 # If not fetched:
-kurt fetch --urls "<product-doc-url>"
+kurt content fetch --urls "<product-doc-url>"
 ```
 
 **Pricing/plans info:**
@@ -101,6 +121,12 @@ kurt content list --url-contains /pricing
 ```bash
 kurt content list --url-contains /customer
 kurt content list --url-contains /testimon
+```
+
+**If no clusters exist yet:**
+```bash
+# Cluster existing content to organize by topic
+kurt content cluster --include "*example.com*"
 ```
 
 **If insufficient sources: Ask user for product specs, competitive positioning, or customer proof**
@@ -254,7 +280,7 @@ kurt content list --url-starts-with https://<company-domain> | head -5
 
 **If NOT_FETCHED:**
 ```bash
-kurt fetch --include "*/product/*" --limit 5
+kurt content fetch --include "*/product/*" --limit 5
 ```
 
 ### Step 2: Select 3-5 Examples (Iterative with User)

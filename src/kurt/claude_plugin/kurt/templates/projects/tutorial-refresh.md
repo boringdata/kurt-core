@@ -11,7 +11,7 @@ When a user clones this template, follow these steps:
 2. Gather current ground truth sources:
    - Add user-provided sources following ADD-SOURCE.md instructions
    - Run `kurt content list` to identify what sources are already available
-   - Fetch any additional current documentation needed with `kurt fetch`
+   - Fetch any additional current documentation needed with `kurt content fetch`
 
 3. Identify published tutorials to review:
    `kurt content list --url-starts-with [domain] --content-type tutorial` (or similar filters)

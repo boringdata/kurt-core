@@ -80,7 +80,7 @@ kurt content list --url-contains /api/ | grep -i "<feature>"
 kurt content list --url-contains /docs/ | grep -i "<feature>"
 
 # If not fetched:
-kurt fetch --urls "<doc-url>"
+kurt content fetch --urls "<doc-url>"
 ```
 
 **Code examples:**
@@ -257,7 +257,7 @@ kurt content list --url-contains /guide
 
 **If NOT_FETCHED:**
 ```bash
-kurt fetch --include "*/docs/*" --limit 10
+kurt content fetch --include "*/docs/*" --limit 10
 ```
 
 ### Step 2: Select 3-5 Examples (Iterative with User)
@@ -274,7 +274,7 @@ Use these, or provide different URLs?"
 
 **If user provides URLs:**
 ```bash
-kurt fetch --urls "<url1>,<url2>,<url3>"
+kurt content fetch --urls "<url1>,<url2>,<url3>"
 ```
 
 **If user pastes text:**

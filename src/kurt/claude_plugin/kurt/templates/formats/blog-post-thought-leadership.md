@@ -55,9 +55,9 @@
 
 1. **Industry data/trends** - Statistics, market research, benchmarks
    - Find existing: `kurt content list | grep -i "report\|research\|study"`
-   - Search Perplexity: `kurt research query "latest [topic] trends in [industry] 2025"`
-   - Search discussions: `kurt research search --source hackernews --query "[topic]"`
-   - Search discussions: `kurt research search --source reddit --query "[topic]"`
+   - Search Perplexity: `kurt integrations research search --query "latest [topic] trends in [industry] 2025"`
+   - Search discussions: `kurt integrations research hackernews --query "[topic]"`
+   - Search discussions: `kurt integrations research reddit --query "[topic]"`
    - Or provide: URLs to industry reports, competitor analysis
    - Or provide: Notes/transcripts from industry experts
 
@@ -68,7 +68,7 @@
 
 3. **Real examples** - Customer stories, use cases, implementations
    - Find existing: `kurt content list --url-contains /customer`
-   - Search discussions: `kurt research search --source reddit --query "[product/topic] experience"`
+   - Search discussions: `kurt integrations research reddit --query "[product/topic] experience"`
    - Or provide: Case study URLs, customer interview notes
 
 ---
@@ -83,7 +83,7 @@
 kurt content list | grep -i "<topic-keyword>"
 
 # If found but not fetched yet:
-kurt fetch --urls "<url1>,<url2>,<url3>"
+kurt content fetch --urls "<url1>,<url2>,<url3>"
 ```
 
 **Related blog posts for context:**
@@ -208,7 +208,7 @@ kurt content list --url-contains /insights
 
 **If you see NOT_FETCHED posts, fetch them:**
 ```bash
-kurt fetch --include "*/blog/*" --limit 10
+kurt content fetch --include "*/blog/*" --limit 10
 ```
 
 ### Step 2: Select 3-5 Examples (Iterative with User)
@@ -225,7 +225,7 @@ Would you like to use these for style analysis, or provide different URLs/paste 
 
 **If user provides URLs:**
 ```bash
-kurt fetch --urls "<url1>,<url2>,<url3>"
+kurt content fetch --urls "<url1>,<url2>,<url3>"
 ```
 
 **If user pastes text:**

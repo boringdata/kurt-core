@@ -38,7 +38,7 @@ Use this when a format template exists but needs its style customized for the us
 
 7. If user provides URLs:
    ```bash
-   kurt fetch --urls "<url1>,<url2>,<url3>"
+   kurt content fetch --urls "<url1>,<url2>,<url3>"
    ```
 
 8. If user pastes text:

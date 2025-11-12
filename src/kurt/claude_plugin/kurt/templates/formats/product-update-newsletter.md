@@ -85,7 +85,7 @@ kurt content list | grep -i "changelog\|release-note"
 kurt content list --url-contains /docs/ | grep -i "version"
 
 # If not fetched:
-kurt fetch --urls "<changelog-url>"
+kurt content fetch --urls "<changelog-url>"
 ```
 
 **Feature documentation:**
