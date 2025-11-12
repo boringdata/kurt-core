@@ -677,6 +677,7 @@ def fetch_documents_batch(
     document_ids: list[str],
     max_concurrent: int = 5,
     fetch_engine: str = None,
+    progress_callback=None,
 ) -> list[dict]:
     """
     Fetch multiple documents in parallel using async HTTP.
@@ -685,6 +686,7 @@ def fetch_documents_batch(
         document_ids: List of document UUIDs or URLs to fetch
         max_concurrent: Maximum number of concurrent downloads (default: 5)
         fetch_engine: Optional engine override ('firecrawl' or 'trafilatura')
+        progress_callback: Optional callback function called after each document completes
 
     Returns:
         List of results, one per document:
@@ -721,15 +723,24 @@ def fetch_documents_batch(
             "⚠️  Warning: Fetching large volumes with Trafilatura may encounter rate limits. "
             "For better reliability with large batches, consider using Firecrawl."
         )
-        logger.warning(warning_msg)
+        # Only print once, don't also log to avoid duplication
         print(f"\n{warning_msg}")
-        print('   1. Update kurt.config: INGESTION_FETCH_ENGINE="firecrawl"')
+        print("\n   To switch to Firecrawl:")
+        print('   1. Set in kurt.config: INGESTION_FETCH_ENGINE="firecrawl"')
         print("   2. Add FIRECRAWL_API_KEY to your .env file")
-        print("   Get your API key at: https://firecrawl.dev\n")
+        print("   3. Get your API key at: https://firecrawl.dev")
+        print("\n   Note: Both the config setting AND the API key are required.\n")
 
     async def _batch_fetch():
         semaphore = asyncio.Semaphore(max_concurrent)
-        tasks = [_fetch_one_async(doc_id, semaphore, fetch_engine) for doc_id in document_ids]
+
+        async def _fetch_with_progress(doc_id):
+            result = await _fetch_one_async(doc_id, semaphore, fetch_engine)
+            if progress_callback:
+                progress_callback()  # Call progress callback after each completion
+            return result
+
+        tasks = [_fetch_with_progress(doc_id) for doc_id in document_ids]
         results = await asyncio.gather(*tasks)
 
         # Log progress every 10 documents or at completion

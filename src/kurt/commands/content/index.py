@@ -28,7 +28,12 @@ logger = logging.getLogger(__name__)
     is_flag=True,
     help="Re-index documents even if already indexed",
 )
-def index(doc_id: str, include_pattern: str, all: bool, force: bool):
+@click.option(
+    "--limit",
+    type=int,
+    help="Maximum number of documents to index (default: no limit)",
+)
+def index(doc_id: str, include_pattern: str, all: bool, force: bool, limit: int):
     """
     Extract metadata from FETCHED documents using LLM analysis.
 
@@ -54,6 +59,9 @@ def index(doc_id: str, include_pattern: str, all: bool, force: bool):
         # Index all un-indexed documents
         kurt content index --all
 
+        # Index with a limit
+        kurt content index --all --limit 10
+
         # Re-index already indexed documents
         kurt content index --include "*/docs/*" --force
     """
@@ -77,6 +85,13 @@ def index(doc_id: str, include_pattern: str, all: bool, force: bool):
         if not documents:
             console.print("[yellow]No documents found matching criteria[/yellow]")
             return
+
+        # Apply limit if specified
+        if limit and len(documents) > limit:
+            console.print(
+                f"[dim]Limiting to first {limit} documents out of {len(documents)} found[/dim]"
+            )
+            documents = documents[:limit]
 
         console.print(f"[bold]Indexing {len(documents)} document(s)...[/bold]\n")
 

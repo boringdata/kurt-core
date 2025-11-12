@@ -9,7 +9,7 @@ Tests the migration utilities including:
 - Status checking
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -295,11 +295,10 @@ class TestDatabaseBackup:
         before_sec = before.replace(microsecond=0)
         after_sec = after.replace(microsecond=0)
         # Timestamp should be within reasonable bounds (allow 1 second before for clock skew)
-        assert (
-            before_sec.replace(second=before_sec.second - 1)
-            <= timestamp
-            <= after_sec.replace(second=after_sec.second + 1)
-        )
+        # Handle edge cases for second values
+        before_with_tolerance = before_sec - timedelta(seconds=1)
+        after_with_tolerance = after_sec + timedelta(seconds=1)
+        assert before_with_tolerance <= timestamp <= after_with_tolerance
 
 
 class TestMigrationApplication:

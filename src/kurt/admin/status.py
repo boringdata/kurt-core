@@ -36,7 +36,14 @@ def get_document_counts() -> Dict[str, int]:
             "fetched": fetched,
             "error": error,
         }
-    except Exception:
+    except RuntimeError:
+        # Re-raise RuntimeError with specific database access issues
+        raise
+    except Exception as e:
+        # Log the actual error for debugging
+        import logging
+
+        logging.debug(f"Error getting document counts: {e}")
         return {
             "total": 0,
             "not_fetched": 0,
@@ -62,7 +69,14 @@ def get_documents_by_domain() -> List[Dict[str, any]]:
 
         domain_counts = Counter(domains)
         return [{"domain": domain, "count": count} for domain, count in domain_counts.most_common()]
-    except Exception:
+    except RuntimeError:
+        # Re-raise RuntimeError with specific database access issues
+        raise
+    except Exception as e:
+        # Log the actual error for debugging
+        import logging
+
+        logging.debug(f"Error getting documents by domain: {e}")
         return []
 
 
@@ -73,7 +87,14 @@ def get_cluster_count() -> int:
 
         session = get_session()
         return session.query(TopicCluster).count()
-    except Exception:
+    except RuntimeError:
+        # Re-raise RuntimeError with specific database access issues
+        raise
+    except Exception as e:
+        # Log the actual error for debugging
+        import logging
+
+        logging.debug(f"Error getting cluster count: {e}")
         return 0
 
 

@@ -254,8 +254,11 @@ class ScenarioRunner:
                     self._log(f"   ✓ Skills: {skills_count} found")
                     self._log(f"   ✓ Commands: {commands_count} found")
 
-                    # Stop scenario if no commands are found
-                    if commands_count == 0:
+                    # Check if we should validate tools existence
+                    check_claude_tools = self.config.get("workspace.check_claude_tools", True)
+
+                    # Stop scenario if no commands are found (unless check is disabled)
+                    if check_claude_tools and commands_count == 0:
                         raise RuntimeError(
                             f".claude folder exists but contains no commands. "
                             f"Commands: {commands_count}, Skills: {skills_count}"

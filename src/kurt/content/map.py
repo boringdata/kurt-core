@@ -1419,68 +1419,54 @@ def map_url_content(
         if progress and task_id is not None:
             progress.update(task_id, completed=len(docs), total=len(docs))
     except (ValueError, Exception) as e:
-        # Sitemap failed - fall back to crawling if max_depth is specified
-        if max_depth is not None:
-            logger.info(
-                f"Sitemap discovery failed: {e}. Falling back to crawling with max_depth={max_depth}"
+        # Sitemap failed - fall back to crawling
+        # Use provided max_depth or default to 2 for automatic fallback
+        fallback_depth = max_depth if max_depth is not None else 2
+
+        logger.info(
+            f"Sitemap discovery failed: {e}. Falling back to crawling with max_depth={fallback_depth}"
+        )
+
+        # Use crawler to discover URLs
+        crawled_urls = crawl_website(
+            homepage=url,
+            max_depth=fallback_depth,  # Use fallback_depth instead of max_depth
+            max_pages=max_pages,
+            allow_external=allow_external,
+            include_patterns=include_patterns,
+            exclude_patterns=exclude_patterns,
+            progress=progress,
+            task_id=task_id,
+        )
+
+        # Create documents for crawled URLs
+        from kurt.content.fetch import add_document
+
+        if progress and task_id is not None:
+            progress.update(
+                task_id,
+                description="Creating documents...",
+                total=len(crawled_urls),
+                completed=0,
             )
 
-            # Use crawler to discover URLs
-            crawled_urls = crawl_website(
-                homepage=url,
-                max_depth=max_depth,
-                max_pages=max_pages,
-                allow_external=allow_external,
-                include_patterns=include_patterns,
-                exclude_patterns=exclude_patterns,
-                progress=progress,
-                task_id=task_id,
-            )
-
-            # Create documents for crawled URLs
-            from kurt.content.fetch import add_document
+        for idx, crawled_url in enumerate(crawled_urls):
+            try:
+                doc_id = add_document(crawled_url)
+                docs.append(
+                    {
+                        "url": crawled_url,
+                        "doc_id": str(doc_id),
+                        "created": True,
+                    }
+                )
+            except Exception as doc_err:
+                logger.warning(f"Failed to create document for {crawled_url}: {doc_err}")
 
             if progress and task_id is not None:
-                progress.update(
-                    task_id,
-                    description="Creating documents...",
-                    total=len(crawled_urls),
-                    completed=0,
-                )
+                progress.update(task_id, completed=idx + 1)
 
-            for idx, crawled_url in enumerate(crawled_urls):
-                try:
-                    doc_id = add_document(crawled_url)
-                    docs.append(
-                        {
-                            "url": crawled_url,
-                            "doc_id": str(doc_id),
-                            "created": True,
-                        }
-                    )
-                except Exception as doc_err:
-                    logger.warning(f"Failed to create document for {crawled_url}: {doc_err}")
-
-                if progress and task_id is not None:
-                    progress.update(task_id, completed=idx + 1)
-
-            discovery_method = "crawl"
-        else:
-            # No max_depth specified and sitemap failed - provide helpful error message
-            from urllib.parse import urlparse
-
-            parsed = urlparse(url)
-            parsed.netloc.replace("www.", "")
-
-            raise ValueError(
-                f"No sitemap found for {url}\n"
-                f"\n"
-                f"To discover content from this site, use crawling with --max-depth:\n"
-                f"  kurt map url {url} --max-depth 3\n"
-                f"\n"
-                f"Or specify a custom sitemap location:\n"
-                f"  kurt map url {url} --sitemap-path /custom-sitemap.xml"
-            )
+        discovery_method = "crawl"
 
     new_count = sum(1 for d in docs if d.get("created", False))
     existing_count = len(docs) - new_count

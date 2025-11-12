@@ -369,12 +369,28 @@ def fetch_cmd(
 
         console.print("[dim]Enqueueing workflow...[/dim]\n")
 
+        # Build filter description for workflow display
+        filter_desc = []
+        if include_pattern:
+            filter_desc.append(f"include: {include_pattern}")
+        if urls:
+            filter_desc.append(f"urls: {urls[:50]}...")
+        if in_cluster:
+            filter_desc.append(f"cluster: {in_cluster}")
+        if with_status:
+            filter_desc.append(f"status: {with_status}")
+        if with_content_type:
+            filter_desc.append(f"type: {with_content_type}")
+
         result = run_with_background_support(
             workflow_func=fetch_batch_workflow,
             workflow_args={
                 "identifiers": doc_ids_to_fetch,
                 "fetch_engine": engine,
-                "skip_index": skip_index,
+                "extract_metadata": not skip_index,  # Convert skip_index to extract_metadata
+                "filter_description": " | ".join(filter_desc)
+                if filter_desc
+                else None,  # Pass filter info
             },
             background=True,
             workflow_id=None,
@@ -394,13 +410,16 @@ def fetch_cmd(
             # Step 1: Fetch documents
             fetch_task = progress.add_task("Fetching content...", total=len(doc_ids_to_fetch))
 
+            # Create progress callback to update the progress bar
+            def update_fetch_progress():
+                progress.advance(fetch_task)
+
             results = fetch_documents_batch(
                 doc_ids_to_fetch,
                 max_concurrent=concurrency,
                 fetch_engine=engine,
+                progress_callback=update_fetch_progress,
             )
-
-            progress.update(fetch_task, completed=len(doc_ids_to_fetch))
 
             # Step 2: Index successfully fetched documents in parallel (unless --skip-index)
             successful = [r for r in results if r["success"]]
@@ -414,14 +433,21 @@ def fetch_cmd(
 
                 # Extract document IDs and run batch indexing
                 doc_ids = [str(r["document_id"]) for r in successful]
-                index_results = asyncio.run(
-                    batch_extract_document_metadata(doc_ids, max_concurrent=concurrency)
-                )
+
+                # Create a wrapper to track progress during indexing
+                async def batch_index_with_progress():
+                    # We can't easily track progress inside batch_extract_document_metadata
+                    # without modifying it, so we'll just update at the end
+                    result = await batch_extract_document_metadata(
+                        doc_ids, max_concurrent=concurrency
+                    )
+                    progress.update(index_task, completed=len(successful))
+                    return result
+
+                index_results = asyncio.run(batch_index_with_progress())
 
                 indexed = index_results["succeeded"]
                 index_errors = index_results["errors"]
-
-                progress.update(index_task, completed=len(successful))
 
                 if index_errors:
                     console.print(

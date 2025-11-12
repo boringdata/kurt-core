@@ -1,6 +1,8 @@
 """Kurt status command - comprehensive project status."""
 
 import json
+import os
+import sys
 from pathlib import Path
 
 import click
@@ -273,9 +275,31 @@ def status(format: str, hook_cc: bool):
             markdown_output = generate_status_markdown()
             console.print(Markdown(markdown_output))
 
+    except RuntimeError as e:
+        # Display user-friendly error message for known database issues
+        console.print(f"[red]Database Error:[/red] {e}")
+
+        # Provide helpful suggestions based on error type
+        error_msg = str(e)
+        if "Database file does not exist" in error_msg:
+            console.print(
+                "\n[yellow]Suggestion:[/yellow] Run 'kurt init' to initialize the project"
+            )
+        elif "permission denied" in error_msg:
+            console.print("\n[yellow]Suggestion:[/yellow] Check file/directory permissions")
+        elif "Database is locked" in error_msg:
+            console.print("\n[yellow]Suggestion:[/yellow] Wait for other operations to complete")
+        elif "disk I/O error" in error_msg:
+            console.print("\n[yellow]Suggestion:[/yellow] Check disk space and file system")
+
+        raise click.Abort()
     except Exception as e:
-        console.print(f"[red]Error:[/red] {e}")
+        console.print(f"[red]Unexpected Error:[/red] {e}")
         import traceback
 
-        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        # Only show traceback in verbose mode or when debugging
+        if "--debug" in sys.argv or os.environ.get("KURT_DEBUG"):
+            console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        else:
+            console.print("[dim]Use --debug flag for more details[/dim]")
         raise click.Abort()

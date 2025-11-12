@@ -10,15 +10,7 @@ scenarios:
   - name: 01_basic_init
     description: Initialize a new Kurt project from scratch
 
-    notes: |
-      Tests the most basic functionality - workspace initialization.
-      Expected behavior:
-      - Workspace automatically runs 'kurt init'
-      - Creates kurt.config file
-      - Creates .kurt/kurt.sqlite database
-      - Creates sources/, rules/, projects/ directories
-
-    initial_prompt: Check the Kurt project status and verify it is initialized correctly
+    initial_prompt: Check the Kurt project status and verify it is initialized correctly. If not initialize the project.
 
     assertions:
       - type: FileExists

@@ -64,6 +64,7 @@ class EvalConfig:
                 "init_kurt": True,
                 "install_claude_plugin": True,
                 "claude_plugin_path": ".claude",
+                "check_claude_tools": True,
             },
             "user_agent": {
                 "llm_provider": "openai",

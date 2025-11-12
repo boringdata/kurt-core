@@ -4,7 +4,6 @@ import asyncio
 import logging
 from typing import Optional
 
-import dspy
 from pydantic import BaseModel
 
 from kurt.db.models import ContentType
@@ -30,30 +29,35 @@ class DocumentMetadataOutput(BaseModel):
 
 
 # ============================================================================
-# DSPy Signature
-# ============================================================================
-
-
-class ExtractMetadata(dspy.Signature):
-    """Extract structured metadata from markdown document content.
-
-    Analyze and extract:
-    - Content Type: reference, tutorial, guide, blog, product_page, etc.
-    - Title: Extract or generate concise title
-    - Topics: 3-5 main topics (e.g., "ML", "Data Engineering")
-    - Tools: Technologies mentioned (e.g., "PostgreSQL", "React")
-    - Structure: code examples, procedures, narrative
-
-    Be accurate - only list prominently discussed topics/tools.
-    """
-
-    document_content: str = dspy.InputField(description="Markdown document content")
-    metadata: DocumentMetadataOutput = dspy.OutputField(description="Extracted metadata")
-
-
-# ============================================================================
 # Business Logic
 # ============================================================================
+
+
+def _get_extract_metadata_signature():
+    """Get the ExtractMetadata DSPy signature class.
+
+    This is defined as a function to ensure it's created fresh in each thread,
+    avoiding DSPy threading issues.
+    """
+    import dspy
+
+    class ExtractMetadata(dspy.Signature):
+        """Extract structured metadata from markdown document content.
+
+        Analyze and extract:
+        - Content Type: reference, tutorial, guide, blog, product_page, etc.
+        - Title: Extract or generate concise title
+        - Topics: 3-5 main topics (e.g., "ML", "Data Engineering")
+        - Tools: Technologies mentioned (e.g., "PostgreSQL", "React")
+        - Structure: code examples, procedures, narrative
+
+        Be accurate - only list prominently discussed topics/tools.
+        """
+
+        document_content: str = dspy.InputField(description="Markdown document content")
+        metadata: DocumentMetadataOutput = dspy.OutputField(description="Extracted metadata")
+
+    return ExtractMetadata
 
 
 def extract_document_metadata(document_id: str, extractor=None, force: bool = False) -> dict:
@@ -158,10 +162,24 @@ def extract_document_metadata(document_id: str, extractor=None, force: bool = Fa
     # Extract metadata using DSPy
     if extractor is None:
         # Single document mode - configure DSPy here
+        import dspy
+
         llm_config = get_config_or_default()
-        lm = dspy.LM(llm_config.INDEXING_LLM_MODEL)
-        dspy.configure(lm=lm)
-        extractor = dspy.ChainOfThought(ExtractMetadata)
+
+        # Check if DSPy is already configured
+        try:
+            current_lm = dspy.settings.lm
+            if current_lm is None:
+                # Not configured yet, configure it
+                lm = dspy.LM(llm_config.INDEXING_LLM_MODEL)
+                dspy.configure(lm=lm)
+        except (AttributeError, RuntimeError):
+            # DSPy not configured yet, configure it
+            lm = dspy.LM(llm_config.INDEXING_LLM_MODEL)
+            dspy.configure(lm=lm)
+
+        extract_metadata_sig = _get_extract_metadata_signature()
+        extractor = dspy.ChainOfThought(extract_metadata_sig)
 
     result = extractor(document_content=content)
     metadata_output = result.metadata
@@ -210,24 +228,6 @@ def extract_document_metadata(document_id: str, extractor=None, force: bool = Fa
     }
 
 
-def _extract_document_metadata_worker(document_id: str, extractor, force: bool = False) -> dict:
-    """
-    Worker function for async batch processing.
-
-    This function is called in thread pool executors and expects
-    extractor to be already configured (avoids dspy.configure() in threads).
-
-    Args:
-        document_id: Document UUID (full or partial)
-        extractor: Pre-configured DSPy extractor
-        force: If True, re-index even if content hasn't changed
-
-    Returns:
-        Dictionary with extraction results (same as extract_document_metadata)
-    """
-    return extract_document_metadata(document_id, extractor=extractor, force=force)
-
-
 async def batch_extract_document_metadata(
     document_ids: list[str],
     max_concurrent: int = 5,
@@ -236,8 +236,8 @@ async def batch_extract_document_metadata(
     """
     Extract metadata for multiple documents in parallel.
 
-    Configures DSPy once in the main thread, then runs extractions in parallel
-    using thread pool executors (avoids dspy.configure() threading issues).
+    Each worker thread configures its own DSPy instance to avoid threading issues.
+    DSPy configuration and signature classes are created fresh in each thread.
 
     Args:
         document_ids: List of document UUIDs (full or partial)
@@ -261,18 +261,42 @@ async def batch_extract_document_metadata(
         for res in result['results']:
             print(f"  {res['title']}: {res['content_type']}")
     """
-    from functools import partial
 
     from kurt.config import get_config_or_default
 
-    # Configure DSPy once in main thread (before spawning workers)
+    # Get model name for worker threads
     llm_config = get_config_or_default()
-    lm = dspy.LM(llm_config.INDEXING_LLM_MODEL)
-    dspy.configure(lm=lm)
-    extractor = dspy.ChainOfThought(ExtractMetadata)
+    model_name = llm_config.INDEXING_LLM_MODEL
 
-    # Create worker function with extractor pre-bound
-    worker = partial(_extract_document_metadata_worker, extractor=extractor, force=force)
+    # Configure DSPy once in the main thread before parallel processing
+    import dspy
+
+    try:
+        current_lm = dspy.settings.lm
+        if current_lm is None:
+            lm = dspy.LM(model_name)
+            dspy.configure(lm=lm)
+    except (AttributeError, RuntimeError):
+        lm = dspy.LM(model_name)
+        dspy.configure(lm=lm)
+
+    # Get the signature and extractor in main thread
+    extract_metadata_sig = _get_extract_metadata_signature()
+    extractor = dspy.ChainOfThought(extract_metadata_sig)
+
+    # Create worker that uses dspy.context() for thread safety
+    def worker_with_context(doc_id: str) -> tuple[str, dict | Exception]:
+        """Worker that uses DSPy context for thread safety."""
+        try:
+            # Use dspy.context() to ensure proper thread initialization
+            with dspy.context():
+                logger.info(f"Starting extraction for document {doc_id}")
+                result = extract_document_metadata(doc_id, extractor=extractor, force=force)
+                logger.info(f"Completed extraction for document {doc_id}")
+                return (doc_id, result)
+        except Exception as e:
+            logger.error(f"Failed to extract metadata for {doc_id}: {e}")
+            return (doc_id, e)
 
     semaphore = asyncio.Semaphore(max_concurrent)
     loop = asyncio.get_event_loop()
@@ -280,14 +304,8 @@ async def batch_extract_document_metadata(
     async def extract_with_semaphore(doc_id: str) -> tuple[str, dict | Exception]:
         """Extract metadata with semaphore to limit concurrency."""
         async with semaphore:
-            try:
-                logger.info(f"Starting extraction for document {doc_id}")
-                result = await loop.run_in_executor(None, worker, doc_id)
-                logger.info(f"Completed extraction for document {doc_id}")
-                return (doc_id, result)
-            except Exception as e:
-                logger.error(f"Failed to extract metadata for {doc_id}: {e}")
-                return (doc_id, e)
+            # Run in executor with DSPy context
+            return await loop.run_in_executor(None, worker_with_context, doc_id)
 
     # Run all extractions concurrently
     tasks = [extract_with_semaphore(doc_id) for doc_id in document_ids]
