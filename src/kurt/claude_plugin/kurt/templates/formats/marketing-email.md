@@ -79,9 +79,9 @@
 **Offer/product information:**
 ```bash
 # Search for what you're promoting
-kurt content list | grep -i "<offer-name>"
-kurt content list --url-contains /product
-kurt content list --url-contains /pricing
+kurt content search "<offer-name>"
+kurt content list --include "*/product*"
+kurt content list --include "*/pricing*"
 
 # If not fetched:
 kurt content fetch --urls "<url>"
@@ -90,8 +90,8 @@ kurt content fetch --urls "<url>"
 **Supporting evidence:**
 ```bash
 # Find proof points
-kurt content list --url-contains /customer
-kurt content list | grep -i "case-stud\|success"
+kurt content list --include "*/customer*"
+kurt content search "case-stud|success"
 ```
 
 **If insufficient sources: Ask user for offer details, proof points, or target audience info**

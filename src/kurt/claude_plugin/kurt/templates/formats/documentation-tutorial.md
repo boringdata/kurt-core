@@ -85,8 +85,8 @@
 **Technical documentation:**
 ```bash
 # Search for API/SDK docs
-kurt content list --url-contains /api/ | grep -i "<feature>"
-kurt content list --url-contains /docs/ | grep -i "<feature>"
+kurt content search "<feature>" --include "*/api/*"
+kurt content search "<feature>" --include "*/docs/*"
 
 # If not fetched:
 kurt content fetch --urls "<doc-url>"
@@ -95,13 +95,15 @@ kurt content fetch --urls "<doc-url>"
 **Code examples:**
 ```bash
 # Search for examples
-kurt content list | grep -i "example\|sample\|quickstart"
+kurt content search "example|sample|quickstart"
 ```
 
 **Prerequisites:**
 ```bash
-# Find setup guides
-kurt content list | grep -i "setup\|install\|authentication"
+# Find setup guides by topic
+kurt content list --with-topic "setup"
+kurt content list --with-topic "installation"
+kurt content search "setup|install|authentication"
 ```
 
 **If insufficient sources: Ask user for technical docs, code samples, or working examples**

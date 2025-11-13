@@ -12,7 +12,38 @@ Use this instruction when:
 
 ## Discovery Methods
 
-### 1. Semantic Search
+### 1. Topic/Technology Discovery
+See what topics and technologies exist across indexed content, identify coverage gaps.
+
+```bash
+# See all indexed topics with document counts
+kurt content list-topics
+
+# See common topics (in 5+ documents)
+kurt content list-topics --min-docs 5
+
+# See all indexed technologies
+kurt content list-technologies
+
+# Filter to docs section only
+kurt content list-topics --include "*/docs/*"
+kurt content list-technologies --include "*/docs/*"
+
+# JSON output for programmatic use
+kurt content list-topics --format json
+```
+
+**Use when**: Understanding what topics/tech are covered, identifying content gaps, planning what to fetch
+
+**Workflow example:**
+1. Run `kurt content list-topics` → See topics like "authentication" (15 docs), "webhooks" (3 docs)
+2. Notice "webhooks" has low coverage
+3. Run `kurt content list --with-topic "webhooks"` → See which 3 docs exist
+4. Identify need for more webhook content → fetch additional webhook guides
+
+---
+
+### 2. Semantic Search
 Full-text search through fetched document content.
 
 ```bash
@@ -32,7 +63,7 @@ kurt content search "OAuth" --case-sensitive
 
 ---
 
-### 2. Cluster-Based Discovery
+### 3. Cluster-Based Discovery
 Browse content organized by topic clusters.
 
 ```bash
@@ -52,7 +83,7 @@ kurt content fetch --in-cluster "Getting Started" --priority 1
 
 ---
 
-### 3. Link-Based Discovery
+### 4. Link-Based Discovery
 Navigate document relationships through internal links.
 
 ```bash
@@ -73,7 +104,38 @@ kurt content links <doc-id> --direction inbound
 
 ---
 
-### 4. Direct Retrieval
+### 5. Indexed Metadata Search
+Filter by topics, technologies, and content characteristics extracted during indexing.
+
+```bash
+# Filter by topic
+kurt content list --with-topic "authentication"
+kurt content list --with-topic "API"
+
+# Filter by technology
+kurt content list --with-technology "Python"
+kurt content list --with-technology "Docker"
+
+# Combine metadata filters
+kurt content list --with-content-type tutorial --with-technology "React"
+kurt content list --with-topic "deployment" --with-technology "Kubernetes"
+
+# View indexed metadata
+kurt content get <doc-id>  # Shows topics, technologies, content type, structural flags
+```
+
+**Use when**: Filtering by extracted topics, technologies, or content type
+
+**Note**: Requires running `kurt content index` first to extract metadata. See `add-source.md` for indexing workflow.
+
+**Available filters:**
+- `--with-topic`: Filter by topics in `primary_topics` (case-insensitive substring match)
+- `--with-technology`: Filter by tools/technologies in `tools_technologies` (case-insensitive substring match)
+- `--with-content-type`: Filter by content type (tutorial, guide, blog, reference, etc.)
+
+---
+
+### 6. Direct Retrieval
 Query documents by metadata, status, or properties.
 
 ```bash
@@ -81,8 +143,8 @@ Query documents by metadata, status, or properties.
 kurt content list
 
 # Filter by URL pattern
-kurt content list --url-contains "/docs/"
-kurt content list --url-starts-with "https://example.com"
+kurt content list --include "*/docs/*"
+kurt content list --include "https://example.com*"
 
 # Filter by status
 kurt content list --with-status FETCHED
@@ -95,7 +157,7 @@ kurt content list --with-content-type tutorial
 kurt content list --in-cluster "API Guides"
 
 # Combine filters
-kurt content list --with-status FETCHED --url-contains "/api/" --with-content-type reference
+kurt content list --with-status FETCHED --include "*/api/*" --with-content-type reference
 
 # Get specific document
 kurt content get <doc-id>
@@ -111,8 +173,17 @@ kurt content stats --include "*docs.example.com*"
 
 ## Which Method to Use?
 
+**I want to understand what topics/tech are covered** → Topic/Technology Discovery
+- Example: "What topics do we have content about?" → `kurt content list-topics`
+- Example: "Do we have Docker content?" → `kurt content list-technologies`
+- Example: "Which topics need more docs?" → `kurt content list-topics` (look for low counts)
+
 **I know the exact topic/keyword** → Semantic Search
 - Example: "Find all docs mentioning webhooks"
+
+**I want docs about a specific topic or technology** → Indexed Metadata Search
+- Example: "Show me all Python tutorials" → `kurt content list --with-content-type tutorial --with-technology Python`
+- Example: "Find authentication guides" → `kurt content list --with-topic authentication`
 
 **I want to explore by theme** → Cluster-Based Discovery
 - Example: "Show me all tutorial content"

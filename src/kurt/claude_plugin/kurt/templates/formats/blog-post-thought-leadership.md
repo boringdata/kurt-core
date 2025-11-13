@@ -85,8 +85,11 @@
 
 **Company's existing content on topic:**
 ```bash
-# Search mapped + fetched content
-kurt content list | grep -i "<topic-keyword>"
+# Search mapped + fetched content by topic
+kurt content search "<topic-keyword>"
+
+# Filter by indexed topics
+kurt content list --with-topic "<topic>"
 
 # If found but not fetched yet:
 kurt content fetch --urls "<url1>,<url2>,<url3>"
@@ -94,13 +97,13 @@ kurt content fetch --urls "<url1>,<url2>,<url3>"
 
 **Related blog posts for context:**
 ```bash
-kurt content list --url-contains /blog/ --status FETCHED | grep -i "<topic>"
+kurt content list --include "*/blog/*" --with-status FETCHED --with-topic "<topic>"
 ```
 
 **Product/feature information:**
 ```bash
-kurt content list --url-contains /docs/ | grep -i "<feature-name>"
-kurt content list --url-contains /product | grep -i "<feature-name>"
+kurt content search "<feature-name>" --include "*/docs/*"
+kurt content search "<feature-name>" --include "*/product/*"
 ```
 
 **If insufficient sources found: Ask user for URLs or content to ingest**

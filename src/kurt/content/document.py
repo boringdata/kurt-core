@@ -428,11 +428,145 @@ def list_clusters() -> list[dict]:
     return clusters
 
 
+def list_indexed_topics(
+    min_docs: int = 1,
+    include_pattern: Optional[str] = None,
+) -> list[dict]:
+    """
+    List all unique topics from indexed documents with document counts.
+
+    Args:
+        min_docs: Minimum number of documents a topic must appear in (default: 1)
+        include_pattern: Optional glob pattern to filter documents (e.g., "*/docs/*")
+
+    Returns:
+        List of dictionaries with topic information, sorted by document count descending:
+            - topic: str (topic name)
+            - doc_count: int (number of documents containing this topic)
+
+    Example:
+        # Get all topics
+        topics = list_indexed_topics()
+        for topic in topics:
+            print(f"{topic['topic']}: {topic['doc_count']} docs")
+
+        # Get common topics (in 5+ documents)
+        topics = list_indexed_topics(min_docs=5)
+
+        # Get topics from docs section only
+        topics = list_indexed_topics(include_pattern="*/docs/*")
+    """
+    from collections import Counter
+    from fnmatch import fnmatch
+
+    session = get_session()
+
+    # Get all FETCHED documents
+    stmt = select(Document).where(Document.ingestion_status == IngestionStatus.FETCHED)
+    documents = session.exec(stmt).all()
+
+    # Filter by pattern if provided
+    if include_pattern:
+        documents = [
+            d
+            for d in documents
+            if (d.source_url and fnmatch(d.source_url, include_pattern))
+            or (d.content_path and fnmatch(d.content_path, include_pattern))
+        ]
+
+    # Count topic occurrences
+    topic_counts = Counter()
+    for doc in documents:
+        if doc.primary_topics:
+            for topic in doc.primary_topics:
+                topic_counts[topic] += 1
+
+    # Filter by min_docs and convert to list of dicts
+    topics = [
+        {"topic": topic, "doc_count": count}
+        for topic, count in topic_counts.items()
+        if count >= min_docs
+    ]
+
+    # Sort by count descending, then alphabetically by topic name
+    topics.sort(key=lambda x: (-x["doc_count"], x["topic"].lower()))
+
+    return topics
+
+
+def list_indexed_technologies(
+    min_docs: int = 1,
+    include_pattern: Optional[str] = None,
+) -> list[dict]:
+    """
+    List all unique technologies from indexed documents with document counts.
+
+    Args:
+        min_docs: Minimum number of documents a technology must appear in (default: 1)
+        include_pattern: Optional glob pattern to filter documents (e.g., "*/docs/*")
+
+    Returns:
+        List of dictionaries with technology information, sorted by document count descending:
+            - technology: str (technology name)
+            - doc_count: int (number of documents containing this technology)
+
+    Example:
+        # Get all technologies
+        techs = list_indexed_technologies()
+        for tech in techs:
+            print(f"{tech['technology']}: {tech['doc_count']} docs")
+
+        # Get common technologies (in 5+ documents)
+        techs = list_indexed_technologies(min_docs=5)
+
+        # Get technologies from docs section only
+        techs = list_indexed_technologies(include_pattern="*/docs/*")
+    """
+    from collections import Counter
+    from fnmatch import fnmatch
+
+    session = get_session()
+
+    # Get all FETCHED documents
+    stmt = select(Document).where(Document.ingestion_status == IngestionStatus.FETCHED)
+    documents = session.exec(stmt).all()
+
+    # Filter by pattern if provided
+    if include_pattern:
+        documents = [
+            d
+            for d in documents
+            if (d.source_url and fnmatch(d.source_url, include_pattern))
+            or (d.content_path and fnmatch(d.content_path, include_pattern))
+        ]
+
+    # Count technology occurrences
+    tech_counts = Counter()
+    for doc in documents:
+        if doc.tools_technologies:
+            for tech in doc.tools_technologies:
+                tech_counts[tech] += 1
+
+    # Filter by min_docs and convert to list of dicts
+    technologies = [
+        {"technology": tech, "doc_count": count}
+        for tech, count in tech_counts.items()
+        if count >= min_docs
+    ]
+
+    # Sort by count descending, then alphabetically by technology name
+    technologies.sort(key=lambda x: (-x["doc_count"], x["technology"].lower()))
+
+    return technologies
+
+
 def list_content(
     with_status: str = None,
     include_pattern: str = None,
     in_cluster: str = None,
     with_content_type: str = None,
+    with_topic: str = None,
+    with_technology: str = None,
     max_depth: int = None,
     limit: int = None,
     offset: int = 0,
@@ -452,6 +586,8 @@ def list_content(
         include_pattern: Glob pattern matching source_url or content_path
         in_cluster: Filter by cluster name (case-insensitive)
         with_content_type: Filter by content type (tutorial | guide | blog | etc)
+        with_topic: Filter by topic in primary_topics (case-insensitive substring match)
+        with_technology: Filter by technology in tools_technologies (case-insensitive substring match)
         max_depth: Filter by maximum URL depth (e.g., 2 for example.com/a/b)
         limit: Maximum number of documents to return
         offset: Number of documents to skip (for pagination)
@@ -479,6 +615,11 @@ def list_content(
 
         # Filter by URL depth
         docs = list_content(max_depth=2)
+
+        # Filter by indexed metadata
+        docs = list_content(with_topic="authentication")
+        docs = list_content(with_technology="Python")
+        docs = list_content(with_content_type="tutorial", with_technology="Docker")
 
         # With analytics
         docs = list_content(with_analytics=True, order_by="pageviews_30d", limit=10)
@@ -602,6 +743,26 @@ def list_content(
         from kurt.utils.url_utils import get_url_depth
 
         documents = [d for d in documents if get_url_depth(d.source_url) <= max_depth]
+
+    # Apply topic filtering (post-query, case-insensitive substring match)
+    if with_topic:
+        topic_lower = with_topic.lower()
+        documents = [
+            d
+            for d in documents
+            if d.primary_topics
+            and any(topic_lower in topic.lower() for topic in d.primary_topics)
+        ]
+
+    # Apply technology filtering (post-query, case-insensitive substring match)
+    if with_technology:
+        tech_lower = with_technology.lower()
+        documents = [
+            d
+            for d in documents
+            if d.tools_technologies
+            and any(tech_lower in tech.lower() for tech in d.tools_technologies)
+        ]
 
     return documents
 

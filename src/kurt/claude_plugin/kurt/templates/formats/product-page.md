@@ -72,7 +72,7 @@
    - Or provide: Customer interview notes, success metrics, testimonials
 
 4. **Use cases** - How customers use this product
-   - Find: `kurt content list | grep -i "use-case\|example"`
+   - Find: `kurt content search "use-case|example"`
    - Or provide: Sales notes, customer stories, implementation examples
 
 **Tip:** After finding a key product doc, discover related content:

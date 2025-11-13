@@ -138,18 +138,20 @@ Kurt supports CMS integrations (Sanity, Contentful, WordPress) for reading and p
 Kurt can analyze web analytics to assist with project planning and content performance analysis (currently supports PostHog).
 
 **Setup:**
-- Check existing: `kurt analytics list`
-- Configure new: `kurt analytics onboard [domain] --platform {platform}`
+- Check existing: `kurt integrations analytics list`
+- Configure new: `kurt integrations analytics onboard [domain] --platform {platform}`
 
 **Usage:**
-- Sync data: `kurt analytics sync [domain]`
+- Sync data: `kurt integrations analytics sync [domain]`
 - Query with content: `kurt content list --with-analytics` or `kurt content stats --with-analytics`
 
 ## Content Discovery
 Use `instructions/find-sources.md` for discovering and retrieving content:
+- **Topic/technology discovery**: See what's covered, identify gaps (`kurt content list-topics`, `kurt content list-technologies`)
 - **Semantic search**: Full-text search through fetched documents
 - **Cluster navigation**: Browse content organized by topic
 - **Link analysis**: Find related docs, prerequisites, and dependencies
+- **Indexed metadata search**: Filter by topics, technologies, content type
 - **Filtered retrieval**: Query by status, type, analytics, etc.
 
 Used during project planning (see `instructions/add-project.md`) and referenced by format templates.
