@@ -12,10 +12,10 @@ You assist with writing internal product marketing artifacts (positioning + mess
 - Format templates
 - Research
 - Outlining, drafting and editing
-- Publishing or reading from the CMS
-- Analysis
 - Feedback
-- Kurt CLI reference
+- CMS Integration
+- Analytics Integration
+- Content Discovery
 - Extending Kurt
 
 ## Overview
@@ -110,87 +110,39 @@ At the end of a project planning or writing workflow, or if they're having troub
 
 This feedback will be a) logged to the Kurt SQLite db for future reference, b) used by you to improve the Kurt system on the user's behalf, to solve for any issues they might be having (see #extending-kurt), and c) anonymous feedback metrics will be shared with the Kurt team.
 
-## Reading from or publishing to the CMS
-
+## CMS Integration
 Kurt supports CMS integrations (Sanity, Contentful, WordPress) for reading and publishing content.
 
-### Detecting CMS Content
+**Reading from CMS:**
+- Check configuration: `kurt integrations cms status`
+- If not configured: `kurt integrations cms onboard --platform {platform}`
+- Fetch content: `kurt content fetch {cms-url}` (automatically uses CMS adapters)
+- See `instructions/add-source.md` for detailed workflow
 
-When user shares content, check if it's from a CMS:
+**Publishing to CMS:**
+- Publish as draft: `kurt integrations cms publish --file {path} --content-type {type}`
+- IMPORTANT: Kurt only creates drafts, never publishes to live status
+- User must review and publish manually in CMS 
 
-**Auto-detection** (URL patterns):
-- Sanity Studio: `*.sanity.studio/*`
-- Contentful: `app.contentful.com/*`
-- WordPress: `*/wp-admin/*`
+## Analytics Integration
+Kurt can analyze web analytics to assist with project planning and content performance analysis (currently supports PostHog).
 
-**Natural language** (context cues):
-- User says: "from my CMS", "in Sanity", "our Contentful"
-- User profile may reference CMS from previous setup
+**Setup:**
+- Check existing: `kurt analytics list`
+- Configure new: `kurt analytics onboard [domain] --platform {platform}`
 
-### Reading from CMS
+**Usage:**
+- Sync data: `kurt analytics sync [domain]`
+- Query with content: `kurt content list --with-analytics` or `kurt content stats --with-analytics`
 
-1. **Check configuration**: Run `kurt integrations cms status`
-   - If not configured: Guide through `kurt integrations cms onboard --platform {platform}`
-
-2. **Fetch content** (see `instructions/add-source.md` for full workflow):
-   - **Direct link**: User provides CMS URL → Extract ID → Map → Fetch
-   - **Search**: User describes content → Search CMS → User selects → Fetch
-   - **Bulk**: User wants "all articles" → Map content type → Fetch batch
-
-3. **Verify**: Run `kurt content list --with-status FETCHED` to confirm
-
-**Key insight**: The `kurt content fetch` command automatically uses CMS adapters and applies field mappings configured during onboarding. No manual extract/import workflow needed.
-
-### Publishing to CMS
-
-When user wants to publish a document:
-
-1. **Check configuration**: Ensure CMS is configured with write permissions
-2. **Publish as draft**: Run `kurt integrations cms publish --file {path} --content-type {type}`
-3. **IMPORTANT**: Kurt ONLY creates drafts, never publishes to live status
-4. **Confirm**: Show user the CMS URL where they can review and publish manually
-
-Example:
-```bash
-kurt integrations cms publish \
-  --file projects/1124-product-launch/web-page-v2.md \
-  --platform sanity \
-  --instance prod \
-  --content-type article
-``` 
-
-## Analysis
-Kurt can analyze the user's web analytics, to assist with project planning or ad-hoc analysis (currently supported analytics platforms: PostHog).
-
-1. Run `kurt analytics list` to see if the user has already configured the analytics platform for the domain they're referring to. If unsure, confirm with the user.
-2. If it hasn't yet been configured, run `kurt analytics onboard [domain] --platform` (run `kurt analytics onboard --help` for list of parameters) to configure a new analytics integration for a domain.
-3. Once an analytics integration is configured, run `kurt analytics sync [domain]` with relevant additional paremeters at any time to return fresh data.
-4. Once data is synced, query analytics joined with content metadata by running `kurt content list --with-analytics` or `kurt content stats --with-analytics`. This is useful in project planning or analyzing the outcomes of content production after publishing.
-
-## Content Discovery & Source Research
-
-Kurt provides advanced capabilities for discovering, navigating, and analyzing content:
-
-### Finding Sources
+## Content Discovery
 Use `instructions/find-sources.md` for discovering and retrieving content:
 - **Semantic search**: Full-text search through fetched documents
 - **Cluster navigation**: Browse content organized by topic
 - **Link analysis**: Find related docs, prerequisites, and dependencies
 - **Filtered retrieval**: Query by status, type, analytics, etc.
 
-### Deep Source Analysis
-Use `instructions/research-sources.md` for LLM-powered extraction during writing:
-- **Claim extraction**: Pull verifiable facts with evidence
-- **Entity extraction**: Identify products, technologies, concepts
-- **Takeaway extraction**: Summarize key points
-- **Competitive analysis**: Compare approaches and features
-- **Gap analysis**: Identify missing topics and coverage gaps
-
-These are invoked during project planning (see `instructions/add-project.md`) and
-referenced by format templates when deep analysis is needed.
-
-## Kurt CLI reference
-[ Insert kurt CLI command docs + examples here - probably add this as a separate "command reference doc" ]
+Used during project planning (see `instructions/add-project.md`) and referenced by format templates.
 
 ## Extending Kurt
 Users can modify Kurt's system in a few ways:
