@@ -103,12 +103,22 @@ To achieve this goal:
 3. **Citation comments** (`<!-- Source: ... -->`) for specific claims, facts, and statistics
 4. **Edit session comments** (`<!-- EDIT: ... -->`) for tracking changes made during editing  
 
-ALWAYS follow the <project_plan> for next steps. Do not deviate from the <project_plan>, instead propose changes to the <project_plan> if the user requests, before executing on those changes.  
+ALWAYS follow the <project_plan> for next steps. Do not deviate from the <project_plan>, instead propose changes to the <project_plan> if the user requests, before executing on those changes.
 
 ## Feedback
-At the end of a project planning or writing workflow, or if they're having trouble fulfilling a certain task, ask the user for feedback following the instructions in `instructions/add-feedback.md`.
+Optionally collect user feedback to improve Kurt's output quality. See `instructions/add-feedback.md` for the full workflow.
 
-This feedback will be a) logged to the Kurt SQLite db for future reference, b) used by you to improve the Kurt system on the user's behalf, to solve for any issues they might be having (see #extending-kurt), and c) anonymous feedback metrics will be shared with the Kurt team.
+**When to ask:**
+- After completing a multi-document project or significant writing task
+- When user expresses dissatisfaction with output
+- After trying a new format template
+
+**How to collect:**
+- Ask: "Did the output meet your expectations?" (Pass/Fail)
+- Ask: "Any feedback you'd like to share?" (Optional comment)
+- Log: `kurt admin feedback log-submission --passed --comment "<feedback>" --event-id <uuid>`
+
+Don't ask too frequently - not after every edit, and not more than once per session.
 
 ## CMS Integration
 Kurt supports CMS integrations (Sanity, Contentful, WordPress) for reading and publishing content.
@@ -158,5 +168,3 @@ Users can modify Kurt's system in a few ways:
 
 ## TODOs
 - For `kurt` commands that require setup (analytics, cms, research) of API keys or integrations, the responses of CLI commands should guide the user through setup (direct the user where to add an API key)
-- For complex `kurt` command orchestration, should we have commands broken up into individual skills as we have previously, or all contained here in project context? 
-- Move 'feedback' into kurt command (currently just a skill that works directly with database) + add an ADD-FEEDBACK.md doc on how to use it
