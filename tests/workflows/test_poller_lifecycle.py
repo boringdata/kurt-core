@@ -105,13 +105,32 @@ class TestDBOSPollerLifecycle:
             handle = test_queue.enqueue(tracked_workflow)
             handles.append(handle)
 
-        # Wait for poller to process (polls every ~1 second)
-        time.sleep(2.0)
+        # Wait for poller to process with polling loop
+        # (polls every ~1 second, so give it time to start and process)
+        max_wait = 10.0
+        poll_interval = 0.5
+        waited = 0.0
+
+        while waited < max_wait:
+            all_complete = True
+            for handle in handles:
+                status = handle.get_status()
+                if status.status not in ["SUCCESS", "ERROR"]:
+                    all_complete = False
+                    break
+
+            if all_complete:
+                break
+
+            time.sleep(poll_interval)
+            waited += poll_interval
 
         # Check that workflows were executed
         for handle in handles:
             status = handle.get_status()
-            assert status.status == "SUCCESS", f"Workflow should complete, got {status.status}"
+            assert (
+                status.status == "SUCCESS"
+            ), f"Workflow should complete, got {status.status} (waited {waited:.1f}s)"
 
         # Verify execution counter
         assert execution_tracker["count"] == 3, "All workflows should have executed"

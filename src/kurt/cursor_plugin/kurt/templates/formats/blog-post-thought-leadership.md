@@ -54,7 +54,7 @@
 **Types of research that strengthen blog posts:**
 
 1. **Industry data/trends** - Statistics, market research, benchmarks
-   - Find existing: `kurt content search "report\|research\|study"`
+   - Find existing: `kurt content list | grep -i "report\|research\|study"`
    - Search Perplexity: `kurt integrations research search --query "latest [topic] trends in [industry] 2025"`
    - Search discussions: `kurt integrations research hackernews --query "[topic]"`
    - Search discussions: `kurt integrations research reddit --query "[topic]"`
@@ -68,14 +68,8 @@
 
 3. **Real examples** - Customer stories, use cases, implementations
    - Find existing: `kurt content list --url-contains /customer`
-   - After finding key article, discover examples:
-     * `kurt content links <article-id> --direction outbound` to see examples it references
-     * `kurt content links <article-id> --direction inbound` to find articles that cite this as example
-     * Look for anchor text like "Case study", "Example", "Customer story"
    - Search discussions: `kurt integrations research reddit --query "[product/topic] experience"`
    - Or provide: Case study URLs, customer interview notes
-
-**For advanced discovery/analysis**, see `instructions/find-sources.md`
 
 ---
 
@@ -85,11 +79,8 @@
 
 **Company's existing content on topic:**
 ```bash
-# Search mapped + fetched content by topic
-kurt content search "<topic-keyword>"
-
-# Filter by indexed topics
-kurt content list --with-topic "<topic>"
+# Search mapped + fetched content
+kurt content list | grep -i "<topic-keyword>"
 
 # If found but not fetched yet:
 kurt content fetch --urls "<url1>,<url2>,<url3>"
@@ -97,13 +88,13 @@ kurt content fetch --urls "<url1>,<url2>,<url3>"
 
 **Related blog posts for context:**
 ```bash
-kurt content list --include "*/blog/*" --with-status FETCHED --with-topic "<topic>"
+kurt content list --url-contains /blog/ --status FETCHED | grep -i "<topic>"
 ```
 
 **Product/feature information:**
 ```bash
-kurt content search "<feature-name>" --include "*/docs/*"
-kurt content search "<feature-name>" --include "*/product/*"
+kurt content list --url-contains /docs/ | grep -i "<feature-name>"
+kurt content list --url-contains /product | grep -i "<feature-name>"
 ```
 
 **If insufficient sources found: Ask user for URLs or content to ingest**
