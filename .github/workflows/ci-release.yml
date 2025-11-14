@@ -43,10 +43,10 @@ jobs:
       - name: Run tests
         run: uv run pytest -v --cov=src/kurt --cov-report=term-missing
 
-  # Release to PyPI (only on GitHub release from main branch)
+  # Release to PyPI (only on GitHub release)
   release-pypi:
     name: Release to PyPI
-    if: github.event_name == 'release' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'release'
     needs: test
     runs-on: ubuntu-latest
     environment:
