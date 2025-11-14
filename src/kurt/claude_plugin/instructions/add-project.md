@@ -21,13 +21,13 @@ To create a new writing <project_plan> file (`projects/project-name/plan.md`) ba
 2. Identify the project template from the user's request based on the available project templates in `kurt/templates/projects/` (the <saved_plan_template>).
 
     **If matches an existing template** -> Confirm that selection with the user.
-    **If doesn't match an existing plan template** -> Ask the user if they'd like to create a saved project plan (see `instructions/add-plan-template.md`) or just create a one-off project (skip to "Create from blank plan" below). Once complete, proceed to the next step.
+    **If doesn't match an existing plan template** -> Ask the user if they'd like to create a saved project plan (see `.claude/instructions/add-plan-template.md`) or just create a one-off project (skip to "Create from blank plan" below). Once complete, proceed to the next step.
 3. Follow setup instructions in the <saved_plan_template>.
 
 ### Create from blank plan
 1. Create a subfolder for the project in the `/projects/` directory, in the format `MMYY-descriptive-project-name` (this is the <project_folder>).
 2. Load the blank project plan template in `kurt/templates/plan-template.md` (the <plan_template>).
-3. Add any provided sources (URLs, pasted text, or CMS links) to the filesystem that the user shared directly in their request following instructions in `instructions/add-source.md`.
+3. Add any provided sources (URLs, pasted text, or CMS links) to the filesystem that the user shared directly in their request following instructions in `.claude/instructions/add-source.md`.
 4. Create a copy of the <plan_template> in the <project_folder> populated with the information we've collected thus far on the project. Continuously update the <project_plan> throughout the rest of this workflow.
 
 5. Ask the user for any information or clarification needed to complete the <project_level_details> section of the <plan_template>:
@@ -43,7 +43,7 @@ We'll gather further details on these in the following steps, but cannot proceed
 6. Identify the document types from the user's request based on the available writing format templates in `kurt/templates/formats/` (<format_template>).  Note that a project will frequently require writing multiple <format_template> variants:
 
     **If matches an existing template** -> Confirm each selection with the user.
-    **If doesn't match an existing template** -> Ask the user if they'd like to create a template (see `instructions/add-format-template.md`) or use the nearest match if one exists. Once complete, proceed to the next step.
+    **If doesn't match an existing template** -> Ask the user if they'd like to create a template (see `.claude/instructions/add-format-template.md`) or use the nearest match if one exists. Once complete, proceed to the next step.
 
 7. Load in all <format_template> that will be used in the project.
 8. Gather sources: read each document <format_template> for instructions on how to gather sources. Gather sources using `kurt content list` and other `kurt content` commands (run `kurt content --help` for more details), or fetch any additional URLs we might need using `kurt content fetch`.

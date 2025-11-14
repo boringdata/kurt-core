@@ -50,8 +50,8 @@ def convert_file_references_to_xml(content: str, instructions_dir: Path) -> str:
     """
     references = {}  # Use dict to track unique references
 
-    # Find all references to instructions/*.md
-    pattern = r"`instructions/([\w-]+)\.md`"
+    # Find all references to instructions/*.md or .claude/instructions/*.md
+    pattern = r"`(?:\.claude/)?instructions/([\w-]+)\.md`"
 
     def replace_reference(match):
         instruction_name = match.group(1)
@@ -102,6 +102,12 @@ def convert_template_references(content: str) -> str:
     content = re.sub(
         r"`(kurt/templates/[^`]+)`",
         r"@\1",
+        content,
+    )
+    # .claude/instructions/X.md → @X rule (for template files)
+    content = re.sub(
+        r"`\.claude/instructions/([\w-]+)\.md`",
+        r"@\1 rule",
         content,
     )
     return content
@@ -161,9 +167,9 @@ def convert_instruction_to_mdc(
     # Convert template references
     content = convert_template_references(content)
 
-    # Convert cross-references to other instructions
+    # Convert cross-references to other instructions (handles both instructions/X.md and .claude/instructions/X.md)
     content = re.sub(
-        r"`instructions/([\w-]+)\.md`",
+        r"`(?:\.claude/)?instructions/([\w-]+)\.md`",
         r"@\1 rule",
         content,
     )
@@ -181,6 +187,23 @@ alwaysApply: false
         f.write(frontmatter + content)
 
     print(f"  ✓ Created {output_path}")
+
+
+def convert_template_file(template_file: Path, output_file: Path) -> None:
+    """Convert a template file, replacing .claude/instructions references."""
+    with open(template_file) as f:
+        content = f.read()
+
+    # Convert .claude/instructions/X.md → @X rule
+    content = re.sub(
+        r"`\.claude/instructions/([\w-]+)\.md`",
+        r"@\1 rule",
+        content,
+    )
+
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_file, "w") as f:
+        f.write(content)
 
 
 def convert_claude_to_cursor(
@@ -217,13 +240,25 @@ def convert_claude_to_cursor(
             output_path = rules_dir / f"{instruction_md.stem}.mdc"
             convert_instruction_to_mdc(instruction_md, output_path)
 
-    # Copy kurt/templates/ as-is
+    # Convert and copy kurt/templates/
     templates_src = claude_plugin_dir / "kurt"
     if templates_src.exists():
-        print(f"\nCopying templates from {templates_src}")
+        print(f"\nConverting templates from {templates_src}")
         templates_dest = cursor_plugin_dir / "kurt"
-        shutil.copytree(templates_src, templates_dest)
-        print(f"  ✓ Copied {templates_src} → {templates_dest}")
+
+        for src_file in templates_src.rglob("*"):
+            if src_file.is_file():
+                rel_path = src_file.relative_to(templates_src)
+                dest_file = templates_dest / rel_path
+
+                # Convert .md files, copy others as-is
+                if src_file.suffix == ".md":
+                    convert_template_file(src_file, dest_file)
+                else:
+                    dest_file.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src_file, dest_file)
+
+        print(f"  ✓ Converted templates {templates_src} → {templates_dest}")
 
     print("\n" + "=" * 60)
     print("Conversion complete!")

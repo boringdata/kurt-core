@@ -33,8 +33,8 @@ Use this when a format template exists but needs its style customized for the us
 5. Find example content for style analysis:
    ```bash
    # Search based on format type (adjust for format)
-   kurt content list --url-contains /blog/     # For blog posts
-   kurt content list --url-contains /docs/     # For tutorials
+   kurt content list --url-prefix "https://domain.com/blog/"     # For blog posts
+   kurt content list --url-prefix "https://domain.com/docs/"     # For tutorials
    ```
 
 6. Offer user 3-5 examples to analyze:
@@ -43,7 +43,7 @@ Use this when a format template exists but needs its style customized for the us
 
 7. If user provides URLs:
    ```bash
-   kurt content fetch --urls "<url1>,<url2>,<url3>"
+   kurt content fetch <url1> <url2> <url3>
    ```
 
 8. If user pastes text:

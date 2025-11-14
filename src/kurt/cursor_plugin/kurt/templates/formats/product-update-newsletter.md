@@ -72,7 +72,7 @@
 3. **User impact** - Why users should care
    - Or provide: Product manager notes, user research, feedback
 
-**For advanced discovery/analysis**, see `instructions/find-sources.md`
+**For advanced discovery/analysis**, see @find-sources rule
 
 ---
 

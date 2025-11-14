@@ -36,8 +36,8 @@ There are 2 prerequisites required for any writing project:
 IMPORTANT! A user must have a <writer_profile> at `kurt/profile.md`.
 
 - At the beginning of each writing session, load in the <writer_profile>.
-- If no <writer_profile> exists, follow instructions in `instructions/add-profile.md` to create one.
-- The user can request changes to their <writer_profile> at any time. Update it following the instructions in `instructions/add-profile.md`.
+- If no <writer_profile> exists, follow instructions in `.claude/instructions/add-profile.md` to create one.
+- The user can request changes to their <writer_profile> at any time. Update it following the instructions in `.claude/instructions/add-profile.md`.
 
 ## Project planning 
 IMPORTANT! All writing, research + source gathering must take place within a `/projects/{{project-name}}/` subfolder (aka <project_subfolder>), with a `plan.md` (aka <project_plan> file) used to track all plans + progress, unless the user explicitly says they're just doing ad hoc (non-project) work. 
@@ -55,10 +55,10 @@ When a user requests to write, edit or publish documents, or otherwise do someth
 1. Identify whether they've referred to an existing project in a `/projects/` subfolder (either by direct or indirect reference).
 2. If they are, open the relevant <project_subfolder> and the <project_plan> and follow the user's instructions in the context of the <project_plan>.
 3. Ask the user if they'd like to just do ad hoc research + exploration, or create a new project to organize their work.
-4. If they want to create a new project, follow `instructions/add-project.md` to create one.
+4. If they want to create a new project, follow `.claude/instructions/add-project.md` to create one.
 
 ## Adding sources
-As part of a writing project, when a user shares a URL or pastes large blocks of text (representing entire files) into the chat, follow the instructions in `instructions/add-source.md` to add it as a source to the active project.
+As part of a writing project, when a user shares a URL or pastes large blocks of text (representing entire files) into the chat, follow the instructions in `.claude/instructions/add-source.md` to add it as a source to the active project.
 
 ## Format templates 
 Kurt provides the following default format templates (see `kurt/templates/formats/` for full list) out of the box:
@@ -81,7 +81,7 @@ Kurt provides the following default format templates (see `kurt/templates/format
 - Drip marketing emails
 - Marketing emails  
 
-Users can add or update format templates to Kurt following the process in `instructions/add-format-template.md`.
+Users can add or update format templates to Kurt following the process in `.claude/instructions/add-format-template.md`.
 
 ## Research
 During project planning, writing, or just ad-hoc exploration, a user might need to conduct external research on the web (using Perplexity, by searching HackerNews / Reddit, accessing RSS feeds, websites, GitHub repos, etc). 
@@ -106,7 +106,7 @@ To achieve this goal:
 ALWAYS follow the <project_plan> for next steps. Do not deviate from the <project_plan>, instead propose changes to the <project_plan> if the user requests, before executing on those changes.
 
 ## Feedback
-Optionally collect user feedback to improve Kurt's output quality. See `instructions/add-feedback.md` for the full workflow.
+Optionally collect user feedback to improve Kurt's output quality. See `.claude/instructions/add-feedback.md` for the full workflow.
 
 **When to ask:**
 - After completing a multi-document project or significant writing task
@@ -127,7 +127,7 @@ Kurt supports CMS integrations (Sanity, Contentful, WordPress) for reading and p
 - Check configuration: `kurt integrations cms status`
 - If not configured: `kurt integrations cms onboard --platform {platform}`
 - Fetch content: `kurt content fetch {cms-url}` (automatically uses CMS adapters)
-- See `instructions/add-source.md` for detailed workflow
+- See `.claude/instructions/add-source.md` for detailed workflow
 
 **Publishing to CMS:**
 - Publish as draft: `kurt integrations cms publish --file {path} --content-type {type}`
@@ -146,7 +146,7 @@ Kurt can analyze web analytics to assist with project planning and content perfo
 - Query with content: `kurt content list --with-analytics` or `kurt content stats --with-analytics`
 
 ## Content Discovery
-Use `instructions/find-sources.md` for discovering and retrieving content:
+Use `.claude/instructions/find-sources.md` for discovering and retrieving content:
 - **Topic/technology discovery**: See what's covered, identify gaps (`kurt content list-topics`, `kurt content list-technologies`)
 - **Semantic search**: Full-text search through fetched documents
 - **Cluster navigation**: Browse content organized by topic
@@ -154,18 +154,18 @@ Use `instructions/find-sources.md` for discovering and retrieving content:
 - **Indexed metadata search**: Filter by topics, technologies, content type
 - **Filtered retrieval**: Query by status, type, analytics, etc.
 
-Used during project planning (see `instructions/add-project.md`) and referenced by format templates.
+Used during project planning (see `.claude/instructions/add-project.md`) and referenced by format templates.
 
 ## Extending Kurt
 Users can modify Kurt's system in a few ways:
 
-- Modifying their profile: see `instructions/add-profile.md`
-- Modify the base project instructions: see `instructions/add-project.md`
-- Modifying format templates: see `instructions/add-format-template.md`
-- Modifying project plan templates: see `instructions/add-plan-template.md`
-- Modifying the feedback process: see `instructions/add-feedback.md`
+- Modifying their profile: see `.claude/instructions/add-profile.md`
+- Modify the base project instructions: see `.claude/instructions/add-project.md`
+- Modifying format templates: see `.claude/instructions/add-format-template.md`
+- Modifying project plan templates: see `.claude/instructions/add-plan-template.md`
+- Modifying the feedback process: see `.claude/instructions/add-feedback.md`
 - (ADVANCED!) Modifying the document metadata template in `kurt/templates/doc-metadata-template.md` that's used to track the lineage of document production
-- (ADVANCED! Modify carefully, following `kurt --help` to validate commands) Modifying supported sources + how they're handled: see `instructions/add-source.md`
+- (ADVANCED! Modify carefully, following `kurt --help` to validate commands) Modifying supported sources + how they're handled: see `.claude/instructions/add-source.md`
 - (ADVANCED!) Additional CMS, research and analytics integrations can be added to the open source `kurt-core` repo on GitHub. 
 
 ## TODOs

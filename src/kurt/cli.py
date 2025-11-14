@@ -279,7 +279,6 @@ OPENAI_API_KEY=your_openai_api_key_here
         console.print("  1. Copy .env.example to .env and add your API keys")
         if ide == "claude":
             console.print("  2. Open Claude Code in this directory")
-            console.print("  3. Run [cyan]/create-project[/cyan] to start your first content project")
         else:
             console.print("  2. Open Cursor in this directory")
             console.print("  3. Mention [cyan]@add-profile[/cyan] to create your content profile")

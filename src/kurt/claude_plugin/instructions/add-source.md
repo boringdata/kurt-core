@@ -331,15 +331,15 @@ kurt content list --with-topic authentication
 kurt content get <doc-id>
 ```
 
-See `instructions/find-sources.md` for complete discovery methods.
+See `.claude/instructions/find-sources.md` for complete discovery methods.
 
 ---
 
 ## Deep Source Analysis & Discovery
 
-After sources are fetched and indexed, use `instructions/find-sources.md` for discovering and retrieving content (semantic search, cluster navigation, link analysis, filtered queries).
+After sources are fetched and indexed, use `.claude/instructions/find-sources.md` for discovering and retrieving content (semantic search, cluster navigation, link analysis, filtered queries).
 
-This is typically used during project planning (see `instructions/add-project.md` steps 5.5, 8, 9) or referenced by format templates.
+This is typically used during project planning (see `.claude/instructions/add-project.md` steps 5.5, 8, 9) or referenced by format templates.
 
 ---
 

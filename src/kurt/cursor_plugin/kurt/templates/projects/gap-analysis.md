@@ -6,8 +6,8 @@ When a user clones this template, follow these steps:
 1. Ask the user:
    - "Which competitor do you want to analyze?" (get domain)
    - "Has their content been indexed?"
-   - If no: "Run: kurt map url https://[competitor-domain] --cluster-urls"
-   - Then: "Run: kurt fetch --url-starts-with https://[competitor-domain]"
+   - If no: "Run: kurt content map url https://[competitor-domain]"
+   - Then: "Run: kurt content fetch --include 'https://[competitor-domain]/**'"
 
 2. Verify competitor content indexed:
    `kurt content stats --include "https://[competitor-domain]/**"`
@@ -236,10 +236,10 @@ Fill top {{NUMBER}} HIGH priority gaps (estimated {{EFFORT}} total)
 **Step 1: Index Competitor Content (1-2 hours)**
 ```bash
 # Map competitor site
-kurt map url https://{{COMPETITOR_DOMAIN}} --cluster-urls
+kurt content map url https://{{COMPETITOR_DOMAIN}}
 
 # Fetch competitor content (automatically indexes)
-kurt fetch --url-starts-with https://{{COMPETITOR_DOMAIN}} --limit 100
+kurt content fetch --include 'https://{{COMPETITOR_DOMAIN}}/**' --limit 100
 
 # Verify indexing complete
 kurt content stats --include "https://{{COMPETITOR_DOMAIN}}/**"

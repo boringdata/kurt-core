@@ -272,8 +272,8 @@ kurt content search "for-|use-case"
 
 **If NOT_FETCHED:**
 ```bash
-kurt fetch --include "*/solution*" --limit 5
-kurt fetch --include "*/use-case*" --limit 5
+kurt content fetch --include "*/solution*" --limit 5
+kurt content fetch --include "*/use-case*" --limit 5
 ```
 
 ### Step 2: Select 3-5 Examples (Iterative with User)

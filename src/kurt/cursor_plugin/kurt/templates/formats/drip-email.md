@@ -91,7 +91,7 @@ kurt content search "<topic>" --include "*/blog/*"
 kurt content list --include "*/docs/*" --with-content-type tutorial
 
 # If not fetched:
-kurt fetch --urls "<resource-url>"
+kurt content fetch <resource-url>
 ```
 
 **Proof points:**
