@@ -6,8 +6,8 @@ When a user clones this template, follow these steps:
 1. Ask the user:
    - "Which competitor do you want to analyze?" (get domain)
    - "Has their content been indexed?"
-   - If no: "Run: kurt map url https://[competitor-domain] --cluster-urls"
-   - Then: "Run: kurt fetch --url-starts-with https://[competitor-domain]"
+   - If no: "Run: kurt content map url https://[competitor-domain]"
+   - Then: "Run: kurt content fetch --include 'https://[competitor-domain]/**'"
 
 2. Verify both content sets indexed:
    `kurt content stats --url-starts-with https://[your-domain]`
@@ -271,12 +271,12 @@ Improve top {{NUMBER}} CRITICAL gaps (estimated {{EFFORT}} total)
 kurt content stats --url-starts-with https://{{YOUR_DOMAIN}}
 
 # If not indexed:
-kurt map url https://{{YOUR_DOMAIN}} --cluster-urls
-kurt fetch --url-starts-with https://{{YOUR_DOMAIN}}
+kurt content map url https://{{YOUR_DOMAIN}}
+kurt content fetch --include 'https://{{YOUR_DOMAIN}}/**'
 
 # Index competitor content
-kurt map url https://{{COMPETITOR_DOMAIN}} --cluster-urls
-kurt fetch --url-starts-with https://{{COMPETITOR_DOMAIN}}
+kurt content map url https://{{COMPETITOR_DOMAIN}}
+kurt content fetch --include 'https://{{COMPETITOR_DOMAIN}}/**'
 
 # View both cluster sets
 kurt content list-clusters --url-starts-with https://{{YOUR_DOMAIN}}

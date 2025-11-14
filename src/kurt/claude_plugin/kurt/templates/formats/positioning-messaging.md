@@ -478,8 +478,8 @@ kurt research search --source reddit --query "best [category] tools"
 
 ```bash
 # Fetch competitor positioning
-kurt map url https://[competitor1.com]
-kurt fetch --urls "https://[competitor1.com]" "https://[competitor1.com]/product"
+kurt content map url https://[competitor1.com]
+kurt content fetch https://[competitor1.com] https://[competitor1.com]/product
 
 # Get their messaging
 kurt content get <competitor-homepage-id>

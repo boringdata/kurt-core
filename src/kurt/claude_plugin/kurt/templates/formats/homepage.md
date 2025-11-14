@@ -291,7 +291,7 @@ outline:
 kurt content list --url-starts-with https://<company-domain> | head -1
 
 # If not fetched:
-kurt fetch --urls "https://<company-domain>"
+kurt content fetch https://<company-domain>
 ```
 
 ### Step 2: Analyze Current Homepage (And Competitor References)
@@ -303,8 +303,8 @@ kurt content get <homepage-doc-id>
 
 **Optional - analyze 2-3 competitor homepages:**
 ```bash
-kurt fetch --urls "https://<competitor1.com>"
-kurt fetch --urls "https://<competitor2.com>"
+kurt content fetch https://<competitor1.com>
+kurt content fetch https://<competitor2.com>
 ```
 
 **Maximum: 1 current + 2-3 competitors = 4 examples total**

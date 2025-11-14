@@ -36,7 +36,7 @@ When a user clones this template, follow these steps:
    kurt content list | grep -i "announc\|launch"
 
    # If not fetched:
-   kurt fetch --urls "https://[domain]/path"
+   kurt content fetch https://[domain]/path
    ```
 
 4. Define messaging and positioning:
