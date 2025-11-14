@@ -1,6 +1,6 @@
 [project]
 name = "kurt-core"
-version = "0.2.5"
+version = "0.2.6"
 description = "Document intelligence CLI - Transform documents into structured knowledge graphs"
 readme = "README.md"
 authors = [
