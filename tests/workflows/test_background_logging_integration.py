@@ -69,11 +69,6 @@ def test_map_background_workflow_creates_log(tmp_project):
     log_content = ""
     found_workflow_logs = False
 
-    # Also check if worker process is still running
-    import psutil
-
-    worker_processes = []
-
     for attempt in range(200):  # 20 seconds max (increased for CI)
         if log_file.exists():
             try:
@@ -90,31 +85,18 @@ def test_map_background_workflow_creates_log(tmp_project):
                 # File might be being written to, try again
                 pass
 
-        # Every 2 seconds, check for worker processes (for debugging)
-        if attempt % 20 == 0:
-            try:
-                worker_processes = [
-                    p
-                    for p in psutil.process_iter(["pid", "name", "cmdline"])
-                    if "kurt.workflows._worker" in " ".join(p.info.get("cmdline", []))
-                ]
-            except Exception:
-                pass
-
         time.sleep(0.1)
 
     # Log file should exist
-    assert (
-        log_file.exists()
-    ), f"Log file not found: {log_file}. Worker processes: {len(worker_processes)}"
+    assert log_file.exists(), f"Log file not found: {log_file}"
 
     # Log file should have content
     assert (
         len(log_content) > 0
-    ), f"Log file is empty after 20s. File size: {log_file.stat().st_size if log_file.exists() else 'N/A'}. Active workers: {len(worker_processes)}"
+    ), f"Log file is empty after 20s. File size: {log_file.stat().st_size if log_file.exists() else 'N/A'}"
 
     # Log should contain expected messages from the workflow
-    assert found_workflow_logs, f"Missing workflow logs after 20s. Log content preview: {log_content[:500] if log_content else '(empty)'}. Worker processes: {len(worker_processes)}"
+    assert found_workflow_logs, f"Missing workflow logs after 20s. Log content preview: {log_content[:500] if log_content else '(empty)'}"
 
 
 @pytest.mark.integration
