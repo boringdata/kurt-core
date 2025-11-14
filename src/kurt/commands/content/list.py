@@ -4,10 +4,13 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from kurt.admin.telemetry.decorators import track_command
+
 console = Console()
 
 
 @click.command("list")
+@track_command
 @click.option(
     "--with-status",
     type=click.Choice(["NOT_FETCHED", "FETCHED", "ERROR"], case_sensitive=False),

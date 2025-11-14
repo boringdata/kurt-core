@@ -3,10 +3,13 @@
 import click
 from rich.console import Console
 
+from kurt.admin.telemetry.decorators import track_command
+
 console = Console()
 
 
 @click.command("delete")
+@track_command
 @click.argument("identifier")
 @click.option(
     "--delete-content",

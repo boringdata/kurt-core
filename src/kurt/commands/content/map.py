@@ -4,6 +4,7 @@ import click
 from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 
+from kurt.admin.telemetry.decorators import track_command
 from kurt.utils.url_utils import get_domain_from_url
 
 console = Console()
@@ -27,6 +28,7 @@ def map_cmd():
 
 
 @map_cmd.command("url")
+@track_command
 @click.argument("url")
 @click.option(
     "--sitemap-path",
@@ -284,6 +286,7 @@ def map_url(
 
 
 @map_cmd.command("folder")
+@track_command
 @click.argument("path")
 @click.option(
     "--include", "include_patterns", multiple=True, help="Include file pattern (glob, repeatable)"
@@ -400,6 +403,7 @@ def map_folder(
 
 
 @map_cmd.command("cms")
+@track_command
 @click.option(
     "--platform",
     type=click.Choice(["sanity", "contentful", "wordpress"]),

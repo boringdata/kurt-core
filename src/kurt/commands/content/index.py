@@ -5,6 +5,7 @@ import logging
 import click
 from rich.console import Console
 
+from kurt.admin.telemetry.decorators import track_command
 from kurt.commands.content._shared_options import add_filter_options
 
 console = Console()
@@ -12,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 @click.command("index")
+@track_command
 @click.argument("identifier", required=False)
 @add_filter_options()
 @click.option(

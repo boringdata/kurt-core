@@ -5,11 +5,14 @@ import logging
 import click
 from rich.console import Console
 
+from kurt.admin.telemetry.decorators import track_command
+
 console = Console()
 logger = logging.getLogger(__name__)
 
 
 @click.command("sync-metadata")
+@track_command
 @click.option(
     "--include",
     "include_patterns",

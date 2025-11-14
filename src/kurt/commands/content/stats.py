@@ -3,12 +3,14 @@
 import click
 from rich.console import Console
 
+from kurt.admin.telemetry.decorators import track_command
 from kurt.commands.content._shared_options import add_filter_options
 
 console = Console()
 
 
 @click.command("stats")
+@track_command
 @add_filter_options(ids=False, exclude=False)  # Stats doesn't need ids or exclude
 @click.option(
     "--format",

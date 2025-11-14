@@ -5,6 +5,7 @@ import logging
 import click
 from rich.console import Console
 
+from kurt.admin.telemetry.decorators import track_command
 from kurt.utils import should_force
 
 console = Console()
@@ -12,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 @click.command("fetch")
+@track_command
 @click.argument("identifier", required=False)
 @click.option(
     "--include",

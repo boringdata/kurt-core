@@ -7,11 +7,14 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from kurt.admin.telemetry.decorators import track_command
+
 console = Console()
 logger = logging.getLogger(__name__)
 
 
 @click.command("list-technologies")
+@track_command
 @click.option(
     "--min-docs",
     type=int,

@@ -7,11 +7,14 @@ from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 from rich.table import Table
 
+from kurt.admin.telemetry.decorators import track_command
+
 console = Console()
 logger = logging.getLogger(__name__)
 
 
 @click.command("cluster-urls")
+@track_command
 @click.option(
     "--include",
     "include_pattern",

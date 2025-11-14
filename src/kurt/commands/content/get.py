@@ -3,10 +3,13 @@
 import click
 from rich.console import Console
 
+from kurt.admin.telemetry.decorators import track_command
+
 console = Console()
 
 
 @click.command("get")
+@track_command
 @click.argument("identifier")
 @click.option(
     "--format",

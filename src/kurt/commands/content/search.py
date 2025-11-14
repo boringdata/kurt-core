@@ -9,10 +9,13 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from kurt.admin.telemetry.decorators import track_command
+
 console = Console()
 
 
 @click.command("search")
+@track_command
 @click.argument("query", type=str)
 @click.option(
     "--include",
