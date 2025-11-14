@@ -13,7 +13,8 @@ uv sync
 
 ```bash
 # 1. Initialize a new Kurt project (creates .kurt/ directory and SQLite database)
-uv run kurt init
+uv run kurt init --ide claude   # For Claude Code
+uv run kurt init --ide cursor   # For Cursor
 
 # 2. Map sitemap to discover URLs (fast, no downloads)
 uv run kurt ingest map https://example.com
@@ -106,10 +107,19 @@ uv run kurt document stats
 ### Project Management
 
 ```bash
-# Initialize project
-uv run kurt init                                   # Current directory
-uv run kurt init --project-path /path/to/project  # Custom location
-uv run kurt init --db-path data/my-db.sqlite      # Custom database path
+# Initialize project for Claude Code (default)
+uv run kurt init --ide claude                      # Current directory
+
+# Initialize project for Cursor
+uv run kurt init --ide cursor
+
+# Initialize with custom paths
+uv run kurt init --ide claude --db-path data/my-db.sqlite
+
+# What gets created:
+# - .kurt/ directory with SQLite database
+# - .claude/ or .cursor/ directory with IDE-specific instructions
+# - kurt/ directory with content templates
 ```
 
 ## Architecture

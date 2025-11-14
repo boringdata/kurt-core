@@ -30,6 +30,16 @@ console = Console()
     help="Filter by content type (tutorial | guide | blog | etc)",
 )
 @click.option(
+    "--with-topic",
+    type=str,
+    help="Filter by topic in primary_topics (case-insensitive substring match)",
+)
+@click.option(
+    "--with-technology",
+    type=str,
+    help="Filter by technology in tools_technologies (case-insensitive substring match)",
+)
+@click.option(
     "--max-depth",
     type=int,
     help="Filter by maximum URL depth (e.g., example.com/a/b has depth 2)",
@@ -73,6 +83,8 @@ def list_documents_cmd(
     include_pattern: str,
     in_cluster: str,
     with_content_type: str,
+    with_topic: str,
+    with_technology: str,
     max_depth: int,
     limit: int,
     offset: int,
@@ -92,6 +104,9 @@ def list_documents_cmd(
         kurt content list --include "*/docs/*"
         kurt content list --in-cluster "Tutorials"
         kurt content list --with-content-type tutorial
+        kurt content list --with-topic authentication
+        kurt content list --with-technology Python
+        kurt content list --with-content-type tutorial --with-technology Docker
         kurt content list --max-depth 2
         kurt content list --limit 20 --format json
 
@@ -118,6 +133,8 @@ def list_documents_cmd(
             include_pattern=include_pattern,
             in_cluster=in_cluster,
             with_content_type=with_content_type,
+            with_topic=with_topic,
+            with_technology=with_technology,
             max_depth=max_depth,
             limit=limit,
             offset=offset,

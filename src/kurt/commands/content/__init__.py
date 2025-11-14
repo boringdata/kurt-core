@@ -9,7 +9,10 @@ from .get import get_document_cmd
 from .index import index
 from .list_clusters import list_clusters_cmd
 from .list_cmd import list_documents_cmd
+from .list_technologies import list_technologies_cmd
+from .list_topics import list_topics_cmd
 from .map_cmd import map_cmd
+from .search import links_cmd, search_cmd
 from .stats import stats_cmd
 from .sync_metadata import sync_metadata
 
@@ -30,7 +33,11 @@ def content():
     - delete: Remove documents
     - stats: View statistics
     - list-clusters: View topic clusters
+    - list-topics: View all indexed topics with counts
+    - list-technologies: View all indexed technologies with counts
     - sync-metadata: Update file frontmatter
+    - search: Search through document content
+    - links: Show links from/to a document (Claude interprets anchor text)
     """
     pass
 
@@ -45,4 +52,8 @@ content.add_command(index)
 content.add_command(delete_document_cmd, name="delete")
 content.add_command(stats_cmd, name="stats")
 content.add_command(list_clusters_cmd, name="list-clusters")
+content.add_command(list_topics_cmd, name="list-topics")
+content.add_command(list_technologies_cmd, name="list-technologies")
 content.add_command(sync_metadata, name="sync-metadata")
+content.add_command(search_cmd, name="search")
+content.add_command(links_cmd, name="links")

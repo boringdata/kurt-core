@@ -428,11 +428,145 @@ def list_clusters() -> list[dict]:
     return clusters
 
 
+def list_indexed_topics(
+    min_docs: int = 1,
+    include_pattern: Optional[str] = None,
+) -> list[dict]:
+    """
+    List all unique topics from indexed documents with document counts.
+
+    Args:
+        min_docs: Minimum number of documents a topic must appear in (default: 1)
+        include_pattern: Optional glob pattern to filter documents (e.g., "*/docs/*")
+
+    Returns:
+        List of dictionaries with topic information, sorted by document count descending:
+            - topic: str (topic name)
+            - doc_count: int (number of documents containing this topic)
+
+    Example:
+        # Get all topics
+        topics = list_indexed_topics()
+        for topic in topics:
+            print(f"{topic['topic']}: {topic['doc_count']} docs")
+
+        # Get common topics (in 5+ documents)
+        topics = list_indexed_topics(min_docs=5)
+
+        # Get topics from docs section only
+        topics = list_indexed_topics(include_pattern="*/docs/*")
+    """
+    from collections import Counter
+    from fnmatch import fnmatch
+
+    session = get_session()
+
+    # Get all FETCHED documents
+    stmt = select(Document).where(Document.ingestion_status == IngestionStatus.FETCHED)
+    documents = session.exec(stmt).all()
+
+    # Filter by pattern if provided
+    if include_pattern:
+        documents = [
+            d
+            for d in documents
+            if (d.source_url and fnmatch(d.source_url, include_pattern))
+            or (d.content_path and fnmatch(d.content_path, include_pattern))
+        ]
+
+    # Count topic occurrences
+    topic_counts = Counter()
+    for doc in documents:
+        if doc.primary_topics:
+            for topic in doc.primary_topics:
+                topic_counts[topic] += 1
+
+    # Filter by min_docs and convert to list of dicts
+    topics = [
+        {"topic": topic, "doc_count": count}
+        for topic, count in topic_counts.items()
+        if count >= min_docs
+    ]
+
+    # Sort by count descending, then alphabetically by topic name
+    topics.sort(key=lambda x: (-x["doc_count"], x["topic"].lower()))
+
+    return topics
+
+
+def list_indexed_technologies(
+    min_docs: int = 1,
+    include_pattern: Optional[str] = None,
+) -> list[dict]:
+    """
+    List all unique technologies from indexed documents with document counts.
+
+    Args:
+        min_docs: Minimum number of documents a technology must appear in (default: 1)
+        include_pattern: Optional glob pattern to filter documents (e.g., "*/docs/*")
+
+    Returns:
+        List of dictionaries with technology information, sorted by document count descending:
+            - technology: str (technology name)
+            - doc_count: int (number of documents containing this technology)
+
+    Example:
+        # Get all technologies
+        techs = list_indexed_technologies()
+        for tech in techs:
+            print(f"{tech['technology']}: {tech['doc_count']} docs")
+
+        # Get common technologies (in 5+ documents)
+        techs = list_indexed_technologies(min_docs=5)
+
+        # Get technologies from docs section only
+        techs = list_indexed_technologies(include_pattern="*/docs/*")
+    """
+    from collections import Counter
+    from fnmatch import fnmatch
+
+    session = get_session()
+
+    # Get all FETCHED documents
+    stmt = select(Document).where(Document.ingestion_status == IngestionStatus.FETCHED)
+    documents = session.exec(stmt).all()
+
+    # Filter by pattern if provided
+    if include_pattern:
+        documents = [
+            d
+            for d in documents
+            if (d.source_url and fnmatch(d.source_url, include_pattern))
+            or (d.content_path and fnmatch(d.content_path, include_pattern))
+        ]
+
+    # Count technology occurrences
+    tech_counts = Counter()
+    for doc in documents:
+        if doc.tools_technologies:
+            for tech in doc.tools_technologies:
+                tech_counts[tech] += 1
+
+    # Filter by min_docs and convert to list of dicts
+    technologies = [
+        {"technology": tech, "doc_count": count}
+        for tech, count in tech_counts.items()
+        if count >= min_docs
+    ]
+
+    # Sort by count descending, then alphabetically by technology name
+    technologies.sort(key=lambda x: (-x["doc_count"], x["technology"].lower()))
+
+    return technologies
+
+
 def list_content(
     with_status: str = None,
     include_pattern: str = None,
     in_cluster: str = None,
     with_content_type: str = None,
+    with_topic: str = None,
+    with_technology: str = None,
     max_depth: int = None,
     limit: int = None,
     offset: int = 0,
@@ -452,6 +586,8 @@ def list_content(
         include_pattern: Glob pattern matching source_url or content_path
         in_cluster: Filter by cluster name (case-insensitive)
         with_content_type: Filter by content type (tutorial | guide | blog | etc)
+        with_topic: Filter by topic in primary_topics (case-insensitive substring match)
+        with_technology: Filter by technology in tools_technologies (case-insensitive substring match)
         max_depth: Filter by maximum URL depth (e.g., 2 for example.com/a/b)
         limit: Maximum number of documents to return
         offset: Number of documents to skip (for pagination)
@@ -479,6 +615,11 @@ def list_content(
 
         # Filter by URL depth
         docs = list_content(max_depth=2)
+
+        # Filter by indexed metadata
+        docs = list_content(with_topic="authentication")
+        docs = list_content(with_technology="Python")
+        docs = list_content(with_content_type="tutorial", with_technology="Docker")
 
         # With analytics
         docs = list_content(with_analytics=True, order_by="pageviews_30d", limit=10)
@@ -603,6 +744,25 @@ def list_content(
 
         documents = [d for d in documents if get_url_depth(d.source_url) <= max_depth]
 
+    # Apply topic filtering (post-query, case-insensitive substring match)
+    if with_topic:
+        topic_lower = with_topic.lower()
+        documents = [
+            d
+            for d in documents
+            if d.primary_topics and any(topic_lower in topic.lower() for topic in d.primary_topics)
+        ]
+
+    # Apply technology filtering (post-query, case-insensitive substring match)
+    if with_technology:
+        tech_lower = with_technology.lower()
+        documents = [
+            d
+            for d in documents
+            if d.tools_technologies
+            and any(tech_lower in tech.lower() for tech in d.tools_technologies)
+        ]
+
     return documents
 
 
@@ -676,3 +836,103 @@ def list_documents_for_indexing(
 
     # Should never reach here due to initial validation
     raise ValueError("Must provide either doc_id, include_pattern, or all_flag=True")
+
+
+def get_document_links(
+    document_id: str,
+    direction: str = "outbound",
+) -> list[dict]:
+    """
+    Get links from or to a document.
+
+    Claude interprets anchor_text to understand relationship types
+    (prerequisites, related content, examples, references).
+
+    Args:
+        document_id: Document UUID (full or partial, minimum 8 chars)
+        direction: "outbound" (default - links from doc) or "inbound" (links to doc)
+
+    Returns:
+        List of dicts with:
+            - link_id: UUID of the link
+            - source_doc_id: UUID of source document
+            - source_title: Title of source document
+            - target_doc_id: UUID of target document
+            - target_title: Title of target document
+            - anchor_text: Link anchor text (Claude interprets this)
+            - direction: "outbound" or "inbound"
+
+    Raises:
+        ValueError: If document not found or direction is invalid
+
+    Example:
+        # Get all outbound links from a document
+        links = get_document_links("550e8400", direction="outbound")
+        for link in links:
+            print(f"Links to: {link['target_title']} ('{link['anchor_text']}')")
+
+        # Get all inbound links to a document
+        links = get_document_links("550e8400", direction="inbound")
+        for link in links:
+            print(f"Linked from: {link['source_title']} ('{link['anchor_text']}')")
+    """
+    from kurt.db.models import DocumentLink
+
+    # Validate direction
+    if direction not in ["outbound", "inbound"]:
+        raise ValueError(f"Invalid direction: {direction}. Must be 'outbound' or 'inbound'")
+
+    # Get document (validates ID and handles partial UUIDs)
+    doc = get_document(document_id)
+
+    session = get_session()
+
+    # Build query based on direction
+    if direction == "outbound":
+        # Links from this document to others
+        stmt = (
+            select(DocumentLink, Document)
+            .where(DocumentLink.source_document_id == doc.id)
+            .join(Document, DocumentLink.target_document_id == Document.id)
+        )
+    else:
+        # Links to this document from others
+        stmt = (
+            select(DocumentLink, Document)
+            .where(DocumentLink.target_document_id == doc.id)
+            .join(Document, DocumentLink.source_document_id == Document.id)
+        )
+
+    results = session.exec(stmt).all()
+
+    # Format results
+    links = []
+    for link, linked_doc in results:
+        if direction == "outbound":
+            # linked_doc is the target
+            links.append(
+                {
+                    "link_id": str(link.id),
+                    "source_doc_id": str(doc.id),
+                    "source_title": doc.title,
+                    "target_doc_id": str(linked_doc.id),
+                    "target_title": linked_doc.title,
+                    "anchor_text": link.anchor_text,
+                    "direction": "outbound",
+                }
+            )
+        else:
+            # linked_doc is the source
+            links.append(
+                {
+                    "link_id": str(link.id),
+                    "source_doc_id": str(linked_doc.id),
+                    "source_title": linked_doc.title,
+                    "target_doc_id": str(doc.id),
+                    "target_title": doc.title,
+                    "anchor_text": link.anchor_text,
+                    "direction": "inbound",
+                }
+            )
+
+    return links

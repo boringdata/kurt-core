@@ -288,6 +288,61 @@ Show summary: "Project now has {count} sources ({relevant_count} directly releva
 
 ---
 
+## Content Indexing
+
+After fetching content, Kurt can extract metadata (topics, technologies, content type, structural features) to enable better discovery.
+
+### When to Index
+
+**Automatically indexed during fetch**: Most content is automatically indexed when fetched.
+
+**Manual indexing**: Run after bulk fetches or to re-index with updated extraction logic:
+
+```bash
+# Index all fetched content
+kurt content index --all
+
+# Index specific document
+kurt content index <doc-id>
+
+# Index by URL pattern
+kurt content index --include "*/docs/*"
+```
+
+### What Gets Extracted
+
+- **Content Type**: tutorial, guide, blog, reference, product_page, etc.
+- **Topics**: Primary topics covered (e.g., "authentication", "API design", "deployment")
+- **Technologies**: Tools/languages mentioned (e.g., "Python", "Docker", "PostgreSQL")
+- **Structure**: Code examples, step-by-step procedures, narrative structure
+
+### Using Indexed Metadata
+
+After indexing, filter content by extracted metadata:
+
+```bash
+# Find Python tutorials
+kurt content list --with-content-type tutorial --with-technology Python
+
+# Find docs about authentication
+kurt content list --with-topic authentication
+
+# View indexed metadata
+kurt content get <doc-id>
+```
+
+See `instructions/find-sources.md` for complete discovery methods.
+
+---
+
+## Deep Source Analysis & Discovery
+
+After sources are fetched and indexed, use `instructions/find-sources.md` for discovering and retrieving content (semantic search, cluster navigation, link analysis, filtered queries).
+
+This is typically used during project planning (see `instructions/add-project.md` steps 5.5, 8, 9) or referenced by format templates.
+
+---
+
 ## Examples
 
 **Example 1: User in Product Page Project**

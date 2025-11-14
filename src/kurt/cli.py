@@ -96,8 +96,14 @@ def main(ctx):
     default=KurtConfig.DEFAULT_RULES_PATH,
     help=f"Path to store rules and configurations relative to current directory (default: {KurtConfig.DEFAULT_RULES_PATH})",
 )
+@click.option(
+    "--ide",
+    type=click.Choice(["claude", "cursor"], case_sensitive=False),
+    default="claude",
+    help="IDE to configure for (claude-code or cursor, default: claude)",
+)
 @track_command
-def init(db_path: str, sources_path: str, projects_path: str, rules_path: str):
+def init(db_path: str, sources_path: str, projects_path: str, rules_path: str, ide: str):
     """
     Initialize a new Kurt project in the current directory.
 
@@ -161,85 +167,107 @@ OPENAI_API_KEY=your_openai_api_key_here
         console.print()
         init_database()
 
-        # Step 3.5: Copy Claude Code instruction files
+        # Step 3.5: Copy IDE instruction files
         console.print()
-        console.print("[dim]Setting up Claude Code instruction files...[/dim]")
+        ide_name = "Claude Code" if ide == "claude" else "Cursor"
+        console.print(f"[dim]Setting up {ide_name} instruction files...[/dim]")
         try:
             # Get the source plugin directory from the package
-            plugin_source = Path(__file__).parent / "claude_plugin"
+            plugin_dir_name = "claude_plugin" if ide == "claude" else "cursor_plugin"
+            plugin_source = Path(__file__).parent / plugin_dir_name
 
             if plugin_source.exists():
-                # Create .claude directory in current working directory
-                claude_dir = Path.cwd() / ".claude"
-                claude_dir.mkdir(exist_ok=True)
+                # Create IDE-specific directory in current working directory
+                ide_dir_name = ".claude" if ide == "claude" else ".cursor"
+                ide_dir = Path.cwd() / ide_dir_name
+                ide_dir.mkdir(exist_ok=True)
 
-                # Check if CLAUDE.md exists and warn user
-                claude_md_dest = claude_dir / "CLAUDE.md"
-                if claude_md_dest.exists():
-                    console.print(
-                        "[yellow]⚠[/yellow] CLAUDE.md already exists and will be overwritten with latest Kurt instructions"
-                    )
-                    overwrite_claude = console.input("Overwrite CLAUDE.md? (y/N): ")
-                    if overwrite_claude.lower() != "y":
-                        console.print("[dim]Skipping CLAUDE.md update[/dim]")
-                        skip_claude_md = True
+                # IDE-specific file copying logic
+                if ide == "claude":
+                    # Claude Code: CLAUDE.md, settings.json, instructions/, commands/, kurt/
+                    # Check if CLAUDE.md exists and warn user
+                    claude_md_dest = ide_dir / "CLAUDE.md"
+                    if claude_md_dest.exists():
+                        console.print(
+                            "[yellow]⚠[/yellow] CLAUDE.md already exists and will be overwritten"
+                        )
+                        overwrite_main = console.input("Overwrite CLAUDE.md? (y/N): ")
+                        skip_main = overwrite_main.lower() != "y"
                     else:
-                        skip_claude_md = False
-                else:
-                    skip_claude_md = False
+                        skip_main = False
 
-                # Copy files individually to preserve user customizations
-                for item in plugin_source.iterdir():
-                    if item.name == "CLAUDE.md":
-                        # Copy CLAUDE.md to .claude/ (unless skipped)
-                        if not skip_claude_md:
-                            shutil.copy2(item, claude_dir / item.name)
-                    elif item.name == "settings.json":
-                        # Merge settings.json with existing settings
-                        dest_settings = claude_dir / "settings.json"
-                        with open(item) as f:
-                            kurt_settings = json.load(f)
+                    for item in plugin_source.iterdir():
+                        if item.name == "CLAUDE.md" and not skip_main:
+                            shutil.copy2(item, ide_dir / item.name)
+                        elif item.name == "settings.json":
+                            # Merge settings.json
+                            dest_settings = ide_dir / "settings.json"
+                            with open(item) as f:
+                                kurt_settings = json.load(f)
+                            if dest_settings.exists():
+                                with open(dest_settings) as f:
+                                    existing_settings = json.load(f)
+                                if "hooks" not in existing_settings:
+                                    existing_settings["hooks"] = {}
+                                existing_settings["hooks"].update(kurt_settings.get("hooks", {}))
+                                with open(dest_settings, "w") as f:
+                                    json.dump(existing_settings, f, indent=2)
+                            else:
+                                with open(dest_settings, "w") as f:
+                                    json.dump(kurt_settings, f, indent=2)
+                        elif item.name in ["instructions", "commands"]:
+                            # Copy directories
+                            dest_dir = ide_dir / item.name
+                            dest_dir.mkdir(exist_ok=True)
+                            for src_file in item.rglob("*"):
+                                if src_file.is_file():
+                                    rel_path = src_file.relative_to(item)
+                                    dest_file = dest_dir / rel_path
+                                    dest_file.parent.mkdir(parents=True, exist_ok=True)
+                                    shutil.copy2(src_file, dest_file)
+                        elif item.name == "kurt":
+                            # Copy kurt/ to working directory
+                            dest_dir = Path.cwd() / item.name
+                            dest_dir.mkdir(exist_ok=True)
+                            for src_file in item.rglob("*"):
+                                if src_file.is_file():
+                                    rel_path = src_file.relative_to(item)
+                                    dest_file = dest_dir / rel_path
+                                    dest_file.parent.mkdir(parents=True, exist_ok=True)
+                                    shutil.copy2(src_file, dest_file)
 
-                        if dest_settings.exists():
-                            # Load existing settings and merge
-                            with open(dest_settings) as f:
-                                existing_settings = json.load(f)
-                            # Merge hooks (Kurt's hooks take precedence)
-                            if "hooks" not in existing_settings:
-                                existing_settings["hooks"] = {}
-                            existing_settings["hooks"].update(kurt_settings.get("hooks", {}))
-                            with open(dest_settings, "w") as f:
-                                json.dump(existing_settings, f, indent=2)
-                        else:
-                            # Create new settings.json
-                            with open(dest_settings, "w") as f:
-                                json.dump(kurt_settings, f, indent=2)
-                    elif item.name in ["instructions", "commands"]:
-                        # Copy directory contents individually, preserving user files
-                        dest_dir = claude_dir / item.name
-                        dest_dir.mkdir(exist_ok=True)
-                        for src_file in item.rglob("*"):
-                            if src_file.is_file():
-                                rel_path = src_file.relative_to(item)
-                                dest_file = dest_dir / rel_path
-                                dest_file.parent.mkdir(parents=True, exist_ok=True)
-                                shutil.copy2(src_file, dest_file)
-                    elif item.name == "kurt":
-                        # Copy kurt/ contents individually, preserving user files
-                        dest_dir = Path.cwd() / item.name
-                        dest_dir.mkdir(exist_ok=True)
-                        for src_file in item.rglob("*"):
-                            if src_file.is_file():
-                                rel_path = src_file.relative_to(item)
-                                dest_file = dest_dir / rel_path
-                                dest_file.parent.mkdir(parents=True, exist_ok=True)
-                                shutil.copy2(src_file, dest_file)
+                else:  # cursor
+                    # Cursor: rules/*.mdc, kurt/
+                    for item in plugin_source.iterdir():
+                        if item.name == "rules":
+                            # Copy rules/ directory
+                            dest_dir = ide_dir / item.name
+                            dest_dir.mkdir(exist_ok=True)
+                            for src_file in item.rglob("*"):
+                                if src_file.is_file():
+                                    rel_path = src_file.relative_to(item)
+                                    dest_file = dest_dir / rel_path
+                                    dest_file.parent.mkdir(parents=True, exist_ok=True)
+                                    shutil.copy2(src_file, dest_file)
+                        elif item.name == "kurt":
+                            # Copy kurt/ to working directory
+                            dest_dir = Path.cwd() / item.name
+                            dest_dir.mkdir(exist_ok=True)
+                            for src_file in item.rglob("*"):
+                                if src_file.is_file():
+                                    rel_path = src_file.relative_to(item)
+                                    dest_file = dest_dir / rel_path
+                                    dest_file.parent.mkdir(parents=True, exist_ok=True)
+                                    shutil.copy2(src_file, dest_file)
 
                 console.print("[green]✓[/green] Copied instruction files")
-                console.print(
-                    f"[dim]  .claude/CLAUDE.md, .claude/settings.json, .claude/instructions/, .claude/commands/[/dim]"
-                )
-                console.print(f"[dim]  kurt/templates/[/dim]")
+                if ide == "claude":
+                    console.print(
+                        "[dim]  .claude/CLAUDE.md, .claude/settings.json, .claude/instructions/, .claude/commands/[/dim]"
+                    )
+                else:
+                    console.print("[dim]  .cursor/rules/*.mdc[/dim]")
+                console.print("[dim]  kurt/templates/[/dim]")
             else:
                 console.print("[yellow]⚠[/yellow] Plugin files not found in package")
         except Exception as e:
@@ -247,8 +275,15 @@ OPENAI_API_KEY=your_openai_api_key_here
 
         console.print("\n[bold]Next steps:[/bold]")
         console.print("  1. Copy .env.example to .env and add your API keys")
-        console.print("  2. Open Claude Code in this directory")
-        console.print("  3. Run [cyan]/create-project[/cyan] to start your first content project")
+        if ide == "claude":
+            console.print("  2. Open Claude Code in this directory")
+            console.print(
+                "  3. Run [cyan]/create-project[/cyan] to start your first content project"
+            )
+        else:
+            console.print("  2. Open Cursor in this directory")
+            console.print("  3. Mention [cyan]@add-profile[/cyan] to create your content profile")
+            console.print("  4. Mention [cyan]@add-project[/cyan] to start a new project")
 
     except Exception as e:
         console.print(f"[bold red]Error:[/bold red] {e}")

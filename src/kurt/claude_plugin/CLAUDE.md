@@ -12,10 +12,10 @@ You assist with writing internal product marketing artifacts (positioning + mess
 - Format templates
 - Research
 - Outlining, drafting and editing
-- Publishing or reading from the CMS
-- Analysis
 - Feedback
-- Kurt CLI reference
+- CMS Integration
+- Analytics Integration
+- Content Discovery
 - Extending Kurt
 
 ## Overview
@@ -86,7 +86,7 @@ Users can add or update format templates to Kurt following the process in `instr
 ## Research
 During project planning, writing, or just ad-hoc exploration, a user might need to conduct external research on the web (using Perplexity, by searching HackerNews / Reddit, accessing RSS feeds, websites, GitHub repos, etc). 
 
-This can be done using `kurt research` commands (see `kurt research --help` for a full list of available research sources). Some research sources, like Perplexity, will require a user to add an API key to their <kurt_config> file (`kurt.config`).
+This can be done using `kurt integrations research` commands (see `kurt integrations research --help` for a full list of available research sources). Some research sources, like Perplexity, will require a user to add an API key to their <kurt_config> file (`kurt.config`).
 
 If working within a project, the outputs of research should be written as .md files to the <project_subfolder> with references added to the <project_plan>. 
 
@@ -103,72 +103,58 @@ To achieve this goal:
 3. **Citation comments** (`<!-- Source: ... -->`) for specific claims, facts, and statistics
 4. **Edit session comments** (`<!-- EDIT: ... -->`) for tracking changes made during editing  
 
-ALWAYS follow the <project_plan> for next steps. Do not deviate from the <project_plan>, instead propose changes to the <project_plan> if the user requests, before executing on those changes.  
+ALWAYS follow the <project_plan> for next steps. Do not deviate from the <project_plan>, instead propose changes to the <project_plan> if the user requests, before executing on those changes.
 
 ## Feedback
-At the end of a project planning or writing workflow, or if they're having trouble fulfilling a certain task, ask the user for feedback following the instructions in `instructions/add-feedback.md`.
+Optionally collect user feedback to improve Kurt's output quality. See `instructions/add-feedback.md` for the full workflow.
 
-This feedback will be a) logged to the Kurt SQLite db for future reference, b) used by you to improve the Kurt system on the user's behalf, to solve for any issues they might be having (see #extending-kurt), and c) anonymous feedback metrics will be shared with the Kurt team.
+**When to ask:**
+- After completing a multi-document project or significant writing task
+- When user expresses dissatisfaction with output
+- After trying a new format template
 
-## Reading from or publishing to the CMS
+**How to collect:**
+- Ask: "Did the output meet your expectations?" (Pass/Fail)
+- Ask: "Any feedback you'd like to share?" (Optional comment)
+- Log: `kurt admin feedback log-submission --passed --comment "<feedback>" --event-id <uuid>`
 
+Don't ask too frequently - not after every edit, and not more than once per session.
+
+## CMS Integration
 Kurt supports CMS integrations (Sanity, Contentful, WordPress) for reading and publishing content.
 
-### Detecting CMS Content
+**Reading from CMS:**
+- Check configuration: `kurt integrations cms status`
+- If not configured: `kurt integrations cms onboard --platform {platform}`
+- Fetch content: `kurt content fetch {cms-url}` (automatically uses CMS adapters)
+- See `instructions/add-source.md` for detailed workflow
 
-When user shares content, check if it's from a CMS:
+**Publishing to CMS:**
+- Publish as draft: `kurt integrations cms publish --file {path} --content-type {type}`
+- IMPORTANT: Kurt only creates drafts, never publishes to live status
+- User must review and publish manually in CMS 
 
-**Auto-detection** (URL patterns):
-- Sanity Studio: `*.sanity.studio/*`
-- Contentful: `app.contentful.com/*`
-- WordPress: `*/wp-admin/*`
+## Analytics Integration
+Kurt can analyze web analytics to assist with project planning and content performance analysis (currently supports PostHog).
 
-**Natural language** (context cues):
-- User says: "from my CMS", "in Sanity", "our Contentful"
-- User profile may reference CMS from previous setup
+**Setup:**
+- Check existing: `kurt integrations analytics list`
+- Configure new: `kurt integrations analytics onboard [domain] --platform {platform}`
 
-### Reading from CMS
+**Usage:**
+- Sync data: `kurt integrations analytics sync [domain]`
+- Query with content: `kurt content list --with-analytics` or `kurt content stats --with-analytics`
 
-1. **Check configuration**: Run `kurt integrations cms status`
-   - If not configured: Guide through `kurt integrations cms onboard --platform {platform}`
+## Content Discovery
+Use `instructions/find-sources.md` for discovering and retrieving content:
+- **Topic/technology discovery**: See what's covered, identify gaps (`kurt content list-topics`, `kurt content list-technologies`)
+- **Semantic search**: Full-text search through fetched documents
+- **Cluster navigation**: Browse content organized by topic
+- **Link analysis**: Find related docs, prerequisites, and dependencies
+- **Indexed metadata search**: Filter by topics, technologies, content type
+- **Filtered retrieval**: Query by status, type, analytics, etc.
 
-2. **Fetch content** (see `instructions/add-source.md` for full workflow):
-   - **Direct link**: User provides CMS URL → Extract ID → Map → Fetch
-   - **Search**: User describes content → Search CMS → User selects → Fetch
-   - **Bulk**: User wants "all articles" → Map content type → Fetch batch
-
-3. **Verify**: Run `kurt content list --with-status FETCHED` to confirm
-
-**Key insight**: The `kurt content fetch` command automatically uses CMS adapters and applies field mappings configured during onboarding. No manual extract/import workflow needed.
-
-### Publishing to CMS
-
-When user wants to publish a document:
-
-1. **Check configuration**: Ensure CMS is configured with write permissions
-2. **Publish as draft**: Run `kurt integrations cms publish --file {path} --content-type {type}`
-3. **IMPORTANT**: Kurt ONLY creates drafts, never publishes to live status
-4. **Confirm**: Show user the CMS URL where they can review and publish manually
-
-Example:
-```bash
-kurt integrations cms publish \
-  --file projects/1124-product-launch/web-page-v2.md \
-  --platform sanity \
-  --instance prod \
-  --content-type article
-``` 
-
-## Analysis
-Kurt can analyze the user's web analytics, to assist with project planning or ad-hoc analysis (currently supported analytics platforms: PostHog).
-
-1. Run `kurt analytics list` to see if the user has already configured the analytics platform for the domain they're referring to. If unsure, confirm with the user.
-2. If it hasn't yet been configured, run `kurt analytics onboard [domain] --platform` (run `kurt analytics onboard --help` for list of parameters) to configure a new analytics integration for a domain. 
-3. Once an analytics integration is configured, run `kurt analytics sync [domain]` with relevant additional paremeters at any time to return fresh data.
-4. Once data is synced, query analytics joined with content metadata by running `kurt content list --with-analytics` or `kurt content stats --with-analytics`. This is useful in project planning or analyzing the outcomes of content production after publishing.  
-
-## Kurt CLI reference
-[ Insert kurt CLI command docs + examples here - probably add this as a separate "command reference doc" ]
+Used during project planning (see `instructions/add-project.md`) and referenced by format templates.
 
 ## Extending Kurt
 Users can modify Kurt's system in a few ways:
@@ -184,5 +170,3 @@ Users can modify Kurt's system in a few ways:
 
 ## TODOs
 - For `kurt` commands that require setup (analytics, cms, research) of API keys or integrations, the responses of CLI commands should guide the user through setup (direct the user where to add an API key)
-- For complex `kurt` command orchestration, should we have commands broken up into individual skills as we have previously, or all contained here in project context? 
-- Move 'feedback' into kurt command (currently just a skill that works directly with database) + add an ADD-FEEDBACK.md doc on how to use it

@@ -55,7 +55,53 @@ def get_document_cmd(document_id: str, format: str):
             if doc.content_hash:
                 console.print(f"[bold]Content Hash:[/bold] {doc.content_hash[:16]}...")
 
-            console.print(f"\n[bold]Content Path:[/bold] {doc.content_path or 'N/A'}")
+            # Indexed metadata section
+            if (
+                doc.content_type
+                or doc.primary_topics
+                or doc.tools_technologies
+                or doc.has_code_examples
+                or doc.has_step_by_step_procedures
+                or doc.has_narrative_structure
+            ):
+                console.print(f"\n[dim]{'─' * 60}[/dim]")
+                console.print("[bold cyan]Indexed Metadata[/bold cyan]")
+
+                if doc.content_type:
+                    console.print(f"[bold]Content Type:[/bold] {doc.content_type.value}")
+
+                if doc.primary_topics:
+                    console.print(f"[bold]Topics:[/bold] {', '.join(doc.primary_topics)}")
+
+                if doc.tools_technologies:
+                    console.print(f"[bold]Technologies:[/bold] {', '.join(doc.tools_technologies)}")
+
+                # Structural flags
+                structural_flags = []
+                if doc.has_code_examples:
+                    structural_flags.append("code examples")
+                if doc.has_step_by_step_procedures:
+                    structural_flags.append("step-by-step procedures")
+                if doc.has_narrative_structure:
+                    structural_flags.append("narrative structure")
+
+                if structural_flags:
+                    console.print(f"[bold]Structure:[/bold] {', '.join(structural_flags)}")
+
+                # Indexing metadata
+                if doc.indexed_with_hash or doc.indexed_with_git_commit:
+                    console.print("\n[dim]Indexing Info:[/dim]")
+                    if doc.indexed_with_hash:
+                        console.print(
+                            f"  [dim]Indexed with content hash: {doc.indexed_with_hash[:16]}...[/dim]"
+                        )
+                    if doc.indexed_with_git_commit:
+                        console.print(
+                            f"  [dim]Indexed with git commit: {doc.indexed_with_git_commit[:8]}[/dim]"
+                        )
+
+            console.print(f"\n[dim]{'─' * 60}[/dim]")
+            console.print(f"[bold]Content Path:[/bold] {doc.content_path or 'N/A'}")
             console.print(f"[bold]Created:[/bold] {doc.created_at}")
             console.print(f"[bold]Updated:[/bold] {doc.updated_at}")
 
