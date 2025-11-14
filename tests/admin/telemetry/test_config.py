@@ -107,7 +107,21 @@ class TestTelemetryConfig:
 
     def test_is_ci_environment(self, monkeypatch):
         """Test CI environment detection."""
-        # Not in CI by default
+        # Clear all CI environment variables first
+        ci_env_vars = [
+            "CI",
+            "CONTINUOUS_INTEGRATION",
+            "BUILD_NUMBER",
+            "GITHUB_ACTIONS",
+            "GITLAB_CI",
+            "CIRCLECI",
+            "TRAVIS",
+            "JENKINS_HOME",
+        ]
+        for var in ci_env_vars:
+            monkeypatch.delenv(var, raising=False)
+
+        # Not in CI by default (after clearing env vars)
         assert is_ci_environment() is False
 
         # Test various CI env vars
