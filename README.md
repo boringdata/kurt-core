@@ -95,8 +95,8 @@ For developers or those who want to use Kurt without an AI editor:
 kurt init
 
 # Fetch content from a website
-kurt map url https://example.com          # Discover URLs
-kurt fetch --url-prefix https://example.com/  # Download content
+kurt content map https://example.com          # Discover URLs
+kurt content fetch --url-prefix https://example.com/  # Download content
 
 # List and search content
 kurt content list
@@ -107,8 +107,8 @@ kurt content list-topics
 kurt content list-technologies
 
 # Research
-kurt research query "market research question"
-kurt research search --source reddit --query "topic"
+kurt integrations research search "market research question"
+kurt integrations research reddit "topic"
 ```
 
 See [CLI Reference](#cli-reference) below for full command documentation.
@@ -193,16 +193,16 @@ Fetch content from web sources to use as grounding material:
 
 ```bash
 # Map sitemap to discover URLs (fast, no downloads)
-kurt map url https://docs.example.com
+kurt content map https://docs.example.com
 
 # Fetch specific content
-kurt fetch --url-prefix https://docs.example.com/guides/
+kurt content fetch --url-prefix https://docs.example.com/guides/
 
 # Fetch by URL pattern
-kurt fetch --url-contains /blog/
+kurt content fetch --url-contains /blog/
 
 # Fetch all discovered URLs
-kurt fetch --all
+kurt content fetch --all
 ```
 
 Content is stored as markdown in `sources/{domain}/{path}/` with metadata in SQLite.
@@ -292,27 +292,27 @@ kurt init --ide claude --db-path data/my-project.db
 
 ```bash
 # 1. Discover URLs from sitemap (fast, creates NOT_FETCHED records)
-kurt map url https://example.com
+kurt content map https://example.com
 
 # 2. Review discovered URLs
 kurt content list --status NOT_FETCHED
 
 # 3. Fetch content (batch or selective)
-kurt fetch --url-prefix https://example.com/     # All from domain
-kurt fetch --url-contains /blog/                 # URLs containing pattern
-kurt fetch --all                                 # All NOT_FETCHED docs
-kurt fetch https://example.com/page              # Single URL
+kurt content fetch --url-prefix https://example.com/     # All from domain
+kurt content fetch --url-contains /blog/                 # URLs containing pattern
+kurt content fetch --all                                 # All NOT_FETCHED docs
+kurt content fetch https://example.com/page              # Single URL
 
 # Options
-kurt fetch --url-prefix https://example.com/ --max-concurrent 10  # Parallel downloads
-kurt fetch --url-prefix https://example.com/ --status ERROR       # Retry failed
+kurt content fetch --url-prefix https://example.com/ --max-concurrent 10  # Parallel downloads
+kurt content fetch --url-prefix https://example.com/ --status ERROR       # Retry failed
 ```
 
-**Direct Add:**
+**Direct Fetch:**
 
 ```bash
-# Add single URL without sitemap
-kurt add url https://example.com/page
+# Fetch single URL directly (auto-creates document if doesn't exist)
+kurt content fetch https://example.com/page
 ```
 
 ### Content Discovery
@@ -361,14 +361,14 @@ See [INDEXING-AND-SEARCH.md](INDEXING-AND-SEARCH.md) for details on indexed meta
 ### Research
 
 ```bash
-# Query Perplexity
-kurt research query "your research question"
+# Search using Perplexity or web search
+kurt integrations research search "your research question"
 
 # Search Reddit
-kurt research search --source reddit --query "topic"
+kurt integrations research reddit "topic"
 
 # Search HackerNews
-kurt research search --source hackernews --query "topic"
+kurt integrations research hackernews "topic"
 ```
 
 ### CMS Integration
@@ -385,10 +385,10 @@ kurt integrations cms publish --file content.md --content-type blog-post
 
 ```bash
 # Configure analytics (PostHog)
-kurt analytics onboard your-domain.com --platform posthog
+kurt integrations analytics onboard your-domain.com --platform posthog
 
 # Sync analytics data
-kurt analytics sync your-domain.com
+kurt integrations analytics sync your-domain.com
 
 # View content with analytics
 kurt content list --with-analytics
@@ -536,14 +536,14 @@ Kurt collects anonymous usage analytics to help us improve the tool. We take pri
 
 ```bash
 # Use the CLI command
-kurt telemetry disable
+kurt admin telemetry disable
 
 # Or set environment variable
 export DO_NOT_TRACK=1
 export KURT_TELEMETRY_DISABLED=1
 
 # Check status
-kurt telemetry status
+kurt admin telemetry status
 ```
 
 All telemetry is:
