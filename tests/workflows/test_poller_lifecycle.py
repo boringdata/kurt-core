@@ -23,7 +23,7 @@ import pytest
 class TestDBOSPollerLifecycle:
     """Tests for DBOS poller lifecycle during Kurt command execution."""
 
-    def test_dbos_poller_triggered_on_command(self):
+    def test_dbos_poller_triggered_on_command(self, tmp_project):
         """Test that DBOS queue poller is started when a Kurt command is executed."""
         from dbos import DBOS
 
@@ -56,7 +56,7 @@ class TestDBOSPollerLifecycle:
         # DBOS should have created at least one background thread (queue poller)
         assert threading.active_count() > 1, "Should have main thread plus background threads"
 
-    def test_multiple_commands_share_dbos_instance(self):
+    def test_multiple_commands_share_dbos_instance(self, tmp_project):
         """Test that multiple commands share the same DBOS instance (singleton pattern)."""
         from kurt.workflows import get_dbos, init_dbos
 
@@ -217,7 +217,7 @@ class TestDBOSPollerLifecycle:
             for f in temp_files:
                 Path(f).unlink(missing_ok=True)
 
-    def test_poller_stop_on_shutdown(self):
+    def test_poller_stop_on_shutdown(self, tmp_project):
         """Test that pollers are properly stopped when DBOS shuts down."""
         from dbos import DBOS
 
@@ -245,7 +245,7 @@ class TestDBOSPollerLifecycle:
             # Queue thread may not be named consistently
             print("Queue thread not found by name, but may still be running")
 
-    def test_queue_thread_polling_interval(self):
+    def test_queue_thread_polling_interval(self, tmp_project):
         """Test that queue thread respects polling intervals."""
         from dbos import DBOS, Queue
 
@@ -284,7 +284,7 @@ class TestDBOSPollerLifecycle:
 class TestKurtCommandDBOSIntegration:
     """Test DBOS integration when actual Kurt commands are run."""
 
-    def test_kurt_map_command_triggers_poller(self):
+    def test_kurt_map_command_triggers_poller(self, tmp_project):
         """Test that running 'kurt content map' triggers DBOS poller."""
         # This would require actually running the command
         # For now, we'll test the initialization path

@@ -53,10 +53,10 @@ class SQLiteClient(DatabaseClient):
         self._config = None
 
     def get_config(self):
-        """Get Kurt configuration (cached)."""
-        if self._config is None:
-            self._config = get_config_or_default()
-        return self._config
+        """Get Kurt configuration (not cached for test isolation)."""
+        # Always get fresh config to support test isolation
+        # Tests change working directory, so we need to re-read config
+        return get_config_or_default()
 
     def get_database_path(self) -> Path:
         """Get the path to the SQLite database file from config."""

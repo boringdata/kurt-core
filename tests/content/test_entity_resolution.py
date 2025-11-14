@@ -149,10 +149,15 @@ def test_two_documents_same_entity_single_creation(
         mock_resolution.resolutions = GroupResolution(resolutions=resolutions_list)
         return mock_resolution
 
+    # Mock DBSCAN to cluster both Python entities together
+    mock_dbscan = Mock()
+    mock_dbscan.fit_predict.return_value = [0, 0]  # Both in cluster 0
+
     with (
         patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution._generate_embeddings") as mock_embed,
-        patch("kurt.content.indexing_entity_resolution._search_similar_entities") as mock_search,
+        patch("kurt.content.indexing_helpers._generate_embeddings") as mock_embed,
+        patch("kurt.content.indexing_helpers._search_similar_entities") as mock_search,
+        patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
     ):
         mock_cot.return_value.side_effect = resolve_entities
         # Ensure both Pythons cluster together

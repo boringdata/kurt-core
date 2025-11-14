@@ -143,10 +143,21 @@ def map_url(
     from kurt.content.map import map_url_content
 
     try:
+        from kurt.commands.content._live_display import (
+            print_command_summary,
+            print_intro_block,
+            print_stage_header,
+        )
+
         # Dry-run mode bypasses workflow system (no DB writes)
         if dry_run:
-            console.print("[bold]DRY RUN - Preview only[/bold]\n")
-            console.print(f"[cyan]Discovering content from:[/cyan] {url}\n")
+            print_intro_block(
+                console,
+                [
+                    "[bold]DRY RUN - Preview only[/bold]",
+                    f"Discovering content from: {url}\n",
+                ],
+            )
 
             result = map_url_content(
                 url=url,
@@ -188,7 +199,9 @@ def map_url(
                 return  # Background mode complete, exit early
 
             # Foreground mode: use original function with progress UI
-            console.print(f"[cyan]Discovering content from:[/cyan] {url}\n")
+            print_intro_block(console, [f"Discovering content from: {url}\n"])
+
+            print_stage_header(console, 1, "DISCOVER CONTENT")
 
             with Progress(
                 SpinnerColumn(),
@@ -217,14 +230,6 @@ def map_url(
 
             console.print(json.dumps(result, indent=2, default=str))
         else:
-            if result.get("dry_run"):
-                console.print(f"[green]✓ Would discover {result['total']} pages[/green]")
-            else:
-                console.print(f"[green]✓ Discovered {result['total']} pages[/green]")
-                console.print(f"  New: {result['new']}")
-                console.print(f"  Existing: {result['existing']}")
-            console.print(f"  Method: {result['method']}")
-
             # Show sample URLs
             if result["discovered"]:
                 console.print("\n[bold]Sample URLs:[/bold]")
@@ -237,9 +242,25 @@ def map_url(
                 if len(result["discovered"]) > 5:
                     console.print(f"  [dim]... and {len(result['discovered']) - 5} more[/dim]")
 
-            # Display clustering results if applicable
+            # Build summary
+            summary_items = []
+            if result.get("dry_run"):
+                summary_items.append(("ℹ", "Would discover", f"{result['total']} page(s)"))
+            else:
+                summary_items.extend(
+                    [
+                        ("✓", "Discovered", f"{result['total']} page(s)"),
+                        ("✓", "New", f"{result['new']} page(s)"),
+                        ("ℹ", "Existing", f"{result['existing']} page(s)"),
+                    ]
+                )
+
+            summary_items.append(("ℹ", "Method", result["method"]))
+
             if result.get("cluster_count"):
-                console.print(f"\n[green]✓ Created {result['cluster_count']} clusters[/green]")
+                summary_items.append(("✓", "Clusters created", str(result["cluster_count"])))
+
+            print_command_summary(console, "Summary", summary_items)
 
             # Clustering tip (if not clustered)
             if result["total"] >= 50 and not cluster_urls:

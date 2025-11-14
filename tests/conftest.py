@@ -10,7 +10,76 @@ import pytest
 
 
 @pytest.fixture
-def tmp_project(monkeypatch, tmp_path):
+def reset_dbos_state():
+    """
+    Reset DBOS state between tests to prevent state pollution.
+
+    This fixture:
+    - Resets the _dbos_initialized flag
+    - Destroys DBOS instance to clean up threads and connections
+    - Should be used by tests that use DBOS/workflows
+
+    Usage:
+        def test_something(tmp_project, reset_dbos_state):
+            # Test runs with clean DBOS state
+    """
+    # Import here to avoid circular dependencies
+    import kurt.workflows
+
+    # Reset global state before test
+    kurt.workflows._dbos_initialized = False
+
+    # Try to cleanup any existing DBOS instance
+    try:
+        import dbos._dbos as dbos_module
+
+        # DBOS stores the global instance in _dbos_global_instance
+        if (
+            hasattr(dbos_module, "_dbos_global_instance")
+            and dbos_module._dbos_global_instance is not None
+        ):
+            instance = dbos_module._dbos_global_instance
+            if (
+                hasattr(instance, "_destroy")
+                and hasattr(instance, "_initialized")
+                and instance._initialized
+            ):
+                # Destroy with short timeout to clean up threads
+                instance._destroy(workflow_completion_timeout_sec=0)
+            dbos_module._dbos_global_instance = None
+    except (ImportError, AttributeError, Exception):
+        # Ignore errors during cleanup
+        pass
+
+    yield
+
+    # Reset global state after test
+    kurt.workflows._dbos_initialized = False
+
+    # Cleanup DBOS instance after test
+    try:
+        import dbos._dbos as dbos_module
+
+        if (
+            hasattr(dbos_module, "_dbos_global_instance")
+            and dbos_module._dbos_global_instance is not None
+        ):
+            instance = dbos_module._dbos_global_instance
+            if (
+                hasattr(instance, "_destroy")
+                and hasattr(instance, "_initialized")
+                and instance._initialized
+            ):
+                # Destroy with short timeout to clean up threads
+                instance._destroy(workflow_completion_timeout_sec=0)
+            dbos_module._dbos_global_instance = None
+    except (ImportError, AttributeError, Exception):
+        # Ignore errors during cleanup
+        pass
+
+
+@pytest.fixture
+def tmp_project(monkeypatch, tmp_path, reset_dbos_state):
     """
     Create isolated temporary Kurt project for testing.
 
@@ -19,6 +88,7 @@ def tmp_project(monkeypatch, tmp_path):
     - Changes working directory to temp project
     - Creates kurt.config file
     - Creates sources/ directory
+    - Resets DBOS state for clean test isolation
     - Cleans up after test
 
     Usage:
@@ -51,6 +121,15 @@ def tmp_project(monkeypatch, tmp_path):
 
     # Set environment variable so Kurt finds this config
     monkeypatch.setenv("KURT_PROJECT_ROOT", str(project_dir))
+
+    # Clear any cached config in the config module
+    try:
+        import kurt.config.base as config_module
+
+        if hasattr(config_module, "_cached_config"):
+            config_module._cached_config = None
+    except (ImportError, AttributeError):
+        pass
 
     # Run migrations to initialize database
     from kurt.db.migrations.utils import apply_migrations

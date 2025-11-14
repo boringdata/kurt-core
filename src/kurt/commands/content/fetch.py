@@ -412,8 +412,8 @@ def fetch_cmd(
         if not click.confirm("\nProceed with fetch?"):
             return
 
-    # Display fetch configuration
-    # Resolve engine (None means use default from config)
+    # Display intro block
+    from kurt.commands.content._live_display import print_intro_block
     from kurt.content.fetch import _get_fetch_engine
 
     resolved_engine = _get_fetch_engine(override=engine)
@@ -424,15 +424,20 @@ def fetch_cmd(
         "httpx": "httpx (fetching) + trafilatura (extraction)",
     }
     engine_display = engine_displays.get(resolved_engine, f"{resolved_engine} (unknown)")
-    console.print(
-        f"[cyan]Fetching {len(doc_ids_to_fetch)} documents with {concurrency} parallel downloads[/cyan]"
-    )
-    console.print(f"[dim]Engine: {engine_display}[/dim]")
+
+    intro_messages = [
+        f"Fetching {len(doc_ids_to_fetch)} document(s) with {concurrency} parallel downloads",
+        f"[dim]Engine: {engine_display}[/dim]",
+    ]
+
     if not skip_index:
-        console.print(f"[dim]LLM Indexing: enabled (parallel with concurrency={concurrency})[/dim]")
+        intro_messages.append(
+            f"[dim]LLM Indexing: enabled (parallel with concurrency={concurrency})[/dim]\n"
+        )
     else:
-        console.print("[dim]LLM Indexing: skipped[/dim]")
-    console.print()
+        intro_messages.append("[dim]LLM Indexing: skipped[/dim]\n")
+
+    print_intro_block(console, intro_messages)
 
     # Background mode support
     if background:
@@ -470,23 +475,32 @@ def fetch_cmd(
         )
         return  # Background mode complete, exit early
 
-    # Fetch in parallel with live display
+    # Fetch in parallel with live display using 3-stage structure
     try:
+        import asyncio
+        import time
+
         from kurt.commands.content._live_display import (
             LiveProgressDisplay,
             create_fetch_progress_callback,
+            finalize_knowledge_graph_with_progress,
+            print_command_summary,
+            print_stage_header,
+            print_stage_summary,
         )
 
-        with LiveProgressDisplay(console) as display:
-            # Stage 1: Fetch documents
-            import time
+        overall_start = time.time()
 
+        # ====================================================================
+        # STAGE 1: Fetch Content
+        # ====================================================================
+        print_stage_header(console, 1, "FETCH CONTENT")
+
+        with LiveProgressDisplay(console, max_log_lines=10) as display:
             display.start_stage("Fetching content", total=len(doc_ids_to_fetch))
 
             # Track results and timing as they arrive
             fetch_count = 0
-            fetch_start_time = time.time()
-            fetch_timings = {}  # doc_id -> elapsed time
 
             # Create progress callback that logs as documents are fetched
             def update_fetch_progress():
@@ -497,9 +511,6 @@ def fetch_cmd(
                     description=f"Fetching content ({fetch_count}/{len(doc_ids_to_fetch)})",
                 )
 
-            # Record start time
-            overall_start = time.time()
-
             results = fetch_documents_batch(
                 doc_ids_to_fetch,
                 max_concurrent=concurrency,
@@ -507,14 +518,9 @@ def fetch_cmd(
                 progress_callback=update_fetch_progress,
             )
 
-            overall_elapsed = time.time() - overall_start
-
-            # Log fetch results with timing (estimated per-doc timing)
+            # Log fetch results
             successful = [r for r in results if r["success"]]
             failed = [r for r in results if not r["success"]]
-
-            # Estimate average time per document
-            avg_time = overall_elapsed / len(results) if results else 0
 
             for result in successful:
                 doc_id = str(result["document_id"])
@@ -522,28 +528,42 @@ def fetch_cmd(
                 size_kb = (
                     result.get("content_length", 0) / 1024 if result.get("content_length") else 0
                 )
-                # Show size and estimated timing
                 display.log(
-                    f"✓ Fetched [{doc_id[:8]}] {title[:50]} ({size_kb:.1f}KB, ~{avg_time:.1f}s)",
-                    style="green",
+                    f"✓ Fetched [{doc_id[:8]}] {title[:50]} ({size_kb:.1f}KB)",
+                    style="dim green",
                 )
 
             for result in failed:
                 doc_id = str(result["document_id"])
                 error = result.get("error", "Unknown error")
-                # Shorten error for display
                 error_short = error[:60] + "..." if len(error) > 60 else error
                 display.log(f"✗ Fetch failed [{doc_id[:8]}] {error_short}", style="red")
 
             display.complete_stage()
 
-            # Stage 2: Index successfully fetched documents (unless --skip-index)
-            if not skip_index and successful:
-                import asyncio
+        # Stage 1 summary
+        print_stage_summary(
+            console,
+            [
+                ("✓", "Fetched", f"{len(successful)} document(s)"),
+                ("✗", "Failed", f"{len(failed)} document(s)"),
+            ],
+        )
 
-                from kurt.content.indexing import batch_extract_document_metadata
+        # ====================================================================
+        # STAGE 2: Metadata Extraction (unless --skip-index)
+        # ====================================================================
+        index_results = None
+        indexed = 0
+        skipped_count = 0
 
-                display.start_stage("Indexing documents", total=len(successful))
+        if not skip_index and successful:
+            from kurt.content.indexing import batch_extract_document_metadata
+
+            print_stage_header(console, 2, "METADATA EXTRACTION")
+
+            with LiveProgressDisplay(console, max_log_lines=10) as display:
+                display.start_stage("Metadata extraction", total=len(successful))
 
                 # Extract document IDs and run batch indexing
                 doc_ids = [str(r["document_id"]) for r in successful]
@@ -551,65 +571,93 @@ def fetch_cmd(
                 # Create progress callback with activity updates and logging
                 update_index_progress = create_fetch_progress_callback(display, len(successful))
 
-                # Force re-indexing if --refetch is used (to get latest extraction features like quotes)
-                async def batch_index_with_progress():
-                    result = await batch_extract_document_metadata(
+                # Force re-indexing if --refetch is used
+                index_results = asyncio.run(
+                    batch_extract_document_metadata(
                         doc_ids,
                         max_concurrent=concurrency,
                         progress_callback=update_index_progress,
-                        force=refetch,  # Force re-index when refetching to get latest features
+                        force=refetch,
                     )
-                    return result
+                )
 
-                index_results = asyncio.run(batch_index_with_progress())
-
-                indexed = index_results["succeeded"]
-                index_errors = index_results["errors"]
+                indexed = index_results["succeeded"] - index_results.get("skipped", 0)
+                skipped_count = index_results.get("skipped", 0)
 
                 display.complete_stage()
 
-                # Stage 3: Finalize knowledge graph (entity resolution + storage)
-                if indexed > 0:
-                    from kurt.content.indexing import finalize_knowledge_graph_from_index_results
+            # Stage 2 summary
+            print_stage_summary(
+                console,
+                [
+                    ("✓", "Indexed", f"{indexed} document(s)"),
+                    ("○", "Skipped", f"{skipped_count} document(s)"),
+                    ("✗", "Failed", f"{index_results['failed']} document(s)"),
+                ],
+            )
 
-                    display.start_stage("Finalizing knowledge graph", total=None)
+            # ====================================================================
+            # STAGE 3: Entity Resolution
+            # ====================================================================
+            if indexed > 0:
+                print_stage_header(console, 3, "ENTITY RESOLUTION")
 
-                    # Create activity callback to log activities
-                    def update_kg_progress(activity: str):
-                        display.log_info(activity)
+                # Get successful results for KG finalization
+                results_for_kg = [
+                    r
+                    for r in index_results.get("results", [])
+                    if not r.get("skipped", False) and "error" not in r
+                ]
 
-                    kg_result = finalize_knowledge_graph_from_index_results(
-                        index_results["results"], activity_callback=update_kg_progress
+                with LiveProgressDisplay(console, max_log_lines=10) as display:
+                    kg_result = finalize_knowledge_graph_with_progress(
+                        results_for_kg, console, display=display
                     )
 
-                    display.complete_stage()
-
-        # Summary (outside live display)
-        console.print(f"\n✓ Fetched: {len(successful)}/{len(results)} documents")
-        if not skip_index and successful:
-            skipped_count = index_results.get("skipped", 0)
-            console.print(f"✓ Indexed: {indexed}/{len(successful)} documents")
-            if skipped_count > 0:
-                console.print(f"○ Skipped: {skipped_count} documents")
-
-            # Show KG stats if finalization happened
-            if indexed > 0 and "kg_result" in locals() and kg_result and "error" not in kg_result:
-                console.print(
-                    f"✓ KG Entities: {kg_result['entities_created']} created, {kg_result['entities_linked']} linked"
+                # Stage 3 summary
+                print_stage_summary(
+                    console,
+                    [
+                        ("✓", "Entities created", str(kg_result["entities_created"])),
+                        ("✓", "Entities linked", str(kg_result["entities_linked"])),
+                        (
+                            "✓",
+                            "Relationships created",
+                            str(kg_result.get("relationships_created", 0)),
+                        ),
+                    ],
                 )
-                if kg_result.get("relationships_created", 0) > 0:
-                    console.print(
-                        f"✓ KG Relationships: {kg_result['relationships_created']} created"
-                    )
+
+        # ====================================================================
+        # Global Command Summary
+        # ====================================================================
+        overall_elapsed = time.time() - overall_start
+        summary_items = [
+            ("✓", "Fetched", f"{len(successful)} document(s)"),
+        ]
+
+        if not skip_index and successful:
+            summary_items.append(("✓", "Indexed", f"{indexed} document(s)"))
+
+            if indexed > 0 and "kg_result" in locals() and kg_result and "error" not in kg_result:
+                summary_items.extend(
+                    [
+                        ("✓", "Entities created", str(kg_result["entities_created"])),
+                        ("✓", "Entities linked", str(kg_result["entities_linked"])),
+                        (
+                            "✓",
+                            "Relationships created",
+                            str(kg_result.get("relationships_created", 0)),
+                        ),
+                    ]
+                )
 
         if failed:
-            console.print(f"✗ Failed: {len(failed)} documents")
-            for r in failed[:5]:  # Show first 5 errors
-                console.print(
-                    f"  [dim]{r.get('document_id', 'unknown')}: {r.get('error', 'Unknown error')}[/dim]"
-                )
-            if len(failed) > 5:
-                console.print(f"  [dim]... and {len(failed) - 5} more[/dim]")
+            summary_items.append(("✗", "Failed", f"{len(failed)} document(s)"))
+
+        summary_items.append(("ℹ", "Time elapsed", f"{overall_elapsed:.1f}s"))
+
+        print_command_summary(console, "Summary", summary_items)
 
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")

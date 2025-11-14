@@ -116,13 +116,19 @@ def index(
             return
 
         # Apply limit if specified
+        intro_messages = []
         if limit and len(documents) > limit:
-            console.print(
+            intro_messages.append(
                 f"[dim]Limiting to first {limit} documents out of {len(documents)} found[/dim]"
             )
             documents = documents[:limit]
 
-        console.print(f"[bold]Indexing {len(documents)} document(s)...[/bold]\n")
+        intro_messages.append(f"Indexing {len(documents)} document(s)...\n")
+
+        # Print intro block
+        from kurt.commands.content._live_display import print_intro_block
+
+        print_intro_block(console, intro_messages)
 
         # Use shared indexing utilities
         from kurt.commands.content._live_display import (
@@ -131,13 +137,9 @@ def index(
 
         # Use async batch processing for multiple documents (>1)
         if len(documents) > 1:
-            import time
-
             from kurt.commands.content._live_display import (
                 index_and_finalize_with_two_stage_progress,
             )
-
-            total_start = time.time()
 
             # Two-stage indexing: metadata extraction + entity resolution
             result = index_and_finalize_with_two_stage_progress(documents, console, force=force)
@@ -146,7 +148,7 @@ def index(
             indexed_count = batch_result["succeeded"] - batch_result["skipped"]
             skipped_count = batch_result["skipped"]
             error_count = batch_result["failed"]
-            elapsed_time = batch_result.get("elapsed_time", time.time() - total_start)
+            # elapsed_time available in batch_result if needed later
 
         else:
             # Single document indexing
@@ -174,7 +176,7 @@ def index(
                     finalize_knowledge_graph_with_progress,
                 )
 
-                kg_result = finalize_knowledge_graph_with_progress(results_for_kg, console)
+                finalize_knowledge_graph_with_progress(results_for_kg, console)
 
                 # Display the knowledge graph for single document
                 if len(documents) == 1:
@@ -196,18 +198,16 @@ def index(
         queue_result = process_metadata_sync_queue()
         queue_synced = queue_result["processed"]
 
-        # Summary
-        console.print("\n[bold]Summary:[/bold]")
-        console.print(f"  Indexed: {indexed_count}")
-        if skipped_count > 0:
-            console.print(f"  Skipped: {skipped_count}")
-        if error_count > 0:
-            console.print(f"  Errors: {error_count}")
-        if queue_synced > 0:
-            console.print(f"  Queue synced: {queue_synced}")
-        # Show total elapsed time for batch operations
-        if len(documents) > 1 and "elapsed_time" in locals():
-            console.print(f"  [dim]Total time: {elapsed_time:.1f}s[/dim]")
+        # Summary (only for single document, multi-doc summary is in two-stage function)
+        if len(documents) == 1:
+            console.print("\n[bold]Summary:[/bold]")
+            console.print(f"  Indexed: {indexed_count}")
+            if skipped_count > 0:
+                console.print(f"  Skipped: {skipped_count}")
+            if error_count > 0:
+                console.print(f"  Errors: {error_count}")
+            if queue_synced > 0:
+                console.print(f"  Queue synced: {queue_synced}")
 
     except Exception as e:
         console.print(f"[bold red]Error:[/bold red] {e}")

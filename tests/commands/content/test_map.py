@@ -1097,7 +1097,7 @@ class TestMapCrawlingFunctionality:
 
         # Should succeed with single URL fallback
         assert result.exit_code == 0
-        assert "Would discover 1" in result.output or "1 pages" in result.output
+        assert "Would discover: 1 page(s)" in result.output or "1 pages" in result.output
 
         # Crawler should NOT have been called (no max_depth)
         mocks["mock_crawler"].assert_not_called()

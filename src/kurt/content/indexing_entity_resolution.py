@@ -252,18 +252,26 @@ def _resolve_entity_groups(
 
         # Convert GroupResolution output to individual resolution dicts
         group_resolutions = []
-        for entity_resolution in result.resolutions.resolutions:
+        # Match resolutions to entities by index (handles multiple entities with same name)
+        for idx, entity_resolution in enumerate(result.resolutions.resolutions):
+            # Try to match by index first (most reliable for same-named entities)
+            if idx < len(task_data["group_entities"]):
+                entity_details = task_data["group_entities"][idx]
+            else:
+                # Fallback: find by name if index is out of range
+                entity_details = next(
+                    (
+                        e
+                        for e in task_data["group_entities"]
+                        if e["name"] == entity_resolution.entity_name
+                    ),
+                    task_data["group_entities"][0],
+                )
+
             group_resolutions.append(
                 {
                     "entity_name": entity_resolution.entity_name,
-                    "entity_details": next(
-                        (
-                            e
-                            for e in task_data["group_entities"]
-                            if e["name"] == entity_resolution.entity_name
-                        ),
-                        task_data["group_entities"][0],  # Fallback
-                    ),
+                    "entity_details": entity_details,
                     "decision": entity_resolution.resolution_decision,
                     "canonical_name": entity_resolution.canonical_name,
                     "aliases": entity_resolution.aliases,
@@ -329,15 +337,12 @@ def _resolve_entity_groups(
         if decision.startswith("MERGE_WITH:"):
             merge_target = decision.replace("MERGE_WITH:", "").strip()
 
-            # Validate: entity cannot merge with itself
-            if merge_target == entity_name:
-                logger.warning(
-                    f"Invalid MERGE_WITH: entity '{entity_name}' cannot merge with itself. "
-                    f"Converting to CREATE_NEW."
-                )
-                resolution["decision"] = "CREATE_NEW"
-            # Validate: merge target must exist in the resolution list
-            elif merge_target not in all_entity_names:
+            # When merge_target == entity_name, this means "merge with another entity that has the same name"
+            # This is VALID when there are multiple entities with the same name from different documents
+            # We should NOT convert this to CREATE_NEW
+
+            # Only validate that the merge target name exists in the resolution list
+            if merge_target not in all_entity_names:
                 logger.warning(
                     f"Invalid MERGE_WITH target '{merge_target}' for entity '{entity_name}'. "
                     f"Target not found in group {list(all_entity_names)[:10]}{'...' if len(all_entity_names) > 10 else ''}. "
@@ -586,6 +591,14 @@ def _create_entities_and_relationships(doc_to_kg_data: dict, resolutions: list[d
                     unique_docs.add(doc_info["document_id"])
             doc_count = len(unique_docs)
 
+            # Average confidence scores from all entities in the group
+            confidence_scores = [
+                r["entity_details"].get("confidence", 0.9) for r in group_resolutions
+            ]
+            avg_confidence = (
+                sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0.9
+            )
+
             entity = Entity(
                 id=uuid4(),
                 name=canonical_name,
@@ -594,7 +607,7 @@ def _create_entities_and_relationships(doc_to_kg_data: dict, resolutions: list[d
                 aliases=list(all_aliases),
                 description=entity_data.get("description", ""),
                 embedding=_embedding_to_bytes(entity_embedding),
-                confidence_score=entity_data.get("confidence", 0.9),
+                confidence_score=avg_confidence,
                 source_mentions=doc_count,
                 created_at=datetime.utcnow(),
                 updated_at=datetime.utcnow(),
@@ -666,6 +679,14 @@ def _create_entities_and_relationships(doc_to_kg_data: dict, resolutions: list[d
                     for doc_info in entity_name_to_docs.get(ent_name, []):
                         unique_docs.add(doc_info["document_id"])
 
+                # Average confidence scores
+                confidence_scores = [
+                    r["entity_details"].get("confidence", 0.9) for r in group_resolutions
+                ]
+                avg_confidence = (
+                    sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0.9
+                )
+
                 entity = Entity(
                     id=uuid4(),
                     name=canonical_name,
@@ -674,7 +695,7 @@ def _create_entities_and_relationships(doc_to_kg_data: dict, resolutions: list[d
                     aliases=list(all_aliases),
                     description=entity_data.get("description", ""),
                     embedding=_embedding_to_bytes(entity_embedding),
-                    confidence_score=entity_data.get("confidence", 0.9),
+                    confidence_score=avg_confidence,
                     source_mentions=len(unique_docs),
                     created_at=datetime.utcnow(),
                     updated_at=datetime.utcnow(),

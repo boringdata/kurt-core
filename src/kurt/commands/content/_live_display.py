@@ -6,6 +6,64 @@ This module provides both interactive and static display utilities:
 - display_knowledge_graph: Static knowledge graph formatting
 - Reusable display building blocks for consistent CLI UX
 
+REUSABLE DISPLAY BUILDING BLOCKS
+---------------------------------
+These functions provide a consistent UX structure across fetch, index, and map commands:
+
+1. print_intro_block(console, messages)
+   - Prints informational messages before command execution
+   - Example: "Limiting to first 10 documents out of 29 found"
+   - Use at the start of the command to explain what will happen
+
+2. print_stage_header(console, stage_number, stage_name)
+   - Prints a visual stage separator with number and name
+   - Example: "━━━ STAGE 1: METADATA EXTRACTION ━━━"
+   - Use before each major stage of processing
+
+3. print_stage_summary(console, items)
+   - Prints a compact summary after each stage completes
+   - Example: "✓ Indexed: 10, ○ Skipped: 0, ✗ Failed: 0"
+   - Use after each stage to show stage-level results
+
+4. print_command_summary(console, title, items)
+   - Prints a final global summary with divider
+   - Example: "Summary ─── ✓ Total indexed: 10, ℹ Time elapsed: 12.3s"
+   - Use at the end of the command to show overall results
+
+5. print_divider(console, char="─", length=60)
+   - Prints a divider line
+   - Use for visual separation
+
+USAGE PATTERN
+-------------
+1. Print intro block explaining what will be done
+2. For each stage:
+   a. Print stage header
+   b. Run stage with LiveProgressDisplay
+   c. Print stage summary
+3. Print global command summary at the end
+
+Example structure:
+    print_intro_block(console, ["Indexing 10 documents..."])
+
+    # Stage 1
+    print_stage_header(console, 1, "METADATA EXTRACTION")
+    with LiveProgressDisplay(console) as display:
+        # ... do work ...
+    print_stage_summary(console, [("✓", "Indexed", "10")])
+
+    # Stage 2
+    print_stage_header(console, 2, "ENTITY RESOLUTION")
+    with LiveProgressDisplay(console) as display:
+        # ... do work ...
+    print_stage_summary(console, [("✓", "Entities", "42")])
+
+    # Final summary
+    print_command_summary(console, "Summary", [
+        ("✓", "Total indexed", "10"),
+        ("ℹ", "Time elapsed", "12.3s"),
+    ])
+
 Consolidated from _display.py and _live_display.py for cleaner organization.
 """
 
@@ -19,6 +77,24 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn
 # ============================================================================
 # Display Building Blocks
 # ============================================================================
+
+
+def print_intro_block(console: Console, messages: list[str]):
+    """
+    Print an intro block explaining what will be done.
+
+    Args:
+        console: Rich Console instance
+        messages: List of informational messages to display
+
+    Example:
+        print_intro_block(console, [
+            "Limiting to first 10 documents out of 29 found",
+            "Indexing 10 document(s)..."
+        ])
+    """
+    for message in messages:
+        console.print(message)
 
 
 def print_stage_header(console: Console, stage_number: int, stage_name: str):
@@ -35,19 +111,60 @@ def print_stage_header(console: Console, stage_number: int, stage_name: str):
     console.print("━" * 60)
 
 
-def print_summary_section(console: Console, title: str, items: list[tuple[str, str, str]]):
+def print_stage_summary(console: Console, items: list[tuple[str, str, str]]):
     """
-    Print a consistent summary section.
+    Print a stage summary (shown after each stage completes).
 
     Args:
         console: Rich Console instance
-        title: Section title
         items: List of (icon, label, value) tuples
                icon: "✓", "✗", "○", or "ℹ"
                label: Item label
                value: Item value
+
+    Example:
+        print_stage_summary(console, [
+            ("✓", "Indexed", "10 documents"),
+            ("○", "Skipped", "0 documents"),
+            ("✗", "Failed", "0 documents"),
+        ])
     """
-    console.print(f"\n[bold]{title}:[/bold]")
+    console.print()
+    for icon, label, value in items:
+        if icon == "✓":
+            color = "green"
+        elif icon == "✗":
+            color = "red"
+        elif icon == "○":
+            color = "yellow"
+        else:
+            color = "cyan"
+
+        console.print(f"  [{color}]{icon}[/{color}] {label}: {value}")
+
+
+def print_command_summary(console: Console, title: str, items: list[tuple[str, str, str]]):
+    """
+    Print a global command summary (shown at the end of the command).
+
+    Args:
+        console: Rich Console instance
+        title: Summary title (e.g., "Summary")
+        items: List of (icon, label, value) tuples
+               icon: "✓", "✗", "○", or "ℹ"
+               label: Item label
+               value: Item value
+
+    Example:
+        print_command_summary(console, "Summary", [
+            ("✓", "Total indexed", "10 documents"),
+            ("✓", "Entities created", "42 entities"),
+            ("✓", "Relationships created", "89 relationships"),
+            ("ℹ", "Time elapsed", "12.3s"),
+        ])
+    """
+    console.print(f"\n[bold]{title}[/bold]")
+    print_divider(console)
     for icon, label, value in items:
         if icon == "✓":
             color = "green"
@@ -169,6 +286,17 @@ class LiveProgressDisplay:
         self.current_task = self.progress.add_task(description, total=total)
         self.update_display()
         return self.current_task
+
+    def update_stage_total(self, total: int):
+        """
+        Update the total for the current stage (useful when total is not known at start).
+
+        Args:
+            total: Total items
+        """
+        if self.current_task is not None:
+            self.progress.update(self.current_task, total=total)
+            self.update_display()
 
     def update_progress(
         self,
@@ -688,14 +816,15 @@ def finalize_knowledge_graph_with_progress(index_results, console, display=None)
         display.__enter__()
 
     try:
-        # Start stage
+        # Start stage (total will be updated when we know group count)
         display.start_stage("Entity resolution", total=None)
 
         # Track current stage for progress updates
         group_count = 0
+        stage_started = False  # Track if we've set the total
 
         def activity_callback(activity: str):
-            nonlocal group_count
+            nonlocal group_count, stage_started
 
             # Parse different activity messages and update display accordingly
             if "Aggregating" in activity:
@@ -719,9 +848,11 @@ def finalize_knowledge_graph_with_progress(index_results, console, display=None)
             elif "Found" in activity and "entity groups" in activity:
                 # Extract group count from message like "Found 29 entity groups, resolving entities with LLM..."
                 match = re.search(r"(\d+) entity groups", activity)
-                if match:
+                if match and not stage_started:
                     group_count = int(match.group(1))
-                    display.start_stage("Entity resolution", total=group_count)
+                    # Update the total instead of starting a new stage
+                    display.update_stage_total(group_count)
+                    stage_started = True
 
             elif "Resolved group" in activity:
                 # Parse: "Resolved group 1/29: Dagster → NEW, Dagster Cloud → MERGE(Dagster) (2.4s)"
@@ -800,15 +931,12 @@ def index_and_finalize_with_two_stage_progress(documents, console, force: bool =
 
     start_time = time.time()
 
-    # Print stage headers outside the live display
-    console.print("\n" + "━" * 60)
-    console.print("[bold cyan]STAGE 1: METADATA EXTRACTION[/bold cyan]")
-    console.print("━" * 60)
+    # ====================================================================
+    # STAGE 1: Document Indexing (Metadata Extraction)
+    # ====================================================================
+    print_stage_header(console, 1, "METADATA EXTRACTION")
 
     with LiveProgressDisplay(console, max_log_lines=10) as display:
-        # ====================================================================
-        # STAGE 1: Document Indexing
-        # ====================================================================
         display.start_stage("Metadata extraction", total=len(document_ids))
 
         # Create progress callback for indexing
@@ -826,6 +954,20 @@ def index_and_finalize_with_two_stage_progress(documents, console, force: bool =
 
         display.complete_stage()
 
+    # Stage 1 summary
+    indexed_count = batch_result["succeeded"] - batch_result["skipped"]
+    skipped_count = batch_result["skipped"]
+    error_count = batch_result["failed"]
+
+    print_stage_summary(
+        console,
+        [
+            ("✓", "Indexed", f"{indexed_count} document(s)"),
+            ("○", "Skipped", f"{skipped_count} document(s)"),
+            ("✗", "Failed", f"{error_count} document(s)"),
+        ],
+    )
+
     # ====================================================================
     # STAGE 2: Entity Resolution
     # ====================================================================
@@ -836,28 +978,54 @@ def index_and_finalize_with_two_stage_progress(documents, console, force: bool =
     ]
 
     if results_for_kg:
-        # Print stage 2 header
-        console.print("\n" + "━" * 60)
-        console.print("[bold cyan]STAGE 2: ENTITY RESOLUTION[/bold cyan]")
-        console.print("━" * 60)
+        print_stage_header(console, 2, "ENTITY RESOLUTION")
 
         # New live display for stage 2
         with LiveProgressDisplay(console, max_log_lines=10) as display:
             kg_result = finalize_knowledge_graph_with_progress(
                 results_for_kg, console, display=display
             )
+
+        # Stage 2 summary
+        print_stage_summary(
+            console,
+            [
+                ("✓", "Entities created", str(kg_result["entities_created"])),
+                ("✓", "Entities linked", str(kg_result["entities_linked"])),
+                (
+                    "✓",
+                    "Relationships created",
+                    str(kg_result.get("relationships_created", 0)),
+                ),
+            ],
+        )
     else:
         kg_result = None
 
-    # Print final summary
-    console.print("\n[bold]Summary:[/bold]")
+    # ====================================================================
+    # Global Command Summary
+    # ====================================================================
+    elapsed = time.time() - start_time
+    summary_items = [
+        ("✓", "Total indexed", f"{indexed_count} document(s)"),
+    ]
+
     if kg_result:
-        console.print(f"  [green]✓[/green] Created {kg_result['entities_created']} entities")
-        console.print(f"  [green]✓[/green] Linked {kg_result['entities_linked']} entities")
-        if kg_result.get("relationships_created", 0) > 0:
-            console.print(
-                f"  [green]✓[/green] Created {kg_result['relationships_created']} relationships"
-            )
+        summary_items.extend(
+            [
+                ("✓", "Entities created", str(kg_result["entities_created"])),
+                ("✓", "Entities linked", str(kg_result["entities_linked"])),
+                (
+                    "✓",
+                    "Relationships created",
+                    str(kg_result.get("relationships_created", 0)),
+                ),
+            ]
+        )
+
+    summary_items.append(("ℹ", "Time elapsed", f"{elapsed:.1f}s"))
+
+    print_command_summary(console, "Summary", summary_items)
 
     # Add elapsed time
     batch_result["elapsed_time"] = time.time() - start_time
