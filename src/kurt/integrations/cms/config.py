@@ -86,7 +86,7 @@ def get_platform_config(platform: str, instance: Optional[str] = None) -> Dict[s
             f"Available platforms: {available}\n"
             f"\n"
             f"To configure {platform}, run:\n"
-            f"  kurt cms onboard --platform {platform}"
+            f"  kurt integrations cms onboard --platform {platform}"
         )
 
     platform_config = config[platform]

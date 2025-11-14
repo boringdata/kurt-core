@@ -19,16 +19,16 @@ import pytest
 class TestKurtCommandPollerBehavior:
     """Tests for DBOS poller behavior across Kurt commands."""
 
-    def test_single_poller_shared_across_commands(self):
+    def test_single_poller_shared_across_commands(self, tmp_project):
         """Test that a single DBOS instance and poller is shared across commands."""
 
-        from kurt.workflows import _dbos_initialized, get_dbos, init_dbos
+        from kurt.workflows import get_dbos, init_dbos, is_initialized
 
         # Simulate first Kurt command
         print("\n=== First command initialization ===")
         init_dbos()
         first_dbos = get_dbos()
-        assert _dbos_initialized, "DBOS should be initialized"
+        assert is_initialized(), "DBOS should be initialized"
 
         # DBOS auto-launches on module import, so threads are already running
         initial_threads = threading.enumerate()
@@ -134,7 +134,7 @@ time.sleep(0.5)
             # Verify each process has at least the main thread
             assert "Process threads: " in output
 
-    def test_queue_poller_continues_across_command_invocations(self):
+    def test_queue_poller_continues_across_command_invocations(self, tmp_project):
         """Test that the queue poller continues running between command invocations."""
         from dbos import DBOS, Queue
 
@@ -180,7 +180,7 @@ time.sleep(0.5)
         assert status.status == "SUCCESS", "Workflow should be completed"
         assert execution_flag["executed"], "Workflow should have executed"
 
-    def test_poller_handles_concurrent_queue_operations(self):
+    def test_poller_handles_concurrent_queue_operations(self, tmp_project):
         """Test that the poller correctly handles operations from multiple commands."""
         from dbos import DBOS, Queue
 
@@ -223,16 +223,25 @@ time.sleep(0.5)
             handles.append(handle)
 
         # Wait for poller to dequeue and process all
-        time.sleep(2.5)  # Give enough time for queue thread to poll and execute
+        # Use a polling loop instead of fixed sleep to handle variable timing
+        max_wait = 5.0  # Maximum wait time
+        poll_interval = 0.2
+        waited = 0.0
 
-        # Check all workflows completed
-        completed = 0
-        for handle in handles:
-            status = handle.get_status()
-            if status.status == "SUCCESS":
-                completed += 1
+        while waited < max_wait:
+            completed = 0
+            for handle in handles:
+                status = handle.get_status()
+                if status.status == "SUCCESS":
+                    completed += 1
 
-        print(f"Completed workflows: {completed}/{len(handles)}")
+            if completed == len(handles):
+                break
+
+            time.sleep(poll_interval)
+            waited += poll_interval
+
+        print(f"Completed workflows: {completed}/{len(handles)} (waited {waited:.1f}s)")
         print(f"Executed workflows: {len(execution_tracker)}")
 
         # All workflows should complete
@@ -245,7 +254,7 @@ time.sleep(0.5)
             len(execution_tracker) == 6
         ), f"All workflows should have executed, got {len(execution_tracker)}"
 
-    def test_verify_single_poller_with_thread_tracking(self):
+    def test_verify_single_poller_with_thread_tracking(self, tmp_project):
         """Verify there's only one queue poller thread regardless of command count."""
         from kurt.workflows import get_dbos, init_dbos
 
@@ -282,7 +291,7 @@ time.sleep(0.5)
 class TestPollerResourceManagement:
     """Test resource management and cleanup of pollers."""
 
-    def test_poller_stops_on_shutdown_signal(self):
+    def test_poller_stops_on_shutdown_signal(self, tmp_project):
         """Test that poller threads can be properly stopped."""
         from dbos import DBOS
 
@@ -308,7 +317,7 @@ class TestPollerResourceManagement:
         # in the current version, so we just verify they exist
         print(f"Queue thread {queue_thread.name} is running")
 
-    def test_executor_cleanup(self):
+    def test_executor_cleanup(self, tmp_project):
         """Test that ThreadPoolExecutor is properly managed."""
         from dbos import DBOS
 

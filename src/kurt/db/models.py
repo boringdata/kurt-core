@@ -104,6 +104,9 @@ class Document(SQLModel, table=True):
     has_step_by_step_procedures: bool = Field(default=False)  # Step-by-step instructions
     has_narrative_structure: bool = Field(default=False)  # Uses storytelling
 
+    # Knowledge graph - document embedding for similarity search
+    embedding: Optional[bytes] = None  # 512-dim float32 vector (2048 bytes)
+
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -134,13 +137,62 @@ class DocumentClusterEdge(SQLModel, table=True):
 
 
 class Entity(SQLModel, table=True):
-    """Entity extracted from documents."""
+    """Entity extracted from documents (knowledge graph nodes)."""
 
     __tablename__ = "entities"
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
-    name: str = Field(index=True)  # Entity canonical name
-    entity_type: str = Field(index=True)  # Entity type (ProductFeature, Topic, etc.)
+    name: str = Field(index=True)  # Entity name (as mentioned in documents)
+    entity_type: str = Field(index=True)  # Entity type (Product, Feature, Technology, etc.)
+
+    # Resolution and disambiguation
+    canonical_name: Optional[str] = Field(
+        default=None, index=True
+    )  # Resolved canonical name (for merged entities)
+    aliases: Optional[list] = Field(default=None, sa_column=Column(JSON))  # Alternative names
+    description: Optional[str] = None  # Brief description
+
+    # Vector embedding for similarity search
+    embedding: Optional[bytes] = None  # 512-dim float32 vector (2048 bytes)
+
+    # Confidence and usage metrics
+    confidence_score: float = Field(default=0.0, index=True)  # Extraction confidence (0.0-1.0)
+    source_mentions: int = Field(default=0)  # Number of times mentioned across documents
+
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class EntityRelationship(SQLModel, table=True):
+    """Relationship between entities (knowledge graph edges)."""
+
+    __tablename__ = "entity_relationships"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    source_entity_id: UUID = Field(foreign_key="entities.id", index=True)
+    target_entity_id: UUID = Field(foreign_key="entities.id", index=True)
+    relationship_type: str = Field(index=True)  # mentions, part_of, integrates_with, etc.
+
+    confidence: float = Field(default=0.0)  # Relationship confidence (0.0-1.0)
+    evidence_count: int = Field(default=1)  # Number of documents supporting this relationship
+    context: Optional[str] = None  # Context snippet where relationship was found
+
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class DocumentEntity(SQLModel, table=True):
+    """Junction table linking documents to entities they mention."""
+
+    __tablename__ = "document_entities"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    document_id: UUID = Field(foreign_key="documents.id", index=True)
+    entity_id: UUID = Field(foreign_key="entities.id", index=True)
+
+    mention_count: int = Field(default=1)  # How many times entity is mentioned
+    confidence: float = Field(default=0.0)  # Mention confidence (0.0-1.0)
+    context: Optional[str] = None  # Context snippet of first mention
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

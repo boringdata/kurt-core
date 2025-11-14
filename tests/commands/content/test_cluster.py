@@ -4,9 +4,28 @@ Tests for 'cluster-urls' command (document organization).
 These tests use mocked LLM responses to avoid expensive API calls.
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from kurt.cli import main
+
+
+class ClusteringResult:
+    """
+    Simple result object that mimics DSPy ComputeClustersAndClassify output structure.
+
+    Used for mocking the LLM response in tests. DSPy signatures with multiple OutputFields
+    return objects where each field is an attribute of the result object.
+
+    This class is designed to work with the mock_dspy_signature fixture by providing
+    a __fields__ attribute that lists the output field names, mimicking a Pydantic v1 model.
+    """
+
+    # Mimic Pydantic v1 model structure for the fixture
+    __fields__ = {"clusters": None, "classifications": None}
+
+    def __init__(self, clusters, classifications):
+        self.clusters = clusters
+        self.classifications = classifications
 
 
 class TestClusterUrlsCommand:
@@ -61,12 +80,11 @@ class TestClusterUrlsCommand:
             assert result.exit_code == 1
             assert "OpenAI" in result.output or "API" in result.output or "key" in result.output
 
-    def test_cluster_urls_with_include_pattern(self, isolated_cli_runner):
+    def test_cluster_urls_with_include_pattern(self, isolated_cli_runner, mock_dspy_signature):
         """Test --include pattern for filtering before clustering."""
         runner, project_dir = isolated_cli_runner
 
         # Create test documents with different URL patterns
-        from unittest.mock import patch
         from uuid import uuid4
 
         from kurt.db.database import get_session
@@ -101,29 +119,31 @@ class TestClusterUrlsCommand:
 
         session.commit()
 
-        # Mock the LLM clustering to avoid API calls
-        with patch("kurt.content.cluster.dspy.LM"):
-            with patch("kurt.content.cluster.dspy.ChainOfThought") as mock_cot:
-                # Mock LLM to return clusters and classifications
-                from unittest.mock import MagicMock
+        # Define the mock output for the clustering signature
+        from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
 
-                from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
-
-                mock_clusterer = mock_cot.return_value
-                mock_result = MagicMock()
-                mock_result.clusters = [
+        def mock_clustering_output(**kwargs):
+            """Return clustering results based on input pages."""
+            _ = kwargs.get("pages", [])  # noqa: F841
+            return ClusteringResult(
+                clusters=[
                     TopicClusterOutput(
                         name="Documentation",
                         description="Docs pages",
                         example_urls=[d.source_url for d in docs_matching[:2]],
                     )
-                ]
-                mock_result.classifications = [
+                ],
+                classifications=[
                     ContentTypeClassification(url=d.source_url, content_type="reference")
                     for d in docs_matching
-                ]
-                mock_clusterer.return_value = mock_result
+                ],
+            )
 
+        # Mock the LLM clustering to avoid API calls
+        with patch("kurt.content.cluster.dspy.LM"):
+            with mock_dspy_signature(
+                "ComputeClustersAndClassify", mock_clustering_output
+            ) as mock_module:
                 # Run cluster-urls with pattern
                 result = runner.invoke(main, ["content", "cluster", "--include", "*/docs/*"])
 
@@ -142,12 +162,12 @@ class TestClusterUrlsCommand:
                 assert "Computing topic clusters" in result.output
 
                 # Verify the mock was actually called
-                assert mock_cot.called, "ChainOfThought mock should have been called"
+                assert mock_module.called, "ComputeClustersAndClassify mock should have been called"
 
                 # Verify that only docs matching pattern were clustered
                 # The mock should have been called with only 3 pages (not 5)
-                if mock_clusterer.called:
-                    call_args = mock_clusterer.call_args
+                if mock_module.called:
+                    call_args = mock_module.call_args
                     pages = call_args.kwargs.get("pages", [])
                     # Should only cluster the 3 matching docs
                     assert len(pages) == 3, f"Expected 3 pages, got {len(pages)}"
@@ -155,7 +175,7 @@ class TestClusterUrlsCommand:
                     for page in pages:
                         assert "/docs/" in page.url
 
-    def test_cluster_urls_works_on_not_fetched(self, isolated_cli_runner):
+    def test_cluster_urls_works_on_not_fetched(self, isolated_cli_runner, mock_dspy_signature):
         """Test clustering works on NOT_FETCHED documents (no content needed)."""
         runner, project_dir = isolated_cli_runner
 
@@ -178,26 +198,28 @@ class TestClusterUrlsCommand:
             session.add(doc)
         session.commit()
 
+        # Define the mock output
+        from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
+
+        mock_result = ClusteringResult(
+            clusters=[
+                TopicClusterOutput(
+                    name="Tutorials",
+                    description="Tutorial content",
+                    example_urls=["https://example.com/tutorial0"],
+                )
+            ],
+            classifications=[
+                ContentTypeClassification(
+                    url=f"https://example.com/tutorial{i}", content_type="tutorial"
+                )
+                for i in range(5)
+            ],
+        )
+
         # Mock LLM to avoid slow API calls
         with patch("kurt.content.cluster.dspy.LM"):
-            with patch("kurt.content.cluster.dspy.ChainOfThought") as mock_cot:
-                from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
-
-                mock_clusterer = mock_cot.return_value
-                mock_clusterer.return_value.clusters = [
-                    TopicClusterOutput(
-                        name="Tutorials",
-                        description="Tutorial content",
-                        example_urls=["https://example.com/tutorial0"],
-                    )
-                ]
-                mock_clusterer.return_value.classifications = [
-                    ContentTypeClassification(
-                        url=f"https://example.com/tutorial{i}", content_type="tutorial"
-                    )
-                    for i in range(5)
-                ]
-
+            with mock_dspy_signature("ComputeClustersAndClassify", mock_result):
                 # Run cluster-urls (should work with just URL/title/description)
                 result = runner.invoke(main, ["content", "cluster"])
 
@@ -205,7 +227,7 @@ class TestClusterUrlsCommand:
                 assert result.exit_code == 0
                 assert "Computing topic clusters" in result.output
 
-    def test_cluster_urls_format_json(self, isolated_cli_runner):
+    def test_cluster_urls_format_json(self, isolated_cli_runner, mock_dspy_signature):
         """Test --format json output."""
         runner, project_dir = isolated_cli_runner
 
@@ -226,26 +248,26 @@ class TestClusterUrlsCommand:
             session.add(doc)
         session.commit()
 
+        # Define the mock output
+        from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
+
+        mock_result = ClusteringResult(
+            clusters=[
+                TopicClusterOutput(
+                    name="Pages",
+                    description="Page content",
+                    example_urls=["https://example.com/page0"],
+                )
+            ],
+            classifications=[
+                ContentTypeClassification(url=f"https://example.com/page{i}", content_type="other")
+                for i in range(3)
+            ],
+        )
+
         # Mock LLM to avoid slow API calls
         with patch("kurt.content.cluster.dspy.LM"):
-            with patch("kurt.content.cluster.dspy.ChainOfThought") as mock_cot:
-                from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
-
-                mock_clusterer = mock_cot.return_value
-                mock_clusterer.return_value.clusters = [
-                    TopicClusterOutput(
-                        name="Pages",
-                        description="Page content",
-                        example_urls=["https://example.com/page0"],
-                    )
-                ]
-                mock_clusterer.return_value.classifications = [
-                    ContentTypeClassification(
-                        url=f"https://example.com/page{i}", content_type="other"
-                    )
-                    for i in range(3)
-                ]
-
+            with mock_dspy_signature("ComputeClustersAndClassify", mock_result):
                 # Run cluster-urls with JSON format
                 result = runner.invoke(main, ["content", "cluster", "--format", "json"])
 
@@ -256,12 +278,13 @@ class TestClusterUrlsCommand:
                     "Computing topic clusters" in result.output or "json" in result.output.lower()
                 )
 
-    def test_cluster_urls_without_pattern_clusters_all(self, isolated_cli_runner):
+    def test_cluster_urls_without_pattern_clusters_all(
+        self, isolated_cli_runner, mock_dspy_signature
+    ):
         """Test that cluster-urls without --include clusters ALL documents."""
         runner, project_dir = isolated_cli_runner
 
         # Create diverse test documents
-        from unittest.mock import patch
         from uuid import uuid4
 
         from kurt.db.database import get_session
@@ -286,31 +309,32 @@ class TestClusterUrlsCommand:
 
         session.commit()
 
+        # Define the mock output
+        from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
+
+        mock_result = ClusteringResult(
+            clusters=[
+                TopicClusterOutput(
+                    name="Documentation",
+                    description="Docs",
+                    example_urls=[all_docs[0].source_url],
+                ),
+                TopicClusterOutput(
+                    name="Blog Posts", description="Blog", example_urls=[all_docs[2].source_url]
+                ),
+            ],
+            classifications=[
+                ContentTypeClassification(
+                    url=doc.source_url,
+                    content_type="reference" if "docs" in doc.source_url else "blog",
+                )
+                for doc in all_docs
+            ],
+        )
+
         # Mock the LLM clustering to avoid API calls
         with patch("kurt.content.cluster.dspy.LM"):
-            with patch("kurt.content.cluster.dspy.ChainOfThought") as mock_cot:
-                # Mock LLM to return clusters and classifications
-                from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
-
-                mock_clusterer = mock_cot.return_value
-                mock_clusterer.return_value.clusters = [
-                    TopicClusterOutput(
-                        name="Documentation",
-                        description="Docs",
-                        example_urls=[all_docs[0].source_url],
-                    ),
-                    TopicClusterOutput(
-                        name="Blog Posts", description="Blog", example_urls=[all_docs[2].source_url]
-                    ),
-                ]
-                mock_clusterer.return_value.classifications = [
-                    ContentTypeClassification(
-                        url=doc.source_url,
-                        content_type="reference" if "docs" in doc.source_url else "blog",
-                    )
-                    for doc in all_docs
-                ]
-
+            with mock_dspy_signature("ComputeClustersAndClassify", mock_result) as mock_module:
                 # Run cluster-urls WITHOUT --include (should cluster ALL)
                 result = runner.invoke(main, ["content", "cluster"])
 
@@ -319,8 +343,8 @@ class TestClusterUrlsCommand:
                 assert "Computing topic clusters" in result.output
 
                 # Verify that ALL documents were clustered
-                if mock_clusterer.called:
-                    call_args = mock_clusterer.call_args
+                if mock_module.called:
+                    call_args = mock_module.call_args
                     pages = call_args.kwargs.get("pages", [])
                     # Should cluster all 6 documents
                     assert len(pages) == 6, f"Expected 6 pages (all docs), got {len(pages)}"
@@ -338,7 +362,7 @@ class TestClusterUrlsCommand:
 class TestClusterUrlsAdditionalOptions:
     """Additional tests for cluster-urls options from CLI-SPEC.md."""
 
-    def test_cluster_urls_with_force_flag(self, isolated_cli_runner):
+    def test_cluster_urls_with_force_flag(self, isolated_cli_runner, mock_dspy_signature):
         """Test --force flag to re-cluster already clustered documents."""
         runner, project_dir = isolated_cli_runner
 
@@ -381,33 +405,33 @@ class TestClusterUrlsAdditionalOptions:
 
         session.commit()
 
+        # Define the mock output
+        from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
+
+        mock_result = ClusteringResult(
+            clusters=[
+                TopicClusterOutput(
+                    name="NewCluster",
+                    description="New clustering",
+                    example_urls=["https://example.com/page0"],
+                )
+            ],
+            classifications=[
+                ContentTypeClassification(url=f"https://example.com/page{i}", content_type="other")
+                for i in range(5)
+            ],
+        )
+
         # Mock LLM for clustering
         with patch("kurt.content.cluster.dspy.LM"):
-            with patch("kurt.content.cluster.dspy.ChainOfThought") as mock_cot:
-                from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
-
-                mock_clusterer = mock_cot.return_value
-                mock_clusterer.return_value.clusters = [
-                    TopicClusterOutput(
-                        name="NewCluster",
-                        description="New clustering",
-                        example_urls=["https://example.com/page0"],
-                    )
-                ]
-                mock_clusterer.return_value.classifications = [
-                    ContentTypeClassification(
-                        url=f"https://example.com/page{i}", content_type="other"
-                    )
-                    for i in range(5)
-                ]
-
+            with mock_dspy_signature("ComputeClustersAndClassify", mock_result):
                 # Run cluster-urls with --force to re-cluster
                 result = runner.invoke(main, ["content", "cluster", "--force"])
 
                 # Should succeed (force bypasses "already clustered" check)
                 assert result.exit_code == 0
 
-    def test_cluster_urls_classifies_automatically(self, isolated_cli_runner):
+    def test_cluster_urls_classifies_automatically(self, isolated_cli_runner, mock_dspy_signature):
         """Test that clustering automatically classifies content types (no flag needed)."""
         runner, project_dir = isolated_cli_runner
 
@@ -435,26 +459,27 @@ class TestClusterUrlsAdditionalOptions:
 
         session.commit()
 
+        # Define the mock output
+        from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
+
+        # Single LLM call returns both clusters and classifications
+        mock_result = ClusteringResult(
+            clusters=[
+                TopicClusterOutput(
+                    name="Blog Posts",
+                    description="Blog content",
+                    example_urls=[docs[0].source_url],
+                )
+            ],
+            classifications=[
+                ContentTypeClassification(url=docs[i].source_url, content_type="blog")
+                for i in range(5)
+            ],
+        )
+
         # Mock clustering and classification (single LLM call)
         with patch("kurt.content.cluster.dspy.LM"):
-            with patch("kurt.content.cluster.dspy.ChainOfThought") as mock_cot:
-                from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
-
-                mock_processor = mock_cot.return_value
-
-                # Single LLM call returns both clusters and classifications
-                mock_processor.return_value.classifications = [
-                    ContentTypeClassification(url=docs[i].source_url, content_type="blog")
-                    for i in range(5)
-                ]
-                mock_processor.return_value.clusters = [
-                    TopicClusterOutput(
-                        name="Blog Posts",
-                        description="Blog content",
-                        example_urls=[docs[0].source_url],
-                    )
-                ]
-
+            with mock_dspy_signature("ComputeClustersAndClassify", mock_result):
                 # Run cluster-urls (no special flag needed)
                 result = runner.invoke(main, ["content", "cluster"])
 
@@ -464,7 +489,9 @@ class TestClusterUrlsAdditionalOptions:
                 assert "Computing topic clusters" in result.output
                 assert "Classified" in result.output
 
-    def test_cluster_urls_force_flag_bypass_safety_check(self, isolated_cli_runner):
+    def test_cluster_urls_force_flag_bypass_safety_check(
+        self, isolated_cli_runner, mock_dspy_signature
+    ):
         """Test that --force ignores existing clusters and creates fresh (vs incremental refinement)."""
         runner, project_dir = isolated_cli_runner
 
@@ -513,28 +540,24 @@ class TestClusterUrlsAdditionalOptions:
         session.commit()
 
         # Test WITHOUT --force (should refine existing clusters)
-        with patch("kurt.content.cluster.dspy.LM"):
-            with patch("kurt.content.cluster.dspy.ChainOfThought") as mock_cot:
-                from kurt.content.cluster import (
-                    ContentTypeClassification,
-                    TopicClusterOutput,
+        from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
+
+        mock_result = ClusteringResult(
+            clusters=[
+                TopicClusterOutput(
+                    name="RefinedCluster",
+                    description="Refined from existing",
+                    example_urls=[docs[0].source_url],
                 )
+            ],
+            classifications=[
+                ContentTypeClassification(url=doc.source_url, content_type="reference")
+                for doc in docs
+            ],
+        )
 
-                mock_clusterer = mock_cot.return_value
-                mock_result = MagicMock()
-                mock_result.clusters = [
-                    TopicClusterOutput(
-                        name="RefinedCluster",
-                        description="Refined from existing",
-                        example_urls=[docs[0].source_url],
-                    )
-                ]
-                mock_result.classifications = [
-                    ContentTypeClassification(url=doc.source_url, content_type="reference")
-                    for doc in docs
-                ]
-                mock_clusterer.return_value = mock_result
-
+        with patch("kurt.content.cluster.dspy.LM"):
+            with mock_dspy_signature("ComputeClustersAndClassify", mock_result) as mock_module:
                 result_without_force = runner.invoke(main, ["content", "cluster"])
 
                 # Should succeed with incremental clustering
@@ -545,31 +568,30 @@ class TestClusterUrlsAdditionalOptions:
                 )
 
                 # Verify existing_clusters was passed to LLM
-                assert mock_clusterer.called
-                call_kwargs = mock_clusterer.call_args.kwargs
+                assert mock_module.called
+                call_kwargs = mock_module.call_args.kwargs
                 assert "existing_clusters" in call_kwargs
                 assert len(call_kwargs["existing_clusters"]) == 1  # One existing cluster
 
         # Test WITH --force (should ignore existing clusters)
+        mock_result_force = ClusteringResult(
+            clusters=[
+                TopicClusterOutput(
+                    name="FreshCluster",
+                    description="Fresh clustering",
+                    example_urls=[docs[0].source_url],
+                )
+            ],
+            classifications=[
+                ContentTypeClassification(url=doc.source_url, content_type="reference")
+                for doc in docs
+            ],
+        )
+
         with patch("kurt.content.cluster.dspy.LM"):
-            with patch("kurt.content.cluster.dspy.ChainOfThought") as mock_cot:
-                from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
-
-                mock_clusterer = mock_cot.return_value
-                mock_result = MagicMock()
-                mock_result.clusters = [
-                    TopicClusterOutput(
-                        name="FreshCluster",
-                        description="Fresh clustering",
-                        example_urls=[docs[0].source_url],
-                    )
-                ]
-                mock_result.classifications = [
-                    ContentTypeClassification(url=doc.source_url, content_type="reference")
-                    for doc in docs
-                ]
-                mock_clusterer.return_value = mock_result
-
+            with mock_dspy_signature(
+                "ComputeClustersAndClassify", mock_result_force
+            ) as mock_module:
                 # Run with --force flag
                 result_with_force = runner.invoke(main, ["content", "cluster", "--force"])
 
@@ -578,12 +600,14 @@ class TestClusterUrlsAdditionalOptions:
                 assert "Computing topic clusters" in result_with_force.output
 
                 # Verify existing_clusters was EMPTY (force mode)
-                assert mock_clusterer.called
-                call_kwargs = mock_clusterer.call_args.kwargs
+                assert mock_module.called
+                call_kwargs = mock_module.call_args.kwargs
                 assert "existing_clusters" in call_kwargs
                 assert len(call_kwargs["existing_clusters"]) == 0  # Empty in force mode
 
-    def test_cluster_urls_force_flag_without_existing_clusters(self, isolated_cli_runner):
+    def test_cluster_urls_force_flag_without_existing_clusters(
+        self, isolated_cli_runner, mock_dspy_signature
+    ):
         """Test --force works when no existing clusters (no-op for safety check)."""
         runner, project_dir = isolated_cli_runner
 
@@ -610,24 +634,25 @@ class TestClusterUrlsAdditionalOptions:
 
         session.commit()
 
+        # Define the mock output
+        from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
+
+        mock_result = ClusteringResult(
+            clusters=[
+                TopicClusterOutput(
+                    name="FirstCluster",
+                    description="First time clustering",
+                    example_urls=[docs[0].source_url],
+                )
+            ],
+            classifications=[
+                ContentTypeClassification(url=doc.source_url, content_type="guide") for doc in docs
+            ],
+        )
+
         # Mock LLM clustering
         with patch("kurt.content.cluster.dspy.LM"):
-            with patch("kurt.content.cluster.dspy.ChainOfThought") as mock_cot:
-                from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
-
-                mock_clusterer = mock_cot.return_value
-                mock_clusterer.return_value.clusters = [
-                    TopicClusterOutput(
-                        name="FirstCluster",
-                        description="First time clustering",
-                        example_urls=[docs[0].source_url],
-                    )
-                ]
-                mock_clusterer.return_value.classifications = [
-                    ContentTypeClassification(url=doc.source_url, content_type="guide")
-                    for doc in docs
-                ]
-
+            with mock_dspy_signature("ComputeClustersAndClassify", mock_result):
                 # Run with --force even though there are no existing clusters
                 result = runner.invoke(main, ["content", "cluster", "--force"])
 
@@ -635,7 +660,7 @@ class TestClusterUrlsAdditionalOptions:
                 assert result.exit_code == 0
                 assert "Computing topic clusters" in result.output
 
-    def test_cluster_urls_large_batch_warning(self, isolated_cli_runner):
+    def test_cluster_urls_large_batch_warning(self, isolated_cli_runner, mock_dspy_signature):
         """Test warning displays when >500 documents."""
         runner, project_dir = isolated_cli_runner
 
@@ -664,33 +689,27 @@ class TestClusterUrlsAdditionalOptions:
 
         session.commit()
 
+        # Create a dynamic response function that returns appropriate data for each batch
+        from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
+
+        def batch_response(**kwargs):
+            pages = kwargs.get("pages", [])
+            return ClusteringResult(
+                clusters=[
+                    TopicClusterOutput(
+                        name="TestCluster",
+                        description="Test",
+                        example_urls=[pages[0].url if pages else docs[0].source_url],
+                    )
+                ],
+                classifications=[
+                    ContentTypeClassification(url=page.url, content_type="other") for page in pages
+                ],
+            )
+
         # Mock LLM clustering (return minimal clusters to speed up test)
         with patch("kurt.content.cluster.dspy.LM"):
-            with patch("kurt.content.cluster.dspy.ChainOfThought") as mock_cot:
-                from unittest.mock import MagicMock
-
-                from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
-
-                # Create a side_effect that returns appropriate data for each batch
-                def batch_response(*args, **kwargs):
-                    pages = kwargs.get("pages", [])
-                    result = MagicMock()
-                    result.clusters = [
-                        TopicClusterOutput(
-                            name="TestCluster",
-                            description="Test",
-                            example_urls=[pages[0].url if pages else docs[0].source_url],
-                        )
-                    ]
-                    result.classifications = [
-                        ContentTypeClassification(url=page.url, content_type="other")
-                        for page in pages
-                    ]
-                    return result
-
-                mock_clusterer = mock_cot.return_value
-                mock_clusterer.side_effect = batch_response
-
+            with mock_dspy_signature("ComputeClustersAndClassify", batch_response):
                 # Run cluster-urls
                 result = runner.invoke(main, ["content", "cluster"])
 
@@ -710,7 +729,9 @@ class TestClusterUrlsAdditionalOptions:
                 assert result.exit_code == 0
                 assert "batches" in result.output.lower() or "250" in result.output
 
-    def test_cluster_urls_displays_actual_doc_counts(self, isolated_cli_runner):
+    def test_cluster_urls_displays_actual_doc_counts(
+        self, isolated_cli_runner, mock_dspy_signature
+    ):
         """Test that doc counts in table are accurate (not '?')."""
         runner, project_dir = isolated_cli_runner
 
@@ -738,33 +759,30 @@ class TestClusterUrlsAdditionalOptions:
 
         session.commit()
 
+        # Define the mock output - use a simple object with the required attributes
+        from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
+
+        mock_result = ClusteringResult(
+            clusters=[
+                TopicClusterOutput(
+                    name="ClusterA",
+                    description="First cluster",
+                    example_urls=[docs[0].source_url, docs[1].source_url, docs[2].source_url],
+                ),
+                TopicClusterOutput(
+                    name="ClusterB",
+                    description="Second cluster",
+                    example_urls=[docs[5].source_url, docs[6].source_url],
+                ),
+            ],
+            classifications=[
+                ContentTypeClassification(url=doc.source_url, content_type="guide") for doc in docs
+            ],
+        )
+
         # Mock LLM clustering - return 2 clusters with specific example URLs
         with patch("kurt.content.cluster.dspy.LM"):
-            with patch("kurt.content.cluster.dspy.ChainOfThought") as mock_cot:
-                from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
-
-                mock_clusterer = mock_cot.return_value
-
-                # Cluster 1: docs 0-4 (5 documents)
-                # Cluster 2: docs 5-9 (5 documents)
-                mock_clusterer.return_value.clusters = [
-                    TopicClusterOutput(
-                        name="ClusterA",
-                        description="First cluster",
-                        example_urls=[docs[0].source_url, docs[1].source_url, docs[2].source_url],
-                    ),
-                    TopicClusterOutput(
-                        name="ClusterB",
-                        description="Second cluster",
-                        example_urls=[docs[5].source_url, docs[6].source_url],
-                    ),
-                ]
-
-                mock_clusterer.return_value.classifications = [
-                    ContentTypeClassification(url=doc.source_url, content_type="guide")
-                    for doc in docs
-                ]
-
+            with mock_dspy_signature("ComputeClustersAndClassify", mock_result):
                 # Run cluster-urls
                 result = runner.invoke(main, ["content", "cluster"])
 

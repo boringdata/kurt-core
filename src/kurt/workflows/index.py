@@ -19,7 +19,7 @@ from typing import Any
 
 from dbos import DBOS, Queue, SetEnqueueOptions
 
-from kurt.content.index import extract_document_metadata
+from kurt.content.indexing import extract_document_metadata
 
 # Create priority-enabled queue for index operations
 # Concurrency=3 means max 3 concurrent LLM extractions (to control costs)

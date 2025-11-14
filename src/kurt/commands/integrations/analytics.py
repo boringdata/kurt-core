@@ -29,8 +29,8 @@ def onboard(domain: str, platform: str, sync_now: bool):
     Second run: Tests connection and registers domain
 
     Examples:
-        kurt analytics onboard docs.company.com
-        kurt analytics onboard docs.company.com --platform ga4
+        kurt integrations analytics onboard docs.company.com
+        kurt integrations analytics onboard docs.company.com --platform ga4
     """
     from kurt.db.database import get_session
     from kurt.db.models import AnalyticsDomain
@@ -55,7 +55,9 @@ def onboard(domain: str, platform: str, sync_now: bool):
         console.print("[yellow]Please fill in your analytics credentials:[/yellow]")
         console.print(f"  1. Open: [cyan]{config_path}[/cyan]")
         console.print(f"  2. Replace placeholder values with your {platform} credentials")
-        console.print("  3. Run this command again: [cyan]kurt analytics onboard {domain}[/cyan]")
+        console.print(
+            "  3. Run this command again: [cyan]kurt integrations analytics onboard {domain}[/cyan]"
+        )
         console.print()
         console.print("[dim]Note: This file is gitignored and won't be committed.[/dim]")
         return
@@ -66,7 +68,7 @@ def onboard(domain: str, platform: str, sync_now: bool):
         console.print(f"[yellow]{platform.capitalize()} not configured yet.[/yellow]")
         console.print()
         console.print(f"Please fill in credentials in: [cyan]{config_path}[/cyan]")
-        console.print(f"Then run: [cyan]kurt analytics onboard {domain}[/cyan]")
+        console.print(f"Then run: [cyan]kurt integrations analytics onboard {domain}[/cyan]")
         return
 
     # Load platform config

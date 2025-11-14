@@ -20,7 +20,9 @@ class KurtConfig(BaseModel):
     DEFAULT_PROJECTS_PATH: ClassVar[str] = "projects"
     DEFAULT_RULES_PATH: ClassVar[str] = "rules"
     DEFAULT_INDEXING_LLM_MODEL: ClassVar[str] = "openai/gpt-4o-mini"
+    DEFAULT_EMBEDDING_MODEL: ClassVar[str] = "openai/text-embedding-3-small"
     DEFAULT_FETCH_ENGINE: ClassVar[str] = "trafilatura"
+    DEFAULT_MAX_CONCURRENT_INDEXING: ClassVar[int] = 50
 
     # Acceptable values for validation
     VALID_FETCH_ENGINES: ClassVar[list[str]] = ["trafilatura", "firecrawl", "httpx"]
@@ -95,9 +97,19 @@ class KurtConfig(BaseModel):
         default=DEFAULT_INDEXING_LLM_MODEL,
         description="LLM model for indexing documents (metadata extraction, classification)",
     )
+    EMBEDDING_MODEL: str = Field(
+        default=DEFAULT_EMBEDDING_MODEL,
+        description="Embedding model for generating vector embeddings (documents and entities)",
+    )
     INGESTION_FETCH_ENGINE: str = Field(
         default=DEFAULT_FETCH_ENGINE,
         description="Fetch engine for content ingestion: 'firecrawl' or 'trafilatura'",
+    )
+    MAX_CONCURRENT_INDEXING: int = Field(
+        default=DEFAULT_MAX_CONCURRENT_INDEXING,
+        description="Maximum number of concurrent LLM calls during indexing (default: 50)",
+        ge=1,  # Must be at least 1
+        le=100,  # Cap at 100 to avoid overwhelming the LLM API
     )
     # Telemetry configuration
     TELEMETRY_ENABLED: bool = Field(
@@ -267,7 +279,9 @@ def create_config(
         f.write(f'PATH_PROJECTS="{config.PATH_PROJECTS}"\n')
         f.write(f'PATH_RULES="{config.PATH_RULES}"\n')
         f.write(f'INDEXING_LLM_MODEL="{config.INDEXING_LLM_MODEL}"\n')
+        f.write(f'EMBEDDING_MODEL="{config.EMBEDDING_MODEL}"\n')
         f.write(f'INGESTION_FETCH_ENGINE="{config.INGESTION_FETCH_ENGINE}"\n')
+        f.write(f"MAX_CONCURRENT_INDEXING={config.MAX_CONCURRENT_INDEXING}\n")
         f.write("\n# Telemetry Configuration\n")
         # Write boolean as True/False (not "True"/"False" string)
         f.write(f"TELEMETRY_ENABLED={config.TELEMETRY_ENABLED}\n")
@@ -321,6 +335,7 @@ def update_config(config: KurtConfig) -> None:
         f.write(f'PATH_PROJECTS="{config.PATH_PROJECTS}"\n')
         f.write(f'PATH_RULES="{config.PATH_RULES}"\n')
         f.write(f'INDEXING_LLM_MODEL="{config.INDEXING_LLM_MODEL}"\n')
+        f.write(f'EMBEDDING_MODEL="{config.EMBEDDING_MODEL}"\n')
         f.write(f'INGESTION_FETCH_ENGINE="{config.INGESTION_FETCH_ENGINE}"\n')
         f.write("\n# Telemetry Configuration\n")
         # Write boolean as True/False (not "True"/"False" string)

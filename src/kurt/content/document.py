@@ -13,7 +13,7 @@ These can be used directly by agents or wrapped by CLI commands.
 from typing import Optional
 from uuid import UUID
 
-from sqlmodel import func, select
+from sqlmodel import select
 
 from kurt.db.database import get_session
 from kurt.db.models import Document, DocumentAnalytics, IngestionStatus
@@ -288,12 +288,22 @@ def delete_document(document_id: str, delete_content: bool = False) -> dict:
     }
 
 
-def get_document_stats(include_pattern: Optional[str] = None) -> dict:
+def get_document_stats(
+    include_pattern: Optional[str] = None,
+    in_cluster: Optional[str] = None,
+    with_status: Optional[str] = None,
+    with_content_type: Optional[str] = None,
+    limit: Optional[int] = None,
+) -> dict:
     """
     Get statistics about documents in the database.
 
     Args:
         include_pattern: Optional glob pattern to filter documents (e.g., "*docs.dagster.io*")
+        in_cluster: Optional cluster name to filter documents
+        with_status: Optional ingestion status filter (NOT_FETCHED, FETCHED, ERROR)
+        with_content_type: Optional content type filter (tutorial, guide, blog, etc.)
+        limit: Optional limit on number of documents to include in stats
 
     Returns:
         Dictionary with statistics:
@@ -309,52 +319,58 @@ def get_document_stats(include_pattern: Optional[str] = None) -> dict:
 
         # With filter
         stats = get_document_stats(include_pattern="*docs.dagster.io*")
+        stats = get_document_stats(in_cluster="Tutorials", with_status="FETCHED")
     """
     from fnmatch import fnmatch
 
     session = get_session()
 
-    # Build base query with optional filtering
-    if include_pattern:
-        # Get all documents matching pattern
-        all_docs_stmt = select(Document)
-        all_docs = session.exec(all_docs_stmt).all()
+    # Build base query
+    stmt = select(Document)
 
-        # Filter by glob pattern
+    # Apply filters (SQL-based when possible)
+    if with_status:
+        status_enum = IngestionStatus[with_status.upper()]
+        stmt = stmt.where(Document.ingestion_status == status_enum)
+
+    if in_cluster:
+        # Join with clusters to filter
+        from kurt.db.models import ClusterMembership
+
+        stmt = stmt.join(ClusterMembership, Document.id == ClusterMembership.document_id).where(
+            ClusterMembership.cluster_name == in_cluster
+        )
+
+    if with_content_type:
+        # Need to join with document_classifications
+        from kurt.db.models import DocumentClassification
+
+        stmt = stmt.join(
+            DocumentClassification, Document.id == DocumentClassification.document_id
+        ).where(DocumentClassification.document_type == with_content_type)
+
+    # Fetch documents (need glob filtering)
+    all_docs = session.exec(stmt).all()
+
+    # Apply glob pattern filtering (post-fetch)
+    if include_pattern:
         filtered_docs = []
         for doc in all_docs:
             if doc.source_url and fnmatch(doc.source_url, include_pattern):
                 filtered_docs.append(doc)
             elif doc.content_path and fnmatch(str(doc.content_path), include_pattern):
                 filtered_docs.append(doc)
+        all_docs = filtered_docs
 
-        # Count by status
-        total = len(filtered_docs)
-        not_fetched = sum(
-            1 for d in filtered_docs if d.ingestion_status == IngestionStatus.NOT_FETCHED
-        )
-        fetched = sum(1 for d in filtered_docs if d.ingestion_status == IngestionStatus.FETCHED)
-        error = sum(1 for d in filtered_docs if d.ingestion_status == IngestionStatus.ERROR)
-    else:
-        # Count total documents
-        total_stmt = select(func.count(Document.id))
-        total = session.exec(total_stmt).one()
+    # Apply limit
+    if limit and len(all_docs) > limit:
+        all_docs = all_docs[:limit]
 
-        # Count by status
-        not_fetched_stmt = select(func.count(Document.id)).where(
-            Document.ingestion_status == IngestionStatus.NOT_FETCHED
-        )
-        not_fetched = session.exec(not_fetched_stmt).one()
-
-        fetched_stmt = select(func.count(Document.id)).where(
-            Document.ingestion_status == IngestionStatus.FETCHED
-        )
-        fetched = session.exec(fetched_stmt).one()
-
-        error_stmt = select(func.count(Document.id)).where(
-            Document.ingestion_status == IngestionStatus.ERROR
-        )
-        error = session.exec(error_stmt).one()
+    # Count by status
+    total = len(all_docs)
+    not_fetched = sum(1 for d in all_docs if d.ingestion_status == IngestionStatus.NOT_FETCHED)
+    fetched = sum(1 for d in all_docs if d.ingestion_status == IngestionStatus.FETCHED)
+    error = sum(1 for d in all_docs if d.ingestion_status == IngestionStatus.ERROR)
 
     return {
         "total": total,
@@ -607,64 +623,151 @@ def list_content(
 
 
 def list_documents_for_indexing(
-    doc_id: Optional[str] = None,
+    ids: Optional[str] = None,
     include_pattern: Optional[str] = None,
+    in_cluster: Optional[str] = None,
+    with_status: Optional[str] = None,
+    with_content_type: Optional[str] = None,
     all_flag: bool = False,
 ) -> list[Document]:
     """
     Get documents that need to be indexed based on filtering criteria.
 
     This function encapsulates the business logic for selecting documents
-    for the indexing process. It handles three modes:
-    1. Single document by ID
-    2. All FETCHED documents matching a glob pattern
-    3. All FETCHED documents (when all_flag is True)
+    for the indexing process. It handles multiple modes:
+    1. Single or multiple documents by IDs (comma-separated)
+    2. All FETCHED documents in a cluster
+    3. All FETCHED documents matching a glob pattern
+    4. All FETCHED documents with specific status
+    5. All FETCHED documents with specific content type
+    6. All FETCHED documents (when all_flag is True)
 
     Args:
-        doc_id: Document ID (full or partial UUID, minimum 8 chars)
+        ids: Comma-separated list of document IDs (full/partial UUIDs, URLs, or file paths)
         include_pattern: Glob pattern to filter documents (e.g., "*/docs/*")
+        in_cluster: Cluster name to filter documents
+        with_status: Filter by ingestion status (NOT_FETCHED, FETCHED, ERROR)
+        with_content_type: Filter by content type (tutorial, guide, blog, etc.)
         all_flag: If True, return all FETCHED documents
 
     Returns:
         List of Document objects ready for indexing
 
     Raises:
-        ValueError: If doc_id is provided but document not found or is ambiguous
+        ValueError: If identifier cannot be resolved or is ambiguous
         ValueError: If no filtering criteria provided
 
     Example:
-        # Get single document
-        docs = list_documents_for_indexing(doc_id="44ea066e")
+        # Get single or multiple documents by IDs
+        docs = list_documents_for_indexing(ids="44ea066e")
+        docs = list_documents_for_indexing(ids="44ea066e,550e8400,a73af781")
+
+        # Get documents in a cluster
+        docs = list_documents_for_indexing(in_cluster="Tutorials")
 
         # Get all documents matching pattern
         docs = list_documents_for_indexing(include_pattern="*/docs/*")
 
         # Get all FETCHED documents
         docs = list_documents_for_indexing(all_flag=True)
+
+        # Get documents by status
+        docs = list_documents_for_indexing(with_status="FETCHED")
+
+        # Get documents by content type
+        docs = list_documents_for_indexing(with_content_type="tutorial")
     """
     from fnmatch import fnmatch
 
     # Validate input - need at least one filtering criterion
-    if not doc_id and not include_pattern and not all_flag:
-        raise ValueError("Must provide either doc_id, include_pattern, or all_flag=True")
+    if (
+        not ids
+        and not include_pattern
+        and not in_cluster
+        and not with_status
+        and not with_content_type
+        and not all_flag
+    ):
+        raise ValueError(
+            "Must provide either ids, include_pattern, in_cluster, with_status, with_content_type, or all_flag=True"
+        )
 
-    # Mode 1: Single document by ID
-    if doc_id:
-        doc = get_document(doc_id)
-        return [doc]
+    # Mode 1: Documents by IDs (single or multiple, supports partial UUIDs/URLs/file paths)
+    if ids:
+        from kurt.content.filtering import resolve_ids_to_uuids
 
-    # Mode 2 & 3: Batch mode - get FETCHED documents
-    if include_pattern or all_flag:
-        # Get all FETCHED documents (no limit for indexing)
+        try:
+            # Resolve all identifiers to full UUIDs
+            uuid_strs = resolve_ids_to_uuids(ids)
+            docs = []
+            for uuid_str in uuid_strs:
+                try:
+                    doc = get_document(uuid_str)
+                    docs.append(doc)
+                except ValueError:
+                    # Skip invalid IDs but continue with others
+                    pass
+            return docs
+        except ValueError as e:
+            raise ValueError(f"Failed to resolve identifiers: {e}")
+
+    # Mode 2+: Batch mode - get documents by filters
+    if include_pattern or in_cluster or with_status or with_content_type or all_flag:
+        # Determine status filter (default to FETCHED if not specified)
+        if with_status:
+            try:
+                status_filter = IngestionStatus[with_status]
+            except KeyError:
+                raise ValueError(
+                    f"Invalid status: {with_status}. Must be one of: NOT_FETCHED, FETCHED, ERROR"
+                )
+        else:
+            # Default to FETCHED for backwards compatibility
+            status_filter = IngestionStatus.FETCHED
+
+        # Get documents with status filter
         docs = list_documents(
-            status=IngestionStatus.FETCHED,
+            status=status_filter,
             url_prefix=None,
             url_contains=None,
             limit=None,
         )
 
+        # Apply cluster filter if provided
+        if in_cluster:
+            docs = [d for d in docs if d.cluster and d.cluster == in_cluster]
+
+        # Apply content type filter if provided
+        if with_content_type:
+            from kurt.db.database import get_session
+            from kurt.db.models import DocumentClassification
+
+            session = get_session()
+            # Get document IDs with matching content type
+            classified_ids = set()
+            for doc in docs:
+                classification = (
+                    session.query(DocumentClassification)
+                    .filter(DocumentClassification.document_id == doc.id)
+                    .first()
+                )
+                if classification and classification.document_type == with_content_type:
+                    classified_ids.add(doc.id)
+
+            docs = [d for d in docs if d.id in classified_ids]
+
         # Apply glob pattern filter if provided
         if include_pattern:
+            # First, check if pattern matches any documents (regardless of status)
+            all_docs_any_status = list_documents(limit=None)
+            matching_any_status = [
+                d
+                for d in all_docs_any_status
+                if (d.source_url and fnmatch(d.source_url, include_pattern))
+                or (d.content_path and fnmatch(d.content_path, include_pattern))
+            ]
+
+            # Filter documents by pattern
             docs = [
                 d
                 for d in docs
@@ -672,7 +775,25 @@ def list_documents_for_indexing(
                 or (d.content_path and fnmatch(d.content_path, include_pattern))
             ]
 
+            # If no docs with requested status but pattern matched other statuses, provide helpful error
+            if not docs and matching_any_status:
+                status_counts = {}
+                for d in matching_any_status:
+                    status = d.ingestion_status.value
+                    status_counts[status] = status_counts.get(status, 0) + 1
+
+                status_summary = ", ".join(
+                    [f"{count} {status}" for status, count in status_counts.items()]
+                )
+                raise ValueError(
+                    f"Found {len(matching_any_status)} document(s) matching pattern '{include_pattern}' "
+                    f"({status_summary}), but none are {status_filter.value}.\n"
+                    f"Tip: Use 'kurt fetch --include \"{include_pattern}\"' to fetch these documents first."
+                )
+
         return docs
 
     # Should never reach here due to initial validation
-    raise ValueError("Must provide either doc_id, include_pattern, or all_flag=True")
+    raise ValueError(
+        "Must provide either ids, include_pattern, in_cluster, with_status, with_content_type, or all_flag=True"
+    )

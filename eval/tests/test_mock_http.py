@@ -105,7 +105,7 @@ def test_context_manager():
 
     import requests
 
-    with create_mock_client() as mock:
+    with create_mock_client():
         response = requests.get("https://acme-corp.com/about")
         assert response.status_code == 200
         print(f"   ✅ Inside context: status {response.status_code}")
@@ -120,7 +120,7 @@ def test_sitemap_xml():
 
     import requests
 
-    with create_mock_client() as mock:
+    with create_mock_client():
         response = requests.get("https://acme-corp.com/sitemap.xml")
 
         assert response.status_code == 200
@@ -128,9 +128,9 @@ def test_sitemap_xml():
 
         content = response.text
         assert '<?xml version="1.0"' in content, "Not valid XML"
-        assert '<urlset' in content, "Not a sitemap"
-        assert 'https://acme-corp.com' in content, "Missing URLs"
-        print(f"   ✅ Valid sitemap XML")
+        assert "<urlset" in content, "Not a sitemap"
+        assert "https://acme-corp.com" in content, "Missing URLs"
+        print("   ✅ Valid sitemap XML")
 
 
 def test_missing_url():
@@ -139,13 +139,13 @@ def test_missing_url():
 
     import requests
 
-    with create_mock_client() as mock:
+    with create_mock_client():
         try:
             # This URL doesn't have a mock
             response = requests.get("https://example.com/not-mocked")
             print(f"   ⚠️  Got response: {response.status_code} (should fall through)")
         except requests.exceptions.ConnectionError:
-            print(f"   ✅ ConnectionError raised (expected for non-mocked URL)")
+            print("   ✅ ConnectionError raised (expected for non-mocked URL)")
 
 
 def main():
@@ -156,7 +156,7 @@ def main():
 
     try:
         # Test 1: Loading
-        mock_client = test_mock_loading()
+        test_mock_loading()
 
         # Test 2: requests library
         test_requests_library()
@@ -190,6 +190,7 @@ def main():
         print("\n" + "=" * 70)
         print(f"❌ ERROR: {e}")
         import traceback
+
         traceback.print_exc()
         print("=" * 70)
         return 1

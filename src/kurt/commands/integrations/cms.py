@@ -65,9 +65,9 @@ def search_cmd(
     Search CMS content.
 
     Examples:
-        kurt cms search --query "tutorial"
-        kurt cms search --platform sanity --instance prod --content-type article --limit 50
-        kurt cms search --query "quickstart" --output json
+        kurt integrations cms search --query "tutorial"
+        kurt integrations cms search --platform sanity --instance prod --content-type article --limit 50
+        kurt integrations cms search --query "quickstart" --output json
     """
     try:
         if not platform_configured(platform, instance):
@@ -75,7 +75,7 @@ def search_cmd(
                 f"[red]Error:[/red] {platform.capitalize()}/{instance or 'default'} not configured"
             )
             console.print(
-                f"Run: [cyan]kurt cms onboard --platform {platform} --instance {instance or 'default'}[/cyan]"
+                f"Run: [cyan]kurt integrations cms onboard --platform {platform} --instance {instance or 'default'}[/cyan]"
             )
             raise click.Abort()
 
@@ -126,7 +126,7 @@ def search_cmd(
 
         console.print(f"\n[green]✓[/green] Found {len(results)} documents")
         console.print(
-            "[yellow]Tip:[/yellow] Fetch content with: [cyan]kurt cms fetch --id <document-id>[/cyan]"
+            "[yellow]Tip:[/yellow] Fetch content with: [cyan]kurt integrations cms fetch --id <document-id>[/cyan]"
         )
 
     except Exception as e:
@@ -169,7 +169,7 @@ def fetch_cmd(
                 f"[red]Error:[/red] {platform.capitalize()}/{instance or 'default'} not configured"
             )
             console.print(
-                f"Run: [cyan]kurt cms onboard --platform {platform} --instance {instance or 'default'}[/cyan]"
+                f"Run: [cyan]kurt integrations cms onboard --platform {platform} --instance {instance or 'default'}[/cyan]"
             )
             raise click.Abort()
 
@@ -245,7 +245,7 @@ def types_cmd(platform: str, instance: Optional[str]):
                 f"[red]Error:[/red] {platform.capitalize()}/{instance or 'default'} not configured"
             )
             console.print(
-                f"Run: [cyan]kurt cms onboard --platform {platform} --instance {instance or 'default'}[/cyan]"
+                f"Run: [cyan]kurt integrations cms onboard --platform {platform} --instance {instance or 'default'}[/cyan]"
             )
             raise click.Abort()
 
@@ -678,7 +678,7 @@ def publish_cmd(
                 f"[red]Error:[/red] {platform.capitalize()}/{instance or 'default'} not configured"
             )
             console.print(
-                f"Run: [cyan]kurt cms onboard --platform {platform} --instance {instance or 'default'}[/cyan]"
+                f"Run: [cyan]kurt integrations cms onboard --platform {platform} --instance {instance or 'default'}[/cyan]"
             )
             raise click.Abort()
 
@@ -763,16 +763,19 @@ def status_cmd(check_health: bool):
         kurt integrations cms status
         kurt integrations cms status --check-health
     """
+    from sqlmodel import func, select
+
     from kurt.db.database import get_session
     from kurt.db.models import Document, IngestionStatus
-    from sqlmodel import func, select
 
     try:
         config = load_cms_config()
 
         if not config:
             console.print("[yellow]No CMS integrations configured[/yellow]\n")
-            console.print("Get started: [cyan]kurt integrations cms onboard --platform sanity[/cyan]")
+            console.print(
+                "Get started: [cyan]kurt integrations cms onboard --platform sanity[/cyan]"
+            )
             return
 
         console.print("[bold]CMS Integrations:[/bold]\n")

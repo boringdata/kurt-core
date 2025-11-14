@@ -1,6 +1,6 @@
 [project]
-name = "kurt"
-version = "0.1.0"
+name = "kurt-core"
+version = "0.2.0"
 description = "Document intelligence CLI - Transform documents into structured knowledge graphs"
 readme = "README.md"
 authors = [
@@ -23,6 +23,8 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "posthog>=3.0.0",
     "dbos>=0.9.0",
+    "scikit-learn>=1.3.0",
+    "numpy>=1.24.0",
 ]
 
 [project.optional-dependencies]
@@ -51,9 +53,6 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/kurt", "eval"]
 
-[tool.hatch.build.targets.wheel.force-include]
-"src/kurt/claude_plugin" = "kurt/claude_plugin"
-
 [tool.ruff]
 line-length = 100
 target-version = "py310"
@@ -70,4 +69,7 @@ python_functions = ["test_*"]
 filterwarnings = [
     "ignore::DeprecationWarning",
     "ignore::UserWarning:rich.live",
+]
+markers = [
+    "integration: marks tests as integration tests (require database and API access)",
 ]

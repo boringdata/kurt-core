@@ -220,3 +220,163 @@ def isolated_cli_runner_with_mocks(isolated_cli_runner, mock_map_functions):
     """
     runner, project_dir = isolated_cli_runner
     return runner, project_dir, mock_map_functions
+
+
+@pytest.fixture
+def mock_dspy_signature():
+    """
+    Generic fixture for mocking DSPy signature calls.
+
+    This fixture allows you to mock any DSPy signature by providing the signature
+    name and the return value. It patches dspy.ChainOfThought to return your mock values.
+
+    Usage:
+        def test_with_mock_signature(mock_dspy_signature):
+            # Define what the LLM should return
+            mock_output = MySignatureOutput(
+                field1="value1",
+                field2="value2"
+            )
+
+            # Set up the mock
+            with mock_dspy_signature("MySignature", mock_output):
+                # Call your function that uses dspy.ChainOfThought(MySignature)
+                result = my_function()
+                assert result.field1 == "value1"
+
+    Advanced usage with dynamic responses:
+        def test_with_dynamic_responses(mock_dspy_signature):
+            # Define a function that returns different values based on input
+            def dynamic_response(**kwargs):
+                input_text = kwargs.get('input_field')
+                if "python" in input_text.lower():
+                    return OutputModel(language="Python")
+                else:
+                    return OutputModel(language="Unknown")
+
+            with mock_dspy_signature("MySignature", dynamic_response):
+                result = my_function()
+
+    Multiple signatures:
+        def test_multiple_signatures(mock_dspy_signature):
+            # You can nest multiple mocks
+            with mock_dspy_signature("Signature1", output1):
+                with mock_dspy_signature("Signature2", output2):
+                    result = my_function()
+    """
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _mock_signature(signature_name: str, return_value):
+        """
+        Context manager for mocking a DSPy signature.
+
+        Args:
+            signature_name: Name of the signature class (for reference/debugging)
+            return_value: Either:
+                - A concrete return value (Pydantic model instance)
+                - A callable that takes **kwargs and returns the output
+        """
+        with patch("dspy.ChainOfThought") as mock_cot:
+            # Create a mock that can be called
+            mock_module = MagicMock()
+
+            def create_mock_result(output):
+                """
+                Create a mock result that properly mimics DSPy ChainOfThought output.
+
+                DSPy ChainOfThought returns an object where OutputFields are attributes.
+                For signatures with multiple OutputFields, each field becomes an attribute.
+                For signatures with a single OutputField, we default to 'resolutions'.
+                """
+                mock_result = MagicMock()
+
+                # Check if output has fields
+                # Check Pydantic v2 first (model_fields on class), then v1 (__fields__)
+                if hasattr(output.__class__, "model_fields"):
+                    # Pydantic v2 - check fields from class, not instance
+                    model_fields = output.__class__.model_fields
+                    # For GroupResolution (single field 'resolutions'), we want result.resolutions = GroupResolution object
+                    # Not result.resolutions = list
+                    if len(model_fields) == 1 and "resolutions" in model_fields:
+                        # Single-field case: ResolveEntityGroup signature
+                        # result.resolutions should be the GroupResolution object itself
+                        mock_result.resolutions = output
+                    else:
+                        # Multi-field case: copy each field
+                        for field_name in model_fields.keys():
+                            setattr(mock_result, field_name, getattr(output, field_name))
+                elif hasattr(output, "__fields__") and len(output.__fields__) > 0:
+                    # Pydantic v1 or custom class with __fields__
+                    # Copy all fields as attributes (for multi-field outputs like ClusteringResult)
+                    for field_name in output.__fields__.keys():
+                        setattr(mock_result, field_name, getattr(output, field_name))
+                else:
+                    # No fields detected - assume single output value for 'resolutions' field
+                    mock_result.resolutions = output
+
+                return mock_result
+
+            if callable(return_value) and not isinstance(return_value, MagicMock):
+                # If return_value is a function, use it to generate responses
+                def side_effect(*args, **kwargs):
+                    output = return_value(**kwargs)
+                    return create_mock_result(output)
+
+                mock_module.side_effect = side_effect
+            else:
+                # Static return value
+                mock_module.return_value = create_mock_result(return_value)
+
+            mock_cot.return_value = mock_module
+            yield mock_module
+
+    return _mock_signature
+
+
+@pytest.fixture
+def mock_all_llm_calls():
+    """
+    Mock all DSPy/LLM calls to avoid API calls during tests.
+
+    This fixture patches embeddings, LM initialization, and DSPy configuration
+    to prevent tests from making real API calls to OpenAI.
+
+    Usage:
+        def test_something(mock_all_llm_calls):
+            # Test code that uses DSPy - no API calls will be made
+            pass
+
+    Note: This is NOT autouse to avoid interfering with tests that have their
+    own specific mocking strategies. Tests that need this should request it explicitly.
+    """
+    with (
+        patch("kurt.content.indexing_helpers._generate_embeddings") as mock_gen_embeddings,
+        patch("dspy.Embedder") as mock_embedder_class,
+        patch("dspy.LM") as mock_lm_class,
+        patch("dspy.configure") as mock_configure,
+    ):
+        # Return fake embeddings - match the number of texts input
+        def fake_embeddings(texts):
+            return [[0.1] * 384 for _ in texts]
+
+        mock_gen_embeddings.side_effect = fake_embeddings
+
+        # Mock Embedder
+        mock_embedder_instance = MagicMock()
+        mock_embedder_instance.return_value = [[0.1] * 384]
+        mock_embedder_class.return_value = mock_embedder_instance
+
+        # Mock LM to return a fake LM instance
+        mock_lm_instance = MagicMock()
+        mock_lm_class.return_value = mock_lm_instance
+
+        # Mock dspy.settings.lm to return the mock LM
+        with patch("dspy.settings") as mock_settings:
+            mock_settings.lm = mock_lm_instance
+            yield {
+                "gen_embeddings": mock_gen_embeddings,
+                "embedder": mock_embedder_instance,
+                "lm": mock_lm_instance,
+                "configure": mock_configure,
+            }

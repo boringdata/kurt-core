@@ -87,11 +87,11 @@ def status(format: str, hook_cc: bool):
                 "- Database: `.kurt/kurt.sqlite`\n"
                 "- Directories: `sources/`, `projects/`, `rules/`\n\n"
                 "🎯 **Get started:**\n"
-                "- Run: `/create-profile` to set up your organization's content profile\n"
-                "- Then: `/create-project` to start your first content project"
+                "- Add content sources: `kurt content fetch <url>`\n"
+                "- Or explore Kurt commands: `kurt --help`"
             )
             output = {
-                "systemMessage": "✨ Kurt project initialized! Run `/create-profile` to get started.",
+                "systemMessage": "✨ Kurt project initialized! Explore commands with `kurt --help`.",
                 "hookSpecificOutput": {
                     "hookEventName": "SessionStart",
                     "additionalContext": message,
@@ -139,26 +139,15 @@ def status(format: str, hook_cc: bool):
                     pass  # Continue if migrations fail
 
                 # Generate success message
-                # Check if profile exists to guide properly
-                has_profile = profile_exists()
-                if has_profile:
-                    message = (
-                        "✨ **Database initialized automatically**\n\n"
-                        "Created:\n"
-                        "- Database: `.kurt/kurt.sqlite`\n\n"
-                        "✓ Profile detected. Ready to create projects:\n"
-                        "- Run: `/create-project` to start a new content project"
-                    )
-                    user_msg = "✨ Database initialized! Run `/create-project` to start."
-                else:
-                    message = (
-                        "✨ **Database initialized automatically**\n\n"
-                        "Created:\n"
-                        "- Database: `.kurt/kurt.sqlite`\n\n"
-                        "🎯 **Get started:**\n"
-                        "- Run: `/create-profile` to set up your organization's content profile"
-                    )
-                    user_msg = "✨ Database initialized! Run `/create-profile` to get started."
+                message = (
+                    "✨ **Database initialized automatically**\n\n"
+                    "Created:\n"
+                    "- Database: `.kurt/kurt.sqlite`\n\n"
+                    "🎯 **Get started:**\n"
+                    "- Add content sources: `kurt content fetch <url>`\n"
+                    "- Or explore Kurt commands: `kurt --help`"
+                )
+                user_msg = "✨ Database initialized! Explore commands with `kurt --help`."
                 output = {
                     "systemMessage": user_msg,
                     "hookSpecificOutput": {
@@ -215,8 +204,6 @@ def status(format: str, hook_cc: bool):
             status_parts.append(f"📁 Projects: {len(projects)}")
             if has_profile:
                 status_parts.append("✓ Profile configured")
-            else:
-                status_parts.append("⚠ No profile (run `/create-profile`)")
 
             user_message = " | ".join(status_parts)
 

@@ -287,7 +287,7 @@ def generate_status_markdown() -> str:
     migration_status = check_pending_migrations()
     if migration_status["has_pending"]:
         output_lines.append(f"\n⚠ **{migration_status['count']} pending database migration(s)**")
-        output_lines.append("- Run: `kurt migrate apply` to update the database")
+        output_lines.append("- Run: `kurt admin migrate apply` to update the database")
         for migration_name in migration_status["migrations"]:
             output_lines.append(f"  - `{migration_name}`")
     output_lines.append("")
@@ -298,9 +298,7 @@ def generate_status_markdown() -> str:
     if plugin_installed:
         output_lines.append("✓ **Kurt plugin installed**")
         output_lines.append("- Claude Code can interact with Kurt")
-        output_lines.append(
-            "- **Agent: Check if you can see `/create-project` command in your available commands**\n"
-        )
+        output_lines.append("- Resume projects by @ mentioning their `project.md` file\n")
     else:
         output_lines.append("⚠ **Kurt plugin not detected**")
         output_lines.append("- Install from Claude Code plugin marketplace")
@@ -325,8 +323,7 @@ def generate_status_markdown() -> str:
             output_lines.append("")
     else:
         output_lines.append("⚠ **No documents ingested yet**")
-        output_lines.append("- Run: `kurt map url <url>` to discover content\n")
-        output_lines.append("- Then: `kurt fetch` to download content\n")
+        output_lines.append("- Run: `kurt content fetch <url>` to add content\n")
 
     # Clusters
     cluster_count = get_cluster_count()
@@ -360,8 +357,7 @@ def generate_status_markdown() -> str:
             output_lines.append("")
     else:
         output_lines.append("⚠ **No projects created yet**")
-        output_lines.append("- Run: `/create-project` to start a new project")
-        output_lines.append("- Or: `/clone-project` to use a template\n")
+        output_lines.append("- Describe your content goals to Claude Code to create a project\n")
 
     # Analytics
     stale_analytics = get_stale_analytics_domains(threshold_days=7)
@@ -378,8 +374,7 @@ def generate_status_markdown() -> str:
                 )
 
         output_lines.append("\n*Sync analytics for accurate content prioritization:*")
-        output_lines.append("- Sync all: `kurt analytics sync --all`")
-        output_lines.append("- Sync specific: `kurt analytics sync <domain>`\n")
+        output_lines.append("- Sync specific domain: `kurt integrations analytics sync <domain>`\n")
 
     # Recommendations - prioritize Claude Code slash commands
     output_lines.append("---\n")
@@ -390,35 +385,27 @@ def generate_status_markdown() -> str:
 
     if not has_profile:
         # No profile - guide to onboarding
-        output_lines.append("🎯 **Start your Kurt journey with onboarding:**")
+        output_lines.append("🎯 **Start your Kurt journey:**")
         output_lines.append(
-            "- Run: `/create-profile` to set up your organization's content profile"
+            "- Describe your organization and content goals to Claude Code to create a profile\n"
         )
-        output_lines.append(
-            "- This captures your target audience, content goals, and writing style\n"
-        )
-        output_lines.append("*After creating your profile, you'll be ready to create projects.*")
     elif not projects:
         # Profile exists but no projects - guide to project creation
         output_lines.append("✓ **Profile created!** Ready to start a content project:")
-        output_lines.append("- Run: `/create-project` to start a new content project")
-        output_lines.append("- Or: `/clone-project` to use a project template\n")
-        output_lines.append(
-            "*Available templates: tutorial-refresh, documentation-audit, gap-analysis, competitive-analysis*"
-        )
+        output_lines.append("- Describe your content goals to Claude Code to create a project\n")
     else:
         # Has projects - guide to resuming work
         output_lines.append("📝 **You have active projects.** Continue your work:")
-        output_lines.append("- Run: `/resume-project` to pick up where you left off")
-        output_lines.append("- Or: `/create-project` to start a new project\n")
+        output_lines.append(
+            "- Resume a project by @ mentioning its `project.md` file in Claude Code\n"
+        )
 
         # Add content management suggestions if needed
         if doc_counts["total"] == 0:
             output_lines.append("\n💡 **Tip:** Add content sources to enrich your projects:")
-            output_lines.append("- Discover content: `kurt map url <url>`")
-            output_lines.append("- Download content: `kurt fetch`")
+            output_lines.append("- Run: `kurt content fetch <url>`")
         elif stale_analytics:
             output_lines.append("\n💡 **Tip:** Sync analytics for data-driven content decisions:")
-            output_lines.append("- Run: `kurt analytics sync --all`")
+            output_lines.append("- Run: `kurt integrations analytics sync <domain>`")
 
     return "\n".join(output_lines)

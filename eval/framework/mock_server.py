@@ -21,24 +21,24 @@ class MockHTTPHandler(http.server.BaseHTTPRequestHandler):
 
     # Domains to mock (all others will be tunneled through)
     MOCK_DOMAINS = {
-        'acme-corp.com',
-        'docs.acme-corp.com',
-        'competitor-co.com',
+        "acme-corp.com",
+        "docs.acme-corp.com",
+        "competitor-co.com",
     }
 
-    def do_CONNECT(self):
+    def do_CONNECT(self):  # noqa: N802
         """Handle CONNECT method for HTTPS proxying.
 
         For mock domains, intercept and serve mock data.
         For all other domains (like api.anthropic.com), establish a real tunnel.
         """
         # Extract the target host from CONNECT request (format: "host:port")
-        target = self.path.split(':')[0]
+        target = self.path.split(":")[0]
 
         # Check if this is a mock domain
         if target in self.MOCK_DOMAINS:
             # Mock domain - send 200 and handle subsequent requests
-            self.send_response(200, 'Connection Established')
+            self.send_response(200, "Connection Established")
             self.end_headers()
             # After this, client will send the actual HTTP request
             # which we'll handle in do_GET/do_POST
@@ -47,10 +47,12 @@ class MockHTTPHandler(http.server.BaseHTTPRequestHandler):
             try:
                 # Connect to the real server
                 remote_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                remote_sock.connect((target, int(self.path.split(':')[1]) if ':' in self.path else 443))
+                remote_sock.connect(
+                    (target, int(self.path.split(":")[1]) if ":" in self.path else 443)
+                )
 
                 # Send success response
-                self.send_response(200, 'Connection Established')
+                self.send_response(200, "Connection Established")
                 self.end_headers()
 
                 # Relay data between client and server
@@ -102,7 +104,7 @@ class MockHTTPHandler(http.server.BaseHTTPRequestHandler):
         except Exception:
             pass
 
-    def do_GET(self):
+    def do_GET(self):  # noqa: N802
         """Handle GET requests by serving mock files."""
         # Parse the incoming URL
         parsed = urlparse(self.path)
@@ -112,14 +114,14 @@ class MockHTTPHandler(http.server.BaseHTTPRequestHandler):
         # We need to map this to eval/mock/websites/acme-corp/sitemap.xml
 
         # For proxy requests, the path includes the full URL
-        if self.path.startswith('http://') or self.path.startswith('https://'):
+        if self.path.startswith("http://") or self.path.startswith("https://"):
             full_url = self.path
             parsed_url = urlparse(full_url)
             domain = parsed_url.netloc
             path = parsed_url.path
         else:
             # Direct request (not through proxy)
-            domain = self.headers.get('Host', '')
+            domain = self.headers.get("Host", "")
             path = parsed.path
 
         # Map domain to mock directory
@@ -145,9 +147,9 @@ class MockHTTPHandler(http.server.BaseHTTPRequestHandler):
 
         # Map domains to directories
         domain_map = {
-            'acme-corp.com': 'websites/acme-corp',
-            'docs.acme-corp.com': 'websites/acme-docs',
-            'competitor-co.com': 'websites/competitor-co',
+            "acme-corp.com": "websites/acme-corp",
+            "docs.acme-corp.com": "websites/acme-docs",
+            "competitor-co.com": "websites/competitor-co",
         }
 
         dir_path = domain_map.get(domain)
@@ -161,21 +163,21 @@ class MockHTTPHandler(http.server.BaseHTTPRequestHandler):
         # /home -> home.md
         # /blog/how-to-build-scalable-apis -> blog-post-1.md
 
-        if path == '/sitemap.xml':
-            return mock_site_dir / 'sitemap.xml'
+        if path == "/sitemap.xml":
+            return mock_site_dir / "sitemap.xml"
 
         # Blog post mappings
         blog_mappings = {
-            '/blog/how-to-build-scalable-apis': 'blog-post-1.md',
-            '/blog/announcing-acme-2-0': 'blog-post-2.md',
-            '/blog/10-tips-for-developer-experience': 'blog-post-3.md',
+            "/blog/how-to-build-scalable-apis": "blog-post-1.md",
+            "/blog/announcing-acme-2-0": "blog-post-2.md",
+            "/blog/10-tips-for-developer-experience": "blog-post-3.md",
         }
 
         if path in blog_mappings:
             return mock_site_dir / blog_mappings[path]
 
         # Direct mappings (e.g., /home -> home.md)
-        path_clean = path.strip('/')
+        path_clean = path.strip("/")
         if path_clean:
             md_file = mock_site_dir / f"{path_clean}.md"
             if md_file.exists():
@@ -195,30 +197,30 @@ class MockHTTPHandler(http.server.BaseHTTPRequestHandler):
         content = file_path.read_bytes()
 
         # Determine content type
-        if file_path.suffix == '.xml':
-            content_type = 'application/xml'
-        elif file_path.suffix == '.json':
-            content_type = 'application/json'
-        elif file_path.suffix == '.md':
+        if file_path.suffix == ".xml":
+            content_type = "application/xml"
+        elif file_path.suffix == ".json":
+            content_type = "application/json"
+        elif file_path.suffix == ".md":
             # Serve markdown as HTML so trafilatura can extract content
             # Wrap markdown in minimal HTML structure
-            md_text = content.decode('utf-8')
-            html_content = f'''<!DOCTYPE html>
+            md_text = content.decode("utf-8")
+            html_content = f"""<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><title>Mock Content</title></head>
 <body>
 <pre>{md_text}</pre>
 </body>
-</html>'''
-            content = html_content.encode('utf-8')
-            content_type = 'text/html; charset=utf-8'
+</html>"""
+            content = html_content.encode("utf-8")
+            content_type = "text/html; charset=utf-8"
         else:
-            content_type = 'text/html'
+            content_type = "text/html"
 
         self.send_response(200)
-        self.send_header('Content-Type', content_type)
-        self.send_header('Content-Length', str(len(content)))
-        self.send_header('X-Mock-Source', str(file_path))
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(content)))
+        self.send_header("X-Mock-Source", str(file_path))
         self.end_headers()
         self.wfile.write(content)
 
@@ -230,8 +232,8 @@ class MockHTTPHandler(http.server.BaseHTTPRequestHandler):
         """
         content = f"Mock data not found: {message}".encode()
         self.send_response(404)
-        self.send_header('Content-Type', 'text/plain')
-        self.send_header('Content-Length', str(len(content)))
+        self.send_header("Content-Type", "text/plain")
+        self.send_header("Content-Length", str(len(content)))
         self.end_headers()
         self.wfile.write(content)
 
@@ -290,10 +292,10 @@ class MockHTTPServer:
         """
         proxy_url = f"http://127.0.0.1:{self.port}"
         return {
-            'HTTP_PROXY': proxy_url,
-            'HTTPS_PROXY': proxy_url,
-            'http_proxy': proxy_url,
-            'https_proxy': proxy_url,
+            "HTTP_PROXY": proxy_url,
+            "HTTPS_PROXY": proxy_url,
+            "http_proxy": proxy_url,
+            "https_proxy": proxy_url,
         }
 
 

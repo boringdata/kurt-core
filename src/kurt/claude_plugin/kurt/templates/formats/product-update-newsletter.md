@@ -61,8 +61,8 @@
 **Types of information needed for product newsletters:**
 
 1. **Product changes** - What shipped, what changed
-   - Find: `kurt content list | grep -i "changelog\|release\|update"`
-   - Find: `kurt content list --url-contains /docs/ | grep -i "version\|release"`
+   - Find: `kurt content search "changelog|release|update"`
+   - Find: `kurt content search "version|release" --include "*/docs/*"`
    - Or provide: Changelog, release notes, Jira/Linear completed tickets
 
 2. **Feature details** - What new features do
@@ -71,6 +71,8 @@
 
 3. **User impact** - Why users should care
    - Or provide: Product manager notes, user research, feedback
+
+**For advanced discovery/analysis**, see `instructions/find-sources.md`
 
 ---
 
@@ -81,8 +83,8 @@
 **Recent changes:**
 ```bash
 # Search for changelogs and release notes
-kurt content list | grep -i "changelog\|release-note"
-kurt content list --url-contains /docs/ | grep -i "version"
+kurt content search "changelog|release-note"
+kurt content search "version" --include "*/docs/*"
 
 # If not fetched:
 kurt content fetch --urls "<changelog-url>"
@@ -91,7 +93,7 @@ kurt content fetch --urls "<changelog-url>"
 **Feature documentation:**
 ```bash
 # Find docs for new features
-kurt content list --url-contains /docs/ | grep -i "<feature-name>"
+kurt content search "<feature-name>" --include "*/docs/*"
 ```
 
 **If insufficient sources: Ask user for changelog, release notes, or list of shipped items**

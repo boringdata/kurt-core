@@ -23,7 +23,7 @@ import pytest
 class TestConcurrentWorkflowExecution:
     """Tests for concurrent workflow execution."""
 
-    def test_multiple_workflows_can_run_concurrently(self):
+    def test_multiple_workflows_can_run_concurrently(self, tmp_project):
         """Test that multiple workflows can be launched and run at the same time."""
         from dbos import DBOS, Queue
 
@@ -81,7 +81,7 @@ class TestConcurrentWorkflowExecution:
         assert len(results) == 5
         assert all(r == "SUCCESS" for r in results)
 
-    def test_queue_concurrency_limit_enforced(self):
+    def test_queue_concurrency_limit_enforced(self, tmp_project):
         """Test that queue concurrency limit is respected."""
         from dbos import DBOS, Queue
 
@@ -139,7 +139,7 @@ class TestConcurrentWorkflowExecution:
             running_count["max"] <= 2
         ), f"Max concurrent was {running_count['max']}, should be <= 2"
 
-    def test_workflow_queued_when_threads_exhausted(self):
+    def test_workflow_queued_when_threads_exhausted(self, tmp_project):
         """Test that workflows are queued when no threads are available."""
         from dbos import DBOS, Queue
 
@@ -200,7 +200,7 @@ class TestConcurrentWorkflowExecution:
             # Allow small overlap due to timing precision
             assert next_start >= current_end - 0.05, "Workflows should execute sequentially"
 
-    def test_priority_queue_ordering(self):
+    def test_priority_queue_ordering(self, tmp_project):
         """Test that high priority workflows are executed first."""
         from dbos import DBOS, Queue, SetEnqueueOptions
 

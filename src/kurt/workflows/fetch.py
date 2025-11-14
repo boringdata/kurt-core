@@ -21,7 +21,7 @@ from uuid import UUID
 from dbos import DBOS, Queue, SetEnqueueOptions
 
 from kurt.content.fetch import fetch_document
-from kurt.content.index import extract_document_metadata
+from kurt.content.indexing import extract_document_metadata
 
 # Create priority-enabled queue for fetch operations
 # Concurrency=5 means max 5 concurrent fetch operations

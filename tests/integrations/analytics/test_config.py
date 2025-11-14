@@ -147,7 +147,7 @@ class TestAnalyticsConfig:
 
         assert "No configuration found for analytics platform 'ga4'" in str(exc_info.value)
         assert "Available platforms: posthog" in str(exc_info.value)
-        assert "kurt analytics onboard --platform ga4" in str(exc_info.value)
+        assert "kurt integrations analytics onboard --platform ga4" in str(exc_info.value)
 
     def test_add_platform_config_new(self, tmp_project):
         """Test adding a new platform config."""

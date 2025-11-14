@@ -49,14 +49,15 @@ def test_command_imports():
     content_commands = [
         "cluster",
         "fetch",
-        "map_cmd",
+        "map",
         "index",
-        "list_cmd",
+        "list",
         "get",
         "delete",
         "stats",
         "list_clusters",
         "sync_metadata",
+        "search",
     ]
 
     for cmd in content_commands:

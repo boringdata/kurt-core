@@ -4,7 +4,6 @@ Patches requests and httpx libraries to return static mock data from eval/mock/
 without running a separate server. Integrates directly into the eval process.
 """
 
-import json
 from pathlib import Path
 from typing import Any, Dict, Optional
 from urllib.parse import urlparse
@@ -187,7 +186,7 @@ class MockHTTPClient:
             "headers": {
                 "Content-Type": content_type,
                 "X-Mock-Source": str(file_path),
-            }
+            },
         }
 
     def start(self):
@@ -200,7 +199,9 @@ class MockHTTPClient:
             mock_data = self.get_mock_response(url)
             if mock_data:
                 # Extract Content-Type from headers and remove it to avoid duplication
-                headers_without_ct = {k: v for k, v in mock_data["headers"].items() if k != "Content-Type"}
+                headers_without_ct = {
+                    k: v for k, v in mock_data["headers"].items() if k != "Content-Type"
+                }
                 content_type = mock_data["headers"].get("Content-Type", "text/html")
 
                 self.responses_mock.add(

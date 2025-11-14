@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 
 from rich.console import Console
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
 from sqlmodel import Session, SQLModel, create_engine
 
 from kurt.config import get_config_or_default
@@ -12,6 +14,34 @@ from kurt.db.base import DatabaseClient
 
 console = Console()
 logger = logging.getLogger(__name__)
+
+
+@event.listens_for(Engine, "connect")
+def _load_sqlite_extensions(dbapi_conn, connection_record):
+    """Load SQLite extensions on connection.
+
+    Currently loads:
+    - sqlite-vec: Vector similarity search extension
+    """
+    try:
+        # Enable extension loading
+        dbapi_conn.enable_load_extension(True)
+
+        # Try to load sqlite-vec extension
+        # The extension file might be named vec0.so, vec0.dylib, or vec0.dll
+        # depending on the platform
+        try:
+            dbapi_conn.load_extension("vec0")
+            logger.debug("Loaded sqlite-vec extension")
+        except Exception as e:
+            # Extension not found - this is OK, vector search just won't work
+            logger.debug(f"sqlite-vec extension not available: {e}")
+
+        # Disable extension loading for security
+        dbapi_conn.enable_load_extension(False)
+    except Exception as e:
+        # Some SQLite builds don't support extensions
+        logger.debug(f"Extension loading not supported: {e}")
 
 
 class SQLiteClient(DatabaseClient):
@@ -109,3 +139,76 @@ class SQLiteClient(DatabaseClient):
         """Check if the SQLite database file exists."""
         db_path = self.get_database_path()
         return db_path.exists()
+
+    def ensure_vector_tables(self) -> None:
+        """
+        Ensure vector search tables exist.
+
+        Creates vec0 virtual tables for entity embeddings if sqlite-vec is available.
+        This must be called after migrations are run.
+        """
+        session = self.get_session()
+        try:
+            # Check if sqlite-vec is available by trying to create a test table
+            session.exec(
+                """
+                CREATE VIRTUAL TABLE IF NOT EXISTS entity_embeddings
+                USING vec0(
+                    entity_id TEXT PRIMARY KEY,
+                    embedding float[512]
+                )
+                """
+            )
+            session.commit()
+            logger.info("Created entity_embeddings vector table")
+        except Exception as e:
+            logger.warning(f"Could not create vector tables (sqlite-vec not available): {e}")
+            # This is OK - vector search features just won't work
+        finally:
+            session.close()
+
+    def search_similar_entities(
+        self, query_embedding: bytes, limit: int = 50, min_similarity: float = 0.75
+    ) -> list[tuple[str, float]]:
+        """
+        Search for entities similar to the query embedding.
+
+        Args:
+            query_embedding: Query embedding as bytes (512 float32 values)
+            limit: Maximum number of results to return
+            min_similarity: Minimum cosine similarity threshold (0.0-1.0)
+
+        Returns:
+            List of (entity_id, similarity_score) tuples
+        """
+        session = self.get_session()
+        try:
+            # Convert bytes to list of floats for vec_search
+            import struct
+
+            from sqlalchemy import text
+
+            floats = struct.unpack(f"{len(query_embedding)//4}f", query_embedding)
+            query_vector = "[" + ",".join(str(f) for f in floats) + "]"
+
+            # Use vec_search to find similar entities
+            # Note: vec_search returns distance, we convert to similarity (1 - distance)
+            result = session.exec(
+                text(
+                    """
+                SELECT entity_id, 1.0 - distance as similarity
+                FROM entity_embeddings
+                WHERE embedding MATCH :query_vector
+                  AND 1.0 - distance >= :min_similarity
+                ORDER BY distance
+                LIMIT :limit
+                """
+                ),
+                {"query_vector": query_vector, "min_similarity": min_similarity, "limit": limit},
+            )
+            return [(row[0], row[1]) for row in result]
+        except Exception as e:
+            logger.debug(f"Vector search not available (will use fallback): {e}")
+            return []
+        finally:
+            session.close()

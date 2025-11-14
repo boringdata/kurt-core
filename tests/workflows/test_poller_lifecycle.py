@@ -76,7 +76,7 @@ class TestDBOSPollerLifecycle:
 
         assert _dbos_initialized, "DBOS should remain initialized"
 
-    def test_queue_poller_processes_workflows(self):
+    def test_queue_poller_processes_workflows(self, tmp_project):
         """Test that the queue poller actually processes enqueued workflows."""
         from dbos import DBOS, Queue
 
@@ -116,7 +116,7 @@ class TestDBOSPollerLifecycle:
         # Verify execution counter
         assert execution_tracker["count"] == 3, "All workflows should have executed"
 
-    def test_poller_thread_lifecycle(self):
+    def test_poller_thread_lifecycle(self, tmp_project):
         """Test the complete lifecycle of poller threads."""
         from dbos import DBOS
 

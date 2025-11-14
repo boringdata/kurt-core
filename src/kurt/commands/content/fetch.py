@@ -4,7 +4,6 @@ import logging
 
 import click
 from rich.console import Console
-from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 
 from kurt.utils import should_force
 
@@ -13,17 +12,25 @@ logger = logging.getLogger(__name__)
 
 
 @click.command("fetch")
+@click.argument("identifier", required=False)
 @click.option(
     "--include",
     "include_pattern",
     help="FILTER: Glob pattern matching source_url or content_path (repeatable)",
 )
-@click.option("--url", help="FILTER: Single source URL (auto-creates if doesn't exist)")
+@click.option(
+    "--url",
+    hidden=True,
+    help="[DEPRECATED: use positional IDENTIFIER] Single source URL (auto-creates if doesn't exist)",
+)
 @click.option(
     "--urls", help="FILTER: Comma-separated list of source URLs (auto-creates if don't exist)"
 )
 @click.option(
-    "--file", "file_path", help="FILTER: Local file path to index (skips fetch, only indexes)"
+    "--file",
+    "file_path",
+    hidden=True,
+    help="[DEPRECATED: use positional IDENTIFIER] Local file path to index (skips fetch, only indexes)",
 )
 @click.option(
     "--files", "files_paths", help="FILTER: Comma-separated list of local file paths to index"
@@ -71,9 +78,17 @@ logger = logging.getLogger(__name__)
     help="PROCESSING: Include already FETCHED documents (default: filters exclude FETCHED, warns about duplicates, implied with --with-status FETCHED)",
 )
 @click.option(
+    "--yes",
+    "-y",
+    "yes_flag",
+    is_flag=True,
+    help="SAFETY: Skip all confirmation prompts (for automation/CI, or set KURT_FORCE=1)",
+)
+@click.option(
     "--force",
     is_flag=True,
-    help="SAFETY: Skip all safety prompts and guardrails (bypasses: batch confirmations, concurrency warnings, refetch warnings, use for automation/CI or set KURT_FORCE=1)",
+    hidden=True,
+    help="[DEPRECATED: use --yes/-y instead] Skip all safety prompts",
 )
 @click.option(
     "--dry-run",
@@ -99,6 +114,7 @@ logger = logging.getLogger(__name__)
     help="Priority for background execution (1=highest, default=10)",
 )
 def fetch_cmd(
+    identifier: str,
     include_pattern: str,
     url: str,
     urls: str,
@@ -114,6 +130,7 @@ def fetch_cmd(
     engine: str,
     skip_index: bool,
     refetch: bool,
+    yes_flag: bool,
     force: bool,
     dry_run: bool,
     output_format: str,
@@ -122,6 +139,8 @@ def fetch_cmd(
 ):
     """
     Fetch and index content from URLs or local files.
+
+    IDENTIFIER can be a document ID, URL, or file path (nominal case).
 
     \b
     What it does:
@@ -133,25 +152,29 @@ def fetch_cmd(
 
     \b
     Usage patterns:
-    1. Single URL:      kurt fetch --url "https://example.com/article"
-    2. Multiple URLs:   kurt fetch --urls "url1,url2,url3"
-    3. Local file:      kurt fetch --file "./docs/article.md"
-    4. Pattern match:   kurt fetch --include "*/docs/*"
-    5. By cluster:      kurt fetch --in-cluster "Tutorials"
+    1. Single ID/URL/file: kurt fetch 04303ee5
+    2. Single URL:         kurt fetch https://example.com/article
+    3. Single file:        kurt fetch ./docs/article.md
+    4. Multiple URLs:      kurt fetch --urls "url1,url2,url3"
+    5. Pattern match:      kurt fetch --include "*/docs/*"
+    6. By cluster:         kurt fetch --in-cluster "Tutorials"
 
     \b
     Examples:
+        # Fetch by document ID (nominal case)
+        kurt fetch 04303ee5
+
+        # Fetch by URL (nominal case, auto-creates if doesn't exist)
+        kurt fetch https://example.com/article
+
+        # Fetch by local file (nominal case)
+        kurt fetch ./docs/article.md
+
         # Fetch by pattern
         kurt fetch --include "*/docs/*"
 
-        # Fetch single URL (auto-creates if doesn't exist)
-        kurt fetch --url "https://example.com/article"
-
         # Fetch specific URLs (auto-creates if don't exist)
         kurt fetch --urls "https://example.com/page1,https://example.com/page2"
-
-        # Index local file (skips fetch, only indexes)
-        kurt fetch --file "./docs/article.md"
 
         # Index multiple local files
         kurt fetch --files "./docs/page1.md,./docs/page2.md"
@@ -179,19 +202,63 @@ def fetch_cmd(
 
         # Dry-run to preview
         kurt fetch --with-status NOT_FETCHED --dry-run
+
+        # Skip confirmations for automation
+        kurt fetch --with-status NOT_FETCHED --yes
+        kurt fetch --with-status NOT_FETCHED -y
     """
+    import os
+
     from kurt.content.fetch import fetch_content, fetch_documents_batch
 
-    # Merge --url into --urls (--url is just convenience for single URL)
+    # Handle positional identifier argument (nominal case: 1 id/url/file)
+    if identifier:
+        # Detect what type of identifier this is
+        if identifier.startswith(("http://", "https://")):
+            # It's a URL
+            if urls:
+                urls = f"{identifier},{urls}"
+            else:
+                urls = identifier
+        elif (
+            os.path.exists(identifier)
+            or identifier.startswith(("./", "../", "/"))
+            or "/" in identifier
+        ):
+            # It's a file path (exists or looks like a path)
+            if files_paths:
+                files_paths = f"{identifier},{files_paths}"
+            else:
+                files_paths = identifier
+        else:
+            # Assume it's a document ID (could be partial UUID)
+            # Resolve partial UUID to full UUID
+            from kurt.content.filtering import resolve_identifier_to_doc_id
+
+            try:
+                doc_id = resolve_identifier_to_doc_id(identifier)
+                if ids:
+                    ids = f"{doc_id},{ids}"
+                else:
+                    ids = doc_id
+            except ValueError as e:
+                console.print(f"[red]Error:[/red] {e}")
+                raise click.Abort()
+
+    # Merge --url into --urls (--url is deprecated, kept for backwards compatibility)
     if url:
+        console.print("[yellow]⚠️  --url is deprecated, use positional IDENTIFIER instead[/yellow]")
+        console.print("[dim]Example: kurt fetch https://example.com/article[/dim]")
         if urls:
             # Combine --url with --urls
             urls = f"{url},{urls}"
         else:
             urls = url
 
-    # Merge --file into --files (--file is just convenience for single file)
+    # Merge --file into --files (--file is deprecated, kept for backwards compatibility)
     if file_path:
+        console.print("[yellow]⚠️  --file is deprecated, use positional IDENTIFIER instead[/yellow]")
+        console.print("[dim]Example: kurt fetch ./docs/article.md[/dim]")
         if files_paths:
             # Combine --file with --files
             files_paths = f"{file_path},{files_paths}"
@@ -308,8 +375,13 @@ def fetch_cmd(
         )
         return
 
+    # Handle --yes/-y and deprecated --force
+    # Show deprecation warning if --force is used
+    if force and not yes_flag:
+        console.print("[yellow]⚠️  --force is deprecated, use --yes or -y instead[/yellow]")
+
     # Check force mode (CLI flag or KURT_FORCE=1 env var)
-    force_mode = should_force(force)
+    force_mode = should_force(yes_flag or force)
 
     # Guardrail: warn if concurrency >20 (rate limit risk)
     if concurrency > 20 and not force_mode:
@@ -398,21 +470,35 @@ def fetch_cmd(
         )
         return  # Background mode complete, exit early
 
-    # Fetch in parallel with progress bar
+    # Fetch in parallel with live display
     try:
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
-            console=console,
-        ) as progress:
-            # Step 1: Fetch documents
-            fetch_task = progress.add_task("Fetching content...", total=len(doc_ids_to_fetch))
+        from kurt.commands.content._live_display import (
+            LiveProgressDisplay,
+            create_fetch_progress_callback,
+        )
 
-            # Create progress callback to update the progress bar
+        with LiveProgressDisplay(console) as display:
+            # Stage 1: Fetch documents
+            import time
+
+            display.start_stage("Fetching content", total=len(doc_ids_to_fetch))
+
+            # Track results and timing as they arrive
+            fetch_count = 0
+            fetch_start_time = time.time()
+            fetch_timings = {}  # doc_id -> elapsed time
+
+            # Create progress callback that logs as documents are fetched
             def update_fetch_progress():
-                progress.advance(fetch_task)
+                nonlocal fetch_count
+                fetch_count += 1
+                display.update_progress(
+                    advance=1,
+                    description=f"Fetching content ({fetch_count}/{len(doc_ids_to_fetch)})",
+                )
+
+            # Record start time
+            overall_start = time.time()
 
             results = fetch_documents_batch(
                 doc_ids_to_fetch,
@@ -421,27 +507,58 @@ def fetch_cmd(
                 progress_callback=update_fetch_progress,
             )
 
-            # Step 2: Index successfully fetched documents in parallel (unless --skip-index)
-            successful = [r for r in results if r["success"]]
+            overall_elapsed = time.time() - overall_start
 
+            # Log fetch results with timing (estimated per-doc timing)
+            successful = [r for r in results if r["success"]]
+            failed = [r for r in results if not r["success"]]
+
+            # Estimate average time per document
+            avg_time = overall_elapsed / len(results) if results else 0
+
+            for result in successful:
+                doc_id = str(result["document_id"])
+                title = result.get("title") or "Untitled"
+                size_kb = (
+                    result.get("content_length", 0) / 1024 if result.get("content_length") else 0
+                )
+                # Show size and estimated timing
+                display.log(
+                    f"✓ Fetched [{doc_id[:8]}] {title[:50]} ({size_kb:.1f}KB, ~{avg_time:.1f}s)",
+                    style="green",
+                )
+
+            for result in failed:
+                doc_id = str(result["document_id"])
+                error = result.get("error", "Unknown error")
+                # Shorten error for display
+                error_short = error[:60] + "..." if len(error) > 60 else error
+                display.log(f"✗ Fetch failed [{doc_id[:8]}] {error_short}", style="red")
+
+            display.complete_stage()
+
+            # Stage 2: Index successfully fetched documents (unless --skip-index)
             if not skip_index and successful:
                 import asyncio
 
-                from kurt.content.index import batch_extract_document_metadata
+                from kurt.content.indexing import batch_extract_document_metadata
 
-                index_task = progress.add_task("Indexing with LLM...", total=len(successful))
+                display.start_stage("Indexing documents", total=len(successful))
 
                 # Extract document IDs and run batch indexing
                 doc_ids = [str(r["document_id"]) for r in successful]
 
-                # Create a wrapper to track progress during indexing
+                # Create progress callback with activity updates and logging
+                update_index_progress = create_fetch_progress_callback(display, len(successful))
+
+                # Force re-indexing if --refetch is used (to get latest extraction features like quotes)
                 async def batch_index_with_progress():
-                    # We can't easily track progress inside batch_extract_document_metadata
-                    # without modifying it, so we'll just update at the end
                     result = await batch_extract_document_metadata(
-                        doc_ids, max_concurrent=concurrency
+                        doc_ids,
+                        max_concurrent=concurrency,
+                        progress_callback=update_index_progress,
+                        force=refetch,  # Force re-index when refetching to get latest features
                     )
-                    progress.update(index_task, completed=len(successful))
                     return result
 
                 index_results = asyncio.run(batch_index_with_progress())
@@ -449,21 +566,44 @@ def fetch_cmd(
                 indexed = index_results["succeeded"]
                 index_errors = index_results["errors"]
 
-                if index_errors:
-                    console.print(
-                        f"\n[yellow]⚠ Indexing warnings:[/yellow] {len(index_errors)} documents"
+                display.complete_stage()
+
+                # Stage 3: Finalize knowledge graph (entity resolution + storage)
+                if indexed > 0:
+                    from kurt.content.indexing import finalize_knowledge_graph_from_index_results
+
+                    display.start_stage("Finalizing knowledge graph", total=None)
+
+                    # Create activity callback to log activities
+                    def update_kg_progress(activity: str):
+                        display.log_info(activity)
+
+                    kg_result = finalize_knowledge_graph_from_index_results(
+                        index_results["results"], activity_callback=update_kg_progress
                     )
-                    for err in index_errors[:3]:
-                        console.print(f"  [dim]{err['document_id']}: {err['error']}[/dim]")
 
-        # Summary
-        failed = [r for r in results if not r["success"]]
+                    display.complete_stage()
 
-        console.print(f"\n[green]✓ Fetched:[/green] {len(successful)}/{len(results)} documents")
+        # Summary (outside live display)
+        console.print(f"\n✓ Fetched: {len(successful)}/{len(results)} documents")
         if not skip_index and successful:
-            console.print(f"[green]✓ Indexed:[/green] {indexed}/{len(successful)} documents")
+            skipped_count = index_results.get("skipped", 0)
+            console.print(f"✓ Indexed: {indexed}/{len(successful)} documents")
+            if skipped_count > 0:
+                console.print(f"○ Skipped: {skipped_count} documents")
+
+            # Show KG stats if finalization happened
+            if indexed > 0 and "kg_result" in locals() and kg_result and "error" not in kg_result:
+                console.print(
+                    f"✓ KG Entities: {kg_result['entities_created']} created, {kg_result['entities_linked']} linked"
+                )
+                if kg_result.get("relationships_created", 0) > 0:
+                    console.print(
+                        f"✓ KG Relationships: {kg_result['relationships_created']} created"
+                    )
+
         if failed:
-            console.print(f"[red]✗ Failed:[/red] {len(failed)} documents")
+            console.print(f"✗ Failed: {len(failed)} documents")
             for r in failed[:5]:  # Show first 5 errors
                 console.print(
                     f"  [dim]{r.get('document_id', 'unknown')}: {r.get('error', 'Unknown error')}[/dim]"

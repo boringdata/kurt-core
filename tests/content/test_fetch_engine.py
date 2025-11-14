@@ -9,6 +9,7 @@ This module tests:
 """
 
 from unittest.mock import MagicMock, patch
+from uuid import UUID
 
 import pytest
 
@@ -151,27 +152,36 @@ class TestFetchDocumentWithEngine:
 
     def test_fetch_document_uses_default_engine(self, monkeypatch):
         """Test that fetch_document uses default engine when no override."""
-        # This is an integration test that would require mocking the entire fetch flow
-        # For now, we just test that the parameter is accepted
         from kurt.content.fetch import fetch_document
 
         # Mock the entire fetch flow
-        with patch("kurt.content.fetch.get_session") as mock_session:
-            with patch("kurt.content.fetch.add_document"):
-                with patch("kurt.content.fetch._get_fetch_engine") as mock_get_engine:
-                    mock_get_engine.return_value = "trafilatura"
+        with (
+            patch("kurt.content.fetch.get_session") as mock_session,
+            patch("kurt.content.fetch.load_config") as mock_config,
+        ):
+            with patch("kurt.content.fetch._get_fetch_engine") as mock_get_engine:
+                with patch("kurt.content.fetch.fetch_with_trafilatura") as mock_fetch:
+                    # Mock config
+                    mock_cfg = MagicMock()
+                    mock_cfg.INGESTION_FETCH_ENGINE = "trafilatura"
+                    mock_config.return_value = mock_cfg
 
-                    # Mock session query
+                    mock_get_engine.return_value = "trafilatura"
+                    mock_fetch.return_value = ("Test content", {"title": "Test"})
+
+                    # Mock session and document
                     mock_doc = MagicMock()
+                    mock_doc.id = UUID("550e8400-e29b-41d4-a716-446655440000")
                     mock_doc.source_url = "https://example.com"
                     mock_doc.ingestion_status = "NOT_FETCHED"
+                    mock_doc.source_type = "URL"
+                    mock_doc.cms_platform = None
+                    mock_doc.cms_instance = None
+                    mock_doc.cms_document_id = None
                     mock_session.return_value.get.return_value = mock_doc
 
-                    # This will fail at fetch stage, but we can verify engine selection
-                    try:
-                        fetch_document("test-doc-id")
-                    except Exception:
-                        pass  # Expected to fail, we're just testing the engine selection
+                    # Call fetch_document
+                    fetch_document(mock_doc.id)
 
                     # Verify _get_fetch_engine was called with no override
                     mock_get_engine.assert_called_once_with(override=None)
@@ -181,22 +191,33 @@ class TestFetchDocumentWithEngine:
         from kurt.content.fetch import fetch_document
 
         # Mock the entire fetch flow
-        with patch("kurt.content.fetch.get_session") as mock_session:
-            with patch("kurt.content.fetch.add_document"):
-                with patch("kurt.content.fetch._get_fetch_engine") as mock_get_engine:
-                    mock_get_engine.return_value = "firecrawl"
+        with (
+            patch("kurt.content.fetch.get_session") as mock_session,
+            patch("kurt.content.fetch.load_config") as mock_config,
+        ):
+            with patch("kurt.content.fetch._get_fetch_engine") as mock_get_engine:
+                with patch("kurt.content.fetch.fetch_with_firecrawl") as mock_fetch:
+                    # Mock config
+                    mock_cfg = MagicMock()
+                    mock_cfg.INGESTION_FETCH_ENGINE = "firecrawl"
+                    mock_config.return_value = mock_cfg
 
-                    # Mock session query
+                    mock_get_engine.return_value = "firecrawl"
+                    mock_fetch.return_value = ("Test content", {"title": "Test"})
+
+                    # Mock session and document
                     mock_doc = MagicMock()
+                    mock_doc.id = UUID("550e8400-e29b-41d4-a716-446655440000")
                     mock_doc.source_url = "https://example.com"
                     mock_doc.ingestion_status = "NOT_FETCHED"
+                    mock_doc.source_type = "URL"
+                    mock_doc.cms_platform = None
+                    mock_doc.cms_instance = None
+                    mock_doc.cms_document_id = None
                     mock_session.return_value.get.return_value = mock_doc
 
-                    # This will fail at fetch stage, but we can verify engine selection
-                    try:
-                        fetch_document("test-doc-id", fetch_engine="firecrawl")
-                    except Exception:
-                        pass  # Expected to fail, we're just testing the engine selection
+                    # Call fetch_document with engine override
+                    fetch_document(mock_doc.id, fetch_engine="firecrawl")
 
                     # Verify _get_fetch_engine was called with override
                     mock_get_engine.assert_called_once_with(override="firecrawl")

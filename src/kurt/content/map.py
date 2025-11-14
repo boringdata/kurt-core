@@ -29,6 +29,7 @@ from pydantic import BaseModel, Field
 from kurt.config import KurtConfig
 from kurt.db.database import get_session
 from kurt.db.models import Document, IngestionStatus, SourceType
+from kurt.utils.url_utils import normalize_url_for_deduplication as normalize_url
 
 logger = logging.getLogger(__name__)
 
@@ -52,33 +53,6 @@ except ImportError:
         logger.info(log_msg)
         if progress and task_id is not None:
             progress.update(task_id, description=message, completed=completed, total=total)
-
-
-def normalize_url(url: str) -> str:
-    """
-    Normalize URL by removing anchors and query strings.
-
-    This prevents duplicate documents from being created for URLs that
-    only differ by anchor or query parameters.
-
-    Args:
-        url: URL to normalize
-
-    Returns:
-        Normalized URL without anchor or query string
-
-    Example:
-        >>> normalize_url("https://example.com/blog?page=1#latest")
-        "https://example.com/blog"
-        >>> normalize_url("https://example.com/blog")
-        "https://example.com/blog"
-    """
-    from urllib.parse import urlparse, urlunparse
-
-    parsed = urlparse(url)
-    # Remove fragment (anchor) and query string
-    normalized = urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", "", ""))
-    return normalized
 
 
 # ============================================================================

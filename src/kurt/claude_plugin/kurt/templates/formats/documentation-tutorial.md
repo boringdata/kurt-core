@@ -52,20 +52,29 @@
 **Types of information needed for tutorials:**
 
 1. **Technical specifications** - API docs, SDK references
-   - Find: `kurt content list --url-contains /api/ --url-contains /docs/`
+   - Find: `kurt content list --url-contains /api/`
+   - Find: `kurt content list --url-contains /docs/`
    - Or provide: Links to technical documentation
 
 2. **Working code examples** - Sample implementations, SDK examples
-   - Find: `kurt content list | grep -i "example\|sample\|quickstart"`
+   - Find: `kurt content search "example" --include "*/docs/*"`
+   - Find: `kurt content list --url-contains /example`
    - Or provide: GitHub repos, code samples, existing implementations
 
 3. **Prerequisites info** - Setup guides, tool requirements
-   - Find: `kurt content list | grep -i "setup\|install\|getting-started"`
+   - Find: `kurt content search "setup\|install\|getting-started"`
+   - After finding the tutorial doc, check what links TO it (prerequisites):
+     * `kurt content links <doc-id> --direction inbound`
+     * Look for anchor text like "Prerequisites", "Before you start", "Read this first"
+   - Or check what it links FROM (dependencies it mentions):
+     * `kurt content links <doc-id> --direction outbound`
    - Or provide: Installation guides, environment setup docs
 
 4. **Common errors** - Troubleshooting, known issues
-   - Find: `kurt content list | grep -i "troubleshoot\|error\|faq"`
+   - Find: `kurt content search "troubleshoot\|error" --include "*/docs/*"`
    - Or provide: Support docs, known issues, debugging guides
+
+**For advanced discovery/analysis**, see `instructions/find-sources.md`
 
 ---
 
@@ -76,8 +85,8 @@
 **Technical documentation:**
 ```bash
 # Search for API/SDK docs
-kurt content list --url-contains /api/ | grep -i "<feature>"
-kurt content list --url-contains /docs/ | grep -i "<feature>"
+kurt content search "<feature>" --include "*/api/*"
+kurt content search "<feature>" --include "*/docs/*"
 
 # If not fetched:
 kurt content fetch --urls "<doc-url>"
@@ -86,13 +95,15 @@ kurt content fetch --urls "<doc-url>"
 **Code examples:**
 ```bash
 # Search for examples
-kurt content list | grep -i "example\|sample\|quickstart"
+kurt content search "example|sample|quickstart"
 ```
 
 **Prerequisites:**
 ```bash
-# Find setup guides
-kurt content list | grep -i "setup\|install\|authentication"
+# Find setup guides by topic
+kurt content list --with-topic "setup"
+kurt content list --with-topic "installation"
+kurt content search "setup|install|authentication"
 ```
 
 **If insufficient sources: Ask user for technical docs, code samples, or working examples**

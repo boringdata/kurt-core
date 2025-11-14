@@ -334,7 +334,7 @@ def show_migration_status() -> None:
 
         console.print(table)
         console.print()
-        console.print("[dim]Run [cyan]kurt migrate[/cyan] to apply migrations[/dim]")
+        console.print("[dim]Run [cyan]kurt admin migrate apply[/cyan] to apply migrations[/dim]")
 
     else:
         # Show applied migrations

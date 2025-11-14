@@ -7,9 +7,10 @@ from .delete import delete_document_cmd
 from .fetch import fetch_cmd
 from .get import get_document_cmd
 from .index import index
+from .list import list_documents_cmd
 from .list_clusters import list_clusters_cmd
-from .list_cmd import list_documents_cmd
-from .map_cmd import map_cmd
+from .map import map_cmd
+from .search import search_cmd
 from .stats import stats_cmd
 from .sync_metadata import sync_metadata
 
@@ -23,6 +24,7 @@ def content():
     Available commands:
     - fetch: Fetch and index content from URLs
     - map: Discover content without downloading
+    - search: Search document content with ripgrep
     - cluster: Organize documents into topic clusters
     - list: View all documents with filters
     - get: View single document details
@@ -38,6 +40,7 @@ def content():
 # Register all subcommands
 content.add_command(fetch_cmd, name="fetch")
 content.add_command(map_cmd, name="map")
+content.add_command(search_cmd, name="search")
 content.add_command(cluster_urls_cmd, name="cluster")
 content.add_command(list_documents_cmd, name="list")
 content.add_command(get_document_cmd, name="get")

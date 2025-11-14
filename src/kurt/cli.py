@@ -51,8 +51,10 @@ def main(ctx):
             console.print("[yellow]⚠ Database migrations are pending[/yellow]")
             console.print(f"[dim]{len(pending)} migration(s) need to be applied[/dim]")
             console.print()
-            console.print("[dim]Run [cyan]kurt migrate apply[/cyan] to update your database[/dim]")
-            console.print("[dim]Or run [cyan]kurt migrate status[/cyan] to see details[/dim]")
+            console.print(
+                "[dim]Run [cyan]kurt admin migrate apply[/cyan] to update your database[/dim]"
+            )
+            console.print("[dim]Or run [cyan]kurt admin migrate status[/cyan] to see details[/dim]")
             console.print()
 
             # Ask if user wants to apply now
@@ -237,9 +239,9 @@ OPENAI_API_KEY=your_openai_api_key_here
 
                 console.print("[green]✓[/green] Copied instruction files")
                 console.print(
-                    f"[dim]  .claude/CLAUDE.md, .claude/settings.json, .claude/instructions/, .claude/commands/[/dim]"
+                    "[dim]  .claude/CLAUDE.md, .claude/settings.json, .claude/instructions/, .claude/commands/[/dim]"
                 )
-                console.print(f"[dim]  kurt/templates/[/dim]")
+                console.print("[dim]  kurt/templates/[/dim]")
             else:
                 console.print("[yellow]⚠[/yellow] Plugin files not found in package")
         except Exception as e:
@@ -248,7 +250,7 @@ OPENAI_API_KEY=your_openai_api_key_here
         console.print("\n[bold]Next steps:[/bold]")
         console.print("  1. Copy .env.example to .env and add your API keys")
         console.print("  2. Open Claude Code in this directory")
-        console.print("  3. Run [cyan]/create-project[/cyan] to start your first content project")
+        console.print("  3. Describe your content goals to Claude Code to create a project")
 
     except Exception as e:
         console.print(f"[bold red]Error:[/bold red] {e}")

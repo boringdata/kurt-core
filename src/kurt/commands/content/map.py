@@ -4,6 +4,8 @@ import click
 from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 
+from kurt.utils.url_utils import get_domain_from_url
+
 console = Console()
 
 
@@ -241,11 +243,8 @@ def map_url(
 
             # Clustering tip (if not clustered)
             if result["total"] >= 50 and not cluster_urls:
-                # Generate pattern based on user's URL
-                from urllib.parse import urlparse
-
-                parsed = urlparse(url)
-                domain = parsed.netloc.replace("www.", "")
+                # Generate pattern based on user's URL (using centralized utility)
+                domain = get_domain_from_url(url, strip_www=True)
                 example_pattern = f"*{domain}*"
 
                 console.print(

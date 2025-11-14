@@ -3,15 +3,13 @@
 import click
 from rich.console import Console
 
+from kurt.commands.content._shared_options import add_filter_options
+
 console = Console()
 
 
 @click.command("stats")
-@click.option(
-    "--include",
-    "include_pattern",
-    help="Filter stats by URL/path pattern (glob matching source_url or source_path)",
-)
+@add_filter_options(ids=False, exclude=False)  # Stats doesn't need ids or exclude
 @click.option(
     "--format",
     "output_format",
@@ -24,7 +22,15 @@ console = Console()
     is_flag=True,
     help="Include analytics statistics (traffic distribution, trends)",
 )
-def stats_cmd(include_pattern: str, output_format: str, with_analytics: bool):
+def stats_cmd(
+    include_pattern: str,
+    in_cluster: str,
+    with_status: str,
+    with_content_type: str,
+    limit: int,
+    output_format: str,
+    with_analytics: bool,
+):
     """
     Show document statistics.
 
@@ -39,7 +45,13 @@ def stats_cmd(include_pattern: str, output_format: str, with_analytics: bool):
     from kurt.content.document import get_document_stats
 
     try:
-        stats = get_document_stats(include_pattern=include_pattern)
+        stats = get_document_stats(
+            include_pattern=include_pattern,
+            in_cluster=in_cluster,
+            with_status=with_status,
+            with_content_type=with_content_type,
+            limit=limit,
+        )
 
         # Get analytics stats if requested
         if with_analytics:

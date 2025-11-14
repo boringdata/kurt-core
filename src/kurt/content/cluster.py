@@ -12,6 +12,7 @@ import dspy
 from pydantic import BaseModel, Field
 
 from kurt.db.models import ContentType
+from kurt.utils.url_utils import normalize_url_for_matching
 
 logger = logging.getLogger(__name__)
 
@@ -133,16 +134,8 @@ class ComputeClustersAndClassify(dspy.Signature):
 # Business Logic
 # ============================================================================
 
-
-def normalize_url(url: str) -> str:
-    """Normalize URL for matching: lowercase, strip trailing slash."""
-    if not url:
-        return ""
-    normalized = url.lower().strip()
-    # Remove trailing slash unless it's just the domain
-    if normalized.endswith("/") and normalized.count("/") > 2:
-        normalized = normalized.rstrip("/")
-    return normalized
+# Use centralized normalize_url function (aliased for backward compatibility)
+normalize_url = normalize_url_for_matching
 
 
 def compute_topic_clusters(

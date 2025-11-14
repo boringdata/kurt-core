@@ -124,6 +124,16 @@ def get_dbos():
     return DBOS
 
 
+def is_initialized():
+    """
+    Check if DBOS has been initialized.
+
+    Returns:
+        bool: True if DBOS is initialized, False otherwise
+    """
+    return _dbos_initialized
+
+
 # Auto-initialize DBOS when module is imported (if available)
 # This ensures DBOS is ready for CLI commands
 # Gracefully skip if database doesn't exist yet (e.g., during kurt init)
@@ -136,4 +146,4 @@ if DBOS_AVAILABLE:
         pass
 
 
-__all__ = ["init_dbos", "get_dbos", "DBOS", "DBOS_AVAILABLE"]
+__all__ = ["init_dbos", "get_dbos", "is_initialized", "DBOS", "DBOS_AVAILABLE", "_dbos_initialized"]

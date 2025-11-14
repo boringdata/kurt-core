@@ -20,14 +20,14 @@ Key Functions:
 import asyncio
 import logging
 import os
-from pathlib import Path
-from urllib.parse import urlparse
 from uuid import UUID
 
-import trafilatura
 from dotenv import find_dotenv, load_dotenv
 
 from kurt.config import KurtConfig, load_config
+from kurt.content.fetch_firecrawl import fetch_with_firecrawl
+from kurt.content.fetch_trafilatura import fetch_with_httpx, fetch_with_trafilatura
+from kurt.content.paths import create_cms_content_path, create_content_path, parse_source_identifier
 from kurt.db.database import get_session
 from kurt.db.models import Document, IngestionStatus, SourceType
 
@@ -100,279 +100,6 @@ def _get_fetch_engine(override: str = None) -> str:
     except Exception:
         # Priority 3: Config file not found or failed to load → use default
         return KurtConfig.DEFAULT_FETCH_ENGINE
-
-
-def _fetch_with_firecrawl(url: str) -> tuple[str, dict]:
-    """
-    Fetch content using Firecrawl API.
-
-    Args:
-        url: URL to fetch
-
-    Returns:
-        Tuple of (content_markdown, metadata_dict)
-
-    Raises:
-        Exception: If fetch fails
-    """
-    from firecrawl import FirecrawlApp
-
-    api_key = os.getenv("FIRECRAWL_API_KEY")
-    if not api_key:
-        raise ValueError("[Firecrawl] FIRECRAWL_API_KEY not set in environment")
-
-    try:
-        app = FirecrawlApp(api_key=api_key)
-        # Scrape the URL and get markdown using the v2 API
-        result = app.scrape(url, formats=["markdown", "html"])
-    except Exception as e:
-        raise ValueError(f"[Firecrawl] API error: {type(e).__name__}: {str(e)}") from e
-
-    if not result or not hasattr(result, "markdown"):
-        raise ValueError(f"[Firecrawl] No content extracted from: {url}")
-
-    content = result.markdown
-
-    # Extract metadata from Firecrawl response
-    metadata = {}
-    if hasattr(result, "metadata") and result.metadata:
-        metadata = result.metadata if isinstance(result.metadata, dict) else {}
-
-    return content, metadata
-
-
-def _fetch_with_httpx(url: str) -> tuple[str, dict]:
-    """
-    Fetch content using httpx + trafilatura extraction (bypasses trafilatura's fetch).
-
-    This engine uses httpx for HTTP requests (which respects proxy patching)
-    and trafilatura only for HTML extraction/conversion to markdown.
-
-    Args:
-        url: URL to fetch
-
-    Returns:
-        Tuple of (content_markdown, metadata_dict)
-
-    Raises:
-        ValueError: If fetch fails
-    """
-    import httpx
-
-    # Download content with httpx (respects proxy patches)
-    try:
-        response = httpx.get(url, follow_redirects=True, timeout=30.0)
-        response.raise_for_status()
-        downloaded = response.text
-    except Exception as e:
-        raise ValueError(f"[httpx] Download error: {type(e).__name__}: {str(e)}") from e
-
-    if not downloaded:
-        raise ValueError(f"[httpx] Failed to download (no content returned): {url}")
-
-    # Extract metadata using trafilatura (but not for fetching)
-    metadata = trafilatura.extract_metadata(
-        downloaded,
-        default_url=url,
-        extensive=True,
-    )
-
-    # Extract content as markdown
-    content = trafilatura.extract(
-        downloaded,
-        output_format="markdown",
-        include_tables=True,
-        include_links=True,
-        url=url,
-        with_metadata=True,
-    )
-
-    if not content:
-        raise ValueError(
-            f"[httpx] No content extracted (page might be empty or paywall blocked): {url}"
-        )
-
-    # Convert trafilatura metadata to dict
-    metadata_dict = {}
-    if metadata:
-        metadata_dict = {
-            "title": metadata.title,
-            "author": metadata.author,
-            "date": metadata.date,
-            "description": metadata.description,
-            "fingerprint": metadata.fingerprint,
-        }
-
-    return content, metadata_dict
-
-
-def _fetch_with_trafilatura(url: str) -> tuple[str, dict]:
-    """
-    Fetch content using Trafilatura.
-
-    Args:
-        url: URL to fetch
-
-    Returns:
-        Tuple of (content_markdown, metadata_dict)
-
-    Raises:
-        ValueError: If fetch fails
-    """
-    # Download content
-    try:
-        downloaded = trafilatura.fetch_url(url)
-        if not downloaded:
-            raise ValueError(f"[Trafilatura] Failed to download (no content returned): {url}")
-    except Exception as e:
-        raise ValueError(f"[Trafilatura] Download error: {type(e).__name__}: {str(e)}") from e
-
-    # Extract metadata using trafilatura
-    metadata = trafilatura.extract_metadata(
-        downloaded,
-        default_url=url,
-        extensive=True,  # More comprehensive metadata extraction
-    )
-
-    # Extract content as markdown
-    content = trafilatura.extract(
-        downloaded,
-        output_format="markdown",
-        include_tables=True,
-        include_links=True,
-        url=url,  # Helps with metadata extraction
-        with_metadata=True,  # Include metadata in extraction
-    )
-
-    if not content:
-        raise ValueError(
-            f"[Trafilatura] No content extracted (page might be empty or paywall blocked): {url}"
-        )
-
-    # Convert trafilatura metadata to dict
-    metadata_dict = {}
-    if metadata:
-        metadata_dict = {
-            "title": metadata.title,
-            "author": metadata.author,
-            "date": metadata.date,
-            "description": metadata.description,
-            "fingerprint": metadata.fingerprint,
-        }
-
-    return content, metadata_dict
-
-
-def _detect_source_type(source_url: str) -> tuple[str, dict]:
-    """
-    Detect if source URL is web (http/https) or CMS (platform/instance/schema/slug).
-
-    Args:
-        source_url: Source URL or CMS identifier
-
-    Returns:
-        Tuple of (source_type, parsed_data):
-            - source_type: 'web' or 'cms'
-            - parsed_data: For web: {'url': url}, For CMS: {'platform': ..., 'instance': ..., 'schema': ..., 'slug': ...}
-
-    Example:
-        >>> _detect_source_type("https://example.com/page")
-        ('web', {'url': 'https://example.com/page'})
-
-        >>> _detect_source_type("sanity/prod/article/vibe-coding-guide")
-        ('cms', {'platform': 'sanity', 'instance': 'prod', 'schema': 'article', 'slug': 'vibe-coding-guide'})
-    """
-    if source_url.startswith(("http://", "https://")):
-        return "web", {"url": source_url}
-
-    # Assume CMS format: platform/instance/schema/slug
-    parts = source_url.split("/", 3)
-    if len(parts) == 4:
-        return "cms", {
-            "platform": parts[0],
-            "instance": parts[1],
-            "schema": parts[2],
-            "slug": parts[3],
-        }
-
-    # Also support legacy 3-part format for backward compatibility
-    if len(parts) == 3:
-        return "cms", {"platform": parts[0], "instance": parts[1], "schema": None, "slug": parts[2]}
-
-    raise ValueError(
-        f"Invalid source URL format: {source_url}. "
-        f"Expected either http(s):// URL or platform/instance/schema/slug format"
-    )
-
-
-def _create_cms_content_path(platform: str, instance: str, doc_id: str, config: KurtConfig) -> Path:
-    """
-    Create filesystem path for CMS content.
-
-    Args:
-        platform: CMS platform name (sanity, contentful, etc)
-        instance: Instance name (prod, staging, etc)
-        doc_id: Document ID
-        config: Kurt configuration
-
-    Returns:
-        Path object for content file
-
-    Example:
-        >>> _create_cms_content_path("sanity", "prod", "abc-123", config)
-        Path("sources/cms/sanity/prod/abc-123.md")
-    """
-    source_base = config.get_absolute_sources_path()
-    content_path = source_base / "cms" / platform / instance / f"{doc_id}.md"
-    return content_path
-
-
-def _create_content_path(url: str, config: KurtConfig) -> Path:
-    """
-    Create filesystem path for storing content.
-
-    Format: {source_path}/{domain}/{subdomain}/{path}/page_name.md
-
-    Example:
-        url: https://docs.example.com/guide/getting-started
-        → sources/docs.example.com/guide/getting-started.md
-
-        url: https://example.com/
-        → sources/example.com/index.md
-
-        url: https://www.example.com/
-        → sources/example.com/index.md (www stripped for consistency)
-    """
-    parsed = urlparse(url)
-
-    # Get domain (netloc includes port if present)
-    domain = parsed.netloc or "unknown"
-
-    # Normalize domain: strip 'www.' prefix for consistency
-    # This ensures www.getdbt.com and getdbt.com map to the same folder
-    if domain.startswith("www."):
-        domain = domain[4:]  # Remove "www."
-
-    # Get path components
-    path = parsed.path.strip("/")
-
-    # If empty path, use 'index'
-    if not path:
-        path = "index"
-
-    # If path ends with /, append 'index'
-    if path.endswith("/"):
-        path = path + "index"
-
-    # Add .md extension if not present
-    if not path.endswith(".md"):
-        path = path + ".md"
-
-    # Build full path: source_path/domain/path
-    source_base = config.get_absolute_sources_path()
-    content_path = source_base / domain / path
-
-    return content_path
 
 
 def _fetch_from_cms(platform: str, instance: str, doc: Document) -> tuple[str, dict]:
@@ -550,7 +277,7 @@ def fetch_document(identifier: str | UUID, fetch_engine: str = None) -> dict:
         else:
             # Web URL - use web scraping engines
             # First check if it looks like a CMS URL pattern (legacy check)
-            source_type, parsed_data = _detect_source_type(doc.source_url)
+            source_type, parsed_data = parse_source_identifier(doc.source_url)
 
             if source_type == "cms":
                 # CMS URL detected but missing platform/instance fields
@@ -564,11 +291,11 @@ def fetch_document(identifier: str | UUID, fetch_engine: str = None) -> dict:
             engine = _get_fetch_engine(override=fetch_engine)
 
             if engine == "firecrawl":
-                content, metadata_dict = _fetch_with_firecrawl(doc.source_url)
+                content, metadata_dict = fetch_with_firecrawl(doc.source_url)
             elif engine == "httpx":
-                content, metadata_dict = _fetch_with_httpx(doc.source_url)
+                content, metadata_dict = fetch_with_httpx(doc.source_url)
             else:
-                content, metadata_dict = _fetch_with_trafilatura(doc.source_url)
+                content, metadata_dict = fetch_with_trafilatura(doc.source_url)
 
         # Update document with extracted metadata
         if metadata_dict:
@@ -604,21 +331,41 @@ def fetch_document(identifier: str | UUID, fetch_engine: str = None) -> dict:
                     # If parsing fails, store as None
                     doc.published_date = None
 
+        # Generate document embedding for knowledge graph (Stage 0)
+        try:
+            import dspy
+            import numpy as np
+
+            # Get configured embedding model
+            embed_config = load_config()
+            embedding_model = embed_config.EMBEDDING_MODEL
+
+            # Use first 1000 chars of content for embedding
+            content_sample = content[:1000] if len(content) > 1000 else content
+            embedding_vector = dspy.Embedder(model=embedding_model)([content_sample])[0]
+            doc.embedding = np.array(embedding_vector, dtype=np.float32).tobytes()
+            logger.debug(
+                f"Generated document embedding ({len(embedding_vector)} dims) using {embedding_model}"
+            )
+        except Exception as e:
+            logger.warning(f"Could not generate document embedding: {e}")
+            # Continue without embedding - it's optional
+
         # Store content to filesystem
         config = load_config()
 
-        # Choose path based on source type
-        if source_type == "cms":
+        # Choose path based on document type (CMS vs Web)
+        if doc.cms_platform and doc.cms_instance:
             # CMS: sources/cms/{platform}/{instance}/{cms_document_id}.md
-            content_path = _create_cms_content_path(
-                platform=parsed_data["platform"],
-                instance=parsed_data["instance"],
+            content_path = create_cms_content_path(
+                platform=doc.cms_platform,
+                instance=doc.cms_instance,
                 doc_id=doc.cms_document_id,
                 config=config,
             )
         else:
             # Web: sources/{domain}/{path}/page_name.md
-            content_path = _create_content_path(doc.source_url, config)
+            content_path = create_content_path(doc.source_url, config)
 
         # Create directory structure
         content_path.parent.mkdir(parents=True, exist_ok=True)
@@ -838,12 +585,21 @@ def fetch_content(
     # Build query based on filters
     stmt = select(Document)
 
-    # Filter by IDs
+    # Filter by IDs (supports partial UUIDs, URLs, and file paths)
     if ids:
         from uuid import UUID
 
-        doc_ids = [UUID(id.strip()) for id in ids.split(",")]
-        stmt = stmt.where(Document.id.in_(doc_ids))
+        from kurt.content.filtering import resolve_ids_to_uuids
+
+        try:
+            # Resolve all identifiers to full UUIDs (handles partial UUIDs, URLs, file paths)
+            uuid_strs = resolve_ids_to_uuids(ids)
+            doc_ids = [UUID(uuid_str) for uuid_str in uuid_strs]
+
+            if doc_ids:
+                stmt = stmt.where(Document.id.in_(doc_ids))
+        except ValueError as e:
+            errors.append(str(e))
 
     # Filter by URLs (auto-create documents that don't exist)
     if urls:

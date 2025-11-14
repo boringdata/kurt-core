@@ -111,12 +111,12 @@ class IsolatedWorkspace:
             # Set HTTP_PROXY environment variable for HTTP URLs only
             # httpx respects this automatically when making requests
             # Note: Only set HTTP_PROXY, not HTTPS_PROXY, since our mock URLs use http://
-            os.environ['HTTP_PROXY'] = "http://127.0.0.1:8765"
-            os.environ['http_proxy'] = "http://127.0.0.1:8765"
+            os.environ["HTTP_PROXY"] = "http://127.0.0.1:8765"
+            os.environ["http_proxy"] = "http://127.0.0.1:8765"
 
             print("✅ HTTP mocking enabled via proxy server")
-            print(f"   Proxy: http://127.0.0.1:8765")
-            print(f"   HTTP_PROXY environment variable set (HTTP only)")
+            print("   Proxy: http://127.0.0.1:8765")
+            print("   HTTP_PROXY environment variable set (HTTP only)")
         except Exception as e:
             print(f"⚠️  Failed to setup HTTP mocks: {e}")
             print("   Scenarios will make real HTTP requests")
@@ -182,10 +182,11 @@ class IsolatedWorkspace:
             if "INGESTION_FETCH_ENGINE" in config_content:
                 # Update existing value
                 import re
+
                 config_content = re.sub(
                     r'INGESTION_FETCH_ENGINE\s*=\s*["\']?[^"\'\n]+["\']?',
                     'INGESTION_FETCH_ENGINE = "httpx"',
-                    config_content
+                    config_content,
                 )
             else:
                 # Add new value at the end
@@ -227,11 +228,12 @@ class IsolatedWorkspace:
                 env_content = eval_env.read_text()
                 # Remove FIRECRAWL_API_KEY lines (commented or not)
                 filtered_lines = [
-                    line for line in env_content.splitlines()
-                    if not line.strip().startswith('FIRECRAWL_API_KEY') and
-                    not line.strip().startswith('# FIRECRAWL_API_KEY')
+                    line
+                    for line in env_content.splitlines()
+                    if not line.strip().startswith("FIRECRAWL_API_KEY")
+                    and not line.strip().startswith("# FIRECRAWL_API_KEY")
                 ]
-                (self.temp_dir / ".env").write_text('\n'.join(filtered_lines) + '\n')
+                (self.temp_dir / ".env").write_text("\n".join(filtered_lines) + "\n")
                 print("✅ .env copied from eval/ (FIRECRAWL_API_KEY filtered out)")
 
             # Also copy .env.example if it exists
@@ -295,7 +297,7 @@ class IsolatedWorkspace:
             self.mock_server.stop()
 
             # Remove HTTP_PROXY environment variables
-            for key in ['HTTP_PROXY', 'http_proxy']:
+            for key in ["HTTP_PROXY", "http_proxy"]:
                 if key in os.environ:
                     del os.environ[key]
 

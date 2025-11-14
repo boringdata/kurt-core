@@ -116,7 +116,6 @@ X-RateLimit-Remaining: 999
 X-RateLimit-Reset: 1635724800
 ```
 """,
-
     "websites/acme-docs/guide-authentication.md": """---
 title: "Authentication Guide"
 url: https://docs.acme-corp.com/guide-authentication
@@ -198,7 +197,6 @@ curl -X POST https://api.acme.dev/oauth/token \\
 4. **Enable IP allowlisting** in dashboard
 5. **Monitor API usage** for anomalies
 """,
-
     "websites/acme-docs/guide-advanced.md": """---
 title: "Advanced Patterns"
 url: https://docs.acme-corp.com/guide-advanced
@@ -312,7 +310,6 @@ export default async function webhook(req) {
 }
 ```
 """,
-
     "websites/acme-docs/troubleshooting.md": """---
 title: "Troubleshooting"
 url: https://docs.acme-corp.com/troubleshooting
@@ -409,7 +406,6 @@ export const config = { cache: { ttl: 300 } };
 2. Search [Discord](https://discord.gg/acme)
 3. Email support@acme-corp.com
 """,
-
     "websites/acme-docs/changelog.md": """---
 title: "Changelog"
 url: https://docs.acme-corp.com/changelog
@@ -450,7 +446,6 @@ category: release-notes
 
 Initial public release.
 """,
-
     "websites/acme-docs/sitemap.xml": """<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://docs.acme-corp.com/getting-started</loc><priority>1.0</priority></url>
@@ -461,11 +456,9 @@ Initial public release.
   <url><loc>https://docs.acme-corp.com/changelog</loc><priority>0.5</priority></url>
 </urlset>
 """,
-
     # ==========================================================================
     # COMPETITOR WEBSITE (for competitive analysis scenarios)
     # ==========================================================================
-
     "websites/competitor-co/feature-comparison.md": """---
 title: "ACME vs Others - Feature Comparison"
 url: https://competitor-co.com/feature-comparison
@@ -541,7 +534,6 @@ Takes less than 5 minutes.
 > "Switching saved us $500/month on our API infrastructure costs."
 > - Mike Rodriguez, Lead Engineer at StreamAPI
 """,
-
     "websites/competitor-co/pricing.md": """---
 title: "Pricing - Simple, Transparent, Affordable"
 url: https://competitor-co.com/pricing
@@ -623,7 +615,6 @@ A: Yes! 50% off for verified non-profits and open source projects.
 **Q: Is there a free trial for paid plans?**
 A: Yes, 14-day free trial for Pro and Team tiers. No credit card required.
 """,
-
     "websites/competitor-co/tutorial-basics.md": """---
 title: "Tutorial: Your First API in 5 Minutes"
 url: https://competitor-co.com/tutorial-basics
@@ -716,7 +707,6 @@ That's it! Your API is live globally.
 - [Connect a database](https://competitor-co.com/tutorial-advanced#database)
 - [Add rate limiting](https://competitor-co.com/tutorial-advanced#rate-limiting)
 """,
-
     "websites/competitor-co/tutorial-advanced.md": """---
 title: "Advanced Tutorial: Authentication, Database, Caching"
 url: https://competitor-co.com/tutorial-advanced
@@ -846,7 +836,6 @@ When limit is exceeded, returns:
 }
 ```
 """,
-
     "websites/competitor-co/case-study.md": """---
 title: "Case Study: How StreamAPI Cut Costs by 60%"
 url: https://competitor-co.com/case-study
@@ -937,7 +926,6 @@ After (Our Platform):
 
 Want similar results? [Start your free trial](https://competitor-co.com/signup) or [talk to our team](https://competitor-co.com/contact).
 """,
-
     "websites/competitor-co/sitemap.xml": """<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://competitor-co.com/feature-comparison</loc><priority>1.0</priority></url>
@@ -947,11 +935,9 @@ Want similar results? [Start your free trial](https://competitor-co.com/signup) 
   <url><loc>https://competitor-co.com/case-study</loc><priority>0.7</priority></url>
 </urlset>
 """,
-
     # ==========================================================================
     # CMS DATA (for CMS integration scenarios)
     # ==========================================================================
-
     "cms/sanity/types.json": """{
   "types": [
     {
@@ -981,7 +967,6 @@ Want similar results? [Start your free trial](https://competitor-co.com/signup) 
     }
   ]
 }""",
-
     "cms/sanity/query-results.json": """{
   "result": [
     {
@@ -1027,7 +1012,6 @@ Want similar results? [Start your free trial](https://competitor-co.com/signup) 
   "ms": 45,
   "query": "*[_type == 'article'] | order(publishedAt desc)"
 }""",
-
     "cms/sanity/article-1.json": """{
   "_id": "article-1",
   "_type": "article",
@@ -1065,7 +1049,6 @@ Want similar results? [Start your free trial](https://competitor-co.com/signup) 
   "tags": ["api-design", "best-practices", "engineering"],
   "featured": true
 }""",
-
     "cms/sanity/article-2.json": """{
   "_id": "article-2",
   "_type": "article",
@@ -1103,7 +1086,6 @@ Want similar results? [Start your free trial](https://competitor-co.com/signup) 
   "tags": ["microservices", "scaling", "architecture"],
   "featured": false
 }""",
-
     "cms/sanity/publish-response.json": """{
   "transactionId": "tx-publish-789",
   "results": [
@@ -1122,11 +1104,9 @@ Want similar results? [Start your free trial](https://competitor-co.com/signup) 
   "documentIds": ["article-1"],
   "transactionTime": "2024-11-01T10:00:00.123Z"
 }""",
-
     # ==========================================================================
     # RESEARCH APIs (for research & competitive analysis scenarios)
     # ==========================================================================
-
     "research/perplexity-ai-trends.json": """{
   "id": "pplx-12345",
   "model": "llama-3.1-sonar-large-128k-online",
@@ -1151,7 +1131,6 @@ Want similar results? [Start your free trial](https://competitor-co.com/signup) 
     "total_tokens": 327
   }
 }""",
-
     "research/perplexity-fastapi.json": """{
   "id": "pplx-67890",
   "model": "llama-3.1-sonar-large-128k-online",
@@ -1176,7 +1155,6 @@ Want similar results? [Start your free trial](https://competitor-co.com/signup) 
     "total_tokens": 347
   }
 }""",
-
     "research/reddit-dataeng.json": """{
   "kind": "Listing",
   "data": {
@@ -1228,7 +1206,6 @@ Want similar results? [Start your free trial](https://competitor-co.com/signup) 
     ]
   }
 }""",
-
     "research/reddit-python.json": """{
   "kind": "Listing",
   "data": {
@@ -1280,7 +1257,6 @@ Want similar results? [Start your free trial](https://competitor-co.com/signup) 
     ]
   }
 }""",
-
     "research/hackernews-top.json": """[
   38942156,
   38941823,
@@ -1293,11 +1269,9 @@ Want similar results? [Start your free trial](https://competitor-co.com/signup) 
   38938234,
   38937891
 ]""",
-
     # ==========================================================================
     # ANALYTICS DATA (for analytics-driven scenarios)
     # ==========================================================================
-
     "analytics/top-pages.json": """{
   "query": "top_pages",
   "period": "last_30_days",
@@ -1365,7 +1339,6 @@ Want similar results? [Start your free trial](https://competitor-co.com/signup) 
   ],
   "generated_at": "2024-11-01T10:00:00Z"
 }""",
-
     "analytics/bottom-pages.json": """{
   "query": "bottom_pages",
   "period": "last_30_days",
@@ -1412,7 +1385,6 @@ Want similar results? [Start your free trial](https://competitor-co.com/signup) 
   ],
   "generated_at": "2024-11-01T10:00:00Z"
 }""",
-
     "analytics/trending-pages.json": """{
   "query": "trending_pages",
   "period": "last_7_days",
@@ -1462,7 +1434,6 @@ Want similar results? [Start your free trial](https://competitor-co.com/signup) 
   ],
   "generated_at": "2024-11-01T10:00:00Z"
 }""",
-
     "analytics/declining-pages.json": """{
   "query": "declining_pages",
   "period": "last_30_days",
@@ -1524,7 +1495,6 @@ Want similar results? [Start your free trial](https://competitor-co.com/signup) 
   ],
   "generated_at": "2024-11-01T10:00:00Z"
 }""",
-
     "analytics/domain-summary.json": """{
   "domain": "acme-corp.com",
   "period": "last_30_days",
@@ -1562,6 +1532,7 @@ Want similar results? [Start your free trial](https://competitor-co.com/signup) 
 }""",
 }
 
+
 def generate_all():
     """Generate all mock data files."""
     count = 0
@@ -1574,6 +1545,7 @@ def generate_all():
 
     print(f"\n✅ Generated {count} mock files")
     print(f"📁 Mock data location: {MOCK_DIR}")
+
 
 if __name__ == "__main__":
     generate_all()
