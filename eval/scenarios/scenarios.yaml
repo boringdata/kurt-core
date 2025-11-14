@@ -1,0 +1,483 @@
+# Kurt Evaluation Scenarios
+#
+# All test scenarios in one file for easier management.
+# Each scenario tests specific Kurt agent behavior.
+
+scenarios:
+  # ========================================================================
+  # Scenario 01: Basic Initialization
+  # ========================================================================
+  - name: 01_basic_init
+    description: Initialize a new Kurt project from scratch
+
+    initial_prompt: Check the Kurt project status and verify it is initialized correctly. If not initialize the project.
+
+    assertions:
+      - type: FileExists
+        path: kurt.config
+
+      - type: FileExists
+        path: .kurt/kurt.sqlite
+
+      - type: FileExists
+        path: sources
+
+      - type: FileExists
+        path: rules
+
+      - type: FileExists
+        path: projects
+
+      - type: MetricEquals
+        metric_path: files.config_exists
+        expected_value: true
+
+      - type: MetricEquals
+        metric_path: files.db_exists
+        expected_value: true
+
+  # ========================================================================
+  # Scenario 02: Add Content from URL (Using Mock HTTP Server)
+  # ========================================================================
+  - name: 02_add_url
+    description: Initialize Kurt and discover/fetch content from mocked URL
+
+    notes: |
+      Tests content discovery and fetching using mock HTTP server.
+      Mock data includes sitemap with 6 URLs (home, about, pricing, 3 blog posts).
+      HTTP requests are intercepted by local proxy server - no real network calls!
+      Uses HTTP (not HTTPS) to avoid SSL complications in testing.
+      The httpx fetch engine is automatically configured in kurt.config.
+
+    initial_prompt: >
+      Initialize a Kurt project, then discover and fetch content from
+      http://acme-corp.com/
+
+    assertions:
+      - type: FileExists
+        path: kurt.config
+
+      - type: FileExists
+        path: .kurt/kurt.sqlite
+
+      - type: MetricEquals
+        metric_path: files.config_exists
+        expected_value: true
+
+      - type: MetricEquals
+        metric_path: files.db_exists
+        expected_value: true
+
+      # Verify content discovery worked (ACME sitemap has 6 URLs)
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) >= 5 FROM documents WHERE source_url LIKE 'http://acme-corp.com/%'
+
+      # Check that documents were fetched
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) >= 3 FROM documents WHERE source_url LIKE 'http://acme-corp.com/%' AND ingestion_status='FETCHED'
+
+  # ========================================================================
+  # Scenario 03: Interactive Project Creation (No Sources)
+  # ========================================================================
+  - name: 03_project_no_sources
+    description: Multi-turn conversation to create a project without sources using /create-project
+
+    initial_prompt: run /create-project
+
+    # User agent system prompt (defines how the user responds to questions)
+    user_agent_prompt: |
+      You are a user responding to an AI agent's questions about creating a Kurt project.
+
+      When asked about:
+      - Project name: respond "test-blog"
+      - Goal: respond "Write technical blog posts about Python"
+      - Intent or purpose: respond "a" (for positioning updates)
+      - Sources: respond "no"
+      - Targets: respond "no"
+      - Additional details: respond "none"
+      Keep responses brief and direct. 
+
+    assertions:
+      # Verify /create-project slash command was called
+      - type: SlashCommandWasCalled
+        command_name: /create-project
+
+      # Verify project-management skill was invoked
+      - type: SkillWasCalled
+        skill_name: project-management
+
+      - type: FileExists
+        path: kurt.config
+
+      - type: FileExists
+        path: .kurt/kurt.sqlite
+
+      - type: FileExists
+        path: projects
+
+      - type: FileExists
+        path: projects/test-blog
+
+      - type: FileExists
+        path: projects/test-blog/project.md
+
+      - type: FileContains
+        path: projects/test-blog/project.md
+        content: test-blog
+
+      - type: FileContains
+        path: projects/test-blog/project.md
+        content: Python
+
+      # Verify project subdirectories were created
+      - type: FileExists
+        path: projects/test-blog/sources
+
+      - type: FileExists
+        path: projects/test-blog/drafts
+
+      # Verify multi-turn conversation metrics (at least 6-7 turns)
+      - type: MetricGreaterThan
+        metric_path: conversation.turns
+        expected_value: 5
+
+      # Verify the agent used tools appropriately (directories, files, status checks)
+      - type: MetricGreaterThan
+        metric_path: conversation.tool_calls
+        expected_value: 8
+
+      # Verify conversation completed successfully
+      - type: MetricEquals
+        metric_path: conversation.completed
+        expected_value: true
+
+      # Verify project.md contains markdown header
+      - type: FileContains
+        path: projects/test-blog/project.md
+        content: "# test-blog"
+
+      # Verify project.md has goal field
+      - type: FileContains
+        path: projects/test-blog/project.md
+        content: "goal"
+
+      # Verify project.md tracks intent
+      - type: FileContains
+        path: projects/test-blog/project.md
+        content: "intent"
+
+      # Verify bash mkdir command was executed
+      - type: ToolWasUsed
+        tool_name: Bash
+
+      # Verify Write tool was used to create project.md
+      - type: ToolWasUsed
+        tool_name: Write
+
+  # ========================================================================
+  # Scenario 04: Interactive Project Creation with Sources (Using Mocks)
+  # ========================================================================
+  - name: 04_project_with_sources
+    description: Multi-turn conversation to create a project and fetch external sources using mock data
+
+    initial_prompt: run /create-project
+
+    # User agent system prompt (defines how the user responds to questions)
+    user_agent_prompt: |
+      You are a content marketing manager at ACME Corp, the API management platform.
+
+      ## Your Company Profile
+      - **Website:** http://acme-corp.com
+      - **Documentation:** http://docs.acme-corp.com
+      - **Target audience:** Software engineers, DevOps teams, API developers
+      - **Product:** API management platform for deploying and scaling APIs
+
+      ## Your Current Situation
+      You're preparing to write technical content about best practices for building scalable APIs.
+      You need to reference ACME's own documentation to ensure accuracy and consistency with
+      the product's features.
+
+      ## Your Goal with Kurt
+      You want to gather reference material from ACME's technical documentation. This will
+      help you create blog posts and guides that align with ACME's product capabilities.
+
+      ## Your Project Details
+      - Project name: "api-scaling-content"
+      - Goal: Create technical content about API best practices
+      - You want to write new blog posts and guides
+      - Source: http://docs.acme-corp.com/ (gather the getting started guide and API reference)
+      - This is your first Kurt project, so skip any foundation setup for now
+
+      Respond naturally to questions based on this context. Keep responses brief and conversational.
+
+    assertions:
+      # Verify /create-project slash command was called
+      - type: SlashCommandWasCalled
+        command_name: /create-project
+
+      # Verify project-management skill was invoked
+      - type: SkillWasCalled
+        skill_name: project-management
+
+      # Basic project structure
+      - type: FileExists
+        path: kurt.config
+
+      - type: FileExists
+        path: .kurt/kurt.sqlite
+
+      - type: FileExists
+        path: projects/api-scaling-content
+
+      - type: FileExists
+        path: projects/api-scaling-content/project.md
+
+      - type: FileExists
+        path: projects/api-scaling-content/sources
+
+      - type: FileExists
+        path: projects/api-scaling-content/drafts
+
+      # Verify project.md contains expected content
+      - type: FileContains
+        path: projects/api-scaling-content/project.md
+        content: api-scaling-content
+
+      - type: FileContains
+        path: projects/api-scaling-content/project.md
+        content: API
+
+      # Verify project.md contains markdown header
+      - type: FileContains
+        path: projects/api-scaling-content/project.md
+        content: "# api-scaling-content"
+
+      # Verify content discovery happened - URLs discovered from ACME docs (6 pages in sitemap)
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) >= 5 FROM documents WHERE source_url LIKE 'http://docs.acme-corp.com/%'
+
+      # Verify content was actually fetched (at least 3 documents)
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) >= 3 FROM documents WHERE source_url LIKE 'http://docs.acme-corp.com/%' AND ingestion_status='FETCHED'
+
+      # Verify content was not over-fetched (max 6 docs in sitemap)
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) <= 6 FROM documents WHERE source_url LIKE 'http://docs.acme-corp.com/%' AND ingestion_status='FETCHED'
+
+      # Verify fetched documents have content stored
+      - type: SQLQueryAssertion
+        query: |
+          SELECT COUNT(*) >= 3
+          FROM documents d
+          JOIN document_versions v ON d.id = v.document_id
+          WHERE d.source_url LIKE 'http://docs.acme-corp.com/%'
+          AND v.content IS NOT NULL
+          AND v.content != ''
+
+      # Verify Bash tool was used to run kurt commands
+      - type: ToolWasUsed
+        tool_name: Bash
+
+      # Verify conversation had sufficient turns for interactive workflow (at least 8)
+      - type: MetricGreaterThan
+        metric_path: conversation.turns
+        expected_value: 7
+
+      # Verify multiple tool calls for discovery + fetch + index (at least 13)
+      - type: MetricGreaterThan
+        metric_path: conversation.tool_calls
+        expected_value: 12
+
+  # ========================================================================
+  # Scenario 05: Setup Kurt Foundations (Using Mocks)
+  # ========================================================================
+  - name: 05_setup_foundations
+    description: Complete foundation setup - init, content discovery, fetching, and rule extraction using mock data
+
+    notes: |
+      Tests the full foundation workflow that should happen before creating content:
+      1. Initialize Kurt project
+      2. Discover and fetch content from organizational source (ACME Corp blog)
+      3. Extract publisher profile rules
+      4. Extract primary style/voice rules
+
+      Uses mocked HTTP responses for fast, reproducible testing.
+      This establishes the "organizational foundation" referenced in project workflows.
+
+    initial_prompt: |
+      Setup Kurt foundations by doing the following:
+
+      1. Initialize a Kurt project if needed
+      2. Discover and fetch content from http://acme-corp.com/ (the company blog with technical articles)
+      3. After fetching completes, extract publisher profile rules using the writing-rules-skill
+      4. Extract primary style rules using the writing-rules-skill
+
+      The goal is to fetch content and extract foundational rules that would apply to all future content creation.
+
+    assertions:
+      # Basic initialization
+      - type: FileExists
+        path: kurt.config
+
+      - type: FileExists
+        path: .kurt/kurt.sqlite
+
+      - type: FileExists
+        path: sources
+
+      - type: FileExists
+        path: rules
+
+      - type: FileExists
+        path: projects
+
+      # Verify content was discovered from ACME Corp (6 URLs in sitemap)
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) >= 5 FROM documents WHERE source_url LIKE 'http://acme-corp.com/%'
+
+      # Verify content WAS fetched (need content for rule extraction)
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) >= 3 FROM documents WHERE source_url LIKE 'http://acme-corp.com/%' AND ingestion_status='FETCHED'
+
+      # Verify fetched documents have content
+      - type: SQLQueryAssertion
+        query: |
+          SELECT COUNT(*) >= 3
+          FROM documents d
+          JOIN document_versions v ON d.id = v.document_id
+          WHERE d.source_url LIKE 'http://acme-corp.com/%'
+          AND v.content IS NOT NULL
+          AND v.content != ''
+
+      # Verify publisher profile rules were extracted
+      - type: FileExists
+        path: rules/publisher
+
+      - type: FileExists
+        path: rules/publisher/publisher-profile.md
+
+      - type: FileContains
+        path: rules/publisher/publisher-profile.md
+        content: "# Publisher Profile"
+
+      # Verify publisher profile has required sections
+      - type: FileContains
+        path: rules/publisher/publisher-profile.md
+        content: "## Core Identity"
+
+      - type: FileContains
+        path: rules/publisher/publisher-profile.md
+        content: "## Content Strategy"
+
+      # Verify primary style rules were extracted
+      - type: FileExists
+        path: rules/style
+
+      - type: FileExists
+        path: rules/style/primary.md
+
+      - type: FileContains
+        path: rules/style/primary.md
+        content: "# Primary Voice & Style Guide"
+
+      # Verify style guide has required sections
+      - type: FileContains
+        path: rules/style/primary.md
+        content: "## Voice Characteristics"
+
+      - type: FileContains
+        path: rules/style/primary.md
+        content: "## Writing Patterns"
+
+      # Verify writing-rules-skill was invoked
+      - type: SkillWasCalled
+        skill_name: writing-rules-skill
+
+      # Verify sufficient conversation turns (at least 8)
+      - type: MetricGreaterThan
+        metric_path: conversation.turns
+        expected_value: 7
+
+      # Verify reasonable number of tool calls (at least 15 for discovery + rule extraction)
+      - type: MetricGreaterThan
+        metric_path: conversation.tool_calls
+        expected_value: 14
+
+      # Verify Bash tool was used for kurt commands
+      - type: ToolWasUsed
+        tool_name: Bash
+
+      # Verify Write tool was used to create rule files
+      - type: ToolWasUsed
+        tool_name: Write
+
+      # Verify conversation completed successfully
+      - type: MetricEquals
+        metric_path: conversation.completed
+        expected_value: true
+
+  # ========================================================================
+  # Scenario 06: Pre-configured Project with Setup Commands
+  # ========================================================================
+  - name: 06_preconfigured_project
+    description: Test scenario with a fully pre-configured project using setup_commands
+
+    notes: |
+      Demonstrates the setup_commands feature which runs bash commands before
+      the scenario starts. This is useful for:
+      - Creating a complete project structure
+      - Pre-populating databases
+      - Fetching content ahead of time
+      - Setting up complex test environments
+
+      This scenario creates a project with sources and rules already in place,
+      then asks the agent to verify the setup and create an outline.
+
+    # Commands run BEFORE the agent receives the initial prompt
+    setup_commands:
+      - mkdir -p projects/demo-blog/sources projects/demo-blog/drafts
+      - echo "# Demo Blog\n\nGoal: Create technical blog posts about AI tools" > projects/demo-blog/project.md
+      - mkdir -p rules/publisher rules/style
+      - echo "# Publisher Profile\n\n## Core Identity\nWe are a technical publisher focused on AI tooling." > rules/publisher/publisher-profile.md
+      - echo "# Primary Voice & Style Guide\n\n## Voice Characteristics\n- Clear and concise\n- Technical but approachable" > rules/style/primary.md
+      - echo "Test source content" > projects/demo-blog/sources/test-article.md
+
+    initial_prompt: |
+      You're working on the "demo-blog" project. Check the project status and verify:
+      1. The project.md file exists and has a clear goal
+      2. Publisher profile rules are available
+      3. Primary style rules are available
+      4. Source content exists
+
+      Then summarize what you found and what content could be created based on the available sources.
+
+    assertions:
+      # Verify basic structure
+      - type: FileExists
+        path: projects/demo-blog/project.md
+
+      - type: FileExists
+        path: projects/demo-blog/sources
+
+      - type: FileExists
+        path: projects/demo-blog/drafts
+
+      # Verify rules were created
+      - type: FileExists
+        path: rules/publisher/publisher-profile.md
+
+      - type: FileExists
+        path: rules/style/primary.md
+
+      # Verify source content
+      - type: FileExists
+        path: projects/demo-blog/sources/test-article.md
+
+      # Verify agent used Read tool to check the files
+      - type: ToolWasUsed
+        tool_name: Read
+
+      # Verify conversation completed
+      - type: MetricEquals
+        metric_path: conversation.completed
+        expected_value: true

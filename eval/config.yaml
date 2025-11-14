@@ -1,0 +1,160 @@
+# Kurt Evaluation Framework Configuration
+#
+# This file defines default settings for running evaluation scenarios.
+# These settings can be overridden via CLI flags.
+
+# Safety Guardrails
+# -----------------
+# These limits prevent runaway scenarios from consuming excessive resources
+
+guardrails:
+  # Maximum number of tool calls allowed per scenario
+  max_tool_calls: 50
+
+  # Maximum execution time in seconds per scenario
+  max_duration_seconds: 500
+
+  # Maximum tokens to use per scenario (input + output)
+  max_tokens: 100000
+
+  # Maximum conversation turns for multi-turn scenarios
+  max_conversation_turns: 20
+
+
+# Workspace Management
+# --------------------
+# Controls how temporary workspaces are handled
+
+workspace:
+  # Preserve workspace on scenario failure (for debugging)
+  preserve_on_error: true
+
+  # Preserve workspace on successful completion
+  preserve_on_success: false
+
+  # Initialize Kurt database in all workspaces
+  init_kurt: true
+
+  # Install Claude plugin (.claude/ folder) in workspaces
+  install_claude_plugin: true
+
+  # Path to source .claude/ directory to copy from
+  # Can be absolute or relative to kurt-core project root
+  # Defaults to kurt-core/.claude if not specified
+  claude_plugin_path: src/kurt/claude_plugin
+
+  # Check that Claude plugin has commands/skills after installation
+  # Set to false to skip validation (useful for minimal test setups)
+  check_claude_tools: false 
+
+
+# User Agent Configuration
+# ------------------------
+# Controls how the simulated user responds during multi-turn conversations
+
+user_agent:
+  # LLM provider for intelligent user responses: "openai" or "anthropic"
+  # - openai: uses gpt-4o-mini (fast, cheap)
+  # - anthropic: uses claude-3-5-haiku (fast, accurate)
+  llm_provider: openai
+
+
+# Conversation Completion Detection
+# ----------------------------------
+# Two-tier system for detecting when conversations should end
+
+conversation_detection:
+  # Enable LLM fallback for uncertain cases (recommended: true)
+  # When heuristics can't confidently determine if agent is asking a question,
+  # use LLM to intelligently analyze the conversation flow
+  use_llm_fallback: true
+
+  # LLM provider for completion detection (inherits from user_agent if not set)
+  # Uses same model as user agent by default
+  # llm_provider: openai
+
+
+# SDK Configuration
+# -----------------
+# Claude Agent SDK settings
+
+sdk:
+  # Allowed tools for the agent
+  allowed_tools:
+    - Bash
+    - Read
+    - Write
+    - Edit
+    - Glob
+    - Grep
+    - Skill
+    - SlashCommand
+
+  # Permission mode: "bypassPermissions" or "promptUser"
+  permission_mode: bypassPermissions
+
+  # Where to load skills/commands from
+  setting_sources:
+    - user
+    - project
+
+
+# Output & Logging
+# ----------------
+# Controls verbosity and output format
+
+output:
+  # Print detailed agent responses and tool calls
+  verbose: true
+
+  # Results directory (relative to eval/)
+  results_dir: results
+
+
+# Scenario Discovery
+# ------------------
+# Where to find scenario definitions
+
+scenarios:
+  # Primary scenarios file (multi-scenario YAML)
+  scenarios_file: scenarios/scenarios.yaml
+
+  # Directory containing individual scenario files (.py, .yaml)
+  scenarios_dir: scenarios
+
+  # Support both .yaml and .yml extensions
+  yaml_extensions:
+    - .yaml
+    - .yml
+
+
+
+
+# API Keys
+# --------
+# API keys are loaded from environment variables or .env files
+# DO NOT put actual keys in this config file!
+
+api_keys:
+  # ANTHROPIC_API_KEY - required for Claude agent
+  # Check locations (in order):
+  #   1. ANTHROPIC_API_KEY environment variable
+  #   2. eval/.env
+
+  # OPENAI_API_KEY - required if using openai for user agent
+  # ANTHROPIC_API_KEY - required if using anthropic for user agent
+
+  # Both are checked in eval/.env
+
+
+
+
+# Metadata
+# --------
+
+metadata:
+  # Framework version
+  version: "0.1.0"
+
+  # Last updated
+  updated: "2025-11-03"

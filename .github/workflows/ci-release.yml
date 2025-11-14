@@ -1,0 +1,90 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'release' }}
+
+jobs:
+  # Run tests and linting
+  test:
+    name: Test & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Run linting
+        run: uv run ruff check .
+
+      - name: Run tests
+        run: uv run pytest -v --cov=src/kurt --cov-report=term-missing
+
+  # Release to PyPI (only on GitHub release)
+  release-pypi:
+    name: Release to PyPI
+    if: github.event_name == 'release'
+    needs: test
+    runs-on: ubuntu-latest
+    environment:
+      name: release
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Build package
+        run: uv build
+
+      - name: Test wheel installation in clean environment
+        run: |
+          python -m venv test_env
+          test_env/bin/pip install dist/*.whl
+          test_env/bin/python -c "import kurt; print('✓ Successfully imported kurt')"
+          test_env/bin/kurt --help
+
+      - name: Run tests with installed package
+        run: uv run pytest -v
+
+      - name: Publish to PyPI
+        run: uv publish --trusted-publishing always
+
+      - name: Cleanup temporary artifacts
+        if: always()
+        run: |
+          rm -rf test_env dist

@@ -1,0 +1,29 @@
+{
+  "types": [
+    {
+      "name": "article",
+      "title": "Article",
+      "type": "document",
+      "fields": [
+        {"name": "title", "type": "string", "title": "Title"},
+        {"name": "slug", "type": "slug", "title": "Slug"},
+        {"name": "author", "type": "reference", "to": [{"type": "author"}]},
+        {"name": "publishedAt", "type": "datetime", "title": "Published at"},
+        {"name": "body", "type": "array", "of": [{"type": "block"}]},
+        {"name": "excerpt", "type": "text", "title": "Excerpt"},
+        {"name": "tags", "type": "array", "of": [{"type": "string"}]},
+        {"name": "featured", "type": "boolean", "title": "Featured"}
+      ]
+    },
+    {
+      "name": "author",
+      "title": "Author",
+      "type": "document",
+      "fields": [
+        {"name": "name", "type": "string", "title": "Name"},
+        {"name": "bio", "type": "text", "title": "Bio"},
+        {"name": "avatar", "type": "image", "title": "Avatar"}
+      ]
+    }
+  ]
+}

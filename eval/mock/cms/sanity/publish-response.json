@@ -1,0 +1,18 @@
+{
+  "transactionId": "tx-publish-789",
+  "results": [
+    {
+      "id": "article-1",
+      "operation": "create",
+      "document": {
+        "_id": "article-1",
+        "_type": "article",
+        "_rev": "v1-abc123",
+        "title": "New Article Published",
+        "_createdAt": "2024-11-01T10:00:00Z"
+      }
+    }
+  ],
+  "documentIds": ["article-1"],
+  "transactionTime": "2024-11-01T10:00:00.123Z"
+}

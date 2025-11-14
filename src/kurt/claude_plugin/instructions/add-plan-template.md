@@ -1,0 +1,117 @@
+# ADD-PLAN-TEMPLATE.md
+
+## When to use this instruction
+To modify the base project plan template, modify an existing saved project template, or create a new saved project template.
+
+## Steps to execute
+
+1. Determine the modification type:
+
+   **Modifying base plan template?** → Follow "Modify base plan" below
+   **Modifying existing saved template?** → Follow "Modify saved template" below
+   **Creating new saved template?** → Follow "Create saved template" below
+
+### Modify base plan
+
+Use this when the change applies to ALL projects (e.g., adding a new section that every project needs).
+
+1. Ask: "Does this change apply to all projects, or just specific types of projects?"
+   - If all projects → Continue with this workflow
+   - If specific types → Skip to "Create saved template" or "Modify saved template"
+
+2. Load `kurt/templates/plan-template.md` (the <base_plan_template>)
+
+3. Make requested modifications to the <base_plan_template>
+
+4. Explain what changed and confirm with user
+
+### Modify saved template
+
+Use this when updating an existing saved project template in `kurt/templates/projects/`.
+
+1. List available saved templates: `ls kurt/templates/projects/`
+
+2. Ask user which template to modify (or identify from their request)
+
+3. Load the <saved_plan_template> file
+
+4. Make requested modifications to:
+   - Setup instructions (HTML comment at top)
+   - Pre-filled plan structure
+   - Placeholders
+
+5. Confirm changes with user
+
+### Create saved template
+
+Use this when creating a new reusable project template. Can start from an existing project or from scratch.
+
+**From existing project:**
+
+1. Ask: "Do you have an existing project plan you'd like to turn into a template?"
+   - If yes → Continue with "From existing project" workflow
+   - If no → Skip to "From scratch" workflow
+
+2. Load the user's existing `plan.md` from their project folder
+
+3. Work with user to create setup instructions:
+   - What questions should Claude ask when cloning this template?
+   - What `kurt` commands should be run during setup?
+   - What information needs to be gathered?
+
+4. Convert the plan to template format:
+   - Add setup instructions as HTML comment at top
+   - Replace specific values with `{{PLACEHOLDERS}}`
+   - Identify what gets populated during setup vs. execution
+
+5. Ask user for template name (descriptive, kebab-case, e.g., `tutorial-refresh.md`)
+
+6. Write to `kurt/templates/projects/{{TEMPLATE_NAME}}.md`
+
+7. Confirm template created and explain how to use it
+
+**From scratch:**
+
+1. Ask user to describe the project type and its purpose
+
+2. Ask about the typical workflow:
+   - What setup is required?
+   - What questions need answering upfront?
+   - What `kurt` commands are typically run?
+   - What documents are typically produced?
+   - What sources are typically needed?
+
+3. Draft setup instructions based on workflow:
+   - Questions to ask user
+   - Kurt commands to run
+   - How to populate the plan
+
+4. Draft pre-filled plan structure using <base_plan_template> as base:
+   - Customize sections for this project type
+   - Add `{{PLACEHOLDERS}}` for values populated during setup
+   - Include helpful examples in comments
+
+5. Review with user iteratively, adjusting as needed
+
+6. Ask user for template name (descriptive, kebab-case)
+
+7. Write to `kurt/templates/projects/{{TEMPLATE_NAME}}.md`
+
+8. Confirm template created and explain how to use it
+
+## Saved template structure
+
+A saved project template contains:
+
+1. **Setup instructions** (HTML comment at top):
+   - Questions to ask user
+   - Kurt commands to run
+   - How to populate the plan based on results
+
+2. **Pre-filled plan** (rest of file):
+   - Copy of `plan-template.md` structure
+   - Pre-populated sections specific to this project type
+   - `{{PLACEHOLDERS}}` for values filled during setup
+   - Helpful examples in comments
+
+See `kurt/templates/projects/tutorial-refresh.md` for reference example.

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>http://docs.acme-corp.com/getting-started</loc><priority>1.0</priority></url>
+  <url><loc>http://docs.acme-corp.com/api-reference</loc><priority>0.9</priority></url>
+  <url><loc>http://docs.acme-corp.com/guide-authentication</loc><priority>0.8</priority></url>
+  <url><loc>http://docs.acme-corp.com/guide-advanced</loc><priority>0.7</priority></url>
+  <url><loc>http://docs.acme-corp.com/troubleshooting</loc><priority>0.6</priority></url>
+  <url><loc>http://docs.acme-corp.com/changelog</loc><priority>0.5</priority></url>
+</urlset>

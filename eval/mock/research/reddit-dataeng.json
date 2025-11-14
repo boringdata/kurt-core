@@ -1,0 +1,51 @@
+{
+  "kind": "Listing",
+  "data": {
+    "after": "t3_abc123",
+    "dist": 25,
+    "children": [
+      {
+        "kind": "t3",
+        "data": {
+          "title": "What's the best way to orchestrate data pipelines in 2024?",
+          "author": "data_engineer_99",
+          "created_utc": 1730390400,
+          "score": 342,
+          "num_comments": 87,
+          "url": "https://www.reddit.com/r/dataengineering/comments/xyz/",
+          "selftext": "Our team is evaluating Airflow, Dagster, and Prefect. Looking for experiences with these tools at scale. We process ~10TB/day.",
+          "subreddit": "dataengineering",
+          "upvote_ratio": 0.95
+        }
+      },
+      {
+        "kind": "t3",
+        "data": {
+          "title": "Dagster vs Airflow - Real world comparison after using both",
+          "author": "pipeline_expert",
+          "created_utc": 1730304000,
+          "score": 428,
+          "num_comments": 123,
+          "url": "https://www.reddit.com/r/dataengineering/comments/abc/",
+          "selftext": "After migrating from Airflow to Dagster, here's what we learned. TLDR: Dagster's asset-based approach is game-changing for data quality.",
+          "subreddit": "dataengineering",
+          "upvote_ratio": 0.97
+        }
+      },
+      {
+        "kind": "t3",
+        "data": {
+          "title": "How to handle schema evolution in data lakes?",
+          "author": "lakehouse_builder",
+          "created_utc": 1730217600,
+          "score": 215,
+          "num_comments": 56,
+          "url": "https://www.reddit.com/r/dataengineering/comments/def/",
+          "selftext": "We're using Delta Lake on S3. Schema changes are causing pipeline failures. What's the best practice for backwards compatibility?",
+          "subreddit": "dataengineering",
+          "upvote_ratio": 0.92
+        }
+      }
+    ]
+  }
+}

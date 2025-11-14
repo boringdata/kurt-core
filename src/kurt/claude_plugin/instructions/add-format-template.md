@@ -1,0 +1,139 @@
+# ADD-FORMAT-TEMPLATE.md
+
+## When to use this instruction
+To create a new format template or customize an existing format template's style guidelines.
+
+## Steps to execute
+
+1. Determine the task:
+
+   **Customizing existing template's style?** → Follow "Customize style guidelines" below
+   **Creating new format template?** → Follow "Create new format" below
+
+### Customize style guidelines
+
+Use this when a format template exists but needs its style customized for the user's company (fills in "[CUSTOMIZATION NEEDED]" section).
+
+1. Ask: "Which format template do you want to customize?"
+   - Or identify from user's request (e.g., "blog post", "tutorial")
+
+2. List available templates: `ls kurt/templates/formats/`
+
+3. Load the format template file
+
+4. Check if "[CUSTOMIZATION NEEDED]" section exists
+   - If already customized → Ask if they want to update it
+   - If needs customization → Continue with workflow
+
+5. Find example content for style analysis:
+   ```bash
+   # Search based on format type (adjust for format)
+   kurt content list --url-prefix "https://domain.com/blog/"     # For blog posts
+   kurt content list --url-prefix "https://domain.com/docs/"     # For tutorials
+   ```
+
+6. Offer user 3-5 examples to analyze:
+   - Show URLs/titles found
+   - Ask: "Use these for style analysis, or provide different URLs?"
+
+7. If user provides URLs:
+   ```bash
+   kurt content fetch <url1> <url2> <url3>
+   ```
+
+8. If user pastes text:
+   - Save to `projects/<project>/style-examples/<filename>.md`
+
+9. Analyze examples following the template's "Customizing This Template" section:
+   - Read each example
+   - Note style patterns (tone, structure, voice, formatting)
+   - Copy actual examples that show their style
+   - Create contrasting "don't" examples
+   - Identify DO/DON'T patterns
+
+10. Update the Style Guidelines section in the format template:
+    - Replace "[CUSTOMIZATION NEEDED]" with analyzed patterns
+    - Include actual examples from their content
+    - Add DO/DON'T pairs with reasoning
+
+11. Confirm updates with user
+
+### Create new format
+
+Use this when user needs a format template that doesn't exist yet.
+
+1. Ask user to describe the format:
+   - What type of content? (email, landing page, case study, etc.)
+   - What's the purpose?
+   - Typical length?
+   - Key success metrics?
+
+2. Ask if they have examples to analyze:
+   - "Do you have 3-5 examples of this format from your company or others?"
+   - If yes → Collect URLs or pasted content
+   - If no → Work from description only
+
+3. Draft format template structure (use existing templates as reference):
+
+   **Section 1: Overview**
+   - Purpose, length, success metrics
+
+   **Section 2: Style Guidelines**
+   - If have examples → Analyze and populate
+   - If no examples → Include "[CUSTOMIZATION NEEDED]" placeholder
+
+   **Section 3: Research Requirements** (if applicable)
+   - Types of research that strengthen this format
+   - Kurt commands to gather research
+
+   **Section 4: Source Requirements**
+   - What sources typically needed
+   - Kurt commands to find them
+
+   **Section 5: Structure**
+   - Template structure in markdown
+   - Include section descriptions
+
+   **Section 6: Workflow**
+   - How to go from outline to draft
+   - YAML frontmatter format
+   - Source tracking
+
+   **Section 7: Customizing This Template** (if has placeholder)
+   - Instructions for one-time style analysis setup
+   - What to look for
+   - How to populate style guidelines
+
+4. Review draft with user iteratively
+
+5. Ask for template filename (descriptive, kebab-case, e.g., `case-study.md`)
+
+6. Write to `kurt/templates/formats/{{TEMPLATE_NAME}}.md`
+
+7. If has "[CUSTOMIZATION NEEDED]" placeholder:
+   - Ask: "Want to customize the style now or later?"
+   - If now → Follow "Customize style guidelines" workflow above
+   - If later → Explain they can customize when first using it
+
+8. Confirm template created
+
+## Format template structure
+
+A format template contains:
+
+1. **Overview** - Purpose, length, success metrics
+
+2. **Style Guidelines** - Voice, tone, structure, DO/DON'T examples
+   - May include "[CUSTOMIZATION NEEDED]" placeholder if not yet customized
+
+3. **Research Requirements** (optional) - Types of research + kurt commands
+
+4. **Source Requirements** - What sources needed + kurt commands to find them
+
+5. **Structure** - Markdown template showing expected structure
+
+6. **Workflow** - How to create outline → draft, YAML frontmatter format
+
+7. **Customizing This Template** (if has placeholder) - Instructions for one-time style setup
+
+See `kurt/templates/formats/blog-post-thought-leadership.md` or `documentation-tutorial.md` for reference examples.
