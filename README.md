@@ -95,7 +95,7 @@ For developers or those who want to use Kurt without an AI editor:
 kurt init
 
 # Fetch content from a website
-kurt content map https://example.com          # Discover URLs
+kurt content map url https://example.com          # Discover URLs
 kurt content fetch --url-prefix https://example.com/  # Download content
 
 # List and search content
@@ -193,7 +193,7 @@ Fetch content from web sources to use as grounding material:
 
 ```bash
 # Map sitemap to discover URLs (fast, no downloads)
-kurt content map https://docs.example.com
+kurt content map url https://docs.example.com
 
 # Fetch specific content
 kurt content fetch --url-prefix https://docs.example.com/guides/
@@ -292,7 +292,7 @@ kurt init --ide claude --db-path data/my-project.db
 
 ```bash
 # 1. Discover URLs from sitemap (fast, creates NOT_FETCHED records)
-kurt content map https://example.com
+kurt content map url https://example.com
 
 # 2. Review discovered URLs
 kurt content list --status NOT_FETCHED
