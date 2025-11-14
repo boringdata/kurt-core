@@ -12,8 +12,8 @@ Kurt helps B2B marketers and content teams create accurate, grounded content usi
 - [Quick Start](#quick-start)
 - [Key Features](#key-features)
   - [Content Templates](#-content-templates)
-  - [Content Discovery & Gap Analysis](#-content-discovery--gap-analysis)
   - [Content Ingestion](#-content-ingestion)
+  - [Content Discovery & Gap Analysis](#-content-discovery--gap-analysis)
   - [Research Integration](#-research-integration)
   - [Publishing](#-publishing)
 - [How It Works](#how-it-works)
@@ -59,8 +59,7 @@ Before getting started, you'll need:
 
 ## Quick Start
 
-<details open>
-<summary><strong>Option A: Use with Claude Code (Recommended)</strong></summary>
+### Install Kurt
 
 1. **Install Kurt CLI:**
    ```bash
@@ -71,17 +70,22 @@ Before getting started, you'll need:
    pip install kurt-core
    ```
 
-2. **Initialize a Kurt project for Claude Code:**
+2. **Initialize your project:**
    ```bash
    cd your-project-directory
-   kurt init --ide claude
+   kurt init  # Installs both Claude Code and Cursor support by default
    ```
 
    This creates:
    - `.kurt/` directory with SQLite database
-   - `.claude/` directory with Kurt's instructions (CLAUDE.md, instructions/, commands/)
-   - `kurt/` directory with all 22 content templates
+   - `.claude/` directory with Claude Code instructions
+   - `.cursor/` directory with Cursor rules
+   - `kurt/` directory with all 22 content templates (shared by both IDEs)
    - `.env.example` with API key placeholders
+
+   **Note:** You can also install for a specific IDE only:
+   - `kurt init --ide claude` - Claude Code only
+   - `kurt init --ide cursor` - Cursor only
 
 3. **Configure API keys:**
    ```bash
@@ -95,55 +99,27 @@ Before getting started, you'll need:
    **Optional:**
    - `FIRECRAWL_API_KEY` - For web scraping with JavaScript support (falls back to Trafilatura)
 
+### Use with Your IDE
+
 4. **Start creating content:**
+
+   **With Claude Code:**
    - Open your project in [Claude Code](https://code.claude.com)
    - Claude automatically loads Kurt's instructions from `.claude/`
    - Ask Claude: *"Create a blog post project about [topic]"*
    - Claude will guide you through template selection, source gathering, and writing
    - See `.claude/CLAUDE.md` for full workflow details
 
-</details>
-
-<details>
-<summary><strong>Option B: Use with Cursor</strong></summary>
-
-1. **Install Kurt CLI** (same as above)
-
-2. **Initialize a Kurt project for Cursor:**
-   ```bash
-   cd your-project-directory
-   kurt init --ide cursor
-   ```
-
-   This creates:
-   - `.kurt/` directory with SQLite database
-   - `.cursor/` directory with Kurt's rules (rules/*.mdc)
-   - `kurt/` directory with all 22 content templates
-   - `.env.example` with API key placeholders
-
-3. **Configure API keys:**
-   ```bash
-   cp .env.example .env
-   # Edit .env and add your API keys
-   ```
-
-   **Required:**
-   - `OPENAI_API_KEY` - For content indexing and metadata extraction
-
-   **Optional:**
-   - `FIRECRAWL_API_KEY` - For web scraping with JavaScript support (falls back to Trafilatura)
-
-4. **Start creating content:**
+   **With Cursor:**
    - Open your project in [Cursor](https://cursor.com)
    - Cursor automatically loads Kurt's rules from `.cursor/rules/`
    - Mention `@add-profile` to create your content profile
    - Mention `@add-project` to start a new writing project
    - See `.cursor/rules/kurt-main.mdc` for full workflow details
 
-</details>
+   **Switch between IDEs anytime** - both share the same database and templates!
 
-<details>
-<summary><strong>Option C: Use Kurt CLI Standalone</strong></summary>
+### Use Kurt CLI Standalone
 
 For developers or those who want to use Kurt without an AI editor:
 
@@ -216,33 +192,6 @@ All templates are customizable and include:
 
 See templates in [`src/kurt/claude_plugin/kurt/templates/`](src/kurt/claude_plugin/kurt/templates/)
 
-### 🔍 Content Discovery & Gap Analysis
-
-Kurt indexes your content to help you find gaps and plan new content:
-
-```bash
-# See all topics covered in your content
-kurt content list-topics
-
-# See all technologies documented
-kurt content list-technologies
-
-# Find all docs about a specific topic
-kurt content list --with-topic "authentication"
-
-# Search for content
-kurt content search "API integration"
-
-# Filter by content type
-kurt content list --with-content-type tutorial
-```
-
-This powers **gap analysis** workflows where you can:
-- Compare your content vs competitors' coverage
-- Identify topics with low documentation
-- Find technologies that need more examples
-- Plan tutorial topics based on what's missing
-
 ### 🌐 Content Ingestion
 
 Fetch content from web sources to use as grounding material:
@@ -286,6 +235,34 @@ kurt content fetch --all
 ```
 
 Content is stored as markdown in `sources/{domain}/{path}/` with metadata in SQLite.
+
+
+### 🔍 Content Discovery & Gap Analysis
+
+Kurt indexes your content to help you find gaps and plan new content:
+
+```bash
+# See all topics covered in your content
+kurt content list-topics
+
+# See all technologies documented
+kurt content list-technologies
+
+# Find all docs about a specific topic
+kurt content list --with-topic "authentication"
+
+# Search for content
+kurt content search "API integration"
+
+# Filter by content type
+kurt content list --with-content-type tutorial
+```
+
+This powers **gap analysis** workflows where you can:
+- Compare your content vs competitors' coverage
+- Identify topics with low documentation
+- Find technologies that need more examples
+- Plan tutorial topics based on what's missing
 
 ### 🔬 Research Integration
 
@@ -344,20 +321,24 @@ All work is organized in `/projects/{project-name}/` directories with a `plan.md
 ### Project Setup
 
 ```bash
-# Initialize new Kurt project for Claude Code (default)
-kurt init --ide claude
+# Initialize new Kurt project (installs both Claude Code and Cursor support by default)
+kurt init
 
-# Initialize for Cursor
-kurt init --ide cursor
+# Or install for a specific IDE only
+kurt init --ide claude   # Claude Code only
+kurt init --ide cursor   # Cursor only
 
 # Initialize with custom database path
-kurt init --ide claude --db-path data/my-project.db
+kurt init --db-path data/my-project.db
 
-# What gets created:
+# What gets created by default:
 # - .kurt/ directory with SQLite database
-# - .claude/ or .cursor/ directory with IDE-specific instructions
-# - kurt/ directory with 22 content templates
+# - .claude/ directory with Claude Code instructions
+# - .cursor/ directory with Cursor rules
+# - kurt/ directory with 22 content templates (shared by both)
 # - .env.example with API key placeholders
+#
+# Both IDEs share the same database and templates!
 ```
 
 ### Content Ingestion

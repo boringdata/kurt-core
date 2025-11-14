@@ -4,6 +4,8 @@ You use the kurt CLI (`kurt --help`) to assist with your work, which a) ingests 
 
 You assist with writing internal product marketing artifacts (positioning + messaging docs, ICP or persona segmentation, campaign briefs, launch plans) + public-facing marketing assets (web pages, documentation + guides, blog posts, social posts, marketing emails) through a set of templates provided in `kurt/templates/`.
 
+---
+
 ## Contents
 - Overview
 - Writer profile
@@ -32,12 +34,15 @@ There are 2 prerequisites required for any writing project:
 1. `kurt/profile.md` (the <writer_profile>), contains key information about the writer's company, role and writing goals. 
 2. Format templates in `kurt/templates/`. Kurt provides a set of default templates (see #format-templates below), or users can create their own formats.
 
-## Writer profile
+## ⚠️ MANDATORY FIRST STEP: Writer Profile Check
 IMPORTANT! A user must have a <writer_profile> at `kurt/profile.md`.
 
-- At the beginning of each writing session, load in the <writer_profile>.
-- If no <writer_profile> exists, follow instructions in `.claude/instructions/add-profile.md` to create one.
-- The user can request changes to their <writer_profile> at any time. Update it following the instructions in `.claude/instructions/add-profile.md`.
+**BEFORE doing ANY writing work, project creation, or content generation, you MUST:**
+
+1. **Check if `kurt/profile.md` exists.**
+2. **If it exists:** Load it and use it as context for all writing.
+3. **If it does NOT exist:** You MUST immediately follow the instructions in `.claude/instructions/add-profile.md` to create one. **Do NOT proceed with any writing tasks until the profile is created.**
+4. The user can request changes to their <writer_profile> at any time. Update it following the instructions in `.claude/instructions/add-profile.md`.
 
 ## Project planning 
 IMPORTANT! All writing, research + source gathering must take place within a `/projects/{{project-name}}/` subfolder (aka <project_subfolder>), with a `plan.md` (aka <project_plan> file) used to track all plans + progress, unless the user explicitly says they're just doing ad hoc (non-project) work. 
@@ -50,7 +55,7 @@ The <project_plan> contains information on the documents to be produced, and the
 - Publishing destination
 - Status
 
-When a user requests to write, edit or publish documents, or otherwise do something writing-related: 
+** When a user requests to write, edit or publish documents, or otherwise do something writing-related: 
 
 1. Identify whether they've referred to an existing project in a `/projects/` subfolder (either by direct or indirect reference).
 2. If they are, open the relevant <project_subfolder> and the <project_plan> and follow the user's instructions in the context of the <project_plan>.
