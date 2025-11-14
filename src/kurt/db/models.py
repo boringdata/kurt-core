@@ -136,6 +136,24 @@ class DocumentClusterEdge(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class DocumentLink(SQLModel, table=True):
+    """Links between documents (internal references).
+
+    Stores simple link relationships extracted from markdown.
+    Claude interprets anchor_text to understand relationship types
+    (prerequisites, related content, examples, etc).
+    """
+
+    __tablename__ = "document_links"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    source_document_id: UUID = Field(foreign_key="documents.id", index=True)
+    target_document_id: UUID = Field(foreign_key="documents.id", index=True)
+    anchor_text: Optional[str] = Field(default=None, max_length=500)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class Entity(SQLModel, table=True):
     """Entity extracted from documents (knowledge graph nodes)."""
 

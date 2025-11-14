@@ -379,6 +379,16 @@ def fetch_document(identifier: str | UUID, fetch_engine: str = None) -> dict:
         doc.content_path = str(content_path.relative_to(source_base))
         doc.ingestion_status = IngestionStatus.FETCHED
 
+        # Extract and save document links (internal references)
+        if doc.source_url:
+            try:
+                links = extract_document_links(content, doc.source_url)
+                links_saved = save_document_links(doc.id, links)
+                logger.debug(f"Extracted {len(links)} links, saved {links_saved} to database")
+            except Exception as e:
+                logger.warning(f"Could not extract document links: {e}")
+                # Continue without links - they're optional
+
         session.commit()
 
         return {
@@ -795,3 +805,129 @@ def fetch_content(
         "estimated_cost": estimated_cost,
         "excluded_fetched_count": excluded_fetched_count,
     }
+
+
+# ============================================================================
+# Document Link Extraction
+# ============================================================================
+
+
+def extract_document_links(content: str, source_url: str) -> list[dict]:
+    """
+    Extract internal document links from markdown content.
+
+    Uses regex to find markdown links [text](url) and resolves relative URLs.
+    Only returns internal links (same domain). Claude interprets anchor_text
+    to understand relationship types (prerequisites, related, examples).
+
+    Args:
+        content: Markdown content to extract links from
+        source_url: Source URL of the document (for resolving relative links)
+
+    Returns:
+        List of dicts with:
+            - url: Resolved absolute URL
+            - anchor_text: Link text (max 500 chars)
+
+    Example:
+        >>> content = "See [Getting Started](./getting-started) for details."
+        >>> extract_document_links(content, "https://example.com/docs/intro")
+        [{'url': 'https://example.com/docs/getting-started', 'anchor_text': 'Getting Started'}]
+    """
+    import re
+    from urllib.parse import urljoin, urlparse
+
+    # Regex for markdown links: [text](url)
+    # Matches: [anchor text](url) or [anchor text](url "title")
+    link_pattern = re.compile(r"\[([^\]]+)\]\(([^\)]+?)(?:\s+['\"]([^'\"]+)['\"])?\)")
+
+    links = []
+    parsed_source = urlparse(source_url)
+
+    for match in link_pattern.finditer(content):
+        anchor_text = match.group(1).strip()
+        link_url = match.group(2).strip()
+
+        # Skip non-HTTP links (anchors, mailto, etc.)
+        if link_url.startswith("#") or link_url.startswith("mailto:"):
+            continue
+
+        # Resolve relative URLs
+        if not link_url.startswith(("http://", "https://")):
+            # Relative URL - resolve against source URL
+            absolute_url = urljoin(source_url, link_url)
+        else:
+            absolute_url = link_url
+
+        # Only include links from the same domain (internal links)
+        parsed_link = urlparse(absolute_url)
+        if parsed_link.netloc != parsed_source.netloc:
+            continue
+
+        links.append(
+            {
+                "url": absolute_url,
+                "anchor_text": anchor_text[:500],  # Truncate to max length
+            }
+        )
+
+    return links
+
+
+def save_document_links(doc_id: UUID, links: list[dict]) -> int:
+    """
+    Save document links to database.
+
+    Deletes existing links for this document (on refetch) and creates new ones.
+    Only creates links where the target document exists in the database.
+
+    Args:
+        doc_id: Source document UUID
+        links: List of link dicts from extract_document_links()
+
+    Returns:
+        Number of links saved
+
+    Example:
+        >>> links = extract_document_links(content, url)
+        >>> count = save_document_links(doc_id, links)
+        >>> # Returns: 3 (saved 3 links)
+    """
+    from sqlmodel import select
+
+    from kurt.db.models import DocumentLink
+
+    session = get_session()
+
+    # Delete existing links for this document (on refetch)
+    existing_links = session.exec(
+        select(DocumentLink).where(DocumentLink.source_document_id == doc_id)
+    ).all()
+    for link in existing_links:
+        session.delete(link)
+
+    # Find which target URLs exist in database
+    target_urls = [link["url"] for link in links]
+    if not target_urls:
+        session.commit()
+        return 0
+
+    # Query for documents matching these URLs
+    target_docs_stmt = select(Document).where(Document.source_url.in_(target_urls))
+    target_docs = {doc.source_url: doc.id for doc in session.exec(target_docs_stmt).all()}
+
+    # Create links for URLs that match documents in database
+    saved_count = 0
+    for link in links:
+        target_url = link["url"]
+        if target_url in target_docs:
+            document_link = DocumentLink(
+                source_document_id=doc_id,
+                target_document_id=target_docs[target_url],
+                anchor_text=link["anchor_text"],
+            )
+            session.add(document_link)
+            saved_count += 1
+
+    session.commit()
+    return saved_count

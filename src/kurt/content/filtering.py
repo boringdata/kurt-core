@@ -495,3 +495,92 @@ def list_technologies(
         {"technology": tech, "doc_count": count, "source": tech_sources.get(tech, "unknown")}
         for tech, count in filtered_techs
     ]
+
+
+def get_document_links(document_id: str, direction: str = "outbound") -> list[dict]:
+    """
+    Get links from or to a document.
+
+    Args:
+        document_id: Document ID (UUID string or partial UUID)
+        direction: Link direction - "outbound" (links FROM doc) or "inbound" (links TO doc)
+
+    Returns:
+        List of dictionaries with link information:
+            - source_id: UUID of source document
+            - source_title: Title of source document
+            - target_id: UUID of target document
+            - target_title: Title of target document
+            - anchor_text: Link anchor text (or None)
+
+    Raises:
+        ValueError: If document not found or direction is invalid
+
+    Example:
+        # Get outbound links (links FROM this document)
+        links = get_document_links("550e8400", direction="outbound")
+
+        # Get inbound links (links TO this document)
+        links = get_document_links("550e8400", direction="inbound")
+    """
+    from sqlmodel import select
+
+    from kurt.content.document import get_document
+    from kurt.db.database import get_session
+    from kurt.db.models import Document, DocumentLink
+
+    # Validate direction
+    if direction not in ("outbound", "inbound"):
+        raise ValueError(f"Invalid direction: {direction}. Must be 'outbound' or 'inbound'")
+
+    # Resolve document ID (supports partial UUIDs)
+    doc = get_document(document_id)
+    doc_uuid = doc.id
+
+    session = get_session()
+
+    # Query based on direction
+    if direction == "outbound":
+        # Links FROM this document
+        stmt = (
+            select(DocumentLink, Document)
+            .where(DocumentLink.source_document_id == doc_uuid)
+            .join(Document, DocumentLink.target_document_id == Document.id)
+        )
+    else:  # inbound
+        # Links TO this document
+        stmt = (
+            select(DocumentLink, Document)
+            .where(DocumentLink.target_document_id == doc_uuid)
+            .join(Document, DocumentLink.source_document_id == Document.id)
+        )
+
+    results = session.exec(stmt).all()
+
+    # Format results
+    links = []
+    for link, related_doc in results:
+        if direction == "outbound":
+            # related_doc is the target
+            links.append(
+                {
+                    "source_id": str(link.source_document_id),
+                    "source_title": doc.title,
+                    "target_id": str(link.target_document_id),
+                    "target_title": related_doc.title,
+                    "anchor_text": link.anchor_text,
+                }
+            )
+        else:  # inbound
+            # related_doc is the source
+            links.append(
+                {
+                    "source_id": str(link.source_document_id),
+                    "source_title": related_doc.title,
+                    "target_id": str(link.target_document_id),
+                    "target_title": doc.title,
+                    "anchor_text": link.anchor_text,
+                }
+            )
+
+    return links

@@ -348,3 +348,82 @@ def search_cmd(
         console.print(
             f"[dim]Showing first {max_results} results. Use --max-results to see more.[/dim]"
         )
+
+
+@click.command("links")
+@click.argument("identifier", type=str)
+@click.option(
+    "--direction",
+    type=click.Choice(["outbound", "inbound"], case_sensitive=False),
+    default="outbound",
+    help="Link direction: outbound (default) = links from doc, inbound = links to doc",
+)
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["table", "json"], case_sensitive=False),
+    default="table",
+    help="Output format",
+)
+def links_cmd(identifier: str, direction: str, output_format: str):
+    """
+    Show links from or to a document.
+
+    Claude interprets anchor text to understand relationship types
+    (prerequisites, related content, examples, references).
+
+    Examples:
+        kurt content links 550e8400                    # Show outbound links (default)
+        kurt content links 550e8400 --direction inbound  # Show inbound links
+        kurt content links 550e8400 --format json
+    """
+    from kurt.content.filtering import get_document_links
+
+    try:
+        links = get_document_links(identifier, direction=direction)
+
+        if output_format == "json":
+            print(json.dumps(links, indent=2))
+        else:
+            if not links:
+                console.print(f"\n[yellow]No {direction} links found[/yellow]")
+                return
+
+            console.print(f"\n[bold cyan]{direction.capitalize()} Links[/bold cyan]")
+            console.print(f"[dim]{'─' * 60}[/dim]\n")
+
+            table = Table(show_header=True, header_style="bold magenta")
+
+            if direction == "outbound":
+                table.add_column("Target Title", style="cyan")
+                table.add_column("Anchor Text", style="green")
+                table.add_column("Target ID", style="dim", width=12)
+            else:  # inbound
+                table.add_column("Source Title", style="cyan")
+                table.add_column("Anchor Text", style="green")
+                table.add_column("Source ID", style="dim", width=12)
+
+            for link in links:
+                if direction == "outbound":
+                    title = link["target_title"]
+                    doc_id = link["target_id"][:8] + "..."
+                else:  # inbound
+                    title = link["source_title"]
+                    doc_id = link["source_id"][:8] + "..."
+
+                anchor = link["anchor_text"] or "[no text]"
+                # Truncate long anchor text
+                if len(anchor) > 50:
+                    anchor = anchor[:47] + "..."
+
+                table.add_row(title[:60], anchor, doc_id)
+
+            console.print(table)
+            console.print(f"\n[dim]Total: {len(links)} links[/dim]")
+
+    except ValueError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise click.Abort()
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise click.Abort()

@@ -12,7 +12,7 @@ from .list_clusters import list_clusters_cmd
 from .list_technologies import list_technologies_cmd
 from .list_topics import list_topics_cmd
 from .map import map_cmd
-from .search import search_cmd
+from .search import links_cmd, search_cmd
 from .stats import stats_cmd
 from .sync_metadata import sync_metadata
 
@@ -27,6 +27,7 @@ def content():
     - fetch: Fetch and index content from URLs
     - map: Discover content without downloading
     - search: Search document content with ripgrep
+    - links: Show links from/to a document
     - cluster: Organize documents into topic clusters
     - list: View all documents with filters
     - list-topics: List all topics from metadata/graph
@@ -45,6 +46,7 @@ def content():
 content.add_command(fetch_cmd, name="fetch")
 content.add_command(map_cmd, name="map")
 content.add_command(search_cmd, name="search")
+content.add_command(links_cmd, name="links")
 content.add_command(cluster_urls_cmd, name="cluster")
 content.add_command(list_documents_cmd, name="list")
 content.add_command(list_topics_cmd, name="list-topics")
