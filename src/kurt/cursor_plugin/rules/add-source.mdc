@@ -1,0 +1,387 @@
+---
+description: User shares URL, CMS content, or pastes text → Ingest for use in writing projects.
+alwaysApply: false
+---
+
+# ADD-SOURCE.md
+
+## When to use this instruction
+User shares URL, CMS content, or pastes text → Ingest for use in writing projects.
+
+All operations return status + file paths created.
+
+## Source Type Detection & Routing
+
+Detect source type using these signals, then route to appropriate workflow:
+
+### 1. CMS Content
+**URL Patterns**: `*.sanity.studio/*`, `app.contentful.com/*`, `*/wp-admin/*`
+**Natural Language**: "from my CMS", "in Sanity", "our Contentful", "WordPress content"
+**Action**: → CMS Workflow
+
+### 2. Single Web Page
+**URL Patterns**: Specific page URL beyond homepage (e.g., `/blog/article-name`, `/docs/guide-name`)
+**Natural Language**: "this article", "this page", "this guide"
+**Action**: → Single Page Workflow
+
+### 3. Full Website/Domain
+**URL Patterns**: Homepage or subdomain root (ends with `/` or domain only)
+**Natural Language**: "their docs", "competitor site", "the website", "their blog"
+**Action**: → Full Site Workflow
+
+### 4. Pasted Content
+**Pattern**: Multi-line text blob (>100 chars, no URL)
+**Detection**: User pastes markdown, code, or text directly into chat
+**Action**: → Pasted Content Workflow
+
+---
+
+## CMS Workflow
+
+### Step 1: Check Configuration
+Run: `kurt integrations cms status`
+
+- **Not configured** → Offer: "I see you're using {platform}. Set it up now? Takes 2 minutes."
+  - If yes: `kurt integrations cms onboard --platform {platform}`
+  - If no: Stop here
+- **Configured** → Continue to Step 2
+
+### Step 2: Determine Scope & Execute
+
+**A. Single Document** (user provides specific CMS URL or document name)
+
+User shared specific document → fetch immediately:
+```bash
+# Search to find it
+kurt integrations cms search --platform {platform} --query "{doc_name_or_id}"
+
+# Map and fetch inline (priority 1 - immediate)
+kurt content map cms --platform {platform} --instance {instance}
+kurt content fetch --with-status NOT_FETCHED --priority 1
+```
+
+Result: "Fetched '{title}' from {platform}. Ready to use."
+
+**B. Search & Select** (user describes content, doesn't know exact doc)
+
+User describes what they need → search and let them pick:
+```bash
+# Search
+kurt integrations cms search --platform {platform} --query "{user_description}"
+
+# Show results to user, they select which ones
+# Then fetch selected (priority 1)
+kurt content fetch --url {selected_urls} --priority 1
+```
+
+**C. Bulk Import** (user wants "all articles", entire content type, or full CMS)
+
+User wants large import → map WITH clustering, fetch in background:
+```bash
+# Map + cluster in one command
+kurt content map cms --platform {platform} --instance {instance} \
+  --content-type {type} --cluster-urls
+
+# Then fetch relevant clusters in background
+kurt content fetch --in-cluster "{relevant_cluster}" --priority 5 --background
+```
+
+Tell user: "Mapped {count} {content_type} documents and created {cluster_count} topic clusters. Fetching {relevant_cluster} in background for your {project_goal}."
+
+**Why cluster CMS content?**
+- Groups articles by topic automatically
+- Enables fetching by theme instead of guessing URL patterns
+- Project-aware: Fetch "API Tutorials" cluster for tutorial project, skip "Blog Posts" cluster
+
+---
+
+## Single Page Workflow
+
+User shared specific page URL → fetch immediately (fast operation):
+
+```bash
+# Priority 1 - inline, immediate
+kurt content fetch --url {url} --priority 1
+```
+
+Result: Show summary immediately:
+- "Fetched: {title}"
+- "Type: {content_type}, {word_count} words"
+- If in project: "Added to project sources."
+
+**No verification needed** - synchronous operation, result is immediate.
+
+---
+
+## Full Site Workflow
+
+### Step 1: Quick Size Estimate
+
+Run dry-run to check size (fast, doesn't save):
+```bash
+kurt content map url {homepage_url} --dry-run
+```
+
+### Step 2: Smart Execution Based on Size
+
+**Small site (<50 pages)**:
+Map + fetch inline (fast enough to not block):
+```bash
+kurt content map url {homepage_url}
+kurt content fetch --with-status NOT_FETCHED --priority 1
+```
+Tell user: "Mapped and fetched 30 pages from {domain}."
+
+**Medium site (50-200 pages)**:
+Map inline, fetch selectively in background:
+```bash
+# Map first (quick)
+kurt content map url {homepage_url}
+
+# Detect sections, fetch relevant ones in background
+kurt content fetch --include "{relevant_sections}" --background --priority 5
+```
+Tell user: "Mapped {count} pages from {domain}. Fetching {relevant_sections} in background for your {project_goal}."
+
+**Large site (>200 pages)**:
+Map inline WITH clustering, fetch in background:
+```bash
+# Map + cluster in one command (LLM creates topic clusters automatically)
+kurt content map url {homepage_url} --cluster-urls
+
+# Then fetch relevant clusters in background
+kurt content fetch --in-cluster "{cluster_name}" --background --priority 10
+```
+Tell user: "Mapping {domain}... Found {count} pages and created {cluster_count} topic clusters. Fetching {relevant_cluster} in background for your {project_goal}. Let's continue."
+
+**Why cluster during map?**
+- Organizes content immediately for intelligent fetching
+- Clusters based on URL patterns, titles, descriptions (doesn't need FETCHED content)
+- Enables cluster-based source discovery later
+
+### Step 3: Project-Aware Section Selection
+
+**If in project context**, intelligently determine which sections to fetch:
+
+**Tutorial/Guide Project**:
+- Fetch: `/docs/*`, `/guides/*`, `/tutorials/*`, `/learn/*`
+- Skip: `/blog/*`, `/about/*`, `/pricing/*`, `/legal/*`
+
+**Product Page Project**:
+- Fetch: homepage, `/product/*`, `/features/*`, `/solutions/*`, `/integrations/*`
+- Skip: `/blog/*`, `/support/*`, `/docs/*`, `/careers/*`
+
+**Blog/Thought Leadership Project**:
+- Fetch: `/blog/*` (filter by keywords related to project topic)
+- Skip: `/docs/*`, `/product/*`, `/support/*`
+
+**Competitive Analysis Project**:
+- Fetch: homepage, 2-3 key product/feature pages (not entire site)
+- Skip: blog archives, full documentation
+
+**No Project Context**:
+Ask user: "Found {count} pages on {domain}. Which sections should I fetch now?"
+- Show detected sections: "`/docs/` (50 pages), `/blog/` (120 pages), `/api/` (30 pages)"
+- User picks sections, or "all", or "just map for now"
+
+### Step 4: Background Operation Updates
+
+For background operations, update user periodically (if >2 minutes):
+```
+[Update after 2 min]: Mapping stripe.com: 85/200 pages discovered...
+[Update after 5 min]: Fetching /docs/*: 25/50 pages complete...
+[Complete]: Finished! Indexed 200 pages from stripe.com.
+```
+
+User can continue conversation while this runs.
+
+---
+
+## Pasted Content Workflow
+
+User pasted text blob → save and index immediately:
+
+### Step 1: Detect Format
+- **Markdown with YAML frontmatter** → `.md`
+- **Plain markdown** (headings, lists, etc.) → `.md`
+- **Code** (detect language from syntax) → `.{language}`
+- **Plain text** → `.txt`
+
+### Step 2: Save to Project Sources
+
+Determine path:
+- **In project**: `/projects/{project-name}/sources/{descriptive-name}.{ext}`
+- **Not in project**: `/sources/{descriptive-name}.{ext}`
+
+Infer descriptive name from:
+- Frontmatter title (if present)
+- First heading (if markdown)
+- First line (if plain text, cleaned up)
+
+### Step 3: Index Immediately
+
+```bash
+# Priority 1 - inline
+kurt content fetch --file {filepath} --priority 1
+```
+
+### Step 4: Confirm
+
+"Saved as `{filepath}` and indexed. Ready to use for your {document_type}."
+
+---
+
+## Priority Assignment (Automatic)
+
+**IMPORTANT**: Never ask user about priority or background mode. Infer automatically from context:
+
+**Priority 1 (Immediate - Run Inline)**:
+- Single pages user explicitly shared
+- CMS docs user mentioned by name
+- Pasted content
+- Small sites (<50 pages)
+- Any source user is actively waiting for
+
+**Priority 5 (Background - Medium)**:
+- Medium sites (50-200 pages)
+- CMS bulk imports (specific content type)
+- Related research materials
+- Competitor site analysis
+
+**Priority 10 (Background - Low)**:
+- Fetching from large sites (>200 pages) after mapping
+- Fetching from full CMS imports (all content types) after mapping
+- Reference materials during profile setup
+- Exploratory/future research
+
+**IMPORTANT**: Mapping always runs inline (foreground) so we know what sections/content exists before deciding what to fetch.
+
+---
+
+## Result Handling
+
+### Inline Operations (Priority 1)
+Show immediate result in conversation:
+```
+✓ Fetched: "Getting Started with Stripe"
+  Type: Tutorial, 2,400 words
+  Added to project sources.
+```
+
+Continue conversation immediately - no "verification" step needed.
+
+### Background Operations (Priority 5+)
+Acknowledge start, don't block:
+```
+Mapping docs.stripe.com in background (est. 5 min)...
+[Continue conversation while it runs]
+```
+
+When complete (if user is still in session):
+```
+✓ Finished mapping docs.stripe.com - 180 pages indexed.
+  Fetched /docs/* and /guides/* for your API integration tutorial.
+```
+
+### Project Context Updates
+If in project, silently update plan with:
+- New sources added
+- Relevant page counts
+- Status: mapped, fetched, ready to use
+
+Show summary: "Project now has {count} sources ({relevant_count} directly relevant to {goal})."
+
+---
+
+## Content Indexing
+
+After fetching content, Kurt can extract metadata (topics, technologies, content type, structural features) to enable better discovery.
+
+### When to Index
+
+**Automatically indexed during fetch**: Most content is automatically indexed when fetched.
+
+**Manual indexing**: Run after bulk fetches or to re-index with updated extraction logic:
+
+```bash
+# Index all fetched content
+kurt content index --all
+
+# Index specific document
+kurt content index <doc-id>
+
+# Index by URL pattern
+kurt content index --include "*/docs/*"
+```
+
+### What Gets Extracted
+
+- **Content Type**: tutorial, guide, blog, reference, product_page, etc.
+- **Topics**: Primary topics covered (e.g., "authentication", "API design", "deployment")
+- **Technologies**: Tools/languages mentioned (e.g., "Python", "Docker", "PostgreSQL")
+- **Structure**: Code examples, step-by-step procedures, narrative structure
+
+### Using Indexed Metadata
+
+After indexing, filter content by extracted metadata:
+
+```bash
+# Find Python tutorials
+kurt content list --with-content-type tutorial --with-technology Python
+
+# Find docs about authentication
+kurt content list --with-topic authentication
+
+# View indexed metadata
+kurt content get <doc-id>
+```
+
+See @find-sources rule for complete discovery methods.
+
+---
+
+## Deep Source Analysis & Discovery
+
+After sources are fetched and indexed, use @find-sources rule for discovering and retrieving content (semantic search, cluster navigation, link analysis, filtered queries).
+
+This is typically used during project planning (see @add-project rule steps 5.5, 8, 9) or referenced by format templates.
+
+---
+
+## Examples
+
+**Example 1: User in Product Page Project**
+```
+User: "Check out stripe.com"
+
+Claude:
+- Detects: Full site
+- Runs: kurt content map url https://stripe.com --dry-run
+- Sees: 180 pages (medium size)
+- Context: Product page project
+- Action: Map inline → fetch /product/*, /features/* in background (priority 5)
+- Says: "Mapping stripe.com... Found 180 pages. Fetching product and feature pages in background for your product page. Let's continue with your draft..."
+```
+
+**Example 2: User Shares Specific Article**
+```
+User: "Use this article: https://example.com/blog/best-practices"
+
+Claude:
+- Detects: Single page
+- Action: kurt content fetch --url {url} --priority 1 (inline)
+- Says: "✓ Fetched: 'API Design Best Practices' (2,100 words). Added to sources."
+```
+
+**Example 3: CMS Bulk Import**
+```
+User: "Import all our Sanity articles"
+
+Claude:
+- Checks: kurt integrations cms status
+- Action: Map inline → fetch in background
+  - kurt content map cms --platform sanity --content-type article
+  - kurt content fetch --with-status NOT_FETCHED --background --priority 5
+- Says: "Mapped 150 articles from Sanity. Fetching relevant ones in background for your {project_goal}. What would you like to work on first?"
+```
+in
