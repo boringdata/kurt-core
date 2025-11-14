@@ -457,6 +457,8 @@ def list_content(
     min_pageviews: int = None,
     max_pageviews: int = None,
     trend: str = None,
+    with_topic: str = None,
+    with_technology: str = None,
 ) -> list[Document]:
     """
     List documents with new explicit naming (for CLI-SPEC.md compliance).
@@ -476,6 +478,8 @@ def list_content(
         min_pageviews: Minimum pageviews_30d filter
         max_pageviews: Maximum pageviews_30d filter
         trend: Filter by trend (increasing | decreasing | stable)
+        with_topic: Filter by topic (documents containing this topic in primary_topics)
+        with_technology: Filter by technology (documents containing this tech in tools_technologies)
 
     Returns:
         List of Document objects (with analytics dict attribute if with_analytics=True)
@@ -618,6 +622,70 @@ def list_content(
         from kurt.utils.url_utils import get_url_depth
 
         documents = [d for d in documents if get_url_depth(d.source_url) <= max_depth]
+
+    # Apply topic filtering (post-query - checks both metadata and knowledge graph)
+    if with_topic:
+        from kurt.db.models import DocumentEntity, Entity
+
+        # Get document IDs that have this topic in knowledge graph
+        topic_stmt = (
+            select(DocumentEntity.document_id)
+            .join(Entity, DocumentEntity.entity_id == Entity.id)
+            .where(Entity.entity_type == "Topic")
+            .where(
+                (Entity.name.ilike(f"%{with_topic}%"))
+                | (Entity.canonical_name.ilike(f"%{with_topic}%"))
+            )
+        )
+        graph_doc_ids = {str(row) for row in session.exec(topic_stmt).all()}
+
+        # Filter documents that have topic in metadata OR in knowledge graph
+        documents = [
+            d
+            for d in documents
+            if
+            (
+                # Check metadata primary_topics
+                (
+                    d.primary_topics
+                    and any(with_topic.lower() in t.lower() for t in d.primary_topics)
+                )
+                # Check knowledge graph
+                or str(d.id) in graph_doc_ids
+            )
+        ]
+
+    # Apply technology filtering (post-query - checks both metadata and knowledge graph)
+    if with_technology:
+        from kurt.db.models import DocumentEntity, Entity
+
+        # Get document IDs that have this technology in knowledge graph
+        tech_stmt = (
+            select(DocumentEntity.document_id)
+            .join(Entity, DocumentEntity.entity_id == Entity.id)
+            .where(Entity.entity_type.in_(["Technology", "Tool", "Product"]))
+            .where(
+                (Entity.name.ilike(f"%{with_technology}%"))
+                | (Entity.canonical_name.ilike(f"%{with_technology}%"))
+            )
+        )
+        graph_doc_ids = {str(row) for row in session.exec(tech_stmt).all()}
+
+        # Filter documents that have technology in metadata OR in knowledge graph
+        documents = [
+            d
+            for d in documents
+            if
+            (
+                # Check metadata tools_technologies
+                (
+                    d.tools_technologies
+                    and any(with_technology.lower() in t.lower() for t in d.tools_technologies)
+                )
+                # Check knowledge graph
+                or str(d.id) in graph_doc_ids
+            )
+        ]
 
     return documents
 

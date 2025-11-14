@@ -71,6 +71,16 @@ console = Console()
     type=click.Choice(["increasing", "decreasing", "stable"], case_sensitive=False),
     help="Filter by traffic trend (requires --with-analytics)",
 )
+@click.option(
+    "--with-topic",
+    type=str,
+    help="Filter by topic (matches documents with this topic in primary_topics)",
+)
+@click.option(
+    "--with-technology",
+    type=str,
+    help="Filter by technology (matches documents with this technology in tools_technologies)",
+)
 def list_documents_cmd(
     with_status: str,
     include_pattern: str,
@@ -85,6 +95,8 @@ def list_documents_cmd(
     min_pageviews: int,
     max_pageviews: int,
     trend: str,
+    with_topic: str,
+    with_technology: str,
 ):
     """
     List all your documents.
@@ -97,6 +109,9 @@ def list_documents_cmd(
         kurt content list --with-content-type tutorial
         kurt content list --max-depth 2
         kurt content list --limit 20 --format json
+        kurt content list --with-topic "Python"
+        kurt content list --with-technology "FastAPI"
+        kurt content list --with-topic "Machine Learning" --with-technology "TensorFlow"
 
         # With analytics
         kurt content list --with-analytics
@@ -129,6 +144,8 @@ def list_documents_cmd(
             min_pageviews=min_pageviews,
             max_pageviews=max_pageviews,
             trend=trend,
+            with_topic=with_topic,
+            with_technology=with_technology,
         )
 
         if not docs:

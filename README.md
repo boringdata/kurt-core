@@ -4,6 +4,26 @@
 
 Kurt helps B2B marketers and content teams create accurate, grounded content using AI. It works with [Claude Code](https://code.claude.com) or [Cursor](https://cursor.com) to produce blog posts, product pages, documentation, positioning docs, and more—all backed by your source material and guided by customizable templates.
 
+## Table of Contents
+
+- [What Kurt Does](#what-kurt-does)
+- [Who It's For](#who-its-for)
+- [Prerequisites](#prerequisites)
+- [Quick Start](#quick-start)
+- [Key Features](#key-features)
+  - [Content Templates](#-content-templates)
+  - [Content Discovery & Gap Analysis](#-content-discovery--gap-analysis)
+  - [Content Ingestion](#-content-ingestion)
+  - [Research Integration](#-research-integration)
+  - [Publishing](#-publishing)
+- [How It Works](#how-it-works)
+- [CLI Reference](#cli-reference)
+- [Documentation](#documentation)
+- [For Developers](#for-developers)
+- [Telemetry](#telemetry)
+- [License](#license)
+- [Support](#support)
+
 ## What Kurt Does
 
 - 📝 **Template-Driven Writing**: 22 built-in templates for common B2B content (blog posts, product pages, docs, positioning, campaign briefs, etc.)
@@ -39,7 +59,8 @@ Before getting started, you'll need:
 
 ## Quick Start
 
-### Option A: Use with Claude Code (Recommended)
+<details open>
+<summary><strong>Option A: Use with Claude Code (Recommended)</strong></summary>
 
 1. **Install Kurt CLI:**
    ```bash
@@ -81,7 +102,10 @@ Before getting started, you'll need:
    - Claude will guide you through template selection, source gathering, and writing
    - See `.claude/CLAUDE.md` for full workflow details
 
-### Option B: Use with Cursor
+</details>
+
+<details>
+<summary><strong>Option B: Use with Cursor</strong></summary>
 
 1. **Install Kurt CLI** (same as above)
 
@@ -116,7 +140,10 @@ Before getting started, you'll need:
    - Mention `@add-project` to start a new writing project
    - See `.cursor/rules/kurt-main.mdc` for full workflow details
 
-### Option C: Use Kurt CLI Standalone
+</details>
+
+<details>
+<summary><strong>Option C: Use Kurt CLI Standalone</strong></summary>
 
 For developers or those who want to use Kurt without an AI editor:
 
@@ -138,10 +165,11 @@ kurt content list-technologies
 
 # Research
 kurt integrations research search "market research question"
-kurt integrations research reddit "topic"
 ```
 
 See [CLI Reference](#cli-reference) below for full command documentation.
+
+</details>
 
 ---
 
@@ -215,27 +243,39 @@ This powers **gap analysis** workflows where you can:
 - Find technologies that need more examples
 - Plan tutorial topics based on what's missing
 
-See [INDEXING-AND-SEARCH.md](INDEXING-AND-SEARCH.md) for full indexing capabilities.
-
 ### 🌐 Content Ingestion
 
 Fetch content from web sources to use as grounding material:
 
-**Web Scraping Options:**
-- **Firecrawl** (optional) - Full browser rendering, handles JavaScript/dynamic content
-  - Requires `FIRECRAWL_API_KEY` in `.env`
-  - Best for modern SPAs and interactive sites
-  - Get API key: https://firecrawl.dev
-- **Trafilatura** (default) - Fast, lightweight HTML parsing
-  - No API key required (used automatically if no Firecrawl key)
-  - Works well for static HTML content
-  - Cannot render JavaScript
+**Configuration** (edit `kurt.config` in your project root):
 
 ```bash
-# Map sitemap to discover URLs (fast, no downloads)
+# Scraping engine - choose based on your content source
+# Options:
+#   - trafilatura (default): Fast, free, static HTML only
+#   - firecrawl: Handles JavaScript/SPAs (requires FIRECRAWL_API_KEY in .env)
+#   - httpx: Proxy-friendly alternative to trafilatura
+INGESTION_FETCH_ENGINE="trafilatura"
+
+# LLM models for content analysis (format: provider/model-name)
+# Alternatives: "anthropic/claude-3-haiku", "google/gemini-1.5-flash", "groq/llama-3.1-8b"
+INDEXING_LLM_MODEL="openai/gpt-4o-mini"              # For metadata extraction
+EMBEDDING_MODEL="openai/text-embedding-3-small"      # For embeddings
+```
+
+**API Keys** (add to `.env` file):
+```bash
+OPENAI_API_KEY=your_key_here           # Required for OpenAI models
+FIRECRAWL_API_KEY=your_key_here        # Optional, for Firecrawl scraping
+ANTHROPIC_API_KEY=your_key_here        # Optional, for Claude models
+GOOGLE_API_KEY=your_key_here           # Optional, for Gemini models
+```
+
+```bash
+# Map sitemap to discover URLs (fast, no downloads, no LLM calls)
 kurt content map url https://docs.example.com
 
-# Fetch specific content
+# Fetch specific content: get content + extract metadata with LLM calls
 kurt content fetch --url-prefix https://docs.example.com/guides/
 
 # Fetch by URL pattern
@@ -253,16 +293,10 @@ Built-in research capabilities for competitive intelligence and market research:
 
 ```bash
 # Query Perplexity for research
-kurt research query "B2B SaaS pricing trends 2024"
-
-# Search Reddit discussions
-kurt research search --source reddit --query "API documentation best practices"
-
-# Search HackerNews
-kurt research search --source hackernews --query "developer tools"
+kurt integrations research search "B2B SaaS pricing trends 2024"
 ```
 
-Requires API keys (configured in `kurt.config`). See [CLAUDE.md](src/kurt/claude_plugin/CLAUDE.md) for setup.
+Requires API keys (configured in `.env`). See [CLAUDE.md](src/kurt/claude_plugin/CLAUDE.md) for setup.
 
 ### 📤 Publishing
 
@@ -270,7 +304,7 @@ Publish directly to your CMS:
 
 ```bash
 # Configure Sanity CMS
-kurt integrations cms configure sanity
+kurt integrations cms onboard --platform sanity
 
 # Publish content
 kurt integrations cms publish --file content.md --content-type blog-post
@@ -375,9 +409,8 @@ kurt content list-topics --min-docs 5            # Only topics in 5+ docs
 kurt content list-topics --include "*/docs/*"    # Filter by path
 
 # Filter by metadata
-kurt content list --with-topic "authentication"
-kurt content list --with-technology "Python"
 kurt content list --with-content-type tutorial
+kurt content list --in-cluster "Tutorials"
 
 # Statistics
 kurt content stats
@@ -396,26 +429,26 @@ kurt content index --url-prefix https://example.com/
 kurt content index --force
 ```
 
-See [INDEXING-AND-SEARCH.md](INDEXING-AND-SEARCH.md) for details on indexed metadata.
-
 ### Research
 
 ```bash
-# Search using Perplexity or web search
+# Search using Perplexity
 kurt integrations research search "your research question"
 
-# Search Reddit
-kurt integrations research reddit "topic"
+# Monitor Reddit discussions
+kurt integrations research reddit -s dataengineering --timeframe day
+kurt integrations research reddit -s "datascience+machinelearning" --keywords "api,tools"
 
-# Search HackerNews
-kurt integrations research hackernews "topic"
+# Monitor HackerNews
+kurt integrations research hackernews --timeframe day
+kurt integrations research hackernews --keywords "API,developer tools" --min-score 50
 ```
 
 ### CMS Integration
 
 ```bash
 # Configure CMS
-kurt integrations cms configure sanity
+kurt integrations cms onboard --platform sanity
 
 # Publish content
 kurt integrations cms publish --file content.md --content-type blog-post
@@ -432,6 +465,68 @@ kurt integrations analytics sync your-domain.com
 
 # View content with analytics
 kurt content list --with-analytics
+```
+
+### Advanced Features
+
+**Content Clustering:**
+```bash
+# Organize documents into topic clusters
+kurt content cluster
+
+# List all clusters
+kurt content list-clusters
+```
+
+**Document Links:**
+```bash
+# Show links from/to a document
+kurt content links <document-id>
+```
+
+**Metadata Sync:**
+```bash
+# Update file frontmatter from database
+kurt content sync-metadata
+```
+
+**Delete Content:**
+```bash
+# Delete documents
+kurt content delete <document-id>
+kurt content delete --url-prefix https://example.com/
+```
+
+### Background Workflows
+
+```bash
+# List background workflows
+kurt workflows list
+
+# Check workflow status
+kurt workflows status <workflow-id>
+
+# Follow workflow progress
+kurt workflows follow <workflow-id>
+
+# Cancel a workflow
+kurt workflows cancel <workflow-id>
+```
+
+### Administrative Commands
+
+```bash
+# Check project status
+kurt status
+
+# Manage telemetry
+kurt admin telemetry status
+kurt admin telemetry disable
+kurt admin telemetry enable
+
+# Database migrations
+kurt admin migrate upgrade
+kurt admin migrate downgrade
 ```
 
 ---
