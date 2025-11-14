@@ -19,6 +19,24 @@ Kurt helps B2B marketers and content teams create accurate, grounded content usi
 - **Product Marketers** writing positioning docs, launch plans, and messaging frameworks
 - **Developer Advocates** creating technical content and integration guides
 
+## Prerequisites
+
+Before getting started, you'll need:
+
+### Required
+- **OpenAI API Key** - Used for:
+  - Content indexing and metadata extraction
+  - Topic/technology discovery
+  - Gap analysis features
+  - Get your API key from: https://platform.openai.com/api-keys
+
+### Optional
+- **Firecrawl API Key** - For advanced web scraping:
+  - Handles JavaScript and dynamic content
+  - Best for modern SPAs and interactive sites
+  - Get your API key from: https://firecrawl.dev
+  - **Alternative**: Kurt falls back to Trafilatura (free, fast, but no JS rendering)
+
 ## Quick Start
 
 ### Option A: Use with Claude Code (Recommended)
@@ -47,8 +65,14 @@ Kurt helps B2B marketers and content teams create accurate, grounded content usi
 3. **Configure API keys:**
    ```bash
    cp .env.example .env
-   # Add your OpenAI API key to .env
+   # Edit .env and add your API keys
    ```
+
+   **Required:**
+   - `OPENAI_API_KEY` - For content indexing and metadata extraction
+
+   **Optional:**
+   - `FIRECRAWL_API_KEY` - For web scraping with JavaScript support (falls back to Trafilatura)
 
 4. **Start creating content:**
    - Open your project in [Claude Code](https://code.claude.com)
@@ -76,8 +100,14 @@ Kurt helps B2B marketers and content teams create accurate, grounded content usi
 3. **Configure API keys:**
    ```bash
    cp .env.example .env
-   # Add your OpenAI API key to .env
+   # Edit .env and add your API keys
    ```
+
+   **Required:**
+   - `OPENAI_API_KEY` - For content indexing and metadata extraction
+
+   **Optional:**
+   - `FIRECRAWL_API_KEY` - For web scraping with JavaScript support (falls back to Trafilatura)
 
 4. **Start creating content:**
    - Open your project in [Cursor](https://cursor.com)
@@ -190,6 +220,16 @@ See [INDEXING-AND-SEARCH.md](INDEXING-AND-SEARCH.md) for full indexing capabilit
 ### 🌐 Content Ingestion
 
 Fetch content from web sources to use as grounding material:
+
+**Web Scraping Options:**
+- **Firecrawl** (optional) - Full browser rendering, handles JavaScript/dynamic content
+  - Requires `FIRECRAWL_API_KEY` in `.env`
+  - Best for modern SPAs and interactive sites
+  - Get API key: https://firecrawl.dev
+- **Trafilatura** (default) - Fast, lightweight HTML parsing
+  - No API key required (used automatically if no Firecrawl key)
+  - Works well for static HTML content
+  - Cannot render JavaScript
 
 ```bash
 # Map sitemap to discover URLs (fast, no downloads)
