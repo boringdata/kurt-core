@@ -4,19 +4,20 @@ This service handles business logic for analytics operations:
 - Testing platform connections
 - Registering domains for analytics tracking
 - Syncing analytics metrics from external platforms
-- Managing DocumentAnalytics records
+- Managing PageAnalytics records (URL-based, independent of documents)
 
 Business logic is separated from CLI commands for testability and reusability.
 """
 
 from datetime import datetime
-from typing import Dict, List
-from uuid import UUID, uuid4
+from typing import Dict
+from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
-from kurt.db.models import AnalyticsDomain, Document, DocumentAnalytics
+from kurt.db.models import AnalyticsDomain, PageAnalytics
 from kurt.integrations.analytics.adapters.base import AnalyticsAdapter, AnalyticsMetrics
+from kurt.integrations.analytics.utils import normalize_url_for_analytics
 
 
 class AnalyticsService:
@@ -66,11 +67,12 @@ class AnalyticsService:
             platform_config: Platform credentials
 
         Returns:
-            True if connection successful, False otherwise
+            True if connection successful
 
         Raises:
             ValueError: If platform is not supported
             ImportError: If platform adapter dependencies are missing
+            ConnectionError: If connection fails (with details about the failure)
         """
         adapter = AnalyticsService.get_adapter_for_platform(platform, platform_config)
         return adapter.test_connection()
@@ -114,69 +116,31 @@ class AnalyticsService:
             return analytics_domain
 
     @staticmethod
-    def get_documents_for_domain(session: Session, domain: str) -> List[Document]:
-        """
-        Get all documents for a domain.
-
-        Handles multiple URL variants:
-        - https://domain
-        - http://domain
-        - https://www.domain
-
-        Args:
-            session: Database session
-            domain: Domain name (e.g., "docs.company.com")
-
-        Returns:
-            List of Document instances
-        """
-        # Query for all URL variants
-        docs = []
-
-        # https://domain
-        docs.extend(
-            session.query(Document)
-            .filter(Document.source_url.startswith(f"https://{domain}"))
-            .all()
-        )
-
-        # http://domain
-        docs.extend(
-            session.query(Document).filter(Document.source_url.startswith(f"http://{domain}")).all()
-        )
-
-        # https://www.domain
-        docs.extend(
-            session.query(Document)
-            .filter(Document.source_url.startswith(f"https://www.{domain}"))
-            .all()
-        )
-
-        # Deduplicate by document ID
-        unique_docs = {doc.id: doc for doc in docs}
-        return list(unique_docs.values())
-
-    @staticmethod
-    def upsert_document_analytics(
+    def upsert_page_analytics(
         session: Session,
-        document_id: UUID,
+        url: str,
+        domain: str,
         metrics: AnalyticsMetrics,
-    ) -> DocumentAnalytics:
+    ) -> PageAnalytics:
         """
-        Create or update DocumentAnalytics record.
+        Create or update PageAnalytics record.
 
         Args:
             session: Database session
-            document_id: Document UUID
+            url: Page URL
+            domain: Domain name (for indexing)
             metrics: Analytics metrics from platform
 
         Returns:
-            Created or updated DocumentAnalytics instance
+            Created or updated PageAnalytics instance
         """
+        # Normalize URL for consistent storage
+        normalized_url = normalize_url_for_analytics(url)
+
         # Check if analytics record exists
         existing = (
-            session.query(DocumentAnalytics)
-            .filter(DocumentAnalytics.document_id == document_id)
+            session.query(PageAnalytics)
+            .filter(PageAnalytics.url == normalized_url)
             .first()
         )
 
@@ -199,9 +163,10 @@ class AnalyticsService:
             return existing
         else:
             # Create new record
-            new_analytics = DocumentAnalytics(
+            new_analytics = PageAnalytics(
                 id=uuid4(),
-                document_id=document_id,
+                url=normalized_url,
+                domain=domain,
                 pageviews_60d=metrics.pageviews_60d,
                 pageviews_30d=metrics.pageviews_30d,
                 pageviews_previous_30d=metrics.pageviews_previous_30d,
@@ -229,6 +194,9 @@ class AnalyticsService:
         """
         Sync analytics metrics for a domain.
 
+        Queries the analytics platform directly for all URLs in the domain,
+        independent of whether those URLs exist as documents in Kurt's database.
+
         Args:
             session: Database session
             domain_obj: AnalyticsDomain instance to sync
@@ -239,37 +207,40 @@ class AnalyticsService:
             Dictionary with sync results:
             {
                 "synced_count": int,
-                "total_documents": int,
+                "total_urls": int,
                 "total_pageviews": int,
             }
 
         Raises:
             Exception: If sync fails
         """
-        # Get all documents for domain
-        docs = AnalyticsService.get_documents_for_domain(session, domain_obj.domain)
+        # Get all URLs for this domain from the analytics platform
+        urls = adapter.get_domain_urls(domain_obj.domain, period_days=period_days)
 
-        if not docs:
+        if not urls:
+            # No URLs found in analytics platform
+            domain_obj.last_synced_at = datetime.utcnow()
+            domain_obj.has_data = False
+            session.add(domain_obj)
             return {
                 "synced_count": 0,
-                "total_documents": 0,
+                "total_urls": 0,
                 "total_pageviews": 0,
             }
 
-        # Fetch metrics from platform
-        urls = [doc.source_url for doc in docs if doc.source_url]
+        # Fetch metrics from platform for all URLs
         metrics_map = adapter.sync_metrics(urls, period_days=period_days)
 
-        # Update or create DocumentAnalytics records
+        # Update or create PageAnalytics records for each URL
         synced_count = 0
         total_pageviews = 0
 
-        for doc in docs:
-            if doc.source_url in metrics_map:
-                metrics = metrics_map[doc.source_url]
-                AnalyticsService.upsert_document_analytics(session, doc.id, metrics)
-                synced_count += 1
-                total_pageviews += metrics.pageviews_60d
+        for url, metrics in metrics_map.items():
+            AnalyticsService.upsert_page_analytics(
+                session, url, domain_obj.domain, metrics
+            )
+            synced_count += 1
+            total_pageviews += metrics.pageviews_60d
 
         # Update domain metadata
         domain_obj.last_synced_at = datetime.utcnow()
@@ -278,6 +249,6 @@ class AnalyticsService:
 
         return {
             "synced_count": synced_count,
-            "total_documents": len(docs),
+            "total_urls": len(urls),
             "total_pageviews": total_pageviews,
         }

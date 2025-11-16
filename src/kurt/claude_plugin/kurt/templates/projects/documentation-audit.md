@@ -6,10 +6,10 @@ When a user clones this template, follow these steps:
 1. Ask the user:
    - "What domain do you want to audit?" (e.g., docs.company.com)
    - "Do you have analytics configured for this domain?"
-   - If no analytics: "Analytics integration required. Run: kurt analytics onboard [domain] --platform posthog"
+   - If no analytics: "Analytics integration required. Run: kurt integrations analytics onboard [domain] --platform posthog"
 
 2. Verify analytics access:
-   `kurt analytics list` - confirm domain is configured
+   `kurt integrations analytics list` - confirm domain is configured
 
 3. Run traffic analysis:
    `kurt content list --url-starts-with https://[domain] --with-analytics --format json`
@@ -52,7 +52,7 @@ When a user clones this template, follow these steps:
 Conduct comprehensive traffic audit of {{DOMAIN}} documentation to identify content health issues: stale high-traffic pages, declining traffic, and orphaned content.
 
 **Prerequisites:**
-- ✓ Analytics configured for domain (run `kurt analytics list` to verify)
+- ✓ Analytics configured for domain (run `kurt integrations analytics list` to verify)
 - ✓ Documentation content fetched (run `kurt content stats` to verify)
 
 ## Research Required (Optional)
@@ -198,12 +198,18 @@ Conduct comprehensive traffic audit of {{DOMAIN}} documentation to identify cont
 **Step 1: Pull Analytics Data (30 min)**
 ```bash
 # Verify analytics configured
-kurt analytics list
+kurt integrations analytics list
 
 # Sync latest data
-kurt analytics sync {{DOMAIN}}
+kurt integrations analytics sync {{DOMAIN}}
 
-# Get content with analytics
+# Query analytics directly - all pages with traffic
+kurt integrations analytics query {{DOMAIN}} --limit 50
+
+# Find pages with traffic you haven't indexed yet
+kurt integrations analytics query {{DOMAIN}} --missing-docs --min-pageviews 100
+
+# Get indexed documents with analytics
 kurt content list --url-starts-with https://{{DOMAIN}} --with-analytics
 ```
 
@@ -226,22 +232,24 @@ kurt content list-technologies --include "https://{{DOMAIN}}/**"
 
 Find high-traffic stale pages:
 ```bash
-# Pages with high traffic but old lastmod dates
-kurt content list --url-starts-with https://{{DOMAIN}} --with-analytics | \
-  # Filter for pages >365 days old with >1000 pageviews
+# Query all pages by traffic, then check which are indexed and stale
+kurt integrations analytics query {{DOMAIN}} --min-pageviews 1000 --limit 50
+
+# Cross-reference with indexed documents to find stale ones
+kurt content list --url-starts-with https://{{DOMAIN}} --with-analytics --min-pageviews 1000
+# Then manually filter for pages >365 days old (check updated_at field)
 ```
 
 Find declining traffic:
 ```bash
-# Compare traffic over time periods
-# Identify pages with >30% traffic decrease
+# Pages with decreasing trends
+kurt integrations analytics query {{DOMAIN}} --trend decreasing --min-pageviews 100
 ```
 
 Find orphaned pages:
 ```bash
-# Pages with 0 pageviews in date range
-kurt content list --url-starts-with https://{{DOMAIN}} --with-analytics | \
-  # Filter for 0 pageviews
+# Pages with 0 pageviews
+kurt integrations analytics query {{DOMAIN}} --max-pageviews 0
 ```
 
 **Step 4: Categorize Issues by Topic (1 hour)**

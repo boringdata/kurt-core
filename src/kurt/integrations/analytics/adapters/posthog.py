@@ -26,8 +26,8 @@ class PostHogAdapter(AnalyticsAdapter):
         Initialize PostHog adapter.
 
         Args:
-            project_id: PostHog project ID (e.g., "phc_abc123")
-            api_key: PostHog API key
+            project_id: PostHog project ID (numeric, e.g., "12345")
+            api_key: PostHog Personal API Key (requires project:read and query:read scopes)
             base_url: PostHog instance URL (default: cloud)
         """
         self.project_id = project_id
@@ -40,13 +40,92 @@ class PostHogAdapter(AnalyticsAdapter):
         )
 
     def test_connection(self) -> bool:
-        """Test PostHog API connection."""
+        """
+        Test PostHog API connection.
+
+        Returns:
+            True if connection successful
+
+        Raises:
+            ConnectionError: If connection fails with details about the failure
+        """
         try:
             response = self.client.get(f"/api/projects/{self.project_id}")
-            return response.status_code == 200
+
+            if response.status_code == 200:
+                return True
+            elif response.status_code == 401:
+                raise ConnectionError(
+                    "Authentication failed. Check your API key.\n"
+                    "Make sure your Personal API Key has 'project:read' and 'query:read' scopes."
+                )
+            elif response.status_code == 403:
+                raise ConnectionError(
+                    "Access denied. Your API key doesn't have permission to access this project.\n"
+                    "Required scopes: project:read, query:read"
+                )
+            elif response.status_code == 404:
+                raise ConnectionError(
+                    f"Project not found. Check your project ID: {self.project_id}\n"
+                    "Find your project ID in the PostHog URL: https://app.posthog.com/project/12345"
+                )
+            else:
+                raise ConnectionError(
+                    f"PostHog API returned status {response.status_code}: {response.text}"
+                )
+        except httpx.ConnectError as e:
+            raise ConnectionError(
+                f"Failed to connect to PostHog at {self.base_url}\n"
+                f"Error: {e}"
+            )
+        except httpx.TimeoutException:
+            raise ConnectionError(
+                f"Connection to PostHog timed out at {self.base_url}\n"
+                "Check your network connection or try again later."
+            )
+        except ConnectionError:
+            # Re-raise ConnectionError as-is
+            raise
         except Exception as e:
             logger.error(f"PostHog connection test failed: {e}")
-            return False
+            raise ConnectionError(f"Unexpected error during connection test: {e}")
+
+    def get_domain_urls(self, domain: str, period_days: int = 60) -> list[str]:
+        """
+        Get all URLs for a domain from PostHog pageview events.
+
+        Args:
+            domain: Domain to filter by (e.g., "technically.dev")
+            period_days: Number of days to query (default: 60)
+
+        Returns:
+            List of unique URLs found in PostHog for this domain
+        """
+        logger.info(f"Querying PostHog for all URLs on domain: {domain}")
+
+        # Calculate time window
+        now = datetime.utcnow()
+        period_start = now - timedelta(days=period_days)
+        period_end = now
+
+        # Query PostHog for all pageviews in this domain
+        pageviews = self._query_pageviews(period_start, period_end)
+
+        # Filter URLs by domain
+        domain_urls = []
+        for url in pageviews.keys():
+            # Check if URL belongs to this domain
+            # Normalized URLs from PostHog may not have protocol, so check both ways
+            if domain in url or url.startswith(f"https://{domain}") or url.startswith(f"http://{domain}"):
+                # Reconstruct full URL if needed
+                if not url.startswith("http"):
+                    full_url = f"https://{url}" if domain in url else url
+                else:
+                    full_url = url
+                domain_urls.append(full_url)
+
+        logger.info(f"Found {len(domain_urls)} unique URLs for domain {domain}")
+        return domain_urls
 
     def sync_metrics(self, urls: list[str], period_days: int = 60) -> dict[str, AnalyticsMetrics]:
         """
@@ -121,14 +200,20 @@ class PostHogAdapter(AnalyticsAdapter):
         Returns:
             Dict mapping normalized_url -> pageview_count
         """
+        # Use HogQL for aggregation queries
         query = {
             "query": {
-                "kind": "EventsQuery",
-                "event": "$pageview",
-                "after": start.isoformat(),
-                "before": end.isoformat(),
-                "select": ["properties.$current_url", "count()"],
-                "group_by": ["properties.$current_url"],
+                "kind": "HogQLQuery",
+                "query": f"""
+                    SELECT
+                        properties.$current_url as url,
+                        count() as pageviews
+                    FROM events
+                    WHERE event = '$pageview'
+                        AND timestamp >= '{start.isoformat()}'
+                        AND timestamp < '{end.isoformat()}'
+                    GROUP BY properties.$current_url
+                """,
             }
         }
 
@@ -154,6 +239,10 @@ class PostHogAdapter(AnalyticsAdapter):
             )
             return dict(results)
 
+        except httpx.HTTPStatusError as e:
+            logger.error(f"PostHog pageview query failed: {e}")
+            logger.error(f"Response body: {e.response.text}")
+            return {}
         except Exception as e:
             logger.error(f"PostHog pageview query failed: {e}")
             return {}

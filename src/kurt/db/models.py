@@ -6,6 +6,7 @@ from enum import Enum
 from typing import Optional
 from uuid import UUID, uuid4
 
+from pydantic import ConfigDict
 from sqlalchemy import JSON, Column
 from sqlmodel import Field, SQLModel
 
@@ -49,6 +50,8 @@ class Document(SQLModel, table=True):
     """Document metadata."""
 
     __tablename__ = "documents"
+
+    model_config = ConfigDict(extra="allow")  # Allow dynamic attributes like analytics
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     title: Optional[str] = None
@@ -297,6 +300,61 @@ class AnalyticsDomain(SQLModel, table=True):
     # Timestamps
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class PageAnalytics(SQLModel, table=True):
+    """Analytics metrics for web pages, independent of documents.
+
+    Stores traffic and engagement metrics for URLs tracked by analytics platforms.
+    No foreign key dependency on documents - analytics exist independently and can
+    be optionally joined with documents when both exist.
+
+    This allows:
+    - Syncing analytics without requiring documents to exist first
+    - Tracking pages that may not have been fetched as documents yet
+    - Flexible queries that join analytics data when available
+
+    Metrics cover a 60-day rolling window split into two 30-day periods
+    for month-over-month trend analysis.
+
+    See migration: 010_page_analytics
+    """
+
+    __tablename__ = "page_analytics"
+
+    # Primary key
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+
+    # Page identification (no foreign key to documents!)
+    url: str = Field(index=True, unique=True)  # Normalized URL
+    domain: str = Field(index=True)  # Domain for filtering (e.g., "technically.dev")
+
+    # Traffic metrics - 60-day total
+    pageviews_60d: int = 0
+    unique_visitors_60d: int = 0
+
+    # Traffic metrics - Last 30 days
+    pageviews_30d: int = 0
+    unique_visitors_30d: int = 0
+
+    # Traffic metrics - Previous 30 days (days 31-60)
+    pageviews_previous_30d: int = 0
+    unique_visitors_previous_30d: int = 0
+
+    # Engagement metrics (session-based)
+    avg_session_duration_seconds: Optional[float] = None
+    bounce_rate: Optional[float] = None  # 0.0 to 1.0
+
+    # Computed trends (derived from 30d vs previous_30d)
+    pageviews_trend: str = "stable"  # "increasing", "stable", "decreasing"
+    trend_percentage: Optional[float] = None  # MoM change percentage
+
+    # Time window metadata
+    period_start: datetime  # Start of 60-day window
+    period_end: datetime  # End of 60-day window
+
+    # Sync metadata
+    synced_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class DocumentAnalytics(SQLModel, table=True):
