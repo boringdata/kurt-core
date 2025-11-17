@@ -59,9 +59,11 @@ class ContentTypeClassification(BaseModel):
 
 
 class DocumentClusterAssignment(BaseModel):
-    """Assignment of a document URL to its best matching cluster."""
+    """Assignment of a document to its best matching cluster."""
 
-    url: str = Field(description="The URL being assigned")
+    document_index: int = Field(
+        description="Index of the document in the input pages list (0-based)"
+    )
     cluster_name: str = Field(description="Name of the best matching cluster for this document")
 
 
@@ -121,10 +123,11 @@ class ComputeClustersAndClassify(dspy.Signature):
     - other: Doesn't fit above
 
     CLUSTER ASSIGNMENT:
-    For EVERY URL in the input, assign it to the single best matching cluster.
-    - Use URL patterns, title keywords, and description to determine best fit
-    - Every URL must be assigned to exactly one cluster
-    - Choose the most semantically relevant cluster for each URL
+    For EVERY document in the input pages list, assign it by INDEX to its best matching cluster.
+    - Use document_index (0-based position: 0, 1, 2, ...) not URLs
+    - Document at index 0 = pages[0], index 1 = pages[1], etc.
+    - Assign each document_index to its most semantically relevant cluster_name
+    - Every document must be assigned to exactly one cluster
 
     IMPORTANT: Output should be COMPACT. Use EXACT type names above, nothing else.
     """
@@ -142,7 +145,7 @@ class ComputeClustersAndClassify(dspy.Signature):
         description=f"Content type classification for each URL. Valid types: {VALID_CONTENT_TYPES}"
     )
     assignments: list[DocumentClusterAssignment] = dspy.OutputField(
-        description="Cluster assignment for EVERY URL - each URL must be assigned to exactly one cluster by name"
+        description="Cluster assignment for EVERY document by INDEX (0-based position in pages array) and cluster_name"
     )
 
 
@@ -467,33 +470,36 @@ def compute_topic_clusters(
 
     logger.info(f"Classified {classified_count} documents with content_type")
 
-    # Now link ALL documents to clusters using LLM-generated assignments
+    # Now link ALL documents to clusters using LLM-generated assignments (by index)
     logger.info(f"Assigning {len(assignments)} documents to clusters...")
 
     if progress_callback:
         progress_callback(f"Creating {len(assignments)} document-cluster links...")
 
     for assignment in assignments:
-        normalized_url = normalize_url(assignment.url)
-        doc_id = url_to_doc_id.get(normalized_url)
-
-        if not doc_id:
-            logger.warning(f"URL not found in documents: {assignment.url}")
+        # Validate document index
+        if not (0 <= assignment.document_index < len(docs)):
+            logger.warning(
+                f"Invalid document_index {assignment.document_index} (valid range: 0-{len(docs)-1})"
+            )
             continue
+
+        # Get document by index
+        doc = docs[assignment.document_index]
 
         # Get cluster ID from cluster name
         cluster_id = cluster_name_to_id.get(assignment.cluster_name)
 
         if not cluster_id:
             logger.warning(
-                f"Cluster '{assignment.cluster_name}' not found for URL: {assignment.url}"
+                f"Cluster '{assignment.cluster_name}' not found for document at index {assignment.document_index}"
             )
             continue
 
         # Create edge
         edge = DocumentClusterEdge(
             id=uuid4(),
-            document_id=doc_id,
+            document_id=doc.id,
             cluster_id=cluster_id,
         )
         session.add(edge)

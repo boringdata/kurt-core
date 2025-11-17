@@ -29,21 +29,21 @@ class ClusteringResult:
         self.assignments = assignments
 
 
-def create_mock_assignments(classifications_list, clusters_list):
+def create_mock_assignments(classifications, clusters):
     """Helper to create assignments from classifications and clusters.
 
-    Assigns each document to the first cluster by index (for simplicity in tests).
+    Assigns each URL to the first cluster (for simplicity in tests).
     """
     from kurt.content.cluster import DocumentClusterAssignment
 
-    if not clusters_list:
+    if not clusters:
         return []
 
-    # Assign all documents to the first cluster (by index)
-    first_cluster_name = clusters_list[0].name
+    # Assign all URLs to the first cluster
+    first_cluster_name = clusters[0].name
     return [
-        DocumentClusterAssignment(document_index=idx, cluster_name=first_cluster_name)
-        for idx in range(len(classifications_list))
+        DocumentClusterAssignment(url=classification.url, cluster_name=first_cluster_name)
+        for classification in classifications
     ]
 
 
@@ -144,19 +144,18 @@ class TestClusterUrlsCommand:
         def mock_clustering_output(**kwargs):
             """Return clustering results based on input pages."""
             _ = kwargs.get("pages", [])  # noqa: F841
-            clusters = [
-                TopicClusterOutput(
-                    name="Documentation",
-                    description="Docs pages",
-                )
-            ]
-            classifications = [
-                ContentTypeClassification(url=d.source_url, content_type="reference")
-                for d in docs_matching
-            ]
             return ClusteringResult(
-                clusters=clusters,
-                classifications=classifications,
+                clusters=[
+                    TopicClusterOutput(
+                        name="Documentation",
+                        description="Docs pages",
+                        example_urls=[d.source_url for d in docs_matching[:2]],
+                    )
+                ],
+                classifications=[
+                    ContentTypeClassification(url=d.source_url, content_type="reference")
+                    for d in docs_matching
+                ],
                 assignments=create_mock_assignments(classifications, clusters),
             )
 
@@ -222,26 +221,21 @@ class TestClusterUrlsCommand:
         # Define the mock output
         from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
 
-        # Define clusters and classifications
-
-        mock_clusters = [
-            TopicClusterOutput(
-                name="Tutorials",
-                description="Tutorial content",
-            )
-        ]
-
-        mock_classifications = [
-            ContentTypeClassification(
-                url=f"https://example.com/tutorial{i}", content_type="tutorial"
-            )
-            for i in range(5)
-        ]
-
         mock_result = ClusteringResult(
-            clusters=mock_clusters,
-            classifications=mock_classifications,
-            assignments=create_mock_assignments(mock_classifications, mock_clusters),
+            clusters=[
+                TopicClusterOutput(
+                    name="Tutorials",
+                    description="Tutorial content",
+                    example_urls=["https://example.com/tutorial0"],
+                )
+            ],
+            classifications=[
+                ContentTypeClassification(
+                    url=f"https://example.com/tutorial{i}", content_type="tutorial"
+                )
+                for i in range(5)
+            ],
+            assignments=create_mock_assignments(classifications, clusters),
         )
 
         # Mock LLM to avoid slow API calls
@@ -278,24 +272,19 @@ class TestClusterUrlsCommand:
         # Define the mock output
         from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
 
-        # Define clusters and classifications
-
-        mock_clusters = [
-            TopicClusterOutput(
-                name="Pages",
-                description="Page content",
-            )
-        ]
-
-        mock_classifications = [
-            ContentTypeClassification(url=f"https://example.com/page{i}", content_type="other")
-            for i in range(3)
-        ]
-
         mock_result = ClusteringResult(
-            clusters=mock_clusters,
-            classifications=mock_classifications,
-            assignments=create_mock_assignments(mock_classifications, mock_clusters),
+            clusters=[
+                TopicClusterOutput(
+                    name="Pages",
+                    description="Page content",
+                    example_urls=["https://example.com/page0"],
+                )
+            ],
+            classifications=[
+                ContentTypeClassification(url=f"https://example.com/page{i}", content_type="other")
+                for i in range(3)
+            ],
+            assignments=create_mock_assignments(classifications, clusters),
         )
 
         # Mock LLM to avoid slow API calls
@@ -345,31 +334,25 @@ class TestClusterUrlsCommand:
         # Define the mock output
         from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
 
-        # Define clusters and classifications
-
-        mock_clusters = [
-            TopicClusterOutput(
-                name="Documentation",
-                description="Docs",
-            ),
-            TopicClusterOutput(
-                name="Blog Posts",
-                description="Blog",
-            ),
-        ]
-
-        mock_classifications = [
-            ContentTypeClassification(
-                url=doc.source_url,
-                content_type="reference" if "docs" in doc.source_url else "blog",
-            )
-            for doc in all_docs
-        ]
-
         mock_result = ClusteringResult(
-            clusters=mock_clusters,
-            classifications=mock_classifications,
-            assignments=create_mock_assignments(mock_classifications, mock_clusters),
+            clusters=[
+                TopicClusterOutput(
+                    name="Documentation",
+                    description="Docs",
+                    example_urls=[all_docs[0].source_url],
+                ),
+                TopicClusterOutput(
+                    name="Blog Posts", description="Blog", example_urls=[all_docs[2].source_url]
+                ),
+            ],
+            classifications=[
+                ContentTypeClassification(
+                    url=doc.source_url,
+                    content_type="reference" if "docs" in doc.source_url else "blog",
+                )
+                for doc in all_docs
+            ],
+            assignments=create_mock_assignments(classifications, clusters),
         )
 
         # Mock the LLM clustering to avoid API calls
@@ -448,24 +431,19 @@ class TestClusterUrlsAdditionalOptions:
         # Define the mock output
         from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
 
-        # Define clusters and classifications
-
-        mock_clusters = [
-            TopicClusterOutput(
-                name="NewCluster",
-                description="New clustering",
-            )
-        ]
-
-        mock_classifications = [
-            ContentTypeClassification(url=f"https://example.com/page{i}", content_type="other")
-            for i in range(5)
-        ]
-
         mock_result = ClusteringResult(
-            clusters=mock_clusters,
-            classifications=mock_classifications,
-            assignments=create_mock_assignments(mock_classifications, mock_clusters),
+            clusters=[
+                TopicClusterOutput(
+                    name="NewCluster",
+                    description="New clustering",
+                    example_urls=["https://example.com/page0"],
+                )
+            ],
+            classifications=[
+                ContentTypeClassification(url=f"https://example.com/page{i}", content_type="other")
+                for i in range(5)
+            ],
+            assignments=create_mock_assignments(classifications, clusters),
         )
 
         # Mock LLM for clustering
@@ -509,19 +487,19 @@ class TestClusterUrlsAdditionalOptions:
         from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
 
         # Single LLM call returns both clusters and classifications
-        mock_clusters = [
-            TopicClusterOutput(
-                name="Blog Posts",
-                description="Blog content",
-            )
-        ]
-        mock_classifications = [
-            ContentTypeClassification(url=docs[i].source_url, content_type="blog") for i in range(5)
-        ]
         mock_result = ClusteringResult(
-            clusters=mock_clusters,
-            classifications=mock_classifications,
-            assignments=create_mock_assignments(mock_classifications, mock_clusters),
+            clusters=[
+                TopicClusterOutput(
+                    name="Blog Posts",
+                    description="Blog content",
+                    example_urls=[docs[0].source_url],
+                )
+            ],
+            classifications=[
+                ContentTypeClassification(url=docs[i].source_url, content_type="blog")
+                for i in range(5)
+            ],
+            assignments=create_mock_assignments(classifications, clusters),
         )
 
         # Mock clustering and classification (single LLM call)
@@ -589,23 +567,19 @@ class TestClusterUrlsAdditionalOptions:
         # Test WITHOUT --force (should refine existing clusters)
         from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
 
-        # Define clusters and classifications
-
-        mock_clusters = [
-            TopicClusterOutput(
-                name="RefinedCluster",
-                description="Refined from existing",
-            )
-        ]
-
-        mock_classifications = [
-            ContentTypeClassification(url=doc.source_url, content_type="reference") for doc in docs
-        ]
-
         mock_result = ClusteringResult(
-            clusters=mock_clusters,
-            classifications=mock_classifications,
-            assignments=create_mock_assignments(mock_classifications, mock_clusters),
+            clusters=[
+                TopicClusterOutput(
+                    name="RefinedCluster",
+                    description="Refined from existing",
+                    example_urls=[docs[0].source_url],
+                )
+            ],
+            classifications=[
+                ContentTypeClassification(url=doc.source_url, content_type="reference")
+                for doc in docs
+            ],
+            assignments=create_mock_assignments(classifications, clusters),
         )
 
         with patch("kurt.content.cluster.dspy.LM"):
@@ -626,23 +600,19 @@ class TestClusterUrlsAdditionalOptions:
                 assert len(call_kwargs["existing_clusters"]) == 1  # One existing cluster
 
         # Test WITH --force (should ignore existing clusters)
-        # Define clusters and classifications
-
-        mock_clusters_force = [
-            TopicClusterOutput(
-                name="FreshCluster",
-                description="Fresh clustering",
-            )
-        ]
-
-        mock_classifications_force = [
-            ContentTypeClassification(url=doc.source_url, content_type="reference") for doc in docs
-        ]
-
         mock_result_force = ClusteringResult(
-            clusters=mock_clusters_force,
-            classifications=mock_classifications_force,
-            assignments=create_mock_assignments(mock_classifications_force, mock_clusters_force),
+            clusters=[
+                TopicClusterOutput(
+                    name="FreshCluster",
+                    description="Fresh clustering",
+                    example_urls=[docs[0].source_url],
+                )
+            ],
+            classifications=[
+                ContentTypeClassification(url=doc.source_url, content_type="reference")
+                for doc in docs
+            ],
+            assignments=create_mock_assignments(classifications, clusters),
         )
 
         with patch("kurt.content.cluster.dspy.LM"):
@@ -694,23 +664,18 @@ class TestClusterUrlsAdditionalOptions:
         # Define the mock output
         from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
 
-        # Define clusters and classifications
-
-        mock_clusters = [
-            TopicClusterOutput(
-                name="FirstCluster",
-                description="First time clustering",
-            )
-        ]
-
-        mock_classifications = [
-            ContentTypeClassification(url=doc.source_url, content_type="guide") for doc in docs
-        ]
-
         mock_result = ClusteringResult(
-            clusters=mock_clusters,
-            classifications=mock_classifications,
-            assignments=create_mock_assignments(mock_classifications, mock_clusters),
+            clusters=[
+                TopicClusterOutput(
+                    name="FirstCluster",
+                    description="First time clustering",
+                    example_urls=[docs[0].source_url],
+                )
+            ],
+            classifications=[
+                ContentTypeClassification(url=doc.source_url, content_type="guide") for doc in docs
+            ],
+            assignments=create_mock_assignments(classifications, clusters),
         )
 
         # Mock LLM clustering
@@ -757,20 +722,17 @@ class TestClusterUrlsAdditionalOptions:
 
         def batch_response(**kwargs):
             pages = kwargs.get("pages", [])
-            clusters = [
-                TopicClusterOutput(
-                    name="TestCluster",
-                    description="Test",
-                )
-            ]
-
-            classifications = [
-                ContentTypeClassification(url=page.url, content_type="other") for page in pages
-            ]
-
             return ClusteringResult(
-                clusters=clusters,
-                classifications=classifications,
+                clusters=[
+                    TopicClusterOutput(
+                        name="TestCluster",
+                        description="Test",
+                        example_urls=[pages[0].url if pages else docs[0].source_url],
+                    )
+                ],
+                classifications=[
+                    ContentTypeClassification(url=page.url, content_type="other") for page in pages
+                ],
                 assignments=create_mock_assignments(classifications, clusters),
             )
 
@@ -829,27 +791,23 @@ class TestClusterUrlsAdditionalOptions:
         # Define the mock output - use a simple object with the required attributes
         from kurt.content.cluster import ContentTypeClassification, TopicClusterOutput
 
-        # Define clusters and classifications
-
-        mock_clusters = [
-            TopicClusterOutput(
-                name="ClusterA",
-                description="First cluster",
-            ),
-            TopicClusterOutput(
-                name="ClusterB",
-                description="Second cluster",
-            ),
-        ]
-
-        mock_classifications = [
-            ContentTypeClassification(url=doc.source_url, content_type="guide") for doc in docs
-        ]
-
         mock_result = ClusteringResult(
-            clusters=mock_clusters,
-            classifications=mock_classifications,
-            assignments=create_mock_assignments(mock_classifications, mock_clusters),
+            clusters=[
+                TopicClusterOutput(
+                    name="ClusterA",
+                    description="First cluster",
+                    example_urls=[docs[0].source_url, docs[1].source_url, docs[2].source_url],
+                ),
+                TopicClusterOutput(
+                    name="ClusterB",
+                    description="Second cluster",
+                    example_urls=[docs[5].source_url, docs[6].source_url],
+                ),
+            ],
+            classifications=[
+                ContentTypeClassification(url=doc.source_url, content_type="guide") for doc in docs
+            ],
+            assignments=create_mock_assignments(classifications, clusters),
         )
 
         # Mock LLM clustering - return 2 clusters with specific example URLs
@@ -876,112 +834,3 @@ class TestClusterUrlsAdditionalOptions:
 
                 # Verify table format shows "Doc Count" column
                 assert "Doc Count" in result.output
-
-    def test_cluster_urls_uses_index_based_assignment(
-        self, isolated_cli_runner, mock_dspy_signature
-    ):
-        """Test that cluster assignment uses document indices, not URLs (more robust)."""
-        runner, project_dir = isolated_cli_runner
-
-        # Create test documents
-        from uuid import uuid4
-
-        from kurt.db.database import get_session
-        from kurt.db.models import Document, DocumentClusterEdge, IngestionStatus, SourceType
-
-        session = get_session()
-
-        docs = []
-        for i in range(5):
-            doc = Document(
-                id=uuid4(),
-                source_url=f"https://example.com/doc{i}",
-                title=f"Doc {i}",
-                description=f"Description {i}",
-                source_type=SourceType.URL,
-                ingestion_status=IngestionStatus.NOT_FETCHED,
-            )
-            session.add(doc)
-            docs.append(doc)
-
-        session.commit()
-
-        # Define the mock output with explicit index-based assignments
-        from kurt.content.cluster import (
-            ContentTypeClassification,
-            DocumentClusterAssignment,
-            TopicClusterOutput,
-        )
-
-        mock_clusters = [
-            TopicClusterOutput(
-                name="ClusterA",
-                description="First cluster",
-            ),
-            TopicClusterOutput(
-                name="ClusterB",
-                description="Second cluster",
-            ),
-        ]
-
-        mock_classifications = [
-            ContentTypeClassification(url=doc.source_url, content_type="guide") for doc in docs
-        ]
-
-        # Explicitly assign documents by index to different clusters
-        mock_assignments = [
-            DocumentClusterAssignment(document_index=0, cluster_name="ClusterA"),
-            DocumentClusterAssignment(document_index=1, cluster_name="ClusterA"),
-            DocumentClusterAssignment(document_index=2, cluster_name="ClusterB"),
-            DocumentClusterAssignment(document_index=3, cluster_name="ClusterB"),
-            DocumentClusterAssignment(document_index=4, cluster_name="ClusterA"),
-        ]
-
-        mock_result = ClusteringResult(
-            clusters=mock_clusters,
-            classifications=mock_classifications,
-            assignments=mock_assignments,
-        )
-
-        # Mock LLM clustering
-        with patch("kurt.content.cluster.dspy.LM"):
-            with mock_dspy_signature("ComputeClustersAndClassify", mock_result):
-                # Run cluster-urls
-                result = runner.invoke(main, ["content", "cluster"])
-
-                # Should succeed
-                assert result.exit_code == 0
-                assert "Computing topic clusters" in result.output
-
-                # Verify assignments were created based on indices
-                # ClusterA should have 3 docs (indices 0, 1, 4)
-                # ClusterB should have 2 docs (indices 2, 3)
-                edges = session.query(DocumentClusterEdge).all()
-                assert len(edges) == 5, f"Expected 5 edges, got {len(edges)}"
-
-                # Verify correct cluster assignments by counting
-                from kurt.db.models import TopicCluster
-
-                cluster_a = (
-                    session.query(TopicCluster).filter(TopicCluster.name == "ClusterA").first()
-                )
-                cluster_b = (
-                    session.query(TopicCluster).filter(TopicCluster.name == "ClusterB").first()
-                )
-
-                assert cluster_a is not None
-                assert cluster_b is not None
-
-                cluster_a_docs = (
-                    session.query(DocumentClusterEdge)
-                    .filter(DocumentClusterEdge.cluster_id == cluster_a.id)
-                    .count()
-                )
-                cluster_b_docs = (
-                    session.query(DocumentClusterEdge)
-                    .filter(DocumentClusterEdge.cluster_id == cluster_b.id)
-                    .count()
-                )
-
-                assert cluster_a_docs == 3, f"ClusterA should have 3 docs, got {cluster_a_docs}"
-                assert cluster_b_docs == 2, f"ClusterB should have 2 docs, got {cluster_b_docs}"
