@@ -423,8 +423,9 @@ def compute_topic_clusters(
             content_type_enum = ContentType(content_type_value)
 
             # Fetch document from current session and update
+            # Only classify if content_type is not already set (e.g., from CMS schema mapping)
             doc = session.get(Document, doc_id)
-            if doc:
+            if doc and not doc.content_type:
                 doc.content_type = content_type_enum
                 session.add(doc)
                 classified_count += 1
@@ -439,7 +440,7 @@ def compute_topic_clusters(
                 f"Invalid content_type '{classification.content_type}' for {classification.url}, using 'other'"
             )
             doc = session.get(Document, doc_id)
-            if doc:
+            if doc and not doc.content_type:
                 doc.content_type = ContentType.OTHER
                 session.add(doc)
                 classified_count += 1
