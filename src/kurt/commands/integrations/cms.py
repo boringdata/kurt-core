@@ -285,17 +285,56 @@ def types_cmd(platform: str, instance: Optional[str]):
 @cms.command("onboard")
 @click.option("--platform", default="sanity", help="CMS platform to configure (currently only sanity is supported)")
 @click.option("--instance", default="default", help="Instance name (default, prod, staging, etc)")
+# CMS Credentials (providing these enables non-interactive mode)
+@click.option("--project-id", help="Project ID (Sanity) - enables non-interactive mode")
+@click.option("--dataset", help="Dataset name (e.g., production, staging)")
+@click.option("--token", help="Read token for CMS API")
+@click.option("--write-token", help="Write token for CMS API")
+@click.option("--base-url", help="Base URL for your website")
+# Content type selection
+@click.option(
+    "--content-types",
+    help="Comma-separated list of content types to configure (default: all when non-interactive)",
+)
 @track_command
-def onboard_cmd(platform: str, instance: str):
+def onboard_cmd(
+    platform: str,
+    instance: str,
+    project_id: Optional[str],
+    dataset: Optional[str],
+    token: Optional[str],
+    write_token: Optional[str],
+    base_url: Optional[str],
+    content_types: Optional[str],
+):
     """
     Interactive CMS onboarding and configuration.
 
     Discovers content types and guides you through field mapping setup.
 
-    Example:
-        kurt cms onboard
-        kurt cms onboard --platform contentful --instance prod
+    Automatically runs in non-interactive mode when credentials are provided via CLI options.
+
+    Examples:
+        # Interactive mode (prompts for all inputs)
+        kurt integrations cms onboard
+
+        # Non-interactive with all credentials
+        kurt integrations cms onboard \\
+            --project-id myproject --dataset production \\
+            --token sk_read_token --write-token sk_write_token \\
+            --base-url https://mysite.com
+
+        # Non-interactive for specific content types only
+        kurt integrations cms onboard \\
+            --project-id myproject --dataset production \\
+            --content-types article,blog_post
+
+        # Partial options (will prompt only for missing fields)
+        kurt integrations cms onboard --project-id myproject --dataset production
     """
+    # Auto-detect non-interactive mode: if any credential option is provided
+    non_interactive = any([project_id, dataset, token, write_token, base_url])
+
     console.print(
         f"[bold green]CMS Onboarding: {platform.capitalize()} ({instance})[/bold green]\n"
     )
@@ -316,7 +355,23 @@ def onboard_cmd(platform: str, instance: str):
         # Get template and prompt for values
         template = create_template_config(platform, instance)
 
-        console.print(f"[bold]Enter {platform.capitalize()} credentials:[/bold]\n")
+        if non_interactive:
+            # Build config from CLI options or template defaults
+            console.print("[dim]Non-interactive mode: using provided options or defaults[/dim]\n")
+            instance_config = {}
+
+            # Map CLI options to config keys (platform-specific)
+            if platform == "sanity":
+                instance_config["project_id"] = project_id or template.get("project_id")
+                instance_config["dataset"] = dataset or template.get("dataset")
+                instance_config["token"] = token or template.get("token")
+                instance_config["write_token"] = write_token or template.get("write_token")
+                instance_config["base_url"] = base_url or template.get("base_url")
+            else:
+                # For other platforms, use template defaults
+                instance_config = template
+        else:
+            console.print(f"[bold]Enter {platform.capitalize()} credentials:[/bold]\n")
 
         # Define helper text for Sanity fields based on publish intent
         if platform == "sanity":
@@ -390,27 +445,56 @@ def onboard_cmd(platform: str, instance: str):
         console.print(table)
         console.print()
 
-        # Interactive selection
-        console.print("[bold]Select content types to configure:[/bold]")
-        console.print(
-            "[dim]Enter numbers separated by commas (e.g., 1,3,5) or 'all' for all types[/dim]"
-        )
+        # Interactive selection or auto-select in non-interactive mode
+        if non_interactive:
+            # Use --content-types option or select all
+            if content_types:
+                # Parse comma-separated list
+                requested_types = [t.strip() for t in content_types.split(",")]
+                available_type_names = {t["name"] for t in types}
+                selected_types = [t for t in requested_types if t in available_type_names]
 
-        selection = console.input("\n[cyan]Your selection:[/cyan] ").strip()
+                # Warn about invalid types
+                invalid_types = set(requested_types) - set(selected_types)
+                if invalid_types:
+                    console.print(
+                        f"[yellow]⚠ Skipping unknown types:[/yellow] {', '.join(invalid_types)}"
+                    )
 
-        if selection.lower() == "all":
-            selected_types = [t["name"] for t in types]
+                if not selected_types:
+                    console.print("[yellow]No valid content types specified[/yellow]")
+                    return
+
+                console.print(
+                    f"[dim]Non-interactive mode: selecting specified types ({len(selected_types)})[/dim]"
+                )
+            else:
+                # Default: select all types
+                selected_types = [t["name"] for t in types]
+                console.print(
+                    f"[dim]Non-interactive mode: selecting all {len(selected_types)} types[/dim]"
+                )
         else:
-            try:
-                indices = [int(x.strip()) - 1 for x in selection.split(",")]
-                selected_types = [types[i]["name"] for i in indices if 0 <= i < len(types)]
-            except (ValueError, IndexError):
-                console.print("[red]Invalid selection[/red]")
-                raise click.Abort()
+            console.print("[bold]Select content types to configure:[/bold]")
+            console.print(
+                "[dim]Enter numbers separated by commas (e.g., 1,3,5) or 'all' for all types[/dim]"
+            )
 
-        if not selected_types:
-            console.print("[yellow]No types selected[/yellow]")
-            return
+            selection = console.input("\n[cyan]Your selection:[/cyan] ").strip()
+
+            if selection.lower() == "all":
+                selected_types = [t["name"] for t in types]
+            else:
+                try:
+                    indices = [int(x.strip()) - 1 for x in selection.split(",")]
+                    selected_types = [types[i]["name"] for i in indices if 0 <= i < len(types)]
+                except (ValueError, IndexError):
+                    console.print("[red]Invalid selection[/red]")
+                    raise click.Abort()
+
+            if not selected_types:
+                console.print("[yellow]No types selected[/yellow]")
+                return
 
         console.print(
             f"\n[green]Selected {len(selected_types)} types:[/green] {', '.join(selected_types)}"
@@ -486,37 +570,12 @@ def onboard_cmd(platform: str, instance: str):
                 elif content_type in ["caseStudy", "case_study"]:
                     content_type_default = "case_study"
 
-                # Ask for content field
-                console.print("\n[bold]Which field contains the main content?[/bold]")
-                if content_field_default:
-                    console.print(f"[dim](Press Enter for: {content_field_default})[/dim]")
-                content_field = console.input("[cyan]Content field:[/cyan] ").strip()
-                if not content_field:
+                # Get field mappings - use defaults in non-interactive mode
+                if non_interactive:
+                    # Use smart defaults
                     content_field = content_field_default
-
-                # Ask for title field
-                console.print("\n[bold]Which field contains the title?[/bold]")
-                if title_field_default:
-                    console.print(f"[dim](Press Enter for: {title_field_default})[/dim]")
-                title_field = console.input("[cyan]Title field:[/cyan] ").strip()
-                if not title_field:
                     title_field = title_field_default
-
-                # Ask for slug field
-                console.print("\n[bold]Which field contains the URL slug?[/bold]")
-                if slug_field_default:
-                    console.print(f"[dim](Press Enter for: {slug_field_default})[/dim]")
-                slug_field = console.input("[cyan]Slug field:[/cyan] ").strip()
-                if not slug_field:
                     slug_field = slug_field_default
-
-                # Ask for description field
-                console.print("\n[bold]Which field contains a summary/description?[/bold]")
-                console.print("[dim](Used for topic clustering and content organization)[/dim]")
-                if description_field_default:
-                    console.print(f"[dim](Press Enter for: {description_field_default})[/dim]")
-                description_field = console.input("[cyan]Description field:[/cyan] ").strip()
-                if not description_field:
                     description_field = description_field_default
 
                 # Ask for content type inference
@@ -531,6 +590,53 @@ def onboard_cmd(platform: str, instance: str):
                 inferred_content_type = console.input("[cyan]Content type:[/cyan] ").strip()
                 if not inferred_content_type:
                     inferred_content_type = content_type_default
+                    console.print(f"[dim]Using smart defaults for {content_type}[/dim]")
+                else:
+                    # Ask for content field
+                    console.print("\n[bold]Which field contains the main content?[/bold]")
+                    if content_field_default:
+                        console.print(f"[dim](Press Enter for: {content_field_default})[/dim]")
+                    content_field = console.input("[cyan]Content field:[/cyan] ").strip()
+                    if not content_field:
+                        content_field = content_field_default
+
+                    # Ask for title field
+                    console.print("\n[bold]Which field contains the title?[/bold]")
+                    if title_field_default:
+                        console.print(f"[dim](Press Enter for: {title_field_default})[/dim]")
+                    title_field = console.input("[cyan]Title field:[/cyan] ").strip()
+                    if not title_field:
+                        title_field = title_field_default
+
+                    # Ask for slug field
+                    console.print("\n[bold]Which field contains the URL slug?[/bold]")
+                    if slug_field_default:
+                        console.print(f"[dim](Press Enter for: {slug_field_default})[/dim]")
+                    slug_field = console.input("[cyan]Slug field:[/cyan] ").strip()
+                    if not slug_field:
+                        slug_field = slug_field_default
+
+                    # Ask for description field
+                    console.print("\n[bold]Which field contains a summary/description?[/bold]")
+                    console.print("[dim](Used for topic clustering and content organization)[/dim]")
+                    if description_field_default:
+                        console.print(f"[dim](Press Enter for: {description_field_default})[/dim]")
+                    description_field = console.input("[cyan]Description field:[/cyan] ").strip()
+                    if not description_field:
+                        description_field = description_field_default
+
+                    # Ask for content type inference
+                    console.print(
+                        "\n[bold]What content type should be inferred from this schema?[/bold]"
+                    )
+                    console.print(
+                        "[dim]Options: article, blog, tutorial, guide, reference, case_study, landing_page, other[/dim]"
+                    )
+                    if content_type_default:
+                        console.print(f"[dim](Press Enter for: {content_type_default})[/dim]")
+                    inferred_content_type = console.input("[cyan]Content type:[/cyan] ").strip()
+                    if not inferred_content_type:
+                        inferred_content_type = content_type_default
 
                 # Save mapping
                 mappings[content_type] = {
@@ -918,8 +1024,6 @@ def status_cmd(check_health: bool):
 
                 console.print()
 
-        session.close()
-
         # Show help if no documents mapped
         total_docs_stmt = select(func.count(Document.id)).where(Document.cms_platform.isnot(None))
         total_docs = session.exec(total_docs_stmt).one()
@@ -927,6 +1031,8 @@ def status_cmd(check_health: bool):
         if total_docs == 0:
             console.print("[yellow]Tip:[/yellow] Map CMS content with:")
             console.print("  [cyan]kurt content map cms --platform sanity --instance prod[/cyan]\n")
+
+        session.close()
 
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
