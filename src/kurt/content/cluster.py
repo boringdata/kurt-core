@@ -40,7 +40,6 @@ class TopicClusterOutput(BaseModel):
     description: str = Field(
         description="Brief explanation of what this topic encompasses (1-2 sentences)"
     )
-    example_urls: list[str] = Field(description="3-5 representative URLs from this cluster")
 
 
 class ExistingCluster(BaseModel):
@@ -59,6 +58,13 @@ class ContentTypeClassification(BaseModel):
     )
 
 
+class DocumentClusterAssignment(BaseModel):
+    """Assignment of a document URL to its best matching cluster."""
+
+    url: str = Field(description="The URL being assigned")
+    cluster_name: str = Field(description="Name of the best matching cluster for this document")
+
+
 # ============================================================================
 # DSPy Signature
 # ============================================================================
@@ -70,6 +76,7 @@ class ComputeClustersAndClassify(dspy.Signature):
     You are analyzing a collection of blog posts/web pages to:
     1. Refine/update existing topic clusters OR create new clusters from scratch
     2. Classify the content type of each individual URL
+    3. Assign EVERY URL to its best matching cluster
 
     INCREMENTAL CLUSTERING:
     If existing_clusters are provided, use them as a starting point:
@@ -113,6 +120,12 @@ class ComputeClustersAndClassify(dspy.Signature):
     - landing_page: Marketing campaigns
     - other: Doesn't fit above
 
+    CLUSTER ASSIGNMENT:
+    For EVERY URL in the input, assign it to the single best matching cluster.
+    - Use URL patterns, title keywords, and description to determine best fit
+    - Every URL must be assigned to exactly one cluster
+    - Choose the most semantically relevant cluster for each URL
+
     IMPORTANT: Output should be COMPACT. Use EXACT type names above, nothing else.
     """
 
@@ -127,6 +140,9 @@ class ComputeClustersAndClassify(dspy.Signature):
     )
     classifications: list[ContentTypeClassification] = dspy.OutputField(
         description=f"Content type classification for each URL. Valid types: {VALID_CONTENT_TYPES}"
+    )
+    assignments: list[DocumentClusterAssignment] = dspy.OutputField(
+        description="Cluster assignment for EVERY URL - each URL must be assigned to exactly one cluster by name"
     )
 
 
@@ -222,6 +238,7 @@ def compute_topic_clusters(
     # Batch processing: 200 documents per batch for large sets
     batch_size = 200
     all_classifications = []
+    all_assignments = []
 
     if len(docs) > batch_size:
         logger.info(f"Processing {len(docs)} documents in batches of {batch_size}")
@@ -271,11 +288,12 @@ def compute_topic_clusters(
                 ExistingCluster(name=c.name, description=c.description) for c in clusters
             ]
 
-            # Collect classifications
+            # Collect classifications and assignments
             all_classifications.extend(result.classifications)
+            all_assignments.extend(result.assignments)
 
             logger.info(
-                f"Batch {batch_num}: {len(clusters)} clusters, {len(result.classifications)} classifications"
+                f"Batch {batch_num}: {len(clusters)} clusters, {len(result.classifications)} classifications, {len(result.assignments)} assignments"
             )
 
             if progress_callback:
@@ -284,8 +302,9 @@ def compute_topic_clusters(
                 )
 
         classifications = all_classifications
+        assignments = all_assignments
         logger.info(
-            f"Completed batching: {len(clusters)} final clusters, {len(classifications)} total classifications"
+            f"Completed batching: {len(clusters)} final clusters, {len(classifications)} total classifications, {len(assignments)} total assignments"
         )
 
     else:
@@ -319,9 +338,10 @@ def compute_topic_clusters(
         result = clusterer(pages=pages, existing_clusters=existing_clusters)
         clusters = result.clusters
         classifications = result.classifications
+        assignments = result.assignments
 
     logger.info(
-        f"Identified {len(clusters)} clusters and {len(classifications)} classifications from {len(docs)} documents"
+        f"Identified {len(clusters)} clusters, {len(classifications)} classifications, and {len(assignments)} assignments from {len(docs)} documents"
     )
     if existing_clusters:
         logger.info(
@@ -447,48 +467,37 @@ def compute_topic_clusters(
 
     logger.info(f"Classified {classified_count} documents with content_type")
 
-    # Now link ALL documents to clusters (not just example URLs)
-    # We use a second LLM call to assign each document to the best matching cluster
-    logger.info(f"Assigning all {len(docs)} documents to clusters...")
+    # Now link ALL documents to clusters using LLM-generated assignments
+    logger.info(f"Assigning {len(assignments)} documents to clusters...")
 
-    # Batch assign documents to clusters (process in batches to avoid token limits)
-    batch_size = 100
-    for i in range(0, len(docs), batch_size):
-        batch_docs = docs[i : i + batch_size]
-        batch_pages = [
-            PageMetadata(
-                url=doc.source_url or "",
-                title=doc.title,
-                description=doc.description,
+    if progress_callback:
+        progress_callback(f"Creating {len(assignments)} document-cluster links...")
+
+    for assignment in assignments:
+        normalized_url = normalize_url(assignment.url)
+        doc_id = url_to_doc_id.get(normalized_url)
+
+        if not doc_id:
+            logger.warning(f"URL not found in documents: {assignment.url}")
+            continue
+
+        # Get cluster ID from cluster name
+        cluster_id = cluster_name_to_id.get(assignment.cluster_name)
+
+        if not cluster_id:
+            logger.warning(
+                f"Cluster '{assignment.cluster_name}' not found for URL: {assignment.url}"
             )
-            for doc in batch_docs
-        ]
+            continue
 
-        # Use LLM to assign documents to clusters
-        # For now, use a simple heuristic: assign to cluster if URL in example_urls
-        # TODO: Use LLM to assign all documents to best matching cluster
-        for doc in batch_docs:
-            if not doc.source_url:
-                continue
-
-            normalized_url = normalize_url(doc.source_url)
-
-            # Find best matching cluster (check example URLs)
-            assigned = False
-            for cluster_data in clusters:
-                for example_url in cluster_data.example_urls:
-                    if normalize_url(example_url) == normalized_url:
-                        edge = DocumentClusterEdge(
-                            id=uuid4(),
-                            document_id=doc.id,
-                            cluster_id=cluster_name_to_id[cluster_data.name],
-                        )
-                        session.add(edge)
-                        edge_count += 1
-                        assigned = True
-                        break
-                if assigned:
-                    break
+        # Create edge
+        edge = DocumentClusterEdge(
+            id=uuid4(),
+            document_id=doc_id,
+            cluster_id=cluster_id,
+        )
+        session.add(edge)
+        edge_count += 1
 
     session.commit()
 
@@ -502,7 +511,6 @@ def compute_topic_clusters(
             {
                 "name": c.name,
                 "description": c.description,
-                "example_urls": c.example_urls,
             }
             for c in clusters
         ],
