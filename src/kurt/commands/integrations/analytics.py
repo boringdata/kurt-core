@@ -118,14 +118,14 @@ def onboard(domain: str, platform: str, sync_now: bool):
         )
         raise click.Abort()
     except ConnectionError as e:
-        console.print(f"[red]✗ Connection failed[/red]")
+        console.print("[red]✗ Connection failed[/red]")
         console.print()
         console.print(f"[yellow]{e}[/yellow]")
         console.print()
         console.print(f"[dim]Config file: {get_config_file_path()}[/dim]")
         raise click.Abort()
     except Exception as e:
-        console.print(f"[red]✗ Connection test failed[/red]")
+        console.print("[red]✗ Connection test failed[/red]")
         console.print(f"[yellow]Error: {e}[/yellow]")
         raise click.Abort()
 
@@ -225,7 +225,7 @@ def _run_sync_for_domain(domain: str, platform: str = None, period: int = 60):
             console.print()
             console.print("[dim]This could mean:[/dim]")
             console.print(f"  • No pageviews in the last {period} days")
-            console.print(f"  • The domain isn't receiving traffic yet")
+            console.print("  • The domain isn't receiving traffic yet")
             console.print()
         else:
             console.print(f"[dim]Found {result['total_urls']} URL(s) with analytics data[/dim]")
@@ -234,9 +234,9 @@ def _run_sync_for_domain(domain: str, platform: str = None, period: int = 60):
                 console.print(f"[dim]Total pageviews (60d): {result['total_pageviews']:,}[/dim]")
                 console.print()
                 console.print("[dim]Tip: View analytics with:[/dim]")
-                console.print(f"  [cyan]kurt content list --with-analytics[/cyan]")
+                console.print("  [cyan]kurt content list --with-analytics[/cyan]")
             else:
-                console.print(f"[yellow]Found URLs but couldn't sync analytics[/yellow]")
+                console.print("[yellow]Found URLs but couldn't sync analytics[/yellow]")
             console.print()
 
     except Exception as e:
