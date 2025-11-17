@@ -903,7 +903,7 @@ def list_documents_for_indexing(
                 raise ValueError(
                     f"Found {len(matching_any_status)} document(s) matching pattern '{include_pattern}' "
                     f"({status_summary}), but none are {status_filter.value}.\n"
-                    f"Tip: Use 'kurt fetch --include \"{include_pattern}\"' to fetch these documents first."
+                    f"Tip: Use 'kurt content fetch --include \"{include_pattern}\"' to fetch these documents first."
                 )
 
         return docs

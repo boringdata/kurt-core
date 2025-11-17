@@ -9,6 +9,7 @@ from rich.console import Console
 from rich.table import Table
 
 from kurt.admin.telemetry.decorators import track_command
+from kurt.db.models import ContentType
 from kurt.integrations.cms.config import (
     add_platform_instance,
     create_template_config,
@@ -39,12 +40,12 @@ def get_adapter(platform: str, instance: Optional[str] = None):
 
 @click.group()
 def cms():
-    """Integrate with CMS platforms (Sanity, Contentful, WordPress)."""
+    """Integrate with CMS platforms (currently only Sanity is supported; Contentful and WordPress coming soon)."""
     pass
 
 
 @cms.command("search")
-@click.option("--platform", default="sanity", help="CMS platform (sanity, contentful, wordpress)")
+@click.option("--platform", default="sanity", help="CMS platform (currently only sanity is supported)")
 @click.option("--instance", default=None, help="Instance name (uses default if not specified)")
 @click.option("--query", "-q", help="Text search query")
 @click.option("--content-type", "-t", help="Filter by content type")
@@ -135,7 +136,7 @@ def search_cmd(
 
 
 @cms.command("fetch")
-@click.option("--platform", default="sanity", help="CMS platform")
+@click.option("--platform", default="sanity", help="CMS platform (currently only sanity is supported)")
 @click.option("--instance", default=None, help="Instance name (uses default if not specified)")
 @click.option("--id", "document_id", required=True, help="Document ID to fetch")
 @click.option("--output-dir", type=click.Path(), help="Output directory for markdown file")
@@ -154,14 +155,18 @@ def fetch_cmd(
     output_format: str,
 ):
     """
-    Fetch document content from CMS.
+    Fetch document content from CMS and save to markdown file.
 
-    Downloads document and converts to markdown format with YAML frontmatter.
+    This exports CMS content to local markdown files. Use this when you want to:
+    - Export CMS content for backup or version control
+    - Edit content locally before importing
+
+    For direct CMS indexing, use: 'kurt content map cms' instead.
 
     Examples:
-        kurt cms fetch --id abc123
-        kurt cms fetch --platform sanity --instance prod --id abc123 --output-dir sources/cms/sanity/
-        kurt cms fetch --id abc123 --output-format json
+        kurt integrations cms fetch --id abc123
+        kurt integrations cms fetch --platform sanity --instance prod --id abc123 --output-dir sources/cms/sanity/
+        kurt integrations cms fetch --id abc123 --output-format json
     """
     try:
         if not platform_configured(platform, instance):
@@ -226,7 +231,7 @@ def fetch_cmd(
 
 
 @cms.command("types")
-@click.option("--platform", default="sanity", help="CMS platform")
+@click.option("--platform", default="sanity", help="CMS platform (currently only sanity is supported)")
 @click.option("--instance", default=None, help="Instance name (uses default if not specified)")
 @track_command
 def types_cmd(platform: str, instance: Optional[str]):
@@ -278,7 +283,7 @@ def types_cmd(platform: str, instance: Optional[str]):
 
 
 @cms.command("onboard")
-@click.option("--platform", default="sanity", help="CMS platform to configure")
+@click.option("--platform", default="sanity", help="CMS platform to configure (currently only sanity is supported)")
 @click.option("--instance", default="default", help="Instance name (default, prod, staging, etc)")
 @track_command
 def onboard_cmd(platform: str, instance: str):
@@ -296,19 +301,48 @@ def onboard_cmd(platform: str, instance: str):
     )
 
     # Check if platform/instance configured
+    wants_publish = False  # Track user intent for next steps
     if not platform_configured(platform, instance):
         console.print(f"[yellow]No configuration found for {platform}/{instance}.[/yellow]\n")
+
+        # Ask upfront about publish intent for Sanity
+        if platform == "sanity":
+            console.print("[bold]Do you want to publish content back to Sanity?[/bold]")
+            console.print("[dim]This determines what token permissions you need.[/dim]\n")
+            publish_response = console.input("  Publish to Sanity? [y/n] (n): ").strip().lower()
+            wants_publish = publish_response in ["y", "yes"]
+            console.print()
 
         # Get template and prompt for values
         template = create_template_config(platform, instance)
 
         console.print(f"[bold]Enter {platform.capitalize()} credentials:[/bold]\n")
 
+        # Define helper text for Sanity fields based on publish intent
+        if platform == "sanity":
+            if wants_publish:
+                token_help = "Create a CONTRIBUTOR token in Sanity Manage console (manage.sanity.io) → API → Tokens → Add API token with 'Editor' permissions (read + write drafts)"
+            else:
+                token_help = "Create a VIEWER token in Sanity Manage console (manage.sanity.io) → API → Tokens → Add API token with 'Viewer' permissions (read-only)"
+
+            sanity_help = {
+                "project_id": "Found in Sanity Studio → Manage → Project settings → Project ID",
+                "dataset": "Usually 'production' (found in Sanity Studio → Manage → Datasets)",
+                "token": token_help,
+                "base_url": "Your public website URL where content is published (e.g., https://yourdomain.com)",
+            }
+        else:
+            sanity_help = {}
+
         # Prompt for each required field
         instance_config = {}
         for key, placeholder in template.items():
             if key == "content_type_mappings":
                 continue  # Skip this for now, will be added during type discovery
+
+            # Show helper text for Sanity fields
+            if platform == "sanity" and key in sanity_help:
+                console.print(f"  [dim]{sanity_help[key]}[/dim]")
 
             value = console.input(f"  {key.replace('_', ' ').title()} [{placeholder}]: ").strip()
             instance_config[key] = value if value else placeholder
@@ -409,10 +443,14 @@ def onboard_cmd(platform: str, instance: str):
 
                 console.print(f"\n[green]✓ Found {len(available_fields)} fields[/green]")
                 console.print("[dim]Available fields:[/dim]")
-                for field in sorted(available_fields)[:15]:  # Show first 15
-                    console.print(f"  - {field}")
-                if len(available_fields) > 15:
-                    console.print(f"  ... and {len(available_fields) - 15} more")
+
+                # Display all fields in 2 columns using Rich Columns
+                from rich.columns import Columns
+                from rich.panel import Panel
+
+                sorted_fields = sorted(available_fields)
+                field_renderables = [f"[cyan]•[/cyan] {field}" for field in sorted_fields]
+                console.print(Columns(field_renderables, equal=True, expand=False, column_first=True))
 
                 # Smart defaults
                 content_field_default = None
@@ -440,7 +478,7 @@ def onboard_cmd(platform: str, instance: str):
                 # Smart default for content type based on schema name
                 content_type_default = None
                 if content_type in ["article", "blog", "blogPost", "post"]:
-                    content_type_default = "article" if content_type == "article" else "blog"
+                    content_type_default = "blog"  # Use "blog" for all article/blog-like content
                 elif content_type in ["tutorial", "guide", "howto"]:
                     content_type_default = "tutorial"
                 elif content_type in ["reference", "glossary", "universeItem"]:
@@ -485,9 +523,9 @@ def onboard_cmd(platform: str, instance: str):
                 console.print(
                     "\n[bold]What content type should be inferred from this schema?[/bold]"
                 )
-                console.print(
-                    "[dim]Options: article, blog, tutorial, guide, reference, case_study, landing_page, other[/dim]"
-                )
+                # Dynamically show all valid ContentType enum values
+                valid_types = ", ".join([ct.value for ct in ContentType])
+                console.print(f"[dim]Options: {valid_types}[/dim]")
                 if content_type_default:
                     console.print(f"[dim](Press Enter for: {content_type_default})[/dim]")
                 inferred_content_type = console.input("[cyan]Content type:[/cyan] ").strip()
@@ -524,13 +562,37 @@ def onboard_cmd(platform: str, instance: str):
         console.print()
         console.print("[bold]Next steps:[/bold]")
         console.print(
-            f"  1. Search content: [cyan]kurt cms search --content-type {selected_types[0]}[/cyan]"
+            f"  1. Index CMS content: [cyan]kurt content map cms --platform {platform}[/cyan]"
         )
         console.print(
-            f"  2. Fetch document: [cyan]kurt cms fetch --id <document-id> --output-dir sources/cms/{platform}/[/cyan]"
+            f"     [dim](Creates document records in database for all CMS content)[/dim]"
         )
         console.print(
-            f"  3. Import to Kurt: [cyan]kurt cms import --source-dir sources/cms/{platform}/[/cyan]"
+            f"  2. Fetch full content: [cyan]kurt content fetch <url>[/cyan]"
+        )
+        console.print(
+            f"     [dim](Downloads and processes document content with LLM)[/dim]"
+        )
+
+        # Only show publish option if user wants it
+        if wants_publish:
+            console.print(
+                f"  3. Publish content: [cyan]kurt integrations cms publish --file <path> --content-type {selected_types[0]}[/cyan]"
+            )
+            console.print(
+                f"     [dim](Publish markdown file to CMS as draft)[/dim]"
+            )
+
+        console.print()
+        console.print("[dim]Alternative workflow (for exporting CMS to markdown files):[/dim]")
+        console.print(
+            f"  • Search content: [cyan]kurt integrations cms search --content-type {selected_types[0]}[/cyan]"
+        )
+        console.print(
+            f"  • Fetch to disk: [cyan]kurt integrations cms fetch --id <doc-id> --output-dir sources/cms/{platform}/[/cyan]"
+        )
+        console.print(
+            f"  • Import to Kurt: [cyan]kurt integrations cms import --source-dir sources/cms/{platform}/[/cyan]"
         )
 
     except Exception as e:
@@ -539,7 +601,7 @@ def onboard_cmd(platform: str, instance: str):
 
 
 @cms.command("import")
-@click.option("--platform", default="sanity", help="CMS platform")
+@click.option("--platform", default="sanity", help="CMS platform (currently only sanity is supported)")
 @click.option(
     "--source-dir",
     required=True,
@@ -551,10 +613,17 @@ def import_cmd(platform: str, source_dir: str):
     """
     Import CMS markdown files to Kurt database.
 
-    Imports markdown files fetched from CMS into the Kurt document database.
+    This is an alternative workflow to 'kurt content map cms'. Use this when you
+    want to export CMS content to markdown files first, then import them.
+
+    Recommended workflow: Use 'kurt content map cms' to directly index CMS content.
 
     Example:
-        kurt cms import --source-dir sources/cms/sanity/
+        # First, fetch CMS content to markdown files:
+        kurt integrations cms fetch --id doc123 --output-dir sources/cms/sanity/
+
+        # Then import those files:
+        kurt integrations cms import --source-dir sources/cms/sanity/
     """
     from pathlib import Path
 
@@ -642,7 +711,7 @@ def import_cmd(platform: str, source_dir: str):
 
 
 @cms.command("publish")
-@click.option("--platform", default="sanity", help="CMS platform")
+@click.option("--platform", default="sanity", help="CMS platform (currently only sanity is supported)")
 @click.option("--instance", default=None, help="Instance name (uses default if not specified)")
 @click.option(
     "--file",
@@ -744,6 +813,11 @@ def publish_cmd(
         console.print()
         console.print("[yellow]Note:[/yellow] Document created as draft. Publish from CMS Studio.")
 
+    except PermissionError as e:
+        console.print(f"\n[red]✗ Publishing failed - Permission denied[/red]\n")
+        console.print(str(e))
+        console.print()
+        raise click.Abort()
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
         raise click.Abort()

@@ -155,8 +155,7 @@ def create_template_config(platform: str, instance: str = "default") -> Dict[str
         template = {
             "project_id": "YOUR_PROJECT_ID",
             "dataset": "production",
-            "token": "YOUR_READ_TOKEN",
-            "write_token": "YOUR_WRITE_TOKEN",
+            "token": "YOUR_API_TOKEN",
             "base_url": "https://yoursite.com",
         }
     elif platform == "contentful":

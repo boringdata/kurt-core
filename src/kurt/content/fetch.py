@@ -344,8 +344,8 @@ def fetch_document(identifier: str | UUID, fetch_engine: str = None) -> dict:
             content_sample = content[:1000] if len(content) > 1000 else content
             embedding_vector = dspy.Embedder(model=embedding_model)([content_sample])[0]
             doc.embedding = np.array(embedding_vector, dtype=np.float32).tobytes()
-            logger.debug(
-                f"Generated document embedding ({len(embedding_vector)} dims) using {embedding_model}"
+            logger.info(
+                f"Generated document embedding ({len(embedding_vector)} dims) for {doc.id}"
             )
         except Exception as e:
             logger.warning(f"Could not generate document embedding: {e}")
@@ -435,6 +435,7 @@ def fetch_documents_batch(
     max_concurrent: int = 5,
     fetch_engine: str = None,
     progress_callback=None,
+    is_cms_fetch: bool = False,
 ) -> list[dict]:
     """
     Fetch multiple documents in parallel using async HTTP.
@@ -444,6 +445,7 @@ def fetch_documents_batch(
         max_concurrent: Maximum number of concurrent downloads (default: 5)
         fetch_engine: Optional engine override ('firecrawl' or 'trafilatura')
         progress_callback: Optional callback function called after each document completes
+        is_cms_fetch: True if fetching from CMS API (skips web scraping warnings)
 
     Returns:
         List of results, one per document:
@@ -471,11 +473,11 @@ def fetch_documents_batch(
     logger.info(f"Starting batch fetch for {len(document_ids)} documents")
     logger.info(f"  Concurrency: {max_concurrent}")
 
-    # Show warning if using Trafilatura for large batch
+    # Show warning if using Trafilatura for large batch (skip for CMS fetches)
     engine = _get_fetch_engine(override=fetch_engine)
     logger.info(f"  Fetch engine: {engine}")
 
-    if engine == "trafilatura" and len(document_ids) > 10:
+    if engine == "trafilatura" and len(document_ids) > 10 and not is_cms_fetch:
         warning_msg = (
             "⚠️  Warning: Fetching large volumes with Trafilatura may encounter rate limits. "
             "For better reliability with large batches, consider using Firecrawl."

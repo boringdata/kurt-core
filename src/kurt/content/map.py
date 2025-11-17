@@ -1847,7 +1847,7 @@ def map_cms_content(
             cms_document_id=cms_doc_id,  # Store CMS ID for fetching
             cms_platform=platform,  # Store platform for fetch routing
             cms_instance=instance,  # Store instance for fetch routing
-            source_type=SourceType.WEB,  # Use WEB type for now (CMS content is web-accessible)
+            source_type=SourceType.API,  # CMS content discovered via API
             ingestion_status=IngestionStatus.NOT_FETCHED,
             title=doc_meta.get("title", "Untitled"),
             description=doc_meta.get("description"),  # For clustering
