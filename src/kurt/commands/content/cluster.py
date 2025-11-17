@@ -202,7 +202,6 @@ def cluster_urls_cmd(
             table = Table(title=f"Topic Clusters ({len(result['clusters'])} total)")
             table.add_column("Cluster", style="cyan bold", no_wrap=False)
             table.add_column("Doc Count", style="green", justify="right")
-            table.add_column("Sample URLs", style="dim", no_wrap=False)
 
             # Get doc counts per cluster from service
             from kurt.content.cluster import get_cluster_document_counts
@@ -213,11 +212,9 @@ def cluster_urls_cmd(
             for cluster in result["clusters"]:
                 doc_count = doc_counts.get(cluster["name"], 0)
 
-                example_urls_str = "\n".join(cluster["example_urls"][:2])
                 table.add_row(
                     f"{cluster['name']}\n{cluster['description']}",
                     str(doc_count),
-                    example_urls_str,
                 )
 
             console.print(table)

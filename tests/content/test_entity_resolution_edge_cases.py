@@ -98,8 +98,12 @@ def test_document_2(tmp_project):
 
 def test_circular_merge_chain_hits_max_iterations(test_document, mock_all_llm_calls):
     """
-    Test that circular merge chains are handled gracefully.
-    A→B, B→C, C→A should hit max_iterations limit and stop.
+    Test that circular merge chains are detected and handled properly.
+    A→B, B→C, C→A should be detected as a cycle, broken, and resolved.
+
+    This test verifies the fix for GitHub issue #23.
+    Previously, circular MERGE_WITH chains would cause "Invalid entity ID" errors
+    when the code tried to parse "MERGE_WITH:EntityName" as a UUID.
     """
     get_session()  # Initialize session
 
@@ -169,13 +173,27 @@ def test_circular_merge_chain_hits_max_iterations(test_document, mock_all_llm_ca
         resolutions = resolve_entity_groups(new_entities)
         doc_to_kg_data = {test_document.id: {"new_entities": new_entities, "relationships": []}}
 
-        # Should not crash, but may not resolve perfectly
-        # The transitive closure will hit max_iterations (10) and stop
+        # Should detect cycle and handle it properly
         try:
             create_entities_and_relationships(doc_to_kg_data, resolutions)
-            assert True, "Should handle circular merge chains gracefully"
+
+            # Verify entities were created successfully
+            session = get_session()
+            entities = session.query(Entity).all()
+
+            # Should have created entities successfully (the exact number depends on how the cycle was broken)
+            assert len(entities) >= 1, "Should have created at least one entity"
+
+            # Most important: Should NOT have gotten "Invalid entity ID in decision" error
+            # which was the original bug from issue #23
+            # If we get here without an exception, the fix is working!
+
+        except ValueError as e:
+            if "Invalid entity ID in decision" in str(e) and "MERGE_WITH" in str(e):
+                pytest.fail(f"Bug #23 not fixed! Circular merge chain caused UUID parse error: {e}")
+            raise
         except RecursionError:
-            pytest.fail("Should not hit recursion error with max_iterations limit")
+            pytest.fail("Hit recursion error - cycle detection not working properly")
 
 
 # ============================================================================
