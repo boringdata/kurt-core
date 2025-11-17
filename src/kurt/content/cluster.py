@@ -59,15 +59,8 @@ class ContentTypeClassification(BaseModel):
     )
 
 
-class DocumentClusterAssignment(BaseModel):
-    """Cluster assignment for a single document."""
-
-    url: str = Field(description="The document URL")
-    cluster_name: str = Field(description="Name of the best matching cluster for this document")
-
-
 # ============================================================================
-# DSPy Signatures
+# DSPy Signature
 # ============================================================================
 
 
@@ -134,36 +127,6 @@ class ComputeClustersAndClassify(dspy.Signature):
     )
     classifications: list[ContentTypeClassification] = dspy.OutputField(
         description=f"Content type classification for each URL. Valid types: {VALID_CONTENT_TYPES}"
-    )
-
-
-class AssignDocumentsToClusters(dspy.Signature):
-    """Assign each document to its best matching topic cluster.
-
-    Given a list of documents (with URL, title, description) and a list of defined topic clusters,
-    assign each document to the single cluster that best matches its content and theme.
-
-    ASSIGNMENT GUIDELINES:
-    1. Analyze the document's URL, title, and description
-    2. Compare against all available clusters
-    3. Choose the ONE cluster that best represents the document's main topic
-    4. If no cluster is a good fit, assign to the most general/broad cluster available
-    5. IMPORTANT: Every document MUST be assigned to exactly one cluster
-
-    OUTPUT FORMAT:
-    - Return one assignment per document
-    - Use the EXACT cluster name from the available clusters (case-sensitive)
-    - Ensure all input documents have an assignment in the output
-    """
-
-    documents: list[PageMetadata] = dspy.InputField(
-        description="List of documents to assign, each with URL, title, and description"
-    )
-    clusters: list[ExistingCluster] = dspy.InputField(
-        description="Available topic clusters to assign documents to"
-    )
-    assignments: list[DocumentClusterAssignment] = dspy.OutputField(
-        description="Cluster assignment for each document (must match cluster names exactly)"
     )
 
 
@@ -485,20 +448,13 @@ def compute_topic_clusters(
 
     logger.info(f"Classified {classified_count} documents with content_type")
 
-    # Now link ALL documents to clusters using LLM-based assignment
-    logger.info(f"Assigning all {len(docs)} documents to clusters using LLM...")
-
-    if progress_callback:
-        progress_callback(f"Assigning {len(docs)} documents to {len(clusters)} clusters...")
-
-    # Prepare cluster descriptions for LLM
-    cluster_list = [ExistingCluster(name=c.name, description=c.description) for c in clusters]
+    # Now link ALL documents to clusters (not just example URLs)
+    # We use a second LLM call to assign each document to the best matching cluster
+    logger.info(f"Assigning all {len(docs)} documents to clusters...")
 
     # Batch assign documents to clusters (process in batches to avoid token limits)
     batch_size = 100
-    all_assignments = []
-
-    for batch_num, i in enumerate(range(0, len(docs), batch_size), 1):
+    for i in range(0, len(docs), batch_size):
         batch_docs = docs[i : i + batch_size]
         batch_pages = [
             PageMetadata(
@@ -509,65 +465,31 @@ def compute_topic_clusters(
             for doc in batch_docs
         ]
 
-        logger.info(
-            f"Assigning batch {batch_num}/{(len(docs) + batch_size - 1) // batch_size}: {len(batch_docs)} documents"
-        )
-
-        if progress_callback:
-            progress_callback(
-                f"LLM assigning batch {batch_num}/{(len(docs) + batch_size - 1) // batch_size}..."
-            )
-
         # Use LLM to assign documents to clusters
-        config = get_config_or_default()
-        estimated_tokens = len(batch_pages) * 30 + len(cluster_list) * 20 + 1000
-        max_tokens = max(4000, min(estimated_tokens, 8000))
+        # For now, use a simple heuristic: assign to cluster if URL in example_urls
+        # TODO: Use LLM to assign all documents to best matching cluster
+        for doc in batch_docs:
+            if not doc.source_url:
+                continue
 
-        lm = dspy.LM(config.INDEXING_LLM_MODEL, max_tokens=max_tokens)
-        dspy.configure(lm=lm)
+            normalized_url = normalize_url(doc.source_url)
 
-        assigner = dspy.ChainOfThought(AssignDocumentsToClusters)
-        result = assigner(documents=batch_pages, clusters=cluster_list)
-        all_assignments.extend(result.assignments)
-
-        logger.info(f"Batch {batch_num}: received {len(result.assignments)} assignments")
-
-    logger.info(f"LLM returned {len(all_assignments)} total assignments for {len(docs)} documents")
-
-    # Create document-cluster edges from assignments
-    url_to_doc_id = {normalize_url(doc.source_url): doc.id for doc in docs if doc.source_url}
-
-    for assignment in all_assignments:
-        normalized_url = normalize_url(assignment.url)
-        doc_id = url_to_doc_id.get(normalized_url)
-
-        if not doc_id:
-            logger.warning(f"Assignment for unknown document URL: {assignment.url}")
-            continue
-
-        # Find cluster ID by name
-        cluster_id = cluster_name_to_id.get(assignment.cluster_name)
-        if not cluster_id:
-            # Try case-insensitive match
-            for name, cid in cluster_name_to_id.items():
-                if name.lower() == assignment.cluster_name.lower():
-                    cluster_id = cid
+            # Find best matching cluster (check example URLs)
+            assigned = False
+            for cluster_data in clusters:
+                for example_url in cluster_data.example_urls:
+                    if normalize_url(example_url) == normalized_url:
+                        edge = DocumentClusterEdge(
+                            id=uuid4(),
+                            document_id=doc.id,
+                            cluster_id=cluster_name_to_id[cluster_data.name],
+                        )
+                        session.add(edge)
+                        edge_count += 1
+                        assigned = True
+                        break
+                if assigned:
                     break
-
-        if not cluster_id:
-            logger.warning(
-                f"Assignment references unknown cluster '{assignment.cluster_name}' for {assignment.url}"
-            )
-            continue
-
-        # Create edge
-        edge = DocumentClusterEdge(
-            id=uuid4(),
-            document_id=doc_id,
-            cluster_id=cluster_id,
-        )
-        session.add(edge)
-        edge_count += 1
 
     session.commit()
 
