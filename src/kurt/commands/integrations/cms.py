@@ -301,6 +301,11 @@ def types_cmd(platform: str, instance: Optional[str]):
 @click.option("--token", help="Read token for CMS API")
 @click.option("--write-token", help="Write token for CMS API")
 @click.option("--base-url", help="Base URL for your website")
+@click.option(
+    "--publish/--no-publish",
+    default=False,
+    help="Whether to publish content back to CMS (determines token permissions needed)",
+)
 # Content type selection
 @click.option(
     "--content-types",
@@ -315,6 +320,7 @@ def onboard_cmd(
     token: Optional[str],
     write_token: Optional[str],
     base_url: Optional[str],
+    publish: bool,
     content_types: Optional[str],
 ):
     """
@@ -339,6 +345,11 @@ def onboard_cmd(
             --project-id myproject --dataset production \\
             --content-types article,blog_post
 
+        # Non-interactive with publish intent
+        kurt integrations cms onboard \\
+            --project-id myproject --dataset production \\
+            --publish
+
         # Partial options (will prompt only for missing fields)
         kurt integrations cms onboard --project-id myproject --dataset production
     """
@@ -356,11 +367,16 @@ def onboard_cmd(
 
         # Ask upfront about publish intent for Sanity
         if platform == "sanity":
-            console.print("[bold]Do you want to publish content back to Sanity?[/bold]")
-            console.print("[dim]This determines what token permissions you need.[/dim]\n")
-            publish_response = console.input("  Publish to Sanity? [y/n] (n): ").strip().lower()
-            wants_publish = publish_response in ["y", "yes"]
-            console.print()
+            if non_interactive:
+                # Use the --publish flag value in non-interactive mode
+                wants_publish = publish
+            else:
+                # Prompt in interactive mode
+                console.print("[bold]Do you want to publish content back to Sanity?[/bold]")
+                console.print("[dim]This determines what token permissions you need.[/dim]\n")
+                publish_response = console.input("  Publish to Sanity? [y/n] (n): ").strip().lower()
+                wants_publish = publish_response in ["y", "yes"]
+                console.print()
 
         # Get template and prompt for values
         template = create_template_config(platform, instance)
@@ -381,36 +397,39 @@ def onboard_cmd(
                 # For other platforms, use template defaults
                 instance_config = template
         else:
+            # Interactive mode: prompt for each field
             console.print(f"[bold]Enter {platform.capitalize()} credentials:[/bold]\n")
 
-        # Define helper text for Sanity fields based on publish intent
-        if platform == "sanity":
-            if wants_publish:
-                token_help = "Create a CONTRIBUTOR token in Sanity Manage console (manage.sanity.io) → API → Tokens → Add API token with 'Editor' permissions (read + write drafts)"
+            # Define helper text for Sanity fields based on publish intent
+            if platform == "sanity":
+                if wants_publish:
+                    token_help = "Create a CONTRIBUTOR token in Sanity Manage console (manage.sanity.io) → API → Tokens → Add API token with 'Editor' permissions (read + write drafts)"
+                else:
+                    token_help = "Create a VIEWER token in Sanity Manage console (manage.sanity.io) → API → Tokens → Add API token with 'Viewer' permissions (read-only)"
+
+                sanity_help = {
+                    "project_id": "Found in Sanity Studio → Manage → Project settings → Project ID",
+                    "dataset": "Usually 'production' (found in Sanity Studio → Manage → Datasets)",
+                    "token": token_help,
+                    "base_url": "Your public website URL where content is published (e.g., https://yourdomain.com)",
+                }
             else:
-                token_help = "Create a VIEWER token in Sanity Manage console (manage.sanity.io) → API → Tokens → Add API token with 'Viewer' permissions (read-only)"
+                sanity_help = {}
 
-            sanity_help = {
-                "project_id": "Found in Sanity Studio → Manage → Project settings → Project ID",
-                "dataset": "Usually 'production' (found in Sanity Studio → Manage → Datasets)",
-                "token": token_help,
-                "base_url": "Your public website URL where content is published (e.g., https://yourdomain.com)",
-            }
-        else:
-            sanity_help = {}
+            # Prompt for each required field
+            instance_config = {}
+            for key, placeholder in template.items():
+                if key == "content_type_mappings":
+                    continue  # Skip this for now, will be added during type discovery
 
-        # Prompt for each required field
-        instance_config = {}
-        for key, placeholder in template.items():
-            if key == "content_type_mappings":
-                continue  # Skip this for now, will be added during type discovery
+                # Show helper text for Sanity fields
+                if platform == "sanity" and key in sanity_help:
+                    console.print(f"  [dim]{sanity_help[key]}[/dim]")
 
-            # Show helper text for Sanity fields
-            if platform == "sanity" and key in sanity_help:
-                console.print(f"  [dim]{sanity_help[key]}[/dim]")
-
-            value = console.input(f"  {key.replace('_', ' ').title()} [{placeholder}]: ").strip()
-            instance_config[key] = value if value else placeholder
+                value = console.input(
+                    f"  {key.replace('_', ' ').title()} [{placeholder}]: "
+                ).strip()
+                instance_config[key] = value if value else placeholder
 
         # Save configuration
         add_platform_instance(platform, instance, instance_config)

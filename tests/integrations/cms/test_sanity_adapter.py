@@ -436,7 +436,7 @@ class TestSanityMutations:
         with pytest.raises(ValueError) as exc_info:
             adapter._mutate([{"create": {"_type": "article"}}])
 
-        assert "Write token required" in str(exc_info.value)
+        assert "API token required for mutations" in str(exc_info.value)
 
     @patch("kurt.integrations.cms.sanity.adapter.requests")
     def test_create_draft_success(self, mock_requests):

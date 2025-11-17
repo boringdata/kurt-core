@@ -211,7 +211,7 @@ def test_resolve_entity_groups_with_activity_callback(tmp_project, mock_dspy_sig
 
     # Check that activity callbacks were triggered
     assert len(activity_messages) > 0
-    assert any("Clustering" in msg for msg in activity_messages)
+    assert any("clustering" in msg for msg in activity_messages)
     assert any("Found" in msg and "groups" in msg for msg in activity_messages)
     assert any("Resolved group" in msg for msg in activity_messages)
 
