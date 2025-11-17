@@ -45,7 +45,9 @@ def cms():
 
 
 @cms.command("search")
-@click.option("--platform", default="sanity", help="CMS platform (currently only sanity is supported)")
+@click.option(
+    "--platform", default="sanity", help="CMS platform (currently only sanity is supported)"
+)
 @click.option("--instance", default=None, help="Instance name (uses default if not specified)")
 @click.option("--query", "-q", help="Text search query")
 @click.option("--content-type", "-t", help="Filter by content type")
@@ -136,7 +138,9 @@ def search_cmd(
 
 
 @cms.command("fetch")
-@click.option("--platform", default="sanity", help="CMS platform (currently only sanity is supported)")
+@click.option(
+    "--platform", default="sanity", help="CMS platform (currently only sanity is supported)"
+)
 @click.option("--instance", default=None, help="Instance name (uses default if not specified)")
 @click.option("--id", "document_id", required=True, help="Document ID to fetch")
 @click.option("--output-dir", type=click.Path(), help="Output directory for markdown file")
@@ -231,7 +235,9 @@ def fetch_cmd(
 
 
 @cms.command("types")
-@click.option("--platform", default="sanity", help="CMS platform (currently only sanity is supported)")
+@click.option(
+    "--platform", default="sanity", help="CMS platform (currently only sanity is supported)"
+)
 @click.option("--instance", default=None, help="Instance name (uses default if not specified)")
 @track_command
 def types_cmd(platform: str, instance: Optional[str]):
@@ -283,7 +289,11 @@ def types_cmd(platform: str, instance: Optional[str]):
 
 
 @cms.command("onboard")
-@click.option("--platform", default="sanity", help="CMS platform to configure (currently only sanity is supported)")
+@click.option(
+    "--platform",
+    default="sanity",
+    help="CMS platform to configure (currently only sanity is supported)",
+)
 @click.option("--instance", default="default", help="Instance name (default, prod, staging, etc)")
 # CMS Credentials (providing these enables non-interactive mode)
 @click.option("--project-id", help="Project ID (Sanity) - enables non-interactive mode")
@@ -530,11 +540,12 @@ def onboard_cmd(
 
                 # Display all fields in 2 columns using Rich Columns
                 from rich.columns import Columns
-                from rich.panel import Panel
 
                 sorted_fields = sorted(available_fields)
                 field_renderables = [f"[cyan]•[/cyan] {field}" for field in sorted_fields]
-                console.print(Columns(field_renderables, equal=True, expand=False, column_first=True))
+                console.print(
+                    Columns(field_renderables, equal=True, expand=False, column_first=True)
+                )
 
                 # Smart defaults
                 content_field_default = None
@@ -670,24 +681,16 @@ def onboard_cmd(
         console.print(
             f"  1. Index CMS content: [cyan]kurt content map cms --platform {platform}[/cyan]"
         )
-        console.print(
-            f"     [dim](Creates document records in database for all CMS content)[/dim]"
-        )
-        console.print(
-            f"  2. Fetch full content: [cyan]kurt content fetch <url>[/cyan]"
-        )
-        console.print(
-            f"     [dim](Downloads and processes document content with LLM)[/dim]"
-        )
+        console.print("     [dim](Creates document records in database for all CMS content)[/dim]")
+        console.print("  2. Fetch full content: [cyan]kurt content fetch <url>[/cyan]")
+        console.print("     [dim](Downloads and processes document content with LLM)[/dim]")
 
         # Only show publish option if user wants it
         if wants_publish:
             console.print(
                 f"  3. Publish content: [cyan]kurt integrations cms publish --file <path> --content-type {selected_types[0]}[/cyan]"
             )
-            console.print(
-                f"     [dim](Publish markdown file to CMS as draft)[/dim]"
-            )
+            console.print("     [dim](Publish markdown file to CMS as draft)[/dim]")
 
         console.print()
         console.print("[dim]Alternative workflow (for exporting CMS to markdown files):[/dim]")
@@ -707,7 +710,9 @@ def onboard_cmd(
 
 
 @cms.command("import")
-@click.option("--platform", default="sanity", help="CMS platform (currently only sanity is supported)")
+@click.option(
+    "--platform", default="sanity", help="CMS platform (currently only sanity is supported)"
+)
 @click.option(
     "--source-dir",
     required=True,
@@ -817,7 +822,9 @@ def import_cmd(platform: str, source_dir: str):
 
 
 @cms.command("publish")
-@click.option("--platform", default="sanity", help="CMS platform (currently only sanity is supported)")
+@click.option(
+    "--platform", default="sanity", help="CMS platform (currently only sanity is supported)"
+)
 @click.option("--instance", default=None, help="Instance name (uses default if not specified)")
 @click.option(
     "--file",
@@ -920,7 +927,7 @@ def publish_cmd(
         console.print("[yellow]Note:[/yellow] Document created as draft. Publish from CMS Studio.")
 
     except PermissionError as e:
-        console.print(f"\n[red]✗ Publishing failed - Permission denied[/red]\n")
+        console.print("\n[red]✗ Publishing failed - Permission denied[/red]\n")
         console.print(str(e))
         console.print()
         raise click.Abort()
