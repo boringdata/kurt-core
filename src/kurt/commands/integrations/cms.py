@@ -668,8 +668,114 @@ def onboard_cmd(
                     if not inferred_content_type:
                         inferred_content_type = content_type_default
 
+                # URL configuration (optional)
+                url_config = None
+                if not non_interactive:
+                    console.print("\n[bold]URL Path Configuration[/bold]")
+                    console.print(
+                        "[dim]Configure how URLs are built for this content type on your website[/dim]"
+                    )
+                    console.print(
+                        "[dim](Optional: skip if documents use slug directly, e.g., yourdomain.com/slug)[/dim]"
+                    )
+
+                    wants_url_config = (
+                        console.input("\n[cyan]Configure URL path? (y/N):[/cyan] ").strip().lower()
+                    )
+
+                    if wants_url_config in ["y", "yes"]:
+                        console.print("\n[bold]URL path type:[/bold]")
+                        console.print("  1. Static prefix (all documents use same path)")
+                        console.print("     Example: /blog/ → yourdomain.com/blog/my-slug")
+                        console.print("  2. Conditional (path depends on a document field)")
+                        console.print(
+                            "     Example: category field → /news/my-slug or /blog/my-slug"
+                        )
+
+                        url_type = console.input("\n[cyan]Select type (1 or 2):[/cyan] ").strip()
+
+                        if url_type == "1":
+                            # Static path prefix
+                            console.print(
+                                "\n[bold]Enter URL path prefix (include leading/trailing slashes)[/bold]"
+                            )
+                            console.print("[dim]Example: /blog/ or /posts/[/dim]")
+                            path_prefix = console.input("[cyan]Path prefix:[/cyan] ").strip()
+
+                            if path_prefix:
+                                url_config = {"type": "static", "path_prefix": path_prefix}
+                                console.print(f"[green]✓ URLs will be: {path_prefix}<slug>[/green]")
+
+                        elif url_type == "2":
+                            # Conditional path based on field
+                            console.print(
+                                "\n[bold]Which document field determines the URL path?[/bold]"
+                            )
+                            console.print(
+                                "[dim]Supports nested fields (e.g., category or category.type)[/dim]"
+                            )
+                            console.print(
+                                f"[dim]Available fields: {', '.join(sorted_fields)}[/dim]"
+                            )
+                            field_name = console.input("[cyan]Field name:[/cyan] ").strip()
+
+                            if field_name:
+                                console.print(
+                                    f"\n[bold]Enter path mappings for different values of '{field_name}':[/bold]"
+                                )
+                                console.print(
+                                    "[dim]Enter field_value=path pairs (e.g., news=/news/)[/dim]"
+                                )
+                                console.print(
+                                    "[dim]Press Enter on empty line when done, or type 'default=/path/' for fallback[/dim]"
+                                )
+
+                                mappings_dict = {}
+                                while True:
+                                    mapping_input = console.input(
+                                        "[cyan]  Mapping:[/cyan] "
+                                    ).strip()
+                                    if not mapping_input:
+                                        break
+
+                                    if "=" in mapping_input:
+                                        field_value, path = mapping_input.split("=", 1)
+                                        mappings_dict[field_value.strip()] = path.strip()
+                                        console.print(
+                                            f"    [green]✓ {field_value.strip()} → {path.strip()}[/green]"
+                                        )
+                                    else:
+                                        console.print(
+                                            "[yellow]  ⚠ Invalid format, use: value=/path/[/yellow]"
+                                        )
+
+                                # Ensure 'default' mapping exists
+                                if mappings_dict and "default" not in mappings_dict:
+                                    console.print(
+                                        "\n[yellow]⚠ No 'default' fallback specified[/yellow]"
+                                    )
+                                    default_path = (
+                                        console.input(
+                                            "[cyan]  Default path (for unmatched values):[/cyan] "
+                                        )
+                                        .strip()
+                                        .strip()
+                                    )
+                                    if default_path:
+                                        mappings_dict["default"] = default_path
+
+                                if mappings_dict:
+                                    url_config = {
+                                        "type": "conditional",
+                                        "field": field_name,
+                                        "mappings": mappings_dict,
+                                    }
+                                    console.print(
+                                        f"[green]✓ URLs will vary based on '{field_name}' field[/green]"
+                                    )
+
                 # Save mapping
-                mappings[content_type] = {
+                mapping_config = {
                     "enabled": True,
                     "content_field": content_field,
                     "title_field": title_field,
@@ -679,12 +785,31 @@ def onboard_cmd(
                     "metadata_fields": {},
                 }
 
+                # Add url_config if configured
+                if url_config:
+                    mapping_config["url_config"] = url_config
+
+                mappings[content_type] = mapping_config
+
                 console.print(f"\n[green]✓ Configured {content_type}[/green]")
                 console.print(f"  Content: [cyan]{content_field}[/cyan]")
                 console.print(f"  Title: [cyan]{title_field}[/cyan]")
                 console.print(f"  Slug: [cyan]{slug_field}[/cyan]")
                 console.print(f"  Description: [cyan]{description_field}[/cyan]")
                 console.print(f"  Content Type: [cyan]{inferred_content_type}[/cyan]")
+
+                # Show URL config if present
+                if url_config:
+                    if url_config["type"] == "static":
+                        console.print(
+                            f"  URL Pattern: [cyan]{url_config['path_prefix']}<slug>[/cyan]"
+                        )
+                    elif url_config["type"] == "conditional":
+                        console.print(
+                            f"  URL Pattern: [cyan]conditional on '{url_config['field']}'[/cyan]"
+                        )
+                        for value, path in url_config["mappings"].items():
+                            console.print(f"    • {value} → [cyan]{path}<slug>[/cyan]")
 
             except Exception as e:
                 console.print(f"[yellow]⚠ Could not configure {content_type}: {e}[/yellow]")

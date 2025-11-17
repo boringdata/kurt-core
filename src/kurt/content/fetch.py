@@ -136,6 +136,12 @@ def _fetch_from_cms(platform: str, instance: str, doc: Document) -> tuple[str, d
         # Fetch document using CMS document ID (not the slug)
         cms_document = adapter.fetch(doc.cms_document_id)
 
+        # Store public URL in discovery_url for link matching
+        # (CMS documents use source_url like "sanity/prod/article/slug"
+        #  but discovery_url stores the actual public URL like "https://technically.dev/posts/slug")
+        if cms_document.url:
+            doc.discovery_url = cms_document.url
+
         # Extract metadata
         metadata_dict = {
             "title": cms_document.title,
@@ -344,9 +350,7 @@ def fetch_document(identifier: str | UUID, fetch_engine: str = None) -> dict:
             content_sample = content[:1000] if len(content) > 1000 else content
             embedding_vector = dspy.Embedder(model=embedding_model)([content_sample])[0]
             doc.embedding = np.array(embedding_vector, dtype=np.float32).tobytes()
-            logger.info(
-                f"Generated document embedding ({len(embedding_vector)} dims) for {doc.id}"
-            )
+            logger.info(f"Generated document embedding ({len(embedding_vector)} dims) for {doc.id}")
         except Exception as e:
             logger.warning(f"Could not generate document embedding: {e}")
             # Continue without embedding - it's optional
@@ -356,12 +360,14 @@ def fetch_document(identifier: str | UUID, fetch_engine: str = None) -> dict:
 
         # Choose path based on document type (CMS vs Web)
         if doc.cms_platform and doc.cms_instance:
-            # CMS: sources/cms/{platform}/{instance}/{cms_document_id}.md
+            # CMS: sources/cms/{platform}/{instance}/{schema}/{slug}.md (if source_url available)
+            # Fallback: sources/cms/{platform}/{instance}/{cms_document_id}.md
             content_path = create_cms_content_path(
                 platform=doc.cms_platform,
                 instance=doc.cms_instance,
                 doc_id=doc.cms_document_id,
                 config=config,
+                source_url=doc.source_url,
             )
         else:
             # Web: sources/{domain}/{path}/page_name.md
@@ -382,7 +388,19 @@ def fetch_document(identifier: str | UUID, fetch_engine: str = None) -> dict:
         # Extract and save document links (internal references)
         if doc.source_url:
             try:
-                links = extract_document_links(content, doc.source_url)
+                # For CMS documents, use base_url for domain matching
+                base_url_for_links = None
+                if doc.cms_platform and doc.cms_instance:
+                    try:
+                        from kurt.integrations.cms.config import get_platform_config
+
+                        cms_config = get_platform_config(doc.cms_platform, doc.cms_instance)
+                        base_url_for_links = cms_config.get("base_url")
+                    except Exception:
+                        # CMS config not available - fall back to source_url
+                        pass
+
+                links = extract_document_links(content, doc.source_url, base_url=base_url_for_links)
                 links_saved = save_document_links(doc.id, links)
                 logger.debug(f"Extracted {len(links)} links, saved {links_saved} to database")
             except Exception as e:
@@ -814,7 +832,9 @@ def fetch_content(
 # ============================================================================
 
 
-def extract_document_links(content: str, source_url: str) -> list[dict]:
+def extract_document_links(
+    content: str, source_url: str, base_url: str | None = None
+) -> list[dict]:
     """
     Extract internal document links from markdown content.
 
@@ -825,6 +845,8 @@ def extract_document_links(content: str, source_url: str) -> list[dict]:
     Args:
         content: Markdown content to extract links from
         source_url: Source URL of the document (for resolving relative links)
+        base_url: Optional base URL for CMS documents (e.g., "https://technically.dev")
+                  Used for domain matching when source_url is a CMS path like "sanity/prod/article/slug"
 
     Returns:
         List of dicts with:
@@ -835,6 +857,11 @@ def extract_document_links(content: str, source_url: str) -> list[dict]:
         >>> content = "See [Getting Started](./getting-started) for details."
         >>> extract_document_links(content, "https://example.com/docs/intro")
         [{'url': 'https://example.com/docs/getting-started', 'anchor_text': 'Getting Started'}]
+
+        >>> # CMS document example
+        >>> content = "See [Context Windows](https://technically.dev/universe/context-windows)."
+        >>> extract_document_links(content, "sanity/prod/article/my-post", base_url="https://technically.dev")
+        [{'url': 'https://technically.dev/universe/context-windows', 'anchor_text': 'Context Windows'}]
     """
     import re
     from urllib.parse import urljoin, urlparse
@@ -844,7 +871,18 @@ def extract_document_links(content: str, source_url: str) -> list[dict]:
     link_pattern = re.compile(r"\[([^\]]+)\]\(([^\)]+?)(?:\s+['\"]([^'\"]+)['\"])?\)")
 
     links = []
-    parsed_source = urlparse(source_url)
+
+    # Determine which URL to use for domain matching
+    # For CMS documents (source_url like "sanity/prod/article/slug"), use base_url
+    # For web documents (source_url like "https://example.com/page"), use source_url
+    if base_url and not source_url.startswith(("http://", "https://")):
+        # CMS document - use base_url for domain matching
+        domain_url = base_url
+    else:
+        # Web document - use source_url
+        domain_url = source_url
+
+    parsed_source = urlparse(domain_url)
 
     for match in link_pattern.finditer(content):
         anchor_text = match.group(1).strip()
@@ -854,10 +892,14 @@ def extract_document_links(content: str, source_url: str) -> list[dict]:
         if link_url.startswith("#") or link_url.startswith("mailto:"):
             continue
 
+        # Skip image links (sanity-image-*)
+        if link_url.startswith("sanity-image"):
+            continue
+
         # Resolve relative URLs
         if not link_url.startswith(("http://", "https://")):
-            # Relative URL - resolve against source URL
-            absolute_url = urljoin(source_url, link_url)
+            # Relative URL - resolve against domain URL
+            absolute_url = urljoin(domain_url, link_url)
         else:
             absolute_url = link_url
 
@@ -915,8 +957,20 @@ def save_document_links(doc_id: UUID, links: list[dict]) -> int:
         return 0
 
     # Query for documents matching these URLs
-    target_docs_stmt = select(Document).where(Document.source_url.in_(target_urls))
-    target_docs = {doc.source_url: doc.id for doc in session.exec(target_docs_stmt).all()}
+    # Check both source_url and discovery_url (for CMS documents with public URLs)
+    from sqlmodel import or_
+
+    target_docs_stmt = select(Document).where(
+        or_(Document.source_url.in_(target_urls), Document.discovery_url.in_(target_urls))
+    )
+
+    # Build mapping of URL -> doc_id (check both source_url and discovery_url)
+    target_docs = {}
+    for doc in session.exec(target_docs_stmt).all():
+        if doc.source_url in target_urls:
+            target_docs[doc.source_url] = doc.id
+        if doc.discovery_url in target_urls:
+            target_docs[doc.discovery_url] = doc.id
 
     # Create links for URLs that match documents in database
     saved_count = 0

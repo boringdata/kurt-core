@@ -6,11 +6,11 @@ Provides interface to Sanity.io CMS using GROQ queries via HTTP API.
 
 import re
 from typing import Any, Dict, List, Optional
-from urllib.parse import urljoin
 
 import requests
 
 from kurt.integrations.cms.base import CMSAdapter, CMSDocument
+from kurt.integrations.cms.utils import build_document_url, extract_field_value
 
 
 class SanityAdapter(CMSAdapter):
@@ -71,9 +71,7 @@ class SanityAdapter(CMSAdapter):
     def _mutate(self, mutations: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Execute mutations (create/update) against Sanity API."""
         if not self.write_token:
-            raise ValueError(
-                "API token required for mutations. Configure a token in kurt.config."
-            )
+            raise ValueError("API token required for mutations. Configure a token in kurt.config.")
 
         headers = {
             "Authorization": f"Bearer {self.write_token}",
@@ -284,15 +282,17 @@ class SanityAdapter(CMSAdapter):
                     # Fallback for unexpected types
                     slug_value = "untitled"
 
-                documents.append({
-                    "id": doc["_id"],
-                    "title": doc.get("title", "Untitled"),
-                    "slug": slug_value,
-                    "description": doc.get("description"),
-                    "content_type": doc["_type"],
-                    "status": doc.get("status", "published"),
-                    "updated_at": doc.get("_updatedAt"),
-                })
+                documents.append(
+                    {
+                        "id": doc["_id"],
+                        "title": doc.get("title", "Untitled"),
+                        "slug": slug_value,
+                        "description": doc.get("description"),
+                        "content_type": doc["_type"],
+                        "status": doc.get("status", "published"),
+                        "updated_at": doc.get("_updatedAt"),
+                    }
+                )
             return documents
         except Exception:
             raise
@@ -499,7 +499,7 @@ class SanityAdapter(CMSAdapter):
         # Extract content using configured field
         content = ""
         if include_content:
-            content_data = self._extract_field_value(doc, content_field)
+            content_data = extract_field_value(doc, content_field)
             if content_data:
                 if isinstance(content_data, list):
                     # Assume portable text blocks
@@ -510,17 +510,10 @@ class SanityAdapter(CMSAdapter):
                     content = str(content_data)
 
         # Extract title using configured field
-        title = str(self._extract_field_value(doc, title_field) or "")
+        title = str(extract_field_value(doc, title_field) or "")
 
-        # Build URL from slug using configured field
-        url = None
-        if self.base_url:
-            slug_value = self._extract_field_value(doc, slug_field)
-            # Handle Sanity slug objects: {"_type": "slug", "current": "actual-slug"}
-            if isinstance(slug_value, dict) and "current" in slug_value:
-                slug_value = slug_value["current"]
-            if slug_value and isinstance(slug_value, str):
-                url = urljoin(self.base_url, slug_value)
+        # Build URL using schema url_config (supports static + conditional paths)
+        url = build_document_url(doc, content_type, self.base_url, self.mappings)
 
         # Extract metadata using configured mappings
         metadata = {}
@@ -529,7 +522,7 @@ class SanityAdapter(CMSAdapter):
         last_modified = None
 
         for key, field_path in metadata_mappings.items():
-            value = self._extract_field_value(doc, field_path)
+            value = extract_field_value(doc, field_path)
             if value is not None:
                 metadata[key] = value
 
@@ -548,7 +541,7 @@ class SanityAdapter(CMSAdapter):
             last_modified = doc.get("_updatedAt")
 
         # Add slug to metadata
-        slug_value = self._extract_field_value(doc, slug_field)
+        slug_value = extract_field_value(doc, slug_field)
         # Handle Sanity slug objects
         if isinstance(slug_value, dict) and "current" in slug_value:
             slug_value = slug_value["current"]
@@ -585,6 +578,10 @@ class SanityAdapter(CMSAdapter):
                 # Standard text block
                 style = block.get("style", "normal")
                 children = block.get("children", [])
+                mark_defs = block.get("markDefs", [])
+
+                # Build mark definitions lookup (for links, etc.)
+                mark_def_lookup = {md.get("_key"): md for md in mark_defs}
 
                 # Build text from children
                 text_parts = []
@@ -592,7 +589,16 @@ class SanityAdapter(CMSAdapter):
                     text = child.get("text", "")
                     marks = child.get("marks", [])
 
-                    # Apply marks
+                    # Check for link marks first (they wrap other marks)
+                    link_href = None
+                    for mark in marks:
+                        if mark in mark_def_lookup:
+                            mark_def = mark_def_lookup[mark]
+                            if mark_def.get("_type") == "link":
+                                link_href = mark_def.get("href")
+                                break
+
+                    # Apply inline formatting marks (bold, italic, code)
                     for mark in marks:
                         if mark == "strong":
                             text = f"**{text}**"
@@ -600,6 +606,11 @@ class SanityAdapter(CMSAdapter):
                             text = f"*{text}*"
                         elif mark == "code":
                             text = f"`{text}`"
+                        # Skip link marks here - handled separately
+
+                    # Wrap in link if link mark found
+                    if link_href:
+                        text = f"[{text}]({link_href})"
 
                     text_parts.append(text)
 
@@ -792,6 +803,9 @@ class SanityAdapter(CMSAdapter):
         """
         Extract field value from document using path notation.
 
+        DEPRECATED: Use kurt.integrations.cms.utils.extract_field_value instead.
+        This method is kept for backward compatibility and delegates to the shared function.
+
         Supports:
         - Simple fields: "title"
         - Nested fields: "slug.current"
@@ -799,44 +813,4 @@ class SanityAdapter(CMSAdapter):
         - Arrays: "tags[]"
         - Array of references: "categories[]->title"
         """
-        if not field_path:
-            return None
-
-        # Handle reference resolution
-        if "->" in field_path:
-            base_path, ref_field = field_path.split("->", 1)
-            base_value = self._extract_field_value(doc, base_path)
-
-            if not base_value:
-                return None
-
-            # Handle array of references
-            if isinstance(base_value, list):
-                return [
-                    item.get(ref_field)
-                    for item in base_value
-                    if isinstance(item, dict) and ref_field in item
-                ]
-            # Handle single reference
-            elif isinstance(base_value, dict):
-                return base_value.get(ref_field)
-            else:
-                return None
-
-        # Handle array notation
-        if field_path.endswith("[]"):
-            base_path = field_path[:-2]
-            value = self._extract_field_value(doc, base_path)
-            return value if isinstance(value, list) else []
-
-        # Handle nested fields
-        parts = field_path.split(".")
-        current = doc
-
-        for part in parts:
-            if isinstance(current, dict) and part in current:
-                current = current[part]
-            else:
-                return None
-
-        return current
+        return extract_field_value(doc, field_path)
