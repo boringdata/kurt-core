@@ -128,19 +128,19 @@ def map_url(
     \b
     Examples:
         # Discover from sitemap
-        kurt map url https://example.com
+        kurt content map url https://example.com
 
         # Discover with custom sitemap path
-        kurt map url https://example.com --sitemap-path /custom-sitemap.xml
+        kurt content map url https://example.com --sitemap-path /custom-sitemap.xml
 
         # Discover with crawling
-        kurt map url https://example.com --max-depth 5
+        kurt content map url https://example.com --max-depth 5
 
         # Discover with filters
-        kurt map url https://example.com --include "*/docs/*" --exclude "*/api/*"
+        kurt content map url https://example.com --include "*/docs/*" --exclude "*/api/*"
 
         # Discover and cluster immediately
-        kurt map url https://example.com --cluster-urls
+        kurt content map url https://example.com --cluster-urls
     """
     from kurt.content.map import map_url_content
 
@@ -271,7 +271,7 @@ def map_url(
                 example_pattern = f"*{domain}*"
 
                 console.print(
-                    f'\n[dim]💡 Tip: Cluster these URLs with [cyan]kurt cluster-urls --include "{example_pattern}"[/cyan] (or just [cyan]kurt cluster-urls[/cyan] for all)[/dim]'
+                    f'\n[dim]💡 Tip: Cluster these URLs with [cyan]kurt content cluster-urls --include "{example_pattern}"[/cyan] (or just [cyan]kurt content cluster-urls[/cyan] for all)[/dim]'
                 )
                 console.print(
                     f'[dim]💡 Tip: Explore URLs by depth with [cyan]kurt content list --include "{example_pattern}" --max-depth 2[/cyan][/dim]'
@@ -321,13 +321,13 @@ def map_folder(
     \b
     Examples:
         # Discover from folder
-        kurt map folder ./docs
+        kurt content map folder ./docs
 
         # Discover with filters
-        kurt map folder ./docs --include "*/guides/*" --exclude "*/draft/*"
+        kurt content map folder ./docs --include "*/guides/*" --exclude "*/draft/*"
 
         # Preview without creating records
-        kurt map folder ./docs --dry-run
+        kurt content map folder ./docs --dry-run
     """
     from pathlib import Path
 
@@ -406,9 +406,9 @@ def map_folder(
 @track_command
 @click.option(
     "--platform",
-    type=click.Choice(["sanity", "contentful", "wordpress"]),
+    type=click.Choice(["sanity"]),
     required=True,
-    help="CMS platform (sanity, contentful, wordpress)",
+    help="CMS platform (currently only sanity is supported; contentful and wordpress coming soon)",
 )
 @click.option(
     "--instance",
@@ -462,19 +462,19 @@ def map_cms(
 
     Examples:
         # Discover all content from Sanity
-        kurt map cms --platform sanity --instance prod
+        kurt content map cms --platform sanity --instance prod
 
         # Discover and cluster
-        kurt map cms --platform sanity --instance prod --cluster-urls
+        kurt content map cms --platform sanity --instance prod --cluster-urls
 
         # Discover specific content type
-        kurt map cms --platform sanity --content-type article
+        kurt content map cms --platform sanity --content-type article
 
         # Discover with filters
-        kurt map cms --platform sanity --status published --limit 100
+        kurt content map cms --platform sanity --status published --limit 100
 
         # Preview without creating records
-        kurt map cms --platform sanity --dry-run
+        kurt content map cms --platform sanity --dry-run
     """
     from kurt.content.map import map_cms_content
     from kurt.integrations.cms.config import list_platform_instances, platform_configured
@@ -552,12 +552,12 @@ def map_cms(
             if cluster_urls and not result.get("dry_run"):
                 console.print(
                     "\n[dim]💡 Documents will be clustered. View with: "
-                    "[cyan]kurt cluster-urls[/cyan][/dim]"
+                    "[cyan]kurt content cluster-urls[/cyan][/dim]"
                 )
 
             # Show next steps
             console.print(
-                f'\n[dim]💡 Next: Fetch content with [cyan]kurt fetch --include "{platform}/{instance}/*"[/cyan][/dim]'
+                f'\n[dim]💡 Next: Fetch content with [cyan]kurt content fetch --include "{platform}/{instance}/*"[/cyan][/dim]'
             )
 
     except Exception as e:

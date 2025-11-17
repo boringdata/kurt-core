@@ -173,7 +173,10 @@ def _resolve_entity_groups(
 
     # Generate embeddings for all NEW entities
     if activity_callback:
-        activity_callback(f"Clustering {len(new_entities_batch)} new entities...")
+        activity_callback(
+            f"Generating embeddings and clustering {len(new_entities_batch)} new entities..."
+        )
+    logger.info(f"Generating embeddings for {len(new_entities_batch)} entities")
     entity_names = [e["name"] for e in new_entities_batch]
     embeddings = _generate_embeddings(entity_names)
 
@@ -566,8 +569,19 @@ def _create_entities_and_relationships(doc_to_kg_data: dict, resolutions: list[d
         # Find the primary resolution (the one that's not a MERGE_WITH)
         primary_resolution = next(
             (r for r in group_resolutions if not r["decision"].startswith("MERGE_WITH:")),
-            group_resolutions[0],  # Fallback to first if all are merges (shouldn't happen)
+            None,  # Will be None if all are merges
         )
+
+        # Handle case where all resolutions are MERGE_WITH (circular/chain merges)
+        if primary_resolution is None:
+            logger.warning(
+                f"All resolutions for '{canonical_name}' are MERGE_WITH decisions. "
+                f"This indicates a circular merge reference or merge chain without a base entity. "
+                f"Converting to CREATE_NEW to prevent infinite loop."
+            )
+            # Use first resolution and convert to CREATE_NEW
+            primary_resolution = group_resolutions[0]
+            primary_resolution["decision"] = "CREATE_NEW"
 
         decision = primary_resolution["decision"]
 
@@ -636,6 +650,87 @@ def _create_entities_and_relationships(doc_to_kg_data: dict, resolutions: list[d
                 for doc_info in entity_name_to_docs.get(ent_name, []):
                     doc_id = doc_info["document_id"]
                     # Keep the highest confidence if a doc mentions multiple variations
+                    if (
+                        doc_id not in docs_to_link
+                        or doc_info["confidence"] > docs_to_link[doc_id]["confidence"]
+                    ):
+                        docs_to_link[doc_id] = doc_info
+
+            for doc_info in docs_to_link.values():
+                edge = DocumentEntity(
+                    id=uuid4(),
+                    document_id=doc_info["document_id"],
+                    entity_id=entity.id,
+                    mention_count=1,
+                    confidence=doc_info["confidence"],
+                    context=doc_info.get("quote"),
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow(),
+                )
+                session.add(edge)
+
+        elif decision.startswith("MERGE_WITH:"):
+            # This should never happen now due to the check above, but handle it defensively
+            logger.error(
+                f"Unexpected MERGE_WITH decision '{decision}' for '{canonical_name}' after primary resolution filtering. "
+                f"This is a bug - MERGE_WITH should have been resolved earlier. Converting to CREATE_NEW."
+            )
+            # Fallback to CREATE_NEW logic
+            entity_data = primary_resolution["entity_details"]
+            entity_embedding = _generate_embeddings([canonical_name])[0]
+            all_entity_names = [r["entity_name"] for r in group_resolutions]
+            all_aliases = set()
+            for r in group_resolutions:
+                all_aliases.update(r["aliases"])
+            unique_docs = set()
+            for ent_name in all_entity_names:
+                for doc_info in entity_name_to_docs.get(ent_name, []):
+                    unique_docs.add(doc_info["document_id"])
+
+            # Average confidence scores
+            confidence_scores = [
+                r["entity_details"].get("confidence", 0.9) for r in group_resolutions
+            ]
+            avg_confidence = (
+                sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0.9
+            )
+
+            entity = Entity(
+                id=uuid4(),
+                name=canonical_name,
+                entity_type=entity_data["type"],
+                canonical_name=canonical_name,
+                aliases=list(all_aliases),
+                description=entity_data.get("description", ""),
+                embedding=_embedding_to_bytes(entity_embedding),
+                confidence_score=avg_confidence,
+                source_mentions=len(unique_docs),
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            )
+            session.add(entity)
+            session.flush()
+
+            # Store entity_embeddings in vec0 table
+            try:
+                floats_str = ",".join(str(f) for f in entity_embedding)
+                session.exec(
+                    text(
+                        f"INSERT INTO entity_embeddings (entity_id, embedding) VALUES ('{entity.id}', '[{floats_str}]')"
+                    )
+                )
+            except Exception as e:
+                logger.debug(f"Could not insert into entity_embeddings: {e}")
+
+            # Map all names to this entity
+            for ent_name in all_entity_names:
+                entity_name_to_id[ent_name] = entity.id
+
+            # Create document-entity edges
+            docs_to_link = {}
+            for ent_name in all_entity_names:
+                for doc_info in entity_name_to_docs.get(ent_name, []):
+                    doc_id = doc_info["document_id"]
                     if (
                         doc_id not in docs_to_link
                         or doc_info["confidence"] > docs_to_link[doc_id]["confidence"]

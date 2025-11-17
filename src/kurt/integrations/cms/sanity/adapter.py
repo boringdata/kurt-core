@@ -23,15 +23,16 @@ class SanityAdapter(CMSAdapter):
         Required config keys:
         - project_id: Sanity project ID
         - dataset: Dataset name (usually 'production')
-        - token: Read token for fetching content
-        - write_token: Write token for creating drafts (optional)
+        - token: API token (Viewer for read-only, Contributor for read+write)
+        - write_token: (Deprecated) Separate write token - for backward compatibility only
         - use_cdn: Whether to use CDN (default: False)
         - base_url: Website base URL for constructing document URLs (optional)
         """
         self.project_id = config["project_id"]
         self.dataset = config["dataset"]
         self.token = config.get("token")
-        self.write_token = config.get("write_token")
+        # Backward compatibility: prefer write_token if present, otherwise fall back to token
+        self.write_token = config.get("write_token") or self.token
         self.use_cdn = config.get("use_cdn", False)
         self.base_url = config.get("base_url", "")
 
@@ -70,7 +71,9 @@ class SanityAdapter(CMSAdapter):
     def _mutate(self, mutations: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Execute mutations (create/update) against Sanity API."""
         if not self.write_token:
-            raise ValueError("Write token required for mutations")
+            raise ValueError(
+                "API token required for mutations. Configure a token in kurt.config."
+            )
 
         headers = {
             "Authorization": f"Bearer {self.write_token}",
@@ -79,10 +82,24 @@ class SanityAdapter(CMSAdapter):
 
         payload = {"mutations": mutations}
 
-        response = requests.post(self.mutation_url, json=payload, headers=headers)
-        response.raise_for_status()
-
-        return response.json()
+        try:
+            response = requests.post(self.mutation_url, json=payload, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 401:
+                raise PermissionError(
+                    "Authentication failed. Your API token may be invalid or expired."
+                ) from e
+            elif e.response.status_code == 403:
+                raise PermissionError(
+                    "Permission denied. Your API token has read-only (Viewer) permissions. "
+                    "Publishing requires a Contributor token with write permissions. "
+                    "Create a new token in Sanity Manage console (manage.sanity.io) → API → Tokens "
+                    "with Editor/Contributor permissions and update the 'token' field in kurt.config."
+                ) from e
+            else:
+                raise
 
     def test_connection(self) -> bool:
         """Test if Sanity connection is working."""
@@ -256,18 +273,27 @@ class SanityAdapter(CMSAdapter):
 
         try:
             results = self._query(groq_query)
-            return [
-                {
+            documents = []
+            for doc in results:
+                # Handle slug - could be a string or a Sanity slug object
+                slug_value = doc.get("slug", "untitled")
+                if isinstance(slug_value, dict) and "current" in slug_value:
+                    # Sanity slug object: {"_type": "slug", "current": "actual-slug"}
+                    slug_value = slug_value["current"]
+                elif not isinstance(slug_value, str):
+                    # Fallback for unexpected types
+                    slug_value = "untitled"
+
+                documents.append({
                     "id": doc["_id"],
                     "title": doc.get("title", "Untitled"),
-                    "slug": doc.get("slug", "untitled"),
+                    "slug": slug_value,
                     "description": doc.get("description"),
                     "content_type": doc["_type"],
                     "status": doc.get("status", "published"),
                     "updated_at": doc.get("_updatedAt"),
-                }
-                for doc in results
-            ]
+                })
+            return documents
         except Exception:
             raise
 
@@ -490,7 +516,10 @@ class SanityAdapter(CMSAdapter):
         url = None
         if self.base_url:
             slug_value = self._extract_field_value(doc, slug_field)
-            if slug_value:
+            # Handle Sanity slug objects: {"_type": "slug", "current": "actual-slug"}
+            if isinstance(slug_value, dict) and "current" in slug_value:
+                slug_value = slug_value["current"]
+            if slug_value and isinstance(slug_value, str):
                 url = urljoin(self.base_url, slug_value)
 
         # Extract metadata using configured mappings
@@ -520,7 +549,10 @@ class SanityAdapter(CMSAdapter):
 
         # Add slug to metadata
         slug_value = self._extract_field_value(doc, slug_field)
-        if slug_value:
+        # Handle Sanity slug objects
+        if isinstance(slug_value, dict) and "current" in slug_value:
+            slug_value = slug_value["current"]
+        if slug_value and isinstance(slug_value, str):
             metadata["slug"] = slug_value
 
         # Add system fields

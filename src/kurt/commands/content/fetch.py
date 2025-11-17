@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 @click.option(
     "--include",
     "include_pattern",
-    help="FILTER: Glob pattern matching source_url or content_path (repeatable)",
+    help="FILTER: Glob pattern matching source_url or content_path (e.g., '*/docs/*' or 'sanity/prod/*')",
 )
 @click.option(
     "--url",
@@ -140,13 +140,14 @@ def fetch_cmd(
     priority: int,
 ):
     """
-    Fetch and index content from URLs or local files.
+    Fetch and index content from URLs, local files, or CMS documents.
 
     IDENTIFIER can be a document ID, URL, or file path (nominal case).
 
     \b
     What it does:
     - Downloads content from web URLs using Trafilatura or Firecrawl
+    - Fetches content from CMS platforms (Sanity) via API
     - Indexes local markdown/text files
     - Extracts metadata with LLM (unless --skip-index)
     - Auto-creates document records (no need to run 'kurt map' first)
@@ -154,60 +155,64 @@ def fetch_cmd(
 
     \b
     Usage patterns:
-    1. Single ID/URL/file: kurt fetch 04303ee5
-    2. Single URL:         kurt fetch https://example.com/article
-    3. Single file:        kurt fetch ./docs/article.md
-    4. Multiple URLs:      kurt fetch --urls "url1,url2,url3"
-    5. Pattern match:      kurt fetch --include "*/docs/*"
-    6. By cluster:         kurt fetch --in-cluster "Tutorials"
+    1. Single ID/URL/file: kurt content fetch 04303ee5
+    2. Single URL:         kurt content fetch https://example.com/article
+    3. Single file:        kurt content fetch ./docs/article.md
+    4. Multiple URLs:      kurt content fetch --urls "url1,url2,url3"
+    5. Pattern match:      kurt content fetch --include "*/docs/*"
+    6. CMS content:        kurt content fetch --include "sanity/prod/*"
+    7. By cluster:         kurt content fetch --in-cluster "Tutorials"
 
     \b
     Examples:
         # Fetch by document ID (nominal case)
-        kurt fetch 04303ee5
+        kurt content fetch 04303ee5
 
         # Fetch by URL (nominal case, auto-creates if doesn't exist)
-        kurt fetch https://example.com/article
+        kurt content fetch https://example.com/article
 
         # Fetch by local file (nominal case)
-        kurt fetch ./docs/article.md
+        kurt content fetch ./docs/article.md
 
         # Fetch by pattern
-        kurt fetch --include "*/docs/*"
+        kurt content fetch --include "*/docs/*"
+
+        # Fetch CMS-mapped content (use after 'kurt content map cms')
+        kurt content fetch --include "sanity/prod/*"
 
         # Fetch specific URLs (auto-creates if don't exist)
-        kurt fetch --urls "https://example.com/page1,https://example.com/page2"
+        kurt content fetch --urls "https://example.com/page1,https://example.com/page2"
 
         # Index multiple local files
-        kurt fetch --files "./docs/page1.md,./docs/page2.md"
+        kurt content fetch --files "./docs/page1.md,./docs/page2.md"
 
         # Fetch by cluster
-        kurt fetch --in-cluster "Tutorials"
+        kurt content fetch --in-cluster "Tutorials"
 
         # Fetch by content type (after clustering)
-        kurt fetch --with-content-type tutorial
+        kurt content fetch --with-content-type tutorial
 
         # Fetch all NOT_FETCHED
-        kurt fetch --with-status NOT_FETCHED
+        kurt content fetch --with-status NOT_FETCHED
 
         # Retry failed fetches
-        kurt fetch --with-status ERROR
+        kurt content fetch --with-status ERROR
 
         # Fetch with exclusions
-        kurt fetch --include "*/docs/*" --exclude "*/api/*"
+        kurt content fetch --include "*/docs/*" --exclude "*/api/*"
 
         # Combine filters
-        kurt fetch --with-content-type tutorial --include "*/docs/*"
+        kurt content fetch --with-content-type tutorial --include "*/docs/*"
 
         # Download only (skip LLM indexing to save costs)
-        kurt fetch --with-status NOT_FETCHED --skip-index
+        kurt content fetch --with-status NOT_FETCHED --skip-index
 
         # Dry-run to preview
-        kurt fetch --with-status NOT_FETCHED --dry-run
+        kurt content fetch --with-status NOT_FETCHED --dry-run
 
         # Skip confirmations for automation
-        kurt fetch --with-status NOT_FETCHED --yes
-        kurt fetch --with-status NOT_FETCHED -y
+        kurt content fetch --with-status NOT_FETCHED --yes
+        kurt content fetch --with-status NOT_FETCHED -y
     """
     import os
 
@@ -250,7 +255,7 @@ def fetch_cmd(
     # Merge --url into --urls (--url is deprecated, kept for backwards compatibility)
     if url:
         console.print("[yellow]⚠️  --url is deprecated, use positional IDENTIFIER instead[/yellow]")
-        console.print("[dim]Example: kurt fetch https://example.com/article[/dim]")
+        console.print("[dim]Example: kurt content fetch https://example.com/article[/dim]")
         if urls:
             # Combine --url with --urls
             urls = f"{url},{urls}"
@@ -260,7 +265,7 @@ def fetch_cmd(
     # Merge --file into --files (--file is deprecated, kept for backwards compatibility)
     if file_path:
         console.print("[yellow]⚠️  --file is deprecated, use positional IDENTIFIER instead[/yellow]")
-        console.print("[dim]Example: kurt fetch ./docs/article.md[/dim]")
+        console.print("[dim]Example: kurt content fetch ./docs/article.md[/dim]")
         if files_paths:
             # Combine --file with --files
             files_paths = f"{file_path},{files_paths}"
@@ -293,9 +298,9 @@ def fetch_cmd(
         else:
             console.print(f"[red]Error:[/red] {e}")
             console.print("\n[dim]Examples:[/dim]")
-            console.print("  kurt fetch --include '*/docs/*'")
-            console.print("  kurt fetch --in-cluster 'Tutorials'")
-            console.print("  kurt fetch --with-status NOT_FETCHED")
+            console.print("  kurt content fetch --include '*/docs/*'")
+            console.print("  kurt content fetch --in-cluster 'Tutorials'")
+            console.print("  kurt content fetch --with-status NOT_FETCHED")
             raise click.Abort()
 
     # Display warnings
@@ -326,20 +331,20 @@ def fetch_cmd(
                 f"[yellow]Found {excluded_fetched_count} document(s), but all are already FETCHED[/yellow]"
             )
             console.print(
-                "\n[dim]By default, 'kurt fetch' skips documents that are already FETCHED.[/dim]"
+                "\n[dim]By default, 'kurt content fetch' skips documents that are already FETCHED.[/dim]"
             )
             console.print("[dim]To re-fetch these documents, use the --refetch flag:[/dim]")
 
             if in_cluster:
-                console.print(f"\n  [cyan]kurt fetch --in-cluster '{in_cluster}' --refetch[/cyan]")
+                console.print(f"\n  [cyan]kurt content fetch --in-cluster '{in_cluster}' --refetch[/cyan]")
             elif include_pattern:
                 console.print(
-                    f"\n  [cyan]kurt fetch --include '{include_pattern}' --refetch[/cyan]"
+                    f"\n  [cyan]kurt content fetch --include '{include_pattern}' --refetch[/cyan]"
                 )
             elif urls:
-                console.print(f"\n  [cyan]kurt fetch --urls '{urls}' --refetch[/cyan]")
+                console.print(f"\n  [cyan]kurt content fetch --urls '{urls}' --refetch[/cyan]")
             else:
-                console.print("\n  [cyan]kurt fetch <your-filters> --refetch[/cyan]")
+                console.print("\n  [cyan]kurt content fetch <your-filters> --refetch[/cyan]")
 
             console.print("\n[dim]To view already fetched content, use:[/dim]")
             if in_cluster:
@@ -418,14 +423,30 @@ def fetch_cmd(
     from kurt.commands.content._live_display import print_intro_block
     from kurt.content.fetch import _get_fetch_engine
 
-    resolved_engine = _get_fetch_engine(override=engine)
+    # Detect if we're fetching CMS documents
+    cms_count = sum(1 for d in docs if d.cms_platform and d.cms_instance)
+    web_count = len(docs) - cms_count
+    has_cms = cms_count > 0
+    has_web = web_count > 0
 
+    # Determine engine display based on content sources
+    resolved_engine = _get_fetch_engine(override=engine)
     engine_displays = {
         "trafilatura": "Trafilatura (free)",
         "firecrawl": "Firecrawl (API)",
         "httpx": "httpx (fetching) + trafilatura (extraction)",
     }
-    engine_display = engine_displays.get(resolved_engine, f"{resolved_engine} (unknown)")
+
+    if has_cms and has_web:
+        # Mixed: show both engines
+        web_engine_display = engine_displays.get(resolved_engine, f"{resolved_engine} (unknown)")
+        engine_display = f"CMS API + {web_engine_display}"
+    elif has_cms:
+        # CMS only
+        engine_display = "CMS API"
+    else:
+        # Web only
+        engine_display = engine_displays.get(resolved_engine, f"{resolved_engine} (unknown)")
 
     intro_messages = [
         f"Fetching {len(doc_ids_to_fetch)} document(s) with {concurrency} parallel downloads",
@@ -518,6 +539,7 @@ def fetch_cmd(
                 max_concurrent=concurrency,
                 fetch_engine=engine,
                 progress_callback=update_fetch_progress,
+                is_cms_fetch=has_cms,
             )
 
             # Log fetch results

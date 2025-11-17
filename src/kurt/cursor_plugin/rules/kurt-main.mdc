@@ -156,7 +156,7 @@ Optionally collect user feedback to improve Kurt's output quality. See the `add-
 Don't ask too frequently - not after every edit, and not more than once per session.
 
 ## CMS Integration
-Kurt supports CMS integrations (Sanity, Contentful, WordPress) for reading and publishing content.
+Kurt supports CMS integrations for reading and publishing content. Currently only Sanity is supported; Contentful and WordPress are coming soon.
 
 **Reading from CMS:**
 - Check configuration: `kurt integrations cms status`
