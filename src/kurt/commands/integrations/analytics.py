@@ -444,10 +444,11 @@ def query_analytics(
         # JSON output for AI agents
         kurt integrations analytics query technically.dev --format json
     """
+    from rich.table import Table
+
     from kurt.db.database import get_session
     from kurt.db.models import AnalyticsDomain, Document, PageAnalytics
     from kurt.integrations.analytics.utils import normalize_url_for_analytics
-    from rich.table import Table
 
     session = get_session()
 
@@ -590,6 +591,6 @@ def query_analytics(
 
         console.print(table)
         console.print(
-            f"\n[dim]Tip: Use [cyan]--url-contains[/cyan], [cyan]--min-pageviews[/cyan], "
-            f"or [cyan]--trend[/cyan] to filter results[/dim]"
+            "\n[dim]Tip: Use [cyan]--url-contains[/cyan], [cyan]--min-pageviews[/cyan], "
+            "or [cyan]--trend[/cyan] to filter results[/dim]"
         )
