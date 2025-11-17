@@ -522,6 +522,63 @@ def _create_entities_and_relationships(doc_to_kg_data: dict, resolutions: list[d
 
     # Build transitive closure of merges (A->B, B->C => A->C)
     # This ensures all entities in a merge chain point to the final canonical entity
+    # Also detect and break cycles
+    def find_canonical_with_cycle_detection(entity_name: str, visited: set) -> str | None:
+        """
+        Follow merge chain to find canonical entity.
+        Returns None if a cycle is detected.
+        """
+        if entity_name not in merge_map:
+            # This is a canonical entity (not merging with anyone)
+            return entity_name
+
+        if entity_name in visited:
+            # Cycle detected!
+            return None
+
+        visited.add(entity_name)
+        return find_canonical_with_cycle_detection(merge_map[entity_name], visited)
+
+    # Detect cycles and resolve them
+    cycles_detected = []
+    for entity_name in list(merge_map.keys()):
+        canonical = find_canonical_with_cycle_detection(entity_name, set())
+        if canonical is None:
+            # Cycle detected - find all entities in the cycle
+            cycle_entities = []
+            current = entity_name
+            visited = set()
+            while current not in visited:
+                visited.add(current)
+                cycle_entities.append(current)
+                if current not in merge_map:
+                    break
+                current = merge_map[current]
+
+            cycles_detected.append(cycle_entities)
+            logger.warning(
+                f"Cycle detected in merge chain: {' -> '.join(cycle_entities)} -> {current}. "
+                f"Breaking cycle by choosing '{cycle_entities[0]}' as canonical entity."
+            )
+
+            # Break the cycle by picking the first entity as canonical
+            # and making all others merge into it
+            canonical_entity = cycle_entities[0]
+            for ent in cycle_entities:
+                if ent == canonical_entity:
+                    # Remove from merge_map - it's now canonical
+                    if ent in merge_map:
+                        del merge_map[ent]
+                    # Update its resolution to CREATE_NEW
+                    for res in resolutions:
+                        if res["entity_name"] == ent:
+                            res["decision"] = "CREATE_NEW"
+                            break
+                else:
+                    # Point to canonical entity
+                    merge_map[ent] = canonical_entity
+
+    # Now build transitive closure for remaining (non-cyclic) chains
     changed = True
     max_iterations = 10
     iteration = 0
@@ -566,8 +623,19 @@ def _create_entities_and_relationships(doc_to_kg_data: dict, resolutions: list[d
         # Find the primary resolution (the one that's not a MERGE_WITH)
         primary_resolution = next(
             (r for r in group_resolutions if not r["decision"].startswith("MERGE_WITH:")),
-            group_resolutions[0],  # Fallback to first if all are merges (shouldn't happen)
+            None,  # Will be None if all are merges (should not happen after cycle detection)
         )
+
+        # Defensive check: if all resolutions are MERGE_WITH (shouldn't happen after cycle detection)
+        if primary_resolution is None:
+            logger.error(
+                f"All resolutions for '{canonical_name}' are MERGE_WITH decisions after cycle detection. "
+                f"This should not happen - indicates a bug in cycle detection. "
+                f"Converting to CREATE_NEW as fallback."
+            )
+            # Use first resolution and convert to CREATE_NEW
+            primary_resolution = group_resolutions[0]
+            primary_resolution["decision"] = "CREATE_NEW"
 
         decision = primary_resolution["decision"]
 
