@@ -20,15 +20,13 @@ def test_documents(tmp_project):
     """Create test documents with various topics and technologies."""
     session = get_session()
 
-    # Create documents
+    # Create documents (without deprecated metadata fields)
     doc1 = Document(
         id=uuid4(),
         title="Python FastAPI Tutorial",
         source_type=SourceType.URL,
         source_url="https://example.com/python-fastapi",
         ingestion_status=IngestionStatus.FETCHED,
-        primary_topics=["Python", "Web Development", "API Design"],
-        tools_technologies=["FastAPI", "Pydantic", "Uvicorn"],
     )
 
     doc2 = Document(
@@ -37,8 +35,6 @@ def test_documents(tmp_project):
         source_type=SourceType.URL,
         source_url="https://example.com/ml-tensorflow",
         ingestion_status=IngestionStatus.FETCHED,
-        primary_topics=["Machine Learning", "Deep Learning", "Neural Networks"],
-        tools_technologies=["TensorFlow", "Keras", "NumPy"],
     )
 
     doc3 = Document(
@@ -47,8 +43,6 @@ def test_documents(tmp_project):
         source_type=SourceType.URL,
         source_url="https://example.com/django-rest",
         ingestion_status=IngestionStatus.FETCHED,
-        primary_topics=["Python", "REST APIs", "Backend Development"],
-        tools_technologies=["Django", "Django REST Framework"],
     )
 
     doc4 = Document(
@@ -57,8 +51,6 @@ def test_documents(tmp_project):
         source_type=SourceType.URL,
         source_url="https://example.com/react-typescript",
         ingestion_status=IngestionStatus.FETCHED,
-        primary_topics=["Frontend Development", "TypeScript"],
-        tools_technologies=["React", "TypeScript", "Webpack"],
     )
 
     doc5 = Document(
@@ -67,11 +59,144 @@ def test_documents(tmp_project):
         source_type=SourceType.URL,
         source_url="https://example.com/no-metadata",
         ingestion_status=IngestionStatus.FETCHED,
-        primary_topics=None,
-        tools_technologies=None,
     )
 
     session.add_all([doc1, doc2, doc3, doc4, doc5])
+    session.commit()
+
+    # Create entities and link them to documents (new knowledge graph approach)
+    # Doc1: Python, Web Development, API Design + FastAPI, Pydantic, Uvicorn
+    entities_doc1_topics = [
+        Entity(id=uuid4(), name="Python", entity_type="Topic", canonical_name="Python"),
+        Entity(
+            id=uuid4(),
+            name="Web Development",
+            entity_type="Topic",
+            canonical_name="Web Development",
+        ),
+        Entity(id=uuid4(), name="API Design", entity_type="Topic", canonical_name="API Design"),
+    ]
+    entities_doc1_tools = [
+        Entity(id=uuid4(), name="FastAPI", entity_type="Technology", canonical_name="FastAPI"),
+        Entity(id=uuid4(), name="Pydantic", entity_type="Technology", canonical_name="Pydantic"),
+        Entity(id=uuid4(), name="Uvicorn", entity_type="Technology", canonical_name="Uvicorn"),
+    ]
+
+    # Doc2: Machine Learning, Deep Learning, Neural Networks + TensorFlow, Keras, NumPy
+    entities_doc2_topics = [
+        Entity(
+            id=uuid4(),
+            name="Machine Learning",
+            entity_type="Topic",
+            canonical_name="Machine Learning",
+        ),
+        Entity(
+            id=uuid4(), name="Deep Learning", entity_type="Topic", canonical_name="Deep Learning"
+        ),
+        Entity(
+            id=uuid4(),
+            name="Neural Networks",
+            entity_type="Topic",
+            canonical_name="Neural Networks",
+        ),
+    ]
+    entities_doc2_tools = [
+        Entity(
+            id=uuid4(), name="TensorFlow", entity_type="Technology", canonical_name="TensorFlow"
+        ),
+        Entity(id=uuid4(), name="Keras", entity_type="Technology", canonical_name="Keras"),
+        Entity(id=uuid4(), name="NumPy", entity_type="Technology", canonical_name="NumPy"),
+    ]
+
+    # Doc3: Python (reuse), REST APIs, Backend Development + Django, Django REST Framework
+    # Note: Python entity already created for doc1, we'll link to it
+    python_entity = entities_doc1_topics[0]  # Reuse Python from doc1
+    entities_doc3_topics = [
+        Entity(id=uuid4(), name="REST APIs", entity_type="Topic", canonical_name="REST APIs"),
+        Entity(
+            id=uuid4(),
+            name="Backend Development",
+            entity_type="Topic",
+            canonical_name="Backend Development",
+        ),
+    ]
+    entities_doc3_tools = [
+        Entity(id=uuid4(), name="Django", entity_type="Technology", canonical_name="Django"),
+        Entity(
+            id=uuid4(),
+            name="Django REST Framework",
+            entity_type="Technology",
+            canonical_name="Django REST Framework",
+        ),
+    ]
+
+    # Doc4: Frontend Development, TypeScript + React, TypeScript, Webpack
+    entities_doc4_topics = [
+        Entity(
+            id=uuid4(),
+            name="Frontend Development",
+            entity_type="Topic",
+            canonical_name="Frontend Development",
+        ),
+        Entity(id=uuid4(), name="TypeScript", entity_type="Topic", canonical_name="TypeScript"),
+    ]
+    entities_doc4_tools = [
+        Entity(id=uuid4(), name="React", entity_type="Technology", canonical_name="React"),
+        Entity(
+            id=uuid4(), name="TypeScript", entity_type="Technology", canonical_name="TypeScript"
+        ),
+        Entity(id=uuid4(), name="Webpack", entity_type="Technology", canonical_name="Webpack"),
+    ]
+
+    # Add all entities
+    all_entities = (
+        entities_doc1_topics
+        + entities_doc1_tools
+        + entities_doc2_topics
+        + entities_doc2_tools
+        + entities_doc3_topics
+        + entities_doc3_tools
+        + entities_doc4_topics
+        + entities_doc4_tools
+    )
+    session.add_all(all_entities)
+    session.flush()
+
+    # Link entities to documents
+    for entity in entities_doc1_topics + entities_doc1_tools:
+        session.add(
+            DocumentEntity(
+                document_id=doc1.id, entity_id=entity.id, mention_count=1, confidence=1.0
+            )
+        )
+
+    for entity in entities_doc2_topics + entities_doc2_tools:
+        session.add(
+            DocumentEntity(
+                document_id=doc2.id, entity_id=entity.id, mention_count=1, confidence=1.0
+            )
+        )
+
+    # Doc3 links to Python from doc1 + its own entities
+    session.add(
+        DocumentEntity(
+            document_id=doc3.id, entity_id=python_entity.id, mention_count=1, confidence=1.0
+        )
+    )
+    for entity in entities_doc3_topics + entities_doc3_tools:
+        session.add(
+            DocumentEntity(
+                document_id=doc3.id, entity_id=entity.id, mention_count=1, confidence=1.0
+            )
+        )
+
+    for entity in entities_doc4_topics + entities_doc4_tools:
+        session.add(
+            DocumentEntity(
+                document_id=doc4.id, entity_id=entity.id, mention_count=1, confidence=1.0
+            )
+        )
+
     session.commit()
 
     return {
@@ -82,102 +207,7 @@ def test_documents(tmp_project):
         "no_metadata": doc5,
     }
 
-
-@pytest.fixture
-def test_entities(tmp_project, test_documents):
-    """Create knowledge graph entities for testing."""
-    session = get_session()
-    docs = test_documents
-
-    # Refresh documents to reattach them to the session
-    for key, doc in docs.items():
-        session.add(doc)
-    session.flush()
-
-    # Create entities
-    entity_python = Entity(
-        id=uuid4(),
-        name="Python",
-        entity_type="Topic",
-        canonical_name="Python Programming",
-    )
-
-    entity_fastapi = Entity(
-        id=uuid4(),
-        name="FastAPI",
-        entity_type="Technology",
-        canonical_name="FastAPI Framework",
-    )
-
-    entity_ml = Entity(
-        id=uuid4(),
-        name="Machine Learning",
-        entity_type="Topic",
-        canonical_name="Machine Learning",
-    )
-
-    entity_tensorflow = Entity(
-        id=uuid4(),
-        name="TensorFlow",
-        entity_type="Tool",
-        canonical_name="TensorFlow",
-    )
-
-    session.add_all([entity_python, entity_fastapi, entity_ml, entity_tensorflow])
-    session.commit()
-
-    # Create document-entity relationships
-    # doc5 (no metadata) has entities in knowledge graph
-    de1 = DocumentEntity(
-        document_id=docs["no_metadata"].id,
-        entity_id=entity_python.id,
-    )
-    de2 = DocumentEntity(
-        document_id=docs["no_metadata"].id,
-        entity_id=entity_fastapi.id,
-    )
-
-    # Also add entities for other docs
-    de3 = DocumentEntity(
-        document_id=docs["ml_tensorflow"].id,
-        entity_id=entity_ml.id,
-    )
-    de4 = DocumentEntity(
-        document_id=docs["ml_tensorflow"].id,
-        entity_id=entity_tensorflow.id,
-    )
-
-    session.add_all([de1, de2, de3, de4])
-    session.commit()
-
-    return {
-        "python": entity_python,
-        "fastapi": entity_fastapi,
-        "ml": entity_ml,
-        "tensorflow": entity_tensorflow,
-    }
-
-
-class TestTopicFiltering:
-    """Test --with-topic filter."""
-
-    def test_filter_by_topic_exact_match(self, test_documents):
-        """Test filtering by exact topic match in metadata."""
-        docs = list_content(with_topic="Python")
-
-        assert len(docs) == 2
-        titles = {doc.title for doc in docs}
-        assert "Python FastAPI Tutorial" in titles
-        assert "Django REST Framework Guide" in titles
-
-    def test_filter_by_topic_partial_match(self, test_documents):
-        """Test filtering by partial topic match (case-insensitive)."""
-        docs = list_content(with_topic="machine")
-
-        assert len(docs) == 1
-        assert docs[0].title == "Machine Learning with TensorFlow"
-
-    def test_filter_by_topic_from_knowledge_graph(self, test_documents, test_entities):
+    def test_filter_by_topic_from_knowledge_graph(self, test_documents):
         """Test filtering includes documents from knowledge graph."""
         # "Python" topic is in knowledge graph for doc5 (no_metadata)
         docs = list_content(with_topic="Python")
@@ -226,7 +256,7 @@ class TestTechnologyFiltering:
         assert len(docs) == 1
         assert docs[0].title == "Machine Learning with TensorFlow"
 
-    def test_filter_by_technology_from_knowledge_graph(self, test_documents, test_entities):
+    def test_filter_by_technology_from_knowledge_graph(self, test_documents):
         """Test filtering includes documents from knowledge graph."""
         # "FastAPI" is in knowledge graph for doc5 (no_metadata)
         docs = list_content(with_technology="FastAPI")

@@ -664,7 +664,7 @@ def list_content(
 
         documents = [d for d in documents if get_url_depth(d.source_url) <= max_depth]
 
-    # Apply topic filtering (post-query - checks both metadata and knowledge graph)
+    # Apply topic filtering (knowledge graph only)
     if with_topic:
         from kurt.db.models import DocumentEntity, Entity
 
@@ -680,23 +680,10 @@ def list_content(
         )
         graph_doc_ids = {str(row) for row in session.exec(topic_stmt).all()}
 
-        # Filter documents that have topic in metadata OR in knowledge graph
-        documents = [
-            d
-            for d in documents
-            if
-            (
-                # Check metadata primary_topics
-                (
-                    d.primary_topics
-                    and any(with_topic.lower() in t.lower() for t in d.primary_topics)
-                )
-                # Check knowledge graph
-                or str(d.id) in graph_doc_ids
-            )
-        ]
+        # Filter documents that have topic in knowledge graph
+        documents = [d for d in documents if str(d.id) in graph_doc_ids]
 
-    # Apply technology filtering (post-query - checks both metadata and knowledge graph)
+    # Apply technology filtering (knowledge graph only)
     if with_technology:
         from kurt.db.models import DocumentEntity, Entity
 
@@ -712,21 +699,8 @@ def list_content(
         )
         graph_doc_ids = {str(row) for row in session.exec(tech_stmt).all()}
 
-        # Filter documents that have technology in metadata OR in knowledge graph
-        documents = [
-            d
-            for d in documents
-            if
-            (
-                # Check metadata tools_technologies
-                (
-                    d.tools_technologies
-                    and any(with_technology.lower() in t.lower() for t in d.tools_technologies)
-                )
-                # Check knowledge graph
-                or str(d.id) in graph_doc_ids
-            )
-        ]
+        # Filter documents that have technology in knowledge graph
+        documents = [d for d in documents if str(d.id) in graph_doc_ids]
 
     # Apply pagination (after all filtering)
     if offset or limit:

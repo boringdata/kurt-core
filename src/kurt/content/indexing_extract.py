@@ -283,8 +283,9 @@ def extract_document_metadata(
     if not doc.cms_platform:
         doc.content_type = metadata_output.content_type
 
-    doc.primary_topics = metadata_output.primary_topics
-    doc.tools_technologies = metadata_output.tools_technologies
+    # NOTE: primary_topics and tools_technologies are deprecated - topics/tools now live in knowledge graph only
+    # doc.primary_topics = metadata_output.primary_topics  # DEPRECATED: see Issue #16
+    # doc.tools_technologies = metadata_output.tools_technologies  # DEPRECATED: see Issue #16
     doc.has_code_examples = metadata_output.has_code_examples
     doc.has_step_by_step_procedures = metadata_output.has_step_by_step_procedures
     doc.has_narrative_structure = metadata_output.has_narrative_structure
