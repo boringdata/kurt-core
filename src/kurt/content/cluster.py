@@ -64,7 +64,9 @@ class DocumentClusterAssignment(BaseModel):
     document_index: int = Field(
         description="Index of the document in the input pages list (0-based)"
     )
-    cluster_name: str = Field(description="Name of the best matching cluster for this document")
+    cluster_name: str | None = Field(
+        description="Name of the best matching cluster, or null if document doesn't fit any cluster"
+    )
 
 
 # ============================================================================
@@ -127,7 +129,8 @@ class ComputeClustersAndClassify(dspy.Signature):
     - Use document_index (0-based position: 0, 1, 2, ...) not URLs
     - Document at index 0 = pages[0], index 1 = pages[1], etc.
     - Assign each document_index to its most semantically relevant cluster_name
-    - Every document must be assigned to exactly one cluster
+    - If a document doesn't fit ANY cluster well, set cluster_name to null
+    - Most documents should be assigned, but some edge cases may not fit any cluster
 
     IMPORTANT: Output should be COMPACT. Use EXACT type names above, nothing else.
     """
@@ -481,6 +484,13 @@ def compute_topic_clusters(
         if not (0 <= assignment.document_index < len(docs)):
             logger.warning(
                 f"Invalid document_index {assignment.document_index} (valid range: 0-{len(docs)-1})"
+            )
+            continue
+
+        # Skip documents with no cluster assignment (doesn't fit any cluster)
+        if assignment.cluster_name is None:
+            logger.debug(
+                f"Document at index {assignment.document_index} not assigned to any cluster (doesn't fit)"
             )
             continue
 

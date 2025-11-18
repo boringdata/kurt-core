@@ -985,3 +985,93 @@ class TestClusterUrlsAdditionalOptions:
 
                 assert cluster_a_docs == 3, f"ClusterA should have 3 docs, got {cluster_a_docs}"
                 assert cluster_b_docs == 2, f"ClusterB should have 2 docs, got {cluster_b_docs}"
+
+    def test_cluster_urls_handles_null_assignments(self, isolated_cli_runner, mock_dspy_signature):
+        """Test that cluster assignment can handle documents that don't fit any cluster (cluster_name=None)."""
+        from uuid import uuid4
+
+        from kurt.content.cluster import (
+            ContentTypeClassification,
+            DocumentClusterAssignment,
+            TopicClusterOutput,
+        )
+        from kurt.db.database import get_session
+        from kurt.db.models import Document, DocumentClusterEdge, IngestionStatus, SourceType
+
+        runner, project_dir = isolated_cli_runner
+
+        session = get_session()
+
+        # Create 5 test documents
+        docs = []
+        for i in range(5):
+            doc = Document(
+                id=uuid4(),
+                source_url=f"https://example.com/page-{i}",
+                name=f"Page {i}",
+                description=f"Description {i}",
+                source_type=SourceType.URL,
+                ingestion_status=IngestionStatus.NOT_FETCHED,
+            )
+            session.add(doc)
+            docs.append(doc)
+
+        session.commit()
+
+        # Define the mock output with some null assignments
+        mock_clusters = [
+            TopicClusterOutput(
+                name="TechCluster",
+                description="Technical content",
+            ),
+        ]
+
+        mock_classifications = [
+            ContentTypeClassification(url=doc.source_url, content_type="guide") for doc in docs
+        ]
+
+        # Some documents assigned to cluster, others set to None (don't fit)
+        mock_assignments = [
+            DocumentClusterAssignment(document_index=0, cluster_name="TechCluster"),
+            DocumentClusterAssignment(document_index=1, cluster_name=None),  # Doesn't fit
+            DocumentClusterAssignment(document_index=2, cluster_name="TechCluster"),
+            DocumentClusterAssignment(document_index=3, cluster_name=None),  # Doesn't fit
+            DocumentClusterAssignment(document_index=4, cluster_name="TechCluster"),
+        ]
+
+        mock_result = ClusteringResult(
+            clusters=mock_clusters,
+            classifications=mock_classifications,
+            assignments=mock_assignments,
+        )
+
+        # Mock LLM clustering
+        with patch("kurt.content.cluster.dspy.LM"):
+            with mock_dspy_signature("ComputeClustersAndClassify", mock_result):
+                # Run cluster-urls
+                result = runner.invoke(main, ["content", "cluster"])
+
+                assert result.exit_code == 0, f"Command failed: {result.output}"
+
+            # Verify only 3 edges were created (docs 0, 2, 4)
+            edges = session.query(DocumentClusterEdge).all()
+            assert len(edges) == 3, f"Expected 3 edges (only assigned docs), got {len(edges)}"
+
+            # Verify all 3 edges point to TechCluster
+            from kurt.db.models import TopicCluster
+
+            tech_cluster = (
+                session.query(TopicCluster).filter(TopicCluster.name == "TechCluster").first()
+            )
+
+            assert tech_cluster is not None
+
+            tech_cluster_docs = (
+                session.query(DocumentClusterEdge)
+                .filter(DocumentClusterEdge.cluster_id == tech_cluster.id)
+                .count()
+            )
+
+            assert (
+                tech_cluster_docs == 3
+            ), f"TechCluster should have 3 docs (0,2,4), got {tech_cluster_docs}"
