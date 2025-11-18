@@ -197,6 +197,20 @@ def test_documents(tmp_project):
             )
         )
 
+    # Doc5 (no_metadata) has entities in knowledge graph (Python and FastAPI)
+    # Link to existing Python and FastAPI entities from doc1
+    fastapi_entity = entities_doc1_tools[0]  # FastAPI from doc1
+    session.add(
+        DocumentEntity(
+            document_id=doc5.id, entity_id=python_entity.id, mention_count=1, confidence=1.0
+        )
+    )
+    session.add(
+        DocumentEntity(
+            document_id=doc5.id, entity_id=fastapi_entity.id, mention_count=1, confidence=1.0
+        )
+    )
+
     session.commit()
 
     return {
@@ -243,11 +257,14 @@ class TestTechnologyFiltering:
     """Test --with-technology filter."""
 
     def test_filter_by_technology_exact_match(self, test_documents):
-        """Test filtering by exact technology match in metadata."""
+        """Test filtering by exact technology match in knowledge graph."""
         docs = list_content(with_technology="FastAPI")
 
-        assert len(docs) == 1
-        assert docs[0].title == "Python FastAPI Tutorial"
+        # FastAPI is linked to both doc1 and doc5
+        assert len(docs) == 2
+        titles = {doc.title for doc in docs}
+        assert "Python FastAPI Tutorial" in titles
+        assert "Document without metadata" in titles
 
     def test_filter_by_technology_partial_match(self, test_documents):
         """Test filtering by partial technology match (case-insensitive)."""
@@ -295,8 +312,11 @@ class TestCombinedFilters:
         """Test filtering by both topic and technology."""
         docs = list_content(with_topic="Python", with_technology="FastAPI")
 
-        assert len(docs) == 1
-        assert docs[0].title == "Python FastAPI Tutorial"
+        # Both doc1 and doc5 have Python + FastAPI in knowledge graph
+        assert len(docs) == 2
+        titles = {doc.title for doc in docs}
+        assert "Python FastAPI Tutorial" in titles
+        assert "Document without metadata" in titles
 
     def test_filter_by_topic_and_technology_no_matches(self, test_documents):
         """Test filtering with incompatible topic and technology returns empty."""

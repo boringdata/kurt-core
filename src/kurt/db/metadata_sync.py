@@ -70,9 +70,12 @@ def write_frontmatter_to_file(doc, session=None) -> None:
     if doc.ingestion_status != IngestionStatus.FETCHED:
         return
 
-    # Skip if no metadata to write
-    if not any([doc.content_type, doc.primary_topics, doc.tools_technologies]):
-        return
+    # Skip if no metadata to write (check content_type only, topics/tools checked below)
+    # NOTE: topics and tools are fetched from knowledge graph, not from document fields
+    if not doc.content_type:
+        # Still write frontmatter if document has entities, even without content_type
+        # We'll check this below after fetching from knowledge graph
+        pass
 
     try:
         # Load config to get sources path
@@ -92,12 +95,42 @@ def write_frontmatter_to_file(doc, session=None) -> None:
         # Remove existing frontmatter if present
         content_without_frontmatter = remove_frontmatter(content)
 
+        # Fetch topics and tools from knowledge graph
+        # Use provided session or create new one
+        from sqlmodel import select
+
+        from kurt.db.models import DocumentEntity, Entity
+
+        fetch_session = session if session is not None else get_session()
+
+        # Get topics from knowledge graph
+        topics_stmt = (
+            select(Entity.canonical_name)
+            .join(DocumentEntity, Entity.id == DocumentEntity.entity_id)
+            .where(DocumentEntity.document_id == doc.id)
+            .where(Entity.entity_type == "Topic")
+        )
+        topics = [name for name in fetch_session.exec(topics_stmt).all() if name]
+
+        # Get tools from knowledge graph
+        tools_stmt = (
+            select(Entity.canonical_name)
+            .join(DocumentEntity, Entity.id == DocumentEntity.entity_id)
+            .where(DocumentEntity.document_id == doc.id)
+            .where(Entity.entity_type.in_(["Technology", "Tool", "Product"]))
+        )
+        tools = [name for name in fetch_session.exec(tools_stmt).all() if name]
+
+        # Skip if no metadata to write
+        if not any([doc.content_type, topics, tools]):
+            return
+
         # Build frontmatter model
         frontmatter = MetadataFrontmatter(
             title=doc.title,
             content_type=doc.content_type.value if doc.content_type else None,
-            topics=doc.primary_topics,
-            tools=doc.tools_technologies,
+            topics=topics if topics else None,
+            tools=tools if tools else None,
             description=doc.description,
             author=doc.author,
             published_date=doc.published_date.isoformat() if doc.published_date else None,

@@ -73,8 +73,6 @@ def test_db_with_queue(temp_project_dir, monkeypatch):
         AFTER UPDATE ON documents
         WHEN (
             NEW.content_type != OLD.content_type OR
-            NEW.primary_topics != OLD.primary_topics OR
-            NEW.tools_technologies != OLD.tools_technologies OR
             NEW.title != OLD.title OR
             NEW.description != OLD.description OR
             NEW.author != OLD.author OR
@@ -124,7 +122,8 @@ def test_queue_populated_via_orm_update(test_db_with_queue):
 
     # Update metadata via ORM
     doc.content_type = ContentType.TUTORIAL
-    doc.primary_topics = ["Python", "Testing"]
+    doc.title = "Updated Test Doc"
+    doc.description = "Test description"
     session.add(doc)
     session.commit()
 
@@ -148,7 +147,7 @@ def test_queue_populated_via_sql_update(test_db_with_queue):
         ingestion_status=IngestionStatus.FETCHED,
         content_path="example.com/test.md",
         content_type=ContentType.TUTORIAL,  # Start with a value
-        primary_topics=["Python"],  # Start with a value
+        description="Initial description",  # Start with a value
     )
     session.add(doc)
     session.commit()
@@ -164,7 +163,7 @@ def test_queue_populated_via_sql_update(test_db_with_queue):
     cursor.execute(
         """
         UPDATE documents
-        SET content_type = 'GUIDE', primary_topics = '["AI", "ML"]'
+        SET content_type = 'GUIDE', description = 'Updated via SQL'
         WHERE id = ?
     """,
         (str(doc_id).replace("-", ""),),
@@ -207,7 +206,7 @@ def test_direct_sync_cleans_queue(test_db_with_queue):
             ingestion_status=IngestionStatus.FETCHED,
             content_path=content_path,
             content_type=ContentType.TUTORIAL,
-            primary_topics=["Python"],
+            description="Test description",
         )
         session.add(doc)
         session.commit()
@@ -263,7 +262,7 @@ def test_process_queue_syncs_and_clears(test_db_with_queue):
             ingestion_status=IngestionStatus.FETCHED,
             content_path=content_path,
             content_type=ContentType.TUTORIAL,
-            primary_topics=["Python"],
+            description="Test description",
         )
         session.add(doc)
         docs.append(doc)
@@ -372,7 +371,7 @@ def test_sql_update_then_process_queue_syncs_file(test_db_with_queue):
             ingestion_status=IngestionStatus.FETCHED,
             content_path=doc1_content_path,
             content_type=ContentType.TUTORIAL,
-            primary_topics=["Original Topic"],
+            description="Original description",
         )
         doc2 = Document(
             id=doc2_id,
@@ -382,7 +381,7 @@ def test_sql_update_then_process_queue_syncs_file(test_db_with_queue):
             ingestion_status=IngestionStatus.FETCHED,
             content_path=doc2_content_path,
             content_type=ContentType.GUIDE,
-            primary_topics=["Python"],
+            description="Test description",
         )
         session.add(doc1)
         session.add(doc2)
@@ -400,7 +399,7 @@ def test_sql_update_then_process_queue_syncs_file(test_db_with_queue):
         cursor.execute(
             """
             UPDATE documents
-            SET content_type = 'GUIDE', primary_topics = '["SQL Update", "Agent"]'
+            SET content_type = 'GUIDE', description = 'SQL Update via Agent'
             WHERE id = ?
         """,
             (str(doc1_id).replace("-", ""),),
@@ -431,8 +430,7 @@ def test_sql_update_then_process_queue_syncs_file(test_db_with_queue):
         doc1_content_after = doc1_full_path.read_text(encoding="utf-8")
         assert doc1_content_after.startswith("---\n")
         assert "content_type: guide" in doc1_content_after
-        assert "- SQL Update" in doc1_content_after
-        assert "- Agent" in doc1_content_after
+        assert "description: SQL Update via Agent" in doc1_content_after
 
         # Queue should be empty (cleaned up)
         session.expire_all()
@@ -490,7 +488,7 @@ def test_multiple_updates_create_multiple_queue_entries(test_db_with_queue):
 
     try:
         doc.content_type = ContentType.TUTORIAL
-        doc.primary_topics = ["Test"]
+        doc.description = "Test update"
         session.add(doc)
         session.commit()
 

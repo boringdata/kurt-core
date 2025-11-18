@@ -68,8 +68,6 @@ def test_db_with_triggers(temp_project_dir, monkeypatch):
         AFTER UPDATE ON documents
         WHEN (
             NEW.content_type != OLD.content_type OR
-            NEW.primary_topics != OLD.primary_topics OR
-            NEW.tools_technologies != OLD.tools_technologies OR
             NEW.title != OLD.title OR
             NEW.description != OLD.description OR
             NEW.author != OLD.author OR
@@ -139,12 +137,30 @@ def test_frontmatter_sync_on_index(test_db_with_triggers):
 
         # Now update the document with metadata (simulating indexing)
         doc.content_type = ContentType.TUTORIAL
-        doc.primary_topics = ["Python", "Testing", "SQLite"]
-        doc.tools_technologies = ["pytest", "SQLite"]
         doc.has_code_examples = True
         doc.indexed_with_hash = "abc123"
 
         session.add(doc)
+        session.commit()
+
+        # Create entities and link them to document (knowledge graph)
+        from kurt.db.models import DocumentEntity, Entity
+
+        entities = [
+            Entity(id=uuid4(), name="Python", entity_type="Topic", canonical_name="Python"),
+            Entity(id=uuid4(), name="Testing", entity_type="Topic", canonical_name="Testing"),
+            Entity(id=uuid4(), name="SQLite", entity_type="Topic", canonical_name="SQLite"),
+            Entity(id=uuid4(), name="pytest", entity_type="Tool", canonical_name="pytest"),
+        ]
+
+        for entity in entities:
+            session.add(entity)
+            session.add(
+                DocumentEntity(
+                    document_id=doc.id, entity_id=entity.id, mention_count=1, confidence=0.9
+                )
+            )
+
         session.commit()
 
         # Write frontmatter (this is what happens during indexing)
@@ -162,7 +178,6 @@ def test_frontmatter_sync_on_index(test_db_with_triggers):
         assert "- SQLite" in content_after_update
         assert "tools:" in content_after_update
         assert "- pytest" in content_after_update
-        assert "- SQLite" in content_after_update
         assert "has_code_examples: true" in content_after_update
 
         # Original content should still be there after the frontmatter
@@ -211,10 +226,27 @@ def test_frontmatter_sync_updates_existing_frontmatter(test_db_with_triggers):
 
         # First update: add initial metadata
         doc.content_type = ContentType.GUIDE
-        doc.primary_topics = ["Initial", "Topics"]
         doc.indexed_with_hash = "hash1"
 
         session.add(doc)
+        session.commit()
+
+        # Create initial entities and link them to document
+        from kurt.db.models import DocumentEntity, Entity
+
+        initial_entities = [
+            Entity(id=uuid4(), name="Initial", entity_type="Topic", canonical_name="Initial"),
+            Entity(id=uuid4(), name="Topics", entity_type="Topic", canonical_name="Topics"),
+        ]
+
+        for entity in initial_entities:
+            session.add(entity)
+            session.add(
+                DocumentEntity(
+                    document_id=doc.id, entity_id=entity.id, mention_count=1, confidence=0.9
+                )
+            )
+
         session.commit()
 
         # Write frontmatter after first update
@@ -226,11 +258,33 @@ def test_frontmatter_sync_updates_existing_frontmatter(test_db_with_triggers):
 
         # Second update: change metadata
         doc.content_type = ContentType.TUTORIAL
-        doc.primary_topics = ["Updated", "Topics", "New"]
-        doc.tools_technologies = ["NewTool"]
         doc.indexed_with_hash = "hash2"
 
         session.add(doc)
+
+        # Remove old entities and add new ones
+        # First, delete old document-entity links
+        from sqlmodel import delete
+
+        stmt = delete(DocumentEntity).where(DocumentEntity.document_id == doc.id)
+        session.exec(stmt)
+
+        # Create new entities
+        new_entities = [
+            Entity(id=uuid4(), name="Updated", entity_type="Topic", canonical_name="Updated"),
+            Entity(id=uuid4(), name="Topics", entity_type="Topic", canonical_name="Topics"),
+            Entity(id=uuid4(), name="New", entity_type="Topic", canonical_name="New"),
+            Entity(id=uuid4(), name="NewTool", entity_type="Tool", canonical_name="NewTool"),
+        ]
+
+        for entity in new_entities:
+            session.add(entity)
+            session.add(
+                DocumentEntity(
+                    document_id=doc.id, entity_id=entity.id, mention_count=1, confidence=0.9
+                )
+            )
+
         session.commit()
 
         # Write frontmatter after second update
