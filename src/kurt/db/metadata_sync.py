@@ -96,30 +96,10 @@ def write_frontmatter_to_file(doc, session=None) -> None:
         content_without_frontmatter = remove_frontmatter(content)
 
         # Fetch topics and tools from knowledge graph
-        # Use provided session or create new one
-        from sqlmodel import select
+        from kurt.db.entity_utils import get_document_technologies, get_document_topics
 
-        from kurt.db.models import DocumentEntity, Entity
-
-        fetch_session = session if session is not None else get_session()
-
-        # Get topics from knowledge graph
-        topics_stmt = (
-            select(Entity.canonical_name)
-            .join(DocumentEntity, Entity.id == DocumentEntity.entity_id)
-            .where(DocumentEntity.document_id == doc.id)
-            .where(Entity.entity_type == "Topic")
-        )
-        topics = [name for name in fetch_session.exec(topics_stmt).all() if name]
-
-        # Get tools from knowledge graph
-        tools_stmt = (
-            select(Entity.canonical_name)
-            .join(DocumentEntity, Entity.id == DocumentEntity.entity_id)
-            .where(DocumentEntity.document_id == doc.id)
-            .where(Entity.entity_type.in_(["Technology", "Tool", "Product"]))
-        )
-        tools = [name for name in fetch_session.exec(tools_stmt).all() if name]
+        topics = get_document_topics(doc.id, session=session)
+        tools = get_document_technologies(doc.id, session=session)
 
         # Skip if no metadata to write
         if not any([doc.content_type, topics, tools]):
