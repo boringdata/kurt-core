@@ -56,20 +56,9 @@ def migrate_metadata_to_entities(conn) -> dict:
     )
 
     for doc_id, title, source_url, topics_json, tools_json in result:
-        # Parse JSON fields - ensure we always get a list even if JSON contains null
-        try:
-            topics = json.loads(topics_json) if topics_json else []
-            if not isinstance(topics, list):
-                topics = []
-        except (json.JSONDecodeError, TypeError):
-            topics = []
-
-        try:
-            tools = json.loads(tools_json) if tools_json else []
-            if not isinstance(tools, list):
-                tools = []
-        except (json.JSONDecodeError, TypeError):
-            tools = []
+        # Parse JSON fields
+        topics = json.loads(topics_json) if topics_json else []
+        tools = json.loads(tools_json) if tools_json else []
 
         # Get existing entity links for this document
         existing_entity_ids = {

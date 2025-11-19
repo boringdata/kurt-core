@@ -125,12 +125,9 @@ def get_migration_history() -> List[Tuple[str, str, Optional[str]]]:
     return list(reversed(history))
 
 
-def backup_database(silent: bool = False) -> Optional[Path]:
+def backup_database() -> Optional[Path]:
     """
     Create a timestamped backup of the database before migration.
-
-    Args:
-        silent: If True, suppress console output
 
     Returns:
         Path to backup file or None if backup failed
@@ -140,22 +137,19 @@ def backup_database(silent: bool = False) -> Optional[Path]:
         db_path = kurt_config.get_absolute_db_path()
 
         if not db_path.exists():
-            if not silent:
-                console.print("[yellow]No database to backup[/yellow]")
+            console.print("[yellow]No database to backup[/yellow]")
             return None
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_path = db_path.parent / f"kurt.sqlite.backup.{timestamp}"
 
-        if not silent:
-            console.print(f"[dim]Creating backup: {backup_path.name}[/dim]")
+        console.print(f"[dim]Creating backup: {backup_path.name}[/dim]")
         shutil.copy2(db_path, backup_path)
 
         return backup_path
 
     except Exception as e:
-        if not silent:
-            console.print(f"[red]Backup failed: {e}[/red]")
+        console.print(f"[red]Backup failed: {e}[/red]")
         return None
 
 
@@ -218,163 +212,91 @@ def display_migration_prompt(pending: List[Tuple[str, str]]) -> bool:
     return Confirm.ask("[bold]Apply migrations now?[/bold]", default=True)
 
 
-def apply_migrations(auto_confirm: bool = False, silent: bool = False) -> dict:
+def apply_migrations(auto_confirm: bool = False) -> bool:
     """
     Apply all pending database migrations with Rich progress UI.
 
     Args:
         auto_confirm: If True, skip confirmation prompt
-        silent: If True, suppress all Rich output and return structured result
 
     Returns:
-        Dict with migration results:
-        {
-            "success": bool,
-            "applied": bool,  # True if migrations were actually applied
-            "count": int,  # Number of migrations applied
-            "current_version": str,
-            "backup_path": str or None,
-            "error": str or None
-        }
+        True if migrations were applied successfully, False otherwise
     """
-    # Suppress Alembic logging in silent mode
-    if silent:
-        import logging
-
-        logging.getLogger("alembic").setLevel(logging.ERROR)
-
     pending = get_pending_migrations()
 
     if not pending:
-        if not silent:
-            console.print("[green]✓ Database is up to date[/green]")
-        return {
-            "success": True,
-            "applied": False,
-            "count": 0,
-            "current_version": get_current_version(),
-            "backup_path": None,
-            "error": None,
-        }
+        console.print("[green]✓ Database is up to date[/green]")
+        return True
 
     # Show prompt unless auto-confirm is enabled
     if not auto_confirm:
         if not display_migration_prompt(pending):
-            if not silent:
-                console.print()
-                console.print("[yellow]⚠ Migration skipped[/yellow]")
-                console.print(
-                    "[dim]Note: Some features may not work without the latest schema[/dim]"
-                )
-                console.print()
-            return {
-                "success": False,
-                "applied": False,
-                "count": 0,
-                "current_version": get_current_version(),
-                "backup_path": None,
-                "error": "User declined migration",
-            }
+            console.print()
+            console.print("[yellow]⚠ Migration skipped[/yellow]")
+            console.print("[dim]Note: Some features may not work without the latest schema[/dim]")
+            console.print()
+            return False
 
-    if not silent:
-        console.print()
+    console.print()
 
     try:
-        # Create backup
-        if not silent:
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                console=console,
-            ) as progress:
-                backup_task = progress.add_task("[cyan]Creating backup...", total=None)
-                backup_path = backup_database(silent=False)
-                progress.update(backup_task, completed=True)
-        else:
-            # Silent backup
-            backup_path = backup_database(silent=True)
+        # Create backup with progress
+        with Progress(
+            SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console
+        ) as progress:
+            backup_task = progress.add_task("[cyan]Creating backup...", total=None)
+            backup_path = backup_database()
+            progress.update(backup_task, completed=True)
 
-        # Apply migrations
-        if not silent:
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(),
-                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-                console=console,
-            ) as progress:
-                task = progress.add_task("[yellow]Applying migrations...", total=len(pending))
-                config = get_alembic_config()
-                progress.update(
-                    task, description="[yellow]Applying all pending migrations...[/yellow]"
-                )
-                command.upgrade(config, "head")
-                progress.update(task, completed=len(pending))
-        else:
-            # Silent migration - suppress stdout/stderr from migration scripts and Alembic
-            import io
-            import sys
+        # Apply migrations with progress
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("[yellow]Applying migrations...", total=len(pending))
 
-            old_stdout = sys.stdout
-            old_stderr = sys.stderr
-            sys.stdout = io.StringIO()
-            sys.stderr = io.StringIO()
-            try:
-                config = get_alembic_config()
-                command.upgrade(config, "head")
-            finally:
-                sys.stdout = old_stdout
-                sys.stderr = old_stderr
+            config = get_alembic_config()
 
-        # Get current version
+            # Apply all migrations at once to handle branching migration trees
+            # Using "+1" can fail when there are multiple heads/branches
+            progress.update(task, description="[yellow]Applying all pending migrations...[/yellow]")
+            command.upgrade(config, "head")
+            progress.update(task, completed=len(pending))
+
+        # Get current version for success message
         current_version = get_current_version()
 
         # Success message
-        if not silent:
-            console.print()
-            backup_info = f"[dim]Backup saved:[/dim] {backup_path.name}" if backup_path else ""
-            console.print(
-                Panel.fit(
-                    f"[bold green]✅ Database migrated successfully![/bold green]\n"
-                    f"[dim]Schema version:[/dim] {current_version or 'unknown'}\n"
-                    f"{backup_info}",
-                    border_style="green",
-                )
+        console.print()
+        backup_info = f"[dim]Backup saved:[/dim] {backup_path.name}" if backup_path else ""
+        console.print(
+            Panel.fit(
+                f"[bold green]✅ Database migrated successfully![/bold green]\n"
+                f"[dim]Schema version:[/dim] {current_version or 'unknown'}\n"
+                f"{backup_info}",
+                border_style="green",
             )
-            console.print()
+        )
+        console.print()
 
-        return {
-            "success": True,
-            "applied": True,
-            "count": len(pending),
-            "current_version": current_version,
-            "backup_path": str(backup_path) if backup_path else None,
-            "error": None,
-        }
+        return True
 
     except Exception as e:
-        if not silent:
-            console.print()
-            console.print(
-                Panel.fit(
-                    f"[bold red]❌ Migration failed![/bold red]\n" f"[dim]Error:[/dim] {str(e)}",
-                    border_style="red",
-                )
+        console.print()
+        console.print(
+            Panel.fit(
+                f"[bold red]❌ Migration failed![/bold red]\n" f"[dim]Error:[/dim] {str(e)}",
+                border_style="red",
             )
-            console.print()
-            console.print(
-                "[yellow]Your database has been backed up. "
-                "You can restore it if needed.[/yellow]"
-            )
-
-        return {
-            "success": False,
-            "applied": False,
-            "count": 0,
-            "current_version": get_current_version(),
-            "backup_path": str(backup_path) if backup_path else None,
-            "error": str(e),
-        }
+        )
+        console.print()
+        console.print(
+            "[yellow]Your database has been backed up. " "You can restore it if needed.[/yellow]"
+        )
+        return False
 
 
 def show_migration_status() -> None:
