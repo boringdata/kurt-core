@@ -1,0 +1,94 @@
+name: "AEO FAQ Schema Generator (Enhanced)"
+description: "Mine questions from community sources, generate FAQ content, and create JSON-LD schema markup for AI search optimization"
+version: "2.0"
+
+variables:
+  target_domain: "example.com"
+  subreddit: "technology"
+  num_questions: 50
+  output_path: "content/faqs"
+  brand_voice: "professional and helpful"
+  base_url: "https://example.com"
+
+steps:
+  - name: "fetch_reddit_questions"
+    description: "Fetch questions from Reddit"
+    type: "cli"
+    command: "integrations research reddit"
+    args:
+      subreddit: "${subreddit}"
+      limit: "${num_questions}"
+      type: "questions"
+    output: "reddit_questions"
+
+  - name: "analyze_questions"
+    description: "Cluster questions by topic"
+    type: "dspy"
+    signature: "AnalyzeQuestions"
+    inputs:
+      questions: "${reddit_questions}"
+      domain: "${target_domain}"
+    output: "question_clusters"
+
+  - name: "generate_faq_content"
+    description: "Generate FAQ page content"
+    type: "dspy"
+    signature: "GenerateFAQContent"
+    inputs:
+      clusters: "${question_clusters}"
+      domain: "${target_domain}"
+      brand_voice: "${brand_voice}"
+      existing_content: ""
+    output: "faq_pages"
+
+  - name: "generate_schema"
+    description: "Generate JSON-LD schema markup"
+    type: "dspy"
+    signature: "GenerateJSONLD"
+    inputs:
+      faq_pages: "${faq_pages}"
+      base_url: "${base_url}"
+    output: "schema_markup"
+
+  - name: "save_faq_files"
+    description: "Export FAQ pages to markdown files"
+    type: "cli"
+    command: "workflows export"
+    args:
+      data: "${faq_pages}"
+      output_dir: "${output_path}"
+      format: "markdown"
+      template: "faq"
+    output: "faq_files"
+
+  - name: "save_schema_files"
+    description: "Export schema markup to JSON files"
+    type: "cli"
+    command: "workflows export"
+    args:
+      data: "${schema_markup}"
+      output_dir: "${output_path}"
+      format: "json"
+      suffix: ".schema"
+    output: "schema_files"
+
+  - name: "validate_schema"
+    description: "Validate schema markup"
+    type: "cli"
+    command: "workflows validate-schema"
+    args:
+      schema_dir: "${output_path}"
+    output: "validation_results"
+
+  - name: "generate_summary"
+    description: "Generate workflow summary report"
+    type: "cli"
+    command: "workflows report"
+    args:
+      workflow_name: "AEO FAQ Generation"
+      output_path: "${output_path}"
+      stats:
+        questions_analyzed: "${num_questions}"
+        topics_identified: "${question_clusters}"
+        files_created: "${faq_files}"
+    output: "report_path"

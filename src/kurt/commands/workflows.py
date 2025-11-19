@@ -19,6 +19,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from kurt.commands.workflows_helpers import export_data, generate_report, validate_schema
 from kurt.workflows import DBOS_AVAILABLE
 
 console = Console()
@@ -28,6 +29,12 @@ console = Console()
 def workflows_group():
     """Manage workflows (YAML and background jobs)"""
     pass
+
+
+# Register helper commands
+workflows_group.add_command(export_data, name="export")
+workflows_group.add_command(validate_schema, name="validate-schema")
+workflows_group.add_command(generate_report, name="report")
 
 
 def _check_dbos_available():
