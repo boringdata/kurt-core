@@ -129,8 +129,8 @@ kurt content get <doc-id>  # Shows topics, technologies, content type, structura
 **Note**: Requires running `kurt content index` first to extract metadata. See `add-source.md` for indexing workflow.
 
 **Available filters:**
-- `--with-topic`: Filter by topics in `primary_topics` (case-insensitive substring match)
-- `--with-technology`: Filter by tools/technologies in `tools_technologies` (case-insensitive substring match)
+- `--with-topic`: Filter by topics in knowledge graph (case-insensitive substring match)
+- `--with-technology`: Filter by tools/technologies in knowledge graph (case-insensitive substring match)
 - `--with-content-type`: Filter by content type (tutorial, guide, blog, reference, etc.)
 
 ---
