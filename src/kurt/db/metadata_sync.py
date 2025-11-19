@@ -29,6 +29,12 @@ class MetadataFrontmatter(BaseModel):
     title: Optional[str] = None
     content_type: Optional[str] = None
     topics: Optional[list[str]] = None
+    technologies: Optional[list[str]] = None
+    products: Optional[list[str]] = None
+    features: Optional[list[str]] = None
+    companies: Optional[list[str]] = None
+    integrations: Optional[list[str]] = None
+    # Legacy field for backward compatibility (maps to technologies)
     tools: Optional[list[str]] = None
     description: Optional[str] = None
     author: Optional[list[str]] = None
@@ -95,18 +101,32 @@ def write_frontmatter_to_file(doc, session=None) -> None:
         # Remove existing frontmatter if present
         content_without_frontmatter = remove_frontmatter(content)
 
-        # Fetch topics and tools from knowledge graph
+        # Fetch all entities from knowledge graph generically
         from kurt.db.knowledge_graph import get_document_entities
 
-        topics = get_document_entities(
-            doc.id, entity_type="Topic", names_only=True, session=session
-        )
-        tools = get_document_entities(
-            doc.id, entity_type="Technology", names_only=True, session=session
+        # Get all entities with their types
+        all_entities = get_document_entities(
+            doc.id, entity_type=None, names_only=False, session=session
         )
 
+        # Organize entities by type
+        entities_by_type = {}
+        for entity_name, entity_type in all_entities:
+            if entity_type not in entities_by_type:
+                entities_by_type[entity_type] = []
+            entities_by_type[entity_type].append(entity_name)
+
+        # Extract each entity type (using lowercase plural for frontmatter field names)
+        topics = entities_by_type.get("Topic", [])
+        technologies = entities_by_type.get("Technology", [])
+        products = entities_by_type.get("Product", [])
+        features = entities_by_type.get("Feature", [])
+        companies = entities_by_type.get("Company", [])
+        integrations = entities_by_type.get("Integration", [])
+
         # Skip if no metadata to write
-        if not any([doc.content_type, topics, tools]):
+        has_entities = any([topics, technologies, products, features, companies, integrations])
+        if not any([doc.content_type, has_entities]):
             return
 
         # Build frontmatter model
@@ -114,7 +134,13 @@ def write_frontmatter_to_file(doc, session=None) -> None:
             title=doc.title,
             content_type=doc.content_type.value if doc.content_type else None,
             topics=topics if topics else None,
-            tools=tools if tools else None,
+            technologies=technologies if technologies else None,
+            products=products if products else None,
+            features=features if features else None,
+            companies=companies if companies else None,
+            integrations=integrations if integrations else None,
+            # Legacy 'tools' field maps to technologies for backward compatibility
+            tools=technologies if technologies else None,
             description=doc.description,
             author=doc.author,
             published_date=doc.published_date.isoformat() if doc.published_date else None,
