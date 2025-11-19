@@ -56,13 +56,17 @@ def test_resolve_entity_groups_single_group(tmp_project, mock_dspy_signature):
     )
 
     with mock_dspy_signature("ResolveEntityGroup", mock_output):
-        with patch("kurt.content.indexing_entity_resolution.generate_embeddings") as mock_embed:
+        with (
+            patch("kurt.content.indexing_entity_resolution.generate_embeddings") as mock_embed,
+            patch("kurt.db.knowledge_graph.generate_embeddings") as mock_embed_kg,
+        ):
             # Generate similar embeddings so they cluster together
             # Mock needs to handle multiple calls: clustering + entity creation
             mock_embed.side_effect = [
                 [[0.1, 0.2, 0.3], [0.11, 0.21, 0.31]],  # Clustering embeddings
                 [[0.1, 0.2, 0.3]],  # Entity creation for "Python"
             ]
+            mock_embed_kg.side_effect = lambda texts: [[0.1] * 384 for _ in texts]
 
             with patch("kurt.db.knowledge_graph.search_similar_entities") as mock_search:
                 mock_search.return_value = []  # No existing entities
