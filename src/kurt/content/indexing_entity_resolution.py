@@ -21,7 +21,6 @@ from uuid import UUID, uuid4
 import dspy
 import numpy as np
 from sklearn.cluster import DBSCAN
-from sqlalchemy import text
 from sqlmodel import select
 
 from kurt.content.embeddings import embedding_to_bytes, generate_embeddings
@@ -30,72 +29,6 @@ from kurt.db.database import get_session
 from kurt.db.models import DocumentEntity, Entity, EntityRelationship
 
 logger = logging.getLogger(__name__)
-
-
-# ============================================================================
-# Helper Functions
-# ============================================================================
-
-
-def create_entity_with_embedding(
-    canonical_name: str,
-    entity_type: str,
-    aliases: list[str],
-    description: str,
-    confidence_score: float,
-    source_mentions: int,
-    session,
-) -> Entity:
-    """
-    Create a new Entity with embedding and persist it to the database.
-
-    This helper reduces code duplication when creating entities during resolution.
-
-    Args:
-        canonical_name: Canonical name for the entity
-        entity_type: Entity type (Topic, Technology, etc.)
-        aliases: List of all aliases for this entity
-        description: Entity description
-        confidence_score: Average confidence score
-        source_mentions: Number of unique documents mentioning this entity
-        session: Database session
-
-    Returns:
-        Created Entity object (already added to session and flushed)
-    """
-    # Generate embedding
-    entity_embedding = generate_embeddings([canonical_name])[0]
-
-    # Create entity
-    entity = Entity(
-        id=uuid4(),
-        name=canonical_name,
-        entity_type=entity_type,
-        canonical_name=canonical_name,
-        aliases=aliases,
-        description=description,
-        embedding=embedding_to_bytes(entity_embedding),
-        confidence_score=confidence_score,
-        source_mentions=source_mentions,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
-    )
-    session.add(entity)
-    session.flush()  # Get entity ID
-
-    # Store entity_embeddings in vec0 table if available
-    try:
-        floats_str = ",".join(str(f) for f in entity_embedding)
-        session.exec(
-            text(
-                f"INSERT INTO entity_embeddings (entity_id, embedding) "
-                f"VALUES ('{entity.id}', '[{floats_str}]')"
-            )
-        )
-    except Exception as e:
-        logger.debug(f"Could not insert into entity_embeddings: {e}")
-
-    return entity
 
 
 # ============================================================================
@@ -732,16 +665,23 @@ def _create_entities_and_relationships(doc_to_kg_data: dict, resolutions: list[d
                 sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0.9
             )
 
-            # Create entity using helper function
-            entity = create_entity_with_embedding(
-                canonical_name=canonical_name,
+            # Create entity with embedding
+            entity_embedding = generate_embeddings([canonical_name])[0]
+            entity = Entity(
+                id=uuid4(),
+                name=canonical_name,
                 entity_type=entity_data["type"],
+                canonical_name=canonical_name,
                 aliases=list(all_aliases),
                 description=entity_data.get("description", ""),
+                embedding=embedding_to_bytes(entity_embedding),
                 confidence_score=avg_confidence,
                 source_mentions=doc_count,
-                session=session,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
             )
+            session.add(entity)
+            session.flush()
 
             # Map all names in this group to this entity ID
             for ent_name in all_entity_names:
@@ -803,16 +743,23 @@ def _create_entities_and_relationships(doc_to_kg_data: dict, resolutions: list[d
                     sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0.9
                 )
 
-                # Create entity using helper function
-                entity = create_entity_with_embedding(
-                    canonical_name=canonical_name,
+                # Create entity with embedding
+                entity_embedding = generate_embeddings([canonical_name])[0]
+                entity = Entity(
+                    id=uuid4(),
+                    name=canonical_name,
                     entity_type=entity_data["type"],
+                    canonical_name=canonical_name,
                     aliases=list(all_aliases),
                     description=entity_data.get("description", ""),
+                    embedding=embedding_to_bytes(entity_embedding),
                     confidence_score=avg_confidence,
                     source_mentions=len(unique_docs),
-                    session=session,
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow(),
                 )
+                session.add(entity)
+                session.flush()
 
                 for ent_name in all_entity_names:
                     entity_name_to_id[ent_name] = entity.id
