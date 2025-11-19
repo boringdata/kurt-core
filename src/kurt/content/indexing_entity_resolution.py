@@ -27,10 +27,75 @@ from sqlmodel import select
 from kurt.content.embeddings import embedding_to_bytes, generate_embeddings
 from kurt.content.indexing_models import GroupResolution
 from kurt.db.database import get_session
-from kurt.db.knowledge_graph import search_similar_entities
 from kurt.db.models import DocumentEntity, Entity, EntityRelationship
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Helper Functions
+# ============================================================================
+
+
+def create_entity_with_embedding(
+    canonical_name: str,
+    entity_type: str,
+    aliases: list[str],
+    description: str,
+    confidence_score: float,
+    source_mentions: int,
+    session,
+) -> Entity:
+    """
+    Create a new Entity with embedding and persist it to the database.
+
+    This helper reduces code duplication when creating entities during resolution.
+
+    Args:
+        canonical_name: Canonical name for the entity
+        entity_type: Entity type (Topic, Technology, etc.)
+        aliases: List of all aliases for this entity
+        description: Entity description
+        confidence_score: Average confidence score
+        source_mentions: Number of unique documents mentioning this entity
+        session: Database session
+
+    Returns:
+        Created Entity object (already added to session and flushed)
+    """
+    # Generate embedding
+    entity_embedding = generate_embeddings([canonical_name])[0]
+
+    # Create entity
+    entity = Entity(
+        id=uuid4(),
+        name=canonical_name,
+        entity_type=entity_type,
+        canonical_name=canonical_name,
+        aliases=aliases,
+        description=description,
+        embedding=embedding_to_bytes(entity_embedding),
+        confidence_score=confidence_score,
+        source_mentions=source_mentions,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    session.add(entity)
+    session.flush()  # Get entity ID
+
+    # Store entity_embeddings in vec0 table if available
+    try:
+        floats_str = ",".join(str(f) for f in entity_embedding)
+        session.exec(
+            text(
+                f"INSERT INTO entity_embeddings (entity_id, embedding) "
+                f"VALUES ('{entity.id}', '[{floats_str}]')"
+            )
+        )
+    except Exception as e:
+        logger.debug(f"Could not insert into entity_embeddings: {e}")
+
+    return entity
 
 
 # ============================================================================
@@ -208,27 +273,20 @@ def _resolve_entity_groups(
 
     # Prepare resolution tasks (one per group) - PARALLELIZE similarity searches
     def fetch_similar_entities(group_id, group_entities):
-        """Fetch similar entities for a group.
+        """Fetch similar entities for a group using thread-safe wrapper."""
+        from kurt.db.knowledge_graph import search_similar_entities_threadsafe
 
-        Note: Creates its own session to avoid threading issues.
-        """
-        # Create a new session for this thread
-        thread_session = get_session()
-        try:
-            representative_entity = group_entities[0]
-            similar_existing = search_similar_entities(
-                representative_entity["name"],
-                representative_entity["type"],
-                limit=10,
-                session=thread_session,
-            )
-            return {
-                "group_id": group_id,
-                "group_entities": group_entities,
-                "similar_existing": similar_existing,
-            }
-        finally:
-            thread_session.close()
+        representative_entity = group_entities[0]
+        similar_existing = search_similar_entities_threadsafe(
+            representative_entity["name"],
+            representative_entity["type"],
+            limit=10,
+        )
+        return {
+            "group_id": group_id,
+            "group_entities": group_entities,
+            "similar_existing": similar_existing,
+        }
 
     # Fetch similar entities for all groups in parallel using ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=max_concurrent) as executor:
@@ -650,7 +708,6 @@ def _create_entities_and_relationships(doc_to_kg_data: dict, resolutions: list[d
         if decision == "CREATE_NEW":
             # Create new entity
             entity_data = primary_resolution["entity_details"]
-            entity_embedding = generate_embeddings([canonical_name])[0]
 
             # Collect all entity names in this group
             all_entity_names = [r["entity_name"] for r in group_resolutions]
@@ -675,32 +732,16 @@ def _create_entities_and_relationships(doc_to_kg_data: dict, resolutions: list[d
                 sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0.9
             )
 
-            entity = Entity(
-                id=uuid4(),
-                name=canonical_name,
-                entity_type=entity_data["type"],
+            # Create entity using helper function
+            entity = create_entity_with_embedding(
                 canonical_name=canonical_name,
+                entity_type=entity_data["type"],
                 aliases=list(all_aliases),
                 description=entity_data.get("description", ""),
-                embedding=embedding_to_bytes(entity_embedding),
                 confidence_score=avg_confidence,
                 source_mentions=doc_count,
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow(),
+                session=session,
             )
-            session.add(entity)
-            session.flush()  # Get entity ID
-
-            # Store entity_embeddings in vec0 table if available
-            try:
-                floats_str = ",".join(str(f) for f in entity_embedding)
-                session.exec(
-                    text(
-                        f"INSERT INTO entity_embeddings (entity_id, embedding) VALUES ('{entity.id}', '[{floats_str}]')"
-                    )
-                )
-            except Exception as e:
-                logger.debug(f"Could not insert into entity_embeddings: {e}")
 
             # Map all names in this group to this entity ID
             for ent_name in all_entity_names:
@@ -745,7 +786,6 @@ def _create_entities_and_relationships(doc_to_kg_data: dict, resolutions: list[d
 
                 # Fallback to CREATE_NEW logic
                 entity_data = primary_resolution["entity_details"]
-                entity_embedding = generate_embeddings([canonical_name])[0]
                 all_entity_names = [r["entity_name"] for r in group_resolutions]
                 all_aliases = set()
                 for r in group_resolutions:
@@ -763,31 +803,16 @@ def _create_entities_and_relationships(doc_to_kg_data: dict, resolutions: list[d
                     sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0.9
                 )
 
-                entity = Entity(
-                    id=uuid4(),
-                    name=canonical_name,
-                    entity_type=entity_data["type"],
+                # Create entity using helper function
+                entity = create_entity_with_embedding(
                     canonical_name=canonical_name,
+                    entity_type=entity_data["type"],
                     aliases=list(all_aliases),
                     description=entity_data.get("description", ""),
-                    embedding=embedding_to_bytes(entity_embedding),
                     confidence_score=avg_confidence,
                     source_mentions=len(unique_docs),
-                    created_at=datetime.utcnow(),
-                    updated_at=datetime.utcnow(),
+                    session=session,
                 )
-                session.add(entity)
-                session.flush()
-
-                try:
-                    floats_str = ",".join(str(f) for f in entity_embedding)
-                    session.exec(
-                        text(
-                            f"INSERT INTO entity_embeddings (entity_id, embedding) VALUES ('{entity.id}', '[{floats_str}]')"
-                        )
-                    )
-                except Exception as e:
-                    logger.debug(f"Could not insert into entity_embeddings: {e}")
 
                 for ent_name in all_entity_names:
                     entity_name_to_id[ent_name] = entity.id

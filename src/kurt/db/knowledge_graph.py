@@ -676,3 +676,45 @@ def search_similar_entities(
     finally:
         if close_session:
             fetch_session.close()
+
+
+def search_similar_entities_threadsafe(
+    entity_name: str,
+    entity_type: str,
+    limit: int = 20,
+) -> list[dict]:
+    """
+    Thread-safe wrapper for search_similar_entities.
+
+    Creates its own database session to avoid threading issues when called
+    from ThreadPoolExecutor or other concurrent contexts.
+
+    Args:
+        entity_name: Entity name to search for
+        entity_type: Entity type to filter by
+        limit: Maximum number of results to return
+
+    Returns:
+        List of similar entities with similarity scores
+
+    Example:
+        # Safe to use in ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [
+                executor.submit(search_similar_entities_threadsafe, "Python", "Topic", 10)
+                for _ in range(5)
+            ]
+            results = [f.result() for f in futures]
+    """
+    from kurt.db.database import get_session
+
+    thread_session = get_session()
+    try:
+        return search_similar_entities(
+            entity_name=entity_name,
+            entity_type=entity_type,
+            limit=limit,
+            session=thread_session,
+        )
+    finally:
+        thread_session.close()

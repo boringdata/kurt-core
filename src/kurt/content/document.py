@@ -255,23 +255,24 @@ def get_document(document_id: str) -> Document:
     return doc
 
 
-def load_document_content(doc: Document) -> str:
+def load_document_content(doc: Document, strip_frontmatter: bool = True) -> str:
     """
     Load document content from filesystem.
 
     Args:
         doc: Document object with content_path
+        strip_frontmatter: If True (default), removes YAML frontmatter from content
 
     Returns:
-        Document content as string
+        Document content as string (with frontmatter stripped by default)
 
     Raises:
         ValueError: If content_path is missing or file doesn't exist
 
     Example:
         doc = get_document("550e8400")
-        content = load_document_content(doc)
-        print(content)
+        content = load_document_content(doc)  # Strips frontmatter
+        content_with_metadata = load_document_content(doc, strip_frontmatter=False)
     """
     if not doc.content_path:
         raise ValueError(f"Document {doc.id} has no content_path")
@@ -290,6 +291,46 @@ def load_document_content(doc: Document) -> str:
     if not content.strip():
         raise ValueError(f"Document {doc.id} has empty content")
 
+    if strip_frontmatter:
+        content = _strip_frontmatter(content)
+
+    return content
+
+
+def _strip_frontmatter(content: str) -> str:
+    """
+    Strip YAML frontmatter from content.
+
+    Args:
+        content: Full content that may contain YAML frontmatter
+
+    Returns:
+        Content without frontmatter
+
+    Example:
+        >>> content = "---\\ntitle: Test\\n---\\nBody content"
+        >>> _strip_frontmatter(content)
+        'Body content'
+    """
+    # Check if content starts with YAML frontmatter delimiter
+    if not content.startswith("---"):
+        return content
+
+    # Find the closing delimiter
+    lines = content.split("\n")
+    closing_index = None
+
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            closing_index = i
+            break
+
+    # If we found the closing delimiter, return everything after it
+    if closing_index is not None:
+        body_lines = lines[closing_index + 1 :]
+        return "\n".join(body_lines).strip()
+
+    # If no closing delimiter found, return original content
     return content
 
 

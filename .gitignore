@@ -43,6 +43,7 @@ htmlcov/
 .kurt/
 *.sqlite
 *.db
+kurt.config
 
 # OS
 .DS_Store
