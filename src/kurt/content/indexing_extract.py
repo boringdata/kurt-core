@@ -14,16 +14,14 @@ from concurrent.futures import ThreadPoolExecutor
 
 import dspy
 
-from kurt.content.indexing_helpers import (
-    _get_top_entities,
-    _load_document_content,
-)
+from kurt.content.indexing_helpers import _load_document_content
 from kurt.content.indexing_models import (
     DocumentMetadataOutput,
     EntityExtraction,
     RelationshipExtraction,
 )
 from kurt.db.database import get_session
+from kurt.db.knowledge_graph import get_top_entities
 from kurt.utils import calculate_content_hash, get_git_commit_hash
 
 logger = logging.getLogger(__name__)
@@ -208,7 +206,7 @@ def extract_document_metadata(
         activity_callback("Loading existing entities...")
 
     # Get existing entities for resolution
-    existing_entities_raw = _get_top_entities(session, limit=100)
+    existing_entities_raw = get_top_entities(limit=100, session=session)
     logger.info(f"  → Loaded {len(existing_entities_raw)} existing entities")
 
     # Create index-to-UUID mapping for efficient LLM processing

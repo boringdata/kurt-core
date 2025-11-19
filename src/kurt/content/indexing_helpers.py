@@ -62,21 +62,6 @@ def _cosine_similarity(emb1: list[float], emb2: list[float]) -> float:
 # ============================================================================
 
 
-def _get_top_entities(session, limit: int = 100) -> list[dict]:
-    """Get most commonly mentioned entities for context.
-
-    Args:
-        session: Database session
-        limit: Maximum number of entities to return
-
-    Returns:
-        List of entity dicts with id, name, type, description, aliases, canonical_name
-    """
-    from kurt.db.knowledge_graph import get_top_entities
-
-    return get_top_entities(limit=limit, session=session)
-
-
 def _search_similar_entities(
     session, entity_name: str, entity_type: str, limit: int = 20
 ) -> list[dict]:

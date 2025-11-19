@@ -5,8 +5,13 @@ from rich.console import Console
 from rich.table import Table
 
 from kurt.admin.telemetry.decorators import track_command
+from kurt.content.indexing_models import EntityType, RelationshipType
 
 console = Console()
+
+# Generate help text dynamically from enums
+ENTITY_TYPES_STR = ", ".join([e.value for e in EntityType])
+RELATIONSHIP_TYPES_STR = ", ".join([r.value for r in RelationshipType])
 
 
 @click.command("list")
@@ -74,12 +79,12 @@ console = Console()
 @click.option(
     "--with-entity",
     type=str,
-    help="Filter by entity. Format: 'Type:Name' or just 'Name'. Types: Topic, Technology, Product, Feature, Company, Integration",
+    help=f"Filter by entity. Format: 'Type:Name' or just 'Name'. Types: {ENTITY_TYPES_STR}",
 )
 @click.option(
     "--with-relationship",
     type=str,
-    help="Filter by relationship. Format: 'Type' or 'Type:Source' or 'Type:Source:Target'. Types: mentions, part_of, integrates_with, enables, related_to, depends_on, replaces",
+    help=f"Filter by relationship. Format: 'Type' or 'Type:Source' or 'Type:Source:Target'. Types: {RELATIONSHIP_TYPES_STR}",
 )
 def list_documents_cmd(
     with_status: str,

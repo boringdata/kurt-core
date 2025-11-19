@@ -10,8 +10,6 @@ from .index import index
 from .list import list_documents_cmd
 from .list_clusters import list_clusters_cmd
 from .list_entities import list_entities_cmd
-from .list_technologies import list_technologies_cmd
-from .list_topics import list_topics_cmd
 from .map import map_cmd
 from .search import links_cmd, search_cmd
 from .stats import stats_cmd
@@ -50,9 +48,6 @@ content.add_command(links_cmd, name="links")
 content.add_command(cluster_urls_cmd, name="cluster")
 content.add_command(list_documents_cmd, name="list")
 content.add_command(list_entities_cmd, name="list-entities")
-# Legacy commands (deprecated - use list-entities instead)
-content.add_command(list_topics_cmd, name="list-topics")
-content.add_command(list_technologies_cmd, name="list-technologies")
 content.add_command(get_document_cmd, name="get")
 content.add_command(index)
 content.add_command(delete_document_cmd, name="delete")

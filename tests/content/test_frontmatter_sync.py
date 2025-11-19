@@ -172,11 +172,13 @@ def test_frontmatter_sync_on_index(test_db_with_triggers):
         # Verify frontmatter was added
         assert content_after_update.startswith("---\n")
         assert "content_type: tutorial" in content_after_update
+        # Entities are now nested under 'entities:' key
+        assert "entities:" in content_after_update
         assert "topics:" in content_after_update
         assert "- Python" in content_after_update
         assert "- Testing" in content_after_update
         assert "- SQLite" in content_after_update
-        assert "tools:" in content_after_update
+        assert "technologies:" in content_after_update
         assert "- pytest" in content_after_update
         assert "has_code_examples: true" in content_after_update
 
@@ -297,6 +299,7 @@ def test_frontmatter_sync_updates_existing_frontmatter(test_db_with_triggers):
 
         # Should have updated metadata
         assert "content_type: tutorial" in content_after_second_update
+        assert "entities:" in content_after_second_update
         assert "- Updated" in content_after_second_update
         assert "- New" in content_after_second_update
         assert "- NewTool" in content_after_second_update

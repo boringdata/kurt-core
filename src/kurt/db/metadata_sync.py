@@ -24,18 +24,13 @@ class MetadataFrontmatter(BaseModel):
     """Pydantic model for metadata written to file frontmatter.
 
     This defines all fields that can be written to markdown file frontmatter.
+    Entities are stored in a single dict field organized by type.
     """
 
     title: Optional[str] = None
     content_type: Optional[str] = None
-    topics: Optional[list[str]] = None
-    technologies: Optional[list[str]] = None
-    products: Optional[list[str]] = None
-    features: Optional[list[str]] = None
-    companies: Optional[list[str]] = None
-    integrations: Optional[list[str]] = None
-    # Legacy field for backward compatibility (maps to technologies)
-    tools: Optional[list[str]] = None
+    # All entities organized by type (e.g., {"topics": [...], "technologies": [...]})
+    entities: Optional[dict[str, list[str]]] = None
     description: Optional[str] = None
     author: Optional[list[str]] = None
     published_date: Optional[str] = None
@@ -109,38 +104,28 @@ def write_frontmatter_to_file(doc, session=None) -> None:
             doc.id, entity_type=None, names_only=False, session=session
         )
 
-        # Organize entities by type
+        # Organize entities by type (lowercase plural for frontmatter field names)
         entities_by_type = {}
         for entity_name, entity_type in all_entities:
-            if entity_type not in entities_by_type:
-                entities_by_type[entity_type] = []
-            entities_by_type[entity_type].append(entity_name)
+            # Convert entity type to lowercase plural for frontmatter field name
+            # e.g., "Topic" -> "topics", "Technology" -> "technologies"
+            field_name = entity_type.lower() + "s"
+            if field_name.endswith("ys"):  # e.g., "Companys" -> "Companies"
+                field_name = field_name[:-2] + "ies"
 
-        # Extract each entity type (using lowercase plural for frontmatter field names)
-        topics = entities_by_type.get("Topic", [])
-        technologies = entities_by_type.get("Technology", [])
-        products = entities_by_type.get("Product", [])
-        features = entities_by_type.get("Feature", [])
-        companies = entities_by_type.get("Company", [])
-        integrations = entities_by_type.get("Integration", [])
+            if field_name not in entities_by_type:
+                entities_by_type[field_name] = []
+            entities_by_type[field_name].append(entity_name)
 
         # Skip if no metadata to write
-        has_entities = any([topics, technologies, products, features, companies, integrations])
-        if not any([doc.content_type, has_entities]):
+        if not any([doc.content_type, entities_by_type]):
             return
 
         # Build frontmatter model
         frontmatter = MetadataFrontmatter(
             title=doc.title,
             content_type=doc.content_type.value if doc.content_type else None,
-            topics=topics if topics else None,
-            technologies=technologies if technologies else None,
-            products=products if products else None,
-            features=features if features else None,
-            companies=companies if companies else None,
-            integrations=integrations if integrations else None,
-            # Legacy 'tools' field maps to technologies for backward compatibility
-            tools=technologies if technologies else None,
+            entities=entities_by_type if entities_by_type else None,
             description=doc.description,
             author=doc.author,
             published_date=doc.published_date.isoformat() if doc.published_date else None,
