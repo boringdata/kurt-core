@@ -206,11 +206,13 @@ def test_resolve_entity_groups_with_activity_callback(tmp_project, mock_dspy_sig
     with mock_dspy_signature("ResolveEntityGroup", mock_output):
         with (
             patch("kurt.content.indexing_entity_resolution.generate_embeddings") as mock_embed,
+            patch("kurt.db.knowledge_graph.generate_embeddings") as mock_embed_kg,
         ):
             mock_embed.side_effect = [
                 [[0.1, 0.2, 0.3]],  # Clustering
                 [[0.1, 0.2, 0.3]],  # Entity creation
             ]
+            mock_embed_kg.side_effect = lambda texts: [[0.1] * 384 for _ in texts]
 
             with patch("kurt.db.knowledge_graph.search_similar_entities") as mock_search:
                 mock_search.return_value = []

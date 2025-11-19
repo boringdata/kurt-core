@@ -15,6 +15,7 @@ from uuid import UUID
 import numpy as np
 from sqlmodel import Session, select
 
+from kurt.content.embeddings import embedding_to_bytes, generate_embeddings
 from kurt.content.indexing_models import EntityType
 from kurt.db.database import get_session
 from kurt.db.models import DocumentEntity, Entity
@@ -635,7 +636,6 @@ def search_similar_entities(
         #   {"id": "...", "name": "Python Language", "similarity": 0.92, ...},
         # ]
     """
-    from kurt.content.embeddings import embedding_to_bytes, generate_embeddings
     from kurt.db.sqlite import SQLiteClient
 
     fetch_session = session if session is not None else get_session()
