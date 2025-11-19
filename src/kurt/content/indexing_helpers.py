@@ -72,25 +72,9 @@ def _get_top_entities(session, limit: int = 100) -> list[dict]:
     Returns:
         List of entity dicts with id, name, type, description, aliases, canonical_name
     """
-    stmt = (
-        select(Entity)
-        .where(Entity.source_mentions > 0)
-        .order_by(Entity.source_mentions.desc())
-        .limit(limit)
-    )
-    entities = session.exec(stmt).all()
+    from kurt.db.knowledge_graph import get_top_entities
 
-    return [
-        {
-            "id": str(e.id),
-            "name": e.name,
-            "type": e.entity_type,
-            "description": e.description or "",
-            "aliases": e.aliases or [],
-            "canonical_name": e.canonical_name or e.name,
-        }
-        for e in entities
-    ]
+    return get_top_entities(limit=limit, session=session)
 
 
 def _search_similar_entities(

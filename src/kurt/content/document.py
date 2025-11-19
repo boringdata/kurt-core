@@ -124,11 +124,17 @@ def list_documents(
                 analytics = analytics_map.get(normalized_url)
 
                 # Apply analytics filters
-                if pageviews_30d_min is not None and (not analytics or analytics.pageviews_30d < pageviews_30d_min):
+                if pageviews_30d_min is not None and (
+                    not analytics or analytics.pageviews_30d < pageviews_30d_min
+                ):
                     continue
-                if pageviews_30d_max is not None and (not analytics or analytics.pageviews_30d > pageviews_30d_max):
+                if pageviews_30d_max is not None and (
+                    not analytics or analytics.pageviews_30d > pageviews_30d_max
+                ):
                     continue
-                if pageviews_trend and (not analytics or analytics.pageviews_trend != pageviews_trend):
+                if pageviews_trend and (
+                    not analytics or analytics.pageviews_trend != pageviews_trend
+                ):
                     continue
 
                 # Attach analytics data to document
@@ -164,7 +170,12 @@ def list_documents(
             elif order_by == "pageviews_60d":
                 matched_docs.sort(key=lambda x: x[1].pageviews_60d if x[1] else 0, reverse=True)
             elif order_by == "trend_percentage":
-                matched_docs.sort(key=lambda x: x[1].trend_percentage if x[1] and x[1].trend_percentage else float('-inf'), reverse=True)
+                matched_docs.sort(
+                    key=lambda x: x[1].trend_percentage
+                    if x[1] and x[1].trend_percentage
+                    else float("-inf"),
+                    reverse=True,
+                )
             elif order_by == "created_at":
                 matched_docs.sort(key=lambda x: x[0].created_at, reverse=True)
         else:
@@ -605,9 +616,13 @@ def list_content(
                 analytics = analytics_map.get(normalized_url)
 
                 # Apply analytics filters
-                if min_pageviews is not None and (not analytics or analytics.pageviews_30d < min_pageviews):
+                if min_pageviews is not None and (
+                    not analytics or analytics.pageviews_30d < min_pageviews
+                ):
                     continue
-                if max_pageviews is not None and (not analytics or analytics.pageviews_30d > max_pageviews):
+                if max_pageviews is not None and (
+                    not analytics or analytics.pageviews_30d > max_pageviews
+                ):
                     continue
                 if trend and (not analytics or analytics.pageviews_trend != trend):
                     continue
@@ -641,7 +656,12 @@ def list_content(
             elif order_by == "pageviews_60d":
                 matched_docs.sort(key=lambda x: x[1].pageviews_60d if x[1] else 0, reverse=True)
             elif order_by == "trend_percentage":
-                matched_docs.sort(key=lambda x: x[1].trend_percentage if x[1] and x[1].trend_percentage else float('-inf'), reverse=True)
+                matched_docs.sort(
+                    key=lambda x: x[1].trend_percentage
+                    if x[1] and x[1].trend_percentage
+                    else float("-inf"),
+                    reverse=True,
+                )
         else:
             # Default created_at ordering
             matched_docs.sort(key=lambda x: x[0].created_at, reverse=True)
@@ -666,40 +686,21 @@ def list_content(
 
     # Apply topic filtering (knowledge graph only)
     if with_topic:
-        from kurt.db.models import DocumentEntity, Entity
+        from kurt.db.knowledge_graph import find_documents_with_topic
 
-        # Get document IDs that have this topic in knowledge graph
-        topic_stmt = (
-            select(DocumentEntity.document_id)
-            .join(Entity, DocumentEntity.entity_id == Entity.id)
-            .where(Entity.entity_type == "Topic")
-            .where(
-                (Entity.name.ilike(f"%{with_topic}%"))
-                | (Entity.canonical_name.ilike(f"%{with_topic}%"))
-            )
-        )
-        graph_doc_ids = {str(row) for row in session.exec(topic_stmt).all()}
-
-        # Filter documents that have topic in knowledge graph
+        graph_doc_ids = {
+            str(doc_id) for doc_id in find_documents_with_topic(with_topic, session=session)
+        }
         documents = [d for d in documents if str(d.id) in graph_doc_ids]
 
     # Apply technology filtering (knowledge graph only)
     if with_technology:
-        from kurt.db.models import DocumentEntity, Entity
+        from kurt.db.knowledge_graph import find_documents_with_technology
 
-        # Get document IDs that have this technology in knowledge graph
-        tech_stmt = (
-            select(DocumentEntity.document_id)
-            .join(Entity, DocumentEntity.entity_id == Entity.id)
-            .where(Entity.entity_type.in_(["Technology", "Tool", "Product"]))
-            .where(
-                (Entity.name.ilike(f"%{with_technology}%"))
-                | (Entity.canonical_name.ilike(f"%{with_technology}%"))
-            )
-        )
-        graph_doc_ids = {str(row) for row in session.exec(tech_stmt).all()}
-
-        # Filter documents that have technology in knowledge graph
+        graph_doc_ids = {
+            str(doc_id)
+            for doc_id in find_documents_with_technology(with_technology, session=session)
+        }
         documents = [d for d in documents if str(d.id) in graph_doc_ids]
 
     # Apply pagination (after all filtering)
