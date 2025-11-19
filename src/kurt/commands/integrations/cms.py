@@ -9,6 +9,7 @@ from rich.console import Console
 from rich.table import Table
 
 from kurt.admin.telemetry.decorators import track_command
+from kurt.db.models import ContentType
 from kurt.integrations.cms.config import (
     add_platform_instance,
     create_template_config,
@@ -39,12 +40,14 @@ def get_adapter(platform: str, instance: Optional[str] = None):
 
 @click.group()
 def cms():
-    """Integrate with CMS platforms (Sanity, Contentful, WordPress)."""
+    """Integrate with CMS platforms (currently only Sanity is supported; Contentful and WordPress coming soon)."""
     pass
 
 
 @cms.command("search")
-@click.option("--platform", default="sanity", help="CMS platform (sanity, contentful, wordpress)")
+@click.option(
+    "--platform", default="sanity", help="CMS platform (currently only sanity is supported)"
+)
 @click.option("--instance", default=None, help="Instance name (uses default if not specified)")
 @click.option("--query", "-q", help="Text search query")
 @click.option("--content-type", "-t", help="Filter by content type")
@@ -135,7 +138,9 @@ def search_cmd(
 
 
 @cms.command("fetch")
-@click.option("--platform", default="sanity", help="CMS platform")
+@click.option(
+    "--platform", default="sanity", help="CMS platform (currently only sanity is supported)"
+)
 @click.option("--instance", default=None, help="Instance name (uses default if not specified)")
 @click.option("--id", "document_id", required=True, help="Document ID to fetch")
 @click.option("--output-dir", type=click.Path(), help="Output directory for markdown file")
@@ -154,14 +159,18 @@ def fetch_cmd(
     output_format: str,
 ):
     """
-    Fetch document content from CMS.
+    Fetch document content from CMS and save to markdown file.
 
-    Downloads document and converts to markdown format with YAML frontmatter.
+    This exports CMS content to local markdown files. Use this when you want to:
+    - Export CMS content for backup or version control
+    - Edit content locally before importing
+
+    For direct CMS indexing, use: 'kurt content map cms' instead.
 
     Examples:
-        kurt cms fetch --id abc123
-        kurt cms fetch --platform sanity --instance prod --id abc123 --output-dir sources/cms/sanity/
-        kurt cms fetch --id abc123 --output-format json
+        kurt integrations cms fetch --id abc123
+        kurt integrations cms fetch --platform sanity --instance prod --id abc123 --output-dir sources/cms/sanity/
+        kurt integrations cms fetch --id abc123 --output-format json
     """
     try:
         if not platform_configured(platform, instance):
@@ -226,7 +235,9 @@ def fetch_cmd(
 
 
 @cms.command("types")
-@click.option("--platform", default="sanity", help="CMS platform")
+@click.option(
+    "--platform", default="sanity", help="CMS platform (currently only sanity is supported)"
+)
 @click.option("--instance", default=None, help="Instance name (uses default if not specified)")
 @track_command
 def types_cmd(platform: str, instance: Optional[str]):
@@ -278,40 +289,147 @@ def types_cmd(platform: str, instance: Optional[str]):
 
 
 @cms.command("onboard")
-@click.option("--platform", default="sanity", help="CMS platform to configure")
+@click.option(
+    "--platform",
+    default="sanity",
+    help="CMS platform to configure (currently only sanity is supported)",
+)
 @click.option("--instance", default="default", help="Instance name (default, prod, staging, etc)")
+# CMS Credentials (providing these enables non-interactive mode)
+@click.option("--project-id", help="Project ID (Sanity) - enables non-interactive mode")
+@click.option("--dataset", help="Dataset name (e.g., production, staging)")
+@click.option("--token", help="Read token for CMS API")
+@click.option("--write-token", help="Write token for CMS API")
+@click.option("--base-url", help="Base URL for your website")
+@click.option(
+    "--publish/--no-publish",
+    default=False,
+    help="Whether to publish content back to CMS (determines token permissions needed)",
+)
+# Content type selection
+@click.option(
+    "--content-types",
+    help="Comma-separated list of content types to configure (default: all when non-interactive)",
+)
 @track_command
-def onboard_cmd(platform: str, instance: str):
+def onboard_cmd(
+    platform: str,
+    instance: str,
+    project_id: Optional[str],
+    dataset: Optional[str],
+    token: Optional[str],
+    write_token: Optional[str],
+    base_url: Optional[str],
+    publish: bool,
+    content_types: Optional[str],
+):
     """
     Interactive CMS onboarding and configuration.
 
     Discovers content types and guides you through field mapping setup.
 
-    Example:
-        kurt cms onboard
-        kurt cms onboard --platform contentful --instance prod
+    Automatically runs in non-interactive mode when credentials are provided via CLI options.
+
+    Examples:
+        # Interactive mode (prompts for all inputs)
+        kurt integrations cms onboard
+
+        # Non-interactive with all credentials
+        kurt integrations cms onboard \\
+            --project-id myproject --dataset production \\
+            --token sk_read_token --write-token sk_write_token \\
+            --base-url https://mysite.com
+
+        # Non-interactive for specific content types only
+        kurt integrations cms onboard \\
+            --project-id myproject --dataset production \\
+            --content-types article,blog_post
+
+        # Non-interactive with publish intent
+        kurt integrations cms onboard \\
+            --project-id myproject --dataset production \\
+            --publish
+
+        # Partial options (will prompt only for missing fields)
+        kurt integrations cms onboard --project-id myproject --dataset production
     """
+    # Auto-detect non-interactive mode: if any credential option is provided
+    non_interactive = any([project_id, dataset, token, write_token, base_url])
+
     console.print(
         f"[bold green]CMS Onboarding: {platform.capitalize()} ({instance})[/bold green]\n"
     )
 
     # Check if platform/instance configured
+    wants_publish = False  # Track user intent for next steps
     if not platform_configured(platform, instance):
         console.print(f"[yellow]No configuration found for {platform}/{instance}.[/yellow]\n")
+
+        # Ask upfront about publish intent for Sanity
+        if platform == "sanity":
+            if non_interactive:
+                # Use the --publish flag value in non-interactive mode
+                wants_publish = publish
+            else:
+                # Prompt in interactive mode
+                console.print("[bold]Do you want to publish content back to Sanity?[/bold]")
+                console.print("[dim]This determines what token permissions you need.[/dim]\n")
+                publish_response = console.input("  Publish to Sanity? [y/n] (n): ").strip().lower()
+                wants_publish = publish_response in ["y", "yes"]
+                console.print()
 
         # Get template and prompt for values
         template = create_template_config(platform, instance)
 
-        console.print(f"[bold]Enter {platform.capitalize()} credentials:[/bold]\n")
+        if non_interactive:
+            # Build config from CLI options or template defaults
+            console.print("[dim]Non-interactive mode: using provided options or defaults[/dim]\n")
+            instance_config = {}
 
-        # Prompt for each required field
-        instance_config = {}
-        for key, placeholder in template.items():
-            if key == "content_type_mappings":
-                continue  # Skip this for now, will be added during type discovery
+            # Map CLI options to config keys (platform-specific)
+            if platform == "sanity":
+                instance_config["project_id"] = project_id or template.get("project_id")
+                instance_config["dataset"] = dataset or template.get("dataset")
+                instance_config["token"] = token or template.get("token")
+                instance_config["write_token"] = write_token or template.get("write_token")
+                instance_config["base_url"] = base_url or template.get("base_url")
+            else:
+                # For other platforms, use template defaults
+                instance_config = template
+        else:
+            # Interactive mode: prompt for each field
+            console.print(f"[bold]Enter {platform.capitalize()} credentials:[/bold]\n")
 
-            value = console.input(f"  {key.replace('_', ' ').title()} [{placeholder}]: ").strip()
-            instance_config[key] = value if value else placeholder
+            # Define helper text for Sanity fields based on publish intent
+            if platform == "sanity":
+                if wants_publish:
+                    token_help = "Create a CONTRIBUTOR token in Sanity Manage console (manage.sanity.io) → API → Tokens → Add API token with 'Editor' permissions (read + write drafts)"
+                else:
+                    token_help = "Create a VIEWER token in Sanity Manage console (manage.sanity.io) → API → Tokens → Add API token with 'Viewer' permissions (read-only)"
+
+                sanity_help = {
+                    "project_id": "Found in Sanity Studio → Manage → Project settings → Project ID",
+                    "dataset": "Usually 'production' (found in Sanity Studio → Manage → Datasets)",
+                    "token": token_help,
+                    "base_url": "Your public website URL where content is published (e.g., https://yourdomain.com)",
+                }
+            else:
+                sanity_help = {}
+
+            # Prompt for each required field
+            instance_config = {}
+            for key, placeholder in template.items():
+                if key == "content_type_mappings":
+                    continue  # Skip this for now, will be added during type discovery
+
+                # Show helper text for Sanity fields
+                if platform == "sanity" and key in sanity_help:
+                    console.print(f"  [dim]{sanity_help[key]}[/dim]")
+
+                value = console.input(
+                    f"  {key.replace('_', ' ').title()} [{placeholder}]: "
+                ).strip()
+                instance_config[key] = value if value else placeholder
 
         # Save configuration
         add_platform_instance(platform, instance, instance_config)
@@ -356,27 +474,56 @@ def onboard_cmd(platform: str, instance: str):
         console.print(table)
         console.print()
 
-        # Interactive selection
-        console.print("[bold]Select content types to configure:[/bold]")
-        console.print(
-            "[dim]Enter numbers separated by commas (e.g., 1,3,5) or 'all' for all types[/dim]"
-        )
+        # Interactive selection or auto-select in non-interactive mode
+        if non_interactive:
+            # Use --content-types option or select all
+            if content_types:
+                # Parse comma-separated list
+                requested_types = [t.strip() for t in content_types.split(",")]
+                available_type_names = {t["name"] for t in types}
+                selected_types = [t for t in requested_types if t in available_type_names]
 
-        selection = console.input("\n[cyan]Your selection:[/cyan] ").strip()
+                # Warn about invalid types
+                invalid_types = set(requested_types) - set(selected_types)
+                if invalid_types:
+                    console.print(
+                        f"[yellow]⚠ Skipping unknown types:[/yellow] {', '.join(invalid_types)}"
+                    )
 
-        if selection.lower() == "all":
-            selected_types = [t["name"] for t in types]
+                if not selected_types:
+                    console.print("[yellow]No valid content types specified[/yellow]")
+                    return
+
+                console.print(
+                    f"[dim]Non-interactive mode: selecting specified types ({len(selected_types)})[/dim]"
+                )
+            else:
+                # Default: select all types
+                selected_types = [t["name"] for t in types]
+                console.print(
+                    f"[dim]Non-interactive mode: selecting all {len(selected_types)} types[/dim]"
+                )
         else:
-            try:
-                indices = [int(x.strip()) - 1 for x in selection.split(",")]
-                selected_types = [types[i]["name"] for i in indices if 0 <= i < len(types)]
-            except (ValueError, IndexError):
-                console.print("[red]Invalid selection[/red]")
-                raise click.Abort()
+            console.print("[bold]Select content types to configure:[/bold]")
+            console.print(
+                "[dim]Enter numbers separated by commas (e.g., 1,3,5) or 'all' for all types[/dim]"
+            )
 
-        if not selected_types:
-            console.print("[yellow]No types selected[/yellow]")
-            return
+            selection = console.input("\n[cyan]Your selection:[/cyan] ").strip()
+
+            if selection.lower() == "all":
+                selected_types = [t["name"] for t in types]
+            else:
+                try:
+                    indices = [int(x.strip()) - 1 for x in selection.split(",")]
+                    selected_types = [types[i]["name"] for i in indices if 0 <= i < len(types)]
+                except (ValueError, IndexError):
+                    console.print("[red]Invalid selection[/red]")
+                    raise click.Abort()
+
+            if not selected_types:
+                console.print("[yellow]No types selected[/yellow]")
+                return
 
         console.print(
             f"\n[green]Selected {len(selected_types)} types:[/green] {', '.join(selected_types)}"
@@ -409,10 +556,15 @@ def onboard_cmd(platform: str, instance: str):
 
                 console.print(f"\n[green]✓ Found {len(available_fields)} fields[/green]")
                 console.print("[dim]Available fields:[/dim]")
-                for field in sorted(available_fields)[:15]:  # Show first 15
-                    console.print(f"  - {field}")
-                if len(available_fields) > 15:
-                    console.print(f"  ... and {len(available_fields) - 15} more")
+
+                # Display all fields in 2 columns using Rich Columns
+                from rich.columns import Columns
+
+                sorted_fields = sorted(available_fields)
+                field_renderables = [f"[cyan]•[/cyan] {field}" for field in sorted_fields]
+                console.print(
+                    Columns(field_renderables, equal=True, expand=False, column_first=True)
+                )
 
                 # Smart defaults
                 content_field_default = None
@@ -440,7 +592,7 @@ def onboard_cmd(platform: str, instance: str):
                 # Smart default for content type based on schema name
                 content_type_default = None
                 if content_type in ["article", "blog", "blogPost", "post"]:
-                    content_type_default = "article" if content_type == "article" else "blog"
+                    content_type_default = "blog"  # Use "blog" for all article/blog-like content
                 elif content_type in ["tutorial", "guide", "howto"]:
                     content_type_default = "tutorial"
                 elif content_type in ["reference", "glossary", "universeItem"]:
@@ -448,54 +600,182 @@ def onboard_cmd(platform: str, instance: str):
                 elif content_type in ["caseStudy", "case_study"]:
                     content_type_default = "case_study"
 
-                # Ask for content field
-                console.print("\n[bold]Which field contains the main content?[/bold]")
-                if content_field_default:
-                    console.print(f"[dim](Press Enter for: {content_field_default})[/dim]")
-                content_field = console.input("[cyan]Content field:[/cyan] ").strip()
-                if not content_field:
+                # Get field mappings - use defaults in non-interactive mode
+                if non_interactive:
+                    # Use smart defaults
                     content_field = content_field_default
-
-                # Ask for title field
-                console.print("\n[bold]Which field contains the title?[/bold]")
-                if title_field_default:
-                    console.print(f"[dim](Press Enter for: {title_field_default})[/dim]")
-                title_field = console.input("[cyan]Title field:[/cyan] ").strip()
-                if not title_field:
                     title_field = title_field_default
-
-                # Ask for slug field
-                console.print("\n[bold]Which field contains the URL slug?[/bold]")
-                if slug_field_default:
-                    console.print(f"[dim](Press Enter for: {slug_field_default})[/dim]")
-                slug_field = console.input("[cyan]Slug field:[/cyan] ").strip()
-                if not slug_field:
                     slug_field = slug_field_default
-
-                # Ask for description field
-                console.print("\n[bold]Which field contains a summary/description?[/bold]")
-                console.print("[dim](Used for topic clustering and content organization)[/dim]")
-                if description_field_default:
-                    console.print(f"[dim](Press Enter for: {description_field_default})[/dim]")
-                description_field = console.input("[cyan]Description field:[/cyan] ").strip()
-                if not description_field:
                     description_field = description_field_default
 
                 # Ask for content type inference
                 console.print(
                     "\n[bold]What content type should be inferred from this schema?[/bold]"
                 )
-                console.print(
-                    "[dim]Options: article, blog, tutorial, guide, reference, case_study, landing_page, other[/dim]"
-                )
+                # Dynamically show all valid ContentType enum values
+                valid_types = ", ".join([ct.value for ct in ContentType])
+                console.print(f"[dim]Options: {valid_types}[/dim]")
                 if content_type_default:
                     console.print(f"[dim](Press Enter for: {content_type_default})[/dim]")
                 inferred_content_type = console.input("[cyan]Content type:[/cyan] ").strip()
                 if not inferred_content_type:
                     inferred_content_type = content_type_default
+                    console.print(f"[dim]Using smart defaults for {content_type}[/dim]")
+                else:
+                    # Ask for content field
+                    console.print("\n[bold]Which field contains the main content?[/bold]")
+                    if content_field_default:
+                        console.print(f"[dim](Press Enter for: {content_field_default})[/dim]")
+                    content_field = console.input("[cyan]Content field:[/cyan] ").strip()
+                    if not content_field:
+                        content_field = content_field_default
+
+                    # Ask for title field
+                    console.print("\n[bold]Which field contains the title?[/bold]")
+                    if title_field_default:
+                        console.print(f"[dim](Press Enter for: {title_field_default})[/dim]")
+                    title_field = console.input("[cyan]Title field:[/cyan] ").strip()
+                    if not title_field:
+                        title_field = title_field_default
+
+                    # Ask for slug field
+                    console.print("\n[bold]Which field contains the URL slug?[/bold]")
+                    if slug_field_default:
+                        console.print(f"[dim](Press Enter for: {slug_field_default})[/dim]")
+                    slug_field = console.input("[cyan]Slug field:[/cyan] ").strip()
+                    if not slug_field:
+                        slug_field = slug_field_default
+
+                    # Ask for description field
+                    console.print("\n[bold]Which field contains a summary/description?[/bold]")
+                    console.print("[dim](Used for topic clustering and content organization)[/dim]")
+                    if description_field_default:
+                        console.print(f"[dim](Press Enter for: {description_field_default})[/dim]")
+                    description_field = console.input("[cyan]Description field:[/cyan] ").strip()
+                    if not description_field:
+                        description_field = description_field_default
+
+                    # Ask for content type inference
+                    console.print(
+                        "\n[bold]What content type should be inferred from this schema?[/bold]"
+                    )
+                    console.print(
+                        "[dim]Options: article, blog, tutorial, guide, reference, case_study, landing_page, other[/dim]"
+                    )
+                    if content_type_default:
+                        console.print(f"[dim](Press Enter for: {content_type_default})[/dim]")
+                    inferred_content_type = console.input("[cyan]Content type:[/cyan] ").strip()
+                    if not inferred_content_type:
+                        inferred_content_type = content_type_default
+
+                # URL configuration (optional)
+                url_config = None
+                if not non_interactive:
+                    console.print("\n[bold]URL Path Configuration[/bold]")
+                    console.print(
+                        "[dim]Configure how URLs are built for this content type on your website[/dim]"
+                    )
+                    console.print(
+                        "[dim](Optional: skip if documents use slug directly, e.g., yourdomain.com/slug)[/dim]"
+                    )
+
+                    wants_url_config = (
+                        console.input("\n[cyan]Configure URL path? (y/N):[/cyan] ").strip().lower()
+                    )
+
+                    if wants_url_config in ["y", "yes"]:
+                        console.print("\n[bold]URL path type:[/bold]")
+                        console.print("  1. Static prefix (all documents use same path)")
+                        console.print("     Example: /blog/ → yourdomain.com/blog/my-slug")
+                        console.print("  2. Conditional (path depends on a document field)")
+                        console.print(
+                            "     Example: category field → /news/my-slug or /blog/my-slug"
+                        )
+
+                        url_type = console.input("\n[cyan]Select type (1 or 2):[/cyan] ").strip()
+
+                        if url_type == "1":
+                            # Static path prefix
+                            console.print(
+                                "\n[bold]Enter URL path prefix (include leading/trailing slashes)[/bold]"
+                            )
+                            console.print("[dim]Example: /blog/ or /posts/[/dim]")
+                            path_prefix = console.input("[cyan]Path prefix:[/cyan] ").strip()
+
+                            if path_prefix:
+                                url_config = {"type": "static", "path_prefix": path_prefix}
+                                console.print(f"[green]✓ URLs will be: {path_prefix}<slug>[/green]")
+
+                        elif url_type == "2":
+                            # Conditional path based on field
+                            console.print(
+                                "\n[bold]Which document field determines the URL path?[/bold]"
+                            )
+                            console.print(
+                                "[dim]Supports nested fields (e.g., category or category.type)[/dim]"
+                            )
+                            console.print(
+                                f"[dim]Available fields: {', '.join(sorted_fields)}[/dim]"
+                            )
+                            field_name = console.input("[cyan]Field name:[/cyan] ").strip()
+
+                            if field_name:
+                                console.print(
+                                    f"\n[bold]Enter path mappings for different values of '{field_name}':[/bold]"
+                                )
+                                console.print(
+                                    "[dim]Enter field_value=path pairs (e.g., news=/news/)[/dim]"
+                                )
+                                console.print(
+                                    "[dim]Press Enter on empty line when done, or type 'default=/path/' for fallback[/dim]"
+                                )
+
+                                mappings_dict = {}
+                                while True:
+                                    mapping_input = console.input(
+                                        "[cyan]  Mapping:[/cyan] "
+                                    ).strip()
+                                    if not mapping_input:
+                                        break
+
+                                    if "=" in mapping_input:
+                                        field_value, path = mapping_input.split("=", 1)
+                                        mappings_dict[field_value.strip()] = path.strip()
+                                        console.print(
+                                            f"    [green]✓ {field_value.strip()} → {path.strip()}[/green]"
+                                        )
+                                    else:
+                                        console.print(
+                                            "[yellow]  ⚠ Invalid format, use: value=/path/[/yellow]"
+                                        )
+
+                                # Ensure 'default' mapping exists
+                                if mappings_dict and "default" not in mappings_dict:
+                                    console.print(
+                                        "\n[yellow]⚠ No 'default' fallback specified[/yellow]"
+                                    )
+                                    default_path = (
+                                        console.input(
+                                            "[cyan]  Default path (for unmatched values):[/cyan] "
+                                        )
+                                        .strip()
+                                        .strip()
+                                    )
+                                    if default_path:
+                                        mappings_dict["default"] = default_path
+
+                                if mappings_dict:
+                                    url_config = {
+                                        "type": "conditional",
+                                        "field": field_name,
+                                        "mappings": mappings_dict,
+                                    }
+                                    console.print(
+                                        f"[green]✓ URLs will vary based on '{field_name}' field[/green]"
+                                    )
 
                 # Save mapping
-                mappings[content_type] = {
+                mapping_config = {
                     "enabled": True,
                     "content_field": content_field,
                     "title_field": title_field,
@@ -505,12 +785,31 @@ def onboard_cmd(platform: str, instance: str):
                     "metadata_fields": {},
                 }
 
+                # Add url_config if configured
+                if url_config:
+                    mapping_config["url_config"] = url_config
+
+                mappings[content_type] = mapping_config
+
                 console.print(f"\n[green]✓ Configured {content_type}[/green]")
                 console.print(f"  Content: [cyan]{content_field}[/cyan]")
                 console.print(f"  Title: [cyan]{title_field}[/cyan]")
                 console.print(f"  Slug: [cyan]{slug_field}[/cyan]")
                 console.print(f"  Description: [cyan]{description_field}[/cyan]")
                 console.print(f"  Content Type: [cyan]{inferred_content_type}[/cyan]")
+
+                # Show URL config if present
+                if url_config:
+                    if url_config["type"] == "static":
+                        console.print(
+                            f"  URL Pattern: [cyan]{url_config['path_prefix']}<slug>[/cyan]"
+                        )
+                    elif url_config["type"] == "conditional":
+                        console.print(
+                            f"  URL Pattern: [cyan]conditional on '{url_config['field']}'[/cyan]"
+                        )
+                        for value, path in url_config["mappings"].items():
+                            console.print(f"    • {value} → [cyan]{path}<slug>[/cyan]")
 
             except Exception as e:
                 console.print(f"[yellow]⚠ Could not configure {content_type}: {e}[/yellow]")
@@ -524,13 +823,29 @@ def onboard_cmd(platform: str, instance: str):
         console.print()
         console.print("[bold]Next steps:[/bold]")
         console.print(
-            f"  1. Search content: [cyan]kurt cms search --content-type {selected_types[0]}[/cyan]"
+            f"  1. Index CMS content: [cyan]kurt content map cms --platform {platform}[/cyan]"
+        )
+        console.print("     [dim](Creates document records in database for all CMS content)[/dim]")
+        console.print("  2. Fetch full content: [cyan]kurt content fetch <url>[/cyan]")
+        console.print("     [dim](Downloads and processes document content with LLM)[/dim]")
+
+        # Only show publish option if user wants it
+        if wants_publish:
+            console.print(
+                f"  3. Publish content: [cyan]kurt integrations cms publish --file <path> --content-type {selected_types[0]}[/cyan]"
+            )
+            console.print("     [dim](Publish markdown file to CMS as draft)[/dim]")
+
+        console.print()
+        console.print("[dim]Alternative workflow (for exporting CMS to markdown files):[/dim]")
+        console.print(
+            f"  • Search content: [cyan]kurt integrations cms search --content-type {selected_types[0]}[/cyan]"
         )
         console.print(
-            f"  2. Fetch document: [cyan]kurt cms fetch --id <document-id> --output-dir sources/cms/{platform}/[/cyan]"
+            f"  • Fetch to disk: [cyan]kurt integrations cms fetch --id <doc-id> --output-dir sources/cms/{platform}/[/cyan]"
         )
         console.print(
-            f"  3. Import to Kurt: [cyan]kurt cms import --source-dir sources/cms/{platform}/[/cyan]"
+            f"  • Import to Kurt: [cyan]kurt integrations cms import --source-dir sources/cms/{platform}/[/cyan]"
         )
 
     except Exception as e:
@@ -539,7 +854,9 @@ def onboard_cmd(platform: str, instance: str):
 
 
 @cms.command("import")
-@click.option("--platform", default="sanity", help="CMS platform")
+@click.option(
+    "--platform", default="sanity", help="CMS platform (currently only sanity is supported)"
+)
 @click.option(
     "--source-dir",
     required=True,
@@ -551,10 +868,17 @@ def import_cmd(platform: str, source_dir: str):
     """
     Import CMS markdown files to Kurt database.
 
-    Imports markdown files fetched from CMS into the Kurt document database.
+    This is an alternative workflow to 'kurt content map cms'. Use this when you
+    want to export CMS content to markdown files first, then import them.
+
+    Recommended workflow: Use 'kurt content map cms' to directly index CMS content.
 
     Example:
-        kurt cms import --source-dir sources/cms/sanity/
+        # First, fetch CMS content to markdown files:
+        kurt integrations cms fetch --id doc123 --output-dir sources/cms/sanity/
+
+        # Then import those files:
+        kurt integrations cms import --source-dir sources/cms/sanity/
     """
     from pathlib import Path
 
@@ -642,7 +966,9 @@ def import_cmd(platform: str, source_dir: str):
 
 
 @cms.command("publish")
-@click.option("--platform", default="sanity", help="CMS platform")
+@click.option(
+    "--platform", default="sanity", help="CMS platform (currently only sanity is supported)"
+)
 @click.option("--instance", default=None, help="Instance name (uses default if not specified)")
 @click.option(
     "--file",
@@ -744,6 +1070,11 @@ def publish_cmd(
         console.print()
         console.print("[yellow]Note:[/yellow] Document created as draft. Publish from CMS Studio.")
 
+    except PermissionError as e:
+        console.print("\n[red]✗ Publishing failed - Permission denied[/red]\n")
+        console.print(str(e))
+        console.print()
+        raise click.Abort()
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
         raise click.Abort()
@@ -844,8 +1175,6 @@ def status_cmd(check_health: bool):
 
                 console.print()
 
-        session.close()
-
         # Show help if no documents mapped
         total_docs_stmt = select(func.count(Document.id)).where(Document.cms_platform.isnot(None))
         total_docs = session.exec(total_docs_stmt).one()
@@ -853,6 +1182,8 @@ def status_cmd(check_health: bool):
         if total_docs == 0:
             console.print("[yellow]Tip:[/yellow] Map CMS content with:")
             console.print("  [cyan]kurt content map cms --platform sanity --instance prod[/cyan]\n")
+
+        session.close()
 
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")

@@ -126,7 +126,7 @@ Optionally collect user feedback to improve Kurt's output quality. See `.claude/
 Don't ask too frequently - not after every edit, and not more than once per session.
 
 ## CMS Integration
-Kurt supports CMS integrations (Sanity, Contentful, WordPress) for reading and publishing content.
+Kurt supports CMS integrations for reading and publishing content. Currently only Sanity is supported; Contentful and WordPress are coming soon.
 
 **Reading from CMS:**
 - Check configuration: `kurt integrations cms status`
@@ -148,7 +148,9 @@ Kurt can analyze web analytics to assist with project planning and content perfo
 
 **Usage:**
 - Sync data: `kurt integrations analytics sync [domain]`
-- Query with content: `kurt content list --with-analytics` or `kurt content stats --with-analytics`
+- Query analytics: `kurt integrations analytics query [domain]` (filter by traffic, trends, URL patterns)
+- Indexing completeness: `kurt integrations analytics query [domain] --missing-docs` (find high-traffic pages not yet indexed)
+- Query with documents: `kurt content list --with-analytics` (documents enriched with analytics)
 
 ## Content Discovery
 Use `.claude/instructions/find-sources.md` for discovering and retrieving content:

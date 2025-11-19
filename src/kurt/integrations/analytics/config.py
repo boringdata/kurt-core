@@ -106,6 +106,40 @@ def analytics_config_exists() -> bool:
     return config_exists_for_prefix(_PREFIX, _LEVELS)
 
 
+def create_template_config(platform: str) -> Dict[str, str]:
+    """
+    Get template configuration structure for an analytics platform.
+
+    Args:
+        platform: Analytics platform name (e.g., 'posthog', 'ga4', 'plausible')
+
+    Returns:
+        Template configuration dictionary with placeholder values
+    """
+    # Platform-specific templates
+    if platform == "posthog":
+        return {
+            "project_id": "YOUR_PROJECT_ID",
+            "api_key": "YOUR_PERSONAL_API_KEY",
+            "host": "https://app.posthog.com",
+        }
+    elif platform == "ga4":
+        return {
+            "property_id": "YOUR_PROPERTY_ID",
+            "credentials_file": "path/to/credentials.json",
+        }
+    elif platform == "plausible":
+        return {
+            "site_id": "YOUR_SITE_ID",
+            "api_key": "YOUR_API_KEY",
+        }
+    else:
+        # Generic template
+        return {
+            "api_key": "YOUR_API_KEY",
+        }
+
+
 def platform_configured(platform: str) -> bool:
     """
     Check if a specific platform is configured.

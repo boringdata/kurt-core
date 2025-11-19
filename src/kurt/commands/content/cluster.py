@@ -63,16 +63,16 @@ def cluster_urls_cmd(
     \b
     Examples:
         # Refine existing clusters + classify content types
-        kurt cluster-urls
+        kurt content cluster-urls
 
         # Ignore existing clusters, create fresh
-        kurt cluster-urls --force
+        kurt content cluster-urls --force
 
         # Cluster specific URL pattern
-        kurt cluster-urls --include "*/docs/*"
+        kurt content cluster-urls --include "*/docs/*"
 
         # JSON output for AI agents
-        kurt cluster-urls --format json
+        kurt content cluster-urls --format json
     """
     from kurt.content.cluster import compute_topic_clusters
 
@@ -221,7 +221,7 @@ def cluster_urls_cmd(
 
             # Show tip for next step
             console.print(
-                '\n[dim]💡 Next: Use [cyan]kurt fetch --in-cluster "ClusterName"[/cyan] to fetch documents from a specific cluster[/dim]'
+                '\n[dim]💡 Next: Use [cyan]kurt content fetch --in-cluster "ClusterName"[/cyan] to fetch documents from a specific cluster[/dim]'
             )
 
     except Exception as e:

@@ -47,6 +47,13 @@ We'll gather further details on these in the following steps, but cannot proceed
 
 7. Load in all <format_template> that will be used in the project.
 8. Gather sources: read each document <format_template> for instructions on how to gather sources. Gather sources using `kurt content list` and other `kurt content` commands (run `kurt content --help` for more details), or fetch any additional URLs we might need using `kurt content fetch`.
+
+   **Optional - Analytics for prioritization:** If analytics is configured for your domain (`kurt integrations analytics list`), consider using traffic data to prioritize work. For example:
+   - High-traffic pages = higher priority for updates
+   - Declining traffic = investigate cause
+   - Use `kurt integrations analytics query [domain]` to explore traffic patterns
+   - See Analytics Integration section in CLAUDE.md for full details
+
 9. Identify + perform research: based on the <format_template>, identify any research that must be performed before completing the project plan.  Confirm with the user before performing that research.
 10. Confirm with the user to review the <project_level_details> of the <project_plan> once you've reached a reasonable point of completeness.  Iterate with the user as needed, returning to any steps that need refinement.
 11. Populate the <project_tracking> and <project_level_details> sections of the <project_plan> based on what's been agreed to with the user in <project_level_details>.
