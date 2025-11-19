@@ -431,6 +431,9 @@ def mock_all_llm_calls():
     """
     with (
         patch("kurt.content.embeddings.generate_embeddings") as mock_gen_embeddings,
+        patch(
+            "kurt.content.indexing_entity_resolution.generate_embeddings"
+        ) as mock_gen_embeddings2,
         patch("dspy.Embedder") as mock_embedder_class,
         patch("dspy.LM") as mock_lm_class,
         patch("dspy.configure") as mock_configure,
@@ -440,6 +443,7 @@ def mock_all_llm_calls():
             return [[0.1] * 384 for _ in texts]
 
         mock_gen_embeddings.side_effect = fake_embeddings
+        mock_gen_embeddings2.side_effect = fake_embeddings
 
         # Mock Embedder
         mock_embedder_instance = MagicMock()

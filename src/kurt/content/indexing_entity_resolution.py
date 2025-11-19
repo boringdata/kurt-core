@@ -201,7 +201,6 @@ def _resolve_entity_groups(
     config = load_config()
     max_concurrent = config.MAX_CONCURRENT_INDEXING  # Reuse same config
 
-    session = get_session()
     resolution_module = dspy.ChainOfThought(ResolveEntityGroup)
 
     total_groups = len(groups)
@@ -209,19 +208,27 @@ def _resolve_entity_groups(
 
     # Prepare resolution tasks (one per group) - PARALLELIZE similarity searches
     def fetch_similar_entities(group_id, group_entities):
-        """Fetch similar entities for a group."""
-        representative_entity = group_entities[0]
-        similar_existing = search_similar_entities(
-            representative_entity["name"],
-            representative_entity["type"],
-            limit=10,
-            session=session,
-        )
-        return {
-            "group_id": group_id,
-            "group_entities": group_entities,
-            "similar_existing": similar_existing,
-        }
+        """Fetch similar entities for a group.
+
+        Note: Creates its own session to avoid threading issues.
+        """
+        # Create a new session for this thread
+        thread_session = get_session()
+        try:
+            representative_entity = group_entities[0]
+            similar_existing = search_similar_entities(
+                representative_entity["name"],
+                representative_entity["type"],
+                limit=10,
+                session=thread_session,
+            )
+            return {
+                "group_id": group_id,
+                "group_entities": group_entities,
+                "similar_existing": similar_existing,
+            }
+        finally:
+            thread_session.close()
 
     # Fetch similar entities for all groups in parallel using ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=max_concurrent) as executor:

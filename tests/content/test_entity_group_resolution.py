@@ -56,9 +56,13 @@ def test_resolve_entity_groups_single_group(tmp_project, mock_dspy_signature):
     )
 
     with mock_dspy_signature("ResolveEntityGroup", mock_output):
-        with patch("kurt.content.embeddings.generate_embeddings") as mock_embed:
+        with patch("kurt.content.indexing_entity_resolution.generate_embeddings") as mock_embed:
             # Generate similar embeddings so they cluster together
-            mock_embed.return_value = [[0.1, 0.2, 0.3], [0.11, 0.21, 0.31]]
+            # Mock needs to handle multiple calls: clustering + entity creation
+            mock_embed.side_effect = [
+                [[0.1, 0.2, 0.3], [0.11, 0.21, 0.31]],  # Clustering embeddings
+                [[0.1, 0.2, 0.3]],  # Entity creation for "Python"
+            ]
 
             with patch("kurt.db.knowledge_graph.search_similar_entities") as mock_search:
                 mock_search.return_value = []  # No existing entities
@@ -142,13 +146,18 @@ def test_resolve_entity_groups_multiple_groups(
         return GroupResolution(resolutions=resolutions)
 
     with mock_dspy_signature("ResolveEntityGroup", resolver):
-        with patch("kurt.content.embeddings.generate_embeddings") as mock_embed:
+        with patch("kurt.content.indexing_entity_resolution.generate_embeddings") as mock_embed:
             # Generate embeddings: React group similar, Docker group similar
-            mock_embed.return_value = [
-                [0.1, 0.2, 0.3],  # React
-                [0.11, 0.21, 0.31],  # ReactJS (similar to React)
-                [0.8, 0.7, 0.6],  # Docker (different cluster)
-                [0.81, 0.71, 0.61],  # Docker Engine (similar to Docker)
+            # Mock needs to handle: clustering + entity creation for each group
+            mock_embed.side_effect = [
+                [
+                    [0.1, 0.2, 0.3],  # React
+                    [0.11, 0.21, 0.31],  # ReactJS (similar to React)
+                    [0.8, 0.7, 0.6],  # Docker (different cluster)
+                    [0.81, 0.71, 0.61],  # Docker Engine (similar to Docker)
+                ],
+                [[0.1, 0.2, 0.3]],  # Entity creation for React
+                [[0.8, 0.7, 0.6]],  # Entity creation for Docker
             ]
 
             with patch("kurt.db.knowledge_graph.search_similar_entities") as mock_search:
@@ -196,9 +205,12 @@ def test_resolve_entity_groups_with_activity_callback(tmp_project, mock_dspy_sig
 
     with mock_dspy_signature("ResolveEntityGroup", mock_output):
         with (
-            patch("kurt.content.embeddings.generate_embeddings") as mock_embed,
+            patch("kurt.content.indexing_entity_resolution.generate_embeddings") as mock_embed,
         ):
-            mock_embed.return_value = [[0.1, 0.2, 0.3]]
+            mock_embed.side_effect = [
+                [[0.1, 0.2, 0.3]],  # Clustering
+                [[0.1, 0.2, 0.3]],  # Entity creation
+            ]
 
             with patch("kurt.db.knowledge_graph.search_similar_entities") as mock_search:
                 mock_search.return_value = []
@@ -252,9 +264,17 @@ def test_resolve_entity_groups_parallel_execution(
         return GroupResolution(resolutions=resolutions)
 
     with mock_dspy_signature("ResolveEntityGroup", resolver):
-        with patch("kurt.content.embeddings.generate_embeddings") as mock_embed:
+        with patch("kurt.content.indexing_entity_resolution.generate_embeddings") as mock_embed:
             # Generate different embeddings so each entity forms its own group
-            mock_embed.return_value = [[i * 0.3, i * 0.3, i * 0.3] for i in range(5)]
+            # Mock needs to handle: clustering + entity creation for each group (5 total)
+            mock_embed.side_effect = [
+                [[i * 0.3, i * 0.3, i * 0.3] for i in range(5)],  # Clustering
+                [[0.0, 0.0, 0.0]],  # Entity0
+                [[0.3, 0.3, 0.3]],  # Entity1
+                [[0.6, 0.6, 0.6]],  # Entity2
+                [[0.9, 0.9, 0.9]],  # Entity3
+                [[1.2, 1.2, 1.2]],  # Entity4
+            ]
 
             with patch("kurt.db.knowledge_graph.search_similar_entities") as mock_search:
                 mock_search.return_value = []
