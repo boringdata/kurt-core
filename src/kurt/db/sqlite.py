@@ -7,7 +7,9 @@ from pathlib import Path
 from rich.console import Console
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from kurt.config import get_config_or_default
 from kurt.db.base import DatabaseClient
@@ -50,6 +52,8 @@ class SQLiteClient(DatabaseClient):
     def __init__(self):
         """Initialize SQLite client."""
         self._engine = None
+        self._async_engine = None
+        self._async_session_maker = None
         self._config = None
 
     def get_config(self):
@@ -212,3 +216,64 @@ class SQLiteClient(DatabaseClient):
             return []
         finally:
             session.close()
+
+    # ========== ASYNC METHODS ==========
+
+    def get_async_database_url(self) -> str:
+        """Get async SQLite URL with aiosqlite driver.
+
+        Returns:
+            str: Database URL like "sqlite+aiosqlite:///path/to/db"
+        """
+        db_path = self.get_database_path()
+        return f"sqlite+aiosqlite:///{db_path}"
+
+    def get_async_engine(self) -> AsyncEngine:
+        """Get or create async engine (singleton).
+
+        Returns:
+            AsyncEngine: SQLAlchemy async engine
+        """
+        if not self._async_engine:
+            db_url = self.get_async_database_url()
+            self._async_engine = create_async_engine(
+                db_url,
+                echo=False,
+                # Important for SQLite: disable thread checking
+                connect_args={"check_same_thread": False},
+            )
+        return self._async_engine
+
+    def get_async_session_maker(self) -> async_sessionmaker:
+        """Get async session factory.
+
+        Returns:
+            async_sessionmaker: Factory for creating AsyncSession instances
+
+        Usage:
+            async_session = db.get_async_session_maker()
+
+            async with async_session() as session:
+                result = await session.exec(select(Entity))
+        """
+        if not self._async_session_maker:
+            engine = self.get_async_engine()
+            self._async_session_maker = async_sessionmaker(
+                engine,
+                class_=AsyncSession,
+                expire_on_commit=False,  # Critical for async!
+            )
+        return self._async_session_maker
+
+    async def dispose_async_engine(self):
+        """Cleanup async resources (call on shutdown).
+
+        Example:
+            # At application shutdown
+            db = get_database_client()
+            await db.dispose_async_engine()
+        """
+        if self._async_engine:
+            await self._async_engine.dispose()
+            self._async_engine = None
+            self._async_session_maker = None
