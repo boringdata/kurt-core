@@ -17,26 +17,26 @@ See what topics and technologies exist across indexed content, identify coverage
 
 ```bash
 # See all indexed topics with document counts
-kurt content list-topics
+kurt content list-entities topic
 
 # See common topics (in 5+ documents)
-kurt content list-topics --min-docs 5
+kurt content list-entities topic --min-docs 5
 
 # See all indexed technologies
-kurt content list-technologies
+kurt content list-entities technology
 
 # Filter to docs section only
-kurt content list-topics --include "*/docs/*"
-kurt content list-technologies --include "*/docs/*"
+kurt content list-entities topic --include "*/docs/*"
+kurt content list-entities technology --include "*/docs/*"
 
 # JSON output for programmatic use
-kurt content list-topics --format json
+kurt content list-entities topic --format json
 ```
 
 **Use when**: Understanding what topics/tech are covered, identifying content gaps, planning what to fetch
 
 **Workflow example:**
-1. Run `kurt content list-topics` → See topics like "authentication" (15 docs), "webhooks" (3 docs)
+1. Run `kurt content list-entities topic` → See topics like "authentication" (15 docs), "webhooks" (3 docs)
 2. Notice "webhooks" has low coverage
 3. Run `kurt content list --with-entity "Topic:webhooks"` → See which 3 docs exist
 4. Identify need for more webhook content → fetch additional webhook guides
@@ -189,9 +189,9 @@ kurt content stats --include "*docs.example.com*"
 ## Which Method to Use?
 
 **I want to understand what topics/tech are covered** → Topic/Technology Discovery
-- Example: "What topics do we have content about?" → `kurt content list-topics`
-- Example: "Do we have Docker content?" → `kurt content list-technologies`
-- Example: "Which topics need more docs?" → `kurt content list-topics` (look for low counts)
+- Example: "What topics do we have content about?" → `kurt content list-entities topic`
+- Example: "Do we have Docker content?" → `kurt content list-entities technology`
+- Example: "Which topics need more docs?" → `kurt content list-entities topic` (look for low counts)
 
 **I know the exact topic/keyword** → Semantic Search
 - Example: "Find all docs mentioning webhooks"

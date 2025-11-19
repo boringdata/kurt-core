@@ -417,10 +417,10 @@ Before proceeding to review, verify all necessary topics and technologies are do
 
 ```bash
 # Check what topics are covered in your documentation
-kurt content list-topics --include "https://{{YOUR_DOMAIN}}/docs/**"
+kurt content list-entities topic --include "https://{{YOUR_DOMAIN}}/docs/**"
 
 # Check what technologies are documented
-kurt content list-technologies --include "https://{{YOUR_DOMAIN}}/docs/**"
+kurt content list-entities technology --include "https://{{YOUR_DOMAIN}}/docs/**"
 
 # Verify each product feature has corresponding documentation
 kurt content list --with-entity "Topic:[feature-name]"

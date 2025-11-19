@@ -15,10 +15,10 @@ When a user clones this template, follow these steps:
 3. Discover competitor topic coverage:
    ```bash
    # See what topics they cover
-   kurt content list-topics --include "https://[competitor-domain]/**"
+   kurt content list-entities topic --include "https://[competitor-domain]/**"
 
    # See what technologies they document
-   kurt content list-technologies --include "https://[competitor-domain]/**"
+   kurt content list-entities technology --include "https://[competitor-domain]/**"
 
    # Also check traditional clusters
    kurt content list-clusters --include "https://[competitor-domain]/**"
@@ -27,10 +27,10 @@ When a user clones this template, follow these steps:
 4. Compare with your topic coverage:
    ```bash
    # Your topic coverage
-   kurt content list-topics --include "https://[your-domain]/**"
+   kurt content list-entities topic --include "https://[your-domain]/**"
 
    # Your technology coverage
-   kurt content list-technologies --include "https://[your-domain]/**"
+   kurt content list-entities technology --include "https://[your-domain]/**"
    ```
 
 5. Identify gaps - topics/technologies competitor has that you don't:
@@ -253,10 +253,10 @@ kurt content list-clusters --include "https://{{COMPETITOR_DOMAIN}}/**"
 **Discover what competitor covers:**
 ```bash
 # Get their topic breakdown
-kurt content list-topics --include "https://{{COMPETITOR_DOMAIN}}/**"
+kurt content list-entities topic --include "https://{{COMPETITOR_DOMAIN}}/**"
 
 # Get their technology coverage
-kurt content list-technologies --include "https://{{COMPETITOR_DOMAIN}}/**"
+kurt content list-entities technology --include "https://{{COMPETITOR_DOMAIN}}/**"
 
 # Traditional cluster view
 kurt content list-clusters --include "https://{{COMPETITOR_DOMAIN}}/**"
@@ -265,10 +265,10 @@ kurt content list-clusters --include "https://{{COMPETITOR_DOMAIN}}/**"
 **Compare with your coverage:**
 ```bash
 # Your topic breakdown
-kurt content list-topics --include "https://{{YOUR_DOMAIN}}/**"
+kurt content list-entities topic --include "https://{{YOUR_DOMAIN}}/**"
 
 # Your technology coverage
-kurt content list-technologies --include "https://{{YOUR_DOMAIN}}/**"
+kurt content list-entities technology --include "https://{{YOUR_DOMAIN}}/**"
 ```
 
 **Identify gaps - Example workflow:**

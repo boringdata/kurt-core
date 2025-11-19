@@ -16,7 +16,7 @@ When a user clones this template, follow these steps:
 3. Validate topic coverage (check for gaps):
    ```bash
    # Check overall topic coverage
-   kurt content list-topics
+   kurt content list-entities topic
 
    # Check if this specific topic is covered
    kurt content list --with-entity "Topic:[topic]"
@@ -340,7 +340,7 @@ Check what coverage already exists:
 
 ```bash
 # Check if topic is covered
-kurt content list-topics
+kurt content list-entities topic
 
 # Look for your topic in the list
 # If "deployment" shows 15 docs, you already have coverage
@@ -384,7 +384,7 @@ kurt content list --with-content-type reference
 kurt content list --with-content-type tutorial
 
 # Check what technologies are documented (if relevant)
-kurt content list-technologies --include "*/docs/*"
+kurt content list-entities technology --include "*/docs/*"
 
 # Get specific docs
 kurt content get <doc-id>

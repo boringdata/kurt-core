@@ -22,10 +22,10 @@ When a user clones this template, follow these steps:
 4. Discover topic coverage to categorize issues:
    ```bash
    # See what topics are covered
-   kurt content list-topics --include "https://[domain]/**"
+   kurt content list-entities topic --include "https://[domain]/**"
 
    # See what technologies are documented
-   kurt content list-technologies --include "https://[domain]/**"
+   kurt content list-entities technology --include "https://[domain]/**"
    ```
 
 5. Gather additional context:
@@ -219,10 +219,10 @@ Understand what topics and technologies are documented:
 
 ```bash
 # See all topics covered
-kurt content list-topics --include "https://{{DOMAIN}}/**"
+kurt content list-entities topic --include "https://{{DOMAIN}}/**"
 
 # See all technologies documented
-kurt content list-technologies --include "https://{{DOMAIN}}/**"
+kurt content list-entities technology --include "https://{{DOMAIN}}/**"
 
 # This will help categorize audit issues by topic area
 # e.g., "Authentication docs are stale" vs "Payment docs are stale"
