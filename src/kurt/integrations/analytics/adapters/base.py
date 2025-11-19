@@ -45,6 +45,23 @@ class AnalyticsAdapter(ABC):
         pass
 
     @abstractmethod
+    def get_domain_urls(self, domain: str, period_days: int = 60) -> list[str]:
+        """
+        Get all URLs for a domain from the analytics platform.
+
+        Args:
+            domain: Domain to filter by (e.g., "technically.dev")
+            period_days: Number of days to query (default: 60)
+
+        Returns:
+            List of unique URLs found in analytics for this domain
+
+        Raises:
+            Exception if API call fails
+        """
+        pass
+
+    @abstractmethod
     def sync_metrics(self, urls: list[str], period_days: int = 60) -> dict[str, AnalyticsMetrics]:
         """
         Fetch analytics metrics for given URLs.

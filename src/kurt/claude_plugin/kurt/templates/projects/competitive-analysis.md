@@ -332,12 +332,12 @@ Create comparison list:
 
 ```bash
 # Sync analytics (if configured)
-kurt analytics sync {{YOUR_DOMAIN}}
+kurt integrations analytics sync {{YOUR_DOMAIN}}
 
-# Get traffic for your pages
+# Get traffic for your pages to identify high-priority gaps
 kurt content list --url-starts-with https://{{YOUR_DOMAIN}} --with-analytics
 
-# Identify high-traffic topics to prioritize
+# Prioritize: gaps in topics where you already have traffic = high impact
 ```
 
 **Step 5: Quality Comparison (4-6 hours)**

@@ -276,7 +276,13 @@ def extract_document_metadata(
     # Update document with extracted metadata (session already obtained at start of function)
     doc.indexed_with_hash = current_content_hash
     doc.indexed_with_git_commit = git_commit_hash
-    doc.content_type = metadata_output.content_type
+
+    # Update content_type unless it's from CMS (CMS schema mapping is source of truth)
+    # This allows indexing to override clustering's coarse URL-based classification
+    # but respects CMS-derived content types
+    if not doc.cms_platform:
+        doc.content_type = metadata_output.content_type
+
     doc.primary_topics = metadata_output.primary_topics
     doc.tools_technologies = metadata_output.tools_technologies
     doc.has_code_examples = metadata_output.has_code_examples

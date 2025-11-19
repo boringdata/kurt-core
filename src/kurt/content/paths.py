@@ -60,24 +60,44 @@ def parse_source_identifier(source_url: str) -> tuple[str, dict]:
     )
 
 
-def create_cms_content_path(platform: str, instance: str, doc_id: str, config: KurtConfig) -> Path:
+def create_cms_content_path(
+    platform: str, instance: str, doc_id: str, config: KurtConfig, source_url: str | None = None
+) -> Path:
     """
     Create filesystem path for CMS content.
 
     Args:
         platform: CMS platform name (sanity, contentful, etc)
         instance: Instance name (prod, staging, etc)
-        doc_id: Document ID
+        doc_id: Document ID (used as fallback if source_url not available)
         config: Kurt configuration
+        source_url: Optional source URL in format "platform/instance/schema/slug" for better path structure
 
     Returns:
         Path object for content file
 
-    Example:
+    Example (with source_url):
+        >>> create_cms_content_path("sanity", "prod", "abc-123", config, "sanity/prod/article/my-post")
+        Path("sources/cms/sanity/prod/article/my-post.md")
+
+    Example (without source_url - fallback):
         >>> create_cms_content_path("sanity", "prod", "abc-123", config)
         Path("sources/cms/sanity/prod/abc-123.md")
     """
     source_base = config.get_absolute_sources_path()
+
+    # Try to parse source_url for better path structure
+    if source_url and not source_url.startswith(("http://", "https://")):
+        # Source URL format: "platform/instance/schema/slug"
+        parts = source_url.split("/")
+        if len(parts) >= 4:
+            # Use schema and slug from source_url
+            schema = parts[2]
+            slug = parts[3]
+            content_path = source_base / "cms" / platform / instance / schema / f"{slug}.md"
+            return content_path
+
+    # Fallback to doc_id if source_url not available or doesn't match expected format
     content_path = source_base / "cms" / platform / instance / f"{doc_id}.md"
     return content_path
 
