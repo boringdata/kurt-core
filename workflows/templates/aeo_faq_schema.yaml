@@ -1,0 +1,137 @@
+name: "AEO FAQ Schema Generator"
+description: "Mine questions from community sources, generate FAQ content, and create JSON-LD schema markup for AI search optimization"
+version: "1.0"
+
+variables:
+  target_domain: "example.com"
+  subreddit: "technology"
+  num_questions: 50
+  output_path: "content/faqs"
+  brand_voice: "professional and helpful"
+  base_url: "https://example.com"
+
+steps:
+  - name: "fetch_reddit_questions"
+    description: "Fetch questions from Reddit"
+    type: "cli"
+    command: "integrations research reddit"
+    args:
+      subreddit: "${subreddit}"
+      limit: "${num_questions}"
+      type: "questions"
+    output: "reddit_questions"
+
+  - name: "analyze_questions"
+    description: "Cluster questions by topic"
+    type: "dspy"
+    signature: "AnalyzeQuestions"
+    inputs:
+      questions: "${reddit_questions}"
+      domain: "${target_domain}"
+    output: "question_clusters"
+
+  - name: "generate_faq_content"
+    description: "Generate FAQ page content"
+    type: "dspy"
+    signature: "GenerateFAQContent"
+    inputs:
+      clusters: "${question_clusters}"
+      domain: "${target_domain}"
+      brand_voice: "${brand_voice}"
+      existing_content: ""
+    output: "faq_pages"
+
+  - name: "generate_schema"
+    description: "Generate JSON-LD schema markup"
+    type: "dspy"
+    signature: "GenerateJSONLD"
+    inputs:
+      faq_pages: "${faq_pages}"
+      base_url: "${base_url}"
+    output: "schema_markup"
+
+  - name: "save_content"
+    description: "Save FAQ pages and schema to disk"
+    type: "script"
+    code: |
+      import json
+      from pathlib import Path
+
+      output_dir = Path(variables['output_path'])
+      output_dir.mkdir(parents=True, exist_ok=True)
+
+      faq_pages = json.loads(variables['faq_pages'])
+      schema_markup = json.loads(variables['schema_markup'])
+
+      results = []
+      for page, schema in zip(faq_pages, schema_markup):
+          # Save markdown content
+          md_path = output_dir / f"{page['slug']}.md"
+          with open(md_path, 'w') as f:
+              f.write(f"# {page['title']}\n\n")
+              f.write(f"{page['meta_description']}\n\n")
+              f.write(f"{page['introduction']}\n\n")
+
+              for faq in page['faqs']:
+                  f.write(f"## {faq['question']}\n\n")
+                  f.write(f"{faq['answer']}\n\n")
+
+          # Save schema markup
+          schema_path = output_dir / f"{page['slug']}.schema.json"
+          with open(schema_path, 'w') as f:
+              json.dump(schema, f, indent=2)
+
+          results.append({
+              'page': page['slug'],
+              'content_file': str(md_path),
+              'schema_file': str(schema_path)
+          })
+
+      result = {
+          'files_created': len(results),
+          'output_directory': str(output_dir),
+          'files': results
+      }
+    output: "save_results"
+
+  - name: "generate_report"
+    description: "Generate summary report"
+    type: "script"
+    code: |
+      import json
+      from pathlib import Path
+
+      save_results = variables['save_results']
+      question_clusters = json.loads(variables['question_clusters'])
+
+      report_path = Path(variables['output_path']) / "REPORT.md"
+
+      with open(report_path, 'w') as f:
+          f.write("# AEO FAQ Generation Report\n\n")
+          f.write(f"## Summary\n\n")
+          f.write(f"- **Questions analyzed**: {variables['num_questions']}\n")
+          f.write(f"- **Topics identified**: {len(question_clusters)}\n")
+          f.write(f"- **FAQ pages created**: {save_results['files_created']}\n")
+          f.write(f"- **Output directory**: {save_results['output_directory']}\n\n")
+
+          f.write("## Topics Covered\n\n")
+          for cluster in question_clusters:
+              f.write(f"### {cluster['topic']}\n\n")
+              f.write(f"{cluster['description']}\n\n")
+              f.write(f"- Questions: {len(cluster['questions'])}\n")
+              f.write(f"- Priority: {cluster.get('priority', 0)}\n\n")
+
+          f.write("## Generated Files\n\n")
+          for file_info in save_results['files']:
+              f.write(f"- **{file_info['page']}**\n")
+              f.write(f"  - Content: `{file_info['content_file']}`\n")
+              f.write(f"  - Schema: `{file_info['schema_file']}`\n\n")
+
+          f.write("## Next Steps\n\n")
+          f.write("1. Review generated FAQ content\n")
+          f.write("2. Validate schema markup with Google Rich Results Test\n")
+          f.write("3. Deploy to your website\n")
+          f.write("4. Track citations with Profound or similar tools\n")
+
+      result = str(report_path)
+    output: "report_path"

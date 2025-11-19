@@ -1,15 +1,19 @@
 """
 Workflow Management Commands
 
-CLI commands for managing DBOS workflows (background jobs).
+CLI commands for managing DBOS workflows (background jobs) and YAML workflows.
 
 Commands:
+- kurt workflows run: Run a YAML workflow
 - kurt workflows list: List all workflows
 - kurt workflows status <id>: Show workflow status and result
 - kurt workflows cancel <id>: Cancel a workflow (completes current step)
+- kurt workflows validate: Validate a YAML workflow file
+- kurt workflows list-templates: List available workflow templates
 """
 
 import json
+from pathlib import Path
 
 import click
 from rich.console import Console
@@ -22,7 +26,7 @@ console = Console()
 
 @click.group(name="workflows")
 def workflows_group():
-    """Manage background workflows"""
+    """Manage workflows (YAML and background jobs)"""
     pass
 
 
@@ -34,6 +38,170 @@ def _check_dbos_available():
         console.print("[dim]Run: uv sync[/dim]")
         raise click.Abort()
     return True
+
+
+@workflows_group.command(name="run")
+@click.argument("workflow_file", type=click.Path(exists=True))
+@click.option("--var", "variables", multiple=True, help="Set workflow variable (format: key=value)")
+@click.option("--background", "-b", is_flag=True, help="Run workflow in background")
+@click.option("--follow", "-f", is_flag=True, help="Follow workflow progress (with --background)")
+def run_workflow(workflow_file, variables, background, follow):
+    """
+    Run a YAML workflow.
+
+    Args:
+        workflow_file: Path to YAML workflow file
+
+    Examples:
+        # Run workflow synchronously
+        kurt workflows run workflows/aeo_faq_schema.yaml
+
+        # Run with custom variables
+        kurt workflows run workflows/aeo_faq_schema.yaml --var target_domain=mysite.com --var num_questions=100
+
+        # Run in background
+        kurt workflows run workflows/aeo_faq_schema.yaml --background
+
+        # Run in background and follow progress
+        kurt workflows run workflows/aeo_faq_schema.yaml --background --follow
+    """
+    from kurt.workflows.parser import WorkflowParseError, load_workflow
+    from kurt.workflows.runner import run_workflow_background, run_workflow_sync
+
+    # Parse variables
+    var_dict = {}
+    for var in variables:
+        if "=" not in var:
+            console.print(f"[red]Invalid variable format: {var}[/red]")
+            console.print("[dim]Use format: --var key=value[/dim]")
+            raise click.Abort()
+        key, value = var.split("=", 1)
+        var_dict[key] = value
+
+    # Load workflow to validate
+    try:
+        workflow = load_workflow(workflow_file)
+        console.print(f"[green]✓[/green] Workflow loaded: {workflow.name}")
+    except WorkflowParseError as e:
+        console.print(f"[red]Error loading workflow:[/red] {e}")
+        raise click.Abort()
+
+    # Run workflow
+    if background:
+        _check_dbos_available()
+
+        try:
+            workflow_id = run_workflow_background(workflow_file, var_dict)
+            console.print("\n[green]✓[/green] Workflow started in background")
+            console.print(f"[cyan]Workflow ID:[/cyan] {workflow_id}\n")
+            console.print("[dim]Track progress with:[/dim]")
+            console.print(f"[cyan]kurt workflows status {workflow_id}[/cyan]")
+            console.print(f"[cyan]kurt workflows follow {workflow_id}[/cyan]")
+
+            if follow:
+                # Automatically follow the workflow
+                console.print("\n[dim]Following workflow progress...[/dim]\n")
+                import time
+
+                time.sleep(1)  # Give workflow a moment to start
+                from click.testing import CliRunner
+
+                runner = CliRunner()
+                result = runner.invoke(follow_workflow, [workflow_id, "--wait"])
+                console.print(result.output)
+
+        except Exception as e:
+            console.print(f"[red]Error starting workflow:[/red] {e}")
+            raise click.Abort()
+    else:
+        # Run synchronously
+        try:
+            result = run_workflow_sync(workflow_file, var_dict)
+
+            if result["status"] == "success":
+                console.print("\n[bold green]✓ Workflow completed[/bold green]")
+                if result.get("outputs"):
+                    console.print("\n[bold]Outputs:[/bold]")
+                    for key, value in result["outputs"].items():
+                        console.print(f"  {key}: {value}")
+            else:
+                console.print("\n[bold red]✗ Workflow failed[/bold red]")
+                if result.get("error"):
+                    console.print(f"[red]Error:[/red] {result['error']}")
+                raise click.Abort()
+
+        except Exception as e:
+            console.print(f"[red]Error running workflow:[/red] {e}")
+            raise click.Abort()
+
+
+@workflows_group.command(name="validate")
+@click.argument("workflow_file", type=click.Path(exists=True))
+def validate_workflow(workflow_file):
+    """
+    Validate a YAML workflow file.
+
+    Args:
+        workflow_file: Path to YAML workflow file
+
+    Example:
+        kurt workflows validate workflows/my_workflow.yaml
+    """
+    from kurt.workflows.parser import validate_workflow_file
+
+    is_valid, message = validate_workflow_file(workflow_file)
+
+    if is_valid:
+        console.print(f"[green]✓[/green] {message}")
+    else:
+        console.print(f"[red]✗[/red] {message}")
+        raise click.Abort()
+
+
+@workflows_group.command(name="list-templates")
+def list_templates():
+    """
+    List available workflow templates.
+
+    Example:
+        kurt workflows list-templates
+    """
+    # Find templates directory
+    import kurt.workflows
+
+    workflows_module_path = Path(kurt.workflows.__file__).parent.parent.parent
+    templates_dir = workflows_module_path / "workflows" / "templates"
+
+    if not templates_dir.exists():
+        console.print("[yellow]No workflow templates found[/yellow]")
+        return
+
+    # List template files
+    templates = list(templates_dir.glob("*.yaml"))
+
+    if not templates:
+        console.print("[yellow]No workflow templates found[/yellow]")
+        return
+
+    console.print("[bold]Available Workflow Templates:[/bold]\n")
+
+    from kurt.workflows.parser import load_workflow
+
+    for template_path in sorted(templates):
+        try:
+            workflow = load_workflow(template_path)
+            console.print(f"[cyan]{template_path.name}[/cyan]")
+            console.print(f"  {workflow.description or 'No description'}")
+            console.print(
+                f"  [dim]Variables: {', '.join(workflow.variables.keys()) if workflow.variables else 'none'}[/dim]"
+            )
+            console.print()
+        except Exception as e:
+            console.print(f"[red]{template_path.name}[/red] (error loading: {e})")
+            console.print()
+
+    console.print("[dim]Run a template with:[/dim]")
+    console.print(f"[cyan]kurt workflows run {templates_dir}/template_name.yaml[/cyan]")
 
 
 @workflows_group.command(name="list")

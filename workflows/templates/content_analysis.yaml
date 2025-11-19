@@ -1,0 +1,119 @@
+name: "Content Analysis and Clustering"
+description: "Fetch content, analyze topics, cluster by theme, and generate strategic insights"
+version: "1.0"
+
+variables:
+  source_url: ""
+  max_docs: 100
+  output_path: "analysis"
+
+steps:
+  - name: "fetch_content"
+    description: "Discover and fetch content from source"
+    type: "cli"
+    command: "content fetch"
+    args:
+      url: "${source_url}"
+      max_docs: "${max_docs}"
+      discover: true
+    output: "fetch_results"
+
+  - name: "index_content"
+    description: "Index content for analysis"
+    type: "cli"
+    command: "content index"
+    args:
+      source_url: "${source_url}"
+    output: "index_results"
+
+  - name: "cluster_content"
+    description: "Cluster content by topic"
+    type: "cli"
+    command: "content cluster"
+    args:
+      source_url: "${source_url}"
+    output: "clusters"
+
+  - name: "analyze_cluster_quality"
+    description: "Analyze quality of clusters"
+    type: "dspy"
+    signature: "AnalyzeClusterQuality"
+    inputs:
+      clusters: "${clusters}"
+      sample_documents: "${index_results}"
+    output: "cluster_analysis"
+
+  - name: "identify_content_gaps"
+    description: "Identify gaps in content coverage"
+    type: "dspy"
+    signature: "AnalyzeContentGaps"
+    inputs:
+      existing_topics: "${clusters}"
+      target_keywords: ""
+      competitor_topics: "[]"
+      audience_questions: "[]"
+    output: "content_gaps"
+
+  - name: "generate_report"
+    description: "Generate comprehensive analysis report"
+    type: "dspy"
+    signature: "GenerateClusterReport"
+    inputs:
+      clusters: "${clusters}"
+      analysis: "${cluster_analysis}"
+      domain: "${source_url}"
+    output: "report_content"
+
+  - name: "generate_content_ideas"
+    description: "Generate content ideas based on analysis"
+    type: "dspy"
+    signature: "GenerateContentIdeas"
+    inputs:
+      existing_content: "${clusters}"
+      clusters: "${clusters}"
+      target_audience: "technical audience"
+      goals: "traffic and education"
+    output: "content_ideas"
+
+  - name: "save_report"
+    description: "Save analysis report and recommendations"
+    type: "script"
+    code: |
+      import json
+      from pathlib import Path
+      from datetime import datetime
+
+      output_dir = Path(variables['output_path'])
+      output_dir.mkdir(parents=True, exist_ok=True)
+
+      # Save main report
+      report_path = output_dir / f"analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+      with open(report_path, 'w') as f:
+          f.write(f"# Content Analysis Report\n\n")
+          f.write(f"**Source**: {variables['source_url']}\n")
+          f.write(f"**Date**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+          f.write("---\n\n")
+          f.write(variables['report_content'])
+
+      # Save content gaps analysis
+      gaps_path = output_dir / "content_gaps.json"
+      with open(gaps_path, 'w') as f:
+          json.dump(json.loads(variables['content_gaps']), f, indent=2)
+
+      # Save content ideas
+      ideas_path = output_dir / "content_ideas.json"
+      with open(ideas_path, 'w') as f:
+          json.dump(json.loads(variables['content_ideas']), f, indent=2)
+
+      # Save clusters
+      clusters_path = output_dir / "clusters.json"
+      with open(clusters_path, 'w') as f:
+          json.dump(json.loads(variables['clusters']), f, indent=2)
+
+      result = {
+          'report': str(report_path),
+          'gaps': str(gaps_path),
+          'ideas': str(ideas_path),
+          'clusters': str(clusters_path),
+      }
+    output: "output_files"

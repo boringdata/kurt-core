@@ -1,0 +1,128 @@
+name: "AI Citation Optimization"
+description: "Analyze content for citation opportunities and optimize for AI search engines"
+version: "1.0"
+
+variables:
+  content_path: ""
+  domain: "example.com"
+  target_keywords: "AI, machine learning, optimization"
+  output_path: "optimized"
+
+steps:
+  - name: "read_content"
+    description: "Load content from file"
+    type: "script"
+    code: |
+      from pathlib import Path
+
+      content_file = Path(variables['content_path'])
+      if not content_file.exists():
+          raise FileNotFoundError(f"Content file not found: {content_file}")
+
+      with open(content_file, 'r') as f:
+          result = f.read()
+    output: "original_content"
+
+  - name: "analyze_citations"
+    description: "Identify citation opportunities"
+    type: "dspy"
+    signature: "AnalyzeCitationOpportunities"
+    inputs:
+      content: "${original_content}"
+      domain: "${domain}"
+      target_keywords: "${target_keywords}"
+    output: "citation_opportunities"
+
+  - name: "extract_target_queries"
+    description: "Extract target queries from keywords"
+    type: "script"
+    code: |
+      keywords = variables['target_keywords'].split(',')
+      queries = [f"What is {kw.strip()}?" for kw in keywords]
+      queries.extend([f"How to {kw.strip()}" for kw in keywords])
+      result = ', '.join(queries)
+    output: "target_queries"
+
+  - name: "optimize_content"
+    description: "Optimize content for AI search"
+    type: "dspy"
+    signature: "OptimizeForAISearch"
+    inputs:
+      content: "${original_content}"
+      target_queries: "${target_queries}"
+      optimization_goals: "citations"
+    output: "optimization_result"
+
+  - name: "generate_schema"
+    description: "Generate schema markup"
+    type: "dspy"
+    signature: "GenerateSchemaMarkup"
+    inputs:
+      content: "${optimization_result}"
+      schema_type: "Article"
+      base_url: "https://${domain}"
+      additional_metadata: "{}"
+    output: "schema_markup"
+
+  - name: "save_optimized_content"
+    description: "Save optimized content and recommendations"
+    type: "script"
+    code: |
+      import json
+      from pathlib import Path
+      from datetime import datetime
+
+      output_dir = Path(variables['output_path'])
+      output_dir.mkdir(parents=True, exist_ok=True)
+
+      # Parse optimization result
+      opt_result = json.loads(variables['optimization_result'])
+
+      # Save optimized content
+      content_path = output_dir / "optimized_content.md"
+      with open(content_path, 'w') as f:
+          f.write(opt_result['optimized_content'])
+
+      # Save schema markup
+      schema_path = output_dir / "schema.json"
+      with open(schema_path, 'w') as f:
+          json.dump(json.loads(variables['schema_markup']), f, indent=2)
+
+      # Generate optimization report
+      report_path = output_dir / "optimization_report.md"
+      opportunities = json.loads(variables['citation_opportunities'])
+
+      with open(report_path, 'w') as f:
+          f.write("# AI Citation Optimization Report\n\n")
+          f.write(f"**Date**: {datetime.now().strftime('%Y-%m-%d')}\n")
+          f.write(f"**Domain**: {variables['domain']}\n")
+          f.write(f"**Keywords**: {variables['target_keywords']}\n\n")
+
+          f.write("## Changes Made\n\n")
+          f.write(opt_result.get('changes_summary', 'No changes summary available'))
+          f.write("\n\n")
+
+          f.write("## Citation Opportunities Identified\n\n")
+          for opp in opportunities:
+              f.write(f"### {opp['type']} (Priority: {opp.get('priority', 'medium')})\n\n")
+              f.write(f"{opp['description']}\n\n")
+              if 'example' in opp:
+                  f.write(f"**Example**: {opp['example']}\n\n")
+
+          f.write("## Files Generated\n\n")
+          f.write(f"- Optimized content: `{content_path}`\n")
+          f.write(f"- Schema markup: `{schema_path}`\n\n")
+
+          f.write("## Next Steps\n\n")
+          f.write("1. Review optimized content for accuracy\n")
+          f.write("2. Deploy to your website\n")
+          f.write("3. Add schema markup to page <head>\n")
+          f.write("4. Validate with Google Rich Results Test\n")
+          f.write("5. Monitor citations in AI search engines\n")
+
+      result = {
+          'content': str(content_path),
+          'schema': str(schema_path),
+          'report': str(report_path),
+      }
+    output: "output_files"
