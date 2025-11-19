@@ -96,13 +96,14 @@ def write_frontmatter_to_file(doc, session=None) -> None:
         content_without_frontmatter = remove_frontmatter(content)
 
         # Fetch topics and tools from knowledge graph
-        from kurt.db.knowledge_graph import (
-            get_document_technologies,
-            get_document_topics,
-        )
+        from kurt.db.knowledge_graph import get_document_entities
 
-        topics = get_document_topics(doc.id, session=session)
-        tools = get_document_technologies(doc.id, session=session)
+        topics = get_document_entities(
+            doc.id, entity_type="Topic", names_only=True, session=session
+        )
+        tools = get_document_entities(
+            doc.id, entity_type="technologies", names_only=True, session=session
+        )
 
         # Skip if no metadata to write
         if not any([doc.content_type, topics, tools]):

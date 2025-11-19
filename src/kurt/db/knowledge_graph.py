@@ -16,110 +16,73 @@ from kurt.db.database import get_session
 from kurt.db.models import DocumentEntity, Entity
 
 
-def get_document_topics(document_id: UUID, session: Optional[Session] = None) -> list[str]:
+def get_document_entities(
+    document_id: UUID,
+    entity_type: Optional[str] = None,
+    names_only: bool = False,
+    session: Optional[Session] = None,
+) -> list[str] | list[tuple[str, str]]:
     """
-    Get all topics for a document from the knowledge graph.
+    Get all entities for a document from the knowledge graph.
 
     Args:
         document_id: The document UUID
+        entity_type: Optional entity type filter:
+            - "Topic" for topics
+            - "Technology", "Tool", or "Product" for technologies/tools
+            - Or use special values:
+                - "technologies" to get Technology+Tool+Product types
+        names_only: If True, return only canonical names (list[str])
+                   If False, return tuples of (canonical_name, entity_type)
         session: Optional SQLModel session (will create one if not provided)
 
     Returns:
-        List of topic canonical names
+        list[str] if names_only=True, list[tuple[str, str]] otherwise
 
-    Example:
-        topics = get_document_topics(doc.id)
+    Examples:
+        # Get all entities with types
+        entities = get_document_entities(doc.id)
+        # Returns: [("Python", "Topic"), ("FastAPI", "Technology"), ...]
+
+        # Get only topics (names only)
+        topics = get_document_entities(doc.id, entity_type="Topic", names_only=True)
         # Returns: ["Python", "Web Development", "API Design"]
-    """
-    fetch_session = session if session is not None else get_session()
-    close_session = session is None
 
-    try:
-        stmt = (
-            select(Entity.canonical_name)
-            .join(DocumentEntity, Entity.id == DocumentEntity.entity_id)
-            .where(DocumentEntity.document_id == document_id)
-            .where(Entity.entity_type == "Topic")
-        )
-        topics = [name for name in fetch_session.exec(stmt).all() if name]
-        return topics
-    finally:
-        if close_session:
-            fetch_session.close()
-
-
-def get_document_technologies(document_id: UUID, session: Optional[Session] = None) -> list[str]:
-    """
-    Get all technologies/tools for a document from the knowledge graph.
-
-    Args:
-        document_id: The document UUID
-        session: Optional SQLModel session (will create one if not provided)
-
-    Returns:
-        List of technology/tool canonical names (includes Technology, Tool, and Product entity types)
-
-    Example:
-        tools = get_document_technologies(doc.id)
+        # Get all technologies/tools (names only)
+        tools = get_document_entities(doc.id, entity_type="technologies", names_only=True)
         # Returns: ["FastAPI", "Pydantic", "Uvicorn"]
     """
     fetch_session = session if session is not None else get_session()
     close_session = session is None
 
     try:
-        stmt = (
-            select(Entity.canonical_name)
-            .join(DocumentEntity, Entity.id == DocumentEntity.entity_id)
-            .where(DocumentEntity.document_id == document_id)
-            .where(Entity.entity_type.in_(["Technology", "Tool", "Product"]))
-        )
-        technologies = [name for name in fetch_session.exec(stmt).all() if name]
-        return technologies
-    finally:
-        if close_session:
-            fetch_session.close()
+        if names_only:
+            stmt = (
+                select(Entity.canonical_name)
+                .join(DocumentEntity, Entity.id == DocumentEntity.entity_id)
+                .where(DocumentEntity.document_id == document_id)
+            )
+        else:
+            stmt = (
+                select(Entity.canonical_name, Entity.entity_type)
+                .join(DocumentEntity, Entity.id == DocumentEntity.entity_id)
+                .where(DocumentEntity.document_id == document_id)
+            )
 
-
-def get_document_entities(
-    document_id: UUID,
-    entity_type: Optional[str] = None,
-    session: Optional[Session] = None,
-) -> list[tuple[str, str]]:
-    """
-    Get all entities for a document from the knowledge graph.
-
-    Args:
-        document_id: The document UUID
-        entity_type: Optional entity type filter (e.g., "Topic", "Technology")
-        session: Optional SQLModel session (will create one if not provided)
-
-    Returns:
-        List of tuples (canonical_name, entity_type)
-
-    Example:
-        entities = get_document_entities(doc.id)
-        # Returns: [("Python", "Topic"), ("FastAPI", "Technology"), ...]
-
-        topics_only = get_document_entities(doc.id, entity_type="Topic")
-        # Returns: [("Python", "Topic"), ("Web Development", "Topic")]
-    """
-    fetch_session = session if session is not None else get_session()
-    close_session = session is None
-
-    try:
-        stmt = (
-            select(Entity.canonical_name, Entity.entity_type)
-            .join(DocumentEntity, Entity.id == DocumentEntity.entity_id)
-            .where(DocumentEntity.document_id == document_id)
-        )
-
-        if entity_type:
+        # Handle entity type filtering
+        if entity_type == "technologies":
+            # Special case: get all technology-related types
+            stmt = stmt.where(Entity.entity_type.in_(["Technology", "Tool", "Product"]))
+        elif entity_type:
             stmt = stmt.where(Entity.entity_type == entity_type)
 
-        entities = [
-            (name, etype) for name, etype in fetch_session.exec(stmt).all() if name and etype
-        ]
-        return entities
+        if names_only:
+            results = [name for name in fetch_session.exec(stmt).all() if name]
+        else:
+            results = [
+                (name, etype) for name, etype in fetch_session.exec(stmt).all() if name and etype
+            ]
+        return results
     finally:
         if close_session:
             fetch_session.close()
@@ -180,26 +143,44 @@ def get_top_entities(limit: int = 100, session: Optional[Session] = None) -> lis
             fetch_session.close()
 
 
-def find_documents_with_topic(topic: str, session: Optional[Session] = None) -> set[UUID]:
+def find_documents_with_entity(
+    entity_name: str,
+    entity_type: Optional[str] = None,
+    session: Optional[Session] = None,
+) -> set[UUID]:
     """
-    Find all document IDs that contain a specific topic.
+    Find all document IDs that contain a specific entity.
 
     Searches both Entity.name and Entity.canonical_name (case-insensitive partial match).
 
     Args:
-        topic: Topic name or partial match (case-insensitive)
+        entity_name: Entity name or partial match (case-insensitive)
+        entity_type: Optional entity type filter:
+            - "Topic" for topics
+            - "Technology", "Tool", or "Product" for specific tech types
+            - "technologies" to search across Technology+Tool+Product
+            - None to search all entity types
         session: Optional SQLModel session
 
     Returns:
-        Set of document UUIDs that contain the topic
+        Set of document UUIDs that contain the entity
 
-    Example:
-        doc_ids = find_documents_with_topic("Python")
+    Examples:
+        # Find documents with a topic
+        doc_ids = find_documents_with_entity("Python", entity_type="Topic")
+        # Returns: {UUID('...'), UUID('...'), ...}
+
+        # Find documents with a technology (any tech type)
+        doc_ids = find_documents_with_entity("FastAPI", entity_type="technologies")
         # Returns: {UUID('...'), UUID('...'), ...}
 
         # Partial match works too
-        doc_ids = find_documents_with_topic("web")
+        doc_ids = find_documents_with_entity("web", entity_type="Topic")
         # Matches "Web Development", "Web APIs", etc.
+
+        # Search across all entity types
+        doc_ids = find_documents_with_entity("Python")
+        # Finds any entity (Topic, Technology, etc.) matching "Python"
     """
     fetch_session = session if session is not None else get_session()
     close_session = session is None
@@ -208,50 +189,19 @@ def find_documents_with_topic(topic: str, session: Optional[Session] = None) -> 
         stmt = (
             select(DocumentEntity.document_id)
             .join(Entity, DocumentEntity.entity_id == Entity.id)
-            .where(Entity.entity_type == "Topic")
-            .where((Entity.name.ilike(f"%{topic}%")) | (Entity.canonical_name.ilike(f"%{topic}%")))
-        )
-        doc_ids = {doc_id for doc_id in fetch_session.exec(stmt).all()}
-        return doc_ids
-    finally:
-        if close_session:
-            fetch_session.close()
-
-
-def find_documents_with_technology(technology: str, session: Optional[Session] = None) -> set[UUID]:
-    """
-    Find all document IDs that contain a specific technology/tool.
-
-    Searches both Entity.name and Entity.canonical_name (case-insensitive partial match).
-
-    Args:
-        technology: Technology/tool name or partial match (case-insensitive)
-        session: Optional SQLModel session
-
-    Returns:
-        Set of document UUIDs that contain the technology
-
-    Example:
-        doc_ids = find_documents_with_technology("FastAPI")
-        # Returns: {UUID('...'), UUID('...'), ...}
-
-        # Partial match works too
-        doc_ids = find_documents_with_technology("react")
-        # Matches "React", "React Native", etc.
-    """
-    fetch_session = session if session is not None else get_session()
-    close_session = session is None
-
-    try:
-        stmt = (
-            select(DocumentEntity.document_id)
-            .join(Entity, DocumentEntity.entity_id == Entity.id)
-            .where(Entity.entity_type.in_(["Technology", "Tool", "Product"]))
             .where(
-                (Entity.name.ilike(f"%{technology}%"))
-                | (Entity.canonical_name.ilike(f"%{technology}%"))
+                (Entity.name.ilike(f"%{entity_name}%"))
+                | (Entity.canonical_name.ilike(f"%{entity_name}%"))
             )
         )
+
+        # Handle entity type filtering
+        if entity_type == "technologies":
+            # Special case: search across all technology-related types
+            stmt = stmt.where(Entity.entity_type.in_(["Technology", "Tool", "Product"]))
+        elif entity_type:
+            stmt = stmt.where(Entity.entity_type == entity_type)
+
         doc_ids = {doc_id for doc_id in fetch_session.exec(stmt).all()}
         return doc_ids
     finally:

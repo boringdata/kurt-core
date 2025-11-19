@@ -686,20 +686,25 @@ def list_content(
 
     # Apply topic filtering (knowledge graph only)
     if with_topic:
-        from kurt.db.knowledge_graph import find_documents_with_topic
+        from kurt.db.knowledge_graph import find_documents_with_entity
 
         graph_doc_ids = {
-            str(doc_id) for doc_id in find_documents_with_topic(with_topic, session=session)
+            str(doc_id)
+            for doc_id in find_documents_with_entity(
+                with_topic, entity_type="Topic", session=session
+            )
         }
         documents = [d for d in documents if str(d.id) in graph_doc_ids]
 
     # Apply technology filtering (knowledge graph only)
     if with_technology:
-        from kurt.db.knowledge_graph import find_documents_with_technology
+        from kurt.db.knowledge_graph import find_documents_with_entity
 
         graph_doc_ids = {
             str(doc_id)
-            for doc_id in find_documents_with_technology(with_technology, session=session)
+            for doc_id in find_documents_with_entity(
+                with_technology, entity_type="technologies", session=session
+            )
         }
         documents = [d for d in documents if str(d.id) in graph_doc_ids]
 
