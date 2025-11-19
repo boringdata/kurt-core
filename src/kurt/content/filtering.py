@@ -22,6 +22,8 @@ class DocumentFilters:
         in_cluster: Cluster name filter
         with_status: Ingestion status filter (NOT_FETCHED, FETCHED, ERROR)
         with_content_type: Content type filter (tutorial, guide, blog, etc.)
+        with_entity: Entity filter in format "EntityType:EntityName" (e.g., "Topic:Python", "Technology:FastAPI")
+        with_relationship: Relationship filter in format "Entity1:RelationType:Entity2" (e.g., "Python:USES:FastAPI")
         limit: Maximum number of documents to process/display
         exclude_pattern: Glob pattern for exclusion (used in fetch)
     """
@@ -31,6 +33,8 @@ class DocumentFilters:
     in_cluster: Optional[str] = None
     with_status: Optional[str] = None
     with_content_type: Optional[str] = None
+    with_entity: Optional[str] = None
+    with_relationship: Optional[str] = None
     limit: Optional[int] = None
     exclude_pattern: Optional[str] = None
 
@@ -176,6 +180,8 @@ def resolve_filters(
     in_cluster: Optional[str] = None,
     with_status: Optional[str] = None,
     with_content_type: Optional[str] = None,
+    with_entity: Optional[str] = None,
+    with_relationship: Optional[str] = None,
     limit: Optional[int] = None,
     exclude_pattern: Optional[str] = None,
 ) -> DocumentFilters:
@@ -194,6 +200,8 @@ def resolve_filters(
         in_cluster: Cluster name filter
         with_status: Ingestion status filter
         with_content_type: Content type filter
+        with_entity: Entity filter in format "EntityType:EntityName"
+        with_relationship: Relationship filter in format "Entity1:RelationType:Entity2"
         limit: Maximum number of documents
         exclude_pattern: Glob pattern for exclusion
 
@@ -213,6 +221,14 @@ def resolve_filters(
         )
         # filters.ids == "44ea066e-xxxx-xxxx-xxxx-xxxxxxxxxxxx,550e8400,a73af781"
         # filters.include_pattern == "*/docs/*"
+
+        # Entity filtering
+        filters = resolve_filters(with_entity="Topic:Python")
+        # filters.with_entity == "Topic:Python"
+
+        # Relationship filtering
+        filters = resolve_filters(with_relationship="Python:USES:FastAPI")
+        # filters.with_relationship == "Python:USES:FastAPI"
     """
     # If identifier provided, resolve and merge into ids
     resolved_ids = ids
@@ -234,6 +250,8 @@ def resolve_filters(
         in_cluster=in_cluster,
         with_status=with_status,
         with_content_type=with_content_type,
+        with_entity=with_entity,
+        with_relationship=with_relationship,
         limit=limit,
         exclude_pattern=exclude_pattern,
     )
