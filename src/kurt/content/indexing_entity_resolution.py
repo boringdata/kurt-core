@@ -14,7 +14,6 @@ Stages:
 import asyncio
 import logging
 import time
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from uuid import UUID, uuid4
 
@@ -142,13 +141,13 @@ def _link_existing_entities(document_id: UUID, existing_entity_ids: list[str]):
 # ============================================================================
 
 
-def _resolve_entity_groups(
+async def _resolve_entity_groups_async(
     new_entities_batch: list[dict], activity_callback: callable = None
 ) -> list[dict]:
     """
     Stage 3: Resolve NEW entities using similarity grouping and entity-level LLM resolution.
 
-    This function uses DSPy Trace #2 (ResolveEntityGroup) to resolve entities.
+    This is the ASYNC version that uses native async DSPy and async database operations.
 
     Args:
         new_entities_batch: List of NEW entity dicts from multiple documents
@@ -201,50 +200,53 @@ def _resolve_entity_groups(
 
     resolution_module = dspy.ChainOfThought(ResolveEntityGroup)
 
-    from kurt.db.knowledge_graph import search_similar_entities
+    from kurt.db.database import async_session_scope
+    from kurt.db.knowledge_graph import search_similar_entities_async
 
     total_groups = len(groups)
     completed_groups = 0
 
-    # Fetch similar entities for all groups in parallel using ThreadPoolExecutor
-    # Pass session=None to ensure thread safety (creates new session per call)
-    with ThreadPoolExecutor(max_workers=max_concurrent) as executor:
-        futures = {
-            group_id: executor.submit(
-                search_similar_entities,
-                group_entities[0]["name"],  # Representative entity
-                group_entities[0]["type"],
-                limit=10,
-                session=None,
-            )
-            for group_id, group_entities in groups.items()
-        }
-        # Build group tasks with results
-        group_tasks = [
-            {
-                "group_id": group_id,
-                "group_entities": groups[group_id],
-                "similar_existing": future.result(),
-            }
-            for group_id, future in futures.items()
-        ]
+    # Stage 1: Fetch similar entities for all groups in parallel using ASYNC!
+    async def fetch_group_similarities(group_item):
+        """Fetch similar entities for one group using async session."""
+        group_id, group_entities = group_item
 
+        # Each task creates its own async session (official SQLAlchemy pattern)
+        async with async_session_scope() as session:
+            similar = await search_similar_entities_async(
+                entity_name=group_entities[0]["name"],  # Representative entity
+                entity_type=group_entities[0]["type"],
+                limit=10,
+                session=session,
+            )
+            return {
+                "group_id": group_id,
+                "group_entities": group_entities,
+                "similar_existing": similar,
+            }
+
+    # Execute all similarity searches in parallel with semaphore
+    semaphore = asyncio.Semaphore(max_concurrent)
+
+    async def limited_fetch(item):
+        async with semaphore:
+            return await fetch_group_similarities(item)
+
+    # Run async similarity searches
+    group_tasks = await asyncio.gather(*[limited_fetch(item) for item in groups.items()])
+
+    # Stage 2: Resolve groups with DSPy using NATIVE ASYNC (acall)!
     async def resolve_group_async(task_data):
-        """Resolve a single group asynchronously."""
+        """Resolve a single group using async DSPy."""
         nonlocal completed_groups
 
         start_time = time.time()
 
-        def _resolve():
-            return resolution_module(
-                group_entities=task_data["group_entities"],
-                existing_candidates=task_data["similar_existing"],
-            )
-
-        # Run in thread pool to avoid blocking
-        loop = asyncio.get_event_loop()
-        with ThreadPoolExecutor() as executor:
-            result = await loop.run_in_executor(executor, _resolve)
+        # Use DSPy's native async method - NO ThreadPoolExecutor!
+        result = await resolution_module.acall(
+            group_entities=task_data["group_entities"],
+            existing_candidates=task_data["similar_existing"],
+        )
 
         elapsed = time.time() - start_time
         completed_groups += 1
@@ -322,8 +324,8 @@ def _resolve_entity_groups(
         # Flatten list of lists into single list
         return [resolution for group_resolutions in results for resolution in group_resolutions]
 
-    # Execute parallel resolution
-    resolutions = asyncio.run(resolve_all_groups())
+    # Execute parallel resolution (we're already in async function)
+    resolutions = await resolve_all_groups()
 
     # Validate MERGE_WITH decisions - ensure targets exist in resolutions
     all_entity_names = {r["entity_name"] for r in resolutions}
@@ -368,6 +370,17 @@ def _resolve_entity_groups(
             logger.debug(f"  - {r['entity_name']}: {r['decision']} → {r['canonical_name']}")
 
     return validated_resolutions
+
+
+def _resolve_entity_groups(
+    new_entities_batch: list[dict], activity_callback: callable = None
+) -> list[dict]:
+    """
+    Sync wrapper for _resolve_entity_groups_async (for backward compatibility).
+
+    This maintains the same interface as before while using async internally.
+    """
+    return asyncio.run(_resolve_entity_groups_async(new_entities_batch, activity_callback))
 
 
 # ============================================================================
