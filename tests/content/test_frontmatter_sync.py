@@ -150,7 +150,7 @@ def test_frontmatter_sync_on_index(test_db_with_triggers):
             Entity(id=uuid4(), name="Python", entity_type="Topic", canonical_name="Python"),
             Entity(id=uuid4(), name="Testing", entity_type="Topic", canonical_name="Testing"),
             Entity(id=uuid4(), name="SQLite", entity_type="Topic", canonical_name="SQLite"),
-            Entity(id=uuid4(), name="pytest", entity_type="Tool", canonical_name="pytest"),
+            Entity(id=uuid4(), name="pytest", entity_type="Technology", canonical_name="pytest"),
         ]
 
         for entity in entities:
@@ -274,7 +274,7 @@ def test_frontmatter_sync_updates_existing_frontmatter(test_db_with_triggers):
             Entity(id=uuid4(), name="Updated", entity_type="Topic", canonical_name="Updated"),
             Entity(id=uuid4(), name="Topics", entity_type="Topic", canonical_name="Topics"),
             Entity(id=uuid4(), name="New", entity_type="Topic", canonical_name="New"),
-            Entity(id=uuid4(), name="NewTool", entity_type="Tool", canonical_name="NewTool"),
+            Entity(id=uuid4(), name="NewTool", entity_type="Technology", canonical_name="NewTool"),
         ]
 
         for entity in new_entities:

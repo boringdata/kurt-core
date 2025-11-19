@@ -70,7 +70,7 @@ class EntityExtraction(BaseModel):
     """Entity extracted from document with resolution status."""
 
     name: str
-    entity_type: str  # Must be one of: Product, Feature, Technology, Topic, Company, Integration
+    entity_type: EntityType
     description: str
     aliases: list[str] = []
     confidence: float  # 0.0-1.0
@@ -78,38 +78,15 @@ class EntityExtraction(BaseModel):
     matched_entity_index: Optional[int] = None  # If EXISTING, the index from existing_entities list
     quote: Optional[str] = None  # Exact quote/context where entity is mentioned (50-200 chars)
 
-    @classmethod
-    def model_validate(cls, value):
-        """Validate entity_type is a valid EntityType value."""
-        obj = super().model_validate(value)
-        valid_types = [e.value for e in EntityType]
-        if obj.entity_type not in valid_types:
-            raise ValueError(
-                f"Invalid entity_type '{obj.entity_type}'. Must be one of: {', '.join(valid_types)}"
-            )
-        return obj
-
 
 class RelationshipExtraction(BaseModel):
     """Relationship between entities extracted from document."""
 
     source_entity: str
     target_entity: str
-    relationship_type: str  # Must be one of: mentions, part_of, integrates_with, enables, related_to, depends_on, replaces
+    relationship_type: RelationshipType
     context: Optional[str] = None
     confidence: float  # 0.0-1.0
-
-    @classmethod
-    def model_validate(cls, value):
-        """Validate relationship_type is a valid RelationshipType value."""
-        obj = super().model_validate(value)
-        valid_types = [r.value for r in RelationshipType]
-        if obj.relationship_type not in valid_types:
-            raise ValueError(
-                f"Invalid relationship_type '{obj.relationship_type}'. "
-                f"Must be one of: {', '.join(valid_types)}"
-            )
-        return obj
 
 
 # ============================================================================

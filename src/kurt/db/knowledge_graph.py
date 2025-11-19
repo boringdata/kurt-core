@@ -7,7 +7,7 @@ This module provides utilities to retrieve entities from the knowledge graph:
 All functions accept an optional session parameter for transaction management and testing.
 """
 
-from typing import Optional
+from typing import Optional, Union
 from uuid import UUID
 
 from sqlmodel import Session, select
@@ -22,7 +22,7 @@ TECHNOLOGY_TYPES = [EntityType.TECHNOLOGY.value, EntityType.PRODUCT.value]
 
 def get_document_entities(
     document_id: UUID,
-    entity_type: Optional[str] = None,
+    entity_type: Optional[Union[EntityType, str]] = None,
     names_only: bool = False,
     session: Optional[Session] = None,
 ) -> list[str] | list[tuple[str, str]]:
@@ -32,7 +32,8 @@ def get_document_entities(
     Args:
         document_id: The document UUID
         entity_type: Optional entity type filter. Can be:
-            - A valid EntityType value: "Topic", "Technology", "Product", "Feature", "Company", "Integration"
+            - An EntityType enum value (e.g., EntityType.TOPIC)
+            - A valid EntityType string: "Topic", "Technology", "Product", "Feature", "Company", "Integration"
             - Special value "technologies" to get Technology+Product types (commonly used for tools/tech)
             - None to get all entity types
         names_only: If True, return only canonical names (list[str])
@@ -50,7 +51,11 @@ def get_document_entities(
         entities = get_document_entities(doc.id)
         # Returns: [("Python", "Topic"), ("FastAPI", "Technology"), ...]
 
-        # Get only topics (names only)
+        # Get only topics (names only, using enum)
+        topics = get_document_entities(doc.id, entity_type=EntityType.TOPIC, names_only=True)
+        # Returns: ["Python", "Web Development", "API Design"]
+
+        # Get only topics (names only, using string)
         topics = get_document_entities(doc.id, entity_type="Topic", names_only=True)
         # Returns: ["Python", "Web Development", "API Design"]
 
@@ -58,6 +63,10 @@ def get_document_entities(
         tools = get_document_entities(doc.id, entity_type="technologies", names_only=True)
         # Returns: ["FastAPI", "Pydantic", "Uvicorn"]
     """
+    # Normalize entity_type to string value
+    if isinstance(entity_type, EntityType):
+        entity_type = entity_type.value
+
     # Validate entity_type if provided
     if entity_type is not None and entity_type != "technologies":
         valid_types = [e.value for e in EntityType]
@@ -160,7 +169,7 @@ def get_top_entities(limit: int = 100, session: Optional[Session] = None) -> lis
 
 def find_documents_with_entity(
     entity_name: str,
-    entity_type: Optional[str] = None,
+    entity_type: Optional[Union[EntityType, str]] = None,
     session: Optional[Session] = None,
 ) -> set[UUID]:
     """
@@ -171,7 +180,8 @@ def find_documents_with_entity(
     Args:
         entity_name: Entity name or partial match (case-insensitive)
         entity_type: Optional entity type filter. Can be:
-            - A valid EntityType value: "Topic", "Technology", "Product", "Feature", "Company", "Integration"
+            - An EntityType enum value (e.g., EntityType.TOPIC)
+            - A valid EntityType string: "Topic", "Technology", "Product", "Feature", "Company", "Integration"
             - Special value "technologies" to get Technology+Product types
             - None to search all entity types
         session: Optional SQLModel session
@@ -183,7 +193,11 @@ def find_documents_with_entity(
         ValueError: If entity_type is not a valid EntityType or special value
 
     Examples:
-        # Find documents with a topic
+        # Find documents with a topic (using enum)
+        doc_ids = find_documents_with_entity("Python", entity_type=EntityType.TOPIC)
+        # Returns: {UUID('...'), UUID('...'), ...}
+
+        # Find documents with a topic (using string)
         doc_ids = find_documents_with_entity("Python", entity_type="Topic")
         # Returns: {UUID('...'), UUID('...'), ...}
 
@@ -192,13 +206,17 @@ def find_documents_with_entity(
         # Returns: {UUID('...'), UUID('...'), ...}
 
         # Partial match works too
-        doc_ids = find_documents_with_entity("web", entity_type="Topic")
+        doc_ids = find_documents_with_entity("web", entity_type=EntityType.TOPIC)
         # Matches "Web Development", "Web APIs", etc.
 
         # Search across all entity types
         doc_ids = find_documents_with_entity("Python")
         # Finds any entity (Topic, Technology, etc.) matching "Python"
     """
+    # Normalize entity_type to string value
+    if isinstance(entity_type, EntityType):
+        entity_type = entity_type.value
+
     # Validate entity_type if provided
     if entity_type is not None and entity_type != "technologies":
         valid_types = [e.value for e in EntityType]

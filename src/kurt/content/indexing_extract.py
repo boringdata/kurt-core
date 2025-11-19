@@ -184,22 +184,18 @@ def extract_document_metadata(
         logger.info(
             f"Skipping document {doc.id} - content unchanged (hash: {current_content_hash[:8]}...)"
         )
-        # Get topics and tools from knowledge graph
+        # Get all entities from knowledge graph
         from kurt.db.knowledge_graph import get_document_entities
 
-        topics = get_document_entities(
-            doc.id, entity_type="Topic", names_only=True, session=session
-        )
-        tools = get_document_entities(
-            doc.id, entity_type="technologies", names_only=True, session=session
-        )
+        all_entities = get_document_entities(doc.id, names_only=False, session=session)
+        # Convert to entity dicts matching the format from extraction
+        entities = [{"name": name, "type": etype} for name, etype in all_entities]
 
         return {
             "document_id": resolved_doc_id,
             "title": doc.title,
             "content_type": doc.content_type.value if doc.content_type else None,
-            "topics": topics,
-            "tools": tools,
+            "entities": entities,
             "skipped": True,
             "skip_reason": "content unchanged",
         }
@@ -330,7 +326,7 @@ def extract_document_metadata(
     new_entities = [
         {
             "name": e.name,
-            "type": e.entity_type,
+            "type": e.entity_type.value,  # Convert enum to string
             "description": e.description,
             "aliases": e.aliases,
             "confidence": e.confidence,
@@ -343,7 +339,7 @@ def extract_document_metadata(
         {
             "source_entity": r.source_entity,
             "target_entity": r.target_entity,
-            "relationship_type": r.relationship_type,
+            "relationship_type": r.relationship_type.value,  # Convert enum to string
             "context": r.context,
             "confidence": r.confidence,
         }
@@ -360,8 +356,7 @@ def extract_document_metadata(
         "document_id": resolved_doc_id,
         "title": doc.title,
         "content_type": metadata_output.content_type.value,
-        "topics": metadata_output.primary_topics,
-        "tools": metadata_output.tools_technologies,
+        "entities": new_entities,  # All entities extracted
         "skipped": False,
         # Knowledge graph data
         "kg_data": {
