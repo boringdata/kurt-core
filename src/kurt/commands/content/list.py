@@ -84,7 +84,7 @@ RELATIONSHIP_TYPES_STR = ", ".join([r.value for r in RelationshipType])
 @click.option(
     "--with-relationship",
     type=str,
-    help=f"Filter by relationship. Format: 'Type' or 'Type:Source' or 'Type:Source:Target'. Types: {RELATIONSHIP_TYPES_STR}",
+    help=f"Filter by entity relationship. Format: 'Type' (any), 'Type:EntityA' (EntityA as source), 'Type::EntityB' (EntityB as target), or 'Type:EntityA:EntityB' (specific pair). Example: 'integrates_with:FastAPI:Pydantic'. Types: {RELATIONSHIP_TYPES_STR}",
 )
 def list_documents_cmd(
     with_status: str,
@@ -149,8 +149,10 @@ def list_documents_cmd(
         entity_type = None
         if with_entity:
             if ":" in with_entity:
-                # Format: "Type:Name"
+                # Format: "Type:Name" (case-insensitive)
                 entity_type, entity_name = with_entity.split(":", 1)
+                # Capitalize entity type for case-insensitive matching
+                entity_type = entity_type.capitalize()
             else:
                 # Format: "Name" (search all types)
                 entity_name = with_entity

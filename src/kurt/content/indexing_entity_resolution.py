@@ -24,13 +24,10 @@ from sklearn.cluster import DBSCAN
 from sqlalchemy import text
 from sqlmodel import select
 
-from kurt.content.indexing_helpers import (
-    _embedding_to_bytes,
-    _generate_embeddings,
-    _search_similar_entities,
-)
+from kurt.content.embeddings import embedding_to_bytes, generate_embeddings
 from kurt.content.indexing_models import GroupResolution
 from kurt.db.database import get_session
+from kurt.db.knowledge_graph import search_similar_entities
 from kurt.db.models import DocumentEntity, Entity, EntityRelationship
 
 logger = logging.getLogger(__name__)
@@ -175,7 +172,7 @@ def _resolve_entity_groups(
     if activity_callback:
         activity_callback(f"Clustering {len(new_entities_batch)} new entities...")
     entity_names = [e["name"] for e in new_entities_batch]
-    embeddings = _generate_embeddings(entity_names)
+    embeddings = generate_embeddings(entity_names)
 
     # Group similar entities using DBSCAN clustering
     embeddings_array = np.array(embeddings)
@@ -215,11 +212,11 @@ def _resolve_entity_groups(
     for group_id, group_entities in groups.items():
         # Get similar existing entities for this group (search using first entity's name as representative)
         representative_entity = group_entities[0]
-        similar_existing = _search_similar_entities(
-            session,
+        similar_existing = search_similar_entities(
             representative_entity["name"],
             representative_entity["type"],
             limit=10,
+            session=session,
         )
 
         group_tasks.append(
@@ -642,7 +639,7 @@ def _create_entities_and_relationships(doc_to_kg_data: dict, resolutions: list[d
         if decision == "CREATE_NEW":
             # Create new entity
             entity_data = primary_resolution["entity_details"]
-            entity_embedding = _generate_embeddings([canonical_name])[0]
+            entity_embedding = generate_embeddings([canonical_name])[0]
 
             # Collect all entity names in this group
             all_entity_names = [r["entity_name"] for r in group_resolutions]
@@ -674,7 +671,7 @@ def _create_entities_and_relationships(doc_to_kg_data: dict, resolutions: list[d
                 canonical_name=canonical_name,
                 aliases=list(all_aliases),
                 description=entity_data.get("description", ""),
-                embedding=_embedding_to_bytes(entity_embedding),
+                embedding=embedding_to_bytes(entity_embedding),
                 confidence_score=avg_confidence,
                 source_mentions=doc_count,
                 created_at=datetime.utcnow(),
@@ -737,7 +734,7 @@ def _create_entities_and_relationships(doc_to_kg_data: dict, resolutions: list[d
 
                 # Fallback to CREATE_NEW logic
                 entity_data = primary_resolution["entity_details"]
-                entity_embedding = _generate_embeddings([canonical_name])[0]
+                entity_embedding = generate_embeddings([canonical_name])[0]
                 all_entity_names = [r["entity_name"] for r in group_resolutions]
                 all_aliases = set()
                 for r in group_resolutions:
@@ -762,7 +759,7 @@ def _create_entities_and_relationships(doc_to_kg_data: dict, resolutions: list[d
                     canonical_name=canonical_name,
                     aliases=list(all_aliases),
                     description=entity_data.get("description", ""),
-                    embedding=_embedding_to_bytes(entity_embedding),
+                    embedding=embedding_to_bytes(entity_embedding),
                     confidence_score=avg_confidence,
                     source_mentions=len(unique_docs),
                     created_at=datetime.utcnow(),

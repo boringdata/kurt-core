@@ -4,6 +4,7 @@ Document utility functions for Kurt.
 These functions provide CRUD operations for documents:
 - list_documents: List all documents with filtering
 - get_document: Get document by ID
+- load_document_content: Load document content from filesystem
 - delete_document: Delete document by ID
 - get_document_stats: Get statistics about documents
 
@@ -252,6 +253,44 @@ def get_document(document_id: str) -> Document:
 
     # Return Document object
     return doc
+
+
+def load_document_content(doc: Document) -> str:
+    """
+    Load document content from filesystem.
+
+    Args:
+        doc: Document object with content_path
+
+    Returns:
+        Document content as string
+
+    Raises:
+        ValueError: If content_path is missing or file doesn't exist
+
+    Example:
+        doc = get_document("550e8400")
+        content = load_document_content(doc)
+        print(content)
+    """
+    if not doc.content_path:
+        raise ValueError(f"Document {doc.id} has no content_path")
+
+    from kurt.config import load_config
+
+    config = load_config()
+    source_base = config.get_absolute_sources_path()
+    content_file = source_base / doc.content_path
+
+    if not content_file.exists():
+        raise ValueError(f"Content file not found: {content_file}")
+
+    content = content_file.read_text(encoding="utf-8")
+
+    if not content.strip():
+        raise ValueError(f"Document {doc.id} has empty content")
+
+    return content
 
 
 def delete_document(document_id: str, delete_content: bool = False) -> dict:

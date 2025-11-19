@@ -38,9 +38,7 @@ def upgrade() -> None:
         sa.Column("unique_visitors_30d", sa.Integer(), nullable=False, server_default="0"),
         # Traffic metrics - Previous 30 days (days 31-60)
         sa.Column("pageviews_previous_30d", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column(
-            "unique_visitors_previous_30d", sa.Integer(), nullable=False, server_default="0"
-        ),
+        sa.Column("unique_visitors_previous_30d", sa.Integer(), nullable=False, server_default="0"),
         # Engagement metrics
         sa.Column("avg_session_duration_seconds", sa.Float(), nullable=True),
         sa.Column("bounce_rate", sa.Float(), nullable=True),

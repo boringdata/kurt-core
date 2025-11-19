@@ -336,7 +336,9 @@ def fetch_cmd(
             console.print("[dim]To re-fetch these documents, use the --refetch flag:[/dim]")
 
             if in_cluster:
-                console.print(f"\n  [cyan]kurt content fetch --in-cluster '{in_cluster}' --refetch[/cyan]")
+                console.print(
+                    f"\n  [cyan]kurt content fetch --in-cluster '{in_cluster}' --refetch[/cyan]"
+                )
             elif include_pattern:
                 console.print(
                     f"\n  [cyan]kurt content fetch --include '{include_pattern}' --refetch[/cyan]"

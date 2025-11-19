@@ -171,8 +171,8 @@ class Entity(SQLModel, table=True):
     aliases: Optional[list] = Field(default=None, sa_column=Column(JSON))  # Alternative names
     description: Optional[str] = None  # Brief description
 
-    # Vector embedding for similarity search
-    embedding: Optional[bytes] = None  # 512-dim float32 vector (2048 bytes)
+    # Vector embedding for similarity search (required in production, use b"" for tests)
+    embedding: bytes = b""  # 512-dim float32 vector (2048 bytes)
 
     # Confidence and usage metrics
     confidence_score: float = Field(default=0.0, index=True)  # Extraction confidence (0.0-1.0)

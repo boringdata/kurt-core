@@ -58,7 +58,7 @@ def list_entities_cmd(entity_type: str, min_docs: int, include_pattern: str, out
         kurt content list-entities all --include "*/docs/*"
         kurt content list-entities product --format json
     """
-    from kurt.content.filtering import list_entities_by_type
+    from kurt.db.knowledge_graph import list_entities_by_type
 
     try:
         # Normalize entity_type to EntityType enum value format (Title case)

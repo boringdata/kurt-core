@@ -14,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import dspy
 
-from kurt.content.indexing_helpers import _load_document_content
+from kurt.content.document import load_document_content
 from kurt.content.indexing_models import (
     DocumentMetadataOutput,
     EntityExtraction,
@@ -172,7 +172,7 @@ def extract_document_metadata(
         )
 
     # Load content from filesystem
-    content = _load_document_content(doc)
+    content = load_document_content(doc)
 
     # Calculate current content hash
     current_content_hash = calculate_content_hash(content, algorithm="sha256")

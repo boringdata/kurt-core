@@ -224,7 +224,9 @@ OPENAI_API_KEY=your_openai_api_key_here
                                         existing_settings = json.load(f)
                                     if "hooks" not in existing_settings:
                                         existing_settings["hooks"] = {}
-                                    existing_settings["hooks"].update(kurt_settings.get("hooks", {}))
+                                    existing_settings["hooks"].update(
+                                        kurt_settings.get("hooks", {})
+                                    )
                                     with open(dest_settings, "w") as f:
                                         json.dump(existing_settings, f, indent=2)
                                 else:
@@ -283,10 +285,14 @@ OPENAI_API_KEY=your_openai_api_key_here
             # Print success messages
             console.print("[green]✓[/green] Copied instruction files")
             if ide == "both":
-                console.print("[dim]  .claude/CLAUDE.md, .claude/settings.json, .claude/instructions/, .claude/commands/[/dim]")
+                console.print(
+                    "[dim]  .claude/CLAUDE.md, .claude/settings.json, .claude/instructions/, .claude/commands/[/dim]"
+                )
                 console.print("[dim]  .cursor/rules/*.mdc[/dim]")
             elif ide == "claude":
-                console.print("[dim]  .claude/CLAUDE.md, .claude/settings.json, .claude/instructions/, .claude/commands/[/dim]")
+                console.print(
+                    "[dim]  .claude/CLAUDE.md, .claude/settings.json, .claude/instructions/, .claude/commands/[/dim]"
+                )
             else:  # cursor
                 console.print("[dim]  .cursor/rules/*.mdc[/dim]")
             console.print("[dim]  kurt/templates/[/dim]")
