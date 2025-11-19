@@ -260,16 +260,11 @@ def apply_migrations(auto_confirm: bool = False) -> bool:
 
             config = get_alembic_config()
 
-            for idx, (revision, description) in enumerate(pending, 1):
-                short_desc = description[:30] + "..." if len(description) > 30 else description
-                progress.update(
-                    task,
-                    description=f"[yellow]Applying {idx}/{len(pending)}: {short_desc}[/yellow]",
-                )
-
-                # Apply single migration step by step
-                command.upgrade(config, "+1")
-                progress.update(task, advance=1)
+            # Apply all migrations at once to handle branching migration trees
+            # Using "+1" can fail when there are multiple heads/branches
+            progress.update(task, description="[yellow]Applying all pending migrations...[/yellow]")
+            command.upgrade(config, "head")
+            progress.update(task, completed=len(pending))
 
         # Get current version for success message
         current_version = get_current_version()
