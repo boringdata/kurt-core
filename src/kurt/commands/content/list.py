@@ -72,14 +72,14 @@ console = Console()
     help="Filter by traffic trend (requires --with-analytics)",
 )
 @click.option(
-    "--with-topic",
+    "--with-entity",
     type=str,
-    help="Filter by topic (matches documents with this topic in primary_topics)",
+    help="Filter by entity. Format: 'Type:Name' or just 'Name'. Types: Topic, Technology, Product, Feature, Company, Integration",
 )
 @click.option(
-    "--with-technology",
+    "--with-relationship",
     type=str,
-    help="Filter by technology (matches documents with this technology in tools_technologies)",
+    help="Filter by relationship. Format: 'Type' or 'Type:Source' or 'Type:Source:Target'. Types: mentions, part_of, integrates_with, enables, related_to, depends_on, replaces",
 )
 def list_documents_cmd(
     with_status: str,
@@ -95,8 +95,8 @@ def list_documents_cmd(
     min_pageviews: int,
     max_pageviews: int,
     trend: str,
-    with_topic: str,
-    with_technology: str,
+    with_entity: str,
+    with_relationship: str,
 ):
     """
     List all your documents.
@@ -109,9 +109,18 @@ def list_documents_cmd(
         kurt content list --with-content-type tutorial
         kurt content list --max-depth 2
         kurt content list --limit 20 --format json
-        kurt content list --with-topic "Python"
-        kurt content list --with-technology "FastAPI"
-        kurt content list --with-topic "Machine Learning" --with-technology "TensorFlow"
+
+        # Filter by entities
+        kurt content list --with-entity "Python"  # Any entity type
+        kurt content list --with-entity "Topic:Python"  # Specific type
+        kurt content list --with-entity "Technology:FastAPI"
+        kurt content list --with-entity "Company:Google"
+
+        # Filter by relationships
+        kurt content list --with-relationship integrates_with
+        kurt content list --with-relationship "integrates_with:FastAPI"
+        kurt content list --with-relationship "depends_on::Python"
+        kurt content list --with-relationship "integrates_with:FastAPI:Pydantic"
 
         # With analytics
         kurt content list --with-analytics
@@ -130,6 +139,27 @@ def list_documents_cmd(
             )
             raise click.Abort()
 
+        # Parse entity filter
+        entity_name = None
+        entity_type = None
+        if with_entity:
+            if ":" in with_entity:
+                # Format: "Type:Name"
+                entity_type, entity_name = with_entity.split(":", 1)
+            else:
+                # Format: "Name" (search all types)
+                entity_name = with_entity
+
+        # Parse relationship filter
+        relationship_type = None
+        relationship_source = None
+        relationship_target = None
+        if with_relationship:
+            parts = with_relationship.split(":")
+            relationship_type = parts[0] if parts else None
+            relationship_source = parts[1] if len(parts) > 1 and parts[1] else None
+            relationship_target = parts[2] if len(parts) > 2 and parts[2] else None
+
         # Call ingestion layer function
         docs = list_content(
             with_status=with_status,
@@ -144,8 +174,11 @@ def list_documents_cmd(
             min_pageviews=min_pageviews,
             max_pageviews=max_pageviews,
             trend=trend,
-            with_topic=with_topic,
-            with_technology=with_technology,
+            entity_name=entity_name,
+            entity_type=entity_type,
+            relationship_type=relationship_type,
+            relationship_source=relationship_source,
+            relationship_target=relationship_target,
         )
 
         if not docs:

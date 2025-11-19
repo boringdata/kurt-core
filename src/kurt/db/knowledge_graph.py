@@ -7,7 +7,7 @@ This module provides utilities to retrieve entities from the knowledge graph:
 All functions accept an optional session parameter for transaction management and testing.
 """
 
-from typing import Optional, Union
+from typing import TYPE_CHECKING, Optional, Union
 from uuid import UUID
 
 from sqlmodel import Session, select
@@ -15,6 +15,9 @@ from sqlmodel import Session, select
 from kurt.content.indexing_models import EntityType
 from kurt.db.database import get_session
 from kurt.db.models import DocumentEntity, Entity
+
+if TYPE_CHECKING:
+    from kurt.content.indexing_models import RelationshipType
 
 # Special entity type groupings for convenience
 TECHNOLOGY_TYPES = [EntityType.TECHNOLOGY.value, EntityType.PRODUCT.value]
@@ -162,6 +165,113 @@ def get_top_entities(limit: int = 100, session: Optional[Session] = None) -> lis
             }
             for e in entities
         ]
+    finally:
+        if close_session:
+            fetch_session.close()
+
+
+def find_documents_with_relationship(
+    relationship_type: Union["RelationshipType", str],
+    source_entity_name: Optional[str] = None,
+    target_entity_name: Optional[str] = None,
+    session: Optional[Session] = None,
+) -> set[UUID]:
+    """
+    Find all document IDs that contain entities with a specific relationship type.
+
+    This finds documents that mention entities involved in relationships of the specified type.
+    For example, finding documents that mention entities in "integrates_with" relationships.
+
+    Args:
+        relationship_type: Relationship type to search for. Can be:
+            - A RelationshipType enum value (e.g., RelationshipType.INTEGRATES_WITH)
+            - A valid RelationshipType string: "mentions", "part_of", "integrates_with", etc.
+        source_entity_name: Optional filter for source entity name (case-insensitive partial match)
+        target_entity_name: Optional filter for target entity name (case-insensitive partial match)
+        session: Optional SQLModel session
+
+    Returns:
+        Set of document UUIDs that mention entities involved in the relationship
+
+    Raises:
+        ValueError: If relationship_type is not a valid RelationshipType
+
+    Examples:
+        # Find documents mentioning entities that integrate with each other
+        doc_ids = find_documents_with_relationship(RelationshipType.INTEGRATES_WITH)
+        # Returns: {UUID('...'), UUID('...'), ...}
+
+        # Find documents about FastAPI integrations
+        doc_ids = find_documents_with_relationship("integrates_with", source_entity_name="FastAPI")
+        # Finds docs mentioning entities that FastAPI integrates with
+
+        # Find documents about things that depend on Python
+        doc_ids = find_documents_with_relationship("depends_on", target_entity_name="Python")
+        # Finds docs mentioning entities that depend on Python
+    """
+    from kurt.content.indexing_models import RelationshipType
+    from kurt.db.models import Entity, EntityRelationship
+
+    # Normalize relationship_type to string value
+    if isinstance(relationship_type, RelationshipType):
+        relationship_type = relationship_type.value
+
+    # Validate relationship_type
+    valid_types = [r.value for r in RelationshipType]
+    if relationship_type not in valid_types:
+        raise ValueError(
+            f"Invalid relationship_type '{relationship_type}'. " f"Must be one of {valid_types}"
+        )
+
+    fetch_session = session if session is not None else get_session()
+    close_session = session is None
+
+    try:
+        # Find relationships of the specified type
+        stmt = select(EntityRelationship).where(
+            EntityRelationship.relationship_type == relationship_type
+        )
+
+        # Apply entity name filters if provided
+        if source_entity_name or target_entity_name:
+            if source_entity_name:
+                source_entity_alias = Entity.__table__.alias("source_entity")
+                stmt = stmt.join(
+                    source_entity_alias,
+                    EntityRelationship.source_entity_id == source_entity_alias.c.id,
+                ).where(
+                    (source_entity_alias.c.name.ilike(f"%{source_entity_name}%"))
+                    | (source_entity_alias.c.canonical_name.ilike(f"%{source_entity_name}%"))
+                )
+
+            if target_entity_name:
+                target_entity_alias = Entity.__table__.alias("target_entity")
+                stmt = stmt.join(
+                    target_entity_alias,
+                    EntityRelationship.target_entity_id == target_entity_alias.c.id,
+                ).where(
+                    (target_entity_alias.c.name.ilike(f"%{target_entity_name}%"))
+                    | (target_entity_alias.c.canonical_name.ilike(f"%{target_entity_name}%"))
+                )
+
+        relationships = fetch_session.exec(stmt).all()
+
+        # Collect all entity IDs involved in these relationships
+        entity_ids = set()
+        for rel in relationships:
+            entity_ids.add(rel.source_entity_id)
+            entity_ids.add(rel.target_entity_id)
+
+        if not entity_ids:
+            return set()
+
+        # Find documents that mention any of these entities
+        doc_stmt = select(DocumentEntity.document_id).where(
+            DocumentEntity.entity_id.in_(entity_ids)
+        )
+        doc_ids = {doc_id for doc_id in fetch_session.exec(doc_stmt).all()}
+
+        return doc_ids
     finally:
         if close_session:
             fetch_session.close()

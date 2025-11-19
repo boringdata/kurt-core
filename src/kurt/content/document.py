@@ -513,8 +513,11 @@ def list_content(
     min_pageviews: int = None,
     max_pageviews: int = None,
     trend: str = None,
-    with_topic: str = None,
-    with_technology: str = None,
+    entity_name: str = None,
+    entity_type: str = None,
+    relationship_type: str = None,
+    relationship_source: str = None,
+    relationship_target: str = None,
 ) -> list[Document]:
     """
     List documents with new explicit naming (for CLI-SPEC.md compliance).
@@ -534,8 +537,11 @@ def list_content(
         min_pageviews: Minimum pageviews_30d filter
         max_pageviews: Maximum pageviews_30d filter
         trend: Filter by trend (increasing | decreasing | stable)
-        with_topic: Filter by topic (documents containing this entity in knowledge graph)
-        with_technology: Filter by technology (documents containing this entity in knowledge graph)
+        entity_name: Entity name to search for (partial match)
+        entity_type: Entity type filter (Topic, Technology, Product, Feature, Company, Integration, or "technologies")
+        relationship_type: Relationship type filter (mentions, part_of, integrates_with, enables, related_to, depends_on, replaces)
+        relationship_source: Optional source entity name filter for relationships
+        relationship_target: Optional target entity name filter for relationships
 
     Returns:
         List of Document objects (with analytics dict attribute if with_analytics=True)
@@ -555,6 +561,14 @@ def list_content(
 
         # Filter by URL depth
         docs = list_content(max_depth=2)
+
+        # Filter by entity
+        docs = list_content(entity_name="Python", entity_type="Topic")
+
+        # Filter by relationship
+        docs = list_content(relationship_type="integrates_with")
+        docs = list_content(relationship_type="integrates_with", relationship_source="FastAPI")
+        docs = list_content(relationship_type="depends_on", relationship_target="Python")
 
         # With analytics
         docs = list_content(with_analytics=True, order_by="pageviews_30d", limit=10)
@@ -684,29 +698,32 @@ def list_content(
 
         documents = [d for d in documents if get_url_depth(d.source_url) <= max_depth]
 
-    # Apply topic filtering (knowledge graph only)
-    if with_topic:
+    # Apply entity filtering (knowledge graph only)
+    if entity_name:
         from kurt.db.knowledge_graph import find_documents_with_entity
 
         graph_doc_ids = {
             str(doc_id)
             for doc_id in find_documents_with_entity(
-                with_topic, entity_type="Topic", session=session
+                entity_name, entity_type=entity_type, session=session
             )
         }
         documents = [d for d in documents if str(d.id) in graph_doc_ids]
 
-    # Apply technology filtering (knowledge graph only)
-    if with_technology:
-        from kurt.db.knowledge_graph import find_documents_with_entity
+    # Apply relationship filtering (knowledge graph only)
+    if relationship_type:
+        from kurt.db.knowledge_graph import find_documents_with_relationship
 
-        graph_doc_ids = {
+        relationship_doc_ids = {
             str(doc_id)
-            for doc_id in find_documents_with_entity(
-                with_technology, entity_type="technologies", session=session
+            for doc_id in find_documents_with_relationship(
+                relationship_type,
+                source_entity_name=relationship_source,
+                target_entity_name=relationship_target,
+                session=session,
             )
         }
-        documents = [d for d in documents if str(d.id) in graph_doc_ids]
+        documents = [d for d in documents if str(d.id) in relationship_doc_ids]
 
     # Apply pagination (after all filtering)
     if offset or limit:

@@ -1,4 +1,4 @@
-"""Tests for list_content filtering by topics and technologies."""
+"""Tests for list_content filtering by entities."""
 
 from uuid import uuid4
 
@@ -224,7 +224,7 @@ def test_documents(tmp_project):
     def test_filter_by_topic_from_knowledge_graph(self, test_documents):
         """Test filtering includes documents from knowledge graph."""
         # "Python" topic is in knowledge graph for doc5 (no_metadata)
-        docs = list_content(with_topic="Python")
+        docs = list_content(entity_name="Python", entity_type="Topic")
 
         assert len(docs) >= 1
         titles = {doc.title for doc in docs}
@@ -233,32 +233,32 @@ def test_documents(tmp_project):
 
     def test_filter_by_topic_case_insensitive(self, test_documents):
         """Test topic filtering is case-insensitive."""
-        docs_lower = list_content(with_topic="python")
-        docs_upper = list_content(with_topic="PYTHON")
-        docs_mixed = list_content(with_topic="PyThOn")
+        docs_lower = list_content(entity_name="python", entity_type="Topic")
+        docs_upper = list_content(entity_name="PYTHON", entity_type="Topic")
+        docs_mixed = list_content(entity_name="PyThOn", entity_type="Topic")
 
         assert len(docs_lower) == len(docs_upper) == len(docs_mixed)
 
     def test_filter_by_topic_no_matches(self, test_documents):
         """Test filtering with no matches returns empty list."""
-        docs = list_content(with_topic="Nonexistent Topic")
+        docs = list_content(entity_name="Nonexistent Topic", entity_type="Topic")
 
         assert len(docs) == 0
 
     def test_filter_by_topic_with_spaces(self, test_documents):
         """Test filtering by multi-word topic."""
-        docs = list_content(with_topic="Machine Learning")
+        docs = list_content(entity_name="Machine Learning", entity_type="Topic")
 
         assert len(docs) == 1
         assert docs[0].title == "Machine Learning with TensorFlow"
 
 
 class TestTechnologyFiltering:
-    """Test --with-technology filter."""
+    """Test --with-entity filter for technologies."""
 
     def test_filter_by_technology_exact_match(self, test_documents):
         """Test filtering by exact technology match in knowledge graph."""
-        docs = list_content(with_technology="FastAPI")
+        docs = list_content(entity_name="FastAPI", entity_type="technologies")
 
         # FastAPI is linked to both doc1 and doc5
         assert len(docs) == 2
@@ -268,7 +268,7 @@ class TestTechnologyFiltering:
 
     def test_filter_by_technology_partial_match(self, test_documents):
         """Test filtering by partial technology match (case-insensitive)."""
-        docs = list_content(with_technology="tensor")
+        docs = list_content(entity_name="tensor", entity_type="technologies")
 
         assert len(docs) == 1
         assert docs[0].title == "Machine Learning with TensorFlow"
@@ -276,7 +276,7 @@ class TestTechnologyFiltering:
     def test_filter_by_technology_from_knowledge_graph(self, test_documents):
         """Test filtering includes documents from knowledge graph."""
         # "FastAPI" is in knowledge graph for doc5 (no_metadata)
-        docs = list_content(with_technology="FastAPI")
+        docs = list_content(entity_name="FastAPI", entity_type="technologies")
 
         assert len(docs) >= 1
         titles = {doc.title for doc in docs}
@@ -285,49 +285,54 @@ class TestTechnologyFiltering:
 
     def test_filter_by_technology_case_insensitive(self, test_documents):
         """Test technology filtering is case-insensitive."""
-        docs_lower = list_content(with_technology="react")
-        docs_upper = list_content(with_technology="REACT")
-        docs_mixed = list_content(with_technology="ReAcT")
+        docs_lower = list_content(entity_name="react", entity_type="technologies")
+        docs_upper = list_content(entity_name="REACT", entity_type="technologies")
+        docs_mixed = list_content(entity_name="ReAcT", entity_type="technologies")
 
         assert len(docs_lower) == len(docs_upper) == len(docs_mixed)
 
     def test_filter_by_technology_no_matches(self, test_documents):
         """Test filtering with no matches returns empty list."""
-        docs = list_content(with_technology="Nonexistent Tech")
+        docs = list_content(entity_name="Nonexistent Tech", entity_type="technologies")
 
         assert len(docs) == 0
 
     def test_filter_by_technology_with_spaces(self, test_documents):
         """Test filtering by multi-word technology."""
-        docs = list_content(with_technology="Django REST")
+        docs = list_content(entity_name="Django REST", entity_type="technologies")
 
         assert len(docs) == 1
         assert docs[0].title == "Django REST Framework Guide"
 
 
 class TestCombinedFilters:
-    """Test combining --with-topic and --with-technology filters."""
+    """Test combining --with-entity with other filters."""
 
-    def test_filter_by_topic_and_technology(self, test_documents):
-        """Test filtering by both topic and technology."""
-        docs = list_content(with_topic="Python", with_technology="FastAPI")
+    def test_filter_by_entity_with_status(self, test_documents):
+        """Test filtering by entity combined with status filter."""
+        docs = list_content(entity_name="Python", entity_type="Topic", with_status="FETCHED")
 
-        # Both doc1 and doc5 have Python + FastAPI in knowledge graph
-        assert len(docs) == 2
+        # Should find documents with Python topic and FETCHED status
+        assert len(docs) >= 1
         titles = {doc.title for doc in docs}
-        assert "Python FastAPI Tutorial" in titles
         assert "Document without metadata" in titles
 
-    def test_filter_by_topic_and_technology_no_matches(self, test_documents):
-        """Test filtering with incompatible topic and technology returns empty."""
-        docs = list_content(with_topic="Machine Learning", with_technology="React")
-
-        assert len(docs) == 0
-
-    def test_filter_topic_technology_with_other_filters(self, test_documents):
-        """Test combining topic/technology with other filters."""
+    def test_filter_entity_with_pattern(self, test_documents):
+        """Test combining entity with URL pattern filter."""
         docs = list_content(
-            with_topic="Python",
+            entity_name="Python",
+            entity_type="Topic",
+            include_pattern="*fastapi*",
+        )
+
+        assert len(docs) == 1
+        assert docs[0].title == "Python FastAPI Tutorial"
+
+    def test_filter_entity_with_multiple_filters(self, test_documents):
+        """Test combining entity with multiple other filters."""
+        docs = list_content(
+            entity_name="Python",
+            entity_type="Topic",
             with_status="FETCHED",
             include_pattern="*fastapi*",
         )
@@ -341,24 +346,24 @@ class TestEdgeCases:
 
     def test_filter_documents_without_metadata(self, test_documents):
         """Test filtering handles documents with null metadata gracefully."""
-        # Should not crash when documents have None for topics/technologies
-        docs = list_content(with_topic="Python")
+        # Should not crash when documents have None for metadata
+        docs = list_content(entity_name="Python", entity_type="Topic")
         assert isinstance(docs, list)
 
-        docs = list_content(with_technology="FastAPI")
+        docs = list_content(entity_name="FastAPI", entity_type="technologies")
         assert isinstance(docs, list)
 
     def test_filter_with_empty_string(self, test_documents):
         """Test filtering with empty string matches nothing."""
-        docs = list_content(with_topic="")
+        docs = list_content(entity_name="", entity_type="Topic")
         # Empty string should not match anything or should match all (implementation dependent)
         assert isinstance(docs, list)
 
     def test_filter_special_characters(self, test_documents):
         """Test filtering handles special characters safely."""
         # Should not crash with special characters
-        docs = list_content(with_topic="Python%")
+        docs = list_content(entity_name="Python%", entity_type="Topic")
         assert isinstance(docs, list)
 
-        docs = list_content(with_technology="C++")
+        docs = list_content(entity_name="C++", entity_type="technologies")
         assert isinstance(docs, list)
