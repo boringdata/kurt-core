@@ -1,7 +1,7 @@
 """Drop deprecated metadata fields from documents table
 
-Revision ID: 009_drop_metadata_fields
-Revises: 008_add_document_links
+Revision ID: 010_drop_metadata_fields
+Revises: 009_add_page_analytics
 Create Date: 2025-11-18
 
 This migration removes redundant fields that have been migrated to the knowledge graph:
@@ -25,8 +25,8 @@ from alembic import op
 from sqlalchemy import JSON
 
 # revision identifiers, used by Alembic.
-revision: str = "009_drop_metadata_fields"
-down_revision: Union[str, None] = "008_add_document_links"
+revision: str = "010_drop_metadata_fields"
+down_revision: Union[str, None] = "009_add_page_analytics"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
