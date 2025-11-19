@@ -327,10 +327,10 @@ After indexing, filter content by extracted metadata:
 
 ```bash
 # Find Python tutorials
-kurt content list --with-content-type tutorial --with-technology Python
+kurt content list --with-content-type tutorial --with-entity "Technology:Python"
 
 # Find docs about authentication
-kurt content list --with-topic authentication
+kurt content list --with-entity "Topic:authentication"
 
 # View indexed metadata
 kurt content get <doc-id>

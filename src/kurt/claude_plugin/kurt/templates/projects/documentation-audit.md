@@ -262,10 +262,10 @@ kurt content get <doc-id>
 # Look at the topics field in metadata
 
 # See all pages on a specific topic
-kurt content list --with-topic "authentication" --include "https://{{DOMAIN}}/**"
+kurt content list --with-entity "Topic:authentication" --include "https://{{DOMAIN}}/**"
 
 # Cross-reference with analytics
-kurt content list --with-topic "authentication" --with-analytics
+kurt content list --with-entity "Topic:authentication" --with-analytics
 ```
 
 This helps identify patterns like:

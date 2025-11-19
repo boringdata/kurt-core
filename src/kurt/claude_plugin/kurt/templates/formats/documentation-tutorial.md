@@ -101,8 +101,8 @@ kurt content search "example|sample|quickstart"
 **Prerequisites:**
 ```bash
 # Find setup guides by topic
-kurt content list --with-topic "setup"
-kurt content list --with-topic "installation"
+kurt content list --with-entity "Topic:setup"
+kurt content list --with-entity "Topic:installation"
 kurt content search "setup|install|authentication"
 ```
 

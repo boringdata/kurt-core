@@ -275,12 +275,12 @@ kurt content list-technologies --include "https://{{YOUR_DOMAIN}}/**"
 ```bash
 # They cover "authentication" with 15 docs
 # Check your coverage
-kurt content list --with-topic "authentication" --include "https://{{YOUR_DOMAIN}}/**"
+kurt content list --with-entity "Topic:authentication" --include "https://{{YOUR_DOMAIN}}/**"
 
 # Found only 2 docs = GAP identified (13 doc deficit)
 
 # They cover "webhooks" with 8 docs
-kurt content list --with-topic "webhooks" --include "https://{{YOUR_DOMAIN}}/**"
+kurt content list --with-entity "Topic:webhooks" --include "https://{{YOUR_DOMAIN}}/**"
 
 # Found 0 docs = MAJOR GAP
 ```

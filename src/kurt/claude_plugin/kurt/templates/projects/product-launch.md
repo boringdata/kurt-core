@@ -423,7 +423,7 @@ kurt content list-topics --include "https://{{YOUR_DOMAIN}}/docs/**"
 kurt content list-technologies --include "https://{{YOUR_DOMAIN}}/docs/**"
 
 # Verify each product feature has corresponding documentation
-kurt content list --with-topic "[feature-name]"
+kurt content list --with-entity "Topic:[feature-name]"
 ```
 
 **Coverage checklist:**

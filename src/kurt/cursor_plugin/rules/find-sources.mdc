@@ -43,7 +43,7 @@ kurt content list-topics --format json
 **Workflow example:**
 1. Run `kurt content list-topics` → See topics like "authentication" (15 docs), "webhooks" (3 docs)
 2. Notice "webhooks" has low coverage
-3. Run `kurt content list --with-topic "webhooks"` → See which 3 docs exist
+3. Run `kurt content list --with-entity "Topic:webhooks"` → See which 3 docs exist
 4. Identify need for more webhook content → fetch additional webhook guides
 
 ---
