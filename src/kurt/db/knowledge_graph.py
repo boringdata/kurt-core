@@ -1,12 +1,4 @@
-"""Knowledge graph utilities for querying entities linked to documents.
-
-This module provides utilities to retrieve entities from the knowledge graph:
-- Per-document queries: Get entities for a specific document
-- Cross-document queries: Get top entities across all documents
-- Entity search and similarity: Find similar entities using vector search
-
-All functions accept an optional session parameter for transaction management and testing.
-"""
+"""Knowledge graph utilities for querying entities linked to documents."""
 
 import logging
 from typing import TYPE_CHECKING, Optional, Union
@@ -17,7 +9,7 @@ from sqlmodel import Session, select
 
 from kurt.content.embeddings import embedding_to_bytes, generate_embeddings
 from kurt.content.indexing_models import EntityType
-from kurt.db.database import get_session
+from kurt.db.database import session_scope
 from kurt.db.models import DocumentEntity, Entity
 
 if TYPE_CHECKING:
@@ -25,8 +17,49 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Special entity type groupings for convenience
+# Special entity type groupings
 TECHNOLOGY_TYPES = [EntityType.TECHNOLOGY.value, EntityType.PRODUCT.value]
+
+
+# ============================================================================
+# Validation Utilities
+# ============================================================================
+
+
+def _normalize_entity_type(entity_type: Optional[Union[EntityType, str]]) -> Optional[str]:
+    """Normalize and validate entity type input.
+
+    Args:
+        entity_type: EntityType enum, string, "technologies" special value, or None
+
+    Returns:
+        Normalized string value or None
+
+    Raises:
+        ValueError: If entity_type is invalid
+    """
+    if entity_type is None:
+        return None
+
+    if isinstance(entity_type, EntityType):
+        return entity_type.value
+
+    # Special multi-type value
+    if entity_type == "technologies":
+        return "technologies"
+
+    # Normalize case
+    normalized = entity_type.capitalize()
+
+    # Validate
+    valid_types = [e.value for e in EntityType]
+    if normalized not in valid_types:
+        raise ValueError(
+            f"Invalid entity_type '{entity_type}'. "
+            f"Must be one of {valid_types} or special value 'technologies'"
+        )
+
+    return normalized
 
 
 def get_document_entities(
@@ -35,65 +68,20 @@ def get_document_entities(
     names_only: bool = False,
     session: Optional[Session] = None,
 ) -> list[str] | list[tuple[str, str]]:
-    """
-    Get all entities for a document from the knowledge graph.
+    """Get all entities for a document from the knowledge graph.
 
     Args:
-        document_id: The document UUID
-        entity_type: Optional entity type filter. Can be:
-            - An EntityType enum value (e.g., EntityType.TOPIC)
-            - A valid EntityType string: "Topic", "Technology", "Product", "Feature", "Company", "Integration"
-            - Special value "technologies" to get Technology+Product types (commonly used for tools/tech)
-            - None to get all entity types
-        names_only: If True, return only canonical names (list[str])
-                   If False, return tuples of (canonical_name, entity_type)
-        session: Optional SQLModel session (will create one if not provided)
+        document_id: Document UUID
+        entity_type: Filter by EntityType enum, string, or "technologies" (Tech+Product)
+        names_only: If True, return list[str], else list[tuple[str, str]]
+        session: Optional SQLModel session
 
     Returns:
-        list[str] if names_only=True, list[tuple[str, str]] otherwise
-
-    Raises:
-        ValueError: If entity_type is not a valid EntityType or special value
-
-    Examples:
-        # Get all entities with types
-        entities = get_document_entities(doc.id)
-        # Returns: [("Python", "Topic"), ("FastAPI", "Technology"), ...]
-
-        # Get only topics (names only, using enum)
-        topics = get_document_entities(doc.id, entity_type=EntityType.TOPIC, names_only=True)
-        # Returns: ["Python", "Web Development", "API Design"]
-
-        # Get only topics (names only, using string)
-        topics = get_document_entities(doc.id, entity_type="Topic", names_only=True)
-        # Returns: ["Python", "Web Development", "API Design"]
-
-        # Get all technologies/products (names only)
-        tools = get_document_entities(doc.id, entity_type="technologies", names_only=True)
-        # Returns: ["FastAPI", "Pydantic", "Uvicorn"]
+        Entity names or (name, type) tuples
     """
-    # Normalize entity_type to string value
-    if isinstance(entity_type, EntityType):
-        entity_type = entity_type.value
+    entity_type = _normalize_entity_type(entity_type)
 
-    # Capitalize entity_type for case-insensitive matching (e.g., "topic" -> "Topic")
-    # Exception: "technologies" is a special multi-type value
-    if entity_type and entity_type != "technologies":
-        entity_type = entity_type.capitalize()
-
-    # Validate entity_type if provided
-    if entity_type is not None and entity_type != "technologies":
-        valid_types = [e.value for e in EntityType]
-        if entity_type not in valid_types:
-            raise ValueError(
-                f"Invalid entity_type '{entity_type}'. "
-                f"Must be one of {valid_types} or special value 'technologies'"
-            )
-
-    fetch_session = session if session is not None else get_session()
-    close_session = session is None
-
-    try:
+    with session_scope(session) as s:
         if names_only:
             stmt = (
                 select(Entity.canonical_name)
@@ -107,63 +95,36 @@ def get_document_entities(
                 .where(DocumentEntity.document_id == document_id)
             )
 
-        # Handle entity type filtering
+        # Apply entity type filter
         if entity_type == "technologies":
-            # Special case: get all technology-related types (Technology + Product)
             stmt = stmt.where(Entity.entity_type.in_(TECHNOLOGY_TYPES))
         elif entity_type:
             stmt = stmt.where(Entity.entity_type == entity_type)
 
         if names_only:
-            results = [name for name in fetch_session.exec(stmt).all() if name]
+            return [name for name in s.exec(stmt).all() if name]
         else:
-            results = [
-                (name, etype) for name, etype in fetch_session.exec(stmt).all() if name and etype
-            ]
-        return results
-    finally:
-        if close_session:
-            fetch_session.close()
+            return [(name, etype) for name, etype in s.exec(stmt).all() if name and etype]
 
 
 def get_top_entities(limit: int = 100, session: Optional[Session] = None) -> list[dict]:
-    """
-    Get most commonly mentioned entities across all documents.
-
-    Entities are ranked by source_mentions count (number of documents mentioning the entity).
+    """Get most commonly mentioned entities across all documents.
 
     Args:
-        limit: Maximum number of entities to return (default: 100)
-        session: Optional SQLModel session (will create one if not provided)
+        limit: Maximum number of entities to return
+        session: Optional SQLModel session
 
     Returns:
-        List of entity dictionaries, sorted by mention count descending:
-            - id: str (entity UUID)
-            - name: str (entity name)
-            - type: str (entity type: Topic, Technology, Tool, Product, etc.)
-            - description: str (entity description)
-            - aliases: list[str] (alternative names)
-            - canonical_name: str (canonical/preferred name)
-
-    Example:
-        top_entities = get_top_entities(limit=50)
-        # Returns: [
-        #   {"id": "...", "name": "Python", "type": "Topic", "description": "...", ...},
-        #   {"id": "...", "name": "FastAPI", "type": "Technology", ...},
-        #   ...
-        # ]
+        List of dicts with id, name, type, description, aliases, canonical_name
     """
-    fetch_session = session if session is not None else get_session()
-    close_session = session is None
-
-    try:
+    with session_scope(session) as s:
         stmt = (
             select(Entity)
             .where(Entity.source_mentions > 0)
             .order_by(Entity.source_mentions.desc())
             .limit(limit)
         )
-        entities = fetch_session.exec(stmt).all()
+        entities = s.exec(stmt).all()
 
         return [
             {
@@ -176,9 +137,6 @@ def get_top_entities(limit: int = 100, session: Optional[Session] = None) -> lis
             }
             for e in entities
         ]
-    finally:
-        if close_session:
-            fetch_session.close()
 
 
 def find_documents_with_relationship(
@@ -187,105 +145,70 @@ def find_documents_with_relationship(
     target_entity_name: Optional[str] = None,
     session: Optional[Session] = None,
 ) -> set[UUID]:
-    """
-    Find all document IDs that contain entities with a specific relationship type.
-
-    This finds documents that mention entities involved in relationships of the specified type.
-    For example, finding documents that mention entities in "integrates_with" relationships.
+    """Find document IDs containing entities with a specific relationship.
 
     Args:
-        relationship_type: Relationship type to search for. Can be:
-            - A RelationshipType enum value (e.g., RelationshipType.INTEGRATES_WITH)
-            - A valid RelationshipType string: "mentions", "part_of", "integrates_with", etc.
-        source_entity_name: Optional filter for source entity name (case-insensitive partial match)
-        target_entity_name: Optional filter for target entity name (case-insensitive partial match)
+        relationship_type: RelationshipType enum or string
+        source_entity_name: Filter for source entity (case-insensitive partial match)
+        target_entity_name: Filter for target entity (case-insensitive partial match)
         session: Optional SQLModel session
 
     Returns:
-        Set of document UUIDs that mention entities involved in the relationship
-
-    Raises:
-        ValueError: If relationship_type is not a valid RelationshipType
-
-    Examples:
-        # Find documents mentioning entities that integrate with each other
-        doc_ids = find_documents_with_relationship(RelationshipType.INTEGRATES_WITH)
-        # Returns: {UUID('...'), UUID('...'), ...}
-
-        # Find documents about FastAPI integrations
-        doc_ids = find_documents_with_relationship("integrates_with", source_entity_name="FastAPI")
-        # Finds docs mentioning entities that FastAPI integrates with
-
-        # Find documents about things that depend on Python
-        doc_ids = find_documents_with_relationship("depends_on", target_entity_name="Python")
-        # Finds docs mentioning entities that depend on Python
+        Set of document UUIDs
     """
     from kurt.content.indexing_models import RelationshipType
     from kurt.db.models import Entity, EntityRelationship
 
-    # Normalize relationship_type to string value
+    # Normalize and validate
     if isinstance(relationship_type, RelationshipType):
         relationship_type = relationship_type.value
 
-    # Validate relationship_type
     valid_types = [r.value for r in RelationshipType]
     if relationship_type not in valid_types:
         raise ValueError(
-            f"Invalid relationship_type '{relationship_type}'. " f"Must be one of {valid_types}"
+            f"Invalid relationship_type '{relationship_type}'. Must be one of {valid_types}"
         )
 
-    fetch_session = session if session is not None else get_session()
-    close_session = session is None
-
-    try:
-        # Find relationships of the specified type
+    with session_scope(session) as s:
         stmt = select(EntityRelationship).where(
             EntityRelationship.relationship_type == relationship_type
         )
 
-        # Apply entity name filters if provided
-        if source_entity_name or target_entity_name:
-            if source_entity_name:
-                source_entity_alias = Entity.__table__.alias("source_entity")
-                stmt = stmt.join(
-                    source_entity_alias,
-                    EntityRelationship.source_entity_id == source_entity_alias.c.id,
-                ).where(
-                    (source_entity_alias.c.name.ilike(f"%{source_entity_name}%"))
-                    | (source_entity_alias.c.canonical_name.ilike(f"%{source_entity_name}%"))
-                )
+        # Apply entity name filters
+        if source_entity_name:
+            source_entity_alias = Entity.__table__.alias("source_entity")
+            stmt = stmt.join(
+                source_entity_alias,
+                EntityRelationship.source_entity_id == source_entity_alias.c.id,
+            ).where(
+                (source_entity_alias.c.name.ilike(f"%{source_entity_name}%"))
+                | (source_entity_alias.c.canonical_name.ilike(f"%{source_entity_name}%"))
+            )
 
-            if target_entity_name:
-                target_entity_alias = Entity.__table__.alias("target_entity")
-                stmt = stmt.join(
-                    target_entity_alias,
-                    EntityRelationship.target_entity_id == target_entity_alias.c.id,
-                ).where(
-                    (target_entity_alias.c.name.ilike(f"%{target_entity_name}%"))
-                    | (target_entity_alias.c.canonical_name.ilike(f"%{target_entity_name}%"))
-                )
+        if target_entity_name:
+            target_entity_alias = Entity.__table__.alias("target_entity")
+            stmt = stmt.join(
+                target_entity_alias,
+                EntityRelationship.target_entity_id == target_entity_alias.c.id,
+            ).where(
+                (target_entity_alias.c.name.ilike(f"%{target_entity_name}%"))
+                | (target_entity_alias.c.canonical_name.ilike(f"%{target_entity_name}%"))
+            )
 
-        relationships = fetch_session.exec(stmt).all()
+        relationships = s.exec(stmt).all()
 
-        # Collect all entity IDs involved in these relationships
-        entity_ids = set()
-        for rel in relationships:
-            entity_ids.add(rel.source_entity_id)
-            entity_ids.add(rel.target_entity_id)
-
+        # Collect entity IDs
+        entity_ids = {
+            e_id for rel in relationships for e_id in (rel.source_entity_id, rel.target_entity_id)
+        }
         if not entity_ids:
             return set()
 
-        # Find documents that mention any of these entities
+        # Find documents mentioning these entities
         doc_stmt = select(DocumentEntity.document_id).where(
             DocumentEntity.entity_id.in_(entity_ids)
         )
-        doc_ids = {doc_id for doc_id in fetch_session.exec(doc_stmt).all()}
-
-        return doc_ids
-    finally:
-        if close_session:
-            fetch_session.close()
+        return {doc_id for doc_id in s.exec(doc_stmt).all()}
 
 
 def get_document_links(
@@ -293,70 +216,46 @@ def get_document_links(
     direction: str = "outbound",
     session: Optional[Session] = None,
 ) -> list[dict]:
-    """
-    Get links from or to a document.
+    """Get links from or to a document.
 
     Args:
-        document_id: Document ID (UUID)
-        direction: Link direction - "outbound" (links FROM doc) or "inbound" (links TO doc)
+        document_id: Document UUID
+        direction: "outbound" (FROM doc) or "inbound" (TO doc)
         session: Optional SQLModel session
 
     Returns:
-        List of dictionaries with link information:
-            - source_id: UUID of source document
-            - source_title: Title of source document
-            - target_id: UUID of target document
-            - target_title: Title of target document
-            - anchor_text: Link anchor text (or None)
-
-    Raises:
-        ValueError: If direction is invalid
-
-    Example:
-        # Get outbound links (links FROM this document)
-        links = get_document_links(doc.id, direction="outbound")
-
-        # Get inbound links (links TO this document)
-        links = get_document_links(doc.id, direction="inbound")
+        List of dicts with source_id, source_title, target_id, target_title, anchor_text
     """
     from kurt.db.models import Document, DocumentLink
 
-    # Validate direction
     if direction not in ("outbound", "inbound"):
         raise ValueError(f"Invalid direction: {direction}. Must be 'outbound' or 'inbound'")
 
-    fetch_session = session if session is not None else get_session()
-    close_session = session is None
-
-    try:
-        # Get document title for result formatting
-        doc = fetch_session.get(Document, document_id)
+    with session_scope(session) as s:
+        doc = s.get(Document, document_id)
         if not doc:
             raise ValueError(f"Document not found: {document_id}")
 
         # Query based on direction
         if direction == "outbound":
-            # Links FROM this document
             stmt = (
                 select(DocumentLink, Document)
                 .where(DocumentLink.source_document_id == document_id)
                 .join(Document, DocumentLink.target_document_id == Document.id)
             )
-        else:  # inbound
-            # Links TO this document
+        else:
             stmt = (
                 select(DocumentLink, Document)
                 .where(DocumentLink.target_document_id == document_id)
                 .join(Document, DocumentLink.source_document_id == Document.id)
             )
 
-        results = fetch_session.exec(stmt).all()
+        results = s.exec(stmt).all()
 
         # Format results
         links = []
         for link, related_doc in results:
             if direction == "outbound":
-                # related_doc is the target
                 links.append(
                     {
                         "source_id": str(link.source_document_id),
@@ -366,8 +265,7 @@ def get_document_links(
                         "anchor_text": link.anchor_text,
                     }
                 )
-            else:  # inbound
-                # related_doc is the source
+            else:
                 links.append(
                     {
                         "source_id": str(link.source_document_id),
@@ -379,9 +277,6 @@ def get_document_links(
                 )
 
         return links
-    finally:
-        if close_session:
-            fetch_session.close()
 
 
 def list_entities_by_type(
@@ -390,58 +285,32 @@ def list_entities_by_type(
     include_pattern: Optional[str] = None,
     session: Optional[Session] = None,
 ) -> list[dict[str, any]]:
-    """
-    List all unique entities of a given type from indexed documents with document counts.
-
-    Entities are extracted from the knowledge graph (Entity table).
+    """List entities with document counts.
 
     Args:
-        entity_type: Entity type filter (Topic, Technology, Product, Feature, Company, Integration)
-                    If None, returns all entity types
-        min_docs: Minimum number of documents an entity must appear in (default: 1)
-        include_pattern: Optional glob pattern to filter documents (e.g., "*/docs/*")
-        session: Optional SQLModel session (will create one if not provided)
+        entity_type: Filter by entity type (Topic, Technology, etc.)
+        min_docs: Minimum document count threshold
+        include_pattern: Glob pattern to filter documents
+        session: Optional SQLModel session
 
     Returns:
-        List of dictionaries with entity information, sorted by document count descending:
-            - entity: str (entity name)
-            - entity_type: str (entity type)
-            - doc_count: int (number of documents mentioning this entity)
-
-    Example:
-        # Get all entities
-        entities = list_entities_by_type()
-
-        # Get all topics
-        topics = list_entities_by_type(entity_type="Topic")
-
-        # Get common technologies (in 5+ documents)
-        technologies = list_entities_by_type(entity_type="Technology", min_docs=5)
-
-        # Get entities from specific documents
-        entities = list_entities_by_type(include_pattern="*/docs/*")
+        List of dicts with entity, entity_type, doc_count (sorted by count desc)
     """
     from fnmatch import fnmatch
 
     from kurt.db.models import Document, IngestionStatus
 
-    fetch_session = session if session is not None else get_session()
-    close_session = session is None
-
-    try:
-        # Normalize entity_type to Title case for case-insensitive matching
+    with session_scope(session) as s:
         normalized_entity_type = entity_type.capitalize() if entity_type else None
 
-        # Build query for entities
         stmt = select(
             Entity.name, Entity.canonical_name, Entity.entity_type, DocumentEntity.document_id
         ).join(DocumentEntity, Entity.id == DocumentEntity.entity_id)
 
-        # Filter by entity type if specified
         if normalized_entity_type:
             stmt = stmt.where(Entity.entity_type == normalized_entity_type)
 
-        entity_mentions = fetch_session.exec(stmt).all()
+        entity_mentions = s.exec(stmt).all()
 
         # Build doc count per entity
         entity_docs = {}
@@ -455,7 +324,7 @@ def list_entities_by_type(
         # Filter by pattern if needed
         if include_pattern:
             doc_stmt = select(Document).where(Document.ingestion_status == IngestionStatus.FETCHED)
-            matching_docs = fetch_session.exec(doc_stmt).all()
+            matching_docs = s.exec(doc_stmt).all()
             matching_doc_ids = {
                 str(d.id)
                 for d in matching_docs
@@ -463,28 +332,21 @@ def list_entities_by_type(
                 or (d.content_path and fnmatch(d.content_path, include_pattern))
             }
 
-            # Filter entity doc sets
             for key in list(entity_docs.keys()):
                 entity_docs[key] &= matching_doc_ids
 
-        # Filter by minimum document count and convert to list
+        # Filter and sort
         filtered_entities = [
             (entity_name, etype, len(doc_ids))
             for (entity_name, etype), doc_ids in entity_docs.items()
             if len(doc_ids) >= min_docs
         ]
-
-        # Sort by count descending, then alphabetically
         filtered_entities.sort(key=lambda x: (-x[2], x[0]))
 
-        # Format output
         return [
             {"entity": entity_name, "entity_type": etype, "doc_count": count}
             for entity_name, etype, count in filtered_entities
         ]
-    finally:
-        if close_session:
-            fetch_session.close()
 
 
 def find_documents_with_entity(
@@ -492,69 +354,19 @@ def find_documents_with_entity(
     entity_type: Optional[Union[EntityType, str]] = None,
     session: Optional[Session] = None,
 ) -> set[UUID]:
-    """
-    Find all document IDs that contain a specific entity.
-
-    Searches both Entity.name and Entity.canonical_name (case-insensitive partial match).
+    """Find document IDs containing a specific entity (case-insensitive partial match).
 
     Args:
-        entity_name: Entity name or partial match (case-insensitive)
-        entity_type: Optional entity type filter. Can be:
-            - An EntityType enum value (e.g., EntityType.TOPIC)
-            - A valid EntityType string: "Topic", "Technology", "Product", "Feature", "Company", "Integration"
-            - Special value "technologies" to get Technology+Product types
-            - None to search all entity types
+        entity_name: Entity name or partial match
+        entity_type: Filter by EntityType enum, string, or "technologies"
         session: Optional SQLModel session
 
     Returns:
-        Set of document UUIDs that contain the entity
-
-    Raises:
-        ValueError: If entity_type is not a valid EntityType or special value
-
-    Examples:
-        # Find documents with a topic (using enum)
-        doc_ids = find_documents_with_entity("Python", entity_type=EntityType.TOPIC)
-        # Returns: {UUID('...'), UUID('...'), ...}
-
-        # Find documents with a topic (using string)
-        doc_ids = find_documents_with_entity("Python", entity_type="Topic")
-        # Returns: {UUID('...'), UUID('...'), ...}
-
-        # Find documents with a technology (any tech type)
-        doc_ids = find_documents_with_entity("FastAPI", entity_type="technologies")
-        # Returns: {UUID('...'), UUID('...'), ...}
-
-        # Partial match works too
-        doc_ids = find_documents_with_entity("web", entity_type=EntityType.TOPIC)
-        # Matches "Web Development", "Web APIs", etc.
-
-        # Search across all entity types
-        doc_ids = find_documents_with_entity("Python")
-        # Finds any entity (Topic, Technology, etc.) matching "Python"
+        Set of document UUIDs
     """
-    # Normalize entity_type to string value
-    if isinstance(entity_type, EntityType):
-        entity_type = entity_type.value
+    entity_type = _normalize_entity_type(entity_type)
 
-    # Capitalize entity_type for case-insensitive matching (e.g., "topic" -> "Topic")
-    # Exception: "technologies" is a special multi-type value
-    if entity_type and entity_type != "technologies":
-        entity_type = entity_type.capitalize()
-
-    # Validate entity_type if provided
-    if entity_type is not None and entity_type != "technologies":
-        valid_types = [e.value for e in EntityType]
-        if entity_type not in valid_types:
-            raise ValueError(
-                f"Invalid entity_type '{entity_type}'. "
-                f"Must be one of {valid_types} or special value 'technologies'"
-            )
-
-    fetch_session = session if session is not None else get_session()
-    close_session = session is None
-
-    try:
+    with session_scope(session) as s:
         stmt = (
             select(DocumentEntity.document_id)
             .join(Entity, DocumentEntity.entity_id == Entity.id)
@@ -564,18 +376,12 @@ def find_documents_with_entity(
             )
         )
 
-        # Handle entity type filtering
         if entity_type == "technologies":
-            # Special case: search across all technology-related types (Technology + Product)
             stmt = stmt.where(Entity.entity_type.in_(TECHNOLOGY_TYPES))
         elif entity_type:
             stmt = stmt.where(Entity.entity_type == entity_type)
 
-        doc_ids = {doc_id for doc_id in fetch_session.exec(stmt).all()}
-        return doc_ids
-    finally:
-        if close_session:
-            fetch_session.close()
+        return {doc_id for doc_id in s.exec(stmt).all()}
 
 
 # ============================================================================
@@ -584,19 +390,7 @@ def find_documents_with_entity(
 
 
 def cosine_similarity(emb1: list[float], emb2: list[float]) -> float:
-    """Calculate cosine similarity between two embeddings.
-
-    Args:
-        emb1: First embedding vector
-        emb2: Second embedding vector
-
-    Returns:
-        Cosine similarity score between -1 and 1
-
-    Example:
-        similarity = cosine_similarity(embedding1, embedding2)
-        # Returns: 0.95 (highly similar)
-    """
+    """Calculate cosine similarity between two embeddings."""
     a = np.array(emb1)
     b = np.array(emb2)
     return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
@@ -610,45 +404,24 @@ def search_similar_entities(
 ) -> list[dict]:
     """Search for entities similar to the given name using vector search.
 
-    Embeddings are compulsory - always uses stored embeddings or generates them.
-    If entity exists without embedding, generates and stores it for future use.
-
     Args:
-        entity_name: Name of entity to find similar entities for
+        entity_name: Entity name to find similar entities for
         entity_type: Entity type filter (only return same type)
         limit: Maximum number of results
         session: Optional SQLModel session
 
     Returns:
-        List of similar entity dicts with similarity scores:
-            - id: str (entity UUID)
-            - name: str (entity name)
-            - type: str (entity type)
-            - description: str (entity description)
-            - aliases: list[str] (alternative names)
-            - canonical_name: str (canonical/preferred name)
-            - similarity: float (cosine similarity score)
-
-    Example:
-        similar = search_similar_entities("Python", "Topic", limit=10)
-        # Returns: [
-        #   {"id": "...", "name": "Python Programming", "similarity": 0.95, ...},
-        #   {"id": "...", "name": "Python Language", "similarity": 0.92, ...},
-        # ]
+        List of dicts with id, name, type, description, aliases, canonical_name, similarity
     """
     from kurt.db.sqlite import SQLiteClient
 
-    fetch_session = session if session is not None else get_session()
-    close_session = session is None
-
-    try:
-        # Try to get stored embedding first (performance optimization)
-        existing_entity = fetch_session.exec(
+    with session_scope(session) as s:
+        # Try to get stored embedding first
+        existing_entity = s.exec(
             select(Entity).where(Entity.name == entity_name, Entity.entity_type == entity_type)
         ).first()
 
         if existing_entity:
-            # Use stored embedding (guaranteed to exist)
             embedding_bytes = existing_entity.embedding
         else:
             # Generate new embedding for search query
@@ -662,59 +435,12 @@ def search_similar_entities(
         # Load and filter entity details
         similar_entities = []
         for entity_id, similarity in results:
-            entity = fetch_session.get(Entity, UUID(entity_id))
-            if entity and entity.entity_type == entity_type:  # Same type only
-                entity_dict = entity.model_dump(
-                    exclude={"embedding"}, mode="python"
-                )  # Exclude large embedding bytes
-                entity_dict["id"] = str(entity_dict["id"])  # UUID to string
-                entity_dict["type"] = entity_dict.pop("entity_type")  # Rename field
-                entity_dict["similarity"] = similarity  # Add similarity score
+            entity = s.get(Entity, UUID(entity_id))
+            if entity and entity.entity_type == entity_type:
+                entity_dict = entity.model_dump(exclude={"embedding"}, mode="python")
+                entity_dict["id"] = str(entity_dict["id"])
+                entity_dict["type"] = entity_dict.pop("entity_type")
+                entity_dict["similarity"] = similarity
                 similar_entities.append(entity_dict)
 
         return similar_entities
-    finally:
-        if close_session:
-            fetch_session.close()
-
-
-def search_similar_entities_threadsafe(
-    entity_name: str,
-    entity_type: str,
-    limit: int = 20,
-) -> list[dict]:
-    """
-    Thread-safe wrapper for search_similar_entities.
-
-    Creates its own database session to avoid threading issues when called
-    from ThreadPoolExecutor or other concurrent contexts.
-
-    Args:
-        entity_name: Entity name to search for
-        entity_type: Entity type to filter by
-        limit: Maximum number of results to return
-
-    Returns:
-        List of similar entities with similarity scores
-
-    Example:
-        # Safe to use in ThreadPoolExecutor
-        with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [
-                executor.submit(search_similar_entities_threadsafe, "Python", "Topic", 10)
-                for _ in range(5)
-            ]
-            results = [f.result() for f in futures]
-    """
-    from kurt.db.database import get_session
-
-    thread_session = get_session()
-    try:
-        return search_similar_entities(
-            entity_name=entity_name,
-            entity_type=entity_type,
-            limit=limit,
-            session=thread_session,
-        )
-    finally:
-        thread_session.close()

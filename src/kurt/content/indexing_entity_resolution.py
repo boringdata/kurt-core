@@ -268,33 +268,33 @@ def _resolve_entity_groups(
 
     resolution_module = dspy.ChainOfThought(ResolveEntityGroup)
 
+    from kurt.db.knowledge_graph import search_similar_entities
+
     total_groups = len(groups)
     completed_groups = 0
 
-    # Prepare resolution tasks (one per group) - PARALLELIZE similarity searches
-    def fetch_similar_entities(group_id, group_entities):
-        """Fetch similar entities for a group using thread-safe wrapper."""
-        from kurt.db.knowledge_graph import search_similar_entities_threadsafe
-
-        representative_entity = group_entities[0]
-        similar_existing = search_similar_entities_threadsafe(
-            representative_entity["name"],
-            representative_entity["type"],
-            limit=10,
-        )
-        return {
-            "group_id": group_id,
-            "group_entities": group_entities,
-            "similar_existing": similar_existing,
-        }
-
     # Fetch similar entities for all groups in parallel using ThreadPoolExecutor
+    # Pass session=None to ensure thread safety (creates new session per call)
     with ThreadPoolExecutor(max_workers=max_concurrent) as executor:
-        futures = [
-            executor.submit(fetch_similar_entities, group_id, group_entities)
+        futures = {
+            group_id: executor.submit(
+                search_similar_entities,
+                group_entities[0]["name"],  # Representative entity
+                group_entities[0]["type"],
+                limit=10,
+                session=None,
+            )
             for group_id, group_entities in groups.items()
+        }
+        # Build group tasks with results
+        group_tasks = [
+            {
+                "group_id": group_id,
+                "group_entities": groups[group_id],
+                "similar_existing": future.result(),
+            }
+            for group_id, future in futures.items()
         ]
-        group_tasks = [future.result() for future in futures]
 
     async def resolve_group_async(task_data):
         """Resolve a single group asynchronously."""

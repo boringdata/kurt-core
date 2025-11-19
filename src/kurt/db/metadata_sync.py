@@ -60,7 +60,6 @@ def write_frontmatter_to_file(doc, session=None) -> None:
     """
     from sqlmodel import delete
 
-    from kurt.db.database import get_session
     from kurt.db.models import IngestionStatus, MetadataSyncQueue
 
     # Skip if no content path
@@ -152,27 +151,20 @@ def write_frontmatter_to_file(doc, session=None) -> None:
         # Clean up any pending queue entries for this document
         # (Silently skip if table doesn't exist - for backwards compatibility)
         try:
-            # Use provided session or create new one
-            cleanup_session = session if session is not None else get_session()
-            close_session = session is None  # Only close if we created it
+            from kurt.db.database import session_scope
 
-            stmt = delete(MetadataSyncQueue).where(MetadataSyncQueue.document_id == doc.id)
-            result = cleanup_session.exec(stmt)
-            if result.rowcount > 0:
-                cleanup_session.commit()
-                logger.debug(f"Cleaned up {result.rowcount} queue entries for document {doc.id}")
-
-            if close_session:
-                cleanup_session.close()
+            with session_scope(session) as s:
+                stmt = delete(MetadataSyncQueue).where(MetadataSyncQueue.document_id == doc.id)
+                result = s.exec(stmt)
+                if result.rowcount > 0:
+                    s.commit()
+                    logger.debug(
+                        f"Cleaned up {result.rowcount} queue entries for document {doc.id}"
+                    )
         except Exception as queue_error:
             # Silently ignore if table doesn't exist (older databases)
             if "no such table" not in str(queue_error).lower():
                 logger.warning(f"Failed to clean up sync queue for {doc.id}: {queue_error}")
-            if close_session:
-                try:
-                    cleanup_session.close()
-                except Exception:
-                    pass
 
     except Exception as e:
         logger.error(f"Failed to write frontmatter for document {doc.id}: {e}")
@@ -218,19 +210,15 @@ def process_metadata_sync_queue(session=None) -> dict:
     """
     from sqlmodel import select
 
-    from kurt.db.database import get_session
+    from kurt.db.database import session_scope
     from kurt.db.models import Document, MetadataSyncQueue
 
-    # Use provided session or create new one
-    process_session = session if session is not None else get_session()
-    close_session = session is None
-
-    try:
+    with session_scope(session) as s:
         # Get all pending syncs
         # (Silently return if table doesn't exist - for backwards compatibility)
         try:
             stmt = select(MetadataSyncQueue)
-            queue_items = process_session.exec(stmt).all()
+            queue_items = s.exec(stmt).all()
         except Exception as e:
             if "no such table" in str(e).lower():
                 logger.debug("metadata_sync_queue table does not exist, skipping")
@@ -249,11 +237,11 @@ def process_metadata_sync_queue(session=None) -> dict:
         for doc_id in doc_ids:
             try:
                 # Get document
-                doc = process_session.get(Document, doc_id)
+                doc = s.get(Document, doc_id)
                 if doc:
                     # Note: write_frontmatter_to_file() already cleans up the queue,
                     # so we don't need to delete items manually afterward
-                    write_frontmatter_to_file(doc, session=process_session)
+                    write_frontmatter_to_file(doc, session=s)
                     processed += 1
             except Exception as e:
                 logger.error(f"Failed to sync frontmatter for {doc_id}: {e}")
@@ -261,10 +249,6 @@ def process_metadata_sync_queue(session=None) -> dict:
 
         # Queue should already be cleaned up by write_frontmatter_to_file()
         # But commit any remaining changes
-        process_session.commit()
+        s.commit()
 
         return {"processed": processed, "errors": errors}
-
-    finally:
-        if close_session:
-            process_session.close()
