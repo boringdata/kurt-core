@@ -184,12 +184,22 @@ def extract_document_metadata(
         logger.info(
             f"Skipping document {doc.id} - content unchanged (hash: {current_content_hash[:8]}...)"
         )
+        # Get topics and tools from knowledge graph
+        from kurt.db.knowledge_graph import get_document_entities
+
+        topics = get_document_entities(
+            doc.id, entity_type="Topic", names_only=True, session=session
+        )
+        tools = get_document_entities(
+            doc.id, entity_type="technologies", names_only=True, session=session
+        )
+
         return {
             "document_id": resolved_doc_id,
             "title": doc.title,
             "content_type": doc.content_type.value if doc.content_type else None,
-            "topics": doc.primary_topics or [],
-            "tools": doc.tools_technologies or [],
+            "topics": topics,
+            "tools": tools,
             "skipped": True,
             "skip_reason": "content unchanged",
         }
@@ -254,11 +264,7 @@ def extract_document_metadata(
     metadata_output = result.metadata
 
     logger.info("  ✓ LLM call completed")
-    logger.info(
-        f"  → Extracted: type={metadata_output.content_type.value}, "
-        f"topics={len(metadata_output.primary_topics)}, "
-        f"tools={len(metadata_output.tools_technologies)}"
-    )
+    logger.info(f"  → Extracted: type={metadata_output.content_type.value}")
     logger.info("  → Updating document in database...")
 
     # Report activity: updating database

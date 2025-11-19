@@ -12,8 +12,12 @@ from uuid import UUID
 
 from sqlmodel import Session, select
 
+from kurt.content.indexing_models import EntityType
 from kurt.db.database import get_session
 from kurt.db.models import DocumentEntity, Entity
+
+# Special entity type groupings for convenience
+TECHNOLOGY_TYPES = [EntityType.TECHNOLOGY.value, EntityType.PRODUCT.value]
 
 
 def get_document_entities(
@@ -27,17 +31,19 @@ def get_document_entities(
 
     Args:
         document_id: The document UUID
-        entity_type: Optional entity type filter:
-            - "Topic" for topics
-            - "Technology", "Tool", or "Product" for technologies/tools
-            - Or use special values:
-                - "technologies" to get Technology+Tool+Product types
+        entity_type: Optional entity type filter. Can be:
+            - A valid EntityType value: "Topic", "Technology", "Product", "Feature", "Company", "Integration"
+            - Special value "technologies" to get Technology+Product types (commonly used for tools/tech)
+            - None to get all entity types
         names_only: If True, return only canonical names (list[str])
                    If False, return tuples of (canonical_name, entity_type)
         session: Optional SQLModel session (will create one if not provided)
 
     Returns:
         list[str] if names_only=True, list[tuple[str, str]] otherwise
+
+    Raises:
+        ValueError: If entity_type is not a valid EntityType or special value
 
     Examples:
         # Get all entities with types
@@ -48,10 +54,19 @@ def get_document_entities(
         topics = get_document_entities(doc.id, entity_type="Topic", names_only=True)
         # Returns: ["Python", "Web Development", "API Design"]
 
-        # Get all technologies/tools (names only)
+        # Get all technologies/products (names only)
         tools = get_document_entities(doc.id, entity_type="technologies", names_only=True)
         # Returns: ["FastAPI", "Pydantic", "Uvicorn"]
     """
+    # Validate entity_type if provided
+    if entity_type is not None and entity_type != "technologies":
+        valid_types = [e.value for e in EntityType]
+        if entity_type not in valid_types:
+            raise ValueError(
+                f"Invalid entity_type '{entity_type}'. "
+                f"Must be one of {valid_types} or special value 'technologies'"
+            )
+
     fetch_session = session if session is not None else get_session()
     close_session = session is None
 
@@ -71,8 +86,8 @@ def get_document_entities(
 
         # Handle entity type filtering
         if entity_type == "technologies":
-            # Special case: get all technology-related types
-            stmt = stmt.where(Entity.entity_type.in_(["Technology", "Tool", "Product"]))
+            # Special case: get all technology-related types (Technology + Product)
+            stmt = stmt.where(Entity.entity_type.in_(TECHNOLOGY_TYPES))
         elif entity_type:
             stmt = stmt.where(Entity.entity_type == entity_type)
 
@@ -155,15 +170,17 @@ def find_documents_with_entity(
 
     Args:
         entity_name: Entity name or partial match (case-insensitive)
-        entity_type: Optional entity type filter:
-            - "Topic" for topics
-            - "Technology", "Tool", or "Product" for specific tech types
-            - "technologies" to search across Technology+Tool+Product
+        entity_type: Optional entity type filter. Can be:
+            - A valid EntityType value: "Topic", "Technology", "Product", "Feature", "Company", "Integration"
+            - Special value "technologies" to get Technology+Product types
             - None to search all entity types
         session: Optional SQLModel session
 
     Returns:
         Set of document UUIDs that contain the entity
+
+    Raises:
+        ValueError: If entity_type is not a valid EntityType or special value
 
     Examples:
         # Find documents with a topic
@@ -182,6 +199,15 @@ def find_documents_with_entity(
         doc_ids = find_documents_with_entity("Python")
         # Finds any entity (Topic, Technology, etc.) matching "Python"
     """
+    # Validate entity_type if provided
+    if entity_type is not None and entity_type != "technologies":
+        valid_types = [e.value for e in EntityType]
+        if entity_type not in valid_types:
+            raise ValueError(
+                f"Invalid entity_type '{entity_type}'. "
+                f"Must be one of {valid_types} or special value 'technologies'"
+            )
+
     fetch_session = session if session is not None else get_session()
     close_session = session is None
 
@@ -197,8 +223,8 @@ def find_documents_with_entity(
 
         # Handle entity type filtering
         if entity_type == "technologies":
-            # Special case: search across all technology-related types
-            stmt = stmt.where(Entity.entity_type.in_(["Technology", "Tool", "Product"]))
+            # Special case: search across all technology-related types (Technology + Product)
+            stmt = stmt.where(Entity.entity_type.in_(TECHNOLOGY_TYPES))
         elif entity_type:
             stmt = stmt.where(Entity.entity_type == entity_type)
 

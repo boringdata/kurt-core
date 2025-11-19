@@ -57,13 +57,13 @@ from kurt.content.indexing_extract import (
 
 # Re-export models and constants
 from kurt.content.indexing_models import (
-    ENTITY_TYPES,
-    RELATIONSHIP_TYPES,
     DocumentMetadataOutput,
     EntityExtraction,
     EntityResolution,
+    EntityType,
     GroupResolution,
     RelationshipExtraction,
+    RelationshipType,
 )
 
 logger = logging.getLogger(__name__)
@@ -75,8 +75,8 @@ __all__ = [
     "RelationshipExtraction",
     "EntityResolution",
     "GroupResolution",
-    "ENTITY_TYPES",
-    "RELATIONSHIP_TYPES",
+    "EntityType",
+    "RelationshipType",
     # Extract (Stage 1)
     "extract_document_metadata",
     "batch_extract_document_metadata",

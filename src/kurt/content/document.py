@@ -534,8 +534,8 @@ def list_content(
         min_pageviews: Minimum pageviews_30d filter
         max_pageviews: Maximum pageviews_30d filter
         trend: Filter by trend (increasing | decreasing | stable)
-        with_topic: Filter by topic (documents containing this topic in primary_topics)
-        with_technology: Filter by technology (documents containing this tech in tools_technologies)
+        with_topic: Filter by topic (documents containing this entity in knowledge graph)
+        with_technology: Filter by technology (documents containing this entity in knowledge graph)
 
     Returns:
         List of Document objects (with analytics dict attribute if with_analytics=True)
