@@ -237,7 +237,108 @@ def resolve_filters(
 
 
 # ============================================================================
-# Topic and Technology Discovery Services
+# Entity Discovery Services
+# ============================================================================
+
+
+def list_entities_by_type(
+    entity_type: Optional[str] = None,
+    min_docs: int = 1,
+    include_pattern: Optional[str] = None,
+) -> list[dict[str, any]]:
+    """
+    List all unique entities of a given type from indexed documents with document counts.
+
+    Entities are extracted from the knowledge graph (Entity table).
+
+    Args:
+        entity_type: Entity type filter (Topic, Technology, Product, Feature, Company, Integration)
+                    If None, returns all entity types
+        min_docs: Minimum number of documents an entity must appear in (default: 1)
+        include_pattern: Optional glob pattern to filter documents (e.g., "*/docs/*")
+
+    Returns:
+        List of dictionaries with entity information, sorted by document count descending:
+            - entity: str (entity name)
+            - entity_type: str (entity type)
+            - doc_count: int (number of documents mentioning this entity)
+
+    Example:
+        # Get all entities
+        entities = list_entities_by_type()
+
+        # Get all topics
+        topics = list_entities_by_type(entity_type="Topic")
+
+        # Get common technologies (in 5+ documents)
+        technologies = list_entities_by_type(entity_type="Technology", min_docs=5)
+
+        # Get entities from specific documents
+        entities = list_entities_by_type(include_pattern="*/docs/*")
+    """
+    from fnmatch import fnmatch
+
+    from sqlmodel import select
+
+    from kurt.db.database import get_session
+    from kurt.db.models import Document, DocumentEntity, Entity, IngestionStatus
+
+    session = get_session()
+
+    # Build query for entities
+    stmt = select(
+        Entity.name, Entity.canonical_name, Entity.entity_type, DocumentEntity.document_id
+    ).join(DocumentEntity, Entity.id == DocumentEntity.entity_id)
+
+    # Filter by entity type if specified
+    if entity_type:
+        stmt = stmt.where(Entity.entity_type == entity_type)
+
+    entity_mentions = session.exec(stmt).all()
+
+    # Build doc count per entity
+    entity_docs = {}
+    for entity_name, canonical_name, etype, doc_id in entity_mentions:
+        entity_display_name = canonical_name or entity_name
+        key = (entity_display_name, etype)
+        if key not in entity_docs:
+            entity_docs[key] = set()
+        entity_docs[key].add(doc_id)
+
+    # Filter by pattern if needed
+    if include_pattern:
+        doc_stmt = select(Document).where(Document.ingestion_status == IngestionStatus.FETCHED)
+        matching_docs = session.exec(doc_stmt).all()
+        matching_doc_ids = {
+            str(d.id)
+            for d in matching_docs
+            if (d.source_url and fnmatch(d.source_url, include_pattern))
+            or (d.content_path and fnmatch(d.content_path, include_pattern))
+        }
+
+        # Filter entity doc sets
+        for key in list(entity_docs.keys()):
+            entity_docs[key] &= matching_doc_ids
+
+    # Filter by minimum document count and convert to list
+    filtered_entities = [
+        (entity_name, etype, len(doc_ids))
+        for (entity_name, etype), doc_ids in entity_docs.items()
+        if len(doc_ids) >= min_docs
+    ]
+
+    # Sort by count descending, then alphabetically
+    filtered_entities.sort(key=lambda x: (-x[2], x[0]))
+
+    # Format output
+    return [
+        {"entity": entity_name, "entity_type": etype, "doc_count": count}
+        for entity_name, etype, count in filtered_entities
+    ]
+
+
+# ============================================================================
+# Legacy Topic and Technology Discovery Services (Deprecated)
 # ============================================================================
 
 
