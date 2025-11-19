@@ -26,11 +26,21 @@ Or use convenience functions:
     session = get_session()
 """
 
+from contextlib import contextmanager
+from typing import Optional
+
 from sqlmodel import Session
 
 from kurt.db.base import DatabaseClient, get_database_client
 
-__all__ = ["get_database_client", "DatabaseClient", "Session", "init_database", "get_session"]
+__all__ = [
+    "get_database_client",
+    "DatabaseClient",
+    "Session",
+    "init_database",
+    "get_session",
+    "session_scope",
+]
 
 
 # Convenience functions
@@ -64,3 +74,30 @@ def check_database_exists() -> bool:
     """Check if the database exists."""
     db = get_database_client()
     return db.check_database_exists()
+
+
+@contextmanager
+def session_scope(session: Optional[Session] = None):
+    """Context manager for database session lifecycle.
+
+    If a session is provided, yields it without closing.
+    If no session is provided, creates a new one and closes it when done.
+
+    Args:
+        session: Optional existing session to use
+
+    Yields:
+        Session: Database session
+
+    Example:
+        with session_scope() as s:
+            result = s.exec(select(Entity)).all()
+    """
+    if session is not None:
+        yield session
+    else:
+        _session = get_session()
+        try:
+            yield _session
+        finally:
+            _session.close()
