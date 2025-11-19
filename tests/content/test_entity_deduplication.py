@@ -72,7 +72,7 @@ def mock_llm_calls(mock_dspy_signature, mock_all_llm_calls):
             entities.append(
                 EntityExtraction(
                     name="Python",
-                    entity_type="Programming Language",
+                    entity_type="Topic",
                     description="High-level programming language",
                     aliases=[],
                     confidence=0.95,
@@ -93,7 +93,7 @@ def mock_llm_calls(mock_dspy_signature, mock_all_llm_calls):
             entities.append(
                 EntityExtraction(
                     name="Django",
-                    entity_type="Framework",
+                    entity_type="Technology",
                     description="Python web framework",
                     aliases=[],
                     confidence=0.90,
@@ -135,7 +135,7 @@ def mock_llm_calls(mock_dspy_signature, mock_all_llm_calls):
             entities.append(
                 EntityExtraction(
                     name="React",
-                    entity_type="Library",
+                    entity_type="Technology",
                     description="JavaScript library for UI",
                     aliases=[],
                     confidence=0.95,
@@ -172,7 +172,7 @@ def mock_llm_calls(mock_dspy_signature, mock_all_llm_calls):
                     RelationshipExtraction(
                         source_entity="Kubernetes",
                         target_entity="Docker",
-                        relationship_type="orchestrates",
+                        relationship_type="integrates_with",
                         context="Kubernetes orchestrates Docker containers",
                         confidence=0.90,
                     )
@@ -256,10 +256,8 @@ def mock_llm_calls(mock_dspy_signature, mock_all_llm_calls):
     with mock_dspy_signature("AllSignatures", router):
         # CRITICAL: Must patch where functions are USED, not where they're DEFINED
         with (
-            patch("kurt.content.indexing_entity_resolution._generate_embeddings") as mock_embed,
-            patch(
-                "kurt.content.indexing_entity_resolution._search_similar_entities"
-            ) as mock_search,
+            patch("kurt.content.indexing_entity_resolution.generate_embeddings") as mock_embed,
+            patch("kurt.db.knowledge_graph.search_similar_entities") as mock_search,
         ):
             # Return embeddings that match input count
             def fake_embeddings(texts):

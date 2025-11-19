@@ -75,8 +75,7 @@ class PostHogAdapter(AnalyticsAdapter):
                 )
         except httpx.ConnectError as e:
             raise ConnectionError(
-                f"Failed to connect to PostHog at {self.base_url}\n"
-                f"Error: {e}"
+                f"Failed to connect to PostHog at {self.base_url}\n" f"Error: {e}"
             )
         except httpx.TimeoutException:
             raise ConnectionError(
@@ -116,7 +115,11 @@ class PostHogAdapter(AnalyticsAdapter):
         for url in pageviews.keys():
             # Check if URL belongs to this domain
             # Normalized URLs from PostHog may not have protocol, so check both ways
-            if domain in url or url.startswith(f"https://{domain}") or url.startswith(f"http://{domain}"):
+            if (
+                domain in url
+                or url.startswith(f"https://{domain}")
+                or url.startswith(f"http://{domain}")
+            ):
                 # Reconstruct full URL if needed
                 if not url.startswith("http"):
                     full_url = f"https://{url}" if domain in url else url

@@ -42,7 +42,7 @@
    - Or provide: Partner documentation, API specs, SDKs
 
 2. **Existing integration examples** - How other integrations are documented
-   - Find: `kurt content list --with-topic "integration"`
+   - Find: `kurt content list --with-entity "Topic:integration"`
    - Search: `kurt content search "integration"`
    - Or provide: Examples of well-documented integrations
 
@@ -52,7 +52,7 @@
    - Or provide: Customer requests, sales feedback
 
 4. **Technical requirements** - What's needed to make this work
-   - Find: `kurt content list --with-technology "[partner-tech]"`
+   - Find: `kurt content list --with-entity "Technology:[partner-tech]"`
    - Or provide: API documentation, authentication requirements, rate limits
 
 ---
@@ -72,7 +72,7 @@ kurt research query "[partner technology] developer resources"
 ```bash
 # Find existing integration pages for style
 kurt content search "integration"
-kurt content list --with-topic "integration"
+kurt content list --with-entity "Topic:integration"
 
 # Discover what integrations exist
 kurt content list --url-contains /integrations/
@@ -678,7 +678,7 @@ const yourProduct = new YourProduct({
 1. **Find 2-3 existing integration pages:**
 ```bash
 kurt content search "integration"
-kurt content list --with-topic "integration"
+kurt content list --with-entity "Topic:integration"
 kurt content list --url-contains /integrations/
 ```
 

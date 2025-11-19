@@ -16,10 +16,10 @@ When a user clones this template, follow these steps:
 3. Validate topic coverage (check for gaps):
    ```bash
    # Check overall topic coverage
-   kurt content list-topics
+   kurt content list-entities topic
 
    # Check if this specific topic is covered
-   kurt content list --with-topic "[topic]"
+   kurt content list --with-entity "Topic:[topic]"
 
    # Check tutorial coverage
    kurt content list --with-content-type tutorial
@@ -37,7 +37,7 @@ When a user clones this template, follow these steps:
    kurt content search "[topic]" --include "*/docs/*"
 
    # Or filter by topic metadata
-   kurt content list --with-topic "[topic]" --include "*/docs/*"
+   kurt content list --with-entity "Topic:[topic]" --include "*/docs/*"
 
    # Find API reference if applicable
    kurt content list --with-content-type reference
@@ -51,7 +51,7 @@ When a user clones this template, follow these steps:
    ```bash
    # Check analytics if available
    kurt integrations analytics sync [domain]
-   kurt content list --with-analytics --with-topic "[related-topic]"
+   kurt content list --with-analytics --with-entity "Topic:[related-topic]"
 
    # Look for search volume
    kurt research query "[topic] tutorial search demand"
@@ -340,7 +340,7 @@ Check what coverage already exists:
 
 ```bash
 # Check if topic is covered
-kurt content list-topics
+kurt content list-entities topic
 
 # Look for your topic in the list
 # If "deployment" shows 15 docs, you already have coverage
@@ -353,7 +353,7 @@ kurt content search "[topic keyword]"
 kurt content list --with-content-type tutorial
 
 # Check if topic + technology combination exists
-kurt content list --with-topic "[topic]" --with-technology "[tech]"
+kurt content list --with-entity "Topic:[topic]" --with-entity "Technology:[tech]"
 ```
 
 **Assess the gap:**
@@ -375,7 +375,7 @@ Find relevant documentation:
 kurt content search "[topic]" --include "*/docs/*"
 
 # Or filter by topic metadata
-kurt content list --with-topic "[topic]" --include "*/docs/*"
+kurt content list --with-entity "Topic:[topic]" --include "*/docs/*"
 
 # API reference if applicable
 kurt content list --with-content-type reference
@@ -384,7 +384,7 @@ kurt content list --with-content-type reference
 kurt content list --with-content-type tutorial
 
 # Check what technologies are documented (if relevant)
-kurt content list-technologies --include "*/docs/*"
+kurt content list-entities technology --include "*/docs/*"
 
 # Get specific docs
 kurt content get <doc-id>

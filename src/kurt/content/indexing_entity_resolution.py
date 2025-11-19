@@ -24,13 +24,10 @@ from sklearn.cluster import DBSCAN
 from sqlalchemy import text
 from sqlmodel import select
 
-from kurt.content.indexing_helpers import (
-    _embedding_to_bytes,
-    _generate_embeddings,
-    _search_similar_entities,
-)
+from kurt.content.embeddings import embedding_to_bytes, generate_embeddings
 from kurt.content.indexing_models import GroupResolution
 from kurt.db.database import get_session
+from kurt.db.knowledge_graph import search_similar_entities
 from kurt.db.models import DocumentEntity, Entity, EntityRelationship
 
 logger = logging.getLogger(__name__)
@@ -175,7 +172,7 @@ def _resolve_entity_groups(
     if activity_callback:
         activity_callback(f"Clustering {len(new_entities_batch)} new entities...")
     entity_names = [e["name"] for e in new_entities_batch]
-    embeddings = _generate_embeddings(entity_names)
+    embeddings = generate_embeddings(entity_names)
 
     # Group similar entities using DBSCAN clustering
     embeddings_array = np.array(embeddings)
@@ -204,31 +201,42 @@ def _resolve_entity_groups(
     config = load_config()
     max_concurrent = config.MAX_CONCURRENT_INDEXING  # Reuse same config
 
-    session = get_session()
     resolution_module = dspy.ChainOfThought(ResolveEntityGroup)
 
     total_groups = len(groups)
     completed_groups = 0
 
-    # Prepare resolution tasks (one per group)
-    group_tasks = []
-    for group_id, group_entities in groups.items():
-        # Get similar existing entities for this group (search using first entity's name as representative)
-        representative_entity = group_entities[0]
-        similar_existing = _search_similar_entities(
-            session,
-            representative_entity["name"],
-            representative_entity["type"],
-            limit=10,
-        )
+    # Prepare resolution tasks (one per group) - PARALLELIZE similarity searches
+    def fetch_similar_entities(group_id, group_entities):
+        """Fetch similar entities for a group.
 
-        group_tasks.append(
-            {
+        Note: Creates its own session to avoid threading issues.
+        """
+        # Create a new session for this thread
+        thread_session = get_session()
+        try:
+            representative_entity = group_entities[0]
+            similar_existing = search_similar_entities(
+                representative_entity["name"],
+                representative_entity["type"],
+                limit=10,
+                session=thread_session,
+            )
+            return {
                 "group_id": group_id,
                 "group_entities": group_entities,
                 "similar_existing": similar_existing,
             }
-        )
+        finally:
+            thread_session.close()
+
+    # Fetch similar entities for all groups in parallel using ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=max_concurrent) as executor:
+        futures = [
+            executor.submit(fetch_similar_entities, group_id, group_entities)
+            for group_id, group_entities in groups.items()
+        ]
+        group_tasks = [future.result() for future in futures]
 
     async def resolve_group_async(task_data):
         """Resolve a single group asynchronously."""
@@ -642,7 +650,7 @@ def _create_entities_and_relationships(doc_to_kg_data: dict, resolutions: list[d
         if decision == "CREATE_NEW":
             # Create new entity
             entity_data = primary_resolution["entity_details"]
-            entity_embedding = _generate_embeddings([canonical_name])[0]
+            entity_embedding = generate_embeddings([canonical_name])[0]
 
             # Collect all entity names in this group
             all_entity_names = [r["entity_name"] for r in group_resolutions]
@@ -674,7 +682,7 @@ def _create_entities_and_relationships(doc_to_kg_data: dict, resolutions: list[d
                 canonical_name=canonical_name,
                 aliases=list(all_aliases),
                 description=entity_data.get("description", ""),
-                embedding=_embedding_to_bytes(entity_embedding),
+                embedding=embedding_to_bytes(entity_embedding),
                 confidence_score=avg_confidence,
                 source_mentions=doc_count,
                 created_at=datetime.utcnow(),
@@ -737,7 +745,7 @@ def _create_entities_and_relationships(doc_to_kg_data: dict, resolutions: list[d
 
                 # Fallback to CREATE_NEW logic
                 entity_data = primary_resolution["entity_details"]
-                entity_embedding = _generate_embeddings([canonical_name])[0]
+                entity_embedding = generate_embeddings([canonical_name])[0]
                 all_entity_names = [r["entity_name"] for r in group_resolutions]
                 all_aliases = set()
                 for r in group_resolutions:
@@ -762,7 +770,7 @@ def _create_entities_and_relationships(doc_to_kg_data: dict, resolutions: list[d
                     canonical_name=canonical_name,
                     aliases=list(all_aliases),
                     description=entity_data.get("description", ""),
-                    embedding=_embedding_to_bytes(entity_embedding),
+                    embedding=embedding_to_bytes(entity_embedding),
                     confidence_score=avg_confidence,
                     source_mentions=len(unique_docs),
                     created_at=datetime.utcnow(),

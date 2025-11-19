@@ -138,11 +138,7 @@ class AnalyticsService:
         normalized_url = normalize_url_for_analytics(url)
 
         # Check if analytics record exists
-        existing = (
-            session.query(PageAnalytics)
-            .filter(PageAnalytics.url == normalized_url)
-            .first()
-        )
+        existing = session.query(PageAnalytics).filter(PageAnalytics.url == normalized_url).first()
 
         if existing:
             # Update existing record
@@ -236,9 +232,7 @@ class AnalyticsService:
         total_pageviews = 0
 
         for url, metrics in metrics_map.items():
-            AnalyticsService.upsert_page_analytics(
-                session, url, domain_obj.domain, metrics
-            )
+            AnalyticsService.upsert_page_analytics(session, url, domain_obj.domain, metrics)
             synced_count += 1
             total_pageviews += metrics.pageviews_60d
 

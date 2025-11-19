@@ -96,12 +96,10 @@ class Document(SQLModel, table=True):
     content_type: Optional[ContentType] = Field(
         default=None, index=True
     )  # Content type classification
-    primary_topics: Optional[list] = Field(
-        default=None, sa_column=Column(JSON)
-    )  # Main topics covered
-    tools_technologies: Optional[list] = Field(
-        default=None, sa_column=Column(JSON)
-    )  # Tools/techs mentioned
+
+    # NOTE: primary_topics and tools_technologies have been removed (Issue #16)
+    # Topics and technologies now live in the knowledge graph as Entity records
+    # Use kurt.content.filtering.list_topics() and list_technologies() to query
 
     has_code_examples: bool = Field(default=False)  # Contains code blocks
     has_step_by_step_procedures: bool = Field(default=False)  # Step-by-step instructions
@@ -173,8 +171,8 @@ class Entity(SQLModel, table=True):
     aliases: Optional[list] = Field(default=None, sa_column=Column(JSON))  # Alternative names
     description: Optional[str] = None  # Brief description
 
-    # Vector embedding for similarity search
-    embedding: Optional[bytes] = None  # 512-dim float32 vector (2048 bytes)
+    # Vector embedding for similarity search (required in production, use b"" for tests)
+    embedding: bytes = b""  # 512-dim float32 vector (2048 bytes)
 
     # Confidence and usage metrics
     confidence_score: float = Field(default=0.0, index=True)  # Extraction confidence (0.0-1.0)

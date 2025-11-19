@@ -24,12 +24,13 @@ class MetadataFrontmatter(BaseModel):
     """Pydantic model for metadata written to file frontmatter.
 
     This defines all fields that can be written to markdown file frontmatter.
+    Entities are stored in a single dict field organized by type.
     """
 
     title: Optional[str] = None
     content_type: Optional[str] = None
-    topics: Optional[list[str]] = None
-    tools: Optional[list[str]] = None
+    # All entities organized by type (e.g., {"topics": [...], "technologies": [...]})
+    entities: Optional[dict[str, list[str]]] = None
     description: Optional[str] = None
     author: Optional[list[str]] = None
     published_date: Optional[str] = None
@@ -70,9 +71,12 @@ def write_frontmatter_to_file(doc, session=None) -> None:
     if doc.ingestion_status != IngestionStatus.FETCHED:
         return
 
-    # Skip if no metadata to write
-    if not any([doc.content_type, doc.primary_topics, doc.tools_technologies]):
-        return
+    # Skip if no metadata to write (check content_type only, topics/tools checked below)
+    # NOTE: topics and tools are fetched from knowledge graph, not from document fields
+    if not doc.content_type:
+        # Still write frontmatter if document has entities, even without content_type
+        # We'll check this below after fetching from knowledge graph
+        pass
 
     try:
         # Load config to get sources path
@@ -92,12 +96,36 @@ def write_frontmatter_to_file(doc, session=None) -> None:
         # Remove existing frontmatter if present
         content_without_frontmatter = remove_frontmatter(content)
 
+        # Fetch all entities from knowledge graph generically
+        from kurt.db.knowledge_graph import get_document_entities
+
+        # Get all entities with their types
+        all_entities = get_document_entities(
+            doc.id, entity_type=None, names_only=False, session=session
+        )
+
+        # Organize entities by type (lowercase plural for frontmatter field names)
+        entities_by_type = {}
+        for entity_name, entity_type in all_entities:
+            # Convert entity type to lowercase plural for frontmatter field name
+            # e.g., "Topic" -> "topics", "Technology" -> "technologies"
+            field_name = entity_type.lower() + "s"
+            if field_name.endswith("ys"):  # e.g., "Companys" -> "Companies"
+                field_name = field_name[:-2] + "ies"
+
+            if field_name not in entities_by_type:
+                entities_by_type[field_name] = []
+            entities_by_type[field_name].append(entity_name)
+
+        # Skip if no metadata to write
+        if not any([doc.content_type, entities_by_type]):
+            return
+
         # Build frontmatter model
         frontmatter = MetadataFrontmatter(
             title=doc.title,
             content_type=doc.content_type.value if doc.content_type else None,
-            topics=doc.primary_topics,
-            tools=doc.tools_technologies,
+            entities=entities_by_type if entities_by_type else None,
             description=doc.description,
             author=doc.author,
             published_date=doc.published_date.isoformat() if doc.published_date else None,

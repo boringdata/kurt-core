@@ -154,7 +154,7 @@ Kurt can analyze web analytics to assist with project planning and content perfo
 
 ## Content Discovery
 Use `.claude/instructions/find-sources.md` for discovering and retrieving content:
-- **Topic/technology discovery**: See what's covered, identify gaps (`kurt content list-topics`, `kurt content list-technologies`)
+- **Topic/technology discovery**: See what's covered, identify gaps (`kurt content list-entities topic`, `kurt content list-entities technology`)
 - **Semantic search**: Full-text search through fetched documents
 - **Cluster navigation**: Browse content organized by topic
 - **Link analysis**: Find related docs, prerequisites, and dependencies

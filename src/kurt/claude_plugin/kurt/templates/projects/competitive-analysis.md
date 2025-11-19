@@ -16,12 +16,12 @@ When a user clones this template, follow these steps:
 3. Identify shared topics and technologies:
    ```bash
    # See what topics each covers
-   kurt content list-topics --include "https://[your-domain]/**"
-   kurt content list-topics --include "https://[competitor-domain]/**"
+   kurt content list-entities topic --include "https://[your-domain]/**"
+   kurt content list-entities topic --include "https://[competitor-domain]/**"
 
    # See what technologies each documents
-   kurt content list-technologies --include "https://[your-domain]/**"
-   kurt content list-technologies --include "https://[competitor-domain]/**"
+   kurt content list-entities technology --include "https://[your-domain]/**"
+   kurt content list-entities technology --include "https://[competitor-domain]/**"
 
    # Also check traditional clusters
    kurt content list-clusters --include "https://[your-domain]/**"
@@ -289,16 +289,16 @@ Discover what topics and technologies both you and competitor cover:
 
 ```bash
 # Your topic coverage
-kurt content list-topics --include "https://{{YOUR_DOMAIN}}/**"
+kurt content list-entities topic --include "https://{{YOUR_DOMAIN}}/**"
 
 # Competitor topic coverage
-kurt content list-topics --include "https://{{COMPETITOR_DOMAIN}}/**"
+kurt content list-entities topic --include "https://{{COMPETITOR_DOMAIN}}/**"
 
 # Your technology coverage
-kurt content list-technologies --include "https://{{YOUR_DOMAIN}}/**"
+kurt content list-entities technology --include "https://{{YOUR_DOMAIN}}/**"
 
 # Competitor technology coverage
-kurt content list-technologies --include "https://{{COMPETITOR_DOMAIN}}/**"
+kurt content list-entities technology --include "https://{{COMPETITOR_DOMAIN}}/**"
 
 # Also check traditional clusters
 kurt content list-clusters --include "https://{{YOUR_DOMAIN}}/**"

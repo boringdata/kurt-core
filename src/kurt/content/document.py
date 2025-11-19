@@ -4,6 +4,7 @@ Document utility functions for Kurt.
 These functions provide CRUD operations for documents:
 - list_documents: List all documents with filtering
 - get_document: Get document by ID
+- load_document_content: Load document content from filesystem
 - delete_document: Delete document by ID
 - get_document_stats: Get statistics about documents
 
@@ -124,11 +125,17 @@ def list_documents(
                 analytics = analytics_map.get(normalized_url)
 
                 # Apply analytics filters
-                if pageviews_30d_min is not None and (not analytics or analytics.pageviews_30d < pageviews_30d_min):
+                if pageviews_30d_min is not None and (
+                    not analytics or analytics.pageviews_30d < pageviews_30d_min
+                ):
                     continue
-                if pageviews_30d_max is not None and (not analytics or analytics.pageviews_30d > pageviews_30d_max):
+                if pageviews_30d_max is not None and (
+                    not analytics or analytics.pageviews_30d > pageviews_30d_max
+                ):
                     continue
-                if pageviews_trend and (not analytics or analytics.pageviews_trend != pageviews_trend):
+                if pageviews_trend and (
+                    not analytics or analytics.pageviews_trend != pageviews_trend
+                ):
                     continue
 
                 # Attach analytics data to document
@@ -164,7 +171,12 @@ def list_documents(
             elif order_by == "pageviews_60d":
                 matched_docs.sort(key=lambda x: x[1].pageviews_60d if x[1] else 0, reverse=True)
             elif order_by == "trend_percentage":
-                matched_docs.sort(key=lambda x: x[1].trend_percentage if x[1] and x[1].trend_percentage else float('-inf'), reverse=True)
+                matched_docs.sort(
+                    key=lambda x: x[1].trend_percentage
+                    if x[1] and x[1].trend_percentage
+                    else float("-inf"),
+                    reverse=True,
+                )
             elif order_by == "created_at":
                 matched_docs.sort(key=lambda x: x[0].created_at, reverse=True)
         else:
@@ -241,6 +253,44 @@ def get_document(document_id: str) -> Document:
 
     # Return Document object
     return doc
+
+
+def load_document_content(doc: Document) -> str:
+    """
+    Load document content from filesystem.
+
+    Args:
+        doc: Document object with content_path
+
+    Returns:
+        Document content as string
+
+    Raises:
+        ValueError: If content_path is missing or file doesn't exist
+
+    Example:
+        doc = get_document("550e8400")
+        content = load_document_content(doc)
+        print(content)
+    """
+    if not doc.content_path:
+        raise ValueError(f"Document {doc.id} has no content_path")
+
+    from kurt.config import load_config
+
+    config = load_config()
+    source_base = config.get_absolute_sources_path()
+    content_file = source_base / doc.content_path
+
+    if not content_file.exists():
+        raise ValueError(f"Content file not found: {content_file}")
+
+    content = content_file.read_text(encoding="utf-8")
+
+    if not content.strip():
+        raise ValueError(f"Document {doc.id} has empty content")
+
+    return content
 
 
 def delete_document(document_id: str, delete_content: bool = False) -> dict:
@@ -502,8 +552,11 @@ def list_content(
     min_pageviews: int = None,
     max_pageviews: int = None,
     trend: str = None,
-    with_topic: str = None,
-    with_technology: str = None,
+    entity_name: str = None,
+    entity_type: str = None,
+    relationship_type: str = None,
+    relationship_source: str = None,
+    relationship_target: str = None,
 ) -> list[Document]:
     """
     List documents with new explicit naming (for CLI-SPEC.md compliance).
@@ -523,8 +576,11 @@ def list_content(
         min_pageviews: Minimum pageviews_30d filter
         max_pageviews: Maximum pageviews_30d filter
         trend: Filter by trend (increasing | decreasing | stable)
-        with_topic: Filter by topic (documents containing this topic in primary_topics)
-        with_technology: Filter by technology (documents containing this tech in tools_technologies)
+        entity_name: Entity name to search for (partial match)
+        entity_type: Entity type filter (Topic, Technology, Product, Feature, Company, Integration, or "technologies")
+        relationship_type: Relationship type filter (mentions, part_of, integrates_with, enables, related_to, depends_on, replaces)
+        relationship_source: Optional source entity name filter for relationships
+        relationship_target: Optional target entity name filter for relationships
 
     Returns:
         List of Document objects (with analytics dict attribute if with_analytics=True)
@@ -544,6 +600,14 @@ def list_content(
 
         # Filter by URL depth
         docs = list_content(max_depth=2)
+
+        # Filter by entity
+        docs = list_content(entity_name="Python", entity_type="Topic")
+
+        # Filter by relationship
+        docs = list_content(relationship_type="integrates_with")
+        docs = list_content(relationship_type="integrates_with", relationship_source="FastAPI")
+        docs = list_content(relationship_type="depends_on", relationship_target="Python")
 
         # With analytics
         docs = list_content(with_analytics=True, order_by="pageviews_30d", limit=10)
@@ -605,9 +669,13 @@ def list_content(
                 analytics = analytics_map.get(normalized_url)
 
                 # Apply analytics filters
-                if min_pageviews is not None and (not analytics or analytics.pageviews_30d < min_pageviews):
+                if min_pageviews is not None and (
+                    not analytics or analytics.pageviews_30d < min_pageviews
+                ):
                     continue
-                if max_pageviews is not None and (not analytics or analytics.pageviews_30d > max_pageviews):
+                if max_pageviews is not None and (
+                    not analytics or analytics.pageviews_30d > max_pageviews
+                ):
                     continue
                 if trend and (not analytics or analytics.pageviews_trend != trend):
                     continue
@@ -641,7 +709,12 @@ def list_content(
             elif order_by == "pageviews_60d":
                 matched_docs.sort(key=lambda x: x[1].pageviews_60d if x[1] else 0, reverse=True)
             elif order_by == "trend_percentage":
-                matched_docs.sort(key=lambda x: x[1].trend_percentage if x[1] and x[1].trend_percentage else float('-inf'), reverse=True)
+                matched_docs.sort(
+                    key=lambda x: x[1].trend_percentage
+                    if x[1] and x[1].trend_percentage
+                    else float("-inf"),
+                    reverse=True,
+                )
         else:
             # Default created_at ordering
             matched_docs.sort(key=lambda x: x[0].created_at, reverse=True)
@@ -664,69 +737,32 @@ def list_content(
 
         documents = [d for d in documents if get_url_depth(d.source_url) <= max_depth]
 
-    # Apply topic filtering (post-query - checks both metadata and knowledge graph)
-    if with_topic:
-        from kurt.db.models import DocumentEntity, Entity
+    # Apply entity filtering (knowledge graph only)
+    if entity_name:
+        from kurt.db.knowledge_graph import find_documents_with_entity
 
-        # Get document IDs that have this topic in knowledge graph
-        topic_stmt = (
-            select(DocumentEntity.document_id)
-            .join(Entity, DocumentEntity.entity_id == Entity.id)
-            .where(Entity.entity_type == "Topic")
-            .where(
-                (Entity.name.ilike(f"%{with_topic}%"))
-                | (Entity.canonical_name.ilike(f"%{with_topic}%"))
+        graph_doc_ids = {
+            str(doc_id)
+            for doc_id in find_documents_with_entity(
+                entity_name, entity_type=entity_type, session=session
             )
-        )
-        graph_doc_ids = {str(row) for row in session.exec(topic_stmt).all()}
+        }
+        documents = [d for d in documents if str(d.id) in graph_doc_ids]
 
-        # Filter documents that have topic in metadata OR in knowledge graph
-        documents = [
-            d
-            for d in documents
-            if
-            (
-                # Check metadata primary_topics
-                (
-                    d.primary_topics
-                    and any(with_topic.lower() in t.lower() for t in d.primary_topics)
-                )
-                # Check knowledge graph
-                or str(d.id) in graph_doc_ids
+    # Apply relationship filtering (knowledge graph only)
+    if relationship_type:
+        from kurt.db.knowledge_graph import find_documents_with_relationship
+
+        relationship_doc_ids = {
+            str(doc_id)
+            for doc_id in find_documents_with_relationship(
+                relationship_type,
+                source_entity_name=relationship_source,
+                target_entity_name=relationship_target,
+                session=session,
             )
-        ]
-
-    # Apply technology filtering (post-query - checks both metadata and knowledge graph)
-    if with_technology:
-        from kurt.db.models import DocumentEntity, Entity
-
-        # Get document IDs that have this technology in knowledge graph
-        tech_stmt = (
-            select(DocumentEntity.document_id)
-            .join(Entity, DocumentEntity.entity_id == Entity.id)
-            .where(Entity.entity_type.in_(["Technology", "Tool", "Product"]))
-            .where(
-                (Entity.name.ilike(f"%{with_technology}%"))
-                | (Entity.canonical_name.ilike(f"%{with_technology}%"))
-            )
-        )
-        graph_doc_ids = {str(row) for row in session.exec(tech_stmt).all()}
-
-        # Filter documents that have technology in metadata OR in knowledge graph
-        documents = [
-            d
-            for d in documents
-            if
-            (
-                # Check metadata tools_technologies
-                (
-                    d.tools_technologies
-                    and any(with_technology.lower() in t.lower() for t in d.tools_technologies)
-                )
-                # Check knowledge graph
-                or str(d.id) in graph_doc_ids
-            )
-        ]
+        }
+        documents = [d for d in documents if str(d.id) in relationship_doc_ids]
 
     # Apply pagination (after all filtering)
     if offset or limit:

@@ -14,16 +14,14 @@ from concurrent.futures import ThreadPoolExecutor
 
 import dspy
 
-from kurt.content.indexing_helpers import (
-    _get_top_entities,
-    _load_document_content,
-)
+from kurt.content.document import load_document_content
 from kurt.content.indexing_models import (
     DocumentMetadataOutput,
     EntityExtraction,
     RelationshipExtraction,
 )
 from kurt.db.database import get_session
+from kurt.db.knowledge_graph import get_top_entities
 from kurt.utils import calculate_content_hash, get_git_commit_hash
 
 logger = logging.getLogger(__name__)
@@ -174,7 +172,7 @@ def extract_document_metadata(
         )
 
     # Load content from filesystem
-    content = _load_document_content(doc)
+    content = load_document_content(doc)
 
     # Calculate current content hash
     current_content_hash = calculate_content_hash(content, algorithm="sha256")
@@ -184,12 +182,18 @@ def extract_document_metadata(
         logger.info(
             f"Skipping document {doc.id} - content unchanged (hash: {current_content_hash[:8]}...)"
         )
+        # Get all entities from knowledge graph
+        from kurt.db.knowledge_graph import get_document_entities
+
+        all_entities = get_document_entities(doc.id, names_only=False, session=session)
+        # Convert to entity dicts matching the format from extraction
+        entities = [{"name": name, "type": etype} for name, etype in all_entities]
+
         return {
             "document_id": resolved_doc_id,
             "title": doc.title,
             "content_type": doc.content_type.value if doc.content_type else None,
-            "topics": doc.primary_topics or [],
-            "tools": doc.tools_technologies or [],
+            "entities": entities,
             "skipped": True,
             "skip_reason": "content unchanged",
         }
@@ -202,7 +206,7 @@ def extract_document_metadata(
         activity_callback("Loading existing entities...")
 
     # Get existing entities for resolution
-    existing_entities_raw = _get_top_entities(session, limit=100)
+    existing_entities_raw = get_top_entities(limit=100, session=session)
     logger.info(f"  → Loaded {len(existing_entities_raw)} existing entities")
 
     # Create index-to-UUID mapping for efficient LLM processing
@@ -254,11 +258,7 @@ def extract_document_metadata(
     metadata_output = result.metadata
 
     logger.info("  ✓ LLM call completed")
-    logger.info(
-        f"  → Extracted: type={metadata_output.content_type.value}, "
-        f"topics={len(metadata_output.primary_topics)}, "
-        f"tools={len(metadata_output.tools_technologies)}"
-    )
+    logger.info(f"  → Extracted: type={metadata_output.content_type.value}")
     logger.info("  → Updating document in database...")
 
     # Report activity: updating database
@@ -283,8 +283,9 @@ def extract_document_metadata(
     if not doc.cms_platform:
         doc.content_type = metadata_output.content_type
 
-    doc.primary_topics = metadata_output.primary_topics
-    doc.tools_technologies = metadata_output.tools_technologies
+    # NOTE: primary_topics and tools_technologies are deprecated - topics/tools now live in knowledge graph only
+    # doc.primary_topics = metadata_output.primary_topics  # DEPRECATED: see Issue #16
+    # doc.tools_technologies = metadata_output.tools_technologies  # DEPRECATED: see Issue #16
     doc.has_code_examples = metadata_output.has_code_examples
     doc.has_step_by_step_procedures = metadata_output.has_step_by_step_procedures
     doc.has_narrative_structure = metadata_output.has_narrative_structure
@@ -323,7 +324,7 @@ def extract_document_metadata(
     new_entities = [
         {
             "name": e.name,
-            "type": e.entity_type,
+            "type": e.entity_type.value,  # Convert enum to string
             "description": e.description,
             "aliases": e.aliases,
             "confidence": e.confidence,
@@ -336,7 +337,7 @@ def extract_document_metadata(
         {
             "source_entity": r.source_entity,
             "target_entity": r.target_entity,
-            "relationship_type": r.relationship_type,
+            "relationship_type": r.relationship_type.value,  # Convert enum to string
             "context": r.context,
             "confidence": r.confidence,
         }
@@ -353,8 +354,7 @@ def extract_document_metadata(
         "document_id": resolved_doc_id,
         "title": doc.title,
         "content_type": metadata_output.content_type.value,
-        "topics": metadata_output.primary_topics,
-        "tools": metadata_output.tools_technologies,
+        "entities": new_entities,  # All entities extracted
         "skipped": False,
         # Knowledge graph data
         "kg_data": {

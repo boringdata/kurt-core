@@ -380,10 +380,13 @@ def links_cmd(identifier: str, direction: str, output_format: str):
         kurt content links 550e8400 --direction inbound  # Show inbound links
         kurt content links 550e8400 --format json
     """
-    from kurt.content.filtering import get_document_links
+    from kurt.content.document import get_document
+    from kurt.db.knowledge_graph import get_document_links
 
     try:
-        links = get_document_links(identifier, direction=direction)
+        # Resolve identifier to UUID
+        doc = get_document(identifier)
+        links = get_document_links(doc.id, direction=direction)
 
         if output_format == "json":
             print(json.dumps(links, indent=2))

@@ -5,8 +5,8 @@ from uuid import uuid4
 import pytest
 
 from kurt.content.fetch import extract_document_links, save_document_links
-from kurt.content.filtering import get_document_links
 from kurt.db.database import get_session
+from kurt.db.knowledge_graph import get_document_links
 from kurt.db.models import Document, DocumentLink, IngestionStatus, SourceType
 
 
@@ -334,7 +334,7 @@ class TestGetDocumentLinks:
         session.commit()
 
         # Get outbound links
-        links = get_document_links(str(source_doc.id), direction="outbound")
+        links = get_document_links(source_doc.id, direction="outbound")
 
         assert len(links) == 1
         assert links[0]["source_title"] == "Source"
@@ -370,47 +370,12 @@ class TestGetDocumentLinks:
         session.commit()
 
         # Get inbound links (to target_doc)
-        links = get_document_links(str(target_doc.id), direction="inbound")
+        links = get_document_links(target_doc.id, direction="inbound")
 
         assert len(links) == 1
         assert links[0]["source_title"] == "Source"
         assert links[0]["target_title"] == "Target"
         assert links[0]["anchor_text"] == "See Target"
-
-    def test_get_links_with_partial_uuid(self, tmp_project):
-        """Test getting links using partial UUID."""
-        session = get_session()
-        # Create documents
-        source_doc = Document(
-            title="Source",
-            source_url="https://example.com/source",
-            source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
-        )
-        target_doc = Document(
-            title="Target",
-            source_url="https://example.com/target",
-            source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
-        )
-        session.add_all([source_doc, target_doc])
-        session.commit()
-
-        # Create link
-        link = DocumentLink(
-            source_document_id=source_doc.id,
-            target_document_id=target_doc.id,
-            anchor_text="Link",
-        )
-        session.add(link)
-        session.commit()
-
-        # Get links using partial UUID (first 8 chars)
-        doc_id_str = str(source_doc.id)
-        partial_id = doc_id_str[:8]
-        links = get_document_links(partial_id, direction="outbound")
-
-        assert len(links) == 1
 
     def test_get_links_no_results(self, tmp_project):
         """Test getting links when document has no links."""
@@ -424,7 +389,7 @@ class TestGetDocumentLinks:
         session.add(doc)
         session.commit()
 
-        links = get_document_links(str(doc.id), direction="outbound")
+        links = get_document_links(doc.id, direction="outbound")
 
         assert len(links) == 0
 
@@ -441,11 +406,11 @@ class TestGetDocumentLinks:
         session.commit()
 
         with pytest.raises(ValueError, match="Invalid direction"):
-            get_document_links(str(doc.id), direction="invalid")
+            get_document_links(doc.id, direction="invalid")
 
     def test_get_links_nonexistent_document(self, tmp_project):
         """Test that nonexistent document raises ValueError."""
-        fake_id = str(uuid4())
+        fake_id = uuid4()
 
         with pytest.raises(ValueError):
             get_document_links(fake_id, direction="outbound")
@@ -497,13 +462,13 @@ class TestIntegration:
         assert count == 2
 
         # Query outbound links from doc1
-        outbound = get_document_links(str(doc1.id), direction="outbound")
+        outbound = get_document_links(doc1.id, direction="outbound")
         assert len(outbound) == 2
         titles = {link["target_title"] for link in outbound}
         assert titles == {"Setup", "Tutorial"}
 
         # Query inbound links to doc2
-        inbound = get_document_links(str(doc2.id), direction="inbound")
+        inbound = get_document_links(doc2.id, direction="inbound")
         assert len(inbound) == 1
         assert inbound[0]["source_title"] == "Introduction"
         assert inbound[0]["anchor_text"] == "Setup"

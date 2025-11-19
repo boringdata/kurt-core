@@ -9,8 +9,7 @@ from .get import get_document_cmd
 from .index import index
 from .list import list_documents_cmd
 from .list_clusters import list_clusters_cmd
-from .list_technologies import list_technologies_cmd
-from .list_topics import list_topics_cmd
+from .list_entities import list_entities_cmd
 from .map import map_cmd
 from .search import links_cmd, search_cmd
 from .stats import stats_cmd
@@ -30,8 +29,7 @@ def content():
     - links: Show links from/to a document
     - cluster: Organize documents into topic clusters
     - list: View all documents with filters
-    - list-topics: List all topics from metadata/graph
-    - list-technologies: List all technologies from metadata/graph
+    - list-entities: List entities from knowledge graph (topics, technologies, etc.)
     - get: View single document details
     - index: Extract metadata with LLM
     - delete: Remove documents
@@ -49,8 +47,7 @@ content.add_command(search_cmd, name="search")
 content.add_command(links_cmd, name="links")
 content.add_command(cluster_urls_cmd, name="cluster")
 content.add_command(list_documents_cmd, name="list")
-content.add_command(list_topics_cmd, name="list-topics")
-content.add_command(list_technologies_cmd, name="list-technologies")
+content.add_command(list_entities_cmd, name="list-entities")
 content.add_command(get_document_cmd, name="get")
 content.add_command(index)
 content.add_command(delete_document_cmd, name="delete")

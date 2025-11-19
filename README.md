@@ -136,8 +136,8 @@ kurt content list
 kurt content search "topic keyword"
 
 # Discover topics and gaps
-kurt content list-topics
-kurt content list-technologies
+kurt content list-entities topic
+kurt content list-entities technology
 
 # Research
 kurt integrations research search "market research question"
@@ -243,13 +243,17 @@ Kurt indexes your content to help you find gaps and plan new content:
 
 ```bash
 # See all topics covered in your content
-kurt content list-topics
+kurt content list-entities topic
 
 # See all technologies documented
-kurt content list-technologies
+kurt content list-entities technology
 
-# Find all docs about a specific topic
-kurt content list --with-topic "authentication"
+# Find all docs about a specific entity
+kurt content list --with-entity "Topic:authentication"
+kurt content list --with-entity "Technology:Python"
+
+# Find docs with specific relationships
+kurt content list --with-relationship integrates_with
 
 # Search for content
 kurt content search "API integration"
@@ -384,10 +388,10 @@ kurt content get <document-id>
 kurt content search "keyword"
 
 # Discover topics and technologies
-kurt content list-topics
-kurt content list-technologies
-kurt content list-topics --min-docs 5            # Only topics in 5+ docs
-kurt content list-topics --include "*/docs/*"    # Filter by path
+kurt content list-entities topic
+kurt content list-entities technology
+kurt content list-entities topic --min-docs 5            # Only topics in 5+ docs
+kurt content list-entities topic --include "*/docs/*"    # Filter by path
 
 # Filter by metadata
 kurt content list --with-content-type tutorial
