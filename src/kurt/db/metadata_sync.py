@@ -102,7 +102,7 @@ def write_frontmatter_to_file(doc, session=None) -> None:
             doc.id, entity_type="Topic", names_only=True, session=session
         )
         tools = get_document_entities(
-            doc.id, entity_type="technologies", names_only=True, session=session
+            doc.id, entity_type="Technology", names_only=True, session=session
         )
 
         # Skip if no metadata to write
