@@ -104,33 +104,48 @@ kurt content links <doc-id> --direction inbound
 
 ---
 
-### 5. Indexed Metadata Search
-Filter by topics, technologies, and content characteristics extracted during indexing.
+### 5. Knowledge Graph Search
+Filter by entities (topics, technologies, companies) and relationships extracted during indexing.
 
 ```bash
-# Filter by topic
-kurt content list --with-topic "authentication"
-kurt content list --with-topic "API"
+# Filter by entity (any type)
+kurt content list --with-entity "Python"
+kurt content list --with-entity "authentication"
 
-# Filter by technology
-kurt content list --with-technology "Python"
-kurt content list --with-technology "Docker"
+# Filter by specific entity type
+kurt content list --with-entity "Topic:authentication"
+kurt content list --with-entity "Technology:Docker"
+kurt content list --with-entity "Company:Google"
+kurt content list --with-entity "Product:FastAPI"
 
-# Combine metadata filters
-kurt content list --with-content-type tutorial --with-technology "React"
-kurt content list --with-topic "deployment" --with-technology "Kubernetes"
+# Filter by relationship type
+kurt content list --with-relationship integrates_with
+kurt content list --with-relationship depends_on
+
+# Filter by relationship with entity names
+kurt content list --with-relationship "integrates_with:FastAPI"
+kurt content list --with-relationship "depends_on::Python"
+kurt content list --with-relationship "integrates_with:FastAPI:Pydantic"
+
+# Combine entity and content type filters
+kurt content list --with-content-type tutorial --with-entity "Technology:React"
+kurt content list --with-entity "Topic:deployment" --with-entity "Technology:Kubernetes"
 
 # View indexed metadata
-kurt content get <doc-id>  # Shows topics, technologies, content type, structural flags
+kurt content get <doc-id>  # Shows entities, relationships, content type, structural flags
 ```
 
-**Use when**: Filtering by extracted topics, technologies, or content type
+**Use when**: Filtering by extracted entities, relationships, or content type
 
 **Note**: Requires running `kurt content index` first to extract metadata. See `add-source.md` for indexing workflow.
 
 **Available filters:**
-- `--with-topic`: Filter by topics in knowledge graph (case-insensitive substring match)
-- `--with-technology`: Filter by tools/technologies in knowledge graph (case-insensitive substring match)
+- `--with-entity`: Filter by entities in knowledge graph
+  - Format: `"Name"` (search all entity types) or `"Type:Name"` (specific type)
+  - Types: Topic, Technology, Product, Feature, Company, Integration
+- `--with-relationship`: Filter by relationship types in knowledge graph
+  - Format: `"Type"`, `"Type:Source"`, `"Type:Source:Target"`
+  - Types: mentions, part_of, integrates_with, enables, related_to, depends_on, replaces
 - `--with-content-type`: Filter by content type (tutorial, guide, blog, reference, etc.)
 
 ---
@@ -181,9 +196,10 @@ kurt content stats --include "*docs.example.com*"
 **I know the exact topic/keyword** → Semantic Search
 - Example: "Find all docs mentioning webhooks"
 
-**I want docs about a specific topic or technology** → Indexed Metadata Search
-- Example: "Show me all Python tutorials" → `kurt content list --with-content-type tutorial --with-technology Python`
-- Example: "Find authentication guides" → `kurt content list --with-topic authentication`
+**I want docs about a specific entity or relationship** → Knowledge Graph Search
+- Example: "Show me all Python tutorials" → `kurt content list --with-content-type tutorial --with-entity "Technology:Python"`
+- Example: "Find authentication guides" → `kurt content list --with-entity "Topic:authentication"`
+- Example: "Find docs about integrations" → `kurt content list --with-relationship integrates_with`
 
 **I want to explore by theme** → Cluster-Based Discovery
 - Example: "Show me all tutorial content"

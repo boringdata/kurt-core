@@ -248,8 +248,12 @@ kurt content list-topics
 # See all technologies documented
 kurt content list-technologies
 
-# Find all docs about a specific topic
-kurt content list --with-topic "authentication"
+# Find all docs about a specific entity
+kurt content list --with-entity "Topic:authentication"
+kurt content list --with-entity "Technology:Python"
+
+# Find docs with specific relationships
+kurt content list --with-relationship integrates_with
 
 # Search for content
 kurt content search "API integration"
