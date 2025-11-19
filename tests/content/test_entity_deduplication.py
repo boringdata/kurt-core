@@ -256,7 +256,7 @@ def mock_llm_calls(mock_dspy_signature, mock_all_llm_calls):
     with mock_dspy_signature("AllSignatures", router):
         # CRITICAL: Must patch where functions are USED, not where they're DEFINED
         with (
-            patch("kurt.content.indexing_entity_resolution._generate_embeddings") as mock_embed,
+            patch("kurt.content.embeddings.generate_embeddings") as mock_embed,
             patch("kurt.db.knowledge_graph.search_similar_entities") as mock_search,
         ):
             # Return embeddings that match input count

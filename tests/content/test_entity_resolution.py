@@ -155,7 +155,7 @@ def test_two_documents_same_entity_single_creation(
 
     with (
         patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_helpers._generate_embeddings") as mock_embed,
+        patch("kurt.content.embeddings.generate_embeddings") as mock_embed,
         patch("kurt.db.knowledge_graph.search_similar_entities") as mock_search,
         patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
     ):
@@ -382,7 +382,7 @@ def test_reindexing_no_duplicates(test_document, mock_all_llm_calls):
 
     with (
         patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution._generate_embeddings") as mock_embed,
+        patch("kurt.content.embeddings.generate_embeddings") as mock_embed,
         patch("kurt.db.knowledge_graph.search_similar_entities") as mock_search,
     ):
         mock_cot.return_value.return_value = mock_resolution
@@ -586,7 +586,7 @@ def test_alias_matching_links_to_existing(test_document, mock_all_llm_calls):
 
     with (
         patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution._generate_embeddings") as mock_embed,
+        patch("kurt.content.embeddings.generate_embeddings") as mock_embed,
         patch("kurt.db.knowledge_graph.search_similar_entities") as mock_search,
     ):
         mock_cot.return_value.return_value = mock_resolution
@@ -657,7 +657,7 @@ def test_orphaned_entity_cleanup(test_document, mock_all_llm_calls):
 
     with (
         patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution._generate_embeddings") as mock_embed,
+        patch("kurt.content.embeddings.generate_embeddings") as mock_embed,
         patch("kurt.db.knowledge_graph.search_similar_entities") as mock_search,
     ):
         mock_cot.return_value.return_value = mock_resolution
@@ -701,7 +701,7 @@ def test_orphaned_entity_cleanup(test_document, mock_all_llm_calls):
 
     with (
         patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution._generate_embeddings") as mock_embed,
+        patch("kurt.content.embeddings.generate_embeddings") as mock_embed,
         patch("kurt.db.knowledge_graph.search_similar_entities") as mock_search,
     ):
         mock_cot.return_value.return_value = mock_resolution_2
@@ -880,7 +880,7 @@ def test_empty_entity_names_handled(test_document, mock_all_llm_calls):
 
     with (
         patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought"),
-        patch("kurt.content.indexing_entity_resolution._generate_embeddings") as mock_embed,
+        patch("kurt.content.embeddings.generate_embeddings") as mock_embed,
         patch("kurt.db.knowledge_graph.search_similar_entities") as mock_search,
     ):
         # Should handle empty names gracefully
@@ -1022,7 +1022,7 @@ def test_finalize_knowledge_graph_end_to_end(test_document, test_document_2, moc
 
     with (
         patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution._generate_embeddings") as mock_embed,
+        patch("kurt.content.embeddings.generate_embeddings") as mock_embed,
         patch("kurt.db.knowledge_graph.search_similar_entities") as mock_search,
     ):
         mock_cot.return_value.return_value = mock_resolution
@@ -1352,7 +1352,7 @@ def test_circular_relationships(test_document, mock_all_llm_calls):
 
     with (
         patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution._generate_embeddings") as mock_embed,
+        patch("kurt.content.embeddings.generate_embeddings") as mock_embed,
         patch("kurt.db.knowledge_graph.search_similar_entities") as mock_search,
     ):
         mock_cot.return_value.side_effect = side_effect_resolutions
@@ -1445,7 +1445,7 @@ def test_unicode_entity_names(test_document, mock_all_llm_calls):
 
     with (
         patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution._generate_embeddings") as mock_embed,
+        patch("kurt.content.embeddings.generate_embeddings") as mock_embed,
         patch("kurt.db.knowledge_graph.search_similar_entities") as mock_search,
     ):
         mock_cot.return_value.side_effect = resolve_entities

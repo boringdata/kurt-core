@@ -207,10 +207,9 @@ def _resolve_entity_groups(
     total_groups = len(groups)
     completed_groups = 0
 
-    # Prepare resolution tasks (one per group)
-    group_tasks = []
-    for group_id, group_entities in groups.items():
-        # Get similar existing entities for this group (search using first entity's name as representative)
+    # Prepare resolution tasks (one per group) - PARALLELIZE similarity searches
+    def fetch_similar_entities(group_id, group_entities):
+        """Fetch similar entities for a group."""
         representative_entity = group_entities[0]
         similar_existing = search_similar_entities(
             representative_entity["name"],
@@ -218,14 +217,19 @@ def _resolve_entity_groups(
             limit=10,
             session=session,
         )
+        return {
+            "group_id": group_id,
+            "group_entities": group_entities,
+            "similar_existing": similar_existing,
+        }
 
-        group_tasks.append(
-            {
-                "group_id": group_id,
-                "group_entities": group_entities,
-                "similar_existing": similar_existing,
-            }
-        )
+    # Fetch similar entities for all groups in parallel using ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=max_concurrent) as executor:
+        futures = [
+            executor.submit(fetch_similar_entities, group_id, group_entities)
+            for group_id, group_entities in groups.items()
+        ]
+        group_tasks = [future.result() for future in futures]
 
     async def resolve_group_async(task_data):
         """Resolve a single group asynchronously."""

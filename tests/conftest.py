@@ -430,7 +430,7 @@ def mock_all_llm_calls():
     own specific mocking strategies. Tests that need this should request it explicitly.
     """
     with (
-        patch("kurt.content.indexing_helpers._generate_embeddings") as mock_gen_embeddings,
+        patch("kurt.content.embeddings.generate_embeddings") as mock_gen_embeddings,
         patch("dspy.Embedder") as mock_embedder_class,
         patch("dspy.LM") as mock_lm_class,
         patch("dspy.configure") as mock_configure,
