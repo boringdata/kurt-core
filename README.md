@@ -110,7 +110,7 @@ uv tool upgrade kurt-core
 
 # Update your local plugin files
 kurt update              # Interactive - prompts for each component
-kurt update --yes        # Auto-update everything
+kurt update --auto       # Auto-update everything
 kurt update --dry-run    # Preview changes without applying
 ```
 
@@ -367,7 +367,7 @@ kurt init --db-path data/my-project.db
 
 # Update plugin files after upgrading Kurt
 kurt update                  # Interactive update with prompts
-kurt update --yes            # Auto-confirm all updates
+kurt update --auto           # Auto-confirm all updates
 kurt update --ide claude     # Update Claude Code files only
 kurt update --dry-run        # Preview what would change
 ```

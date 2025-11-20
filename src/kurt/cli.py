@@ -353,7 +353,7 @@ OPENAI_API_KEY=your_openai_api_key_here
     help="Update specific IDE only (default: all installed IDEs)",
 )
 @click.option(
-    "--yes",
+    "--auto",
     is_flag=True,
     help="Auto-confirm all updates without prompting",
 )
@@ -363,7 +363,7 @@ OPENAI_API_KEY=your_openai_api_key_here
     help="Show what would be updated without applying changes",
 )
 @track_command
-def update(ide: str | None, yes: bool, dry_run: bool):
+def update(ide: str | None, auto: bool, dry_run: bool):
     """
     Update Kurt plugin files to the latest version.
 
@@ -380,7 +380,7 @@ def update(ide: str | None, yes: bool, dry_run: bool):
         kurt update --ide cursor
 
         # Auto-confirm all updates
-        kurt update --yes
+        kurt update --auto
 
         # Preview what would be updated
         kurt update --dry-run
@@ -388,7 +388,7 @@ def update(ide: str | None, yes: bool, dry_run: bool):
     from kurt.update import update_files
 
     try:
-        result = update_files(ide=ide, auto_confirm=yes, dry_run=dry_run)
+        result = update_files(ide=ide, auto_confirm=auto, dry_run=dry_run)
 
         if result.get("error"):
             raise click.Abort()
