@@ -518,16 +518,25 @@ def fetch_documents_batch(
             return result
 
         tasks = [_fetch_with_progress(doc_id) for doc_id in document_ids]
-        results = await asyncio.gather(*tasks)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Filter out exceptions and log errors
+        valid_results = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.error(f"Failed to fetch document {document_ids[i]}: {result}")
+                valid_results.append({"success": False, "error": str(result)})
+            else:
+                valid_results.append(result)
 
         # Log progress every 10 documents or at completion
-        successful_count = sum(1 for r in results if r["success"])
-        failed_count = len(results) - successful_count
+        successful_count = sum(1 for r in valid_results if r["success"])
+        failed_count = len(valid_results) - successful_count
         logger.info(
-            f"Fetching complete: {successful_count} successful, {failed_count} failed [{len(results)}/{len(document_ids)}]"
+            f"Fetching complete: {successful_count} successful, {failed_count} failed [{len(valid_results)}/{len(document_ids)}]"
         )
 
-        return results
+        return valid_results
 
     results = asyncio.run(_batch_fetch())
 
