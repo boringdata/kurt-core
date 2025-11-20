@@ -159,7 +159,12 @@ def test_two_documents_same_entity_single_creation(
         patch("kurt.db.knowledge_graph.search_similar_entities") as mock_search,
         patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
     ):
+        # Wrap synchronous mock in async function for .acall()
+        async def async_resolve_entities(*args, **kwargs):
+            return resolve_entities(*args, **kwargs)
+
         mock_cot.return_value.side_effect = resolve_entities
+        mock_cot.return_value.acall = Mock(side_effect=async_resolve_entities)
         # Ensure both Pythons cluster together
         mock_embed.return_value = [[0.1, 0.2, 0.3], [0.11, 0.21, 0.31]]
         mock_search.return_value = []
@@ -310,7 +315,12 @@ def test_similar_entity_names_merged(test_document, mock_all_llm_calls):
         patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
         patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
     ):
+        # Wrap synchronous mock in async function for .acall()
+        async def async_resolve_entities(*args, **kwargs):
+            return resolve_entities(*args, **kwargs)
+
         mock_cot.return_value.side_effect = resolve_entities
+        mock_cot.return_value.acall = Mock(side_effect=async_resolve_entities)
 
         # Three variations of the same entity
         new_entities = [
@@ -386,6 +396,12 @@ def test_reindexing_no_duplicates(test_document, mock_all_llm_calls):
         patch("kurt.db.knowledge_graph.search_similar_entities") as mock_search,
     ):
         mock_cot.return_value.return_value = mock_resolution
+
+        # Also set up async .acall() to return same mock
+        async def async_return_value(*args, **kwargs):
+            return mock_resolution
+
+        mock_cot.return_value.acall = Mock(side_effect=async_return_value)
         mock_embed.return_value = [[0.1, 0.2, 0.3]]
         mock_search.return_value = []
 
@@ -497,6 +513,12 @@ def test_entity_type_mismatch_no_merge(test_document, test_document_2, mock_all_
     ):
         # First entity: Company named "Apple Inc"
         mock_cot.return_value.return_value = mock_resolution_1
+
+        # Also set up async .acall() to return same mock
+        async def async_return_value(*args, **kwargs):
+            return mock_resolution_1
+
+        mock_cot.return_value.acall = Mock(side_effect=async_return_value)
         new_entities_1 = [
             {
                 "name": "Apple Inc",
@@ -512,6 +534,12 @@ def test_entity_type_mismatch_no_merge(test_document, test_document_2, mock_all_
 
         # Second entity: Topic named "Apple fruit"
         mock_cot.return_value.return_value = mock_resolution_2
+
+        # Also set up async .acall() to return same mock
+        async def async_return_value(*args, **kwargs):
+            return mock_resolution_2
+
+        mock_cot.return_value.acall = Mock(side_effect=async_return_value)
         new_entities_2 = [
             {
                 "name": "Apple fruit",
@@ -590,6 +618,12 @@ def test_alias_matching_links_to_existing(test_document, mock_all_llm_calls):
         patch("kurt.db.knowledge_graph.search_similar_entities") as mock_search,
     ):
         mock_cot.return_value.return_value = mock_resolution
+
+        # Also set up async .acall() to return same mock
+        async def async_return_value(*args, **kwargs):
+            return mock_resolution
+
+        mock_cot.return_value.acall = Mock(side_effect=async_return_value)
         mock_embed.return_value = [[0.1, 0.2, 0.3]]
         mock_search.return_value = []
 
@@ -661,6 +695,12 @@ def test_orphaned_entity_cleanup(test_document, mock_all_llm_calls):
         patch("kurt.db.knowledge_graph.search_similar_entities") as mock_search,
     ):
         mock_cot.return_value.return_value = mock_resolution
+
+        # Also set up async .acall() to return same mock
+        async def async_return_value(*args, **kwargs):
+            return mock_resolution
+
+        mock_cot.return_value.acall = Mock(side_effect=async_return_value)
         mock_embed.return_value = [[0.1, 0.2, 0.3]]
         mock_search.return_value = []
 
@@ -705,6 +745,12 @@ def test_orphaned_entity_cleanup(test_document, mock_all_llm_calls):
         patch("kurt.db.knowledge_graph.search_similar_entities") as mock_search,
     ):
         mock_cot.return_value.return_value = mock_resolution_2
+
+        # Also set up async .acall() to return same mock
+        async def async_return_value(*args, **kwargs):
+            return mock_resolution_2
+
+        mock_cot.return_value.acall = Mock(side_effect=async_return_value)
         mock_embed.return_value = [[0.1, 0.2, 0.3]]
         mock_search.return_value = []
 
@@ -792,7 +838,12 @@ def test_relationship_creation_no_duplicates(test_document, mock_all_llm_calls):
         patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
         patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
     ):
+        # Wrap synchronous mock in async function for .acall()
+        async def async_side_effect_resolutions(*args, **kwargs):
+            return side_effect_resolutions(*args, **kwargs)
+
         mock_cot.return_value.side_effect = side_effect_resolutions
+        mock_cot.return_value.acall = Mock(side_effect=async_side_effect_resolutions)
 
         new_entities = [
             {
@@ -1026,6 +1077,12 @@ def test_finalize_knowledge_graph_end_to_end(test_document, test_document_2, moc
         patch("kurt.db.knowledge_graph.search_similar_entities") as mock_search,
     ):
         mock_cot.return_value.return_value = mock_resolution
+
+        # Also set up async .acall() to return same mock
+        async def async_return_value(*args, **kwargs):
+            return mock_resolution
+
+        mock_cot.return_value.acall = Mock(side_effect=async_return_value)
         mock_embed.return_value = [[0.1, 0.2, 0.3]]
         mock_search.return_value = []
 
@@ -1225,7 +1282,12 @@ def test_complex_grouping_mixed_resolutions(test_document, mock_all_llm_calls):
         patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
         patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
     ):
+        # Wrap synchronous mock in async function for .acall()
+        async def async_side_effect_resolutions(*args, **kwargs):
+            return side_effect_resolutions(*args, **kwargs)
+
         mock_cot.return_value.side_effect = side_effect_resolutions
+        mock_cot.return_value.acall = Mock(side_effect=async_side_effect_resolutions)
 
         # 5 entities: React, React.js, Django, DjangoREST, FastAPI
         new_entities = [
@@ -1355,7 +1417,12 @@ def test_circular_relationships(test_document, mock_all_llm_calls):
         patch("kurt.content.indexing_entity_resolution.generate_embeddings") as mock_embed,
         patch("kurt.db.knowledge_graph.search_similar_entities") as mock_search,
     ):
+        # Wrap synchronous mock in async function for .acall()
+        async def async_side_effect_resolutions(*args, **kwargs):
+            return side_effect_resolutions(*args, **kwargs)
+
         mock_cot.return_value.side_effect = side_effect_resolutions
+        mock_cot.return_value.acall = Mock(side_effect=async_side_effect_resolutions)
         # Each entity in its own cluster
         mock_embed.return_value = [[0.1, 0.2, 0.3], [0.8, 0.7, 0.6]]
         mock_search.return_value = []
@@ -1448,7 +1515,12 @@ def test_unicode_entity_names(test_document, mock_all_llm_calls):
         patch("kurt.content.indexing_entity_resolution.generate_embeddings") as mock_embed,
         patch("kurt.db.knowledge_graph.search_similar_entities") as mock_search,
     ):
+        # Wrap synchronous mock in async function for .acall()
+        async def async_resolve_entities(*args, **kwargs):
+            return resolve_entities(*args, **kwargs)
+
         mock_cot.return_value.side_effect = resolve_entities
+        mock_cot.return_value.acall = Mock(side_effect=async_resolve_entities)
         # Each entity in different cluster
         mock_embed.return_value = [[0.1, 0.2, 0.3], [0.5, 0.6, 0.7], [0.9, 0.8, 0.7]]
         mock_search.return_value = []
