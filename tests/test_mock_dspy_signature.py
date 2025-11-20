@@ -362,6 +362,9 @@ def test_simulating_llm_errors(mock_dspy_signature, tmp_project):
     Test error handling by having the mock raise exceptions.
 
     This is useful for testing error cases without making real API calls.
+
+    With async resilient design, errors are caught and logged (not propagated)
+    so that one failing group doesn't stop processing other groups.
     """
 
     def error_resolver(**kwargs):
@@ -373,19 +376,22 @@ def test_simulating_llm_errors(mock_dspy_signature, tmp_project):
             _resolve_entity_groups as resolve_entity_groups,
         )
 
-        # Expect the error to propagate (embeddings auto-mocked by autouse fixture)
-        with pytest.raises(ValueError, match="LLM returned invalid JSON"):
-            resolve_entity_groups(
-                [
-                    {
-                        "name": "Test",
-                        "type": "Technology",
-                        "description": "Test entity",
-                        "aliases": [],
-                        "confidence": 0.9,
-                    }
-                ]
-            )
+        # With resilient async design, errors are caught and empty results returned
+        # (one failing group doesn't stop other groups from processing)
+        result = resolve_entity_groups(
+            [
+                {
+                    "name": "Test",
+                    "type": "Technology",
+                    "description": "Test entity",
+                    "aliases": [],
+                    "confidence": 0.9,
+                }
+            ]
+        )
+
+        # Should return empty list since the only group failed
+        assert result == []
 
 
 # ============================================================================
