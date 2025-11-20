@@ -18,6 +18,10 @@ def setup_database():
     """Ensure database schema exists before running tests."""
     # Get database URL from client
     client = SQLiteClient()
+
+    # Ensure .kurt directory exists (critical for CI)
+    client.ensure_kurt_directory()
+
     db_url = client.get_database_url()
 
     # Create engine and tables
