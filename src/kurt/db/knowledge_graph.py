@@ -387,6 +387,117 @@ def find_documents_with_entity(
 
 
 # ============================================================================
+# Entity Creation
+# ============================================================================
+
+
+def create_entity_with_document_edges(
+    session,
+    canonical_name: str,
+    group_resolutions: list,
+    entity_name_to_docs: dict,
+    entity_name_to_id: dict,
+    entity_data: dict,
+    entity_embedding: list = None,
+) -> Entity:
+    """Create a new entity with document edges from entity resolution.
+
+    This function handles the complete entity creation workflow:
+    1. Aggregates data from all entity name variations in a group
+    2. Creates the Entity with embeddings
+    3. Creates DocumentEntity edges for all mentioning documents
+
+    Args:
+        session: Database session
+        canonical_name: Canonical name for the entity
+        group_resolutions: List of resolutions in this group (from LLM)
+        entity_name_to_docs: Mapping of entity names to document info
+        entity_name_to_id: Mapping to update with new entity ID
+        entity_data: Entity details from resolution (type, description, etc.)
+        entity_embedding: Pre-computed embedding (optional, will generate if None)
+
+    Returns:
+        Created Entity object
+
+    Note:
+        If entity_embedding is None, this function will generate it synchronously.
+        For async contexts, compute the embedding beforehand using run_in_executor.
+    """
+    from datetime import datetime
+    from uuid import uuid4
+
+    # Collect all entity names in this group
+    all_entity_names = [r["entity_name"] for r in group_resolutions]
+
+    # Collect all aliases from all resolutions in group
+    all_aliases = set()
+    for r in group_resolutions:
+        all_aliases.update(r["aliases"])
+
+    # Count how many unique documents mention any entity in this group
+    unique_docs = set()
+    for ent_name in all_entity_names:
+        for doc_info in entity_name_to_docs.get(ent_name, []):
+            unique_docs.add(doc_info["document_id"])
+    doc_count = len(unique_docs)
+
+    # Average confidence scores from all entities in the group
+    confidence_scores = [r["entity_details"].get("confidence", 0.9) for r in group_resolutions]
+    avg_confidence = sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0.9
+
+    # Create entity with embedding (generate if not provided)
+    if entity_embedding is None:
+        entity_embedding = generate_embeddings([canonical_name])[0]
+
+    entity = Entity(
+        id=uuid4(),
+        name=canonical_name,
+        entity_type=entity_data["type"],
+        canonical_name=canonical_name,
+        aliases=list(all_aliases),
+        description=entity_data.get("description", ""),
+        embedding=embedding_to_bytes(entity_embedding),
+        confidence_score=avg_confidence,
+        source_mentions=doc_count,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    session.add(entity)
+    session.flush()
+
+    # Map all names in this group to this entity ID
+    for ent_name in all_entity_names:
+        entity_name_to_id[ent_name] = entity.id
+
+    # Create document-entity edges for ALL documents that mention any entity in this group
+    docs_to_link = {}
+    for ent_name in all_entity_names:
+        for doc_info in entity_name_to_docs.get(ent_name, []):
+            doc_id = doc_info["document_id"]
+            # Keep the highest confidence if a doc mentions multiple variations
+            if (
+                doc_id not in docs_to_link
+                or doc_info["confidence"] > docs_to_link[doc_id]["confidence"]
+            ):
+                docs_to_link[doc_id] = doc_info
+
+    for doc_info in docs_to_link.values():
+        edge = DocumentEntity(
+            id=uuid4(),
+            document_id=doc_info["document_id"],
+            entity_id=entity.id,
+            mention_count=1,
+            confidence=doc_info["confidence"],
+            context=doc_info.get("quote"),
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+        )
+        session.add(edge)
+
+    return entity
+
+
+# ============================================================================
 # Entity Search and Similarity
 # ============================================================================
 
@@ -398,70 +509,13 @@ def cosine_similarity(emb1: list[float], emb2: list[float]) -> float:
     return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
 
 
-def search_similar_entities(
-    entity_name: str,
-    entity_type: str,
-    limit: int = 20,
-    session: Optional[Session] = None,
-) -> list[dict]:
-    """Search for entities similar to the given name using vector search.
-
-    Args:
-        entity_name: Entity name to find similar entities for
-        entity_type: Entity type filter (only return same type)
-        limit: Maximum number of results
-        session: Optional SQLModel session
-
-    Returns:
-        List of dicts with id, name, type, description, aliases, canonical_name, similarity
-    """
-    from kurt.db.sqlite import SQLiteClient
-
-    with session_scope(session) as s:
-        # Try to get stored embedding first
-        existing_entity = s.exec(
-            select(Entity).where(Entity.name == entity_name, Entity.entity_type == entity_type)
-        ).first()
-
-        if existing_entity:
-            embedding_bytes = existing_entity.embedding
-        else:
-            # Generate new embedding for search query
-            embedding_vector = generate_embeddings([entity_name])[0]
-            embedding_bytes = embedding_to_bytes(embedding_vector)
-
-        # Use SQLite client's vector search
-        client = SQLiteClient()
-        results = client.search_similar_entities(embedding_bytes, limit=limit, min_similarity=0.70)
-
-        # Load and filter entity details
-        similar_entities = []
-        for entity_id, similarity in results:
-            entity = s.get(Entity, UUID(entity_id))
-            if entity and entity.entity_type == entity_type:
-                entity_dict = entity.model_dump(exclude={"embedding"}, mode="python")
-                entity_dict["id"] = str(entity_dict["id"])
-                entity_dict["type"] = entity_dict.pop("entity_type")
-                entity_dict["similarity"] = similarity
-                similar_entities.append(entity_dict)
-
-        return similar_entities
-
-
-# ============================================================================
-# Async Functions
-# ============================================================================
-
-
-async def search_similar_entities_async(
+async def search_similar_entities(
     entity_name: str,
     entity_type: str,
     limit: int = 20,
     session: Optional[AsyncSession] = None,
 ) -> list[dict]:
-    """Async version of search_similar_entities.
-
-    Search for entities similar to the given name using vector search.
+    """Search for entities similar to the given name using vector search.
 
     Args:
         entity_name: Entity name to find similar entities for
@@ -475,14 +529,14 @@ async def search_similar_entities_async(
     Usage:
         # Single query
         async with async_session_scope() as session:
-            similar = await search_similar_entities_async(
+            similar = await search_similar_entities(
                 "Python", "Technology", session=session
             )
 
         # Batch queries (each creates its own session)
         async def fetch_similar(name: str, entity_type: str):
             async with async_session_scope() as session:
-                return await search_similar_entities_async(
+                return await search_similar_entities(
                     name, entity_type, session=session
                 )
 
