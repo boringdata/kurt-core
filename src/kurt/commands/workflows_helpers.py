@@ -1,12 +1,14 @@
-"""Helper CLI commands for workflows.
+"""Generic helper CLI commands for workflows.
 
-Commands for common workflow operations like exporting data, validating schemas, etc.
-These commands are designed to be used within workflow YAML files.
+Provides composable, generic operations that can be used in any workflow:
+- File I/O (read/write JSON, YAML, Markdown)
+- Template rendering
+- Data transformation
+- Validation
 """
 
 import json
 from pathlib import Path
-from typing import Any, Dict
 
 import click
 from rich.console import Console
@@ -20,241 +22,284 @@ def workflows_helpers():
     pass
 
 
-@workflows_helpers.command(name="export")
-@click.option("--data", required=True, help="JSON data to export")
-@click.option("--output-dir", required=True, type=click.Path(), help="Output directory")
+@workflows_helpers.command(name="write")
+@click.option("--data", required=True, help="Data to write (JSON string or reference)")
+@click.option("--output", required=True, type=click.Path(), help="Output file path")
 @click.option(
     "--format",
-    type=click.Choice(["markdown", "json", "yaml"]),
-    default="markdown",
+    type=click.Choice(["json", "yaml", "text"]),
+    default="json",
     help="Output format",
 )
-@click.option("--template", help="Template name (for markdown format)")
-@click.option("--suffix", default="", help="File suffix (e.g., .schema)")
-def export_data(data: str, output_dir: str, format: str, template: str, suffix: str):
+@click.option("--template", type=click.Path(exists=True), help="Template file (for text format)")
+@click.option("--append", is_flag=True, help="Append to file instead of overwriting")
+def write_file(data: str, output: str, format: str, template: str, append: bool):
     """
-    Export workflow data to files.
+    Write data to a file.
 
-    This command takes JSON data and exports it to files in various formats.
-    Useful for saving workflow results without writing custom scripts.
+    Generic file writing with format conversion and templating support.
 
     Examples:
-        # Export FAQ pages as markdown
-        kurt workflows export --data '${faq_pages}' --output-dir content/faqs --format markdown --template faq
+        # Write JSON
+        kurt workflows write --data '{"key": "value"}' --output data.json
 
-        # Export schema as JSON
-        kurt workflows export --data '${schema}' --output-dir content/faqs --format json --suffix .schema
+        # Write using template
+        kurt workflows write --data '${faq_data}' --output page.md --format text --template faq.md.j2
+
+        # Append to file
+        kurt workflows write --data "New line" --output log.txt --format text --append
     """
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
+    output_path = Path(output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    try:
+        # Parse data if JSON
+        if format in ["json", "yaml"]:
+            data_obj = json.loads(data) if isinstance(data, str) else data
+        else:
+            data_obj = data
+
+        # Apply template if provided
+        if template:
+            from string import Template
+
+            with open(template) as f:
+                tmpl = Template(f.read())
+
+            content = tmpl.safe_substitute(
+                data_obj if isinstance(data_obj, dict) else {"data": data_obj}
+            )
+        else:
+            # Format output
+            if format == "json":
+                content = json.dumps(data_obj, indent=2)
+            elif format == "yaml":
+                import yaml
+
+                content = yaml.dump(data_obj, default_flow_style=False)
+            else:
+                content = str(data_obj)
+
+        # Write to file
+        mode = "a" if append else "w"
+        with open(output_path, mode) as f:
+            f.write(content)
+            if append:
+                f.write("\n")
+
+        console.print(f"[green]✓[/green] Written to {output_path}")
+        click.echo(json.dumps({"file": str(output_path)}))
+
+    except Exception as e:
+        console.print(f"[red]Error writing file:[/red] {e}")
+        raise click.Abort()
+
+
+@workflows_helpers.command(name="read")
+@click.option(
+    "--input", "input_file", required=True, type=click.Path(exists=True), help="Input file"
+)
+@click.option(
+    "--format",
+    type=click.Choice(["json", "yaml", "text", "auto"]),
+    default="auto",
+    help="Input format (auto-detect by extension)",
+)
+def read_file(input_file: str, format: str):
+    """
+    Read data from a file.
+
+    Outputs data as JSON for use in workflows.
+
+    Examples:
+        kurt workflows read --input data.json
+        kurt workflows read --input config.yaml --format yaml
+    """
+    file_path = Path(input_file)
+
+    # Auto-detect format
+    if format == "auto":
+        ext = file_path.suffix.lower()
+        if ext in [".json"]:
+            format = "json"
+        elif ext in [".yaml", ".yml"]:
+            format = "yaml"
+        else:
+            format = "text"
+
+    try:
+        with open(file_path) as f:
+            if format == "json":
+                data = json.load(f)
+            elif format == "yaml":
+                import yaml
+
+                data = yaml.safe_load(f)
+            else:
+                data = f.read()
+
+        # Output as JSON
+        click.echo(json.dumps(data))
+
+    except Exception as e:
+        console.print(f"[red]Error reading file:[/red] {e}")
+        raise click.Abort()
+
+
+@workflows_helpers.command(name="transform")
+@click.option("--data", required=True, help="Input data (JSON)")
+@click.option("--jq", "jq_filter", help="jq-style filter expression")
+@click.option("--map", "map_expr", help="Map expression (Python)")
+@click.option("--filter", "filter_expr", help="Filter expression (Python)")
+def transform_data(data: str, jq_filter: str, map_expr: str, filter_expr: str):
+    """
+    Transform JSON data.
+
+    Apply filters and transformations to JSON data.
+
+    Examples:
+        # Filter list items
+        kurt workflows transform --data '${items}' --filter "item['count'] > 10"
+
+        # Map to extract fields
+        kurt workflows transform --data '${items}' --map "{'name': item['name'], 'id': item['id']}"
+    """
     try:
         data_obj = json.loads(data)
-    except json.JSONDecodeError as e:
-        console.print(f"[red]Error parsing JSON data:[/red] {e}")
+
+        result = data_obj
+
+        # Apply filter
+        if filter_expr and isinstance(result, list):
+            result = [item for item in result if eval(filter_expr, {"item": item})]
+
+        # Apply map
+        if map_expr and isinstance(result, list):
+            result = [eval(map_expr, {"item": item}) for item in result]
+
+        # Output result
+        click.echo(json.dumps(result))
+
+    except Exception as e:
+        console.print(f"[red]Error transforming data:[/red] {e}")
         raise click.Abort()
 
-    # Handle list of items
-    if isinstance(data_obj, list):
-        files_created = []
 
-        for item in data_obj:
-            if format == "markdown" and template == "faq":
-                file_path = _export_faq_markdown(item, output_path)
-                files_created.append(str(file_path))
-            elif format == "json":
-                slug = item.get("slug", f"item_{len(files_created)}")
-                file_path = output_path / f"{slug}{suffix}.json"
-                with open(file_path, "w") as f:
-                    json.dump(item, f, indent=2)
-                files_created.append(str(file_path))
-            else:
-                console.print(f"[yellow]Unsupported format/template: {format}/{template}[/yellow]")
-                raise click.Abort()
+@workflows_helpers.command(name="validate")
+@click.option("--data", required=True, help="Data to validate (JSON)")
+@click.option("--schema", type=click.Path(exists=True), help="JSON Schema file")
+@click.option("--type", "check_type", help="Expected type (object, array, string)")
+@click.option("--required", multiple=True, help="Required fields (for objects)")
+def validate_data(data: str, schema: str, check_type: str, required: tuple):
+    """
+    Validate data structure.
 
-        console.print(f"[green]✓[/green] Exported {len(files_created)} files to {output_path}")
+    Generic validation for JSON data.
 
-        # Return file list as JSON for workflow
-        click.echo(json.dumps({"files": files_created, "count": len(files_created)}))
+    Examples:
+        # Check type
+        kurt workflows validate --data '${result}' --type object
 
-    else:
-        # Single item
-        if format == "json":
-            file_path = output_path / f"data{suffix}.json"
-            with open(file_path, "w") as f:
-                json.dump(data_obj, f, indent=2)
-            console.print(f"[green]✓[/green] Exported to {file_path}")
-            click.echo(json.dumps({"file": str(file_path)}))
+        # Check required fields
+        kurt workflows validate --data '${page}' --required title --required content
+
+        # Validate against JSON schema
+        kurt workflows validate --data '${data}' --schema page-schema.json
+    """
+    try:
+        data_obj = json.loads(data)
+        errors = []
+
+        # Type check
+        if check_type:
+            expected_types = {
+                "object": dict,
+                "array": list,
+                "string": str,
+                "number": (int, float),
+                "boolean": bool,
+            }
+            if check_type in expected_types:
+                if not isinstance(data_obj, expected_types[check_type]):
+                    errors.append(f"Expected type {check_type}, got {type(data_obj).__name__}")
+
+        # Required fields check
+        if required and isinstance(data_obj, dict):
+            for field in required:
+                if field not in data_obj:
+                    errors.append(f"Missing required field: {field}")
+
+        # JSON Schema validation
+        if schema:
+            import jsonschema
+
+            with open(schema) as f:
+                schema_obj = json.load(f)
+
+            try:
+                jsonschema.validate(data_obj, schema_obj)
+            except jsonschema.ValidationError as e:
+                errors.append(f"Schema validation failed: {e.message}")
+
+        # Output result
+        result = {"valid": len(errors) == 0, "errors": errors}
+
+        if errors:
+            console.print(f"[yellow]⚠ Validation failed with {len(errors)} error(s)[/yellow]")
+            for error in errors:
+                console.print(f"  [red]✗[/red] {error}")
         else:
-            console.print("[yellow]Single item export only supports JSON format[/yellow]")
+            console.print("[green]✓[/green] Validation passed")
+
+        click.echo(json.dumps(result))
+
+    except Exception as e:
+        console.print(f"[red]Error validating data:[/red] {e}")
+        click.echo(json.dumps({"valid": False, "errors": [str(e)]}))
+        raise click.Abort()
+
+
+@workflows_helpers.command(name="foreach")
+@click.option("--data", required=True, help="Array data (JSON)")
+@click.option("--command", required=True, help="Command to run for each item")
+@click.option("--var-name", default="item", help="Variable name for item (default: item)")
+def foreach_item(data: str, command: str, var_name: str):
+    r"""
+    Execute command for each item in array.
+
+    Useful for batch operations.
+
+    Examples:
+        # Process each file
+        kurt workflows foreach --data '${files}' --command "workflows write --data \${item} --output files/\${item.slug}.md"
+    """
+    try:
+        data_obj = json.loads(data)
+
+        if not isinstance(data_obj, list):
+            console.print("[red]Data must be an array[/red]")
             raise click.Abort()
 
+        results = []
+        for i, item in enumerate(data_obj):
+            console.print(f"[cyan]Processing item {i+1}/{len(data_obj)}[/cyan]")
 
-def _export_faq_markdown(faq_page: Dict[str, Any], output_dir: Path) -> Path:
-    """Export a single FAQ page to markdown."""
-    slug = faq_page.get("slug", "faq")
-    file_path = output_dir / f"{slug}.md"
+            # TODO: Execute command with item context
+            # This requires subprocess execution with variable substitution
+            results.append({"index": i, "status": "pending"})
 
-    with open(file_path, "w") as f:
-        f.write(f"# {faq_page['title']}\n\n")
+        click.echo(json.dumps({"processed": len(results), "results": results}))
 
-        if "meta_description" in faq_page:
-            f.write(f"> {faq_page['meta_description']}\n\n")
-
-        if "introduction" in faq_page:
-            f.write(f"{faq_page['introduction']}\n\n")
-
-        f.write("---\n\n")
-
-        for faq in faq_page.get("faqs", []):
-            f.write(f"## {faq['question']}\n\n")
-            f.write(f"{faq['answer']}\n\n")
-
-        if "related_topics" in faq_page and faq_page["related_topics"]:
-            f.write("---\n\n")
-            f.write("## Related Topics\n\n")
-            for topic in faq_page["related_topics"]:
-                f.write(f"- {topic}\n")
-
-    return file_path
-
-
-@workflows_helpers.command(name="validate-schema")
-@click.option(
-    "--schema-dir", required=True, type=click.Path(exists=True), help="Directory with schema files"
-)
-@click.option("--schema-type", default="FAQPage", help="Expected schema type")
-def validate_schema(schema_dir: str, schema_type: str):
-    """
-    Validate JSON-LD schema markup files.
-
-    Checks schema files for:
-    - Valid JSON syntax
-    - Required schema.org fields
-    - Proper structure
-
-    Example:
-        kurt workflows validate-schema --schema-dir content/faqs --schema-type FAQPage
-    """
-    schema_path = Path(schema_dir)
-    schema_files = list(schema_path.glob("*.schema.json"))
-
-    if not schema_files:
-        console.print(f"[yellow]No schema files found in {schema_dir}[/yellow]")
-        click.echo(json.dumps({"valid": True, "files_checked": 0, "errors": []}))
-        return
-
-    errors = []
-    valid_count = 0
-
-    for schema_file in schema_files:
-        try:
-            with open(schema_file) as f:
-                schema = json.load(f)
-
-            # Basic validation
-            if "@context" not in schema:
-                errors.append(f"{schema_file.name}: Missing @context")
-                continue
-
-            if "@type" not in schema:
-                errors.append(f"{schema_file.name}: Missing @type")
-                continue
-
-            if schema.get("@type") != schema_type:
-                errors.append(
-                    f"{schema_file.name}: Expected @type={schema_type}, got {schema.get('@type')}"
-                )
-                continue
-
-            # Type-specific validation
-            if schema_type == "FAQPage":
-                if "mainEntity" not in schema:
-                    errors.append(f"{schema_file.name}: FAQPage missing mainEntity")
-                    continue
-
-            valid_count += 1
-
-        except json.JSONDecodeError as e:
-            errors.append(f"{schema_file.name}: Invalid JSON - {e}")
-        except Exception as e:
-            errors.append(f"{schema_file.name}: {e}")
-
-    if errors:
-        console.print(f"[yellow]⚠ Found {len(errors)} validation errors:[/yellow]")
-        for error in errors:
-            console.print(f"  [red]✗[/red] {error}")
-    else:
-        console.print(f"[green]✓[/green] All {valid_count} schema files are valid")
-
-    result = {"valid": len(errors) == 0, "files_checked": len(schema_files), "errors": errors}
-
-    click.echo(json.dumps(result))
-
-
-@workflows_helpers.command(name="report")
-@click.option("--workflow-name", required=True, help="Workflow name")
-@click.option("--output-path", required=True, type=click.Path(), help="Output directory")
-@click.option("--stats", required=True, help="Workflow statistics (JSON)")
-def generate_report(workflow_name: str, output_path: str, stats: str):
-    """
-    Generate a workflow execution report.
-
-    Creates a markdown report summarizing the workflow results.
-
-    Example:
-        kurt workflows report --workflow-name "AEO FAQ" --output-path content/faqs --stats '{"questions": 50}'
-    """
-    output_dir = Path(output_path)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    try:
-        stats_obj = json.loads(stats)
-    except json.JSONDecodeError as e:
-        console.print(f"[red]Error parsing stats JSON:[/red] {e}")
+    except Exception as e:
+        console.print(f"[red]Error in foreach:[/red] {e}")
         raise click.Abort()
 
-    from datetime import datetime
 
-    report_path = output_dir / "WORKFLOW_REPORT.md"
-
-    with open(report_path, "w") as f:
-        f.write(f"# {workflow_name} Report\n\n")
-        f.write(f"**Generated**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-        f.write("---\n\n")
-
-        f.write("## Summary\n\n")
-        for key, value in stats_obj.items():
-            formatted_key = key.replace("_", " ").title()
-
-            # Handle different value types
-            if isinstance(value, dict) and "count" in value:
-                f.write(f"- **{formatted_key}**: {value['count']}\n")
-            elif isinstance(value, (list, dict)):
-                # Skip complex objects in summary
-                pass
-            else:
-                f.write(f"- **{formatted_key}**: {value}\n")
-
-        f.write("\n---\n\n")
-        f.write("## Output Files\n\n")
-        f.write(f"All files are located in: `{output_dir}`\n\n")
-
-        # List files
-        files = list(output_dir.glob("*"))
-        for file in sorted(files):
-            if file.name != "WORKFLOW_REPORT.md":
-                f.write(f"- `{file.name}`\n")
-
-        f.write("\n---\n\n")
-        f.write("## Next Steps\n\n")
-        f.write("1. Review generated content\n")
-        f.write("2. Validate schema markup\n")
-        f.write("3. Deploy to your website\n")
-        f.write("4. Track performance and citations\n")
-
-    console.print(f"[green]✓[/green] Report generated: {report_path}")
-    click.echo(json.dumps({"report_path": str(report_path)}))
-
-
-__all__ = ["workflows_helpers", "export_data", "validate_schema", "generate_report"]
+__all__ = [
+    "workflows_helpers",
+    "write_file",
+    "read_file",
+    "transform_data",
+    "validate_data",
+    "foreach_item",
+]

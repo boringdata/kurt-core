@@ -19,7 +19,13 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from kurt.commands.workflows_helpers import export_data, generate_report, validate_schema
+from kurt.commands.workflows_helpers import (
+    foreach_item,
+    read_file,
+    transform_data,
+    validate_data,
+    write_file,
+)
 from kurt.workflows import DBOS_AVAILABLE
 
 console = Console()
@@ -31,10 +37,12 @@ def workflows_group():
     pass
 
 
-# Register helper commands
-workflows_group.add_command(export_data, name="export")
-workflows_group.add_command(validate_schema, name="validate-schema")
-workflows_group.add_command(generate_report, name="report")
+# Register generic helper commands
+workflows_group.add_command(write_file, name="write")
+workflows_group.add_command(read_file, name="read")
+workflows_group.add_command(transform_data, name="transform")
+workflows_group.add_command(validate_data, name="validate")
+workflows_group.add_command(foreach_item, name="foreach")
 
 
 def _check_dbos_available():
