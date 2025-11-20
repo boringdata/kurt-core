@@ -430,6 +430,137 @@ def fetch_document(identifier: str | UUID, fetch_engine: str = None) -> dict:
         raise e
 
 
+def _process_fetched_cms_document(doc: Document, cms_document) -> dict:
+    """
+    Process a CMS document that has already been fetched from the CMS API.
+
+    This function stores the content, extracts metadata, generates embeddings,
+    and updates the document record. It's used by bulk fetch to avoid
+    re-fetching documents individually.
+
+    Args:
+        doc: Document record from database
+        cms_document: CMSDocument object from CMS adapter
+
+    Returns:
+        dict with document_id, title, content_length, etc.
+
+    Raises:
+        Exception if processing fails
+    """
+    from datetime import datetime
+
+    # Extract content and metadata
+    content = cms_document.content
+
+    # Store public URL in discovery_url for link matching
+    if cms_document.url:
+        doc.discovery_url = cms_document.url
+
+    # Extract metadata
+    if cms_document.title:
+        doc.title = cms_document.title
+
+    if cms_document.metadata and cms_document.metadata.get("description"):
+        doc.description = cms_document.metadata["description"]
+
+    # Author
+    if cms_document.author:
+        author = cms_document.author
+        if isinstance(author, str):
+            doc.author = [author]
+        else:
+            doc.author = list(author) if author else None
+
+    # Published date
+    if cms_document.published_date:
+        try:
+            if isinstance(cms_document.published_date, str):
+                doc.published_date = datetime.fromisoformat(cms_document.published_date)
+            else:
+                doc.published_date = cms_document.published_date
+        except (ValueError, AttributeError):
+            doc.published_date = None
+
+    # Generate document embedding for knowledge graph (Stage 0)
+    try:
+        import dspy
+        import numpy as np
+
+        # Get configured embedding model
+        embed_config = load_config()
+        embedding_model = embed_config.EMBEDDING_MODEL
+
+        # Use first 1000 chars of content for embedding
+        content_sample = content[:1000] if len(content) > 1000 else content
+        embedding_vector = dspy.Embedder(model=embedding_model)([content_sample])[0]
+        doc.embedding = np.array(embedding_vector, dtype=np.float32).tobytes()
+        logger.debug(f"Generated document embedding ({len(embedding_vector)} dims) for {doc.id}")
+    except Exception as e:
+        logger.warning(f"Could not generate document embedding: {e}")
+        # Continue without embedding - it's optional
+
+    # Store content to filesystem
+    config = load_config()
+
+    # CMS: sources/cms/{platform}/{instance}/{schema}/{slug}.md
+    content_path = create_cms_content_path(
+        platform=doc.cms_platform,
+        instance=doc.cms_instance,
+        doc_id=doc.cms_document_id,
+        config=config,
+        source_url=doc.source_url,
+    )
+
+    # Create directory structure
+    content_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Write markdown content
+    with open(content_path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+    # Store relative path in document
+    source_base = config.get_absolute_sources_path()
+    doc.content_path = str(content_path.relative_to(source_base))
+    doc.ingestion_status = IngestionStatus.FETCHED
+
+    # Extract and save document links (internal references)
+    if doc.source_url:
+        try:
+            # For CMS documents, use base_url for domain matching
+            base_url_for_links = None
+            if doc.cms_platform and doc.cms_instance:
+                try:
+                    from kurt.integrations.cms.config import get_platform_config
+
+                    cms_config = get_platform_config(doc.cms_platform, doc.cms_instance)
+                    base_url_for_links = cms_config.get("base_url")
+                except Exception:
+                    # CMS config not available - fall back to source_url
+                    pass
+
+            links = extract_document_links(content, doc.source_url, base_url=base_url_for_links)
+            links_saved = save_document_links(doc.id, links)
+            logger.debug(f"Extracted {len(links)} links, saved {links_saved} to database")
+        except Exception as e:
+            logger.warning(f"Could not extract document links: {e}")
+            # Continue without links - they're optional
+
+    return {
+        "document_id": doc.id,
+        "title": doc.title,
+        "content_length": len(content),
+        "status": "FETCHED",
+        "content_path": str(content_path),
+        "content": content,  # Return content for immediate use
+        # Metadata fields
+        "content_hash": doc.content_hash,
+        "description": doc.description,
+        "author": doc.author,
+        "published_date": doc.published_date,
+    }
+
+
 async def _fetch_one_async(
     doc_id: str, semaphore: asyncio.Semaphore, fetch_engine: str = None
 ) -> dict:
@@ -456,7 +587,10 @@ def fetch_documents_batch(
     is_cms_fetch: bool = False,
 ) -> list[dict]:
     """
-    Fetch multiple documents in parallel using async HTTP.
+    Fetch multiple documents in parallel using async HTTP or CMS bulk API.
+
+    For CMS documents, uses efficient batch fetching (one API call per platform/instance).
+    For web documents, uses async HTTP with configurable concurrency.
 
     Args:
         document_ids: List of document UUIDs or URLs to fetch
@@ -487,54 +621,188 @@ def fetch_documents_batch(
         successful = [r for r in results if r["success"]]
         failed = [r for r in results if not r["success"]]
     """
+    from collections import defaultdict
+
+    from sqlmodel import select
+
     # Log batch fetch start
     logger.info(f"Starting batch fetch for {len(document_ids)} documents")
     logger.info(f"  Concurrency: {max_concurrent}")
 
-    # Show warning if using Trafilatura for large batch (skip for CMS fetches)
-    engine = _get_fetch_engine(override=fetch_engine)
-    logger.info(f"  Fetch engine: {engine}")
+    # Load all documents from database to check for CMS documents
+    session = get_session()
+    docs = []
+    for doc_id in document_ids:
+        try:
+            if isinstance(doc_id, UUID):
+                doc = session.get(Document, doc_id)
+            else:
+                doc = session.get(Document, UUID(doc_id))
+            if doc:
+                docs.append(doc)
+        except (ValueError, AttributeError):
+            # Not a UUID, treat as URL
+            stmt = select(Document).where(Document.source_url == doc_id)
+            doc = session.exec(stmt).first()
+            if doc:
+                docs.append(doc)
 
-    if engine == "trafilatura" and len(document_ids) > 10 and not is_cms_fetch:
-        warning_msg = (
-            "⚠️  Warning: Fetching large volumes with Trafilatura may encounter rate limits. "
-            "For better reliability with large batches, consider using Firecrawl."
-        )
-        # Only print once, don't also log to avoid duplication
-        print(f"\n{warning_msg}")
-        print("\n   To switch to Firecrawl:")
-        print('   1. Set in kurt.config: INGESTION_FETCH_ENGINE="firecrawl"')
-        print("   2. Add FIRECRAWL_API_KEY to your .env file")
-        print("   3. Get your API key at: https://firecrawl.dev")
-        print("\n   Note: Both the config setting AND the API key are required.\n")
+    # Separate CMS documents from web documents
+    cms_docs = []
+    web_doc_ids = []
 
-    async def _batch_fetch():
-        semaphore = asyncio.Semaphore(max_concurrent)
+    for doc in docs:
+        if doc.cms_platform and doc.cms_instance and doc.cms_document_id:
+            cms_docs.append(doc)
+        else:
+            web_doc_ids.append(str(doc.id))
 
-        async def _fetch_with_progress(doc_id):
-            result = await _fetch_one_async(doc_id, semaphore, fetch_engine)
-            if progress_callback:
-                progress_callback()  # Call progress callback after each completion
-            return result
+    logger.info(f"  Found {len(cms_docs)} CMS documents and {len(web_doc_ids)} web documents")
 
-        tasks = [_fetch_with_progress(doc_id) for doc_id in document_ids]
-        results = await asyncio.gather(*tasks)
+    # Process CMS documents using bulk fetch
+    cms_results = []
+    if cms_docs:
+        # Group CMS documents by (platform, instance)
+        cms_groups = defaultdict(list)
+        for doc in cms_docs:
+            key = (doc.cms_platform, doc.cms_instance)
+            cms_groups[key].append(doc)
 
-        # Log progress every 10 documents or at completion
-        successful_count = sum(1 for r in results if r["success"])
-        failed_count = len(results) - successful_count
-        logger.info(
-            f"Fetching complete: {successful_count} successful, {failed_count} failed [{len(results)}/{len(document_ids)}]"
-        )
+        logger.info(f"  Using bulk fetch for {len(cms_groups)} CMS platform/instance combinations")
 
-        return results
+        # Fetch each group using batch API
+        for (platform, instance), group_docs in cms_groups.items():
+            try:
+                from kurt.integrations.cms import get_adapter
+                from kurt.integrations.cms.config import get_platform_config
 
-    results = asyncio.run(_batch_fetch())
+                # Get CMS adapter
+                cms_config = get_platform_config(platform, instance)
+                adapter = get_adapter(platform, cms_config)
+
+                # Extract CMS document IDs
+                cms_doc_ids = [doc.cms_document_id for doc in group_docs]
+
+                logger.info(
+                    f"  Bulk fetching {len(cms_doc_ids)} documents from {platform}/{instance}"
+                )
+
+                # Fetch all documents in one API call
+                cms_documents = adapter.fetch_batch(cms_doc_ids)
+
+                # Create lookup by CMS document ID
+                cms_docs_by_id = {cms_doc.id: cms_doc for cms_doc in cms_documents}
+
+                # Process each document
+                for doc in group_docs:
+                    try:
+                        cms_document = cms_docs_by_id.get(doc.cms_document_id)
+                        if not cms_document:
+                            raise ValueError(
+                                f"Document {doc.cms_document_id} not returned from CMS batch fetch"
+                            )
+
+                        # Process and store the document (similar to fetch_document logic)
+                        result = _process_fetched_cms_document(doc, cms_document)
+                        cms_results.append({"success": True, **result})
+
+                        if progress_callback:
+                            progress_callback()
+
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to process CMS document {doc.id} ({doc.cms_document_id}): {e}"
+                        )
+                        doc.ingestion_status = IngestionStatus.ERROR
+                        cms_results.append(
+                            {
+                                "success": False,
+                                "document_id": doc.id,
+                                "error": str(e),
+                            }
+                        )
+
+                        if progress_callback:
+                            progress_callback()
+
+                session.commit()
+
+            except Exception as e:
+                logger.error(f"Bulk fetch failed for {platform}/{instance}: {e}")
+                # Mark all documents in this group as ERROR
+                for doc in group_docs:
+                    doc.ingestion_status = IngestionStatus.ERROR
+                    cms_results.append(
+                        {
+                            "success": False,
+                            "document_id": doc.id,
+                            "error": f"Bulk fetch failed: {str(e)}",
+                        }
+                    )
+
+                    if progress_callback:
+                        progress_callback()
+
+                session.commit()
+
+    # Process web documents using async HTTP (existing logic)
+    web_results = []
+    if web_doc_ids:
+        # Show warning if using Trafilatura for large batch (skip for CMS fetches)
+        engine = _get_fetch_engine(override=fetch_engine)
+        logger.info(f"  Fetch engine for web documents: {engine}")
+
+        if engine == "trafilatura" and len(web_doc_ids) > 10 and not is_cms_fetch:
+            warning_msg = (
+                "⚠️  Warning: Fetching large volumes with Trafilatura may encounter rate limits. "
+                "For better reliability with large batches, consider using Firecrawl."
+            )
+            # Only print once, don't also log to avoid duplication
+            print(f"\n{warning_msg}")
+            print("\n   To switch to Firecrawl:")
+            print('   1. Set in kurt.config: INGESTION_FETCH_ENGINE="firecrawl"')
+            print("   2. Add FIRECRAWL_API_KEY to your .env file")
+            print("   3. Get your API key at: https://firecrawl.dev")
+            print("\n   Note: Both the config setting AND the API key are required.\n")
+
+        async def _batch_fetch():
+            semaphore = asyncio.Semaphore(max_concurrent)
+
+            async def _fetch_with_progress(doc_id):
+                result = await _fetch_one_async(doc_id, semaphore, fetch_engine)
+                if progress_callback:
+                    progress_callback()  # Call progress callback after each completion
+                return result
+
+            tasks = [_fetch_with_progress(doc_id) for doc_id in web_doc_ids]
+            results = await asyncio.gather(*tasks)
+
+            # Log progress every 10 documents or at completion
+            successful_count = sum(1 for r in results if r["success"])
+            failed_count = len(results) - successful_count
+            logger.info(
+                f"Web fetching complete: {successful_count} successful, {failed_count} failed [{len(results)}/{len(web_doc_ids)}]"
+            )
+
+            return results
+
+        web_results = asyncio.run(_batch_fetch())
+
+    # Combine results
+    results = cms_results + web_results
 
     # Log final summary
     successful = [r for r in results if r["success"]]
     failed = [r for r in results if not r["success"]]
     logger.info(f"✓ Fetched {len(successful)}/{len(results)} documents successfully")
+    if cms_docs:
+        logger.info(
+            f"  CMS bulk fetch: {sum(1 for r in cms_results if r['success'])}/{len(cms_results)}"
+        )
+    if web_doc_ids:
+        logger.info(
+            f"  Web async fetch: {sum(1 for r in web_results if r['success'])}/{len(web_results)}"
+        )
     if failed:
         logger.info(f"  Failed: {len(failed)}")
 

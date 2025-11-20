@@ -63,7 +63,10 @@ The <project_plan> contains information on the documents to be produced, and the
 4. If they want to create a new project, follow `.claude/instructions/add-project.md` to create one.
 
 ## Adding sources
-As part of a writing project, when a user shares a URL or pastes large blocks of text (representing entire files) into the chat, follow the instructions in `.claude/instructions/add-source.md` to add it as a source to the active project.
+When a user shares a URL or pastes content, or when you need to update existing sources to check for new content, follow the instructions in `.claude/instructions/add-source.md`. This covers:
+- Adding new sources (CMS, websites, pasted content)
+- Updating existing sources to discover new content
+- Content fetching and indexing workflows
 
 ## Format templates 
 Kurt provides the following default format templates (see `kurt/templates/formats/` for full list) out of the box:
@@ -133,6 +136,9 @@ Kurt supports CMS integrations for reading and publishing content. Currently onl
 - If not configured: `kurt integrations cms onboard --platform {platform}`
 - Fetch content: `kurt content fetch {cms-url}` (automatically uses CMS adapters)
 - See `.claude/instructions/add-source.md` for detailed workflow
+
+**Keeping CMS content up to date:**
+Periodically update sources to discover new or modified content. See the "Updating Existing Sources" section in `.claude/instructions/add-source.md` for the workflow.
 
 **Publishing to CMS:**
 - Publish as draft: `kurt integrations cms publish --file {path} --content-type {type}`
