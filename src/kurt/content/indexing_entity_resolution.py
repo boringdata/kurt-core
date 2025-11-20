@@ -26,6 +26,7 @@ from kurt.content.embeddings import embedding_to_bytes, generate_embeddings
 from kurt.content.indexing_models import GroupResolution
 from kurt.db.database import get_session
 from kurt.db.models import DocumentEntity, Entity, EntityRelationship
+from kurt.utils.async_helpers import gather_with_semaphore
 
 logger = logging.getLogger(__name__)
 
@@ -33,40 +34,6 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 # Helper Functions
 # ============================================================================
-
-
-async def gather_with_semaphore(
-    tasks: list,
-    max_concurrent: int,
-    task_description: str = "task",
-) -> list:
-    """Execute async tasks with controlled concurrency and exception handling.
-
-    Args:
-        tasks: List of coroutines to execute
-        max_concurrent: Maximum number of concurrent tasks
-        task_description: Description for error logging
-
-    Returns:
-        List of successful results (exceptions are filtered out and logged)
-    """
-    semaphore = asyncio.Semaphore(max_concurrent)
-
-    async def bounded_task(task):
-        async with semaphore:
-            return await task
-
-    results = await asyncio.gather(*[bounded_task(task) for task in tasks], return_exceptions=True)
-
-    # Filter out exceptions and log errors
-    valid_results = []
-    for i, result in enumerate(results):
-        if isinstance(result, Exception):
-            logger.error(f"Failed to execute {task_description} {i}: {result}")
-        else:
-            valid_results.append(result)
-
-    return valid_results
 
 
 def _create_new_entity_with_edges(
