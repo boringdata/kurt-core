@@ -167,7 +167,12 @@ def test_two_documents_same_entity_single_creation(
         mock_cot.return_value.acall = Mock(side_effect=async_resolve_entities)
         # Ensure both Pythons cluster together
         mock_embed.return_value = [[0.1, 0.2, 0.3], [0.11, 0.21, 0.31]]
-        mock_search.return_value = []
+
+        # Mock async search_similar_entities
+        async def mock_search_return(*args, **kwargs):
+            return []
+
+        mock_search.side_effect = mock_search_return
 
         # Simulate index results from two documents mentioning same entity
         index_results = [
@@ -403,7 +408,12 @@ def test_reindexing_no_duplicates(test_document, mock_all_llm_calls):
 
         mock_cot.return_value.acall = Mock(side_effect=async_return_value)
         mock_embed.return_value = [[0.1, 0.2, 0.3]]
-        mock_search.return_value = []
+
+        # Mock async search_similar_entities
+        async def mock_search_return(*args, **kwargs):
+            return []
+
+        mock_search.side_effect = mock_search_return
 
         new_entities = [
             {
@@ -625,7 +635,12 @@ def test_alias_matching_links_to_existing(test_document, mock_all_llm_calls):
 
         mock_cot.return_value.acall = Mock(side_effect=async_return_value)
         mock_embed.return_value = [[0.1, 0.2, 0.3]]
-        mock_search.return_value = []
+
+        # Mock async search_similar_entities
+        async def mock_search_return(*args, **kwargs):
+            return []
+
+        mock_search.side_effect = mock_search_return
 
         new_entities = [
             {
@@ -702,7 +717,12 @@ def test_orphaned_entity_cleanup(test_document, mock_all_llm_calls):
 
         mock_cot.return_value.acall = Mock(side_effect=async_return_value)
         mock_embed.return_value = [[0.1, 0.2, 0.3]]
-        mock_search.return_value = []
+
+        # Mock async search_similar_entities
+        async def mock_search_return(*args, **kwargs):
+            return []
+
+        mock_search.side_effect = mock_search_return
 
         new_entities = [
             {
@@ -752,7 +772,12 @@ def test_orphaned_entity_cleanup(test_document, mock_all_llm_calls):
 
         mock_cot.return_value.acall = Mock(side_effect=async_return_value)
         mock_embed.return_value = [[0.1, 0.2, 0.3]]
-        mock_search.return_value = []
+
+        # Mock async search_similar_entities
+        async def mock_search_return(*args, **kwargs):
+            return []
+
+        mock_search.side_effect = mock_search_return
 
         new_entities = [
             {
@@ -936,7 +961,12 @@ def test_empty_entity_names_handled(test_document, mock_all_llm_calls):
     ):
         # Should handle empty names gracefully
         mock_embed.return_value = [[0.1, 0.2, 0.3]]
-        mock_search.return_value = []
+
+        # Mock async search_similar_entities
+        async def mock_search_return(*args, **kwargs):
+            return []
+
+        mock_search.side_effect = mock_search_return
 
         new_entities = [
             {
@@ -1084,7 +1114,12 @@ def test_finalize_knowledge_graph_end_to_end(test_document, test_document_2, moc
 
         mock_cot.return_value.acall = Mock(side_effect=async_return_value)
         mock_embed.return_value = [[0.1, 0.2, 0.3]]
-        mock_search.return_value = []
+
+        # Mock async search_similar_entities
+        async def mock_search_return(*args, **kwargs):
+            return []
+
+        mock_search.side_effect = mock_search_return
 
         # Prepare index results from two documents
         index_results = [
@@ -1281,7 +1316,7 @@ def test_complex_grouping_mixed_resolutions(test_document, mock_all_llm_calls):
     with (
         patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
         patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
-        patch("kurt.db.knowledge_graph.search_similar_entities_async") as mock_search_async,
+        patch("kurt.db.knowledge_graph.search_similar_entities") as mock_search_async,
     ):
         # Mock async similarity search to return existing entities
         async def mock_search_similar(*args, **kwargs):
@@ -1438,7 +1473,12 @@ def test_circular_relationships(test_document, mock_all_llm_calls):
         mock_cot.return_value.acall = Mock(side_effect=async_side_effect_resolutions)
         # Each entity in its own cluster
         mock_embed.return_value = [[0.1, 0.2, 0.3], [0.8, 0.7, 0.6]]
-        mock_search.return_value = []
+
+        # Mock async search_similar_entities
+        async def mock_search_return(*args, **kwargs):
+            return []
+
+        mock_search.side_effect = mock_search_return
 
         new_entities = [
             {
@@ -1536,7 +1576,12 @@ def test_unicode_entity_names(test_document, mock_all_llm_calls):
         mock_cot.return_value.acall = Mock(side_effect=async_resolve_entities)
         # Each entity in different cluster
         mock_embed.return_value = [[0.1, 0.2, 0.3], [0.5, 0.6, 0.7], [0.9, 0.8, 0.7]]
-        mock_search.return_value = []
+
+        # Mock async search_similar_entities
+        async def mock_search_return(*args, **kwargs):
+            return []
+
+        mock_search.side_effect = mock_search_return
 
         new_entities = [
             {

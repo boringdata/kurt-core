@@ -22,116 +22,14 @@ import numpy as np
 from sklearn.cluster import DBSCAN
 from sqlmodel import select
 
-from kurt.content.embeddings import embedding_to_bytes, generate_embeddings
+from kurt.content.embeddings import generate_embeddings
 from kurt.content.indexing_models import GroupResolution
 from kurt.db.database import get_session
+from kurt.db.knowledge_graph import create_entity_with_document_edges
 from kurt.db.models import DocumentEntity, Entity, EntityRelationship
 from kurt.utils.async_helpers import gather_with_semaphore
 
 logger = logging.getLogger(__name__)
-
-
-# ============================================================================
-# Helper Functions
-# ============================================================================
-
-
-def _create_new_entity_with_edges(
-    session,
-    canonical_name: str,
-    group_resolutions: list,
-    entity_name_to_docs: dict,
-    entity_name_to_id: dict,
-    entity_data: dict,
-    entity_embedding: list = None,
-) -> Entity:
-    """Create a new entity with document edges (extracted to eliminate duplication).
-
-    Args:
-        session: Database session
-        canonical_name: Canonical name for the entity
-        group_resolutions: List of resolutions in this group
-        entity_name_to_docs: Mapping of entity names to document info
-        entity_name_to_id: Mapping to update with new entity ID
-        entity_data: Entity details from resolution
-        entity_embedding: Pre-computed embedding (optional, will generate if None)
-
-    Returns:
-        Created Entity object
-
-    Note:
-        If entity_embedding is None, this function will generate it synchronously.
-        For async contexts, compute the embedding beforehand using run_in_executor.
-    """
-    # Collect all entity names in this group
-    all_entity_names = [r["entity_name"] for r in group_resolutions]
-
-    # Collect all aliases from all resolutions in group
-    all_aliases = set()
-    for r in group_resolutions:
-        all_aliases.update(r["aliases"])
-
-    # Count how many unique documents mention any entity in this group
-    unique_docs = set()
-    for ent_name in all_entity_names:
-        for doc_info in entity_name_to_docs.get(ent_name, []):
-            unique_docs.add(doc_info["document_id"])
-    doc_count = len(unique_docs)
-
-    # Average confidence scores from all entities in the group
-    confidence_scores = [r["entity_details"].get("confidence", 0.9) for r in group_resolutions]
-    avg_confidence = sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0.9
-
-    # Create entity with embedding (generate if not provided)
-    if entity_embedding is None:
-        entity_embedding = generate_embeddings([canonical_name])[0]
-
-    entity = Entity(
-        id=uuid4(),
-        name=canonical_name,
-        entity_type=entity_data["type"],
-        canonical_name=canonical_name,
-        aliases=list(all_aliases),
-        description=entity_data.get("description", ""),
-        embedding=embedding_to_bytes(entity_embedding),
-        confidence_score=avg_confidence,
-        source_mentions=doc_count,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
-    )
-    session.add(entity)
-    session.flush()
-
-    # Map all names in this group to this entity ID
-    for ent_name in all_entity_names:
-        entity_name_to_id[ent_name] = entity.id
-
-    # Create document-entity edges for ALL documents that mention any entity in this group
-    docs_to_link = {}
-    for ent_name in all_entity_names:
-        for doc_info in entity_name_to_docs.get(ent_name, []):
-            doc_id = doc_info["document_id"]
-            # Keep the highest confidence if a doc mentions multiple variations
-            if (
-                doc_id not in docs_to_link
-                or doc_info["confidence"] > docs_to_link[doc_id]["confidence"]
-            ):
-                docs_to_link[doc_id] = doc_info
-
-    for doc_info in docs_to_link.values():
-        edge = DocumentEntity(
-            id=uuid4(),
-            document_id=doc_info["document_id"],
-            entity_id=entity.id,
-            mention_count=1,
-            confidence=doc_info["confidence"],
-            context=doc_info.get("quote"),
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
-        )
-        session.add(edge)
-
-    return entity
 
 
 # ============================================================================
@@ -305,7 +203,7 @@ async def _resolve_entity_groups_async(
     resolution_module = dspy.ChainOfThought(ResolveEntityGroup)
 
     from kurt.db.database import async_session_scope
-    from kurt.db.knowledge_graph import search_similar_entities_async
+    from kurt.db.knowledge_graph import search_similar_entities
 
     total_groups = len(groups)
     completed_groups = 0
@@ -317,7 +215,7 @@ async def _resolve_entity_groups_async(
 
         # Each task creates its own async session (official SQLAlchemy pattern)
         async with async_session_scope() as session:
-            similar = await search_similar_entities_async(
+            similar = await search_similar_entities(
                 entity_name=group_entities[0]["name"],  # Representative entity
                 entity_type=group_entities[0]["type"],
                 limit=10,
@@ -759,7 +657,7 @@ def _create_entities_and_relationships(doc_to_kg_data: dict, resolutions: list[d
             if decision == "CREATE_NEW":
                 # Create new entity using helper function
                 entity_data = primary_resolution["entity_details"]
-                entity = _create_new_entity_with_edges(
+                entity = create_entity_with_document_edges(
                     session=session,
                     canonical_name=canonical_name,
                     group_resolutions=group_resolutions,
@@ -782,7 +680,7 @@ def _create_entities_and_relationships(doc_to_kg_data: dict, resolutions: list[d
 
                     # Fallback to CREATE_NEW logic using helper function
                     entity_data = primary_resolution["entity_details"]
-                    entity = _create_new_entity_with_edges(
+                    entity = create_entity_with_document_edges(
                         session=session,
                         canonical_name=canonical_name,
                         group_resolutions=group_resolutions,
