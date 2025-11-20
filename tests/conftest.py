@@ -402,10 +402,22 @@ def mock_dspy_signature():
                     output = return_value(**kwargs)
                     return create_mock_result(output)
 
+                async def async_side_effect(*args, **kwargs):
+                    output = return_value(**kwargs)
+                    return create_mock_result(output)
+
                 mock_module.side_effect = side_effect
+                mock_module.acall = MagicMock(side_effect=async_side_effect)
             else:
                 # Static return value
-                mock_module.return_value = create_mock_result(return_value)
+                mock_result = create_mock_result(return_value)
+                mock_module.return_value = mock_result
+
+                # For async calls, return a coroutine
+                async def async_return_value(*args, **kwargs):
+                    return mock_result
+
+                mock_module.acall = MagicMock(side_effect=async_return_value)
 
             mock_cot.return_value = mock_module
             yield mock_module

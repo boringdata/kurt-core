@@ -202,7 +202,12 @@ def test_relationship_evidence_count_accumulates(
         patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
         patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
     ):
+        # Wrap synchronous mock in async function for .acall()
+        async def async_resolve_entities(*args, **kwargs):
+            return resolve_entities(*args, **kwargs)
+
         mock_cot.return_value.side_effect = resolve_entities
+        mock_cot.return_value.acall = Mock(side_effect=async_resolve_entities)
         finalize_knowledge_graph(index_results)
 
     # Verify relationship has evidence_count = 2
@@ -245,7 +250,12 @@ def test_aliases_no_duplicates_on_reindexing(test_document, mock_all_llm_calls):
         patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
         patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
     ):
+        # Wrap synchronous mock in async function for .acall()
+        async def async_resolve_entities(*args, **kwargs):
+            return resolve_entities(*args, **kwargs)
+
         mock_cot.return_value.side_effect = resolve_entities
+        mock_cot.return_value.acall = Mock(side_effect=async_resolve_entities)
 
         # Index first time
         new_entities = [
@@ -330,7 +340,12 @@ def test_orphaned_relationships_skipped(test_document, mock_all_llm_calls):
         patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
         patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
     ):
+        # Wrap synchronous mock in async function for .acall()
+        async def async_resolve_entities(*args, **kwargs):
+            return resolve_entities(*args, **kwargs)
+
         mock_cot.return_value.side_effect = resolve_entities
+        mock_cot.return_value.acall = Mock(side_effect=async_resolve_entities)
 
         resolutions = resolve_entity_groups(new_entities)
         doc_to_kg_data = {
@@ -376,7 +391,12 @@ def test_none_empty_values_handled_gracefully(test_document, mock_all_llm_calls)
         patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
         patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
     ):
+        # Wrap synchronous mock in async function for .acall()
+        async def async_resolve_entities(*args, **kwargs):
+            return resolve_entities(*args, **kwargs)
+
         mock_cot.return_value.side_effect = resolve_entities
+        mock_cot.return_value.acall = Mock(side_effect=async_resolve_entities)
 
         new_entities = [
             {
@@ -445,7 +465,12 @@ def test_entity_type_conflict_uses_primary_type(test_document, mock_all_llm_call
         patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
         patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
     ):
+        # Wrap synchronous mock in async function for .acall()
+        async def async_resolve_entities(*args, **kwargs):
+            return resolve_entities(*args, **kwargs)
+
         mock_cot.return_value.side_effect = resolve_entities
+        mock_cot.return_value.acall = Mock(side_effect=async_resolve_entities)
 
         new_entities = [
             {
@@ -510,7 +535,12 @@ def test_uuid_linking_to_nonexistent_entity_creates_fallback(test_document, mock
         patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
         patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
     ):
+        # Wrap synchronous mock in async function for .acall()
+        async def async_resolve_entities(*args, **kwargs):
+            return resolve_entities(*args, **kwargs)
+
         mock_cot.return_value.side_effect = resolve_entities
+        mock_cot.return_value.acall = Mock(side_effect=async_resolve_entities)
 
         new_entities = [
             {
@@ -577,7 +607,12 @@ def test_zero_confidence_score_handled(test_document, mock_all_llm_calls):
         patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
         patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
     ):
+        # Wrap synchronous mock in async function for .acall()
+        async def async_resolve_entities(*args, **kwargs):
+            return resolve_entities(*args, **kwargs)
+
         mock_cot.return_value.side_effect = resolve_entities
+        mock_cot.return_value.acall = Mock(side_effect=async_resolve_entities)
 
         new_entities = [
             {
