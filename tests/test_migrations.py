@@ -312,7 +312,9 @@ class TestMigrationApplication:
 
         result = apply_migrations(auto_confirm=True)
 
-        assert result is True
+        assert result["success"] is True
+        assert result["applied"] is False
+        assert result["count"] == 0
         # Should print "up to date" message
         mock_console.print.assert_called()
 
@@ -326,7 +328,9 @@ class TestMigrationApplication:
 
         result = apply_migrations(auto_confirm=False)
 
-        assert result is False
+        assert result["success"] is False
+        assert result["applied"] is False
+        assert result["error"] == "User declined migration"
         mock_prompt.assert_called_once()
 
     @patch("kurt.db.migrations.utils.get_pending_migrations")
@@ -344,7 +348,11 @@ class TestMigrationApplication:
 
         result = apply_migrations(auto_confirm=True)
 
-        assert result is True
+        assert result["success"] is True
+        assert result["applied"] is True
+        assert result["count"] == 1
+        assert result["current_version"] == "001_initial"
+        assert result["backup_path"] == "/tmp/backup.db"
         mock_backup.assert_called_once()
         # Should call upgrade for each pending migration
         assert mock_command.upgrade.call_count == 1
@@ -363,7 +371,10 @@ class TestMigrationApplication:
 
         result = apply_migrations(auto_confirm=True)
 
-        assert result is False
+        assert result["success"] is False
+        assert result["applied"] is False
+        assert result["error"] == "Migration failed"
+        assert result["backup_path"] == "/tmp/backup.db"
         mock_backup.assert_called_once()
         # Should show error message
         mock_console.print.assert_called()

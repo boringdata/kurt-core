@@ -182,19 +182,22 @@ def check_pending_migrations() -> Dict[str, any]:
 
         has_pending = check_migrations_needed()
         if has_pending:
-            pending = get_pending_migrations()
+            pending = get_pending_migrations()  # Returns List[Tuple[str, str]]
             return {
                 "has_pending": True,
                 "count": len(pending),
-                "migrations": [m["name"] for m in pending],
+                "migrations": [revision_id for revision_id, _ in pending],
             }
 
         return {"has_pending": False, "count": 0, "migrations": []}
     except ImportError:
         # Migration system not available
         return {"has_pending": False, "count": 0, "migrations": []}
-    except Exception:
-        # Error checking migrations
+    except Exception as e:
+        # Error checking migrations - log for debugging
+        import logging
+
+        logging.debug(f"Error checking pending migrations: {e}")
         return {"has_pending": False, "count": 0, "migrations": []}
 
 

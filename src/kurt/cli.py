@@ -2,6 +2,7 @@
 
 import json
 import shutil
+import sys
 from pathlib import Path
 
 import click
@@ -33,6 +34,11 @@ def main(ctx):
     if ctx.invoked_subcommand in ["init", "migrate"]:
         return
 
+    # Skip migration check if running in hook mode (--hook-cc flag)
+    # Hooks should handle migrations silently within the command
+    if "--hook-cc" in sys.argv:
+        return
+
     # Check if project is initialized
     if not config_file_exists():
         return  # Let commands handle "not initialized" error
@@ -47,6 +53,11 @@ def main(ctx):
 
         if check_migrations_needed():
             pending = get_pending_migrations()
+
+            # Check if we're in an interactive terminal
+            # If not (e.g., Cursor AI running commands), just warn without prompting
+            is_interactive = sys.stdin.isatty() and sys.stdout.isatty()
+
             console.print()
             console.print("[yellow]⚠ Database migrations are pending[/yellow]")
             console.print(f"[dim]{len(pending)} migration(s) need to be applied[/dim]")
@@ -57,18 +68,32 @@ def main(ctx):
             console.print("[dim]Or run [cyan]kurt admin migrate status[/cyan] to see details[/dim]")
             console.print()
 
-            # Ask if user wants to apply now
-            from rich.prompt import Confirm
+            # Only prompt if in interactive terminal (not when Cursor AI is running commands)
+            if is_interactive:
+                from rich.prompt import Confirm
 
-            if Confirm.ask("[bold]Apply migrations now?[/bold]", default=False):
-                success = apply_migrations(auto_confirm=True)
-                if not success:
-                    raise click.Abort()
+                if Confirm.ask("[bold]Apply migrations now?[/bold]", default=False):
+                    result = apply_migrations(auto_confirm=True)
+                    if not result["success"]:
+                        raise click.Abort()
+                else:
+                    console.print(
+                        "[yellow]⚠ Proceeding without migration. Some features may not work.[/yellow]"
+                    )
+                    console.print()
             else:
-                console.print(
-                    "[yellow]⚠ Proceeding without migration. Some features may not work.[/yellow]"
-                )
-                console.print()
+                # Non-interactive mode (Cursor, scripts, etc.) - auto-apply migrations
+                result = apply_migrations(auto_confirm=True, silent=True)
+                if result["success"] and result["applied"]:
+                    console.print(f"[green]✓ Applied {result['count']} migration(s)[/green]")
+                    console.print()
+                elif not result["success"]:
+                    # Migration failed - warn but don't block CLI
+                    console.print(
+                        f"[red]⚠ Migration failed: {result.get('error', 'Unknown error')}[/red]"
+                    )
+                    console.print("[dim]Database backup created. Some features may not work.[/dim]")
+                    console.print()
     except ImportError:
         # Migration system not available (shouldn't happen but handle gracefully)
         pass
