@@ -1,0 +1,150 @@
+name: "AEO FAQ with Inline DSPy"
+description: "Complete AEO workflow with DSPy signatures defined inline - no Python files needed"
+version: "3.0"
+
+variables:
+  subreddit: "technology"
+  num_questions: 50
+  target_domain: "example.com"
+  brand_voice: "professional and helpful"
+  output_path: "content/faqs"
+
+steps:
+  - name: "fetch_questions"
+    type: "cli"
+    command: "integrations research reddit"
+    args:
+      subreddit: "${subreddit}"
+      limit: "${num_questions}"
+      type: "questions"
+    output: "reddit_questions"
+
+  - name: "cluster_questions"
+    type: "dspy"
+    signature:
+      inputs:
+        - name: "questions"
+          type: "str"
+          description: "List of questions from Reddit (JSON format)"
+        - name: "domain"
+          type: "str"
+          description: "Domain or industry context"
+      outputs:
+        - name: "clusters"
+          type: "str"
+          description: "Question clusters grouped by topic (JSON format with topic, questions, priority)"
+      prompt: |
+        You are analyzing questions from a community to identify common themes and topics.
+
+        Your task:
+        1. Read through all the questions
+        2. Identify recurring themes and topics
+        3. Group related questions together
+        4. Rank clusters by importance (frequency, complexity, business value)
+        5. Extract key terms and concepts for each cluster
+
+        Focus on creating 3-7 meaningful clusters that represent the main areas of interest.
+        Each cluster should have a clear, descriptive name and contain semantically related questions.
+    inputs:
+      questions: "${reddit_questions}"
+      domain: "${target_domain}"
+    output: "question_clusters"
+
+  - name: "generate_faq_pages"
+    type: "dspy"
+    signature:
+      inputs:
+        - name: "clusters"
+          type: "str"
+          description: "Question clusters (JSON format)"
+        - name: "domain"
+          type: "str"
+          description: "Domain/industry context"
+        - name: "brand_voice"
+          type: "str"
+          description: "Brand voice guidelines"
+      outputs:
+        - name: "faq_pages"
+          type: "str"
+          description: "Generated FAQ pages (JSON format with slug, title, meta_description, introduction, faqs)"
+      prompt: |
+        Generate comprehensive FAQ pages from question clusters.
+
+        For each cluster, create a well-structured FAQ page that:
+        1. Has a clear, SEO-friendly title
+        2. Includes a compelling meta description (150-160 chars)
+        3. Starts with an informative introduction paragraph
+        4. Answers each question clearly and comprehensively
+        5. Uses the specified brand voice: {brand_voice}
+        6. Includes relevant keywords naturally
+        7. Provides practical, actionable information
+
+        Make the content optimized for BOTH human readers AND AI search engines.
+        Each answer should be 2-4 paragraphs with specific details and examples.
+    inputs:
+      clusters: "${question_clusters}"
+      domain: "${target_domain}"
+      brand_voice: "${brand_voice}"
+    output: "faq_pages"
+
+  - name: "generate_json_ld"
+    type: "dspy"
+    signature:
+      inputs:
+        - name: "faq_pages"
+          type: "str"
+          description: "FAQ pages with questions and answers (JSON format)"
+        - name: "base_url"
+          type: "str"
+          description: "Base URL for the website"
+      outputs:
+        - name: "schema_markup"
+          type: "str"
+          description: "JSON-LD schema markup for each FAQ page (JSON array)"
+      prompt: |
+        Generate valid JSON-LD schema markup following schema.org FAQPage specification.
+
+        For each FAQ page, create a complete FAQPage schema that includes:
+        1. @context: "https://schema.org"
+        2. @type: "FAQPage"
+        3. mainEntity: array of Question objects
+
+        Each Question object must have:
+        - @type: "Question"
+        - name: the question text
+        - acceptedAnswer:
+            @type: "Answer"
+            text: the answer text
+
+        The schema should be valid JSON that passes schema.org validation.
+        Include the full page URL using the base_url and page slug.
+    inputs:
+      faq_pages: "${faq_pages}"
+      base_url: "https://${target_domain}"
+    output: "schema_markup"
+
+  - name: "save_faq_content"
+    type: "cli"
+    command: "workflows write"
+    args:
+      data: "${faq_pages}"
+      output: "${output_path}/faq_pages.json"
+      format: "json"
+    output: "saved_faqs"
+
+  - name: "save_schema_markup"
+    type: "cli"
+    command: "workflows write"
+    args:
+      data: "${schema_markup}"
+      output: "${output_path}/schema_markup.json"
+      format: "json"
+    output: "saved_schema"
+
+  - name: "validate_schema"
+    type: "cli"
+    command: "workflows validate"
+    args:
+      data: "${schema_markup}"
+      type: "array"
+    output: "validation_result"

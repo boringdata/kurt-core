@@ -239,13 +239,18 @@ class WorkflowExecutor:
         # Substitute variables in inputs
         inputs = substitute_variables(step.inputs or {}, self.context.variables)
 
-        # Load signature class
+        # Load or create signature class
         try:
-            signature_class = self._load_dspy_signature(step.signature)
+            if isinstance(step.signature, dict):
+                # Inline signature definition
+                signature_class = self._create_dynamic_signature(step.signature)
+                console.print("[dim]  Using inline DSPy signature[/dim]")
+            else:
+                # Reference to existing signature class
+                signature_class = self._load_dspy_signature(step.signature)
+                console.print(f"[dim]  Using DSPy signature: {step.signature}[/dim]")
         except Exception as e:
-            raise WorkflowExecutionError(f"Failed to load DSPy signature '{step.signature}': {e}")
-
-        console.print(f"[dim]  Using DSPy signature: {step.signature}[/dim]")
+            raise WorkflowExecutionError(f"Failed to load DSPy signature: {e}")
 
         # Create predictor
         predictor = dspy.Predict(signature_class)
@@ -333,6 +338,43 @@ class WorkflowExecutor:
         except Exception as e:
             logger.warning(f"Condition evaluation failed: {e}")
             return False
+
+    def _create_dynamic_signature(self, signature_def: Dict[str, Any]) -> type[dspy.Signature]:
+        """
+        Create a DSPy signature class dynamically from inline definition.
+
+        Args:
+            signature_def: Dictionary containing inputs, outputs, and prompt
+
+        Returns:
+            Dynamically created DSPy Signature class
+        """
+        from kurt.workflows.schema import InlineSignature
+
+        # Validate signature definition
+        try:
+            inline_sig = InlineSignature(**signature_def)
+        except Exception as e:
+            raise ValueError(f"Invalid inline signature definition: {e}")
+
+        # Build class attributes
+        class_attrs = {}
+
+        # Add docstring from prompt
+        class_attrs["__doc__"] = inline_sig.prompt
+
+        # Add input fields
+        for field in inline_sig.inputs:
+            class_attrs[field.name] = dspy.InputField(desc=field.description)
+
+        # Add output fields
+        for field in inline_sig.outputs:
+            class_attrs[field.name] = dspy.OutputField(desc=field.description)
+
+        # Create dynamic class inheriting from dspy.Signature
+        signature_class = type("DynamicSignature", (dspy.Signature,), class_attrs)
+
+        return signature_class
 
     def _load_dspy_signature(self, signature_name: str) -> type[dspy.Signature]:
         """

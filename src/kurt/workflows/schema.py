@@ -4,7 +4,7 @@ Defines the structure of YAML workflow files and provides validation.
 """
 
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -43,6 +43,22 @@ class ErrorHandling(BaseModel):
         return v
 
 
+class InlineSignatureField(BaseModel):
+    """Field definition for inline DSPy signature."""
+
+    name: str = Field(description="Field name")
+    type: str = Field(description="Field type (str, int, float, bool, list, dict)")
+    description: str = Field(description="Field description for the LLM")
+
+
+class InlineSignature(BaseModel):
+    """Inline DSPy signature definition."""
+
+    inputs: List[InlineSignatureField] = Field(description="Input fields")
+    outputs: List[InlineSignatureField] = Field(description="Output fields")
+    prompt: str = Field(description="System prompt/instructions for the LLM")
+
+
 class WorkflowStep(BaseModel):
     """A single step in a workflow."""
 
@@ -59,8 +75,9 @@ class WorkflowStep(BaseModel):
     args: Optional[Dict[str, Any]] = Field(default=None, description="Arguments for the command")
 
     # DSPy step fields
-    signature: Optional[str] = Field(
-        default=None, description="DSPy signature class name (for dspy type)"
+    signature: Optional[Union[str, Dict[str, Any]]] = Field(
+        default=None,
+        description="DSPy signature: class name (string) or inline definition (dict)",
     )
     inputs: Optional[Dict[str, Any]] = Field(default=None, description="Inputs for DSPy signature")
 
@@ -192,6 +209,8 @@ __all__ = [
     "StepType",
     "ErrorAction",
     "ErrorHandling",
+    "InlineSignatureField",
+    "InlineSignature",
     "WorkflowStep",
     "WorkflowDefinition",
 ]

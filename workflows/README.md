@@ -16,10 +16,35 @@ A workflow YAML file defines:
 1. **Steps**: Sequential operations to execute
 2. **Step Types**:
    - `cli`: Execute a Kurt CLI command
-   - `dspy`: Run a DSPy signature for AI-powered processing
+   - `dspy`: Run a DSPy signature for AI-powered processing (supports **inline signatures**)
    - `script`: Run custom Python code
 3. **Variables**: Pass data between steps
 4. **Conditions**: Control flow based on results
+
+### Inline DSPy Signatures
+
+DSPy signatures can be defined **inline** in the YAML without requiring separate Python files:
+
+```yaml
+- name: "analyze_content"
+  type: "dspy"
+  signature:
+    inputs:
+      - name: "text"
+        type: "str"
+        description: "Text to analyze"
+    outputs:
+      - name: "summary"
+        type: "str"
+        description: "Brief summary"
+    prompt: |
+      Analyze the text and provide a concise summary.
+  inputs:
+    text: "${content}"
+  output: "result"
+```
+
+See [INLINE_SIGNATURES.md](INLINE_SIGNATURES.md) for complete documentation.
 
 ## Example Workflows
 

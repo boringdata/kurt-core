@@ -23,6 +23,15 @@ except ImportError:
 # Suppress DBOS logging
 import logging
 
+from kurt.workflows.executor import WorkflowContext, WorkflowExecutor
+from kurt.workflows.parser import load_workflow, substitute_variables
+from kurt.workflows.schema import (
+    InlineSignature,
+    InlineSignatureField,
+    WorkflowDefinition,
+    WorkflowStep,
+)
+
 logging.getLogger("dbos").setLevel(logging.ERROR)
 
 # Global DBOS instance
@@ -145,5 +154,22 @@ if DBOS_AVAILABLE:
         # DBOS will be initialized on-demand later via get_dbos()
         pass
 
-
-__all__ = ["init_dbos", "get_dbos", "is_initialized", "DBOS", "DBOS_AVAILABLE", "_dbos_initialized"]
+__all__ = [
+    "init_dbos",
+    "get_dbos",
+    "is_initialized",
+    "DBOS",
+    "DBOS_AVAILABLE",
+    "_dbos_initialized",
+    # Schema
+    "WorkflowDefinition",
+    "WorkflowStep",
+    "InlineSignature",
+    "InlineSignatureField",
+    # Parser
+    "load_workflow",
+    "substitute_variables",
+    # Executor
+    "WorkflowExecutor",
+    "WorkflowContext",
+]
