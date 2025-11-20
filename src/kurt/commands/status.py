@@ -179,15 +179,13 @@ def status(format: str, hook_cc: bool):
 
         # Handle --hook-cc flag: auto-apply migrations + generate status
         if hook_cc:
-            # Auto-apply any pending migrations
-            try:
-                migration_status = check_pending_migrations()
-                if migration_status["has_pending"]:
-                    from kurt.db.migrations.utils import apply_migrations
+            # Auto-apply any pending migrations in silent mode
+            migration_result = None
+            migration_status = check_pending_migrations()
+            if migration_status["has_pending"]:
+                from kurt.db.migrations.utils import apply_migrations
 
-                    apply_migrations(auto_confirm=True)
-            except Exception:
-                pass  # Continue if migration check/apply fails
+                migration_result = apply_migrations(auto_confirm=True, silent=True)
 
             # Generate status markdown
             markdown_output = generate_status_markdown()
@@ -205,8 +203,17 @@ def status(format: str, hook_cc: bool):
             if has_profile:
                 status_parts.append("✓ Profile configured")
 
+            # Add migration status to user message
+            if migration_result and migration_result["applied"]:
+                status_parts.append(f"✓ Applied {migration_result['count']} migrations")
+            elif migration_result and not migration_result["success"]:
+                status_parts.append(
+                    f"⚠ Migration failed: {migration_result.get('error', 'Unknown')}"
+                )
+
             user_message = " | ".join(status_parts)
 
+            # Build hook output with migration details
             hook_output = {
                 "systemMessage": user_message,
                 "hookSpecificOutput": {
@@ -214,6 +221,11 @@ def status(format: str, hook_cc: bool):
                     "additionalContext": markdown_output,
                 },
             }
+
+            # Add migration metadata if available
+            if migration_result:
+                hook_output["hookSpecificOutput"]["migrationResult"] = migration_result
+
             print(json.dumps(hook_output, indent=2))
             return
 
