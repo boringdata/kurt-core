@@ -213,7 +213,12 @@ OPENAI_API_KEY=your_openai_api_key_here
 
                         for item in plugin_source.iterdir():
                             if item.name == "CLAUDE.md" and not skip_main:
-                                shutil.copy2(item, ide_dir / item.name)
+                                dest = ide_dir / item.name
+                                shutil.copy2(item, dest)
+                                # Record file installation
+                                from kurt.update.hasher import record_installed_file
+
+                                record_installed_file(".claude/CLAUDE.md", dest, __version__)
                             elif item.name == "settings.json":
                                 # Merge settings.json
                                 dest_settings = ide_dir / "settings.json"
@@ -232,8 +237,16 @@ OPENAI_API_KEY=your_openai_api_key_here
                                 else:
                                     with open(dest_settings, "w") as f:
                                         json.dump(kurt_settings, f, indent=2)
+                                # Record settings.json installation
+                                from kurt.update.hasher import record_installed_file
+
+                                record_installed_file(
+                                    ".claude/settings.json", dest_settings, __version__
+                                )
                             elif item.name in ["instructions", "commands"]:
                                 # Copy directories
+                                from kurt.update.hasher import record_installed_file
+
                                 dest_dir = ide_dir / item.name
                                 dest_dir.mkdir(exist_ok=True)
                                 for src_file in item.rglob("*"):
@@ -242,8 +255,13 @@ OPENAI_API_KEY=your_openai_api_key_here
                                         dest_file = dest_dir / rel_path
                                         dest_file.parent.mkdir(parents=True, exist_ok=True)
                                         shutil.copy2(src_file, dest_file)
+                                        # Record each file
+                                        file_rel_path = f".claude/{item.name}/{rel_path}"
+                                        record_installed_file(file_rel_path, dest_file, __version__)
                             elif item.name == "kurt" and not templates_copied:
                                 # Copy kurt/ to working directory (only once for both IDEs)
+                                from kurt.update.hasher import record_installed_file
+
                                 dest_dir = Path.cwd() / item.name
                                 dest_dir.mkdir(exist_ok=True)
                                 for src_file in item.rglob("*"):
@@ -252,6 +270,9 @@ OPENAI_API_KEY=your_openai_api_key_here
                                         dest_file = dest_dir / rel_path
                                         dest_file.parent.mkdir(parents=True, exist_ok=True)
                                         shutil.copy2(src_file, dest_file)
+                                        # Record each template file
+                                        file_rel_path = f"kurt/{rel_path}"
+                                        record_installed_file(file_rel_path, dest_file, __version__)
                                 templates_copied = True
 
                     else:  # cursor
@@ -259,6 +280,8 @@ OPENAI_API_KEY=your_openai_api_key_here
                         for item in plugin_source.iterdir():
                             if item.name == "rules":
                                 # Copy rules/ directory
+                                from kurt.update.hasher import record_installed_file
+
                                 dest_dir = ide_dir / item.name
                                 dest_dir.mkdir(exist_ok=True)
                                 for src_file in item.rglob("*"):
@@ -267,8 +290,13 @@ OPENAI_API_KEY=your_openai_api_key_here
                                         dest_file = dest_dir / rel_path
                                         dest_file.parent.mkdir(parents=True, exist_ok=True)
                                         shutil.copy2(src_file, dest_file)
+                                        # Record each rule file
+                                        file_rel_path = f".cursor/rules/{rel_path}"
+                                        record_installed_file(file_rel_path, dest_file, __version__)
                             elif item.name == "kurt" and not templates_copied:
                                 # Copy kurt/ to working directory (only once for both IDEs)
+                                from kurt.update.hasher import record_installed_file
+
                                 dest_dir = Path.cwd() / item.name
                                 dest_dir.mkdir(exist_ok=True)
                                 for src_file in item.rglob("*"):
@@ -277,6 +305,9 @@ OPENAI_API_KEY=your_openai_api_key_here
                                         dest_file = dest_dir / rel_path
                                         dest_file.parent.mkdir(parents=True, exist_ok=True)
                                         shutil.copy2(src_file, dest_file)
+                                        # Record each template file
+                                        file_rel_path = f"kurt/{rel_path}"
+                                        record_installed_file(file_rel_path, dest_file, __version__)
                                 templates_copied = True
 
                 else:
@@ -309,6 +340,58 @@ OPENAI_API_KEY=your_openai_api_key_here
             console.print("  2. Open Cursor in this directory")
             console.print("  3. Mention [cyan]@add-profile[/cyan] to create your content profile")
             console.print("  4. Mention [cyan]@add-project[/cyan] to start a new project")
+
+    except Exception as e:
+        console.print(f"[bold red]Error:[/bold red] {e}")
+        raise click.Abort()
+
+
+@main.command()
+@click.option(
+    "--ide",
+    type=click.Choice(["claude", "cursor"]),
+    help="Update specific IDE only (default: all installed IDEs)",
+)
+@click.option(
+    "--yes",
+    is_flag=True,
+    help="Auto-confirm all updates without prompting",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Show what would be updated without applying changes",
+)
+@track_command
+def update(ide: str | None, yes: bool, dry_run: bool):
+    """
+    Update Kurt plugin files to the latest version.
+
+    Updates your local .claude/, .cursor/, and kurt/ directories with the latest
+    files from the installed kurt-core package. Smart detection preserves your
+    customizations while updating Kurt's default files.
+
+    Examples:
+        # Interactive update (prompts for each component)
+        kurt update
+
+        # Update specific IDE only
+        kurt update --ide claude
+        kurt update --ide cursor
+
+        # Auto-confirm all updates
+        kurt update --yes
+
+        # Preview what would be updated
+        kurt update --dry-run
+    """
+    from kurt.update import update_files
+
+    try:
+        result = update_files(ide=ide, auto_confirm=yes, dry_run=dry_run)
+
+        if result.get("error"):
+            raise click.Abort()
 
     except Exception as e:
         console.print(f"[bold red]Error:[/bold red] {e}")

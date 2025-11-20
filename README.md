@@ -99,6 +99,27 @@ Before getting started, you'll need:
    **Optional:**
    - `FIRECRAWL_API_KEY` - For web scraping with JavaScript support (falls back to Trafilatura)
 
+### Upgrading Kurt
+
+When you upgrade the `kurt-core` package, your plugin files may have updates available:
+
+```bash
+# Upgrade the package
+uv tool upgrade kurt-core
+# or: pip install --upgrade kurt-core
+
+# Update your local plugin files
+kurt update              # Interactive - prompts for each component
+kurt update --yes        # Auto-update everything
+kurt update --dry-run    # Preview changes without applying
+```
+
+The `kurt update` command smartly detects changes:
+- ✅ **Safe updates**: Automatically updates Kurt's default files that you haven't modified
+- ⚠️ **Modified files**: Prompts before overwriting files you've customized
+- 📁 **Custom files**: Preserves your custom templates and instructions
+- 🔀 **Smart merge**: Automatically merges `settings.json` to preserve your hooks
+
 ### Use with Your IDE
 
 4. **Start creating content:**
@@ -343,6 +364,12 @@ kurt init --db-path data/my-project.db
 # - .env.example with API key placeholders
 #
 # Both IDEs share the same database and templates!
+
+# Update plugin files after upgrading Kurt
+kurt update                  # Interactive update with prompts
+kurt update --yes            # Auto-confirm all updates
+kurt update --ide claude     # Update Claude Code files only
+kurt update --dry-run        # Preview what would change
 ```
 
 ### Content Ingestion
