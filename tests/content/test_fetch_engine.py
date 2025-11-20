@@ -228,98 +228,203 @@ class TestFetchDocumentsBatchWithEngine:
 
     def test_batch_fetch_uses_default_engine(self):
         """Test that batch fetch uses default engine when no override."""
+        from uuid import UUID
+
         from kurt.content.fetch import fetch_documents_batch
 
         with patch("kurt.content.fetch._get_fetch_engine") as mock_get_engine:
             mock_get_engine.return_value = "trafilatura"
 
-            # Mock asyncio.run to avoid actually running async code
-            with patch("kurt.content.fetch.asyncio.run") as mock_run:
-                # Properly consume the coroutine to avoid RuntimeWarning
-                mock_run.side_effect = lambda coro: (coro.close(), [])[1]
+            # Mock get_session to return mock documents (web URLs, not CMS)
+            with patch("kurt.content.fetch.get_session") as mock_session:
+                # Create mock documents (web documents without cms_platform)
+                mock_doc1 = MagicMock()
+                mock_doc1.id = UUID("550e8400-e29b-41d4-a716-446655440001")
+                mock_doc1.cms_platform = None
+                mock_doc1.cms_instance = None
+                mock_doc1.cms_document_id = None
 
-                fetch_documents_batch(["doc1", "doc2"])
+                mock_doc2 = MagicMock()
+                mock_doc2.id = UUID("550e8400-e29b-41d4-a716-446655440002")
+                mock_doc2.cms_platform = None
+                mock_doc2.cms_instance = None
+                mock_doc2.cms_document_id = None
 
-                # Verify _get_fetch_engine was called with no override
-                mock_get_engine.assert_called_once_with(override=None)
+                mock_session.return_value.get.side_effect = [mock_doc1, mock_doc2]
+
+                # Mock asyncio.run to avoid actually running async code
+                with patch("kurt.content.fetch.asyncio.run") as mock_run:
+                    # Properly consume the coroutine to avoid RuntimeWarning
+                    mock_run.side_effect = lambda coro: (coro.close(), [])[1]
+
+                    # Pass valid UUID strings (not "doc1", "doc2")
+                    fetch_documents_batch(
+                        [
+                            "550e8400-e29b-41d4-a716-446655440001",
+                            "550e8400-e29b-41d4-a716-446655440002",
+                        ]
+                    )
+
+                    # Verify _get_fetch_engine was called with no override
+                    mock_get_engine.assert_called_once_with(override=None)
 
     def test_batch_fetch_uses_override_engine(self):
         """Test that batch fetch respects fetch_engine parameter."""
+        from uuid import UUID
+
         from kurt.content.fetch import fetch_documents_batch
 
         with patch("kurt.content.fetch._get_fetch_engine") as mock_get_engine:
             mock_get_engine.return_value = "firecrawl"
 
-            # Mock asyncio.run to avoid actually running async code
-            with patch("kurt.content.fetch.asyncio.run") as mock_run:
-                # Properly consume the coroutine to avoid RuntimeWarning
-                mock_run.side_effect = lambda coro: (coro.close(), [])[1]
+            # Mock get_session to return mock documents (web URLs, not CMS)
+            with patch("kurt.content.fetch.get_session") as mock_session:
+                # Create mock documents (web documents without cms_platform)
+                mock_doc1 = MagicMock()
+                mock_doc1.id = UUID("550e8400-e29b-41d4-a716-446655440001")
+                mock_doc1.cms_platform = None
+                mock_doc1.cms_instance = None
+                mock_doc1.cms_document_id = None
 
-                fetch_documents_batch(["doc1", "doc2"], fetch_engine="firecrawl")
+                mock_doc2 = MagicMock()
+                mock_doc2.id = UUID("550e8400-e29b-41d4-a716-446655440002")
+                mock_doc2.cms_platform = None
+                mock_doc2.cms_instance = None
+                mock_doc2.cms_document_id = None
 
-                # Verify _get_fetch_engine was called with override
-                mock_get_engine.assert_called_once_with(override="firecrawl")
+                mock_session.return_value.get.side_effect = [mock_doc1, mock_doc2]
+
+                # Mock asyncio.run to avoid actually running async code
+                with patch("kurt.content.fetch.asyncio.run") as mock_run:
+                    # Properly consume the coroutine to avoid RuntimeWarning
+                    mock_run.side_effect = lambda coro: (coro.close(), [])[1]
+
+                    # Pass valid UUID strings (not "doc1", "doc2")
+                    fetch_documents_batch(
+                        [
+                            "550e8400-e29b-41d4-a716-446655440001",
+                            "550e8400-e29b-41d4-a716-446655440002",
+                        ],
+                        fetch_engine="firecrawl",
+                    )
+
+                    # Verify _get_fetch_engine was called with override
+                    mock_get_engine.assert_called_once_with(override="firecrawl")
 
     def test_batch_fetch_shows_warning_for_large_trafilatura_batch(self, capsys):
         """Test that warning is shown for large batches with Trafilatura."""
+        from uuid import UUID
+
         from kurt.content.fetch import fetch_documents_batch
 
         with patch("kurt.content.fetch._get_fetch_engine") as mock_get_engine:
             mock_get_engine.return_value = "trafilatura"
 
-            # Mock asyncio.run to avoid actually running async code
-            with patch("kurt.content.fetch.asyncio.run") as mock_run:
-                # Properly consume the coroutine to avoid RuntimeWarning
-                mock_run.side_effect = lambda coro: (coro.close(), [])[1]
+            # Mock get_session to return mock documents (web URLs, not CMS)
+            with patch("kurt.content.fetch.get_session") as mock_session:
+                # Create 15 mock documents (web documents without cms_platform)
+                mock_docs = []
+                doc_ids = []
+                for i in range(15):
+                    uuid_str = f"550e8400-e29b-41d4-a716-4466554400{i:02d}"
+                    doc_ids.append(uuid_str)
 
-                # Create batch of 15 documents (>10 threshold)
-                doc_ids = [f"doc{i}" for i in range(15)]
-                fetch_documents_batch(doc_ids)
+                    mock_doc = MagicMock()
+                    mock_doc.id = UUID(uuid_str)
+                    mock_doc.cms_platform = None
+                    mock_doc.cms_instance = None
+                    mock_doc.cms_document_id = None
+                    mock_docs.append(mock_doc)
 
-                # Check that warning was printed
-                captured = capsys.readouterr()
-                assert "Warning: Fetching large volumes with Trafilatura" in captured.out
-                assert "Firecrawl" in captured.out
+                mock_session.return_value.get.side_effect = mock_docs
+
+                # Mock asyncio.run to avoid actually running async code
+                with patch("kurt.content.fetch.asyncio.run") as mock_run:
+                    # Properly consume the coroutine to avoid RuntimeWarning
+                    mock_run.side_effect = lambda coro: (coro.close(), [])[1]
+
+                    fetch_documents_batch(doc_ids)
+
+                    # Check that warning was printed
+                    captured = capsys.readouterr()
+                    assert "Warning: Fetching large volumes with Trafilatura" in captured.out
+                    assert "Firecrawl" in captured.out
 
     def test_batch_fetch_no_warning_for_small_trafilatura_batch(self, capsys):
         """Test that no warning is shown for small batches with Trafilatura."""
+        from uuid import UUID
+
         from kurt.content.fetch import fetch_documents_batch
 
         with patch("kurt.content.fetch._get_fetch_engine") as mock_get_engine:
             mock_get_engine.return_value = "trafilatura"
 
-            # Mock asyncio.run to avoid actually running async code
-            with patch("kurt.content.fetch.asyncio.run") as mock_run:
-                # Properly consume the coroutine to avoid RuntimeWarning
-                mock_run.side_effect = lambda coro: (coro.close(), [])[1]
+            # Mock get_session to return mock documents (web URLs, not CMS)
+            with patch("kurt.content.fetch.get_session") as mock_session:
+                # Create 5 mock documents (web documents without cms_platform)
+                mock_docs = []
+                doc_ids = []
+                for i in range(5):
+                    uuid_str = f"550e8400-e29b-41d4-a716-4466554400{i:02d}"
+                    doc_ids.append(uuid_str)
 
-                # Create batch of 5 documents (<10 threshold)
-                doc_ids = [f"doc{i}" for i in range(5)]
-                fetch_documents_batch(doc_ids)
+                    mock_doc = MagicMock()
+                    mock_doc.id = UUID(uuid_str)
+                    mock_doc.cms_platform = None
+                    mock_doc.cms_instance = None
+                    mock_doc.cms_document_id = None
+                    mock_docs.append(mock_doc)
 
-                # Check that no warning was printed
-                captured = capsys.readouterr()
-                assert "Warning" not in captured.out
+                mock_session.return_value.get.side_effect = mock_docs
+
+                # Mock asyncio.run to avoid actually running async code
+                with patch("kurt.content.fetch.asyncio.run") as mock_run:
+                    # Properly consume the coroutine to avoid RuntimeWarning
+                    mock_run.side_effect = lambda coro: (coro.close(), [])[1]
+
+                    fetch_documents_batch(doc_ids)
+
+                    # Check that no warning was printed
+                    captured = capsys.readouterr()
+                    assert "Warning" not in captured.out
 
     def test_batch_fetch_no_warning_for_large_firecrawl_batch(self, capsys):
         """Test that no warning is shown for large batches with Firecrawl."""
+        from uuid import UUID
+
         from kurt.content.fetch import fetch_documents_batch
 
         with patch("kurt.content.fetch._get_fetch_engine") as mock_get_engine:
             mock_get_engine.return_value = "firecrawl"
 
-            # Mock asyncio.run to avoid actually running async code
-            with patch("kurt.content.fetch.asyncio.run") as mock_run:
-                # Properly consume the coroutine to avoid RuntimeWarning
-                mock_run.side_effect = lambda coro: (coro.close(), [])[1]
+            # Mock get_session to return mock documents (web URLs, not CMS)
+            with patch("kurt.content.fetch.get_session") as mock_session:
+                # Create 20 mock documents (web documents without cms_platform)
+                mock_docs = []
+                doc_ids = []
+                for i in range(20):
+                    uuid_str = f"550e8400-e29b-41d4-a716-4466554400{i:02d}"
+                    doc_ids.append(uuid_str)
 
-                # Create batch of 20 documents (>10 threshold)
-                doc_ids = [f"doc{i}" for i in range(20)]
-                fetch_documents_batch(doc_ids)
+                    mock_doc = MagicMock()
+                    mock_doc.id = UUID(uuid_str)
+                    mock_doc.cms_platform = None
+                    mock_doc.cms_instance = None
+                    mock_doc.cms_document_id = None
+                    mock_docs.append(mock_doc)
 
-                # Check that no warning was printed
-                captured = capsys.readouterr()
-                assert "Warning" not in captured.out
+                mock_session.return_value.get.side_effect = mock_docs
+
+                # Mock asyncio.run to avoid actually running async code
+                with patch("kurt.content.fetch.asyncio.run") as mock_run:
+                    # Properly consume the coroutine to avoid RuntimeWarning
+                    mock_run.side_effect = lambda coro: (coro.close(), [])[1]
+
+                    fetch_documents_batch(doc_ids)
+
+                    # Check that no warning was printed
+                    captured = capsys.readouterr()
+                    assert "Warning" not in captured.out
 
 
 class TestEngineConfigurationScenarios:

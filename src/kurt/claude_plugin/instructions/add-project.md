@@ -46,7 +46,7 @@ We'll gather further details on these in the following steps, but cannot proceed
     **If doesn't match an existing template** -> Ask the user if they'd like to create a template (see `.claude/instructions/add-format-template.md`) or use the nearest match if one exists. Once complete, proceed to the next step.
 
 7. Load in all <format_template> that will be used in the project.
-8. Gather sources: read each document <format_template> for instructions on how to gather sources. Gather sources using `kurt content list` and other `kurt content` commands (run `kurt content --help` for more details), or fetch any additional URLs we might need using `kurt content fetch`.
+8. Gather sources: read each document <format_template> for instructions on how to gather sources. Gather sources using `kurt content list` and other `kurt content` commands (run `kurt content --help` for more details), or fetch any additional URLs we might need using `kurt content fetch`.  See `.claude/instructions/add-source.md` for full instructions on how to view, add and refresh sources like websites or a CMS.
 
    **Optional - Analytics for prioritization:** If analytics is configured for your domain (`kurt integrations analytics list`), consider using traffic data to prioritize work. For example:
    - High-traffic pages = higher priority for updates

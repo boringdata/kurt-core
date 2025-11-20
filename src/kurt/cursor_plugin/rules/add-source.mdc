@@ -93,6 +93,60 @@ Tell user: "Mapped {count} {content_type} documents and created {cluster_count} 
 - Enables fetching by theme instead of guessing URL patterns
 - Project-aware: Fetch "API Tutorials" cluster for tutorial project, skip "Blog Posts" cluster
 
+### Step 3: Keeping CMS Content Up to Date
+
+After initial CMS integration, periodically check for new or modified content:
+
+**When to update:**
+- Before starting a new project - ensure you have latest content
+- User asks - "check for new content", "update from CMS"
+- Regular intervals - monthly for active content sources
+
+**How to discover new content:**
+```bash
+# Re-map CMS to discover new documents (incremental - only creates new records)
+kurt content map cms --platform {platform} --instance {instance}
+```
+
+**How it works:**
+- Checks CMS for all documents
+- Only creates records for NEW documents not in database
+- Existing documents are skipped (checks by `source_url`)
+- Returns count of new vs. existing documents
+
+**After discovering new content:**
+Apply the same logic from Step 2 based on how many new documents were found:
+- **1-5 new docs** → Treat as Single Document (Step 2A): Fetch immediately with priority 1
+- **6-50 new docs** → Treat as Search & Select (Step 2B): Show list, let user select which to fetch
+- **>50 new docs** → Treat as Bulk Import (Step 2C): Use clustering, fetch relevant clusters in background
+
+**Incremental vs. Full Refresh:**
+
+Incremental (Default - Recommended):
+```bash
+# Only fetches NEW or FAILED documents
+kurt content fetch --with-status NOT_FETCHED
+kurt content fetch --with-status ERROR  # Retry failed fetches
+```
+
+Full Refresh (Use Sparingly):
+```bash
+# Re-fetches ALL documents, even if already fetched
+kurt content fetch --include "sanity/prod/*" --refetch
+```
+
+**Important:** Full refresh with `--refetch` will:
+- Re-download content for all documents (even unchanged ones)
+- Re-run metadata extraction for changed content (skips unchanged via content_hash)
+- Take significantly longer for large document sets
+- Use more LLM API credits
+
+**When to use --refetch:**
+- Major CMS content updates (e.g., rewrote 50% of articles)
+- Changed content structure or format
+- Debugging content issues
+- NOT for routine updates (use incremental instead)
+
 ---
 
 ## Single Page Workflow
@@ -194,6 +248,43 @@ For background operations, update user periodically (if >2 minutes):
 ```
 
 User can continue conversation while this runs.
+
+### Step 5: Keeping Site Content Up to Date
+
+After initial site mapping, periodically check for new pages:
+
+**When to update:**
+- Before starting a new project - ensure you have latest content
+- User asks - "check for new pages", "refresh sitemap", "update site content"
+- Regular intervals - monthly for active content sources
+- After major site updates or launches
+
+**How to discover new pages:**
+```bash
+# Re-map website to discover new pages (incremental - only creates new records)
+kurt content map url {homepage_or_sitemap_url}
+```
+
+**How it works:**
+- Re-crawls sitemap or website
+- Only creates records for NEW URLs not in database
+- Existing URLs are skipped (checks by `source_url`)
+- Returns count of new vs. existing pages
+
+**After discovering new pages:**
+1. Run dry-run to check if site has grown: `kurt content map url {url} --dry-run`
+2. Apply the same logic from Step 2 based on total size:
+   - **Still small (<50 total pages)** → Map + fetch inline
+   - **Now medium (50-200 pages)** → Map inline, fetch selectively in background
+   - **Now large (>200 pages)** → Map with clustering, fetch relevant clusters
+
+**Selective fetch for new pages only:**
+```bash
+# Only fetch the newly discovered pages
+kurt content fetch --with-status NOT_FETCHED
+```
+
+This applies project-aware section selection (Step 3) to only the new pages, keeping your existing content intact.
 
 ---
 

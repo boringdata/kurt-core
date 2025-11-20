@@ -204,6 +204,7 @@ class PostHogAdapter(AnalyticsAdapter):
             Dict mapping normalized_url -> pageview_count
         """
         # Use HogQL for aggregation queries
+        # Add explicit LIMIT to ensure we get all results (PostHog default is ~100)
         query = {
             "query": {
                 "kind": "HogQLQuery",
@@ -216,6 +217,8 @@ class PostHogAdapter(AnalyticsAdapter):
                         AND timestamp >= '{start.isoformat()}'
                         AND timestamp < '{end.isoformat()}'
                     GROUP BY properties.$current_url
+                    ORDER BY pageviews DESC
+                    LIMIT 10000
                 """,
             }
         }
