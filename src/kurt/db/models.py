@@ -54,6 +54,15 @@ class Document(SQLModel, table=True):
     model_config = ConfigDict(extra="allow")  # Allow dynamic attributes like analytics
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
+
+    # Multi-tenancy: workspace isolation for cloud mode
+    # In local SQLite mode, uses default value '00000000-0000-0000-0000-000000000000'
+    tenant_id: Optional[UUID] = Field(
+        default=UUID("00000000-0000-0000-0000-000000000000"),
+        index=True,
+        description="Workspace ID for multi-tenant isolation (cloud mode)",
+    )
+
     title: Optional[str] = None
     source_type: SourceType
     source_url: Optional[str] = Field(default=None, unique=True, index=True)
@@ -161,6 +170,14 @@ class Entity(SQLModel, table=True):
     __tablename__ = "entities"
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
+
+    # Multi-tenancy: workspace isolation for cloud mode
+    tenant_id: Optional[UUID] = Field(
+        default=UUID("00000000-0000-0000-0000-000000000000"),
+        index=True,
+        description="Workspace ID for multi-tenant isolation (cloud mode)",
+    )
+
     name: str = Field(index=True)  # Entity name (as mentioned in documents)
     entity_type: str = Field(index=True)  # Entity type (Product, Feature, Technology, etc.)
 
@@ -188,6 +205,14 @@ class EntityRelationship(SQLModel, table=True):
     __tablename__ = "entity_relationships"
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
+
+    # Multi-tenancy: workspace isolation for cloud mode
+    tenant_id: Optional[UUID] = Field(
+        default=UUID("00000000-0000-0000-0000-000000000000"),
+        index=True,
+        description="Workspace ID for multi-tenant isolation (cloud mode)",
+    )
+
     source_entity_id: UUID = Field(foreign_key="entities.id", index=True)
     target_entity_id: UUID = Field(foreign_key="entities.id", index=True)
     relationship_type: str = Field(index=True)  # mentions, part_of, integrates_with, etc.
@@ -206,6 +231,14 @@ class DocumentEntity(SQLModel, table=True):
     __tablename__ = "document_entities"
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
+
+    # Multi-tenancy: workspace isolation for cloud mode
+    tenant_id: Optional[UUID] = Field(
+        default=UUID("00000000-0000-0000-0000-000000000000"),
+        index=True,
+        description="Workspace ID for multi-tenant isolation (cloud mode)",
+    )
+
     document_id: UUID = Field(foreign_key="documents.id", index=True)
     entity_id: UUID = Field(foreign_key="entities.id", index=True)
 

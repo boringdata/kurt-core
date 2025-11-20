@@ -67,3 +67,32 @@ def init():
     from kurt.db.migrations.utils import initialize_alembic
 
     initialize_alembic()
+
+
+@migrate.command("migrate-db")
+@click.option("--target-url", required=True, help="Target PostgreSQL connection string")
+@click.option("--workspace-id", help="Workspace ID for multi-tenant setup")
+@click.option("--auto-confirm", "-y", is_flag=True, help="Skip confirmation prompts")
+@track_command
+def migrate_db(target_url: str, workspace_id: str, auto_confirm: bool):
+    """
+    Migrate local SQLite database to PostgreSQL (e.g., Supabase).
+
+    This command will:
+    - Copy all documents, entities, and relationships from SQLite to PostgreSQL
+    - Preserve UUIDs and timestamps
+    - Content files stay local (only metadata is migrated)
+    - Update kurt.config to point to PostgreSQL
+
+    Example:
+        kurt admin migrate migrate-db \\
+            --target-url "postgresql://user:pass@db.supabase.co:5432/postgres" \\
+            --workspace-id "workspace-uuid"
+    """
+    from kurt.db.migrate_to_postgres import migrate_sqlite_to_postgres
+
+    migrate_sqlite_to_postgres(
+        target_url=target_url,
+        workspace_id=workspace_id,
+        auto_confirm=auto_confirm,
+    )

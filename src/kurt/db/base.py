@@ -55,14 +55,24 @@ def get_database_client() -> DatabaseClient:
     """
     Factory function to get the appropriate database client.
 
-    Currently returns SQLiteClient (local mode) by default.
-
-    Future enhancement: Could check environment variables to select
-    different database backends (PostgreSQL, MySQL, etc.).
+    Checks configuration for DATABASE_URL:
+    - If DATABASE_URL is set → PostgreSQLClient (shared/cloud mode)
+    - Otherwise → SQLiteClient (local mode)
 
     Returns:
-        DatabaseClient: SQLiteClient instance (local .kurt/kurt.sqlite)
+        DatabaseClient: PostgreSQLClient or SQLiteClient instance
     """
+    from kurt.config import get_config_or_default
+
+    config = get_config_or_default()
+
+    # Check if PostgreSQL is configured
+    if config.DATABASE_URL:
+        from kurt.db.postgresql import PostgreSQLClient
+
+        return PostgreSQLClient(database_url=config.DATABASE_URL, workspace_id=config.WORKSPACE_ID)
+
+    # Default: Local SQLite
     from kurt.db.sqlite import SQLiteClient
 
     return SQLiteClient()

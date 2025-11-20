@@ -6,6 +6,7 @@ from .feedback import feedback
 from .migrate import migrate
 from .project import project
 from .telemetry import telemetry
+from .workspace import workspace
 
 
 @click.group()
@@ -19,6 +20,7 @@ def admin():
     - migrate: Database schema migrations
     - telemetry: Manage usage analytics
     - project: Manage Kurt projects
+    - workspace: Manage PostgreSQL workspaces
     """
     pass
 
@@ -28,3 +30,4 @@ admin.add_command(feedback)
 admin.add_command(migrate)
 admin.add_command(telemetry)
 admin.add_command(project)
+admin.add_command(workspace)
