@@ -1281,7 +1281,20 @@ def test_complex_grouping_mixed_resolutions(test_document, mock_all_llm_calls):
     with (
         patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
         patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
+        patch("kurt.db.knowledge_graph.search_similar_entities_async") as mock_search_async,
     ):
+        # Mock async similarity search to return existing entities
+        async def mock_search_similar(*args, **kwargs):
+            entity_name = kwargs.get("entity_name", "")
+            if "React" in entity_name:
+                return [{"id": str(existing_react.id), "name": "React", "similarity": 0.95}]
+            elif "Django" in entity_name:
+                return [{"id": str(existing_django.id), "name": "Django", "similarity": 0.95}]
+            else:
+                return []
+
+        mock_search_async.side_effect = mock_search_similar
+
         # Wrap synchronous mock in async function for .acall()
         async def async_side_effect_resolutions(*args, **kwargs):
             return side_effect_resolutions(*args, **kwargs)

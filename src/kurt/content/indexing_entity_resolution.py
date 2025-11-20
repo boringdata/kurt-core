@@ -569,8 +569,8 @@ def _create_entities_and_relationships(doc_to_kg_data: dict, resolutions: list[d
                 # Keep if it's being recreated in Stage 4
                 entity = session.get(Entity, de.entity_id)
                 if entity and entity.name in new_entity_names:
-                    # This will be recreated, so delete the old version
-                    old_entity_ids_to_clean.add(de.entity_id)
+                    # This will be recreated, so keep it (don't clean up)
+                    continue
                 else:
                     # Entity is no longer mentioned - orphan it
                     old_entity_ids_to_clean.add(de.entity_id)
