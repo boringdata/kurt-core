@@ -7,10 +7,10 @@ from unittest.mock import patch
 import pytest
 from sqlmodel import SQLModel, create_engine, select
 
-from kurt.content.indexing_entity_resolution import gather_with_semaphore
 from kurt.db import async_session_scope, get_session
 from kurt.db.models import Entity
 from kurt.db.sqlite import SQLiteClient
+from kurt.utils.async_helpers import gather_with_semaphore
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -75,7 +75,7 @@ async def test_gather_with_semaphore_handles_exceptions():
 
     tasks = [failing_task(i) for i in range(10)]
 
-    with patch("kurt.content.indexing_entity_resolution.logger") as mock_logger:
+    with patch("kurt.utils.async_helpers.logger") as mock_logger:
         results = await gather_with_semaphore(
             tasks=tasks, max_concurrent=3, task_description="test"
         )
@@ -265,7 +265,7 @@ async def test_exception_propagation_in_gather_with_semaphore():
 
     tasks = [task_with_custom_exception(i) for i in range(10)]
 
-    with patch("kurt.content.indexing_entity_resolution.logger") as mock_logger:
+    with patch("kurt.utils.async_helpers.logger") as mock_logger:
         _ = await gather_with_semaphore(tasks=tasks, max_concurrent=3, task_description="custom")
 
         # Verify the exception was logged with proper context
