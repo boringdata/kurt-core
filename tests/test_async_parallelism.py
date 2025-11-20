@@ -5,11 +5,24 @@ import time
 from unittest.mock import patch
 
 import pytest
-from sqlmodel import select
+from sqlmodel import SQLModel, create_engine, select
 
 from kurt.content.indexing_entity_resolution import gather_with_semaphore
 from kurt.db import async_session_scope, get_session
 from kurt.db.models import Entity
+from kurt.db.sqlite import SQLiteClient
+
+
+@pytest.fixture(scope="module", autouse=True)
+def setup_database():
+    """Ensure database schema exists before running tests."""
+    # Get database URL from client
+    client = SQLiteClient()
+    db_url = client.get_database_url()
+
+    # Create engine and tables
+    engine = create_engine(db_url)
+    SQLModel.metadata.create_all(engine)
 
 
 @pytest.mark.asyncio
