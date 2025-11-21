@@ -183,7 +183,7 @@ def index(
                 # Display the knowledge graph for single document
                 if len(documents) == 1:
                     from kurt.commands.content._live_display import display_knowledge_graph
-                    from kurt.content.indexing import get_document_knowledge_graph
+                    from kurt.db.graph_queries import get_document_knowledge_graph
 
                     try:
                         doc_id = str(documents[0].id)

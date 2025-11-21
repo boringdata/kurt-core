@@ -9,10 +9,17 @@ INDEXING WORKFLOW:
    → batch_extract_document_metadata() - parallel batch processing
 
 2. Finalize knowledge graph (link + resolve + create entities)
-   → finalize_knowledge_graph_from_index_results()
+   → complete_entity_resolution_workflow() in workflows/entity_resolution.py
 
 3. Query document knowledge graph
    → get_document_knowledge_graph()
+
+ARCHITECTURE:
+============
+Pattern:
+- content/indexing_xxx.py: Business logic functions (pure logic + LLM calls)
+- workflows/: DBOS orchestration (calls business logic + db operations)
+- content/indexing.py: CLI entry point (calls workflows)
 
 DSPy TRACES:
 ============
@@ -21,7 +28,7 @@ Trace #1: IndexDocument (in indexing_extract.py)
    - Extract entities with pre-resolution (EXISTING vs NEW)
    - Extract relationships between entities
 
-Trace #2: ResolveEntityGroup (in entity_resolution.py, called by indexing_entity_resolution.py)
+Trace #2: ResolveEntityGroup (called by indexing_entity_resolution.py, used by workflow)
    - Cluster similar entities using DBSCAN
    - Resolve entity groups using LLM
    - Deduplicate and merge entities
@@ -31,32 +38,21 @@ FILE ORGANIZATION:
 - indexing_models.py: All Pydantic models and constants
 - indexing_helpers.py: Shared utility functions (no DSPy)
 - indexing_extract.py: DSPy Trace #1 - IndexDocument signature
-- indexing_entity_resolution.py: Orchestration for stages 2-4 (delegates to entity_resolution.py)
-- indexing_document_graph.py: Query functions (no DSPy)
-- indexing.py (this file): Public API + high-level orchestration
+- indexing_entity_resolution.py: Business logic for entity resolution (LLM calls)
+- indexing.py (this file): Public API + high-level orchestration (calls workflows)
 """
 
 import asyncio
 import logging
 
-# Re-export document graph query
-from kurt.content.indexing_document_graph import (
-    get_document_knowledge_graph,
-)
-
-# Re-export entity resolution orchestration
-from kurt.content.indexing_entity_resolution import (
-    finalize_knowledge_graph_from_index_results,
-)
-
 # Re-export extract functions (DSPy Trace #1)
-from kurt.content.indexing_extract import (
+from kurt.content.indexing.extract import (
     batch_extract_document_metadata,
     extract_document_metadata,
 )
 
 # Re-export models and constants
-from kurt.content.indexing_models import (
+from kurt.content.indexing.models import (
     DocumentMetadataOutput,
     EntityExtraction,
     EntityResolution,
@@ -80,10 +76,6 @@ __all__ = [
     # Extract (Stage 1)
     "extract_document_metadata",
     "batch_extract_document_metadata",
-    # Entity resolution (Stages 2-4)
-    "finalize_knowledge_graph_from_index_results",
-    # Query
-    "get_document_knowledge_graph",
     # High-level orchestration
     "index_documents",
 ]
@@ -144,17 +136,38 @@ def index_documents(
         f"{extract_results['failed']} failed, {extract_results['skipped']} skipped"
     )
 
-    # Stage 2-4: Finalize knowledge graph
+    # Stage 2-4: Finalize knowledge graph via DBOS workflow
     kg_stats = None
     if enable_kg and extract_results["results"]:
-        logger.info("Stages 2-4: Finalizing knowledge graph...")
-        kg_stats = finalize_knowledge_graph_from_index_results(
-            extract_results["results"], activity_callback=progress_callback
-        )
-        logger.info(
-            f"Knowledge graph complete: {kg_stats.get('entities_created', 0)} created, "
-            f"{kg_stats.get('entities_merged', 0)} merged"
-        )
+        logger.info("Stages 2-4: Finalizing knowledge graph via workflow...")
+        try:
+            # Import workflow here to avoid circular import
+            from kurt.content.indexing.workflow import complete_entity_resolution_workflow
+
+            # Call the DBOS workflow (will use fallback for tests if DBOS not initialized)
+            kg_stats = complete_entity_resolution_workflow(extract_results["results"])
+            logger.info(
+                f"Knowledge graph complete: {kg_stats.get('entities_created', 0)} created, "
+                f"{kg_stats.get('entities_merged', 0)} merged, "
+                f"{kg_stats.get('entities_linked_existing', 0)} linked"
+            )
+        except Exception as e:
+            if "DBOS" in str(e):
+                # Fallback: call the business logic directly (for tests/non-DBOS environments)
+                logger.debug("DBOS not initialized, using fallback implementation")
+                from kurt.content.indexing.entity_group_resolution import (
+                    finalize_knowledge_graph_from_index_results_fallback,
+                )
+
+                kg_stats = finalize_knowledge_graph_from_index_results_fallback(
+                    extract_results["results"], activity_callback=progress_callback
+                )
+                logger.info(
+                    f"Knowledge graph complete (fallback): {kg_stats.get('entities_created', 0)} created, "
+                    f"{kg_stats.get('entities_merged', 0)} merged"
+                )
+            else:
+                raise
 
     return {
         "extract_results": extract_results,

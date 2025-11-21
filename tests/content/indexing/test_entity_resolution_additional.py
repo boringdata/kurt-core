@@ -18,16 +18,16 @@ from uuid import uuid4
 import pytest
 from sqlmodel import select
 
-from kurt.content.indexing_entity_resolution import (
+from kurt.content.indexing.entity_group_resolution import (
     _create_entities_and_relationships as create_entities_and_relationships,
 )
-from kurt.content.indexing_entity_resolution import (
+from kurt.content.indexing.entity_group_resolution import (
     _resolve_entity_groups as resolve_entity_groups,
 )
-from kurt.content.indexing_entity_resolution import (
-    finalize_knowledge_graph_from_index_results as finalize_knowledge_graph,
+from kurt.content.indexing.entity_group_resolution import (
+    finalize_knowledge_graph_from_index_results_fallback as finalize_knowledge_graph,
 )
-from kurt.content.indexing_models import EntityResolution, GroupResolution
+from kurt.content.indexing.models import EntityResolution, GroupResolution
 from kurt.db.database import get_session
 from kurt.db.models import Document, Entity, EntityRelationship, SourceType
 
@@ -199,8 +199,8 @@ def test_relationship_evidence_count_accumulates(
         return mock_resolution
 
     with (
-        patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
+        patch("kurt.content.indexing.entity_group_resolution.dspy.ChainOfThought") as mock_cot,
+        patch("kurt.content.indexing.entity_group_resolution.DBSCAN", return_value=mock_dbscan),
     ):
         # Wrap synchronous mock in async function for .acall()
         async def async_resolve_entities(*args, **kwargs):
@@ -247,8 +247,8 @@ def test_aliases_no_duplicates_on_reindexing(test_document, mock_all_llm_calls):
         return mock_resolution
 
     with (
-        patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
+        patch("kurt.content.indexing.entity_group_resolution.dspy.ChainOfThought") as mock_cot,
+        patch("kurt.content.indexing.entity_group_resolution.DBSCAN", return_value=mock_dbscan),
     ):
         # Wrap synchronous mock in async function for .acall()
         async def async_resolve_entities(*args, **kwargs):
@@ -337,8 +337,8 @@ def test_orphaned_relationships_skipped(test_document, mock_all_llm_calls):
         return mock_resolution
 
     with (
-        patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
+        patch("kurt.content.indexing.entity_group_resolution.dspy.ChainOfThought") as mock_cot,
+        patch("kurt.content.indexing.entity_group_resolution.DBSCAN", return_value=mock_dbscan),
     ):
         # Wrap synchronous mock in async function for .acall()
         async def async_resolve_entities(*args, **kwargs):
@@ -388,8 +388,8 @@ def test_none_empty_values_handled_gracefully(test_document, mock_all_llm_calls)
         return mock_resolution
 
     with (
-        patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
+        patch("kurt.content.indexing.entity_group_resolution.dspy.ChainOfThought") as mock_cot,
+        patch("kurt.content.indexing.entity_group_resolution.DBSCAN", return_value=mock_dbscan),
     ):
         # Wrap synchronous mock in async function for .acall()
         async def async_resolve_entities(*args, **kwargs):
@@ -462,8 +462,8 @@ def test_entity_type_conflict_uses_primary_type(test_document, mock_all_llm_call
         return mock_resolution
 
     with (
-        patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
+        patch("kurt.content.indexing.entity_group_resolution.dspy.ChainOfThought") as mock_cot,
+        patch("kurt.content.indexing.entity_group_resolution.DBSCAN", return_value=mock_dbscan),
     ):
         # Wrap synchronous mock in async function for .acall()
         async def async_resolve_entities(*args, **kwargs):
@@ -532,8 +532,8 @@ def test_uuid_linking_to_nonexistent_entity_creates_fallback(test_document, mock
         return mock_resolution
 
     with (
-        patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
+        patch("kurt.content.indexing.entity_group_resolution.dspy.ChainOfThought") as mock_cot,
+        patch("kurt.content.indexing.entity_group_resolution.DBSCAN", return_value=mock_dbscan),
     ):
         # Wrap synchronous mock in async function for .acall()
         async def async_resolve_entities(*args, **kwargs):
@@ -604,8 +604,8 @@ def test_zero_confidence_score_handled(test_document, mock_all_llm_calls):
         return mock_resolution
 
     with (
-        patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
+        patch("kurt.content.indexing.entity_group_resolution.dspy.ChainOfThought") as mock_cot,
+        patch("kurt.content.indexing.entity_group_resolution.DBSCAN", return_value=mock_dbscan),
     ):
         # Wrap synchronous mock in async function for .acall()
         async def async_resolve_entities(*args, **kwargs):

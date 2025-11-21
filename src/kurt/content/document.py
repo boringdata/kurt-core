@@ -28,6 +28,192 @@ from kurt.integrations.analytics.utils import normalize_url_for_analytics
 # ============================================================================
 
 
+def add_documents_for_urls(
+    url_list: list[str],
+    discovery_method: Optional[str] = None,
+    discovery_url: Optional[str] = None,
+    batch_size: int = 100,
+) -> tuple[list[Document], int]:
+    """
+    Create document records for URLs (auto-creates if don't exist).
+
+    Optimized for bulk document creation with batch commits and optional
+    discovery metadata tracking.
+
+    Args:
+        url_list: List of URLs
+        discovery_method: Optional discovery method (sitemap, crawl, blogroll, etc.)
+        discovery_url: Optional source URL where these URLs were discovered
+        batch_size: Number of documents to commit at once (default: 100)
+
+    Returns:
+        Tuple of (list of Document objects, count of newly created documents)
+
+    Example:
+        >>> # Basic usage
+        >>> docs, new_count = add_documents_for_urls(["https://example.com/page1", "https://example.com/page2"])
+        >>> # Returns: ([Document(...), Document(...)], 2)
+        >>>
+        >>> # With discovery metadata
+        >>> docs, new_count = add_documents_for_urls(
+        ...     urls,
+        ...     discovery_method="sitemap",
+        ...     discovery_url="https://example.com/sitemap.xml"
+        ... )
+    """
+    session = get_session()
+
+    # Check which URLs already exist (using IN for efficiency)
+    from sqlmodel import select
+
+    existing_urls_stmt = select(Document).where(Document.source_url.in_(url_list))
+    existing_docs = list(session.exec(existing_urls_stmt).all())
+    existing_urls = {doc.source_url for doc in existing_docs}
+
+    # Create documents for new URLs with batch commits
+    new_urls = [url for url in url_list if url not in existing_urls]
+    new_count = 0
+
+    if new_urls:
+        # Batch creation for performance
+        docs_to_add = []
+        for url in new_urls:
+            # Generate title from URL
+            title = url.rstrip("/").split("/")[-1] or url
+
+            # Create document with optional discovery metadata
+            doc = Document(
+                title=title,
+                source_type=SourceType.URL,
+                source_url=url,
+                ingestion_status=IngestionStatus.NOT_FETCHED,
+                discovery_method=discovery_method,
+                discovery_url=discovery_url,
+            )
+
+            session.add(doc)
+            docs_to_add.append(doc)
+
+            # Commit in batches
+            if len(docs_to_add) >= batch_size:
+                session.commit()
+                docs_to_add = []
+
+        # Commit any remaining
+        if docs_to_add:
+            session.commit()
+
+        new_count = len(new_urls)
+
+    # Return all documents (existing + newly created)
+    all_docs_stmt = select(Document).where(Document.source_url.in_(url_list))
+    all_docs = list(session.exec(all_docs_stmt).all())
+
+    return all_docs, new_count
+
+
+def add_documents_for_files(file_list: list[str]) -> tuple[list[Document], int, list[str]]:
+    """
+    Create document records for local files.
+
+    Files outside sources directory are copied to sources/local/.
+    Documents are marked as FETCHED since content already exists.
+
+    Args:
+        file_list: List of file paths
+
+    Returns:
+        Tuple of (list of Document objects, count of newly created, list of errors)
+
+    Example:
+        >>> docs, new_count, errors = add_documents_for_files(["./docs/page1.md", "./docs/page2.md"])
+        >>> # Returns: ([Document(...), Document(...)], 2, [])
+    """
+    from pathlib import Path
+
+    from sqlmodel import select
+
+    session = get_session()
+    config = load_config()
+    source_base = config.get_absolute_sources_path()
+
+    created_docs = []
+    errors = []
+
+    for file_path_str in file_list:
+        file_path = Path(file_path_str).resolve()
+
+        # Validate file exists
+        if not file_path.exists():
+            errors.append(f"File not found: {file_path_str}")
+            continue
+
+        if not file_path.is_file():
+            errors.append(f"Not a file: {file_path_str}")
+            continue
+
+        # Determine content path relative to sources directory
+        try:
+            relative_path = file_path.relative_to(source_base)
+            content_path_str = str(relative_path)
+        except ValueError:
+            # File is outside sources directory - copy it there
+            file_name = file_path.name
+            dest_path = source_base / "local" / file_name
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
+
+            import shutil
+
+            shutil.copy2(file_path, dest_path)
+
+            relative_path = dest_path.relative_to(source_base)
+            content_path_str = str(relative_path)
+
+        # Check if document exists
+        existing_stmt = select(Document).where(Document.content_path == content_path_str)
+        existing_doc = session.exec(existing_stmt).first()
+
+        if existing_doc:
+            created_docs.append(existing_doc)
+            continue
+
+        # Create new document
+        title = file_path.stem
+
+        # Read content to extract title from first line if it's a markdown heading
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+                first_line = content.split("\n")[0].strip()
+                if first_line.startswith("#"):
+                    title = first_line.lstrip("#").strip()
+        except Exception:
+            pass
+
+        new_doc = Document(
+            title=title,
+            source_type=SourceType.FILE_UPLOAD,
+            content_path=content_path_str,
+            ingestion_status=IngestionStatus.FETCHED,  # Already have the file
+        )
+
+        session.add(new_doc)
+        created_docs.append(new_doc)
+
+    # Commit all new documents
+    if created_docs:
+        session.commit()
+        # Refresh to get IDs
+        for doc in created_docs:
+            session.refresh(doc)
+
+    new_count = len(
+        [d for d in created_docs if d.id and d.ingestion_status == IngestionStatus.FETCHED]
+    )
+
+    return created_docs, new_count, errors
+
+
 def add_document(url: str, title: str = None) -> UUID:
     """
     Create document record with NOT_FETCHED status.
@@ -1210,3 +1396,49 @@ def list_documents_for_indexing(
     raise ValueError(
         "Must provide either ids, include_pattern, in_cluster, with_status, with_content_type, or all_flag=True"
     )
+
+
+# ============================================================================
+# Document Link Resolution (Helper for workflows)
+# ============================================================================
+
+
+def resolve_urls_to_doc_ids(url_list: list[str]) -> dict[str, UUID]:
+    """
+    Resolve URLs to document IDs.
+
+    Checks both source_url and discovery_url fields to match URLs.
+    Used by link saving logic to find target documents.
+
+    Args:
+        url_list: List of URLs to resolve
+
+    Returns:
+        Dictionary mapping URL -> document UUID
+
+    Example:
+        >>> url_to_id = resolve_urls_to_doc_ids(["https://example.com/page1", "https://example.com/page2"])
+        >>> # Returns: {"https://example.com/page1": UUID(...), ...}
+    """
+    from sqlmodel import or_
+
+    session = get_session()
+
+    if not url_list:
+        return {}
+
+    # Query for documents matching these URLs
+    # Check both source_url and discovery_url (for CMS documents with public URLs)
+    stmt = select(Document).where(
+        or_(Document.source_url.in_(url_list), Document.discovery_url.in_(url_list))
+    )
+
+    # Build mapping of URL -> doc_id (check both source_url and discovery_url)
+    url_to_id = {}
+    for doc in session.exec(stmt).all():
+        if doc.source_url in url_list:
+            url_to_id[doc.source_url] = doc.id
+        if doc.discovery_url in url_list:
+            url_to_id[doc.discovery_url] = doc.id
+
+    return url_to_id

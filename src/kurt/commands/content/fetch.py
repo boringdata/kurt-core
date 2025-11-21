@@ -216,7 +216,8 @@ def fetch_cmd(
     """
     import os
 
-    from kurt.content.fetch import fetch_content, fetch_documents_batch
+    from kurt.content.fetch import select_documents_for_fetch
+    from kurt.content.fetch.workflow import fetch_batch_workflow
 
     # Handle positional identifier argument (nominal case: 1 id/url/file)
     if identifier:
@@ -274,7 +275,7 @@ def fetch_cmd(
 
     # Call ingestion layer for filtering and validation
     try:
-        result = fetch_content(
+        result = select_documents_for_fetch(
             include_pattern=include_pattern,
             urls=urls,
             files=files_paths,
@@ -284,8 +285,6 @@ def fetch_cmd(
             with_content_type=with_content_type,
             exclude=exclude,
             limit=limit,
-            concurrency=concurrency,
-            engine=engine,
             skip_index=skip_index,
             refetch=refetch,
         )
@@ -502,12 +501,10 @@ def fetch_cmd(
 
     # Fetch in parallel with live display using 3-stage structure
     try:
-        import asyncio
         import time
 
         from kurt.commands.content._live_display import (
             LiveProgressDisplay,
-            create_fetch_progress_callback,
             finalize_knowledge_graph_with_progress,
             print_command_summary,
             print_stage_header,
@@ -524,33 +521,25 @@ def fetch_cmd(
         with LiveProgressDisplay(console, max_log_lines=10) as display:
             display.start_stage("Fetching content", total=len(doc_ids_to_fetch))
 
-            # Track results and timing as they arrive
-            fetch_count = 0
-
-            # Create progress callback that logs as documents are fetched
-            def update_fetch_progress():
-                nonlocal fetch_count
-                fetch_count += 1
-                display.update_progress(
-                    advance=1,
-                    description=f"Fetching content ({fetch_count}/{len(doc_ids_to_fetch)})",
-                )
-
-            results = fetch_documents_batch(
-                doc_ids_to_fetch,
-                max_concurrent=concurrency,
+            # Use workflow-based batch fetching (replaces legacy async approach)
+            batch_result = fetch_batch_workflow(
+                identifiers=doc_ids_to_fetch,
                 fetch_engine=engine,
-                progress_callback=update_fetch_progress,
-                is_cms_fetch=has_cms,
+                extract_metadata=not skip_index,  # Combine fetch + index if not skipping
             )
 
-            # Log fetch results
-            successful = [r for r in results if r["success"]]
-            failed = [r for r in results if not r["success"]]
+            # Update progress bar to completion
+            display.update_progress(advance=len(doc_ids_to_fetch))
 
+            # Extract results
+            all_results = batch_result["results"]
+            successful = [r for r in all_results if r.get("status") == "FETCHED"]
+            failed = [r for r in all_results if r.get("status") != "FETCHED"]
+
+            # Log fetch results
             for result in successful:
                 doc_id = str(result["document_id"])
-                title = result.get("title") or "Untitled"
+                title = result.get("metadata", {}).get("title") or "Untitled"
                 size_kb = (
                     result.get("content_length", 0) / 1024 if result.get("content_length") else 0
                 )
@@ -560,7 +549,7 @@ def fetch_cmd(
                 )
 
             for result in failed:
-                doc_id = str(result["document_id"])
+                doc_id = str(result.get("document_id", result.get("identifier", "unknown")))
                 error = result.get("error", "Unknown error")
                 error_short = error[:60] + "..." if len(error) > 60 else error
                 display.log(f"✗ Fetch failed [{doc_id[:8]}] {error_short}", style="red")
@@ -577,48 +566,27 @@ def fetch_cmd(
         )
 
         # ====================================================================
-        # STAGE 2: Metadata Extraction (unless --skip-index)
+        # STAGE 2: Metadata Extraction Summary (handled by workflow)
         # ====================================================================
-        index_results = None
         indexed = 0
         skipped_count = 0
 
         if not skip_index and successful:
-            from kurt.content.indexing import batch_extract_document_metadata
-
+            # Metadata extraction was already handled by fetch_and_index_workflow
+            # Just count successful indexing from results
             print_stage_header(console, 2, "METADATA EXTRACTION")
 
-            with LiveProgressDisplay(console, max_log_lines=10) as display:
-                display.start_stage("Metadata extraction", total=len(successful))
+            indexed_results = [r for r in successful if r.get("index_metadata")]
+            indexed = len(indexed_results)
 
-                # Extract document IDs and run batch indexing
-                doc_ids = [str(r["document_id"]) for r in successful]
-
-                # Create progress callback with activity updates and logging
-                update_index_progress = create_fetch_progress_callback(display, len(successful))
-
-                # Force re-indexing if --refetch is used
-                index_results = asyncio.run(
-                    batch_extract_document_metadata(
-                        doc_ids,
-                        max_concurrent=concurrency,
-                        progress_callback=update_index_progress,
-                        force=refetch,
-                    )
-                )
-
-                indexed = index_results["succeeded"] - index_results.get("skipped", 0)
-                skipped_count = index_results.get("skipped", 0)
-
-                display.complete_stage()
-
-            # Stage 2 summary
+            # Show summary
+            index_failed = len(successful) - indexed
             print_stage_summary(
                 console,
                 [
                     ("✓", "Indexed", f"{indexed} document(s)"),
                     ("○", "Skipped", f"{skipped_count} document(s)"),
-                    ("✗", "Failed", f"{index_results['failed']} document(s)"),
+                    ("✗", "Failed", f"{index_failed} document(s)"),
                 ],
             )
 

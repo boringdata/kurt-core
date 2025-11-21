@@ -10,7 +10,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from kurt.content.embeddings import embedding_to_bytes, generate_embeddings
-from kurt.content.indexing_models import EntityType
+from kurt.content.indexing.models import EntityType
 from kurt.db.database import async_session_scope
 from kurt.db.models import Entity
 

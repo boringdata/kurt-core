@@ -17,25 +17,24 @@ from uuid import uuid4
 import pytest
 from sqlmodel import select
 
-from kurt.content.indexing_entity_resolution import (
+# Import resolution functions from entity_resolution
+from kurt.content.indexing.entity_group_resolution import (
     _create_entities_and_relationships as create_entities_and_relationships,
 )
-
-# Import from new modular structure
-from kurt.content.indexing_entity_resolution import (
-    _link_existing_entities as link_existing_entities,
-)
-from kurt.content.indexing_entity_resolution import (
+from kurt.content.indexing.entity_group_resolution import (
     _resolve_entity_groups as resolve_entity_groups,
 )
-from kurt.content.indexing_entity_resolution import (
-    finalize_knowledge_graph_from_index_results as finalize_knowledge_graph,
+from kurt.content.indexing.entity_group_resolution import (
+    finalize_knowledge_graph_from_index_results_fallback as finalize_knowledge_graph,
 )
-from kurt.content.indexing_models import (
+from kurt.content.indexing.models import (
     EntityResolution,
     GroupResolution,
 )
 from kurt.db.database import get_session
+
+# Import from db layer
+from kurt.db.graph_resolution import link_existing_entities
 from kurt.db.models import Document, DocumentEntity, Entity, EntityRelationship, SourceType
 
 
@@ -154,10 +153,10 @@ def test_two_documents_same_entity_single_creation(
     mock_dbscan.fit_predict.return_value = [0, 0]  # Both in cluster 0
 
     with (
-        patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution.generate_embeddings") as mock_embed,
+        patch("kurt.content.indexing.entity_group_resolution.dspy.ChainOfThought") as mock_cot,
+        patch("kurt.db.graph_entities.generate_embeddings") as mock_embed,
         patch("kurt.db.graph_similarity.search_similar_entities") as mock_search,
-        patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
+        patch("kurt.db.graph_entities.DBSCAN", return_value=mock_dbscan),
     ):
         # Wrap synchronous mock in async function for .acall()
         async def async_resolve_entities(*args, **kwargs):
@@ -312,8 +311,8 @@ def test_similar_entity_names_merged(test_document, mock_all_llm_calls):
     mock_dbscan.fit_predict.return_value = [0, 0, 0]  # All in cluster 0
 
     with (
-        patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
+        patch("kurt.content.indexing.entity_group_resolution.dspy.ChainOfThought") as mock_cot,
+        patch("kurt.db.graph_entities.DBSCAN", return_value=mock_dbscan),
     ):
         # Wrap synchronous mock in async function for .acall()
         async def async_resolve_entities(*args, **kwargs):
@@ -391,8 +390,8 @@ def test_reindexing_no_duplicates(test_document, mock_all_llm_calls):
     )
 
     with (
-        patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution.generate_embeddings") as mock_embed,
+        patch("kurt.content.indexing.entity_group_resolution.dspy.ChainOfThought") as mock_cot,
+        patch("kurt.db.graph_entities.generate_embeddings") as mock_embed,
         patch("kurt.db.graph_similarity.search_similar_entities") as mock_search,
     ):
         mock_cot.return_value.return_value = mock_resolution
@@ -508,8 +507,8 @@ def test_entity_type_mismatch_no_merge(test_document, test_document_2, mock_all_
     )
 
     with (
-        patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
+        patch("kurt.content.indexing.entity_group_resolution.dspy.ChainOfThought") as mock_cot,
+        patch("kurt.db.graph_entities.DBSCAN", return_value=mock_dbscan),
     ):
         # First entity: Company named "Apple Inc"
         mock_cot.return_value.return_value = mock_resolution_1
@@ -613,8 +612,8 @@ def test_alias_matching_links_to_existing(test_document, mock_all_llm_calls):
     )
 
     with (
-        patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution.generate_embeddings") as mock_embed,
+        patch("kurt.content.indexing.entity_group_resolution.dspy.ChainOfThought") as mock_cot,
+        patch("kurt.db.graph_entities.generate_embeddings") as mock_embed,
         patch("kurt.db.graph_similarity.search_similar_entities") as mock_search,
     ):
         mock_cot.return_value.return_value = mock_resolution
@@ -690,8 +689,8 @@ def test_orphaned_entity_cleanup(test_document, mock_all_llm_calls):
     )
 
     with (
-        patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution.generate_embeddings") as mock_embed,
+        patch("kurt.content.indexing.entity_group_resolution.dspy.ChainOfThought") as mock_cot,
+        patch("kurt.db.graph_entities.generate_embeddings") as mock_embed,
         patch("kurt.db.graph_similarity.search_similar_entities") as mock_search,
     ):
         mock_cot.return_value.return_value = mock_resolution
@@ -740,8 +739,8 @@ def test_orphaned_entity_cleanup(test_document, mock_all_llm_calls):
     )
 
     with (
-        patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution.generate_embeddings") as mock_embed,
+        patch("kurt.content.indexing.entity_group_resolution.dspy.ChainOfThought") as mock_cot,
+        patch("kurt.db.graph_entities.generate_embeddings") as mock_embed,
         patch("kurt.db.graph_similarity.search_similar_entities") as mock_search,
     ):
         mock_cot.return_value.return_value = mock_resolution_2
@@ -835,8 +834,8 @@ def test_relationship_creation_no_duplicates(test_document, mock_all_llm_calls):
     mock_dbscan.fit_predict.return_value = [0, 1]  # Two separate clusters
 
     with (
-        patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
+        patch("kurt.content.indexing.entity_group_resolution.dspy.ChainOfThought") as mock_cot,
+        patch("kurt.db.graph_entities.DBSCAN", return_value=mock_dbscan),
     ):
         # Wrap synchronous mock in async function for .acall()
         async def async_side_effect_resolutions(*args, **kwargs):
@@ -930,8 +929,8 @@ def test_empty_entity_names_handled(test_document, mock_all_llm_calls):
     get_session()
 
     with (
-        patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought"),
-        patch("kurt.content.indexing_entity_resolution.generate_embeddings") as mock_embed,
+        patch("kurt.content.indexing.entity_group_resolution.dspy.ChainOfThought"),
+        patch("kurt.db.graph_entities.generate_embeddings") as mock_embed,
         patch("kurt.db.graph_similarity.search_similar_entities") as mock_search,
     ):
         # Should handle empty names gracefully
@@ -987,7 +986,8 @@ def test_link_existing_entities_creates_edges(test_document, test_document_2):
     session.commit()
 
     # Link to first document
-    link_existing_entities(test_document.id, [str(entity.id)])
+    link_existing_entities(session, test_document.id, [str(entity.id)])
+    session.commit()
 
     # Verify link created
     stmt = select(DocumentEntity).where(
@@ -1002,7 +1002,8 @@ def test_link_existing_entities_creates_edges(test_document, test_document_2):
     assert entity.source_mentions == 1
 
     # Link to second document
-    link_existing_entities(test_document_2.id, [str(entity.id)])
+    link_existing_entities(session, test_document_2.id, [str(entity.id)])
+    session.commit()
 
     # Verify second link
     stmt = select(DocumentEntity).where(
@@ -1016,7 +1017,8 @@ def test_link_existing_entities_creates_edges(test_document, test_document_2):
     assert entity.source_mentions == 2
 
     # Re-link same document (should increment mention_count)
-    link_existing_entities(test_document.id, [str(entity.id)])
+    link_existing_entities(session, test_document.id, [str(entity.id)])
+    session.commit()
 
     # Refresh session to see updates
     session.expire_all()
@@ -1072,8 +1074,8 @@ def test_finalize_knowledge_graph_end_to_end(test_document, test_document_2, moc
     )
 
     with (
-        patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution.generate_embeddings") as mock_embed,
+        patch("kurt.content.indexing.entity_group_resolution.dspy.ChainOfThought") as mock_cot,
+        patch("kurt.db.graph_entities.generate_embeddings") as mock_embed,
         patch("kurt.db.graph_similarity.search_similar_entities") as mock_search,
     ):
         mock_cot.return_value.return_value = mock_resolution
@@ -1279,8 +1281,8 @@ def test_complex_grouping_mixed_resolutions(test_document, mock_all_llm_calls):
         return resolution
 
     with (
-        patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
+        patch("kurt.content.indexing.entity_group_resolution.dspy.ChainOfThought") as mock_cot,
+        patch("kurt.db.graph_entities.DBSCAN", return_value=mock_dbscan),
         patch("kurt.db.graph_similarity.search_similar_entities") as mock_search_async,
     ):
         # Mock async similarity search to return existing entities
@@ -1426,8 +1428,8 @@ def test_circular_relationships(test_document, mock_all_llm_calls):
         return resolution
 
     with (
-        patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution.generate_embeddings") as mock_embed,
+        patch("kurt.content.indexing.entity_group_resolution.dspy.ChainOfThought") as mock_cot,
+        patch("kurt.db.graph_entities.generate_embeddings") as mock_embed,
         patch("kurt.db.graph_similarity.search_similar_entities") as mock_search,
     ):
         # Wrap synchronous mock in async function for .acall()
@@ -1524,8 +1526,8 @@ def test_unicode_entity_names(test_document, mock_all_llm_calls):
         return mock_resolution
 
     with (
-        patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution.generate_embeddings") as mock_embed,
+        patch("kurt.content.indexing.entity_group_resolution.dspy.ChainOfThought") as mock_cot,
+        patch("kurt.db.graph_entities.generate_embeddings") as mock_embed,
         patch("kurt.db.graph_similarity.search_similar_entities") as mock_search,
     ):
         # Wrap synchronous mock in async function for .acall()

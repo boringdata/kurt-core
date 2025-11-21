@@ -28,6 +28,77 @@ from kurt.db.models import DocumentEntity, Entity, EntityRelationship
 logger = logging.getLogger(__name__)
 
 
+# ============================================================================
+# Stage 2: Link Existing Entities
+# ============================================================================
+
+
+def link_existing_entities(session, document_id: UUID, existing_entity_ids: list[str]) -> int:
+    """
+    Stage 2: Create document-entity edges for EXISTING entities.
+
+    Args:
+        session: Database session
+        document_id: Document UUID
+        existing_entity_ids: List of entity IDs that were matched during indexing
+
+    Returns:
+        Number of entities linked
+    """
+    linked_count = 0
+
+    for entity_id_str in existing_entity_ids:
+        # Parse UUID with validation
+        try:
+            entity_id = UUID(entity_id_str.strip())
+        except (ValueError, TypeError) as e:
+            logger.error(
+                f"Invalid entity_id '{entity_id_str}' for document {document_id}: {e}. "
+                f"This should not happen - entity IDs are now validated during extraction."
+            )
+            continue  # Skip and continue
+
+        # Check if edge already exists
+        stmt = select(DocumentEntity).where(
+            DocumentEntity.document_id == document_id,
+            DocumentEntity.entity_id == entity_id,
+        )
+        existing_edge = session.exec(stmt).first()
+
+        if existing_edge:
+            # Update mention count
+            existing_edge.mention_count += 1
+            existing_edge.updated_at = datetime.utcnow()
+        else:
+            # Create new edge
+            edge = DocumentEntity(
+                id=uuid4(),
+                document_id=document_id,
+                entity_id=entity_id,
+                mention_count=1,
+                confidence=0.9,  # High confidence since LLM matched it
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            )
+            session.add(edge)
+
+        # Update entity mention count
+        entity = session.get(Entity, entity_id)
+        if entity:
+            entity.source_mentions += 1
+            entity.updated_at = datetime.utcnow()
+
+        linked_count += 1
+
+    logger.info(f"Stage 2: Linked {linked_count} existing entities to document {document_id}")
+    return linked_count
+
+
+# ============================================================================
+# Stage 3/4: Entity Resolution Logic
+# ============================================================================
+
+
 def build_entity_docs_mapping(doc_to_kg_data: dict) -> dict[str, list[dict]]:
     """Build mapping of which documents mention which entity names.
 
