@@ -1,5 +1,6 @@
 """Alembic migration environment for Kurt."""
 
+import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -22,10 +23,28 @@ target_metadata = SQLModel.metadata
 
 # Import all models here to ensure they're registered
 # This is crucial for autogenerate to work properly
+from kurt.db.models import (  # noqa: E402, F401
+    Document,
+    DocumentEntity,
+    Entity,
+    EntityRelationship,
+    TopicCluster,
+)
 
 
 def get_database_url() -> str:
-    """Get database URL from Kurt configuration."""
+    """Get database URL from environment or Kurt configuration.
+
+    Priority:
+    1. DATABASE_URL environment variable (for PostgreSQL/cloud mode)
+    2. Kurt configuration (for SQLite/local mode)
+    """
+    # Check for DATABASE_URL in environment (PostgreSQL/cloud mode)
+    database_url = os.getenv("DATABASE_URL")
+    if database_url:
+        return database_url
+
+    # Fall back to Kurt config (SQLite/local mode)
     kurt_config = load_config()
     db_path = kurt_config.get_absolute_db_path()
     return f"sqlite:///{db_path}"
