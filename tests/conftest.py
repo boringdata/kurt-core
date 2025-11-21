@@ -446,7 +446,7 @@ def mock_all_llm_calls():
         patch(
             "kurt.content.indexing_entity_resolution.generate_embeddings"
         ) as mock_gen_embeddings2,
-        patch("kurt.db.knowledge_graph.generate_embeddings") as mock_gen_embeddings3,
+        patch("kurt.db.graph_similarity.generate_embeddings") as mock_gen_embeddings3,
         patch("dspy.Embedder") as mock_embedder_class,
         patch("dspy.LM") as mock_lm_class,
         patch("dspy.configure") as mock_configure,

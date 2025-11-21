@@ -14,7 +14,7 @@ import logging
 
 from dbos import DBOS
 
-from kurt.db.entity_operations import (
+from kurt.db.graph_resolution import (
     build_entity_docs_mapping,
     cleanup_old_entities,
     create_entities,

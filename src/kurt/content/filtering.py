@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 # Re-export for backward compatibility (deprecated - use kurt.db.knowledge_graph instead)
-from kurt.db.knowledge_graph import get_document_links, list_entities_by_type  # noqa: F401
+from kurt.db.graph_queries import get_document_links, list_entities_by_type  # noqa: F401
 
 
 @dataclass

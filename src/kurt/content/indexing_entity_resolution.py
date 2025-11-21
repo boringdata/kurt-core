@@ -25,7 +25,7 @@ from sqlmodel import select
 from kurt.content.embeddings import generate_embeddings
 from kurt.content.indexing_models import GroupResolution
 from kurt.db.database import get_session
-from kurt.db.knowledge_graph import (
+from kurt.db.graph_entities import (
     create_entity_with_document_edges,
     find_existing_entity,
     find_or_create_document_entity_link,
@@ -207,7 +207,7 @@ async def _resolve_entity_groups_async(
     resolution_module = dspy.ChainOfThought(ResolveEntityGroup)
 
     from kurt.db.database import async_session_scope
-    from kurt.db.knowledge_graph import search_similar_entities
+    from kurt.db.graph_similarity import search_similar_entities
 
     total_groups = len(groups)
     completed_groups = 0
