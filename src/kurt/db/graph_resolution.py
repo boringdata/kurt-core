@@ -1,9 +1,13 @@
-"""Entity resolution operations for content processing.
+"""Entity resolution operations for knowledge graph construction.
 
-These functions are extracted from the monolithic _create_entities_and_relationships()
-to support fine-grained DBOS workflow steps.
+These functions handle the complex logic of entity deduplication and resolution:
+- Building entity-document mappings
+- Resolving merge chains and detecting cycles
+- Grouping entities by canonical names
+- Cleaning up old entities during re-indexing
+- Creating entities and relationships
 
-Functions are organized into:
+Organized into:
 - Pure logic functions (no I/O)
 - Database operation functions (session-based I/O)
 """
@@ -14,7 +18,7 @@ from uuid import UUID, uuid4
 
 from sqlmodel import select
 
-from kurt.db.knowledge_graph import (
+from kurt.db.graph_entities import (
     create_entity_with_document_edges,
     find_existing_entity,
     find_or_create_document_entity_link,

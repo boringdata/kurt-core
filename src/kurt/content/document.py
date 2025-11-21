@@ -780,7 +780,7 @@ def list_content(
 
     # Apply entity filtering (knowledge graph only)
     if entity_name:
-        from kurt.db.knowledge_graph import find_documents_with_entity
+        from kurt.db.graph_queries import find_documents_with_entity
 
         graph_doc_ids = {
             str(doc_id)
@@ -792,7 +792,7 @@ def list_content(
 
     # Apply relationship filtering (knowledge graph only)
     if relationship_type:
-        from kurt.db.knowledge_graph import find_documents_with_relationship
+        from kurt.db.graph_queries import find_documents_with_relationship
 
         relationship_doc_ids = {
             str(doc_id)

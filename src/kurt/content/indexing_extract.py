@@ -21,7 +21,7 @@ from kurt.content.indexing_models import (
     RelationshipExtraction,
 )
 from kurt.db.database import get_session
-from kurt.db.knowledge_graph import get_top_entities
+from kurt.db.graph_queries import get_top_entities
 from kurt.utils import calculate_content_hash, get_git_commit_hash
 
 logger = logging.getLogger(__name__)
@@ -183,7 +183,7 @@ def extract_document_metadata(
             f"Skipping document {doc.id} - content unchanged (hash: {current_content_hash[:8]}...)"
         )
         # Get all entities from knowledge graph
-        from kurt.db.knowledge_graph import get_document_entities
+        from kurt.db.graph_queries import get_document_entities
 
         all_entities = get_document_entities(doc.id, names_only=False, session=session)
         # Convert to entity dicts matching the format from extraction
