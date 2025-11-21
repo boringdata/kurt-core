@@ -14,6 +14,7 @@ import logging
 
 from dbos import DBOS
 
+from kurt.db.database import get_session
 from kurt.db.graph_resolution import (
     build_entity_docs_mapping,
     cleanup_old_entities,
@@ -22,7 +23,6 @@ from kurt.db.graph_resolution import (
     group_by_canonical_entity,
     resolve_merge_chains,
 )
-from kurt.db.session import get_session
 
 logger = logging.getLogger(__name__)
 

@@ -30,13 +30,15 @@ from uuid import UUID
 
 from dbos import DBOS, Queue, SetEnqueueOptions
 
-# Import helper functions from refactored fetch.py
+# Import helper functions from their proper modules
+from kurt.content.document import (
+    resolve_or_create_document,
+    save_document_content_and_metadata,
+)
+from kurt.content.embeddings import generate_document_embedding
 from kurt.content.fetch import (
     extract_and_save_document_links,
     fetch_content_from_source,
-    generate_document_embedding,
-    resolve_or_create_document,
-    save_document_content_and_metadata,
 )
 from kurt.content.indexing import extract_document_metadata
 

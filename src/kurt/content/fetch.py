@@ -30,9 +30,15 @@ from uuid import UUID
 from dotenv import find_dotenv, load_dotenv
 
 from kurt.config import KurtConfig, load_config
+from kurt.content.document import (
+    add_document,
+    resolve_or_create_document,
+    save_document_content_and_metadata,
+)
+from kurt.content.embeddings import generate_document_embedding
 from kurt.content.fetch_firecrawl import fetch_with_firecrawl
 from kurt.content.fetch_trafilatura import fetch_with_httpx, fetch_with_trafilatura
-from kurt.content.paths import create_cms_content_path, create_content_path, parse_source_identifier
+from kurt.content.paths import parse_source_identifier
 from kurt.db.database import get_session
 from kurt.db.models import Document, IngestionStatus, SourceType
 
@@ -173,64 +179,11 @@ def _fetch_from_cms(platform: str, instance: str, doc: Document) -> tuple[str, d
 # ============================================================================
 # Core Helper Functions (For DBOS Workflows)
 # ============================================================================
-
-
-def resolve_or_create_document(identifier: str | UUID) -> dict:
-    """
-    Find existing document or create new one.
-
-    Fast database operation - returns lightweight dict to minimize checkpoint data.
-
-    Args:
-        identifier: Document UUID or source URL
-
-    Returns:
-        dict with keys:
-            - id: str (document UUID)
-            - source_url: str
-            - cms_platform: str | None
-            - cms_instance: str | None
-            - cms_document_id: str | None
-
-    Example:
-        >>> doc_info = resolve_or_create_document("https://example.com/page1")
-        >>> # Returns: {'id': 'uuid...', 'source_url': 'https://...', ...}
-    """
-    from sqlmodel import select
-
-    session = get_session()
-
-    # Try UUID lookup
-    try:
-        doc_id = UUID(identifier) if not isinstance(identifier, UUID) else identifier
-        doc = session.get(Document, doc_id)
-        if doc:
-            return {
-                "id": str(doc.id),
-                "source_url": doc.source_url,
-                "cms_platform": doc.cms_platform,
-                "cms_instance": doc.cms_instance,
-                "cms_document_id": doc.cms_document_id,
-            }
-    except (ValueError, AttributeError):
-        pass
-
-    # Try URL lookup
-    stmt = select(Document).where(Document.source_url == str(identifier))
-    doc = session.exec(stmt).first()
-
-    if not doc:
-        # Create new document
-        doc_id = add_document(str(identifier))
-        doc = session.get(Document, doc_id)
-
-    return {
-        "id": str(doc.id),
-        "source_url": doc.source_url,
-        "cms_platform": doc.cms_platform,
-        "cms_instance": doc.cms_instance,
-        "cms_document_id": doc.cms_document_id,
-    }
+# NOTE: Document CRUD functions (add_document, resolve_or_create_document,
+#       save_document_content_and_metadata) have been moved to document.py
+#       and are imported above for backward compatibility.
+# NOTE: Embedding function (generate_document_embedding) has been moved to
+#       embeddings.py and is imported above for backward compatibility.
 
 
 def fetch_content_from_source(
@@ -293,133 +246,8 @@ def fetch_content_from_source(
         return fetch_with_trafilatura(source_url)
 
 
-def generate_document_embedding(content: str) -> bytes:
-    """
-    Generate embedding vector for content.
-
-    EXPENSIVE LLM CALL - must be wrapped in @DBOS.step() for checkpointing!
-
-    Args:
-        content: Document content (uses first 1000 chars)
-
-    Returns:
-        Embedding as bytes (numpy float32 array)
-
-    Raises:
-        Exception: If embedding generation fails
-
-    Example:
-        >>> embedding = generate_document_embedding("Document content here...")
-        >>> # Returns: b'\\x00\\x00\\x00...' (bytes)
-    """
-    import dspy
-    import numpy as np
-
-    config = load_config()
-    embedding_model = config.EMBEDDING_MODEL
-
-    # Use first 1000 chars
-    content_sample = content[:1000] if len(content) > 1000 else content
-
-    embedding_vector = dspy.Embedder(model=embedding_model)([content_sample])[0]
-    logger.info(f"Generated embedding ({len(embedding_vector)} dims)")
-
-    return np.array(embedding_vector, dtype=np.float32).tobytes()
-
-
-def save_document_content_and_metadata(
-    doc_id: UUID, content: str, metadata: dict, embedding: bytes | None
-) -> dict:
-    """
-    Save content to filesystem and update database.
-
-    Transactional operation - should be wrapped in @DBOS.transaction().
-
-    Args:
-        doc_id: Document UUID
-        content: Markdown content
-        metadata: Metadata dict (title, author, date, etc.)
-        embedding: Optional embedding bytes
-
-    Returns:
-        dict with keys:
-            - content_path: str (path to saved file)
-            - status: str ('FETCHED')
-
-    Example:
-        >>> result = save_document_content_and_metadata(
-        ...     doc_id, "# Title\\n\\nContent", {"title": "..."}, embedding_bytes
-        ... )
-        >>> # Returns: {'content_path': 'sources/example.com/page1.md', ...}
-    """
-    session = get_session()
-    doc = session.get(Document, doc_id)
-
-    if not doc:
-        raise ValueError(f"Document not found: {doc_id}")
-
-    # Update metadata
-    if metadata:
-        # Title (prefer metadata title over URL-derived title)
-        if metadata.get("title"):
-            doc.title = metadata["title"]
-
-        # Content hash (fingerprint for deduplication)
-        if metadata.get("fingerprint"):
-            doc.content_hash = metadata["fingerprint"]
-
-        # Description
-        if metadata.get("description"):
-            doc.description = metadata["description"]
-
-        # Author(s) - convert to list if single author
-        author = metadata.get("author")
-        if author:
-            doc.author = [author] if isinstance(author, str) else list(author)
-
-        # Published date
-        if metadata.get("date"):
-            from datetime import datetime
-
-            try:
-                doc.published_date = datetime.fromisoformat(metadata["date"])
-            except (ValueError, AttributeError):
-                pass
-
-    # Store embedding
-    if embedding:
-        doc.embedding = embedding
-
-    # Determine content path
-    config = load_config()
-
-    if doc.cms_platform and doc.cms_instance:
-        content_path = create_cms_content_path(
-            platform=doc.cms_platform,
-            instance=doc.cms_instance,
-            doc_id=doc.cms_document_id,
-            config=config,
-            source_url=doc.source_url,
-        )
-    else:
-        content_path = create_content_path(doc.source_url, config)
-
-    # Write file
-    content_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(content_path, "w", encoding="utf-8") as f:
-        f.write(content)
-
-    # Update document record
-    source_base = config.get_absolute_sources_path()
-    doc.content_path = str(content_path.relative_to(source_base))
-    doc.ingestion_status = IngestionStatus.FETCHED
-
-    session.commit()
-
-    return {
-        "content_path": str(content_path),
-        "status": "FETCHED",
-    }
+# NOTE: generate_document_embedding() moved to embeddings.py (imported above)
+# NOTE: save_document_content_and_metadata() moved to document.py (imported above)
 
 
 def extract_and_save_document_links(doc_id: UUID, content: str, source_url: str) -> int:
@@ -468,55 +296,10 @@ def extract_and_save_document_links(doc_id: UUID, content: str, source_url: str)
 
 
 # ============================================================================
-# Document Creation
+# Document CRUD Functions
 # ============================================================================
-
-
-def add_document(url: str, title: str = None) -> UUID:
-    """
-    Create document record with NOT_FETCHED status.
-
-    If document with URL already exists, returns existing document ID.
-
-    Args:
-        url: Source URL
-        title: Optional title (defaults to last path segment)
-
-    Returns:
-        UUID of created or existing document
-
-    Example:
-        doc_id = add_document("https://example.com/page1", "Page 1")
-        # Returns: UUID('550e8400-e29b-41d4-a716-446655440000')
-    """
-    from sqlmodel import select
-
-    session = get_session()
-
-    # Check if document already exists
-    stmt = select(Document).where(Document.source_url == url)
-    existing_doc = session.exec(stmt).first()
-
-    if existing_doc:
-        return existing_doc.id
-
-    # Generate title from URL if not provided
-    if not title:
-        title = url.rstrip("/").split("/")[-1] or url
-
-    # Create document
-    doc = Document(
-        title=title,
-        source_type=SourceType.URL,
-        source_url=url,
-        ingestion_status=IngestionStatus.NOT_FETCHED,
-    )
-
-    session.add(doc)
-    session.commit()
-    session.refresh(doc)
-
-    return doc.id
+# NOTE: add_document() and resolve_or_create_document() have been moved to
+#       document.py and are imported above for backward compatibility.
 
 
 # ============================================================================
