@@ -803,11 +803,13 @@ def finalize_knowledge_graph_with_progress(index_results, console, display=None)
         display: Optional existing LiveProgressDisplay instance (for multi-stage display)
 
     Returns:
-        Result dict from finalize_knowledge_graph_from_index_results
+        Result dict from finalize_knowledge_graph_from_index_results_fallback
     """
     import re
 
-    from kurt.content.indexing_entity_resolution import finalize_knowledge_graph_from_index_results
+    from kurt.content.indexing.entity_group_resolution import (
+        finalize_knowledge_graph_from_index_results_fallback,
+    )
 
     # Use provided display or create a new one
     own_display = display is None
@@ -876,7 +878,7 @@ def finalize_knowledge_graph_with_progress(index_results, console, display=None)
                 display.log_info(activity)
 
         # Run the finalization with our activity callback
-        kg_result = finalize_knowledge_graph_from_index_results(
+        kg_result = finalize_knowledge_graph_from_index_results_fallback(
             index_results, activity_callback=activity_callback
         )
 
@@ -1044,7 +1046,7 @@ def display_kg_finalization_summary(kg_result, console):
     Use finalize_knowledge_graph_with_progress for interactive display.
 
     Args:
-        kg_result: Result dict from finalize_knowledge_graph_from_index_results
+        kg_result: Result dict from finalize_knowledge_graph_from_index_results_fallback
         console: Rich Console instance
     """
     console.print("\n[bold]Finalizing knowledge graph...[/bold]")

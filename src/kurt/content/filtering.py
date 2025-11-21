@@ -255,3 +255,143 @@ def resolve_filters(
         limit=limit,
         exclude_pattern=exclude_pattern,
     )
+
+
+# ============================================================================
+# Query Building for Document Selection (Helper for workflows)
+# ============================================================================
+
+
+def build_document_query(
+    id_uuids: list,
+    with_status: str = None,
+    refetch: bool = False,
+    in_cluster: str = None,
+    with_content_type: str = None,
+    limit: int = None,
+):
+    """
+    Build SQLModel query for document selection.
+
+    Pure query construction - no execution, just returns the statement.
+    Used by workflows to construct DB queries from filter specifications.
+
+    Args:
+        id_uuids: List of UUIDs to filter by
+        with_status: Status filter (NOT_FETCHED | FETCHED | ERROR)
+        refetch: If True, include FETCHED documents
+        in_cluster: Cluster name filter
+        with_content_type: Content type filter
+        limit: Maximum documents to return
+
+    Returns:
+        SQLModel Select statement
+
+    Example:
+        >>> stmt = build_document_query(
+        ...     id_uuids=[uuid1, uuid2],
+        ...     with_status="NOT_FETCHED",
+        ...     limit=10
+        ... )
+        >>> # Then execute: docs = session.exec(stmt).all()
+    """
+    from sqlmodel import select
+
+    from kurt.db.models import Document, IngestionStatus
+
+    stmt = select(Document)
+
+    # Filter by IDs
+    if id_uuids:
+        stmt = stmt.where(Document.id.in_(id_uuids))
+
+    # Filter by status
+    if with_status:
+        status_enum = IngestionStatus[with_status]
+        stmt = stmt.where(Document.status == status_enum)
+    elif not refetch:
+        # Default: exclude FETCHED documents unless refetch=True
+        stmt = stmt.where(Document.status != IngestionStatus.FETCHED)
+
+    # Filter by cluster
+    if in_cluster:
+        stmt = stmt.where(Document.cluster == in_cluster)
+
+    # Filter by content type
+    if with_content_type:
+        stmt = stmt.where(Document.content_type == with_content_type)
+
+    # Apply limit
+    if limit:
+        stmt = stmt.limit(limit)
+
+    return stmt
+
+
+def should_include_document(doc_url: str, doc_path: str, include_pattern: str) -> bool:
+    """Check if document matches include pattern using glob matching."""
+    from fnmatch import fnmatch
+
+    if not include_pattern:
+        return True
+
+    return (doc_url and fnmatch(doc_url, include_pattern)) or (
+        doc_path and fnmatch(doc_path, include_pattern)
+    )
+
+
+def should_exclude_document(doc_url: str, doc_path: str, exclude_pattern: str) -> bool:
+    """Check if document matches exclude pattern using glob matching."""
+    from fnmatch import fnmatch
+
+    if not exclude_pattern:
+        return False
+
+    return (doc_url and fnmatch(doc_url, exclude_pattern)) or (
+        doc_path and fnmatch(doc_path, exclude_pattern)
+    )
+
+
+def apply_glob_filters(
+    docs: list, include_pattern: str = None, exclude_pattern: str = None
+) -> list:
+    """
+    Apply glob pattern filters to document list.
+
+    Pure filtering function - no DB operations.
+    Uses should_include_document and should_exclude_document helpers.
+
+    Args:
+        docs: List of Document objects
+        include_pattern: Glob pattern to include (e.g., "*/api/*")
+        exclude_pattern: Glob pattern to exclude (e.g., "*/internal/*")
+
+    Returns:
+        Filtered list of Document objects
+
+    Example:
+        >>> filtered = apply_glob_filters(
+        ...     docs,
+        ...     include_pattern="*/docs/*",
+        ...     exclude_pattern="*/api/*"
+        ... )
+    """
+    filtered_docs = []
+    for doc in docs:
+        # Include pattern
+        if include_pattern:
+            if not should_include_document(
+                doc.source_url or "", doc.content_path or "", include_pattern
+            ):
+                continue
+
+        # Exclude pattern
+        if exclude_pattern:
+            if should_exclude_document(
+                doc.source_url or "", doc.content_path or "", exclude_pattern
+            ):
+                continue
+
+        filtered_docs.append(doc)
+
+    return filtered_docs

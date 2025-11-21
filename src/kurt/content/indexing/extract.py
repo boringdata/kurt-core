@@ -15,7 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 import dspy
 
 from kurt.content.document import load_document_content
-from kurt.content.indexing_models import (
+from kurt.content.indexing.models import (
     DocumentMetadataOutput,
     EntityExtraction,
     RelationshipExtraction,

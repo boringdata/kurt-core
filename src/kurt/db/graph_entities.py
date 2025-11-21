@@ -5,10 +5,12 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
+import numpy as np
+from sklearn.cluster import DBSCAN
 from sqlmodel import select
 
 from kurt.content.embeddings import embedding_to_bytes, generate_embeddings
-from kurt.content.indexing_models import EntityType
+from kurt.content.indexing.models import EntityType
 from kurt.db.models import DocumentEntity, Entity
 
 if TYPE_CHECKING:
@@ -18,6 +20,51 @@ logger = logging.getLogger(__name__)
 
 # Special entity type groupings
 TECHNOLOGY_TYPES = [EntityType.TECHNOLOGY.value, EntityType.PRODUCT.value]
+
+
+# ============================================================================
+# Entity Clustering
+# ============================================================================
+
+
+def cluster_entities_by_similarity(
+    entities: list[dict], eps: float = 0.25, min_samples: int = 1
+) -> dict[int, list[dict]]:
+    """Cluster entities using DBSCAN on their embeddings.
+
+    Args:
+        entities: List of entity dicts with 'name' field
+        eps: Maximum distance between two samples for clustering
+        min_samples: Minimum samples in a neighborhood for a core point
+
+    Returns:
+        Dict mapping cluster_id -> list of entities in that cluster
+    """
+    if not entities:
+        return {}
+
+    # Generate embeddings for all entities
+    entity_names = [e["name"] for e in entities]
+    embeddings = generate_embeddings(entity_names)
+
+    # Cluster using DBSCAN
+    embeddings_array = np.array(embeddings)
+    clustering = DBSCAN(eps=eps, min_samples=min_samples, metric="cosine")
+    labels = clustering.fit_predict(embeddings_array)
+
+    # Organize into groups
+    groups = {}
+    for idx, label in enumerate(labels):
+        if label not in groups:
+            groups[label] = []
+        groups[label].append(entities[idx])
+
+    logger.info(f"Clustered {len(entities)} entities into {len(groups)} groups")
+    logger.debug(
+        f"  Sample groups: {[(gid, [e['name'] for e in ents]) for gid, ents in list(groups.items())[:3]]}"
+    )
+
+    return groups
 
 
 # ============================================================================

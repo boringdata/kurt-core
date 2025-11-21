@@ -253,10 +253,10 @@ def mock_map_functions():
         Dict with mock functions for customization
     """
     with (
-        patch("kurt.content.map._discover_sitemap_urls") as mock_sitemap,
-        patch("kurt.content.map.identify_blogroll_candidates") as mock_blogroll,
-        patch("kurt.content.map.extract_chronological_content") as mock_extract,
-        patch("kurt.content.map.crawl_website") as mock_crawler,
+        patch("kurt.content.map.sitemap.discover_sitemap_urls") as mock_sitemap,
+        patch("kurt.content.map.blogroll.identify_blogroll_candidates") as mock_blogroll,
+        patch("kurt.content.map.blogroll.extract_chronological_content") as mock_extract,
+        patch("kurt.content.map.crawl.crawl_website") as mock_crawler,
     ):
         # Default return values
         mock_sitemap.return_value = [
@@ -443,10 +443,8 @@ def mock_all_llm_calls():
     """
     with (
         patch("kurt.content.embeddings.generate_embeddings") as mock_gen_embeddings,
-        patch(
-            "kurt.content.indexing_entity_resolution.generate_embeddings"
-        ) as mock_gen_embeddings2,
-        patch("kurt.db.graph_similarity.generate_embeddings") as mock_gen_embeddings3,
+        patch("kurt.db.graph_similarity.generate_embeddings") as mock_gen_embeddings2,
+        patch("kurt.db.graph_entities.generate_embeddings") as mock_gen_embeddings3,
         patch("dspy.Embedder") as mock_embedder_class,
         patch("dspy.LM") as mock_lm_class,
         patch("dspy.configure") as mock_configure,

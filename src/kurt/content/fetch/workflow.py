@@ -1,28 +1,10 @@
 """
 DBOS Workflows for Content Fetching
 
-This module provides durable, resumable workflows for fetching web content.
-
-Key Features:
-- Automatic checkpointing after each step (5 steps per document!)
-- Resume from last completed step on crash/restart
-- Priority queue support for urgent content
-- Batch fetching with progress tracking
-- Granular checkpointing for expensive operations (HTTP, LLM, DB)
-
-Workflows:
-- fetch_document_workflow: Fetch single document with 5 checkpointed steps
-- fetch_batch_workflow: Fetch multiple documents with checkpoints
-- fetch_and_index_workflow: Fetch + extract metadata (fully checkpointed)
-
-Checkpoint Strategy:
-1. Resolve document → Fast DB lookup
-2. Fetch content → Network I/O (can timeout/rate-limit)
-3. Generate embedding → EXPENSIVE LLM call (~$0.0001)
-4. Save to database → Atomic transaction
-5. Extract links → Optional, doesn't block
-
-If embedding fails, steps 1-2 don't re-run = cost savings!
+Durable, resumable workflows with automatic checkpointing:
+- fetch_document_workflow: Fetch single document (5 checkpoints)
+- fetch_batch_workflow: Fetch multiple documents with progress tracking
+- fetch_and_index_workflow: Fetch + metadata extraction (6 checkpoints)
 """
 
 from typing import Any
@@ -32,15 +14,20 @@ from dbos import DBOS, Queue, SetEnqueueOptions
 
 # Import helper functions from their proper modules
 from kurt.content.document import (
+    add_documents_for_files,
+    add_documents_for_urls,
     resolve_or_create_document,
     save_document_content_and_metadata,
 )
 from kurt.content.embeddings import generate_document_embedding
 from kurt.content.fetch import (
-    extract_and_save_document_links,
-    fetch_content_from_source,
+    DocumentFetchFilters,
+    _get_fetch_engine,
+    extract_document_links,
+    fetch_from_cms,
+    fetch_from_web,
 )
-from kurt.content.indexing import extract_document_metadata
+from kurt.content.filtering import resolve_ids_to_uuids
 
 # Create priority-enabled queue for fetch operations
 # Concurrency=5 means max 5 concurrent fetch operations
@@ -54,18 +41,7 @@ fetch_queue = Queue("fetch_queue", priority_enabled=True, concurrency=5)
 
 @DBOS.step()
 def resolve_document_step(identifier: str | UUID) -> dict[str, Any]:
-    """
-    Step 1: Resolve or create document record.
-
-    Fast database lookup - checkpointed to avoid re-creating documents.
-    Returns lightweight dict to minimize checkpoint data size.
-
-    Args:
-        identifier: Document UUID or source URL
-
-    Returns:
-        dict with document info (id, source_url, cms fields)
-    """
+    """Resolve or create document record. Returns dict with id, source_url, cms fields."""
     return resolve_or_create_document(identifier)
 
 
@@ -75,54 +51,38 @@ def fetch_content_step(
     cms_platform: str | None = None,
     cms_instance: str | None = None,
     cms_document_id: str | None = None,
+    discovery_url: str | None = None,
     fetch_engine: str | None = None,
 ) -> dict[str, Any]:
-    """
-    Step 2: Fetch content from source.
+    """Fetch content from source (CMS or web). Returns dict with content, metadata, public_url."""
+    # Determine engine to use
+    engine = _get_fetch_engine(override=fetch_engine)
 
-    Network I/O - can fail due to timeouts, rate limits, etc.
-    Checkpointing means we don't re-fetch on retry!
-
-    Args:
-        source_url: Source URL to fetch
-        cms_platform: CMS platform (optional)
-        cms_instance: CMS instance (optional)
-        cms_document_id: CMS document ID (optional)
-        fetch_engine: Optional engine override
-
-    Returns:
-        dict with content and metadata
-    """
-    content, metadata = fetch_content_from_source(
-        source_url=source_url,
-        cms_platform=cms_platform,
-        cms_instance=cms_instance,
-        cms_document_id=cms_document_id,
-        fetch_engine=fetch_engine,
-    )
+    # Call pure business logic (NO DB operations!)
+    if cms_platform and cms_instance and cms_document_id:
+        # CMS fetch
+        content, metadata, public_url = fetch_from_cms(
+            platform=cms_platform,
+            instance=cms_instance,
+            cms_document_id=cms_document_id,
+            discovery_url=discovery_url,
+        )
+    else:
+        # Web fetch
+        content, metadata = fetch_from_web(source_url=source_url, fetch_engine=engine)
+        public_url = None
 
     return {
         "content": content,
         "metadata": metadata,
         "content_length": len(content),
+        "public_url": public_url,
     }
 
 
 @DBOS.step()
 def generate_embedding_step(content: str) -> dict[str, Any]:
-    """
-    Step 3: Generate document embedding.
-
-    EXPENSIVE LLM CALL (~$0.0001 per call) - critical to checkpoint!
-    If this fails, we don't re-fetch content (saves time + money).
-    If workflow restarts after this completes, we don't re-generate.
-
-    Args:
-        content: Document content
-
-    Returns:
-        dict with embedding and status
-    """
+    """Generate document embedding (LLM call). Returns dict with embedding, status."""
     try:
         embedding = generate_document_embedding(content)
         embedding_dims = len(embedding) // 4  # bytes to float32 count
@@ -149,21 +109,7 @@ def generate_embedding_step(content: str) -> dict[str, Any]:
 def save_document_transaction(
     doc_id: str, content: str, metadata: dict, embedding: bytes | None
 ) -> dict[str, Any]:
-    """
-    Step 4: Save content and metadata to database.
-
-    ACID transaction - uses @DBOS.transaction() for proper guarantees.
-    File write + database update are atomic and checkpointed.
-
-    Args:
-        doc_id: Document UUID (as string)
-        content: Markdown content
-        metadata: Metadata dict
-        embedding: Optional embedding bytes
-
-    Returns:
-        dict with save result
-    """
+    """Save content and metadata to database (ACID). Returns dict with save result."""
     result = save_document_content_and_metadata(UUID(doc_id), content, metadata, embedding)
 
     DBOS.logger.info(f"Saved document {doc_id} to {result['content_path']}")
@@ -171,26 +117,65 @@ def save_document_transaction(
     return result
 
 
+@DBOS.transaction()
+def save_links_transaction(doc_id: str, links: list[dict]) -> int:
+    """Save document links to database (ACID). Returns number of links saved."""
+    from sqlmodel import select
+
+    from kurt.db.database import get_session
+    from kurt.db.models import DocumentLink
+
+    session = get_session()
+    doc_uuid = UUID(doc_id)
+
+    # Delete existing links for this document (on refetch)
+    existing_links = session.exec(
+        select(DocumentLink).where(DocumentLink.source_document_id == doc_uuid)
+    ).all()
+    for link in existing_links:
+        session.delete(link)
+
+    # Find which target URLs exist in database
+    target_urls = [link["url"] for link in links]
+    if not target_urls:
+        session.commit()
+        return 0
+
+    # Resolve URLs to document IDs (calls helper from document.py - NO logic here!)
+    from kurt.content.document import resolve_urls_to_doc_ids
+
+    url_to_doc_id = resolve_urls_to_doc_ids(target_urls)
+
+    # Create links for URLs that have matching documents
+    saved_count = 0
+    for link in links:
+        target_url = link["url"]
+        if target_url in url_to_doc_id:
+            document_link = DocumentLink(
+                source_document_id=doc_uuid,
+                target_document_id=url_to_doc_id[target_url],
+                anchor_text=link["anchor_text"],
+            )
+            session.add(document_link)
+            saved_count += 1
+
+    session.commit()
+    return saved_count
+
+
 @DBOS.step()
-def extract_links_step(doc_id: str, content: str, source_url: str) -> dict[str, Any]:
-    """
-    Step 5: Extract and save document links.
-
-    Separate step so link extraction failures don't affect document save.
-    Optional operation - workflow succeeds even if this fails.
-
-    Args:
-        doc_id: Document UUID (as string)
-        content: Markdown content
-        source_url: Source URL for resolving relative links
-
-    Returns:
-        dict with links extraction result
-    """
+def extract_links_step(
+    doc_id: str, content: str, source_url: str, base_url: str | None = None
+) -> dict[str, Any]:
+    """Extract and save document links. Returns dict with links_extracted, status."""
     try:
-        links_count = extract_and_save_document_links(UUID(doc_id), content, source_url)
+        # Call pure business logic (NO DB operations!)
+        links = extract_document_links(content, source_url, base_url=base_url)
 
-        DBOS.logger.info(f"Extracted {links_count} links for document {doc_id}")
+        # Save to database (DB operation in transaction)
+        links_count = save_links_transaction(doc_id, links)
+
+        DBOS.logger.info(f"Extracted {len(links)} links, saved {links_count} for document {doc_id}")
 
         return {
             "links_extracted": links_count,
@@ -207,20 +192,73 @@ def extract_links_step(doc_id: str, content: str, source_url: str) -> dict[str, 
 
 @DBOS.step()
 def extract_metadata_step(document_id: str, force: bool = False) -> dict[str, Any]:
-    """
-    Step 6: Extract metadata from document.
+    """Extract metadata from document (LLM call). Calls indexing workflow."""
+    from kurt.content.indexing.workflow_index import index_document_workflow
 
-    EXPENSIVE LLM CALL (~$0.01 per call) - must be checkpointed!
-    Used in fetch_and_index_workflow.
+    return index_document_workflow(document_id, force=force)
 
-    Args:
-        document_id: Document UUID
-        force: If True, re-index even if content hasn't changed
 
-    Returns:
-        dict with metadata extraction results
-    """
-    return extract_document_metadata(document_id, force=force)
+@DBOS.step()
+def select_documents_step(filters: DocumentFetchFilters) -> list[dict[str, Any]]:
+    """Select documents to fetch based on filters. Returns list of doc info dicts."""
+    from kurt.content.filtering import apply_glob_filters, build_document_query
+    from kurt.db.database import get_session
+
+    session = get_session()
+
+    # Step 1: Create documents for URLs (calls document.py helper - DB operation)
+    if filters.url_list:
+        DBOS.logger.info(f"Creating documents for {len(filters.url_list)} URLs")
+        add_documents_for_urls(filters.url_list)
+
+    # Step 2: Create documents for files (calls document.py helper - DB operation)
+    if filters.file_list:
+        DBOS.logger.info(f"Creating documents for {len(filters.file_list)} files")
+        add_documents_for_files(filters.file_list)
+
+    # Step 3: Resolve IDs to UUIDs (calls filtering.py helper)
+    id_uuids = []
+    if filters.id_list:
+        DBOS.logger.info(f"Resolving {len(filters.id_list)} IDs to UUIDs")
+        id_uuids = resolve_ids_to_uuids(filters.id_list)
+
+    # Step 4: Build query (calls filtering.py helper - NO logic here!)
+    stmt = build_document_query(
+        id_uuids=id_uuids,
+        with_status=filters.with_status,
+        refetch=filters.refetch,
+        in_cluster=filters.in_cluster,
+        with_content_type=filters.with_content_type,
+        limit=filters.limit,
+    )
+
+    # Execute query (DB operation)
+    docs = list(session.exec(stmt).all())
+
+    # Step 5: Apply glob filters (calls filtering.py helper - NO logic here!)
+    filtered_docs = apply_glob_filters(
+        docs,
+        include_pattern=filters.include_pattern,
+        exclude_pattern=filters.exclude_pattern,
+    )
+
+    # Convert to lightweight dicts for checkpoint
+    doc_infos = []
+    for doc in filtered_docs:
+        doc_infos.append(
+            {
+                "id": str(doc.id),
+                "source_url": doc.source_url,
+                "cms_platform": doc.cms_platform,
+                "cms_instance": doc.cms_instance,
+                "cms_document_id": doc.cms_document_id,
+                "discovery_url": doc.discovery_url,
+            }
+        )
+
+    DBOS.logger.info(f"Selected {len(doc_infos)} documents to fetch")
+
+    return doc_infos
 
 
 # ============================================================================
@@ -232,30 +270,7 @@ def extract_metadata_step(document_id: str, force: bool = False) -> dict[str, An
 def fetch_document_workflow(
     identifier: str | UUID, fetch_engine: str | None = None
 ) -> dict[str, Any]:
-    """
-    Durable workflow for fetching a document.
-
-    Each step is checkpointed - workflow can resume from any step on failure:
-
-    1. Resolve document → Fast DB lookup
-    2. Fetch content → Network I/O (can timeout/rate-limit)
-    3. Generate embedding → EXPENSIVE LLM call (~$0.0001)
-    4. Save to database → Atomic transaction
-    5. Extract links → Optional, doesn't block
-
-    Failure Recovery Examples:
-    - Network timeout after step 1 → Resume from step 2 (re-fetch)
-    - Embedding fails after step 2 → Resume from step 3 (NO re-fetch!)
-    - Database error after step 3 → Resume from step 4 (NO re-fetch, NO re-embed!)
-    - Link extraction fails → Document still saved, just log warning
-
-    Args:
-        identifier: Document UUID or source URL
-        fetch_engine: Optional engine override
-
-    Returns:
-        dict with complete fetch results
-    """
+    """Fetch document with 5 checkpointed steps. Returns dict with fetch results."""
     # Step 1: Resolve document (fast DB lookup - checkpointed)
     DBOS.logger.info(f"Resolving document: {identifier}")
     doc_info = resolve_document_step(identifier)
@@ -305,33 +320,7 @@ def fetch_document_workflow(
 def fetch_and_index_workflow(
     identifier: str | UUID, fetch_engine: str | None = None
 ) -> dict[str, Any]:
-    """
-    Complete fetch + index workflow with proper checkpointing.
-
-    This workflow has meaningful structure with 6 checkpointed steps:
-
-    Steps 1-5: Fetch document (via fetch_document_workflow)
-      1. Resolve document
-      2. Fetch content (network I/O)
-      3. Generate embedding (LLM ~$0.0001)
-      4. Save to database (transaction)
-      5. Extract links
-
-    Step 6: Extract metadata (EXPENSIVE LLM ~$0.01)
-
-    Key Benefit: If metadata extraction fails, document is already fetched!
-    On retry, only step 6 runs (no re-fetch, no re-embed).
-
-    This is a MAJOR improvement over the old implementation where
-    metadata failure would re-run the entire fetch.
-
-    Args:
-        identifier: Document UUID or source URL
-        fetch_engine: Optional fetch engine override
-
-    Returns:
-        dict with fetch and metadata results
-    """
+    """Fetch document and extract metadata with 6 checkpointed steps."""
     # Steps 1-5: Fetch document (checkpointed sub-workflow)
     DBOS.logger.info(f"Starting fetch workflow for {identifier}")
     fetch_result = fetch_document_workflow(identifier, fetch_engine)
@@ -353,22 +342,7 @@ def fetch_batch_workflow(
     fetch_engine: str | None = None,
     extract_metadata: bool = False,
 ) -> dict[str, Any]:
-    """
-    Batch fetch workflow with progress tracking.
-
-    Each document is fetched using fetch_document_workflow,
-    which provides 5 checkpoints per document.
-
-    Can resume mid-batch if crashed.
-
-    Args:
-        identifiers: List of document UUIDs or source URLs
-        fetch_engine: Optional fetch engine override
-        extract_metadata: If True, also extract metadata for each document
-
-    Returns:
-        dict with batch results
-    """
+    """Batch fetch workflow with progress tracking and checkpoints per document."""
     results = []
     total = len(identifiers)
     successful = 0
@@ -414,21 +388,7 @@ def enqueue_fetch_with_priority(
     fetch_engine: str | None = None,
     extract_metadata: bool = False,
 ) -> list[str]:
-    """
-    Enqueue fetch jobs with specific priority.
-
-    Priority ranges from 1 (highest) to 2,147,483,647 (lowest).
-    Lower number = higher priority.
-
-    Args:
-        identifiers: List of document UUIDs or URLs to fetch
-        priority: Priority level (1=highest, default=10)
-        fetch_engine: Optional fetch engine override
-        extract_metadata: If True, also extract metadata
-
-    Returns:
-        List of workflow IDs
-    """
+    """Enqueue fetch jobs with priority (1=highest). Returns workflow IDs."""
     workflow_ids = []
 
     with SetEnqueueOptions(priority=priority):
@@ -456,21 +416,7 @@ def enqueue_batch_fetch(
     extract_metadata: bool = False,
     priority: int = 10,
 ) -> str:
-    """
-    Enqueue a batch fetch job (single workflow for all documents).
-
-    This is more efficient than individual workflows when you don't need
-    fine-grained priority control per document.
-
-    Args:
-        identifiers: List of document UUIDs or URLs
-        fetch_engine: Optional fetch engine override
-        extract_metadata: If True, also extract metadata
-        priority: Priority level (1=highest, default=10)
-
-    Returns:
-        Workflow ID
-    """
+    """Enqueue batch fetch job as single workflow. Returns workflow ID."""
     with SetEnqueueOptions(priority=priority):
         handle = fetch_queue.enqueue(
             fetch_batch_workflow,
@@ -484,10 +430,12 @@ def enqueue_batch_fetch(
 
 __all__ = [
     # Workflow steps (for direct use if needed)
+    "select_documents_step",
     "resolve_document_step",
     "fetch_content_step",
     "generate_embedding_step",
     "save_document_transaction",
+    "save_links_transaction",
     "extract_links_step",
     "extract_metadata_step",
     # Main workflows

@@ -13,11 +13,13 @@ import pytest
 from sqlalchemy import text
 from sqlmodel import select
 
-from kurt.content.indexing_entity_resolution import finalize_knowledge_graph_from_index_results
+from kurt.content.indexing.entity_group_resolution import (
+    finalize_knowledge_graph_from_index_results_fallback,
+)
 
 # Import from specific modules in the new structure
-from kurt.content.indexing_extract import extract_document_metadata
-from kurt.content.indexing_models import (
+from kurt.content.indexing.extract import extract_document_metadata
+from kurt.content.indexing.models import (
     DocumentMetadataOutput,
     EntityExtraction,
     RelationshipExtraction,
@@ -214,7 +216,7 @@ def mock_llm_calls(mock_dspy_signature, mock_all_llm_calls):
             return create_mock_metadata_extraction(**kwargs)
         elif "group_entities" in kwargs:
             # ResolveEntityGroup signature
-            from kurt.content.indexing_models import EntityResolution, GroupResolution
+            from kurt.content.indexing.models import EntityResolution, GroupResolution
 
             group_entities = kwargs.get("group_entities", [])
 
@@ -256,7 +258,9 @@ def mock_llm_calls(mock_dspy_signature, mock_all_llm_calls):
     with mock_dspy_signature("AllSignatures", router):
         # CRITICAL: Must patch where functions are USED, not where they're DEFINED
         with (
-            patch("kurt.content.indexing_entity_resolution.generate_embeddings") as mock_embed,
+            patch(
+                "kurt.content.indexing.entity_group_resolution.generate_embeddings"
+            ) as mock_embed,
             patch("kurt.db.knowledge_graph.search_similar_entities") as mock_search,
         ):
             # Return embeddings that match input count
@@ -432,7 +436,7 @@ def test_reindex_no_duplicates(test_documents, mock_llm_calls):
         print(f"  ✓ Indexed {doc_id[:8]}: {result.get('title', 'Unknown')}")
 
     # Finalize KG
-    finalize_knowledge_graph_from_index_results(index_results_1)
+    finalize_knowledge_graph_from_index_results_fallback(index_results_1)
 
     counts_1 = get_entity_counts()
     print("\n  After first pass:")
@@ -454,7 +458,7 @@ def test_reindex_no_duplicates(test_documents, mock_llm_calls):
         print(f"  ✓ Re-indexed {doc_id[:8]}: {result.get('title', 'Unknown')}")
 
     # Finalize KG
-    finalize_knowledge_graph_from_index_results(index_results_2)
+    finalize_knowledge_graph_from_index_results_fallback(index_results_2)
 
     counts_2 = get_entity_counts()
     print("\n  After second pass:")
@@ -476,7 +480,7 @@ def test_reindex_no_duplicates(test_documents, mock_llm_calls):
         print(f"  ✓ Re-indexed {doc_id[:8]}: {result.get('title', 'Unknown')}")
 
     # Finalize KG
-    finalize_knowledge_graph_from_index_results(index_results_3)
+    finalize_knowledge_graph_from_index_results_fallback(index_results_3)
 
     counts_3 = get_entity_counts()
     print("\n  After third pass:")
@@ -537,7 +541,7 @@ def test_entity_linking_stability(test_documents, mock_llm_calls):
     clear_all_entities_and_relationships()
 
     result_1 = extract_document_metadata(doc_id, force=True)
-    finalize_knowledge_graph_from_index_results([result_1])
+    finalize_knowledge_graph_from_index_results_fallback([result_1])
 
     # Get linked entities
     session = get_session()
@@ -551,7 +555,7 @@ def test_entity_linking_stability(test_documents, mock_llm_calls):
 
     # Re-index
     result_2 = extract_document_metadata(doc_id, force=True)
-    finalize_knowledge_graph_from_index_results([result_2])
+    finalize_knowledge_graph_from_index_results_fallback([result_2])
 
     # Get linked entities again
     doc_entities_2 = session.exec(

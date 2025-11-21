@@ -223,103 +223,77 @@ class TestFetchDocumentWithEngine:
                     mock_get_engine.assert_called_once_with(override="firecrawl")
 
 
-class TestFetchDocumentsBatchWithEngine:
-    """Tests for fetch_documents_batch() with fetch_engine parameter."""
+class TestFetchBatchWorkflow:
+    """Tests for fetch_batch_workflow() - workflow-based batch fetching."""
 
-    def test_batch_fetch_uses_default_engine(self):
-        """Test that batch fetch uses default engine when no override."""
-        from kurt.content.fetch import fetch_documents_batch
+    def test_batch_workflow_uses_fetch_engine(self):
+        """Test that batch workflow passes fetch_engine to individual fetches."""
+        from kurt.content.fetch.workflow import fetch_batch_workflow
 
-        with patch("kurt.content.fetch._get_fetch_engine") as mock_get_engine:
-            mock_get_engine.return_value = "trafilatura"
+        with patch("kurt.content.fetch.workflow.fetch_document_workflow") as mock_fetch:
+            mock_fetch.return_value = {
+                "document_id": "doc1",
+                "status": "FETCHED",
+                "content_length": 1000,
+            }
 
-            # Mock asyncio.run to avoid actually running async code
-            with patch("kurt.content.fetch.asyncio.run") as mock_run:
-                # Properly consume the coroutine to avoid RuntimeWarning
-                mock_run.side_effect = lambda coro: (coro.close(), [])[1]
+            result = fetch_batch_workflow(
+                identifiers=["doc1", "doc2"],
+                fetch_engine="firecrawl",
+                extract_metadata=False,
+            )
 
-                fetch_documents_batch(["doc1", "doc2"])
+            # Verify fetch_document_workflow was called with fetch_engine
+            assert mock_fetch.call_count == 2
+            for call in mock_fetch.call_args_list:
+                assert call.kwargs.get("fetch_engine") == "firecrawl"
 
-                # Verify _get_fetch_engine was called with no override
-                mock_get_engine.assert_called_once_with(override=None)
+    def test_batch_workflow_with_metadata_extraction(self):
+        """Test that batch workflow uses fetch_and_index_workflow when extract_metadata=True."""
+        from kurt.content.fetch.workflow import (
+            fetch_batch_workflow,
+        )
 
-    def test_batch_fetch_uses_override_engine(self):
-        """Test that batch fetch respects fetch_engine parameter."""
-        from kurt.content.fetch import fetch_documents_batch
+        with patch("kurt.content.fetch.workflow.fetch_and_index_workflow") as mock_fetch_index:
+            mock_fetch_index.return_value = {
+                "document_id": "doc1",
+                "status": "FETCHED",
+                "content_length": 1000,
+                "index_metadata": {"title": "Test"},
+            }
 
-        with patch("kurt.content.fetch._get_fetch_engine") as mock_get_engine:
-            mock_get_engine.return_value = "firecrawl"
+            result = fetch_batch_workflow(
+                identifiers=["doc1", "doc2"],
+                fetch_engine="trafilatura",
+                extract_metadata=True,
+            )
 
-            # Mock asyncio.run to avoid actually running async code
-            with patch("kurt.content.fetch.asyncio.run") as mock_run:
-                # Properly consume the coroutine to avoid RuntimeWarning
-                mock_run.side_effect = lambda coro: (coro.close(), [])[1]
+            # Verify fetch_and_index_workflow was called
+            assert mock_fetch_index.call_count == 2
+            assert result["total"] == 2
 
-                fetch_documents_batch(["doc1", "doc2"], fetch_engine="firecrawl")
+    def test_batch_workflow_returns_summary(self):
+        """Test that batch workflow returns proper summary with counts."""
+        from kurt.content.fetch.workflow import fetch_batch_workflow
 
-                # Verify _get_fetch_engine was called with override
-                mock_get_engine.assert_called_once_with(override="firecrawl")
+        with patch("kurt.content.fetch.workflow.fetch_document_workflow") as mock_fetch:
+            # Mock 2 successful, 1 failed
+            mock_fetch.side_effect = [
+                {"document_id": "doc1", "status": "FETCHED", "content_length": 1000},
+                {"document_id": "doc2", "status": "FETCHED", "content_length": 2000},
+                Exception("Fetch failed"),
+            ]
 
-    def test_batch_fetch_shows_warning_for_large_trafilatura_batch(self, capsys):
-        """Test that warning is shown for large batches with Trafilatura."""
-        from kurt.content.fetch import fetch_documents_batch
+            result = fetch_batch_workflow(
+                identifiers=["doc1", "doc2", "doc3"],
+                extract_metadata=False,
+            )
 
-        with patch("kurt.content.fetch._get_fetch_engine") as mock_get_engine:
-            mock_get_engine.return_value = "trafilatura"
-
-            # Mock asyncio.run to avoid actually running async code
-            with patch("kurt.content.fetch.asyncio.run") as mock_run:
-                # Properly consume the coroutine to avoid RuntimeWarning
-                mock_run.side_effect = lambda coro: (coro.close(), [])[1]
-
-                # Create batch of 15 documents (>10 threshold)
-                doc_ids = [f"doc{i}" for i in range(15)]
-                fetch_documents_batch(doc_ids)
-
-                # Check that warning was printed
-                captured = capsys.readouterr()
-                assert "Warning: Fetching large volumes with Trafilatura" in captured.out
-                assert "Firecrawl" in captured.out
-
-    def test_batch_fetch_no_warning_for_small_trafilatura_batch(self, capsys):
-        """Test that no warning is shown for small batches with Trafilatura."""
-        from kurt.content.fetch import fetch_documents_batch
-
-        with patch("kurt.content.fetch._get_fetch_engine") as mock_get_engine:
-            mock_get_engine.return_value = "trafilatura"
-
-            # Mock asyncio.run to avoid actually running async code
-            with patch("kurt.content.fetch.asyncio.run") as mock_run:
-                # Properly consume the coroutine to avoid RuntimeWarning
-                mock_run.side_effect = lambda coro: (coro.close(), [])[1]
-
-                # Create batch of 5 documents (<10 threshold)
-                doc_ids = [f"doc{i}" for i in range(5)]
-                fetch_documents_batch(doc_ids)
-
-                # Check that no warning was printed
-                captured = capsys.readouterr()
-                assert "Warning" not in captured.out
-
-    def test_batch_fetch_no_warning_for_large_firecrawl_batch(self, capsys):
-        """Test that no warning is shown for large batches with Firecrawl."""
-        from kurt.content.fetch import fetch_documents_batch
-
-        with patch("kurt.content.fetch._get_fetch_engine") as mock_get_engine:
-            mock_get_engine.return_value = "firecrawl"
-
-            # Mock asyncio.run to avoid actually running async code
-            with patch("kurt.content.fetch.asyncio.run") as mock_run:
-                # Properly consume the coroutine to avoid RuntimeWarning
-                mock_run.side_effect = lambda coro: (coro.close(), [])[1]
-
-                # Create batch of 20 documents (>10 threshold)
-                doc_ids = [f"doc{i}" for i in range(20)]
-                fetch_documents_batch(doc_ids)
-
-                # Check that no warning was printed
-                captured = capsys.readouterr()
-                assert "Warning" not in captured.out
+            # Verify summary
+            assert result["total"] == 3
+            assert result["successful"] == 2
+            assert result["failed"] == 1
+            assert len(result["results"]) == 3
 
 
 class TestEngineConfigurationScenarios:

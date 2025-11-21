@@ -21,16 +21,16 @@ from uuid import uuid4
 import pytest
 from sqlmodel import select
 
-from kurt.content.indexing_entity_resolution import (
+from kurt.content.indexing.entity_group_resolution import (
     _create_entities_and_relationships as create_entities_and_relationships,
 )
-from kurt.content.indexing_entity_resolution import (
+from kurt.content.indexing.entity_group_resolution import (
     _resolve_entity_groups as resolve_entity_groups,
 )
-from kurt.content.indexing_entity_resolution import (
-    finalize_knowledge_graph_from_index_results as finalize_knowledge_graph,
+from kurt.content.indexing.entity_group_resolution import (
+    finalize_knowledge_graph_from_index_results_fallback as finalize_knowledge_graph,
 )
-from kurt.content.indexing_models import EntityResolution, GroupResolution
+from kurt.content.indexing.models import EntityResolution, GroupResolution
 from kurt.db.database import get_session
 from kurt.db.models import Document, DocumentEntity, Entity, EntityRelationship, SourceType
 
@@ -141,8 +141,8 @@ def test_circular_merge_chain_hits_max_iterations(test_document, mock_all_llm_ca
         return mock_resolution
 
     with (
-        patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
+        patch("kurt.content.indexing.entity_group_resolution.dspy.ChainOfThought") as mock_cot,
+        patch("kurt.content.indexing.entity_group_resolution.DBSCAN", return_value=mock_dbscan),
     ):
         # Wrap synchronous mock in async function for .acall()
         async def async_resolve_entities(*args, **kwargs):
@@ -231,8 +231,8 @@ def test_merge_with_nonexistent_target_converts_to_create(test_document, mock_al
         return mock_resolution
 
     with (
-        patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
+        patch("kurt.content.indexing.entity_group_resolution.dspy.ChainOfThought") as mock_cot,
+        patch("kurt.content.indexing.entity_group_resolution.DBSCAN", return_value=mock_dbscan),
     ):
         # Wrap synchronous mock in async function for .acall()
         async def async_resolve_entities(*args, **kwargs):
@@ -296,8 +296,8 @@ def test_empty_aliases_in_merge_group(test_document, mock_all_llm_calls):
         return mock_resolution
 
     with (
-        patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
+        patch("kurt.content.indexing.entity_group_resolution.dspy.ChainOfThought") as mock_cot,
+        patch("kurt.content.indexing.entity_group_resolution.DBSCAN", return_value=mock_dbscan),
     ):
         # Wrap synchronous mock in async function for .acall()
         async def async_resolve_entities(*args, **kwargs):
@@ -370,8 +370,8 @@ def test_confidence_score_averaging(test_document, test_document_2, mock_all_llm
         return mock_resolution
 
     with (
-        patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
+        patch("kurt.content.indexing.entity_group_resolution.dspy.ChainOfThought") as mock_cot,
+        patch("kurt.content.indexing.entity_group_resolution.DBSCAN", return_value=mock_dbscan),
     ):
         # Wrap synchronous mock in async function for .acall()
         async def async_resolve_entities(*args, **kwargs):
@@ -483,8 +483,8 @@ def test_source_mentions_counts_all_documents(test_document, test_document_2, mo
         return mock_resolution
 
     with (
-        patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
+        patch("kurt.content.indexing.entity_group_resolution.dspy.ChainOfThought") as mock_cot,
+        patch("kurt.content.indexing.entity_group_resolution.DBSCAN", return_value=mock_dbscan),
     ):
         # Wrap synchronous mock in async function for .acall()
         async def async_resolve_entities(*args, **kwargs):
@@ -556,8 +556,8 @@ def test_no_duplicate_document_entity_links(test_document, mock_all_llm_calls):
         return mock_resolution
 
     with (
-        patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
+        patch("kurt.content.indexing.entity_group_resolution.dspy.ChainOfThought") as mock_cot,
+        patch("kurt.content.indexing.entity_group_resolution.DBSCAN", return_value=mock_dbscan),
     ):
         # Wrap synchronous mock in async function for .acall()
         async def async_resolve_entities(*args, **kwargs):
@@ -641,8 +641,8 @@ def test_relationship_endpoints_updated_after_merge(test_document, mock_all_llm_
         return mock_resolution
 
     with (
-        patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
+        patch("kurt.content.indexing.entity_group_resolution.dspy.ChainOfThought") as mock_cot,
+        patch("kurt.content.indexing.entity_group_resolution.DBSCAN", return_value=mock_dbscan),
     ):
         # Wrap synchronous mock in async function for .acall()
         async def async_resolve_entities(*args, **kwargs):
@@ -756,8 +756,8 @@ def test_merge_transitive_closure(test_document, mock_all_llm_calls):
         return mock_resolution
 
     with (
-        patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
+        patch("kurt.content.indexing.entity_group_resolution.dspy.ChainOfThought") as mock_cot,
+        patch("kurt.content.indexing.entity_group_resolution.DBSCAN", return_value=mock_dbscan),
     ):
         # Wrap synchronous mock in async function for .acall()
         async def async_resolve_entities(*args, **kwargs):
@@ -878,8 +878,8 @@ def test_same_name_different_types_kept_separate(
         return mock_resolution
 
     with (
-        patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
+        patch("kurt.content.indexing.entity_group_resolution.dspy.ChainOfThought") as mock_cot,
+        patch("kurt.content.indexing.entity_group_resolution.DBSCAN", return_value=mock_dbscan),
     ):
         # Wrap synchronous mock in async function for .acall()
         async def async_resolve_entities(*args, **kwargs):
@@ -937,8 +937,8 @@ def test_canonical_name_conflicts_trigger_merge(test_document, mock_all_llm_call
         return mock_resolution
 
     with (
-        patch("kurt.content.indexing_entity_resolution.dspy.ChainOfThought") as mock_cot,
-        patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan),
+        patch("kurt.content.indexing.entity_group_resolution.dspy.ChainOfThought") as mock_cot,
+        patch("kurt.content.indexing.entity_group_resolution.DBSCAN", return_value=mock_dbscan),
     ):
         # Wrap synchronous mock in async function for .acall()
         async def async_resolve_entities(*args, **kwargs):

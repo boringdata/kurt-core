@@ -10,7 +10,7 @@ import pytest
 from pydantic import BaseModel, Field
 
 # Import actual signatures from the codebase
-from kurt.content.indexing_models import (
+from kurt.content.indexing.models import (
     EntityResolution,
     GroupResolution,
 )
@@ -47,7 +47,7 @@ def test_simple_static_mock(mock_dspy_signature, tmp_project):
     # Use the mock in a context manager
     with mock_dspy_signature("ResolveEntityGroup", mock_resolution):
         # Import the function that uses this signature
-        from kurt.content.indexing_entity_resolution import (
+        from kurt.content.indexing.entity_group_resolution import (
             _resolve_entity_groups as resolve_entity_groups,
         )
 
@@ -116,7 +116,7 @@ def test_dynamic_mock_response(mock_dspy_signature, tmp_project):
 
     # Use the dynamic mock (embeddings auto-mocked by autouse fixture)
     with mock_dspy_signature("ResolveEntityGroup", dynamic_resolver):
-        from kurt.content.indexing_entity_resolution import (
+        from kurt.content.indexing.entity_group_resolution import (
             _resolve_entity_groups as resolve_entity_groups,
         )
 
@@ -196,7 +196,7 @@ def test_merge_with_mock(mock_dspy_signature, tmp_project):
     with mock_dspy_signature("ResolveEntityGroup", merge_resolver):
         from unittest.mock import patch
 
-        from kurt.content.indexing_entity_resolution import (
+        from kurt.content.indexing.entity_group_resolution import (
             _resolve_entity_groups as resolve_entity_groups,
         )
 
@@ -204,7 +204,9 @@ def test_merge_with_mock(mock_dspy_signature, tmp_project):
         mock_dbscan = Mock()
         mock_dbscan.fit_predict.return_value = [0, 0, 0]  # All in cluster 0
 
-        with patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan):
+        with patch(
+            "kurt.content.indexing.entity_group_resolution.DBSCAN", return_value=mock_dbscan
+        ):
             # Three variations that should merge (embeddings auto-mocked by autouse fixture)
             entities = [
                 {
@@ -287,8 +289,10 @@ def test_invalid_merge_target_fallback_to_create_new(tmp_project, mock_dspy_sign
     mock_dbscan.fit_predict.return_value = np.array([0, 0])  # All in group 0
 
     with mock_dspy_signature("ResolveEntityGroup", mock_resolve_invalid_merge):
-        with patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan):
-            from kurt.content.indexing_entity_resolution import (
+        with patch(
+            "kurt.content.indexing.entity_group_resolution.DBSCAN", return_value=mock_dbscan
+        ):
+            from kurt.content.indexing.entity_group_resolution import (
                 _resolve_entity_groups as resolve_entity_groups,
             )
 
@@ -372,7 +376,7 @@ def test_simulating_llm_errors(mock_dspy_signature, tmp_project):
         raise ValueError("LLM returned invalid JSON")
 
     with mock_dspy_signature("ResolveEntityGroup", error_resolver):
-        from kurt.content.indexing_entity_resolution import (
+        from kurt.content.indexing.entity_group_resolution import (
             _resolve_entity_groups as resolve_entity_groups,
         )
 
@@ -429,7 +433,7 @@ def test_stateful_mock_tracking_calls(mock_dspy_signature, tmp_project):
     with mock_dspy_signature("ResolveEntityGroup", counting_resolver):
         from unittest.mock import patch
 
-        from kurt.content.indexing_entity_resolution import (
+        from kurt.content.indexing.entity_group_resolution import (
             _resolve_entity_groups as resolve_entity_groups,
         )
 
@@ -437,7 +441,9 @@ def test_stateful_mock_tracking_calls(mock_dspy_signature, tmp_project):
         mock_dbscan = Mock()
         mock_dbscan.fit_predict.return_value = [0, 1]  # Two clusters
 
-        with patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan):
+        with patch(
+            "kurt.content.indexing.entity_group_resolution.DBSCAN", return_value=mock_dbscan
+        ):
             # Two entities in different clusters = 2 LLM calls (embeddings auto-mocked by autouse fixture)
             entities = [
                 {
@@ -476,8 +482,8 @@ def test_realistic_entity_resolution_scenario(mock_dspy_signature, tmp_project):
     from datetime import datetime
     from uuid import uuid4
 
-    from kurt.content.indexing_entity_resolution import (
-        finalize_knowledge_graph_from_index_results as finalize_knowledge_graph,
+    from kurt.content.indexing.entity_group_resolution import (
+        finalize_knowledge_graph_from_index_results_fallback as finalize_knowledge_graph,
     )
     from kurt.db.database import get_session
     from kurt.db.models import Document, Entity, SourceType
@@ -557,7 +563,9 @@ def test_realistic_entity_resolution_scenario(mock_dspy_signature, tmp_project):
         mock_dbscan = Mock()
         mock_dbscan.fit_predict.return_value = [0, 0]  # Both in cluster 0
 
-        with patch("kurt.content.indexing_entity_resolution.DBSCAN", return_value=mock_dbscan):
+        with patch(
+            "kurt.content.indexing.entity_group_resolution.DBSCAN", return_value=mock_dbscan
+        ):
             # Simulate index results (embeddings auto-mocked by autouse fixture)
             index_results = [
                 {

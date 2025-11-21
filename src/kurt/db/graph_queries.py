@@ -13,7 +13,7 @@ from uuid import UUID
 
 from sqlmodel import Session, and_, col, func, or_, select
 
-from kurt.content.indexing_models import EntityType
+from kurt.content.indexing.models import EntityType
 from kurt.db.database import get_session
 from kurt.db.models import Document, DocumentEntity, Entity, EntityRelationship
 
