@@ -13,6 +13,47 @@ from sqlmodel import Field, SQLModel
 logger = logging.getLogger(__name__)
 
 
+# ============================================================================
+# Multi-Tenancy Models
+# ============================================================================
+
+
+class Workspace(SQLModel, table=True):
+    """Workspace for multi-tenant isolation.
+
+    In cloud mode, each workspace represents a separate tenant.
+    In local mode, a default workspace is used (00000000-0000-0000-0000-000000000000).
+    """
+
+    __tablename__ = "workspaces"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    name: str = Field(index=True)
+    slug: str = Field(unique=True, index=True)  # URL-friendly identifier
+
+    # Owner/organization info
+    owner_email: Optional[str] = Field(default=None, index=True)
+    organization: Optional[str] = None
+
+    # Subscription/billing (for cloud mode)
+    plan: str = Field(default="free")  # free, pro, enterprise
+    max_documents: Optional[int] = None
+    max_users: Optional[int] = None
+
+    # Settings
+    settings: Optional[dict] = Field(default=None, sa_column=Column(JSON))
+
+    # Status
+    is_active: bool = Field(default=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+# ============================================================================
+# Document Models
+# ============================================================================
+
+
 class IngestionStatus(str, Enum):
     """Status of document content ingestion."""
 

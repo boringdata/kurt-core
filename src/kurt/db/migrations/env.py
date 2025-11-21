@@ -29,6 +29,7 @@ from kurt.db.models import (  # noqa: E402, F401
     Entity,
     EntityRelationship,
     TopicCluster,
+    Workspace,
 )
 
 
