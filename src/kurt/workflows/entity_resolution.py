@@ -1,7 +1,7 @@
 """DBOS workflow for entity resolution with fine-grained checkpointing.
 
 This workflow orchestrates entity resolution operations with automatic checkpointing
-and recovery. All business logic is in content/entity_operations.py.
+and recovery. All business logic is in db/entity_operations.py.
 
 Benefits:
 - Granular checkpointing saves progress at each step
@@ -14,7 +14,7 @@ import logging
 
 from dbos import DBOS
 
-from kurt.content.entity_operations import (
+from kurt.db.entity_operations import (
     build_entity_docs_mapping,
     cleanup_old_entities,
     create_entities,
