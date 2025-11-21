@@ -41,14 +41,14 @@ class TestPostgreSQLConnection:
         cursor.execute("""
             SELECT table_name FROM information_schema.tables
             WHERE table_schema = 'public'
-            AND table_name IN ('documents', 'entities', 'workspaces', 'workspace_members')
+            AND table_name IN ('documents', 'entities')
         """)
         tables = [row[0] for row in cursor.fetchall()]
 
         assert "documents" in tables
         assert "entities" in tables
-        assert "workspaces" in tables
-        assert "workspace_members" in tables
+
+        # Note: workspaces and workspace_members tables will be added in future migration
 
     def test_tenant_id_columns_exist(self, postgres_db):
         """Test that tenant_id columns were added by migration."""

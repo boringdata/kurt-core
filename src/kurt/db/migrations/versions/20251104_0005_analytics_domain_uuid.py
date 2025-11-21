@@ -53,19 +53,52 @@ def upgrade() -> None:
     )
 
     # 4. Copy data from old table (generate UUIDs for existing rows)
-    op.execute("""
-        INSERT INTO analytics_domains (id, domain, platform, has_data, last_synced_at, sync_period_days, created_at, updated_at)
-        SELECT
-            lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)), 2) || '-' || substr('89ab', abs(random()) % 4 + 1, 1) || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6))) as id,
-            domain,
-            platform,
-            has_data,
-            last_synced_at,
-            sync_period_days,
-            created_at,
-            updated_at
-        FROM analytics_domains_old
-    """)
+    connection = op.get_bind()
+    dialect_name = connection.dialect.name
+
+    if dialect_name == "postgresql":
+        # PostgreSQL: Use gen_random_uuid() or uuid_generate_v4()
+        # First try to enable uuid-ossp extension if available
+        try:
+            op.execute('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"')
+            uuid_func = "uuid_generate_v4()"
+        except Exception:
+            # Fall back to gen_random_uuid() (requires pgcrypto or built-in)
+            try:
+                op.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
+                uuid_func = "gen_random_uuid()"
+            except Exception:
+                # PostgreSQL 13+ has gen_random_uuid() built-in
+                uuid_func = "gen_random_uuid()"
+
+        op.execute(f"""
+            INSERT INTO analytics_domains (id, domain, platform, has_data, last_synced_at, sync_period_days, created_at, updated_at)
+            SELECT
+                {uuid_func}::text as id,
+                domain,
+                platform,
+                has_data,
+                last_synced_at,
+                sync_period_days,
+                created_at,
+                updated_at
+            FROM analytics_domains_old
+        """)
+    else:
+        # SQLite: Generate UUID v4 using random functions
+        op.execute("""
+            INSERT INTO analytics_domains (id, domain, platform, has_data, last_synced_at, sync_period_days, created_at, updated_at)
+            SELECT
+                lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)), 2) || '-' || substr('89ab', abs(random()) % 4 + 1, 1) || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6))) as id,
+                domain,
+                platform,
+                has_data,
+                last_synced_at,
+                sync_period_days,
+                created_at,
+                updated_at
+            FROM analytics_domains_old
+        """)
 
     # 5. Drop old table
     op.drop_table("analytics_domains_old")
