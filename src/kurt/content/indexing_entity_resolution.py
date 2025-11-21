@@ -25,7 +25,11 @@ from sqlmodel import select
 from kurt.content.embeddings import generate_embeddings
 from kurt.content.indexing_models import GroupResolution
 from kurt.db.database import get_session
-from kurt.db.knowledge_graph import create_entity_with_document_edges
+from kurt.db.knowledge_graph import (
+    create_entity_with_document_edges,
+    find_existing_entity,
+    find_or_create_document_entity_link,
+)
 from kurt.db.models import DocumentEntity, Entity, EntityRelationship
 from kurt.utils.async_helpers import gather_with_semaphore
 
@@ -654,6 +658,16 @@ def _create_entities_and_relationships(doc_to_kg_data: dict, resolutions: list[d
 
             decision = primary_resolution["decision"]
 
+            # Handle re-indexing: check if entity already exists before creating
+            if decision == "CREATE_NEW":
+                entity_data = primary_resolution["entity_details"]
+                existing = find_existing_entity(session, canonical_name, entity_data["type"])
+                if existing:
+                    logger.debug(
+                        f"Re-indexing: Entity '{canonical_name}' exists, linking to {existing.id}"
+                    )
+                    decision = str(existing.id)
+
             if decision == "CREATE_NEW":
                 # Create new entity using helper function
                 entity_data = primary_resolution["entity_details"]
@@ -729,17 +743,13 @@ def _create_entities_and_relationships(doc_to_kg_data: dict, resolutions: list[d
                                 docs_to_link[doc_id] = doc_info
 
                     for doc_info in docs_to_link.values():
-                        edge = DocumentEntity(
-                            id=uuid4(),
+                        find_or_create_document_entity_link(
+                            session=session,
                             document_id=doc_info["document_id"],
                             entity_id=entity_id,
-                            mention_count=1,
                             confidence=doc_info["confidence"],
                             context=doc_info.get("quote"),
-                            created_at=datetime.utcnow(),
-                            updated_at=datetime.utcnow(),
                         )
-                        session.add(edge)
 
         # Create relationships from all documents
         for doc_id, kg_data in doc_to_kg_data.items():
