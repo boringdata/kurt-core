@@ -16,6 +16,7 @@ class StepType(str, Enum):
     DSPY = "dspy"
     SCRIPT = "script"
     PARALLEL = "parallel"
+    FOREACH = "foreach"
 
 
 class ErrorAction(str, Enum):
@@ -91,6 +92,21 @@ class WorkflowStep(BaseModel):
         default=None, description="Sub-steps for parallel execution"
     )
 
+    # Foreach step fields
+    items: Optional[str] = Field(
+        default=None,
+        description="Variable reference to array of items to iterate over (for foreach type)",
+    )
+    step: Optional["WorkflowStep"] = Field(
+        default=None, description="Template step to execute for each item (for foreach type)"
+    )
+    concurrency: Optional[int] = Field(
+        default=10,
+        ge=1,
+        le=100,
+        description="Max concurrent executions (for foreach/parallel types)",
+    )
+
     # Common fields
     output: Optional[str] = Field(default=None, description="Variable name to store step output")
     condition: Optional[str] = Field(
@@ -130,6 +146,22 @@ class WorkflowStep(BaseModel):
         """Validate sub-steps are provided for parallel type."""
         if info.data.get("type") == StepType.PARALLEL and not v:
             raise ValueError("steps is required for parallel type")
+        return v
+
+    @field_validator("items")
+    @classmethod
+    def validate_foreach_items(cls, v, info):
+        """Validate items array is provided for foreach type."""
+        if info.data.get("type") == StepType.FOREACH and not v:
+            raise ValueError("items is required for foreach type steps")
+        return v
+
+    @field_validator("step")
+    @classmethod
+    def validate_foreach_step(cls, v, info):
+        """Validate template step is provided for foreach type."""
+        if info.data.get("type") == StepType.FOREACH and not v:
+            raise ValueError("step is required for foreach type steps")
         return v
 
 

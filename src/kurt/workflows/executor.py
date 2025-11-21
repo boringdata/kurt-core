@@ -151,6 +151,8 @@ class WorkflowExecutor:
                 result = self._execute_script_step(step)
             elif step.type == StepType.PARALLEL:
                 result = self._execute_parallel_step(step)
+            elif step.type == StepType.FOREACH:
+                result = self._execute_foreach_step(step)
             else:
                 raise WorkflowExecutionError(f"Unknown step type: {step.type}")
 
@@ -309,6 +311,133 @@ class WorkflowExecutor:
             self._execute_step(sub_step)
             if sub_step.output:
                 results.append(self.context.get_variable(sub_step.output))
+
+        return results
+
+    def _execute_foreach_step(self, step: WorkflowStep) -> Any:
+        """
+        Execute a step for each item in an array using DBOS queues for parallelism.
+
+        Uses DBOS queues to enable true concurrent execution with durability guarantees.
+        """
+        # Resolve the items array from variables
+        items_var = substitute_variables(step.items, self.context.variables)
+
+        if not isinstance(items_var, list):
+            raise WorkflowExecutionError(
+                f"Foreach items must be a list, got {type(items_var).__name__}"
+            )
+
+        console.print(
+            f"[dim]  Processing {len(items_var)} items with concurrency={step.concurrency or 10}[/dim]"
+        )
+
+        # Try to use DBOS queues for true parallelism
+        from kurt.workflows import DBOS_AVAILABLE
+
+        if DBOS_AVAILABLE:
+            try:
+                return self._execute_foreach_with_dbos(step, items_var)
+            except Exception as e:
+                logger.warning(f"DBOS foreach failed, falling back to sequential: {e}")
+                # Fall through to sequential execution
+
+        # Fallback: Sequential execution (no DBOS available or DBOS failed)
+        console.print("[yellow]⚠ DBOS not available, executing sequentially[/yellow]")
+        return self._execute_foreach_sequential(step, items_var)
+
+    def _execute_foreach_with_dbos(self, step: WorkflowStep, items: list) -> list:
+        """Execute foreach using DBOS queues for parallel execution."""
+        from dbos import DBOS, Queue
+
+        # Create a queue for this foreach operation
+        queue_name = f"foreach_{step.name}_{id(step)}"
+        queue = Queue(queue_name, worker_concurrency=step.concurrency or 10)
+
+        # Define a DBOS workflow for executing a single item
+        @DBOS.workflow()
+        def execute_foreach_item(item_data: Any, template_step_dict: dict, variables_dict: dict):
+            """Execute template step for a single item (DBOS workflow)."""
+            # Reconstruct the template step
+            from kurt.workflows.schema import WorkflowStep
+
+            template_step = WorkflowStep(**template_step_dict)
+
+            # Create child context with 'item' variable
+            child_context = WorkflowContext(self.workflow, variables_dict)
+            child_context.set_variable("item", item_data)
+
+            # Create child executor
+            child_executor = WorkflowExecutor(self.workflow)
+            child_executor.context = child_context
+
+            # Execute the template step
+            child_executor._execute_step(template_step)
+
+            # Return the output if specified
+            if template_step.output:
+                return child_context.get_variable(template_step.output)
+            return None
+
+        # Enqueue all items
+        handles = []
+        for i, item in enumerate(items):
+            console.print(f"[dim]  Enqueueing item {i+1}/{len(items)}[/dim]")
+
+            # Serialize template step and context
+            template_step_dict = step.step.model_dump()
+            variables_dict = self.context.variables.copy()
+
+            # Enqueue the item
+            handle = queue.enqueue(execute_foreach_item, item, template_step_dict, variables_dict)
+            handles.append(handle)
+
+        # Wait for all tasks to complete and collect results
+        console.print(f"[cyan]  Waiting for {len(handles)} tasks to complete...[/cyan]")
+        results = []
+        for i, handle in enumerate(handles):
+            try:
+                result = handle.get_result()
+                results.append(result)
+                console.print(f"[green]  ✓ Completed {i+1}/{len(handles)}[/green]")
+            except Exception as e:
+                logger.error(f"Item {i} failed: {e}")
+                results.append({"error": str(e), "index": i})
+
+        return results
+
+    def _execute_foreach_sequential(self, step: WorkflowStep, items: list) -> list:
+        """Execute foreach sequentially (fallback when DBOS not available)."""
+        results = []
+
+        for i, item in enumerate(items):
+            console.print(f"[cyan]  Processing item {i+1}/{len(items)}[/cyan]")
+
+            # Create child context with 'item' variable
+            child_variables = self.context.variables.copy()
+            child_variables["item"] = item
+
+            # Substitute variables in the template step
+            template_step = step.step
+
+            # Create a temporary executor with child context
+            child_executor = WorkflowExecutor(self.workflow, child_variables)
+
+            # Execute the template step
+            try:
+                child_executor._execute_step(template_step)
+
+                # Collect output if specified
+                if template_step.output:
+                    result = child_executor.context.get_variable(template_step.output)
+                else:
+                    result = None
+
+                results.append(result)
+
+            except Exception as e:
+                logger.error(f"Item {i} failed: {e}")
+                results.append({"error": str(e), "index": i})
 
         return results
 

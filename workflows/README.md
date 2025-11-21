@@ -18,6 +18,8 @@ A workflow YAML file defines:
    - `cli`: Execute a Kurt CLI command
    - `dspy`: Run a DSPy signature for AI-powered processing (supports **inline signatures**)
    - `script`: Run custom Python code
+   - `foreach`: Process arrays in parallel using **DBOS queues**
+   - `parallel`: Run multiple steps concurrently
 3. **Variables**: Pass data between steps
 4. **Conditions**: Control flow based on results
 
@@ -45,6 +47,26 @@ DSPy signatures can be defined **inline** in the YAML without requiring separate
 ```
 
 See [INLINE_SIGNATURES.md](INLINE_SIGNATURES.md) for complete documentation.
+
+### Foreach - Parallel Array Processing
+
+Process arrays in parallel with DBOS queue-based concurrency:
+
+```yaml
+- name: "save_all_pages"
+  type: "foreach"
+  items: "${pages}"      # Array to iterate over
+  concurrency: 10         # Max concurrent tasks
+  step:
+    type: "cli"
+    command: "workflows write"
+    args:
+      data: "${item}"                    # Current item
+      output: "pages/${item.slug}.md"
+  output: "results"       # Array of all results
+```
+
+See [FOREACH.md](FOREACH.md) for complete documentation.
 
 ## Example Workflows
 

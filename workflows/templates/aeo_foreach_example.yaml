@@ -1,0 +1,79 @@
+name: "AEO with Foreach - Parallel FAQ Generation"
+description: "Generate individual FAQ pages in parallel using foreach with inline DSPy signatures"
+version: "3.1"
+
+variables:
+  topics:
+    - name: "AI Safety"
+      questions:
+        - "How do we ensure AI systems are safe?"
+        - "What are AI alignment challenges?"
+    - name: "Machine Learning"
+      questions:
+        - "What is supervised learning?"
+        - "How do neural networks work?"
+    - name: "Data Privacy"
+      questions:
+        - "How is user data protected?"
+        - "What is GDPR compliance?"
+  brand_voice: "professional and accessible"
+  output_path: "content/faqs"
+
+steps:
+  # Step 1: Generate FAQ content for each topic in parallel
+  - name: "generate_all_faqs"
+    description: "Generate FAQ page for each topic using foreach with DSPy"
+    type: "foreach"
+    items: "${topics}"
+    concurrency: 3
+    step:
+      name: "generate_topic_faq"
+      type: "dspy"
+      signature:
+        inputs:
+          - name: "topic_name"
+            type: "str"
+            description: "Topic name"
+          - name: "questions"
+            type: "str"
+            description: "Questions for this topic (JSON array)"
+          - name: "voice"
+            type: "str"
+            description: "Brand voice to use"
+        outputs:
+          - name: "faq_page"
+            type: "str"
+            description: "Generated FAQ page with title, intro, and Q&A pairs (JSON)"
+        prompt: |
+          Generate a comprehensive FAQ page for the given topic.
+
+          Create:
+          1. An engaging title
+          2. A brief introduction paragraph
+          3. Clear, detailed answers to each question
+          4. Use the specified brand voice
+
+          Return JSON with: {title, introduction, faqs: [{question, answer}]}
+      inputs:
+        topic_name: "${item.name}"
+        questions: "${item.questions}"
+        voice: "${brand_voice}"
+      output: "faq_content"
+    output: "all_faq_pages"
+
+  # Step 2: Save all FAQ pages
+  - name: "save_all_faqs"
+    description: "Save each generated FAQ page to a file"
+    type: "foreach"
+    items: "${all_faq_pages}"
+    concurrency: 5
+    step:
+      name: "save_faq"
+      type: "cli"
+      command: "workflows write"
+      args:
+        data: "${item}"
+        output: "${output_path}/${item.slug}.md"
+        format: "text"
+      output: "saved_path"
+    output: "saved_files"

@@ -1,0 +1,33 @@
+name: "Foreach Test Workflow"
+description: "Test foreach step with DBOS queue-based parallel execution"
+version: "1.0"
+
+variables:
+  pages:
+    - slug: "getting-started"
+      title: "Getting Started Guide"
+      content: "Welcome to our platform..."
+    - slug: "api-reference"
+      title: "API Reference"
+      content: "Complete API documentation..."
+    - slug: "best-practices"
+      title: "Best Practices"
+      content: "Industry best practices..."
+  output_dir: "output/pages"
+
+steps:
+  - name: "save_all_pages"
+    description: "Save each page to a separate file using foreach with parallelism"
+    type: "foreach"
+    items: "${pages}"
+    concurrency: 3
+    step:
+      name: "save_page"
+      type: "cli"
+      command: "workflows write"
+      args:
+        data: "${item}"
+        output: "${output_dir}/${item.slug}.json"
+        format: "json"
+      output: "saved_file"
+    output: "all_saved_files"
