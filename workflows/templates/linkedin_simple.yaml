@@ -1,0 +1,61 @@
+name: "LinkedIn Quick Post Generator"
+description: "Simple workflow to generate LinkedIn posts from a single topic"
+version: "1.0"
+
+variables:
+  topic: "The rise of AI agents in software development"
+  target_audience: "software engineers and tech leads"
+  brand_voice: "technical and insightful"
+  num_posts: 5
+
+steps:
+  # Generate multiple post variations
+  - name: "generate_posts"
+    type: "dspy"
+    signature:
+      inputs:
+        - name: "topic"
+          type: "str"
+          description: "Topic to write about"
+        - name: "audience"
+          type: "str"
+          description: "Target audience"
+        - name: "count"
+          type: "str"
+          description: "Number of posts to generate"
+      outputs:
+        - name: "posts"
+          type: "str"
+          description: "Generated LinkedIn posts (JSON array)"
+      prompt: |
+        Generate ${count} LinkedIn posts about: ${topic}
+        Target audience: ${audience}
+
+        Each post should:
+        - Start with a compelling hook
+        - Provide 2-3 key insights
+        - End with a question to drive engagement
+        - Be 800-1200 characters
+        - Use line breaks for readability
+
+        Return JSON: [{text: "...", hook_type: "question|story|data"}]
+    inputs:
+      topic: "${topic}"
+      audience: "${target_audience}"
+      count: "${num_posts}"
+    output: "generated_posts"
+
+  # Save each post to a file (in parallel!)
+  - name: "save_posts"
+    type: "foreach"
+    items: "${generated_posts}"
+    concurrency: 5
+    step:
+      type: "cli"
+      command: "workflows write"
+      args:
+        data: "${item.text}"
+        output: "linkedin_posts/post_${item.hook_type}_v${index}.md"
+        format: "text"
+      output: "filepath"
+    output: "saved_files"

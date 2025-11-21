@@ -1,0 +1,280 @@
+name: "LinkedIn Content Generation Pipeline"
+description: "End-to-end workflow for generating LinkedIn posts from trending topics with AI-powered optimization"
+version: "1.0"
+
+variables:
+  # Input configuration
+  industry: "AI & Machine Learning"
+  target_audience: "technical founders and CTOs"
+  brand_voice: "authoritative yet approachable, technical but accessible"
+  num_trending_topics: 10
+  posts_per_topic: 2
+
+  # Output configuration
+  output_dir: "content/linkedin"
+  publish_schedule: "weekly"
+
+steps:
+  # Step 1: Discover trending topics
+  - name: "fetch_trending_topics"
+    description: "Fetch trending topics from multiple sources"
+    type: "parallel"
+    concurrency: 3
+    steps:
+      - name: "reddit_trends"
+        type: "cli"
+        command: "integrations research reddit"
+        args:
+          subreddit: "MachineLearning"
+          limit: 20
+          type: "hot"
+        output: "reddit_data"
+
+      - name: "hackernews_trends"
+        type: "cli"
+        command: "integrations research hackernews"
+        args:
+          limit: 20
+          min_score: 100
+        output: "hn_data"
+
+      - name: "twitter_trends"
+        type: "cli"
+        command: "integrations research twitter"
+        args:
+          topic: "${industry}"
+          limit: 20
+        output: "twitter_data"
+
+  # Step 2: Analyze and cluster trending topics
+  - name: "analyze_trends"
+    description: "Use DSPy to identify and cluster trending topics across sources"
+    type: "dspy"
+    signature:
+      inputs:
+        - name: "reddit_topics"
+          type: "str"
+          description: "Topics from Reddit (JSON)"
+        - name: "hn_topics"
+          type: "str"
+          description: "Topics from HackerNews (JSON)"
+        - name: "twitter_topics"
+          type: "str"
+          description: "Topics from Twitter (JSON)"
+        - name: "industry"
+          type: "str"
+          description: "Target industry"
+      outputs:
+        - name: "trending_clusters"
+          type: "str"
+          description: "Clustered trending topics with engagement signals (JSON array)"
+      prompt: |
+        You are a content strategist analyzing trending topics across platforms.
+
+        Your task:
+        1. Identify common themes across Reddit, HackerNews, and Twitter
+        2. Cluster related topics together
+        3. Rank by engagement potential (upvotes, comments, shares)
+        4. Filter for relevance to ${industry}
+        5. Extract key insights and angles for each cluster
+
+        Return top 10 clusters as JSON array with:
+        - topic: Clear topic name
+        - angle: Unique perspective or hook
+        - engagement_score: 1-100 based on signals
+        - sources: Which platforms mentioned it
+        - key_points: 3-5 key discussion points
+    inputs:
+      reddit_topics: "${reddit_data}"
+      hn_topics: "${hn_data}"
+      twitter_topics: "${twitter_data}"
+      industry: "${industry}"
+    output: "trending_topics"
+
+  # Step 3: Generate LinkedIn posts for each topic (PARALLEL!)
+  - name: "generate_all_posts"
+    description: "Generate multiple post variations for each trending topic in parallel"
+    type: "foreach"
+    items: "${trending_topics}"
+    concurrency: 5  # Process 5 topics at once
+    step:
+      name: "generate_topic_posts"
+      type: "dspy"
+      signature:
+        inputs:
+          - name: "topic"
+            type: "str"
+            description: "Topic to write about (JSON with topic, angle, key_points)"
+          - name: "audience"
+            type: "str"
+            description: "Target audience description"
+          - name: "voice"
+            type: "str"
+            description: "Brand voice guidelines"
+          - name: "num_variations"
+            type: "str"
+            description: "Number of post variations to create"
+        outputs:
+          - name: "posts"
+            type: "str"
+            description: "Array of LinkedIn post variations (JSON)"
+        prompt: |
+          You are a LinkedIn content creator specializing in ${industry}.
+
+          Generate ${num_variations} high-performing LinkedIn posts about this topic.
+
+          For each post:
+          1. Start with a compelling hook (question, bold statement, or story)
+          2. Develop the main insight using the key points
+          3. Include 1-2 practical takeaways or actionable tips
+          4. End with engagement prompt (question or call-to-action)
+          5. Optimize for LinkedIn algorithm (line breaks, emojis strategically)
+          6. Keep under 1300 characters
+          7. Match the brand voice: ${voice}
+
+          Vary the approach:
+          - Post 1: Personal story/experience angle
+          - Post 2: Data-driven insights angle
+          - Post 3: Contrarian/hot take angle (if applicable)
+
+          Return JSON array: [{
+            post_text: "...",
+            hook_type: "question|story|statement",
+            estimated_engagement: "low|medium|high",
+            hashtags: ["tag1", "tag2"],
+            best_time: "morning|afternoon|evening"
+          }]
+      inputs:
+        topic: "${item}"  # Current trending topic
+        audience: "${target_audience}"
+        voice: "${brand_voice}"
+        num_variations: "3"
+      output: "posts"
+    output: "all_generated_posts"
+
+  # Step 4: Flatten and score all posts
+  - name: "score_all_posts"
+    description: "Analyze and score all generated posts for quality"
+    type: "dspy"
+    signature:
+      inputs:
+        - name: "posts"
+          type: "str"
+          description: "All generated posts from all topics (nested JSON)"
+        - name: "audience"
+          type: "str"
+          description: "Target audience"
+      outputs:
+        - name: "scored_posts"
+          type: "str"
+          description: "Posts with quality scores and rankings (JSON)"
+      prompt: |
+        You are a LinkedIn engagement expert analyzing post quality.
+
+        For each post, evaluate:
+        1. Hook strength (1-10): Does it grab attention?
+        2. Value delivery (1-10): Clear insights/takeaways?
+        3. Engagement potential (1-10): Likely to get comments/shares?
+        4. Audience fit (1-10): Resonates with ${audience}?
+        5. Authenticity (1-10): Genuine, not salesy?
+
+        Calculate overall_score (weighted average).
+
+        Return JSON with all posts sorted by score, including:
+        - All original fields
+        - Scores for each dimension
+        - overall_score (1-100)
+        - improvement_suggestions (if score < 80)
+    inputs:
+      posts: "${all_generated_posts}"
+      audience: "${target_audience}"
+    output: "scored_posts"
+
+  # Step 5: Select best posts and save
+  - name: "select_top_posts"
+    description: "Select top N posts for scheduling"
+    type: "cli"
+    command: "workflows transform"
+    args:
+      data: "${scored_posts}"
+      filter: "item['overall_score'] > 75"
+    output: "top_posts"
+
+  # Step 6: Save each post with metadata (PARALLEL!)
+  - name: "save_all_posts"
+    description: "Save each selected post to individual file"
+    type: "foreach"
+    items: "${top_posts}"
+    concurrency: 10
+    step:
+      name: "save_post"
+      type: "cli"
+      command: "workflows write"
+      args:
+        data: "${item}"
+        output: "${output_dir}/post_${item.topic_slug}_${item.hook_type}.json"
+        format: "json"
+      output: "saved_path"
+    output: "saved_posts"
+
+  # Step 7: Generate publishing schedule
+  - name: "create_schedule"
+    description: "Create optimal publishing schedule for selected posts"
+    type: "dspy"
+    signature:
+      inputs:
+        - name: "posts"
+          type: "str"
+          description: "Selected posts with metadata (JSON)"
+        - name: "frequency"
+          type: "str"
+          description: "Publishing frequency (daily/weekly)"
+      outputs:
+        - name: "schedule"
+          type: "str"
+          description: "Publishing schedule with dates and times (JSON)"
+      prompt: |
+        Create an optimal LinkedIn publishing schedule.
+
+        Guidelines:
+        1. Best times: Tue-Thu, 7-9am or 5-6pm (professional hours)
+        2. Avoid weekends for B2B content
+        3. Space posts 2-3 days apart minimum
+        4. Match post.best_time preferences when possible
+        5. Alternate hook types for variety
+        6. Start from next Monday
+
+        Return JSON array: [{
+          post_id: "...",
+          publish_date: "YYYY-MM-DD",
+          publish_time: "HH:MM",
+          day_of_week: "Monday",
+          reasoning: "Why this slot"
+        }]
+    inputs:
+      posts: "${top_posts}"
+      frequency: "${publish_schedule}"
+    output: "publishing_schedule"
+
+  # Step 8: Save final schedule
+  - name: "save_schedule"
+    description: "Save publishing schedule and summary report"
+    type: "cli"
+    command: "workflows write"
+    args:
+      data: |
+        {
+          "workflow_run": "${workflow.name}",
+          "completed_at": "${timestamp}",
+          "stats": {
+            "topics_analyzed": "${trending_topics.length}",
+            "posts_generated": "${all_generated_posts.length}",
+            "posts_selected": "${top_posts.length}",
+            "avg_quality_score": "${scored_posts.avg_score}"
+          },
+          "schedule": ${publishing_schedule},
+          "posts": ${saved_posts}
+        }
+      output: "${output_dir}/schedule_and_summary.json"
+      format: "json"
+    output: "final_report"
