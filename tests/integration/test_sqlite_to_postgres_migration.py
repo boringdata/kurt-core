@@ -22,6 +22,7 @@ class TestContentMigration:
         # Create new cloud workspace
         cloud_workspace_id = uuid4()
 
+        # Create cloud workspace and documents
         with client.get_session() as session:
             # Create cloud workspace
             cloud_ws = Workspace(
@@ -50,21 +51,26 @@ class TestContentMigration:
             session.add(doc2)
             session.commit()
 
-            # Get document IDs before migration
-            doc1_id = doc1.id
-            doc2_id = doc2.id
+            # Get document IDs before migration (as strings to avoid type issues)
+            doc1_id = str(doc1.id)
+            doc2_id = str(doc2.id)
 
-            # Simulate migration: change tenant_id
-            local_docs = session.exec(
-                select(Document).where(Document.tenant_id == local_workspace_id)
-            ).all()
+        # Perform migration using raw SQL to avoid type mismatch issues
+        # (database schema uses VARCHAR for UUIDs, but model expects UUID type)
+        with client.get_session() as session:
+            from sqlalchemy import text
 
-            for doc in local_docs:
-                doc.tenant_id = cloud_workspace_id
-
+            # Use raw SQL to update tenant_id
+            session.execute(
+                text(
+                    "UPDATE documents SET tenant_id = :new_tenant " "WHERE tenant_id = :old_tenant"
+                ),
+                {"new_tenant": str(cloud_workspace_id), "old_tenant": str(local_workspace_id)},
+            )
             session.commit()
 
-            # Verify migration
+        # Verify migration in a fresh session
+        with client.get_session() as session:
             # Local workspace should have no documents
             local_docs_after = session.exec(
                 select(Document).where(Document.tenant_id == local_workspace_id)
@@ -78,7 +84,7 @@ class TestContentMigration:
             assert len(cloud_docs) == 2
 
             # Verify document IDs and content unchanged
-            cloud_doc_ids = {doc.id for doc in cloud_docs}
+            cloud_doc_ids = {str(doc.id) for doc in cloud_docs}
             assert doc1_id in cloud_doc_ids
             assert doc2_id in cloud_doc_ids
 

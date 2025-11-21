@@ -128,7 +128,9 @@ class PostgreSQLClient(DatabaseClient):
                 max_overflow=10,  # Max connections beyond pool_size
             )
 
-        session = Session(self._engine)
+        # Create session with expire_on_commit=False to avoid refresh issues
+        # when database schema uses VARCHAR for UUID columns
+        session = Session(self._engine, expire_on_commit=False)
 
         # Set workspace context if in multi-tenant mode
         # This can be used by RLS policies or application-level filtering

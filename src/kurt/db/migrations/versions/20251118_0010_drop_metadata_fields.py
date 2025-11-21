@@ -255,6 +255,7 @@ def upgrade() -> None:
     This is done in one migration to ensure atomicity.
     """
     conn = op.get_bind()
+    dialect = conn.dialect.name
 
     # Step 1: Migrate data from metadata fields to knowledge graph
     print("Migrating metadata to entities...")
@@ -268,9 +269,61 @@ def upgrade() -> None:
     else:
         print("  No metadata to migrate")
 
-    # Step 2: Drop the deprecated columns
-    dialect = conn.dialect.name
+    # Step 2: Update metadata sync trigger to remove references to dropped fields
+    if dialect == "postgresql":
+        # PostgreSQL: Drop and recreate trigger without deprecated fields
+        op.execute("DROP TRIGGER IF EXISTS documents_metadata_sync_trigger ON documents")
+        op.execute("DROP FUNCTION IF EXISTS documents_metadata_sync_trigger_fn()")
 
+        # Recreate trigger function without primary_topics and tools_technologies
+        op.execute("""
+            CREATE OR REPLACE FUNCTION documents_metadata_sync_trigger_fn()
+            RETURNS TRIGGER AS $$
+            BEGIN
+                IF (
+                    NEW.content_type IS DISTINCT FROM OLD.content_type OR
+                    NEW.title IS DISTINCT FROM OLD.title OR
+                    NEW.description IS DISTINCT FROM OLD.description OR
+                    (NEW.author::text) IS DISTINCT FROM (OLD.author::text) OR
+                    NEW.published_date IS DISTINCT FROM OLD.published_date OR
+                    NEW.indexed_with_hash IS DISTINCT FROM OLD.indexed_with_hash
+                ) THEN
+                    INSERT INTO metadata_sync_queue (document_id, created_at)
+                    VALUES (NEW.id, NOW());
+                END IF;
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql;
+        """)
+
+        op.execute("""
+            CREATE TRIGGER documents_metadata_sync_trigger
+            AFTER UPDATE ON documents
+            FOR EACH ROW
+            EXECUTE FUNCTION documents_metadata_sync_trigger_fn();
+        """)
+    else:
+        # SQLite: Drop and recreate trigger without deprecated fields
+        op.execute("DROP TRIGGER IF EXISTS documents_metadata_sync_trigger")
+
+        op.execute("""
+            CREATE TRIGGER IF NOT EXISTS documents_metadata_sync_trigger
+            AFTER UPDATE ON documents
+            WHEN (
+                NEW.content_type != OLD.content_type OR
+                NEW.title != OLD.title OR
+                NEW.description != OLD.description OR
+                NEW.author != OLD.author OR
+                NEW.published_date != OLD.published_date OR
+                NEW.indexed_with_hash != OLD.indexed_with_hash
+            )
+            BEGIN
+                INSERT INTO metadata_sync_queue (document_id, created_at)
+                VALUES (NEW.id, datetime('now'));
+            END;
+        """)
+
+    # Step 3: Drop the deprecated columns
     if dialect == "sqlite":
         # SQLite: Recreate table without deprecated columns
         with op.batch_alter_table("documents", schema=None) as batch_op:
