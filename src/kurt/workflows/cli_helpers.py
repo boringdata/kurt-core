@@ -41,11 +41,11 @@ def run_with_background_support(
         - Otherwise: workflow result (dict)
 
     Example:
-        from kurt.workflows.fetch import fetch_batch_workflow
+        from kurt.content.fetch.workflow import fetch_workflow
         from kurt.workflows.cli_helpers import run_with_background_support
 
         result = run_with_background_support(
-            workflow_func=fetch_batch_workflow,
+            workflow_func=fetch_workflow,
             workflow_args={"identifiers": doc_ids, "fetch_engine": "trafilatura"},
             background=background_flag,
             workflow_id=workflow_id_arg,
@@ -122,7 +122,7 @@ def run_with_background_support(
         elif "index" in workflow_func.__name__:
             pass
         elif "map" in workflow_func.__name__:
-            from kurt.workflows.map import get_map_queue
+            from kurt.content.map.workflow import get_map_queue
 
             get_map_queue()
         else:

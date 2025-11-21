@@ -206,8 +206,10 @@ def select_documents_for_fetch(
     file_doc_ids = []
     if files:
         file_list = [f.strip() for f in files.split(",")]
-        file_docs, new_count, file_errors = add_documents_for_files(file_list)
+        file_docs, new_count, file_errors, copied_files = add_documents_for_files(file_list)
         errors.extend(file_errors)
+        # Add copied file messages to warnings
+        warnings.extend(copied_files)
         if new_count > 0:
             warnings.append(f"Created {new_count} document(s) for local files")
         file_doc_ids = [doc.id for doc in file_docs if doc.id]
@@ -246,10 +248,23 @@ def select_documents_for_fetch(
         limit=limit,
     )
 
-    # Execute query
-    docs_before_status_filter = (
-        list(session.exec(stmt).all()) if not with_status and not refetch else []
-    )
+    # Execute query without status filter to check for FETCHED documents
+    if not with_status and not refetch and id_uuids:
+        # For ID-based queries, query without status filter to find FETCHED docs
+        stmt_no_filter = build_document_query(
+            id_uuids=id_uuids,
+            with_status=None,
+            refetch=True,  # Include all statuses
+            in_cluster=in_cluster,
+            with_content_type=with_content_type,
+            limit=None,
+        )
+        docs_before_status_filter = list(session.exec(stmt_no_filter).all())
+    elif not with_status and not refetch:
+        # For pattern-based queries
+        docs_before_status_filter = list(session.exec(stmt).all())
+    else:
+        docs_before_status_filter = []
 
     # Re-build query with status filter for final results
     stmt = build_document_query(
@@ -295,9 +310,71 @@ def select_documents_for_fetch(
     }
 
 
+def select_documents_to_fetch(filters: DocumentFetchFilters) -> list[dict]:
+    """
+    Select documents to fetch based on filters (for workflow steps).
+
+    Returns lightweight dicts suitable for checkpointing.
+    """
+    from kurt.content.document import add_documents_for_files, add_documents_for_urls
+    from kurt.content.filtering import (
+        apply_glob_filters,
+        build_document_query,
+        resolve_ids_to_uuids,
+    )
+    from kurt.db.database import get_session
+
+    session = get_session()
+
+    # Step 1: Create documents for URLs
+    if filters.url_list:
+        add_documents_for_urls(filters.url_list)
+
+    # Step 2: Create documents for files
+    if filters.file_list:
+        add_documents_for_files(filters.file_list)
+
+    # Step 3: Resolve IDs to UUIDs
+    id_uuids = []
+    if filters.id_list:
+        id_uuids = resolve_ids_to_uuids(filters.id_list)
+
+    # Step 4: Build and execute query
+    stmt = build_document_query(
+        id_uuids=id_uuids,
+        with_status=filters.with_status,
+        refetch=filters.refetch,
+        in_cluster=filters.in_cluster,
+        with_content_type=filters.with_content_type,
+        limit=filters.limit,
+    )
+    docs = list(session.exec(stmt).all())
+
+    # Step 5: Apply glob filters
+    filtered_docs = apply_glob_filters(
+        docs,
+        include_pattern=filters.include_pattern,
+        exclude_pattern=filters.exclude_pattern,
+    )
+
+    # Convert to lightweight dicts for checkpoint
+    return [
+        {
+            "id": str(doc.id),
+            "source_url": doc.source_url,
+            "cms_platform": doc.cms_platform,
+            "cms_instance": doc.cms_instance,
+            "cms_document_id": doc.cms_document_id,
+            "discovery_url": doc.discovery_url,
+        }
+        for doc in filtered_docs
+    ]
+
+
 __all__ = [
     "DocumentFetchFilters",
     "build_document_filters",
     "estimate_fetch_cost",
     "select_documents_for_fetch",
+    "select_documents_to_fetch",
 ]

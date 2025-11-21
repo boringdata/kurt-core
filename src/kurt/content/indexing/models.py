@@ -4,43 +4,13 @@ This module contains all Pydantic models used throughout the indexing pipeline:
 - Document metadata extraction models
 - Entity and relationship extraction models
 - Entity resolution models
-- Type constants
 """
 
-from enum import Enum
 from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from kurt.db.models import ContentType
-
-# ============================================================================
-# Entity and Relationship Type Constants
-# ============================================================================
-
-
-class EntityType(str, Enum):
-    """Canonical entity types extracted during document indexing."""
-
-    PRODUCT = "Product"
-    FEATURE = "Feature"
-    TECHNOLOGY = "Technology"
-    TOPIC = "Topic"
-    COMPANY = "Company"
-    INTEGRATION = "Integration"
-
-
-class RelationshipType(str, Enum):
-    """Canonical relationship types extracted during document indexing."""
-
-    MENTIONS = "mentions"
-    PART_OF = "part_of"
-    INTEGRATES_WITH = "integrates_with"
-    ENABLES = "enables"
-    RELATED_TO = "related_to"
-    DEPENDS_ON = "depends_on"
-    REPLACES = "replaces"
-
+from kurt.db.models import ContentType, EntityType, RelationshipType
 
 # ============================================================================
 # Document Metadata Models (used by IndexDocument DSPy signature)

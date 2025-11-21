@@ -42,4 +42,13 @@ def fetch_with_firecrawl(url: str) -> tuple[str, dict]:
     if hasattr(result, "metadata") and result.metadata:
         metadata = result.metadata if isinstance(result.metadata, dict) else {}
 
+    # Ensure we have a title - Firecrawl may use different keys
+    # Try common metadata fields for title
+    if "title" not in metadata and metadata:
+        # Check alternate keys that might contain the title
+        for key in ["ogTitle", "og:title", "twitter:title", "pageTitle"]:
+            if key in metadata and metadata[key]:
+                metadata["title"] = metadata[key]
+                break
+
     return content, metadata

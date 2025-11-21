@@ -4,9 +4,9 @@ from uuid import uuid4
 
 import pytest
 
-from kurt.content.fetch import extract_document_links, save_document_links
+from kurt.content.document import save_document_links
+from kurt.content.fetch import extract_document_links
 from kurt.db.database import get_session
-from kurt.db.knowledge_graph import get_document_links
 from kurt.db.models import Document, DocumentLink, IngestionStatus, SourceType
 
 
@@ -307,6 +307,8 @@ class TestGetDocumentLinks:
 
     def test_get_outbound_links(self, tmp_project):
         """Test getting outbound links (links FROM a document)."""
+        from kurt.content.document import get_document_links
+
         session = get_session()
         # Create documents
         source_doc = Document(
@@ -343,6 +345,8 @@ class TestGetDocumentLinks:
 
     def test_get_inbound_links(self, tmp_project):
         """Test getting inbound links (links TO a document)."""
+        from kurt.content.document import get_document_links
+
         session = get_session()
         # Create documents
         source_doc = Document(
@@ -379,6 +383,8 @@ class TestGetDocumentLinks:
 
     def test_get_links_no_results(self, tmp_project):
         """Test getting links when document has no links."""
+        from kurt.content.document import get_document_links
+
         session = get_session()
         doc = Document(
             title="Isolated",
@@ -395,6 +401,8 @@ class TestGetDocumentLinks:
 
     def test_get_links_invalid_direction(self, tmp_project):
         """Test that invalid direction raises ValueError."""
+        from kurt.content.document import get_document_links
+
         session = get_session()
         doc = Document(
             title="Doc",
@@ -410,6 +418,8 @@ class TestGetDocumentLinks:
 
     def test_get_links_nonexistent_document(self, tmp_project):
         """Test that nonexistent document raises ValueError."""
+        from kurt.content.document import get_document_links
+
         fake_id = uuid4()
 
         with pytest.raises(ValueError):
@@ -421,6 +431,8 @@ class TestIntegration:
 
     def test_extract_and_save_workflow(self, tmp_project):
         """Test extracting links from content and saving to database."""
+        from kurt.content.document import get_document_links
+
         session = get_session()
         # Create documents
         doc1 = Document(

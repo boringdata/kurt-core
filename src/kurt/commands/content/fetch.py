@@ -1,11 +1,25 @@
 """Fetch command - Download + index content (root-level command)."""
 
 import logging
+import time
 
 import click
 from rich.console import Console
 
 from kurt.admin.telemetry.decorators import track_command
+from kurt.commands.content._fetch_helpers import (
+    build_background_filter_desc,
+    build_intro_messages,
+    check_guardrails,
+    display_dry_run_preview,
+    display_json_output,
+    display_no_documents_help,
+    display_refetch_warning,
+    display_result_messages,
+    get_engine_display,
+    handle_force_flag,
+    merge_identifier_into_filters,
+)
 from kurt.utils import should_force
 
 console = Console()
@@ -214,66 +228,18 @@ def fetch_cmd(
         kurt content fetch --with-status NOT_FETCHED --yes
         kurt content fetch --with-status NOT_FETCHED -y
     """
-    import os
-
     from kurt.content.fetch import select_documents_for_fetch
-    from kurt.content.fetch.workflow import fetch_batch_workflow
+    from kurt.content.fetch.workflow import fetch_workflow
 
-    # Handle positional identifier argument (nominal case: 1 id/url/file)
-    if identifier:
-        # Detect what type of identifier this is
-        if identifier.startswith(("http://", "https://")):
-            # It's a URL
-            if urls:
-                urls = f"{identifier},{urls}"
-            else:
-                urls = identifier
-        elif (
-            os.path.exists(identifier)
-            or identifier.startswith(("./", "../", "/"))
-            or "/" in identifier
-        ):
-            # It's a file path (exists or looks like a path)
-            if files_paths:
-                files_paths = f"{identifier},{files_paths}"
-            else:
-                files_paths = identifier
-        else:
-            # Assume it's a document ID (could be partial UUID)
-            # Resolve partial UUID to full UUID
-            from kurt.content.filtering import resolve_identifier_to_doc_id
+    # Step 1: Merge identifier into appropriate filter
+    urls, files_paths, ids = merge_identifier_into_filters(
+        identifier, url, urls, file_path, files_paths, ids, console
+    )
 
-            try:
-                doc_id = resolve_identifier_to_doc_id(identifier)
-                if ids:
-                    ids = f"{doc_id},{ids}"
-                else:
-                    ids = doc_id
-            except ValueError as e:
-                console.print(f"[red]Error:[/red] {e}")
-                raise click.Abort()
+    # Step 2: Handle deprecated --force flag
+    effective_refetch = handle_force_flag(force, yes_flag, refetch, console)
 
-    # Merge --url into --urls (--url is deprecated, kept for backwards compatibility)
-    if url:
-        console.print("[yellow]⚠️  --url is deprecated, use positional IDENTIFIER instead[/yellow]")
-        console.print("[dim]Example: kurt content fetch https://example.com/article[/dim]")
-        if urls:
-            # Combine --url with --urls
-            urls = f"{url},{urls}"
-        else:
-            urls = url
-
-    # Merge --file into --files (--file is deprecated, kept for backwards compatibility)
-    if file_path:
-        console.print("[yellow]⚠️  --file is deprecated, use positional IDENTIFIER instead[/yellow]")
-        console.print("[dim]Example: kurt content fetch ./docs/article.md[/dim]")
-        if files_paths:
-            # Combine --file with --files
-            files_paths = f"{file_path},{files_paths}"
-        else:
-            files_paths = file_path
-
-    # Call ingestion layer for filtering and validation
+    # Step 3: Select documents for fetching
     try:
         result = select_documents_for_fetch(
             include_pattern=include_pattern,
@@ -286,10 +252,9 @@ def fetch_cmd(
             exclude=exclude,
             limit=limit,
             skip_index=skip_index,
-            refetch=refetch,
+            refetch=effective_refetch,
         )
     except ValueError as e:
-        # If no filter provided, show full help
         if "Requires at least ONE filter" in str(e):
             ctx = click.get_current_context()
             click.echo(ctx.get_help())
@@ -302,259 +267,245 @@ def fetch_cmd(
             console.print("  kurt content fetch --with-status NOT_FETCHED")
             raise click.Abort()
 
-    # Display warnings
-    for warning in result["warnings"]:
-        console.print(f"[yellow]Warning:[/yellow] {warning}")
-
-    # Display errors
-    for error in result["errors"]:
-        console.print(f"[red]Error:[/red] {error}")
+    # Step 4: Display warnings and errors
+    display_result_messages(result, console)
 
     docs = result["docs"]
     doc_ids_to_fetch = result["doc_ids"]
     excluded_fetched_count = result.get("excluded_fetched_count", 0)
 
-    # Warn about duplicates when using --refetch with already FETCHED documents
-    if refetch and excluded_fetched_count > 0:
-        console.print(
-            f"[yellow]⚠️  Note:[/yellow] {excluded_fetched_count} document(s) are already FETCHED and will be re-fetched (--refetch enabled)"
-        )
-        console.print(
-            "[dim]This will re-download and re-index content, which may incur LLM costs[/dim]\n"
-        )
+    # Step 5: Display warnings about re-fetching
+    display_refetch_warning(refetch, excluded_fetched_count, console)
 
+    # Step 6: Handle case with no documents
     if not docs:
-        # Show explicit message about excluded FETCHED documents
-        if excluded_fetched_count > 0:
-            console.print(
-                f"[yellow]Found {excluded_fetched_count} document(s), but all are already FETCHED[/yellow]"
-            )
-            console.print(
-                "\n[dim]By default, 'kurt content fetch' skips documents that are already FETCHED.[/dim]"
-            )
-            console.print("[dim]To re-fetch these documents, use the --refetch flag:[/dim]")
-
-            if in_cluster:
-                console.print(
-                    f"\n  [cyan]kurt content fetch --in-cluster '{in_cluster}' --refetch[/cyan]"
-                )
-            elif include_pattern:
-                console.print(
-                    f"\n  [cyan]kurt content fetch --include '{include_pattern}' --refetch[/cyan]"
-                )
-            elif urls:
-                console.print(f"\n  [cyan]kurt content fetch --urls '{urls}' --refetch[/cyan]")
-            else:
-                console.print("\n  [cyan]kurt content fetch <your-filters> --refetch[/cyan]")
-
-            console.print("\n[dim]To view already fetched content, use:[/dim]")
-            if in_cluster:
-                console.print(f"  [cyan]kurt content list --in-cluster '{in_cluster}'[/cyan]")
-            else:
-                console.print("  [cyan]kurt content list --with-status FETCHED[/cyan]")
-        else:
-            console.print("[yellow]No documents found matching filters[/yellow]")
-
+        display_no_documents_help(
+            excluded_fetched_count, in_cluster, include_pattern, urls, ids, console
+        )
         return
 
-    # Dry-run mode
+    # Step 7: Dry-run mode
     if dry_run:
-        console.print("[bold]DRY RUN - Preview only (no actual fetching)[/bold]\n")
-        console.print(f"[cyan]Would fetch {len(docs)} documents:[/cyan]\n")
-        for doc in docs[:10]:
-            console.print(f"  • {doc.source_url or doc.content_path}")
-        if len(docs) > 10:
-            console.print(f"  [dim]... and {len(docs) - 10} more[/dim]")
-
-        # Estimate time based on concurrency and average fetch time
-        avg_fetch_time_seconds = 3  # Conservative estimate: 3 seconds per document
-        estimated_time_seconds = (len(docs) / concurrency) * avg_fetch_time_seconds
-
-        if estimated_time_seconds < 60:
-            time_estimate = f"{int(estimated_time_seconds)} seconds"
-        else:
-            time_estimate = f"{int(estimated_time_seconds / 60)} minutes"
-
-        console.print(
-            f"\n[dim]Estimated cost: ${result['estimated_cost']:.2f} (LLM indexing)[/dim]"
-        )
-        console.print(
-            f"[dim]Estimated time: ~{time_estimate} (with concurrency={concurrency})[/dim]"
-        )
+        display_dry_run_preview(docs, concurrency, result, console)
         return
 
-    # Handle --yes/-y and deprecated --force
-    # Show deprecation warning if --force is used
-    if force and not yes_flag:
-        console.print("[yellow]⚠️  --force is deprecated, use --yes or -y instead[/yellow]")
-
-    # Check force mode (CLI flag or KURT_FORCE=1 env var)
+    # Step 8: Check guardrails
     force_mode = should_force(yes_flag or force)
+    if not check_guardrails(docs, concurrency, force_mode, console):
+        return
 
-    # Guardrail: warn if concurrency >20 (rate limit risk)
-    if concurrency > 20 and not force_mode:
-        console.print(
-            f"[yellow]⚠️  High concurrency ({concurrency}) may trigger rate limits[/yellow]"
-        )
-        console.print("[dim]Use --force or set KURT_FORCE=1 to skip this warning[/dim]")
-        if not click.confirm("Continue anyway?"):
-            console.print("[dim]Aborted[/dim]")
-            return
-
-    # Guardrail: warn if >100 docs without --force
-    if len(docs) > 100 and not force_mode:
-        console.print(f"[yellow]⚠️  About to fetch {len(docs)} documents[/yellow]")
-        if not click.confirm("Continue?"):
-            console.print("[dim]Aborted[/dim]")
-            return
-
-    # JSON output format
+    # Step 9: JSON output format
     if output_format == "json":
-        import json
-
-        output = {
-            "total": len(docs),
-            "documents": [{"id": str(d.id), "url": d.source_url or d.content_path} for d in docs],
-        }
-        console.print(json.dumps(output, indent=2))
-        if not click.confirm("\nProceed with fetch?"):
+        if not display_json_output(docs, console):
             return
 
-    # Display intro block
+    # Step 10: Display intro block
     from kurt.commands.content._live_display import print_intro_block
-    from kurt.content.fetch import _get_fetch_engine
 
-    # Detect if we're fetching CMS documents
-    cms_count = sum(1 for d in docs if d.cms_platform and d.cms_instance)
-    web_count = len(docs) - cms_count
-    has_cms = cms_count > 0
-    has_web = web_count > 0
-
-    # Determine engine display based on content sources
-    resolved_engine = _get_fetch_engine(override=engine)
-    engine_displays = {
-        "trafilatura": "Trafilatura (free)",
-        "firecrawl": "Firecrawl (API)",
-        "httpx": "httpx (fetching) + trafilatura (extraction)",
-    }
-
-    if has_cms and has_web:
-        # Mixed: show both engines
-        web_engine_display = engine_displays.get(resolved_engine, f"{resolved_engine} (unknown)")
-        engine_display = f"CMS API + {web_engine_display}"
-    elif has_cms:
-        # CMS only
-        engine_display = "CMS API"
-    else:
-        # Web only
-        engine_display = engine_displays.get(resolved_engine, f"{resolved_engine} (unknown)")
-
-    intro_messages = [
-        f"Fetching {len(doc_ids_to_fetch)} document(s) with {concurrency} parallel downloads",
-        f"[dim]Engine: {engine_display}[/dim]",
-    ]
-
-    if not skip_index:
-        intro_messages.append(
-            f"[dim]LLM Indexing: enabled (parallel with concurrency={concurrency})[/dim]\n"
-        )
-    else:
-        intro_messages.append("[dim]LLM Indexing: skipped[/dim]\n")
-
+    engine_display = get_engine_display(docs, engine)
+    intro_messages = build_intro_messages(
+        len(doc_ids_to_fetch), concurrency, engine_display, skip_index
+    )
     print_intro_block(console, intro_messages)
 
-    # Background mode support
+    # Step 11: Background mode support
     if background:
         from kurt.workflows.cli_helpers import run_with_background_support
-        from kurt.workflows.fetch import fetch_batch_workflow
 
         console.print("[dim]Enqueueing workflow...[/dim]\n")
+        filter_desc = build_background_filter_desc(
+            include_pattern, urls, in_cluster, with_status, with_content_type
+        )
 
-        # Build filter description for workflow display
-        filter_desc = []
-        if include_pattern:
-            filter_desc.append(f"include: {include_pattern}")
-        if urls:
-            filter_desc.append(f"urls: {urls[:50]}...")
-        if in_cluster:
-            filter_desc.append(f"cluster: {in_cluster}")
-        if with_status:
-            filter_desc.append(f"status: {with_status}")
-        if with_content_type:
-            filter_desc.append(f"type: {with_content_type}")
-
-        result = run_with_background_support(
-            workflow_func=fetch_batch_workflow,
+        run_with_background_support(
+            workflow_func=fetch_workflow,
             workflow_args={
                 "identifiers": doc_ids_to_fetch,
                 "fetch_engine": engine,
-                "extract_metadata": not skip_index,  # Convert skip_index to extract_metadata
-                "filter_description": " | ".join(filter_desc)
-                if filter_desc
-                else None,  # Pass filter info
+                "filter_description": filter_desc,
             },
             background=True,
             workflow_id=None,
             priority=priority,
         )
-        return  # Background mode complete, exit early
+        return
 
-    # Fetch in parallel with live display using 3-stage structure
+    # Step 12: Execute fetch and indexing workflows
     try:
-        import time
+        from dbos import DBOS
 
         from kurt.commands.content._live_display import (
             LiveProgressDisplay,
-            finalize_knowledge_graph_with_progress,
             print_command_summary,
             print_stage_header,
             print_stage_summary,
+            read_multiple_streams_parallel,
+            read_stream_with_display,
         )
+        from kurt.content.indexing.workflow_indexing import complete_indexing_workflow
+        from kurt.workflows import get_dbos
 
+        get_dbos()  # Initialize DBOS
         overall_start = time.time()
 
         # ====================================================================
-        # STAGE 1: Fetch Content
+        # STAGE 1: Fetch & Index Content (combined workflow)
         # ====================================================================
-        print_stage_header(console, 1, "FETCH CONTENT")
+        if skip_index:
+            print_stage_header(console, 1, "FETCH CONTENT & GENERATE EMBEDDINGS")
+        else:
+            print_stage_header(console, 1, "FETCH CONTENT & GENERATE EMBEDDINGS")
 
         with LiveProgressDisplay(console, max_log_lines=10) as display:
             display.start_stage("Fetching content", total=len(doc_ids_to_fetch))
 
-            # Use workflow-based batch fetching (replaces legacy async approach)
-            batch_result = fetch_batch_workflow(
+            # Start fetch workflow and poll events for progress
+            import queue
+            import threading
+
+            from dbos import DBOS
+
+            handle = DBOS.start_workflow(
+                fetch_workflow,
                 identifiers=doc_ids_to_fetch,
                 fetch_engine=engine,
-                extract_metadata=not skip_index,  # Combine fetch + index if not skipping
+                max_concurrent=concurrency,
             )
 
-            # Update progress bar to completion
-            display.update_progress(advance=len(doc_ids_to_fetch))
+            # Read streams for live progress with sorted display
+            total = len(doc_ids_to_fetch)
+            completed_count = 0
+            completed_lock = threading.Lock()
 
-            # Extract results
-            all_results = batch_result["results"]
-            successful = [r for r in all_results if r.get("status") == "FETCHED"]
-            failed = [r for r in all_results if r.get("status") != "FETCHED"]
+            # Event queue for sorting by timestamp
+            event_queue = queue.Queue()
+            display_thread_stop = threading.Event()
 
-            # Log fetch results
-            for result in successful:
-                doc_id = str(result["document_id"])
-                title = result.get("metadata", {}).get("title") or "Untitled"
-                size_kb = (
-                    result.get("content_length", 0) / 1024 if result.get("content_length") else 0
-                )
-                display.log(
-                    f"✓ Fetched [{doc_id[:8]}] {title[:50]} ({size_kb:.1f}KB)",
-                    style="dim green",
-                )
+            def format_event(update, doc_id):
+                """Format an event for display."""
+                status = update.get("status")
+                duration_ms = update.get("duration_ms")
+                timing = f" ({duration_ms}ms)" if duration_ms else ""
+                timestamp = update.get("timestamp", "")
 
-            for result in failed:
-                doc_id = str(result.get("document_id", result.get("identifier", "unknown")))
-                error = result.get("error", "Unknown error")
-                error_short = error[:60] + "..." if len(error) > 60 else error
-                display.log(f"✗ Fetch failed [{doc_id[:8]}] {error_short}", style="red")
+                if timestamp:
+                    time_str = timestamp.split("T")[1][:12]
+                    ts_display = f"[{time_str}] "
+                else:
+                    ts_display = ""
+
+                if status == "started":
+                    return (timestamp, f"{ts_display}⠋ Started [{doc_id}]", "dim")
+                elif status == "resolved":
+                    return (timestamp, f"{ts_display}→ Resolved [{doc_id}]{timing}", "dim")
+                elif status == "fetched":
+                    return (timestamp, f"{ts_display}⠋ Fetched [{doc_id}]{timing}", "dim cyan")
+                elif status == "embedded":
+                    return (
+                        timestamp,
+                        f"{ts_display}⠋ Embeddings extracted [{doc_id}]{timing}",
+                        "dim",
+                    )
+                elif status == "saved":
+                    return (timestamp, f"{ts_display}⠋ Saved [{doc_id}]{timing}", "dim")
+                elif status == "links_extracted":
+                    return (timestamp, f"{ts_display}→ Extracted links [{doc_id}]{timing}", "dim")
+                elif status == "completed":
+                    return (timestamp, f"{ts_display}✓ Completed [{doc_id}]{timing}", "dim green")
+                elif status == "error":
+                    error = update.get("error", "Unknown error")
+                    error_short = error[:60] + "..." if len(error) > 60 else error
+                    return (timestamp, f"✗ Error [{doc_id}] {error_short}", "dim red")
+                return None
+
+            def display_sorted_events():
+                """Periodically flush events sorted by timestamp."""
+                buffer = []
+                while not display_thread_stop.is_set() or not event_queue.empty():
+                    # Collect events for 100ms
+                    deadline = time.time() + 0.1
+                    while time.time() < deadline:
+                        try:
+                            event = event_queue.get(timeout=0.01)
+                            buffer.append(event)
+                        except queue.Empty:
+                            pass
+
+                    # Sort by timestamp and display
+                    if buffer:
+                        # Safe sort: treat empty timestamps as very old (sort first)
+                        buffer.sort(key=lambda x: x[0] if x[0] else "")
+                        for timestamp, message, style in buffer:
+                            display.log(message, style=style)
+                        buffer = []
+
+            def read_progress_stream(index: int):
+                """Read progress stream for one document."""
+                nonlocal completed_count
+                doc_id = "..."
+
+                try:
+                    for update in DBOS.read_stream(handle.workflow_id, f"doc_{index}_progress"):
+                        status = update.get("status")
+
+                        # Extract document ID from stream if available
+                        if "identifier" in update:
+                            identifier = update["identifier"]
+                            doc_id = identifier[:8] if len(identifier) > 8 else identifier
+                        elif "document_id" in update:
+                            document_id = update["document_id"]
+                            doc_id = document_id[:8] if len(document_id) > 8 else document_id
+
+                        # Format and queue event
+                        formatted = format_event(update, doc_id)
+                        if formatted:
+                            event_queue.put(formatted)
+
+                        # Update progress for terminal statuses
+                        if status in ("completed", "error"):
+                            display.update_progress(advance=1)
+                            with completed_lock:
+                                completed_count += 1
+
+                except Exception as e:
+                    event_queue.put(("", f"Stream error for doc_{index}: {str(e)}", "dim red"))
+
+            # Start display thread
+            display_thread = threading.Thread(target=display_sorted_events)
+            display_thread.start()
+
+            # Start thread for each document stream
+            threads = []
+            for i in range(total):
+                t = threading.Thread(target=read_progress_stream, args=(i,))
+                t.start()
+                threads.append(t)
+
+            # Wait for all streams to complete
+            for t in threads:
+                t.join()
+
+            # Stop display thread and wait for final flush
+            display_thread_stop.set()
+            display_thread.join()
+
+            # Get final result
+            fetch_results = handle.get_result()
+
+            # Normalize results to a list
+            if isinstance(fetch_results, dict):
+                if "results" in fetch_results:
+                    # Batch response with results list
+                    fetch_results = fetch_results["results"]
+                else:
+                    # Single document response - wrap in list
+                    fetch_results = [fetch_results]
 
             display.complete_stage()
+
+        # Extract successful/failed from results
+        successful = [r for r in fetch_results if r.get("status") == "FETCHED"]
+        failed = [r for r in fetch_results if r.get("status") != "FETCHED"]
 
         # Stage 1 summary
         print_stage_summary(
@@ -565,22 +516,91 @@ def fetch_cmd(
             ],
         )
 
+        # Display error details if any documents failed
+        if failed:
+            console.print("\n[bold red]Failed documents:[/bold red]")
+            for result in failed:
+                doc_id = result.get("document_id", "unknown")[:8]
+                url = result.get("source_url", result.get("identifier", "unknown"))
+                error = result.get("error", "Unknown error")
+                console.print(f"  [red]✗[/red] [{doc_id}] {url}")
+                console.print(f"    [dim red]Error: {error}[/dim red]")
+
         # ====================================================================
-        # STAGE 2: Metadata Extraction Summary (handled by workflow)
+        # STAGES 2-3: Indexing (Metadata Extraction + Entity Resolution)
         # ====================================================================
         indexed = 0
         skipped_count = 0
+        indexed_results = []
+        kg_result = None
 
         if not skip_index and successful:
-            # Metadata extraction was already handled by fetch_and_index_workflow
-            # Just count successful indexing from results
+            from kurt.commands.content._live_display import (
+                read_multiple_streams_parallel,
+                read_stream_with_display,
+            )
+            from kurt.content.indexing.workflow_indexing import complete_indexing_workflow
+
+            # Extract document IDs from successful fetch results
+            doc_ids_to_index = [r["document_id"] for r in successful]
+
+            # Start indexing workflow (runs both metadata extraction + entity resolution)
+            index_handle = DBOS.start_workflow(
+                complete_indexing_workflow,
+                document_ids=doc_ids_to_index,
+                force=False,
+                enable_kg=True,
+                max_concurrent=concurrency,
+            )
+
+            # ====================================================================
+            # STAGE 2: Metadata Extraction
+            # ====================================================================
             print_stage_header(console, 2, "METADATA EXTRACTION")
 
-            indexed_results = [r for r in successful if r.get("index_metadata")]
-            indexed = len(indexed_results)
+            with LiveProgressDisplay(console, max_log_lines=10) as display:
+                display.start_stage("Metadata extraction", total=len(doc_ids_to_index))
 
-            # Show summary
-            index_failed = len(successful) - indexed
+                # Read document progress streams in parallel
+                read_multiple_streams_parallel(
+                    workflow_id=index_handle.workflow_id,
+                    stream_names=[f"doc_{i}_progress" for i in range(len(doc_ids_to_index))],
+                    display=display,
+                    on_event=lambda _stream, event: display.update_progress(advance=1)
+                    if event.get("advance_progress")
+                    else None,
+                )
+
+                display.complete_stage()
+
+            # ====================================================================
+            # STAGE 3: Entity Resolution
+            # ====================================================================
+            print_stage_header(console, 3, "ENTITY RESOLUTION")
+
+            with LiveProgressDisplay(console, max_log_lines=10) as display:
+                display.start_stage("Entity resolution", total=1)
+
+                # Read entity resolution stream
+                read_stream_with_display(
+                    workflow_id=index_handle.workflow_id,
+                    stream_name="entity_resolution_progress",
+                    display=display,
+                    on_event=None,
+                )
+
+                display.complete_stage()
+
+            # Get final result
+            index_result = index_handle.get_result()
+
+            # Extract stats from result
+            extract_results = index_result.get("extract_results", {})
+            indexed = extract_results.get("succeeded", 0)
+            skipped_count = extract_results.get("skipped", 0)
+            index_failed = extract_results.get("failed", 0)
+
+            # Stage 2 summary
             print_stage_summary(
                 console,
                 [
@@ -590,30 +610,25 @@ def fetch_cmd(
                 ],
             )
 
-            # ====================================================================
-            # STAGE 3: Entity Resolution
-            # ====================================================================
-            if indexed > 0:
-                print_stage_header(console, 3, "ENTITY RESOLUTION")
+            # Display indexing error details if any documents failed
+            if index_failed > 0:
+                index_errors = extract_results.get("errors", [])
+                if index_errors:
+                    console.print("\n[bold red]Indexing errors:[/bold red]")
+                    for error_result in index_errors:
+                        doc_id = error_result.get("document_id", "unknown")[:8]
+                        error = error_result.get("error", "Unknown error")
+                        console.print(f"  [red]✗[/red] [{doc_id}]")
+                        console.print(f"    [dim red]Error: {error}[/dim red]")
 
-                # Get successful results for KG finalization
-                results_for_kg = [
-                    r
-                    for r in index_results.get("results", [])
-                    if not r.get("skipped", False) and "error" not in r
-                ]
-
-                with LiveProgressDisplay(console, max_log_lines=10) as display:
-                    kg_result = finalize_knowledge_graph_with_progress(
-                        results_for_kg, console, display=display
-                    )
-
-                # Stage 3 summary
+            # Stage 3 summary
+            kg_result = index_result.get("kg_stats")
+            if kg_result:
                 print_stage_summary(
                     console,
                     [
-                        ("✓", "Entities created", str(kg_result["entities_created"])),
-                        ("✓", "Entities linked", str(kg_result["entities_linked"])),
+                        ("✓", "Entities created", str(kg_result.get("entities_created", 0))),
+                        ("✓", "Entities linked", str(kg_result.get("entities_linked_existing", 0))),
                         (
                             "✓",
                             "Relationships created",
@@ -621,6 +636,9 @@ def fetch_cmd(
                         ),
                     ],
                 )
+
+            # Store results for final summary
+            indexed_results = extract_results.get("results", [])
 
         # ====================================================================
         # Global Command Summary
@@ -637,7 +655,7 @@ def fetch_cmd(
                 summary_items.extend(
                     [
                         ("✓", "Entities created", str(kg_result["entities_created"])),
-                        ("✓", "Entities linked", str(kg_result["entities_linked"])),
+                        ("✓", "Entities linked", str(kg_result.get("entities_linked_existing", 0))),
                         (
                             "✓",
                             "Relationships created",

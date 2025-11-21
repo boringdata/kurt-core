@@ -1,21 +1,24 @@
 """
 DBOS Workflows for Content Fetching
 
-Durable, resumable workflows with automatic checkpointing:
-- fetch_document_workflow: Fetch single document (5 checkpoints)
-- fetch_batch_workflow: Fetch multiple documents with progress tracking
-- fetch_and_index_workflow: Fetch + metadata extraction (6 checkpoints)
+Main workflow:
+- fetch_workflow(): Unified workflow for single or batch fetching (NO indexing)
+  - Single: Calls fetch_document_step()
+  - Batch: Parallel execution with DBOS events (doc_N_status, batch_status)
+
+Main step:
+- fetch_document_step(): Fetch one document (resolve → fetch → embed → save → links)
+  - Use this in other workflows or CLI orchestration
 """
 
+import asyncio
+import logging
 from typing import Any
 from uuid import UUID
 
-from dbos import DBOS, Queue, SetEnqueueOptions
+from dbos import DBOS, Queue
 
-# Import helper functions from their proper modules
 from kurt.content.document import (
-    add_documents_for_files,
-    add_documents_for_urls,
     resolve_or_create_document,
     save_document_content_and_metadata,
 )
@@ -27,7 +30,8 @@ from kurt.content.fetch import (
     fetch_from_cms,
     fetch_from_web,
 )
-from kurt.content.filtering import resolve_ids_to_uuids
+
+logger = logging.getLogger(__name__)
 
 # Create priority-enabled queue for fetch operations
 # Concurrency=5 means max 5 concurrent fetch operations
@@ -87,7 +91,7 @@ def generate_embedding_step(content: str) -> dict[str, Any]:
         embedding = generate_document_embedding(content)
         embedding_dims = len(embedding) // 4  # bytes to float32 count
 
-        DBOS.logger.info(f"Generated embedding ({embedding_dims} dimensions)")
+        logger.info(f"Generated embedding ({embedding_dims} dimensions)")
 
         return {
             "embedding": embedding,
@@ -96,7 +100,7 @@ def generate_embedding_step(content: str) -> dict[str, Any]:
         }
     except Exception as e:
         # Log but don't fail entire workflow
-        DBOS.logger.warning(f"Could not generate embedding: {e}")
+        logger.warning(f"Could not generate embedding: {e}")
         return {
             "embedding": None,
             "embedding_dims": 0,
@@ -105,345 +109,390 @@ def generate_embedding_step(content: str) -> dict[str, Any]:
         }
 
 
-@DBOS.transaction()
-def save_document_transaction(
-    doc_id: str, content: str, metadata: dict, embedding: bytes | None
+@DBOS.step()
+def save_document_step(
+    doc_id: str,
+    content: str,
+    metadata: dict,
+    embedding: bytes | None,
+    public_url: str | None = None,
 ) -> dict[str, Any]:
-    """Save content and metadata to database (ACID). Returns dict with save result."""
-    result = save_document_content_and_metadata(UUID(doc_id), content, metadata, embedding)
+    """Save content and metadata to database. Returns dict with save result."""
+    result = save_document_content_and_metadata(
+        UUID(doc_id), content, metadata, embedding, public_url=public_url
+    )
 
-    DBOS.logger.info(f"Saved document {doc_id} to {result['content_path']}")
+    logger.info(f"Saved document {doc_id} to {result['content_path']}")
 
     return result
 
 
-@DBOS.transaction()
-def save_links_transaction(doc_id: str, links: list[dict]) -> int:
-    """Save document links to database (ACID). Returns number of links saved."""
-    from sqlmodel import select
+@DBOS.step()
+def save_links_step(doc_id: str, links: list[dict]) -> int:
+    """Save document links to database. Returns number of links saved."""
+    from kurt.content.document import save_document_links
 
+    return save_document_links(UUID(doc_id), links)
+
+
+@DBOS.transaction()
+def mark_document_error_transaction(doc_id: str, error_message: str) -> dict[str, Any]:
+    """Mark document as ERROR in database (ACID). Returns dict with error info."""
     from kurt.db.database import get_session
-    from kurt.db.models import DocumentLink
+    from kurt.db.models import Document, IngestionStatus
 
     session = get_session()
-    doc_uuid = UUID(doc_id)
+    doc = session.get(Document, UUID(doc_id))
 
-    # Delete existing links for this document (on refetch)
-    existing_links = session.exec(
-        select(DocumentLink).where(DocumentLink.source_document_id == doc_uuid)
-    ).all()
-    for link in existing_links:
-        session.delete(link)
-
-    # Find which target URLs exist in database
-    target_urls = [link["url"] for link in links]
-    if not target_urls:
+    if doc:
+        doc.ingestion_status = IngestionStatus.ERROR
+        session.add(doc)
         session.commit()
-        return 0
 
-    # Resolve URLs to document IDs (calls helper from document.py - NO logic here!)
-    from kurt.content.document import resolve_urls_to_doc_ids
+        logger.info(f"Marked document {doc_id} as ERROR: {error_message}")
 
-    url_to_doc_id = resolve_urls_to_doc_ids(target_urls)
-
-    # Create links for URLs that have matching documents
-    saved_count = 0
-    for link in links:
-        target_url = link["url"]
-        if target_url in url_to_doc_id:
-            document_link = DocumentLink(
-                source_document_id=doc_uuid,
-                target_document_id=url_to_doc_id[target_url],
-                anchor_text=link["anchor_text"],
-            )
-            session.add(document_link)
-            saved_count += 1
-
-    session.commit()
-    return saved_count
+    return {"document_id": doc_id, "status": "ERROR", "error": error_message}
 
 
 @DBOS.step()
-def extract_links_step(
-    doc_id: str, content: str, source_url: str, base_url: str | None = None
-) -> dict[str, Any]:
-    """Extract and save document links. Returns dict with links_extracted, status."""
-    try:
-        # Call pure business logic (NO DB operations!)
-        links = extract_document_links(content, source_url, base_url=base_url)
-
-        # Save to database (DB operation in transaction)
-        links_count = save_links_transaction(doc_id, links)
-
-        DBOS.logger.info(f"Extracted {len(links)} links, saved {links_count} for document {doc_id}")
-
-        return {
-            "links_extracted": links_count,
-            "status": "success",
-        }
-    except Exception as e:
-        DBOS.logger.warning(f"Could not extract links: {e}")
-        return {
-            "links_extracted": 0,
-            "status": "failed",
-            "error": str(e),
-        }
+def extract_links_step(content: str, source_url: str, base_url: str | None = None) -> list[dict]:
+    """Extract links from content. Returns list of links (no DB operation)."""
+    # Call pure business logic (NO DB operations!)
+    return extract_document_links(content, source_url, base_url=base_url)
 
 
 @DBOS.step()
 def extract_metadata_step(document_id: str, force: bool = False) -> dict[str, Any]:
-    """Extract metadata from document (LLM call). Calls indexing workflow."""
-    from kurt.content.indexing.workflow_index import index_document_workflow
+    """Extract metadata from document (LLM call)."""
+    from kurt.content.indexing.extract import extract_document_metadata
 
-    return index_document_workflow(document_id, force=force)
+    # Create callback to publish events
+    def publish_activity(activity: str):
+        """Publish indexing activity as DBOS event"""
+        DBOS.set_event(f"doc_{document_id[:8]}_index_activity", activity)
+
+    return extract_document_metadata(document_id, force=force, activity_callback=publish_activity)
 
 
 @DBOS.step()
 def select_documents_step(filters: DocumentFetchFilters) -> list[dict[str, Any]]:
     """Select documents to fetch based on filters. Returns list of doc info dicts."""
-    from kurt.content.filtering import apply_glob_filters, build_document_query
-    from kurt.db.database import get_session
+    from kurt.content.fetch.filtering import select_documents_to_fetch
 
-    session = get_session()
-
-    # Step 1: Create documents for URLs (calls document.py helper - DB operation)
-    if filters.url_list:
-        DBOS.logger.info(f"Creating documents for {len(filters.url_list)} URLs")
-        add_documents_for_urls(filters.url_list)
-
-    # Step 2: Create documents for files (calls document.py helper - DB operation)
-    if filters.file_list:
-        DBOS.logger.info(f"Creating documents for {len(filters.file_list)} files")
-        add_documents_for_files(filters.file_list)
-
-    # Step 3: Resolve IDs to UUIDs (calls filtering.py helper)
-    id_uuids = []
-    if filters.id_list:
-        DBOS.logger.info(f"Resolving {len(filters.id_list)} IDs to UUIDs")
-        id_uuids = resolve_ids_to_uuids(filters.id_list)
-
-    # Step 4: Build query (calls filtering.py helper - NO logic here!)
-    stmt = build_document_query(
-        id_uuids=id_uuids,
-        with_status=filters.with_status,
-        refetch=filters.refetch,
-        in_cluster=filters.in_cluster,
-        with_content_type=filters.with_content_type,
-        limit=filters.limit,
-    )
-
-    # Execute query (DB operation)
-    docs = list(session.exec(stmt).all())
-
-    # Step 5: Apply glob filters (calls filtering.py helper - NO logic here!)
-    filtered_docs = apply_glob_filters(
-        docs,
-        include_pattern=filters.include_pattern,
-        exclude_pattern=filters.exclude_pattern,
-    )
-
-    # Convert to lightweight dicts for checkpoint
-    doc_infos = []
-    for doc in filtered_docs:
-        doc_infos.append(
-            {
-                "id": str(doc.id),
-                "source_url": doc.source_url,
-                "cms_platform": doc.cms_platform,
-                "cms_instance": doc.cms_instance,
-                "cms_document_id": doc.cms_document_id,
-                "discovery_url": doc.discovery_url,
-            }
-        )
-
-    DBOS.logger.info(f"Selected {len(doc_infos)} documents to fetch")
-
-    return doc_infos
+    return select_documents_to_fetch(filters)
 
 
 # ============================================================================
-# DBOS Workflows (Orchestration with Granular Checkpointing)
+# Unified Fetch Workflow
 # ============================================================================
 
 
-@DBOS.workflow()
-def fetch_document_workflow(
-    identifier: str | UUID, fetch_engine: str | None = None
-) -> dict[str, Any]:
-    """Fetch document with 5 checkpointed steps. Returns dict with fetch results."""
-    # Step 1: Resolve document (fast DB lookup - checkpointed)
-    DBOS.logger.info(f"Resolving document: {identifier}")
-    doc_info = resolve_document_step(identifier)
-    doc_id = doc_info["id"]
-
-    # Step 2: Fetch content (network I/O - checkpointed!)
-    DBOS.logger.info(f"Fetching content for {doc_id} from {doc_info['source_url']}")
-    fetch_result = fetch_content_step(
-        source_url=doc_info["source_url"],
-        cms_platform=doc_info.get("cms_platform"),
-        cms_instance=doc_info.get("cms_instance"),
-        cms_document_id=doc_info.get("cms_document_id"),
-        fetch_engine=fetch_engine,
-    )
-    content = fetch_result["content"]
-    metadata = fetch_result["metadata"]
-
-    # Step 3: Generate embedding (EXPENSIVE LLM - checkpointed!)
-    DBOS.logger.info(f"Generating embedding for {doc_id}")
-    embedding_result = generate_embedding_step(content)
-
-    # Step 4: Save to database (transactional - checkpointed!)
-    DBOS.logger.info(f"Saving document {doc_id} to database")
-    save_result = save_document_transaction(
-        doc_id=doc_id,
-        content=content,
-        metadata=metadata,
-        embedding=embedding_result.get("embedding"),
-    )
-
-    # Step 5: Extract links (optional - checkpointed!)
-    DBOS.logger.info(f"Extracting links for {doc_id}")
-    links_result = extract_links_step(doc_id, content, doc_info["source_url"])
-
-    return {
-        "document_id": doc_id,
-        "status": save_result["status"],
-        "content_length": fetch_result["content_length"],
-        "content_path": save_result["content_path"],
-        "embedding_dims": embedding_result["embedding_dims"],
-        "links_extracted": links_result["links_extracted"],
-        "metadata": metadata,
-    }
-
-
-@DBOS.workflow()
-def fetch_and_index_workflow(
-    identifier: str | UUID, fetch_engine: str | None = None
-) -> dict[str, Any]:
-    """Fetch document and extract metadata with 6 checkpointed steps."""
-    # Steps 1-5: Fetch document (checkpointed sub-workflow)
-    DBOS.logger.info(f"Starting fetch workflow for {identifier}")
-    fetch_result = fetch_document_workflow(identifier, fetch_engine)
-
-    # Step 6: Extract metadata (EXPENSIVE LLM - checkpointed!)
-    DBOS.logger.info(f"Extracting metadata for {fetch_result['document_id']}")
-    metadata_result = extract_metadata_step(fetch_result["document_id"], force=False)
-
-    return {
-        **fetch_result,
-        "index_metadata": metadata_result,
-        "workflow_status": "completed",
-    }
-
-
-@DBOS.workflow()
-def fetch_batch_workflow(
-    identifiers: list[str | UUID],
+@DBOS.step()
+def fetch_document_step(
+    identifier: str | UUID,
     fetch_engine: str | None = None,
-    extract_metadata: bool = False,
 ) -> dict[str, Any]:
-    """Batch fetch workflow with progress tracking and checkpoints per document."""
-    results = []
-    total = len(identifiers)
-    successful = 0
-    failed = 0
+    """
+    Fetch one document (ONLY fetching, no indexing).
 
-    for i, identifier in enumerate(identifiers):
-        # Each fetch is checkpointed (5 steps per document)
-        try:
-            if extract_metadata:
-                # Use fetch_and_index_workflow (6 checkpoints)
-                result = fetch_and_index_workflow(identifier, fetch_engine)
-            else:
-                # Use fetch_document_workflow (5 checkpoints)
-                result = fetch_document_workflow(identifier, fetch_engine)
+    Steps:
+    1. Resolve document
+    2. Fetch content
+    3. Generate embedding
+    4. Save to database
+    5. Extract and save links
+    """
+    try:
+        # Step 1: Resolve
+        doc_info = resolve_document_step(identifier)
+        doc_id = doc_info["id"]
 
-            results.append(result)
-
-            if result.get("status") == "FETCHED":
-                successful += 1
-            else:
-                failed += 1
-
-        except Exception as e:
-            # Log error and continue
-            DBOS.logger.error(f"Failed to fetch {identifier}: {e}")
-            results.append({"identifier": str(identifier), "status": "ERROR", "error": str(e)})
-            failed += 1
-
-        # Progress tracking (logs to DBOS)
-        DBOS.logger.info(f"Progress: {i+1}/{total} documents processed")
-
-    return {"total": total, "successful": successful, "failed": failed, "results": results}
-
-
-# ============================================================================
-# Priority Queue Helper Functions
-# ============================================================================
-
-
-def enqueue_fetch_with_priority(
-    identifiers: list[str | UUID],
-    priority: int = 10,
-    fetch_engine: str | None = None,
-    extract_metadata: bool = False,
-) -> list[str]:
-    """Enqueue fetch jobs with priority (1=highest). Returns workflow IDs."""
-    workflow_ids = []
-
-    with SetEnqueueOptions(priority=priority):
-        for identifier in identifiers:
-            if extract_metadata:
-                handle = fetch_queue.enqueue(
-                    fetch_and_index_workflow,
-                    identifier=identifier,
-                    fetch_engine=fetch_engine,
-                )
-            else:
-                handle = fetch_queue.enqueue(
-                    fetch_document_workflow,
-                    identifier=identifier,
-                    fetch_engine=fetch_engine,
-                )
-            workflow_ids.append(handle.workflow_id)
-
-    return workflow_ids
-
-
-def enqueue_batch_fetch(
-    identifiers: list[str | UUID],
-    fetch_engine: str | None = None,
-    extract_metadata: bool = False,
-    priority: int = 10,
-) -> str:
-    """Enqueue batch fetch job as single workflow. Returns workflow ID."""
-    with SetEnqueueOptions(priority=priority):
-        handle = fetch_queue.enqueue(
-            fetch_batch_workflow,
-            identifiers=identifiers,
+        # Step 2: Fetch
+        fetch_result = fetch_content_step(
+            source_url=doc_info["source_url"],
+            cms_platform=doc_info.get("cms_platform"),
+            cms_instance=doc_info.get("cms_instance"),
+            cms_document_id=doc_info.get("cms_document_id"),
             fetch_engine=fetch_engine,
-            extract_metadata=extract_metadata,
+        )
+        content = fetch_result["content"]
+        metadata = fetch_result["metadata"]
+
+        # Step 3: Embed
+        embedding_result = generate_embedding_step(content)
+
+        # Step 4: Save
+        save_result = save_document_step(
+            doc_id=doc_id,
+            content=content,
+            metadata=metadata,
+            embedding=embedding_result.get("embedding"),
+            public_url=fetch_result.get("public_url"),
         )
 
-    return handle.workflow_id
+        # Step 5: Links
+        links = extract_links_step(content, doc_info["source_url"])
+        links_count = 0
+        if links:
+            try:
+                links_count = save_links_step(doc_id, links)
+            except Exception as e:
+                logger.warning(f"Links failed: {e}")
 
+        return {
+            "document_id": doc_id,
+            "status": "FETCHED",
+            "content_length": fetch_result["content_length"],
+            "content_path": save_result["content_path"],
+            "embedding_dims": embedding_result["embedding_dims"],
+            "links_extracted": links_count,
+            "metadata": metadata,
+        }
+
+    except Exception as e:
+        logger.error(f"Failed {identifier}: {e}")
+        try:
+            doc_info = resolve_document_step(identifier)
+            mark_document_error_transaction(doc_info["id"], str(e))
+        except Exception:
+            pass
+        return {"identifier": str(identifier), "status": "ERROR", "error": str(e)}
+
+
+@DBOS.workflow()
+async def fetch_workflow(
+    identifiers: str | UUID | list[str | UUID],
+    fetch_engine: str | None = None,
+    max_concurrent: int = 5,
+) -> dict[str, Any]:
+    """
+    One workflow for fetching (NO indexing - CLI orchestrates that).
+
+    Args:
+        identifiers: Single ID or list of IDs
+        fetch_engine: Optional engine override
+        max_concurrent: Parallel limit
+
+    Returns:
+        Single: {document_id, status, ...}
+        Batch: {total, successful, failed, results: [...]}
+    """
+    # Normalize to list
+    is_batch = isinstance(identifiers, list)
+    id_list = identifiers if is_batch else [identifiers]
+
+    if len(id_list) == 1:
+        # SINGLE: Call fetch step directly
+        result = fetch_document_step(id_list[0], fetch_engine)
+        DBOS.set_event("workflow_done", True)  # Signal completion for CLI polling
+        return result
+
+    else:
+        # BATCH: Parallel gather with events
+        total = len(id_list)
+
+        # Step 1: Batch start
+        DBOS.set_event("batch_total", total)
+        DBOS.set_event("batch_status", "processing")
+
+        # Step 2: Parallel gather
+        semaphore = asyncio.Semaphore(max_concurrent)
+
+        async def fetch_with_semaphore(identifier: str | UUID, index: int) -> dict[str, Any]:
+            """Fetch one document with semaphore control and streaming progress."""
+            import time
+            from datetime import datetime
+
+            key = f"doc_{index}"
+            loop = asyncio.get_event_loop()
+            start_time = time.time()
+
+            async with semaphore:
+                try:
+                    # Stream: Started
+                    DBOS.write_stream(
+                        f"{key}_progress",
+                        {
+                            "status": "started",
+                            "identifier": str(identifier),
+                            "timestamp": datetime.now().isoformat(),
+                        },
+                    )
+
+                    # Step 1: Resolve
+                    resolve_start = time.time()
+                    doc_info = await loop.run_in_executor(
+                        None, lambda: resolve_document_step(identifier)
+                    )
+                    resolve_duration = time.time() - resolve_start
+                    doc_id = doc_info["id"]
+                    DBOS.write_stream(
+                        f"{key}_progress",
+                        {
+                            "status": "resolved",
+                            "document_id": doc_id,
+                            "duration_ms": int(resolve_duration * 1000),
+                            "timestamp": datetime.now().isoformat(),
+                        },
+                    )
+
+                    # Step 2: Fetch
+                    fetch_start = time.time()
+                    fetch_result = await loop.run_in_executor(
+                        None,
+                        lambda: fetch_content_step(
+                            source_url=doc_info["source_url"],
+                            cms_platform=doc_info.get("cms_platform"),
+                            cms_instance=doc_info.get("cms_instance"),
+                            cms_document_id=doc_info.get("cms_document_id"),
+                            fetch_engine=fetch_engine,
+                        ),
+                    )
+                    fetch_duration = time.time() - fetch_start
+                    content = fetch_result["content"]
+                    metadata = fetch_result["metadata"]
+                    DBOS.write_stream(
+                        f"{key}_progress",
+                        {
+                            "status": "fetched",
+                            "duration_ms": int(fetch_duration * 1000),
+                            "timestamp": datetime.now().isoformat(),
+                        },
+                    )
+
+                    # Step 3: Embed
+                    embed_start = time.time()
+                    embedding_result = await loop.run_in_executor(
+                        None, lambda: generate_embedding_step(content)
+                    )
+                    embed_duration = time.time() - embed_start
+                    DBOS.write_stream(
+                        f"{key}_progress",
+                        {
+                            "status": "embedded",
+                            "duration_ms": int(embed_duration * 1000),
+                            "timestamp": datetime.now().isoformat(),
+                        },
+                    )
+
+                    # Step 4: Save
+                    save_start = time.time()
+                    save_result = await loop.run_in_executor(
+                        None,
+                        lambda: save_document_step(
+                            doc_id=doc_id,
+                            content=content,
+                            metadata=metadata,
+                            embedding=embedding_result.get("embedding"),
+                            public_url=fetch_result.get("public_url"),
+                        ),
+                    )
+                    save_duration = time.time() - save_start
+                    DBOS.write_stream(
+                        f"{key}_progress",
+                        {
+                            "status": "saved",
+                            "duration_ms": int(save_duration * 1000),
+                            "timestamp": datetime.now().isoformat(),
+                        },
+                    )
+
+                    # Step 5: Links
+                    links_start = time.time()
+                    links = await loop.run_in_executor(
+                        None, lambda: extract_links_step(content, doc_info["source_url"])
+                    )
+                    links_count = 0
+                    if links:
+                        try:
+                            links_count = await loop.run_in_executor(
+                                None, lambda: save_links_step(doc_id, links)
+                            )
+                        except Exception as e:
+                            logger.warning(f"Links failed: {e}")
+                    links_duration = time.time() - links_start
+                    DBOS.write_stream(
+                        f"{key}_progress",
+                        {
+                            "status": "links_extracted",
+                            "duration_ms": int(links_duration * 1000),
+                            "timestamp": datetime.now().isoformat(),
+                        },
+                    )
+
+                    # Stream: Completed with total time
+                    total_duration = time.time() - start_time
+                    DBOS.write_stream(
+                        f"{key}_progress",
+                        {
+                            "status": "completed",
+                            "document_id": doc_id,
+                            "duration_ms": int(total_duration * 1000),
+                            "timestamp": datetime.now().isoformat(),
+                        },
+                    )
+                    DBOS.close_stream(f"{key}_progress")
+
+                    return {
+                        "document_id": doc_id,
+                        "status": "FETCHED",
+                        "metadata": metadata,
+                        "content_length": len(content),
+                        "links_count": links_count,
+                    }
+
+                except Exception as e:
+                    # Stream: Error
+                    error_msg = str(e)
+                    DBOS.write_stream(f"{key}_progress", {"status": "error", "error": error_msg})
+                    DBOS.close_stream(f"{key}_progress")
+
+                    # Try to mark document as error if we have doc_id
+                    try:
+                        if "doc_id" in locals():
+                            await loop.run_in_executor(
+                                None, lambda: mark_document_error_transaction(doc_id, error_msg)
+                            )
+                    except Exception:
+                        pass
+
+                    return {"identifier": str(identifier), "status": "ERROR", "error": error_msg}
+
+        results = await asyncio.gather(
+            *[fetch_with_semaphore(id, i) for i, id in enumerate(id_list)]
+        )
+
+        # Step 3: Batch completion
+        successful = sum(1 for r in results if r.get("status") == "FETCHED")
+        failed = total - successful
+
+        DBOS.set_event("batch_successful", successful)
+        DBOS.set_event("batch_failed", failed)
+        DBOS.set_event("batch_status", "completed")
+        DBOS.set_event("workflow_done", True)  # Signal completion for CLI polling
+
+        return {"total": total, "successful": successful, "failed": failed, "results": results}
+
+
+# ============================================================================
+# Exports
+# ============================================================================
 
 __all__ = [
-    # Workflow steps (for direct use if needed)
+    # Main workflow
+    "fetch_workflow",
+    # Helper step
+    "fetch_document_step",
+    # Granular steps (for custom workflows)
     "select_documents_step",
     "resolve_document_step",
     "fetch_content_step",
     "generate_embedding_step",
-    "save_document_transaction",
-    "save_links_transaction",
+    "save_document_step",
+    "save_links_step",
     "extract_links_step",
     "extract_metadata_step",
-    # Main workflows
-    "fetch_document_workflow",
-    "fetch_and_index_workflow",
-    "fetch_batch_workflow",
-    # Queue helpers
-    "enqueue_fetch_with_priority",
-    "enqueue_batch_fetch",
+    "mark_document_error_transaction",
+    # Queue
     "fetch_queue",
 ]

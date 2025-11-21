@@ -1137,7 +1137,8 @@ class TestMapCrawlingFunctionality:
         """Test that sitemap is tried first, crawler only used on failure."""
         runner, project_dir, mocks = isolated_cli_runner_with_mocks
 
-        # Sitemap succeeds (default mock already returns URLs)
+        # In normal (non-dry-run) mode, sitemap discovery happens via map_sitemap
+        # which correctly uses the mocked discover_sitemap_urls
         result = runner.invoke(
             main,
             [
@@ -1147,14 +1148,13 @@ class TestMapCrawlingFunctionality:
                 "https://example.com",
                 "--max-depth",
                 "2",  # max_depth provided but shouldn't be used
-                "--dry-run",
             ],
         )
 
         assert result.exit_code == 0
 
-        # Sitemap should have been called
-        mocks["mock_sitemap"].assert_called_once()
+        # Sitemap mock should have been called (via map_sitemap -> discover_sitemap_urls)
+        assert mocks["mock_sitemap"].called
 
         # Crawler should NOT have been called (sitemap succeeded)
         mocks["mock_crawler"].assert_not_called()

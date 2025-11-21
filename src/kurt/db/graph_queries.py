@@ -13,9 +13,14 @@ from uuid import UUID
 
 from sqlmodel import Session, and_, col, func, or_, select
 
-from kurt.content.indexing.models import EntityType
 from kurt.db.database import get_session
-from kurt.db.models import Document, DocumentEntity, Entity, EntityRelationship
+from kurt.db.models import (
+    Document,
+    DocumentEntity,
+    Entity,
+    EntityRelationship,
+    EntityType,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,12 +48,12 @@ def _normalize_entity_type(entity_type: Optional[Union[EntityType, str]]) -> Opt
 
     # Handle string input
     if isinstance(entity_type, str):
-        # Special case: "technologies" -> "TOOL"
+        # Special case: "technologies" -> "Technology"
         if entity_type.lower() == "technologies":
-            return "TOOL"
+            return "Technology"
 
-        # Normalize to uppercase
-        normalized = entity_type.upper()
+        # Normalize to title case (Product, Feature, Technology, Topic, Company, Integration)
+        normalized = entity_type.capitalize()
 
         # Validate against EntityType enum values
         valid_types = {et.value for et in EntityType}
@@ -75,39 +80,49 @@ def _normalize_entity_type(entity_type: Optional[Union[EntityType, str]]) -> Opt
 def get_document_entities(
     document_id: UUID,
     entity_type: Optional[Union[EntityType, str]] = None,
+    names_only: bool = False,
     session: Optional[Session] = None,
-) -> list[dict]:
-    """Get entities mentioned in a document."""
+) -> Union[list[str], list[tuple[str, str]]]:
+    """Get entities mentioned in a document.
+
+    Args:
+        document_id: Document UUID
+        entity_type: Filter by entity type (optional)
+        names_only: If True, return list[str] of canonical names. If False, return list of (name, type) tuples.
+        session: SQLModel session (optional)
+
+    Returns:
+        If names_only=True: list[str] of canonical names
+        If names_only=False: list[tuple[str, str]] of (canonical_name, entity_type)
+    """
     if session is None:
         session = get_session()
 
     normalized_type = _normalize_entity_type(entity_type)
 
     # Query DocumentEntity join Entity
-    query = (
-        select(Entity, DocumentEntity.confidence)
-        .join(DocumentEntity, Entity.id == DocumentEntity.entity_id)
-        .where(DocumentEntity.document_id == document_id)
-    )
+    if names_only:
+        query = (
+            select(Entity.canonical_name)
+            .join(DocumentEntity, Entity.id == DocumentEntity.entity_id)
+            .where(DocumentEntity.document_id == document_id)
+        )
+    else:
+        query = (
+            select(Entity.canonical_name, Entity.entity_type)
+            .join(DocumentEntity, Entity.id == DocumentEntity.entity_id)
+            .where(DocumentEntity.document_id == document_id)
+        )
 
     if normalized_type:
         query = query.where(Entity.entity_type == normalized_type)
 
-    results = session.exec(query).all()
-
-    return [
-        {
-            "id": str(entity.id),
-            "name": entity.name,
-            "canonical_name": entity.canonical_name,
-            "type": entity.entity_type,
-            "aliases": entity.aliases,
-            "description": entity.description,
-            "confidence": confidence,
-            "source_mentions": entity.source_mentions,
-        }
-        for entity, confidence in results
-    ]
+    if names_only:
+        results = session.exec(query).all()
+        return [name for name in results if name]
+    else:
+        results = session.exec(query).all()
+        return [(name, etype) for name, etype in results if name and etype]
 
 
 def get_top_entities(limit: int = 100, session: Optional[Session] = None) -> list[dict]:
@@ -324,46 +339,43 @@ def list_entities_by_type(
 
 
 def find_documents_with_entity(
-    entity_name: str, limit: int = 100, session: Optional[Session] = None
-) -> list[dict]:
-    """Find documents mentioning a specific entity (by name or canonical name)."""
+    entity_name: str,
+    entity_type: Optional[Union[EntityType, str]] = None,
+    session: Optional[Session] = None,
+) -> set[UUID]:
+    """Find documents mentioning a specific entity (case-insensitive partial match).
+
+    Args:
+        entity_name: Entity name or canonical name to search for (partial match)
+        entity_type: Filter by entity type (optional)
+        session: SQLModel session (optional)
+
+    Returns:
+        Set of document UUIDs
+    """
     if session is None:
         session = get_session()
 
-    # Find the entity (try both name and canonical_name)
-    entity = session.exec(
-        select(Entity).where(
+    normalized_type = _normalize_entity_type(entity_type)
+
+    # Find matching entities (try both name and canonical_name, with partial matching)
+    query = (
+        select(DocumentEntity.document_id)
+        .join(Entity, DocumentEntity.entity_id == Entity.id)
+        .where(
             or_(
-                Entity.name == entity_name,
-                Entity.canonical_name == entity_name,
+                Entity.name.ilike(f"%{entity_name}%"),
+                Entity.canonical_name.ilike(f"%{entity_name}%"),
             )
         )
-    ).first()
-
-    if not entity:
-        return []
-
-    # Find documents mentioning this entity
-    query = (
-        select(Document, DocumentEntity.confidence)
-        .join(DocumentEntity, Document.id == DocumentEntity.document_id)
-        .where(DocumentEntity.entity_id == entity.id)
-        .limit(limit)
     )
 
-    results = session.exec(query).all()
+    if normalized_type:
+        query = query.where(Entity.entity_type == normalized_type)
 
-    return [
-        {
-            "id": str(doc.id),
-            "title": doc.title,
-            "source_url": doc.source_url,
-            "confidence": confidence,
-            "content_type": doc.content_type,
-            "created_at": doc.created_at.isoformat() if doc.created_at else None,
-        }
-        for doc, confidence in results
-    ]
+    doc_ids = session.exec(query).all()
+
+    return {doc_id for doc_id in doc_ids}
 
 
 def get_document_knowledge_graph(document_id: str) -> dict:

@@ -12,9 +12,6 @@ All discovery operations create documents with NOT_FETCHED status.
 import logging
 from fnmatch import fnmatch
 
-logger = logging.getLogger(__name__)
-
-# Re-export main functions for convenience
 from kurt.content.map.blogroll import (
     extract_chronological_content,
     identify_blogroll_candidates,
@@ -24,6 +21,8 @@ from kurt.content.map.cms import map_cms_content
 from kurt.content.map.crawl import crawl_website
 from kurt.content.map.folder import map_folder_content
 from kurt.content.map.sitemap import discover_sitemap_urls, map_sitemap
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "map_url_content",
@@ -246,8 +245,8 @@ def map_url_content(
             task_id=task_id,
         )
 
-        # Create documents for crawled URLs using batch creation
-        from kurt.content.document import add_documents_for_urls
+        # Create documents for crawled URLs using map-specific batch creation
+        from kurt.content.map.utils import batch_create_discovered_documents
 
         if progress and task_id is not None:
             progress.update(
@@ -257,7 +256,7 @@ def map_url_content(
                 completed=len(crawled_urls),
             )
 
-        crawled_docs, new_count = add_documents_for_urls(
+        crawled_docs, new_count = batch_create_discovered_documents(
             url_list=crawled_urls,
             discovery_method="crawl",
             discovery_url=url,

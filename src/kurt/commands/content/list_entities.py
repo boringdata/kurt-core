@@ -8,7 +8,7 @@ from rich.console import Console
 from rich.table import Table
 
 from kurt.admin.telemetry.decorators import track_command
-from kurt.content.indexing.models import EntityType
+from kurt.db.models import EntityType
 
 console = Console()
 logger = logging.getLogger(__name__)

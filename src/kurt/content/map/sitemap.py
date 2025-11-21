@@ -207,8 +207,7 @@ def map_sitemap(
         docs = map_sitemap("https://example.com", discover_blogrolls=True)
         # Returns sitemap docs + additional posts found on blogroll pages
     """
-    # Import fetch workflow here to avoid circular imports
-    from kurt.content.fetch.workflow import fetch_document_workflow
+    # Import fetch step here to avoid circular imports
 
     # Use custom sitemap discovery
     urls = discover_sitemap_urls(url, progress=progress, task_id=task_id)
@@ -232,10 +231,10 @@ def map_sitemap(
     if limit:
         urls = list(urls)[:limit]
 
-    # Use enhanced document creation from document.py
-    from kurt.content.document import add_documents_for_urls
+    # Use map-specific batch creation with discovery metadata
+    from kurt.content.map.utils import batch_create_discovered_documents
 
-    docs, new_count = add_documents_for_urls(
+    docs, new_count = batch_create_discovered_documents(
         url_list=urls,
         discovery_method="sitemap",
         discovery_url=url,
@@ -260,17 +259,21 @@ def map_sitemap(
 
     # Handle fetch_all option if requested
     if fetch_all:
-        from kurt.content.fetch.workflow import fetch_document_workflow
+        from kurt.content.fetch.workflow import fetch_queue, fetch_workflow
 
+        # Enqueue fetch workflows for all newly created documents
         for doc_result in created_docs:
             if doc_result.get("created"):  # Only fetch newly created docs
                 try:
-                    fetch_result = fetch_document_workflow(str(doc_result["document_id"]))
-                    doc_result["status"] = fetch_result["status"]
-                    doc_result["fetched"] = True
-                    doc_result["content_length"] = fetch_result["content_length"]
+                    # Enqueue fetch workflow (non-blocking, durable)
+                    handle = fetch_queue.enqueue(
+                        fetch_workflow,
+                        identifiers=str(doc_result["document_id"]),
+                    )
+                    doc_result["workflow_id"] = handle.workflow_id
+                    doc_result["fetched"] = "enqueued"  # Mark as enqueued, not fetched yet
                 except Exception as e:
-                    # Continue on fetch errors
+                    # Continue on enqueue errors
                     doc_result["fetch_error"] = str(e)
 
     # Optionally discover additional posts from blogroll/changelog pages

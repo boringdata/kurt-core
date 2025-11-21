@@ -14,9 +14,12 @@ Workflows:
 - map_url_workflow: Discover content from URL with optional clustering (durable)
 """
 
+import logging
 from typing import Any
 
 from dbos import DBOS, Queue, SetEnqueueOptions
+
+logger = logging.getLogger(__name__)
 
 # Lazy queue initialization - created on first access
 _map_queue = None
@@ -137,7 +140,7 @@ def map_url_workflow(
             - discovered: list
             - cluster_count: int (if clustered)
     """
-    DBOS.logger.info(f"Starting map workflow for URL: {url}")
+    logger.info(f"Starting map workflow for URL: {url}")
 
     # Publish event - workflow started
     DBOS.set_event("status", "started")
@@ -155,7 +158,7 @@ def map_url_workflow(
         cluster_urls=cluster_urls,
     )
 
-    DBOS.logger.info(f"Completed map workflow: {result['total']} URLs discovered")
+    logger.info(f"Completed map workflow: {result['total']} URLs discovered")
 
     # Publish event - workflow completed
     DBOS.set_event("status", "completed")

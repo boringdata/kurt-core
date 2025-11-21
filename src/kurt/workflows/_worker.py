@@ -34,25 +34,25 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
     get_dbos()
 
     # Import workflow modules to register them
-    from kurt.workflows import map as _map  # noqa
-    from kurt.workflows import fetch as _fetch  # noqa
-    from kurt.content.indexing import workflow as _indexing_workflow  # noqa
+    from kurt.content.map import workflow as _map  # noqa
+    from kurt.content.fetch import workflow as _fetch  # noqa
+    from kurt.content.indexing import workflow_indexing as _indexing_workflow  # noqa
 
     # Get the workflow function
     workflow_func = None
     queue = None
     if workflow_name == "map_url_workflow":
-        from kurt.workflows.map import get_map_queue, map_url_workflow
+        from kurt.content.map.workflow import get_map_queue, map_url_workflow
 
         workflow_func = map_url_workflow
         queue = get_map_queue()
-    elif workflow_name == "fetch_batch_workflow":
-        from kurt.workflows.fetch import fetch_batch_workflow, fetch_queue
+    elif workflow_name == "fetch_workflow":
+        from kurt.content.fetch.workflow import fetch_queue, fetch_workflow
 
-        workflow_func = fetch_batch_workflow
+        workflow_func = fetch_workflow
         queue = fetch_queue
     elif workflow_name == "complete_indexing_workflow":
-        from kurt.content.indexing.workflow import complete_indexing_workflow
+        from kurt.content.indexing.workflow_indexing import complete_indexing_workflow
 
         workflow_func = complete_indexing_workflow
         queue = None  # No queue needed for direct workflow invocation

@@ -10,9 +10,8 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from kurt.content.embeddings import embedding_to_bytes, generate_embeddings
-from kurt.content.indexing.models import EntityType
 from kurt.db.database import async_session_scope
-from kurt.db.models import Entity
+from kurt.db.models import Entity, EntityType
 
 if TYPE_CHECKING:
     pass
@@ -77,11 +76,13 @@ async def search_similar_entities(
         )
         existing_entity = result.first()
 
+        # Get event loop once for all async operations
+        loop = asyncio.get_event_loop()
+
         if existing_entity:
             embedding_bytes = existing_entity.embedding
         else:
             # Generate new embedding (sync operation - run in executor)
-            loop = asyncio.get_event_loop()
             embedding_vector = await loop.run_in_executor(
                 None, lambda: generate_embeddings([entity_name])[0]
             )

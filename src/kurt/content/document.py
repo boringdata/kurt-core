@@ -19,6 +19,7 @@ from uuid import UUID
 
 from sqlmodel import select
 
+from kurt.config import load_config
 from kurt.db.database import get_session
 from kurt.db.models import Document, IngestionStatus, PageAnalytics, SourceType
 from kurt.integrations.analytics.utils import normalize_url_for_analytics
@@ -28,38 +29,22 @@ from kurt.integrations.analytics.utils import normalize_url_for_analytics
 # ============================================================================
 
 
-def add_documents_for_urls(
-    url_list: list[str],
-    discovery_method: Optional[str] = None,
-    discovery_url: Optional[str] = None,
-    batch_size: int = 100,
-) -> tuple[list[Document], int]:
+def add_documents_for_urls(url_list: list[str]) -> tuple[list[Document], int]:
     """
     Create document records for URLs (auto-creates if don't exist).
 
-    Optimized for bulk document creation with batch commits and optional
-    discovery metadata tracking.
+    Basic CRUD operation - no discovery metadata.
+    For discovery operations, use map-specific functions in content/map/.
 
     Args:
         url_list: List of URLs
-        discovery_method: Optional discovery method (sitemap, crawl, blogroll, etc.)
-        discovery_url: Optional source URL where these URLs were discovered
-        batch_size: Number of documents to commit at once (default: 100)
 
     Returns:
         Tuple of (list of Document objects, count of newly created documents)
 
     Example:
-        >>> # Basic usage
         >>> docs, new_count = add_documents_for_urls(["https://example.com/page1", "https://example.com/page2"])
         >>> # Returns: ([Document(...), Document(...)], 2)
-        >>>
-        >>> # With discovery metadata
-        >>> docs, new_count = add_documents_for_urls(
-        ...     urls,
-        ...     discovery_method="sitemap",
-        ...     discovery_url="https://example.com/sitemap.xml"
-        ... )
     """
     session = get_session()
 
@@ -70,39 +55,14 @@ def add_documents_for_urls(
     existing_docs = list(session.exec(existing_urls_stmt).all())
     existing_urls = {doc.source_url for doc in existing_docs}
 
-    # Create documents for new URLs with batch commits
+    # Create documents for new URLs
     new_urls = [url for url in url_list if url not in existing_urls]
     new_count = 0
 
     if new_urls:
-        # Batch creation for performance
-        docs_to_add = []
         for url in new_urls:
-            # Generate title from URL
-            title = url.rstrip("/").split("/")[-1] or url
-
-            # Create document with optional discovery metadata
-            doc = Document(
-                title=title,
-                source_type=SourceType.URL,
-                source_url=url,
-                ingestion_status=IngestionStatus.NOT_FETCHED,
-                discovery_method=discovery_method,
-                discovery_url=discovery_url,
-            )
-
-            session.add(doc)
-            docs_to_add.append(doc)
-
-            # Commit in batches
-            if len(docs_to_add) >= batch_size:
-                session.commit()
-                docs_to_add = []
-
-        # Commit any remaining
-        if docs_to_add:
-            session.commit()
-
+            add_document(url)
+        session.commit()
         new_count = len(new_urls)
 
     # Return all documents (existing + newly created)
@@ -112,7 +72,9 @@ def add_documents_for_urls(
     return all_docs, new_count
 
 
-def add_documents_for_files(file_list: list[str]) -> tuple[list[Document], int, list[str]]:
+def add_documents_for_files(
+    file_list: list[str],
+) -> tuple[list[Document], int, list[str], list[str]]:
     """
     Create document records for local files.
 
@@ -123,11 +85,11 @@ def add_documents_for_files(file_list: list[str]) -> tuple[list[Document], int, 
         file_list: List of file paths
 
     Returns:
-        Tuple of (list of Document objects, count of newly created, list of errors)
+        Tuple of (list of Document objects, count of newly created, list of errors, list of copied file messages)
 
     Example:
-        >>> docs, new_count, errors = add_documents_for_files(["./docs/page1.md", "./docs/page2.md"])
-        >>> # Returns: ([Document(...), Document(...)], 2, [])
+        >>> docs, new_count, errors, copied = add_documents_for_files(["./docs/page1.md", "./docs/page2.md"])
+        >>> # Returns: ([Document(...), Document(...)], 2, [], [])
     """
     from pathlib import Path
 
@@ -139,6 +101,7 @@ def add_documents_for_files(file_list: list[str]) -> tuple[list[Document], int, 
 
     created_docs = []
     errors = []
+    copied_files = []
 
     for file_path_str in file_list:
         file_path = Path(file_path_str).resolve()
@@ -168,6 +131,7 @@ def add_documents_for_files(file_list: list[str]) -> tuple[list[Document], int, 
 
             relative_path = dest_path.relative_to(source_base)
             content_path_str = str(relative_path)
+            copied_files.append(f"Copied {file_path.name} to sources/local/")
 
         # Check if document exists
         existing_stmt = select(Document).where(Document.content_path == content_path_str)
@@ -211,7 +175,7 @@ def add_documents_for_files(file_list: list[str]) -> tuple[list[Document], int, 
         [d for d in created_docs if d.id and d.ingestion_status == IngestionStatus.FETCHED]
     )
 
-    return created_docs, new_count, errors
+    return created_docs, new_count, errors, copied_files
 
 
 def add_document(url: str, title: str = None) -> UUID:
@@ -639,7 +603,11 @@ def _strip_frontmatter(content: str) -> str:
 
 
 def save_document_content_and_metadata(
-    doc_id: UUID, content: str, metadata: dict, embedding: bytes | None
+    doc_id: UUID,
+    content: str,
+    metadata: dict,
+    embedding: bytes | None,
+    public_url: str | None = None,
 ) -> dict:
     """
     Save content to filesystem and update database.
@@ -651,6 +619,7 @@ def save_document_content_and_metadata(
         content: Markdown content
         metadata: Metadata dict (title, author, date, etc.)
         embedding: Optional embedding bytes
+        public_url: Optional public URL (for CMS documents, stored in discovery_url for link matching)
 
     Returns:
         dict with keys:
@@ -662,6 +631,11 @@ def save_document_content_and_metadata(
         ...     doc_id, "# Title\\n\\nContent", {"title": "..."}, embedding_bytes
         ... )
         >>> # Returns: {'content_path': 'sources/example.com/page1.md', ...}
+
+        >>> # CMS document with public URL
+        >>> result = save_document_content_and_metadata(
+        ...     doc_id, content, metadata, embedding, public_url="https://technically.dev/posts/slug"
+        ... )
     """
     from datetime import datetime
 
@@ -699,6 +673,10 @@ def save_document_content_and_metadata(
                 doc.published_date = datetime.fromisoformat(metadata["date"])
             except (ValueError, AttributeError):
                 pass
+
+    # Store public URL (for CMS documents - used for link matching)
+    if public_url:
+        doc.discovery_url = public_url
 
     # Store embedding
     if embedding:
@@ -1442,3 +1420,137 @@ def resolve_urls_to_doc_ids(url_list: list[str]) -> dict[str, UUID]:
             url_to_id[doc.discovery_url] = doc.id
 
     return url_to_id
+
+
+def save_document_links(doc_id: UUID, links: list[dict]) -> int:
+    """
+    Save document links to database, replacing existing links.
+
+    Args:
+        doc_id: Source document UUID
+        links: List of link dicts with "url" and "anchor_text"
+
+    Returns:
+        Number of links saved
+    """
+    from kurt.db.models import DocumentLink
+
+    session = get_session()
+
+    # Delete existing links (for refetch)
+    existing_links = session.exec(
+        select(DocumentLink).where(DocumentLink.source_document_id == doc_id)
+    ).all()
+    for link in existing_links:
+        session.delete(link)
+
+    # Early return if no links
+    target_urls = [link["url"] for link in links]
+    if not target_urls:
+        session.commit()
+        return 0
+
+    # Resolve URLs to document IDs
+    url_to_doc_id = resolve_urls_to_doc_ids(target_urls)
+
+    # Create links for URLs with matching documents
+    saved_count = 0
+    for link in links:
+        target_url = link["url"]
+        if target_url in url_to_doc_id:
+            document_link = DocumentLink(
+                source_document_id=doc_id,
+                target_document_id=url_to_doc_id[target_url],
+                anchor_text=link["anchor_text"],
+            )
+            session.add(document_link)
+            saved_count += 1
+
+    session.commit()
+    return saved_count
+
+
+def get_document_links(document_id: UUID, direction: str) -> list[dict]:
+    """
+    Get document links from the DocumentLink table.
+
+    Args:
+        document_id: Document UUID
+        direction: "outbound" (links FROM this document) or "inbound" (links TO this document)
+
+    Returns:
+        List of dicts with link information:
+        - source_document_id: UUID of source document
+        - target_document_id: UUID of target document
+        - source_title: Title of source document
+        - target_title: Title of target document
+        - anchor_text: Link anchor text
+
+    Raises:
+        ValueError: If direction is invalid or document doesn't exist
+
+    Example:
+        >>> # Get all links FROM a document
+        >>> outbound = get_document_links(doc_id, direction="outbound")
+        >>> # Get all links TO a document
+        >>> inbound = get_document_links(doc_id, direction="inbound")
+    """
+    from sqlmodel import select
+
+    from kurt.db.models import Document, DocumentLink
+
+    if direction not in ("inbound", "outbound"):
+        raise ValueError(f"Invalid direction: {direction}. Must be 'inbound' or 'outbound'")
+
+    session = get_session()
+
+    # Verify document exists
+    doc = session.get(Document, document_id)
+    if not doc:
+        raise ValueError(f"Document not found: {document_id}")
+
+    # Build query based on direction
+    if direction == "outbound":
+        # Links FROM this document
+        stmt = (
+            select(DocumentLink, Document)
+            .join(Document, DocumentLink.target_document_id == Document.id)
+            .where(DocumentLink.source_document_id == document_id)
+        )
+    else:  # inbound
+        # Links TO this document
+        stmt = (
+            select(DocumentLink, Document)
+            .join(Document, DocumentLink.source_document_id == Document.id)
+            .where(DocumentLink.target_document_id == document_id)
+        )
+
+    results = session.exec(stmt).all()
+
+    # Format results
+    links = []
+    for link, related_doc in results:
+        if direction == "outbound":
+            # related_doc is the target
+            links.append(
+                {
+                    "source_document_id": link.source_document_id,
+                    "target_document_id": link.target_document_id,
+                    "source_title": doc.title or doc.source_url,
+                    "target_title": related_doc.title or related_doc.source_url,
+                    "anchor_text": link.anchor_text,
+                }
+            )
+        else:  # inbound
+            # related_doc is the source
+            links.append(
+                {
+                    "source_document_id": link.source_document_id,
+                    "target_document_id": link.target_document_id,
+                    "source_title": related_doc.title or related_doc.source_url,
+                    "target_title": doc.title or doc.source_url,
+                    "anchor_text": link.anchor_text,
+                }
+            )
+
+    return links

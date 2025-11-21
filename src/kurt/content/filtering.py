@@ -8,9 +8,6 @@ import os
 from dataclasses import dataclass
 from typing import Optional
 
-# Re-export for backward compatibility (deprecated - use kurt.db.knowledge_graph instead)
-from kurt.db.graph_queries import get_document_links, list_entities_by_type  # noqa: F401
-
 
 @dataclass
 class DocumentFilters:
@@ -308,14 +305,21 @@ def build_document_query(
     # Filter by status
     if with_status:
         status_enum = IngestionStatus[with_status]
-        stmt = stmt.where(Document.status == status_enum)
+        stmt = stmt.where(Document.ingestion_status == status_enum)
     elif not refetch:
         # Default: exclude FETCHED documents unless refetch=True
-        stmt = stmt.where(Document.status != IngestionStatus.FETCHED)
+        stmt = stmt.where(Document.ingestion_status != IngestionStatus.FETCHED)
 
     # Filter by cluster
     if in_cluster:
-        stmt = stmt.where(Document.cluster == in_cluster)
+        # Join with DocumentClusterEdge and TopicCluster to filter by cluster name
+        from kurt.db.models import DocumentClusterEdge, TopicCluster
+
+        stmt = (
+            stmt.join(DocumentClusterEdge, Document.id == DocumentClusterEdge.document_id)
+            .join(TopicCluster, DocumentClusterEdge.cluster_id == TopicCluster.id)
+            .where(TopicCluster.name == in_cluster)
+        )
 
     # Filter by content type
     if with_content_type:

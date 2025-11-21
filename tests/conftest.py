@@ -252,14 +252,16 @@ def mock_map_functions():
     Returns:
         Dict with mock functions for customization
     """
+    # Patch at sitemap module level - this mocks the HTTP/network calls
+    # but lets the rest of the logic (document creation, etc.) run normally
     with (
-        patch("kurt.content.map.sitemap.discover_sitemap_urls") as mock_sitemap,
+        patch("kurt.content.map.sitemap.discover_sitemap_urls") as mock_discover_sitemap,
         patch("kurt.content.map.blogroll.identify_blogroll_candidates") as mock_blogroll,
         patch("kurt.content.map.blogroll.extract_chronological_content") as mock_extract,
-        patch("kurt.content.map.crawl.crawl_website") as mock_crawler,
+        patch("kurt.content.map.crawl_website") as mock_crawler,
     ):
-        # Default return values
-        mock_sitemap.return_value = [
+        # Default return values for discover_sitemap_urls
+        mock_discover_sitemap.return_value = [
             "https://example.com/page1",
             "https://example.com/page2",
             "https://example.com/page3",
@@ -272,7 +274,7 @@ def mock_map_functions():
         mock_crawler.return_value = []  # No crawled URLs by default
 
         yield {
-            "mock_sitemap": mock_sitemap,
+            "mock_sitemap": mock_discover_sitemap,
             "mock_blogroll": mock_blogroll,
             "mock_extract": mock_extract,
             "mock_crawler": mock_crawler,

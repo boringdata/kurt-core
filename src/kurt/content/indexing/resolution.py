@@ -1,17 +1,21 @@
-"""DSPy LLM resolution for entity groups.
+"""Entity resolution business logic.
 
-This module contains ONLY the DSPy signature and LLM call logic.
+This module contains ONLY the DSPy signature, LLM calls, and validation logic.
 NO orchestration, NO database calls, NO clustering.
 
 Pattern:
-- This is pure LLM business logic (DSPy signatures + calls)
-- Orchestration (clustering, DB queries, parallel processing) is in workflow.py
+- This is pure business logic (DSPy signatures + LLM calls + validation)
+- Orchestration (clustering, DB queries, parallel processing) is in workflow_entity_resolution.py
 - Database operations are in db/graph_*.py
 """
+
+import logging
 
 import dspy
 
 from kurt.content.indexing.models import GroupResolution
+
+logger = logging.getLogger(__name__)
 
 # ============================================================================
 # DSPy Signature
@@ -106,3 +110,41 @@ async def resolve_single_group(
         )
 
     return group_resolutions
+
+
+# ============================================================================
+# Validation Functions
+# ============================================================================
+
+
+def validate_merge_decisions(resolutions: list[dict]) -> list[dict]:
+    """Validate MERGE_WITH decisions and fix invalid ones.
+
+    This is business logic - validates that merge targets actually exist.
+
+    Args:
+        resolutions: List of resolution dicts
+
+    Returns:
+        List of validated resolution dicts
+    """
+    all_entity_names = {r["entity_name"] for r in resolutions}
+    validated_resolutions = []
+
+    for resolution in resolutions:
+        decision = resolution["decision"]
+        entity_name = resolution["entity_name"]
+
+        if decision.startswith("MERGE_WITH:"):
+            merge_target = decision.replace("MERGE_WITH:", "").strip()
+
+            if merge_target not in all_entity_names:
+                logger.warning(
+                    f"Invalid MERGE_WITH target '{merge_target}' for entity '{entity_name}'. "
+                    f"Target not found in group. Converting to CREATE_NEW."
+                )
+                resolution["decision"] = "CREATE_NEW"
+
+        validated_resolutions.append(resolution)
+
+    return validated_resolutions
