@@ -65,7 +65,7 @@ class PostgreSQLClient(DatabaseClient):
         """
         Initialize the PostgreSQL database.
 
-        Creates all tables in the database.
+        Creates all tables and installs required extensions (pgvector).
         Note: For multi-tenant setups, ensure RLS policies are set up separately.
         """
         console.print("[dim]Connecting to PostgreSQL...[/dim]")
@@ -73,6 +73,17 @@ class PostgreSQLClient(DatabaseClient):
         # Create database engine
         engine = create_engine(self.database_url, echo=False)
         self._engine = engine
+
+        # Install pgvector extension (for vector similarity search)
+        console.print("[dim]Installing extensions...[/dim]")
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+                conn.commit()
+            console.print("[green]✓[/green] Installed pgvector extension")
+        except Exception as e:
+            console.print(f"[yellow]⚠[/yellow] Could not install pgvector: {e}")
+            console.print("[dim]Vector similarity search will not be available[/dim]")
 
         # Create all tables
         console.print("[dim]Creating tables...[/dim]")
