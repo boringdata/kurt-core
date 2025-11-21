@@ -14,6 +14,7 @@ from .map import map_cmd
 from .search import links_cmd, search_cmd
 from .stats import stats_cmd
 from .sync_metadata import sync_metadata
+from .write import write_cmd
 
 
 @click.group()
@@ -25,6 +26,7 @@ def content():
     Available commands:
     - fetch: Fetch and index content from URLs
     - map: Discover content without downloading
+    - write: Generate content with AI based on sources and goals
     - search: Search document content with ripgrep
     - links: Show links from/to a document
     - cluster: Organize documents into topic clusters
@@ -43,6 +45,7 @@ def content():
 # Register all subcommands
 content.add_command(fetch_cmd, name="fetch")
 content.add_command(map_cmd, name="map")
+content.add_command(write_cmd, name="write")
 content.add_command(search_cmd, name="search")
 content.add_command(links_cmd, name="links")
 content.add_command(cluster_urls_cmd, name="cluster")
