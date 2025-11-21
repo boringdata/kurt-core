@@ -2,8 +2,9 @@
 
 import asyncio
 import logging
+from datetime import datetime
 from typing import TYPE_CHECKING, Optional, Union
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import numpy as np
 from sqlmodel import Session, select
@@ -495,6 +496,72 @@ def create_entity_with_document_edges(
         session.add(edge)
 
     return entity
+
+
+def find_existing_entity(session, canonical_name: str, entity_type: str) -> Entity | None:
+    """Find an existing entity by canonical name and type.
+
+    Used during re-indexing to check if entity already exists before creating duplicate.
+
+    Args:
+        session: Database session
+        canonical_name: Canonical name to search for
+        entity_type: Entity type (e.g., "Technology", "Person")
+
+    Returns:
+        Entity if found, None otherwise
+    """
+    stmt = select(Entity).where(
+        Entity.canonical_name == canonical_name,
+        Entity.entity_type == entity_type,
+    )
+    return session.exec(stmt).first()
+
+
+def find_or_create_document_entity_link(
+    session, document_id: UUID, entity_id: UUID, confidence: float, context: str | None = None
+) -> DocumentEntity:
+    """Find existing document-entity link or create new one.
+
+    Used during re-indexing to prevent duplicate links and UNIQUE constraint violations.
+
+    Args:
+        session: Database session
+        document_id: Document UUID
+        entity_id: Entity UUID
+        confidence: Confidence score
+        context: Optional context/quote
+
+    Returns:
+        DocumentEntity (existing or newly created)
+    """
+    # Check if link already exists
+    stmt = select(DocumentEntity).where(
+        DocumentEntity.document_id == document_id,
+        DocumentEntity.entity_id == entity_id,
+    )
+    existing_edge = session.exec(stmt).first()
+
+    if existing_edge:
+        # Update existing edge
+        existing_edge.confidence = confidence
+        existing_edge.context = context
+        existing_edge.updated_at = datetime.utcnow()
+        return existing_edge
+    else:
+        # Create new edge
+        edge = DocumentEntity(
+            id=uuid4(),
+            document_id=document_id,
+            entity_id=entity_id,
+            mention_count=1,
+            confidence=confidence,
+            context=context,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+        )
+        session.add(edge)
+        return edge
 
 
 # ============================================================================
