@@ -69,3 +69,44 @@ def bytes_to_embedding(embedding_bytes: bytes) -> list[float]:
         embedding = bytes_to_embedding(stored_bytes)
     """
     return struct.unpack(f"{len(embedding_bytes)//4}f", embedding_bytes)
+
+
+def generate_document_embedding(content: str, max_chars: int = 1000) -> bytes:
+    """Generate embedding for document content.
+
+    EXPENSIVE LLM CALL (~$0.0001 per call) - use wisely!
+
+    Uses first max_chars characters to avoid token limits.
+    Returns bytes for direct database storage.
+
+    Args:
+        content: Document content
+        max_chars: Maximum characters to use (default: 1000)
+
+    Returns:
+        Embedding as bytes (numpy float32 array)
+
+    Raises:
+        Exception: If embedding generation fails
+
+    Example:
+        >>> embedding = generate_document_embedding("Document content here...")
+        >>> # Returns: b'\\x00\\x00\\x00...' (bytes)
+        >>> # Can be stored directly in Document.embedding field
+    """
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    # Use first max_chars
+    content_sample = content[:max_chars] if len(content) > max_chars else content
+
+    # Generate embedding using configured model
+    embeddings = generate_embeddings([content_sample])
+
+    # Convert to bytes
+    embedding_bytes = embedding_to_bytes(embeddings[0])
+
+    logger.info(f"Generated embedding ({len(embeddings[0])} dimensions)")
+
+    return embedding_bytes
