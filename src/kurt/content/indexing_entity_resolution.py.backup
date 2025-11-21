@@ -396,38 +396,6 @@ def _create_entities_and_relationships(doc_to_kg_data: dict, resolutions: list[d
     """
     Stage 4: Create new entities and all relationship edges for multiple documents.
 
-    DEPRECATED: This is now a wrapper around the DBOS workflow for backward compatibility.
-    Use entity_resolution_workflow() directly for better observability and checkpointing.
-
-    Args:
-        doc_to_kg_data: Dict mapping document_id (UUID) to kg_data dict with 'new_entities' and 'relationships'
-        resolutions: List of resolution decisions from Stage 3
-    """
-    # Import DBOS workflow (lazy import to avoid circular dependency)
-    try:
-        from kurt.workflows.entity_resolution import entity_resolution_workflow
-
-        # Call the new DBOS workflow
-        result = entity_resolution_workflow(doc_to_kg_data, resolutions)
-        logger.info(
-            f"Stage 4: Created {result['entities_created']} new entities, "
-            f"linked {result['entities_linked']} to existing for {len(result['document_ids'])} documents"
-        )
-        return result
-
-    except ImportError:
-        # DBOS not available - fall back to old implementation
-        logger.warning("DBOS not available, using legacy entity resolution (no checkpointing)")
-        return _create_entities_and_relationships_legacy(doc_to_kg_data, resolutions)
-
-
-def _create_entities_and_relationships_legacy(doc_to_kg_data: dict, resolutions: list[dict]):
-    """
-    Legacy implementation of entity resolution without DBOS workflows.
-
-    This is the old 400-line monolithic function kept for backward compatibility
-    when DBOS is not available.
-
     Args:
         doc_to_kg_data: Dict mapping document_id (UUID) to kg_data dict with 'new_entities' and 'relationships'
         resolutions: List of resolution decisions from Stage 3
