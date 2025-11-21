@@ -25,12 +25,7 @@ from sqlmodel import select
 from kurt.content.embeddings import generate_embeddings
 from kurt.content.indexing_models import GroupResolution
 from kurt.db.database import get_session
-from kurt.db.graph_entities import (
-    create_entity_with_document_edges,
-    find_existing_entity,
-    find_or_create_document_entity_link,
-)
-from kurt.db.models import DocumentEntity, Entity, EntityRelationship
+from kurt.db.models import DocumentEntity, Entity
 from kurt.utils.async_helpers import gather_with_semaphore
 
 logger = logging.getLogger(__name__)
@@ -393,456 +388,79 @@ def _resolve_entity_groups(
 
 
 def _create_entities_and_relationships(doc_to_kg_data: dict, resolutions: list[dict]):
-    """
-    Stage 4: Create new entities and all relationship edges for multiple documents.
+    """Stage 4: Create new entities and all relationship edges for multiple documents.
 
-    DEPRECATED: This is now a wrapper around the DBOS workflow for backward compatibility.
-    Use entity_resolution_workflow() directly for better observability and checkpointing.
+    Calls the DBOS workflow (or falls back to direct function calls in tests).
 
     Args:
-        doc_to_kg_data: Dict mapping document_id (UUID) to kg_data dict with 'new_entities' and 'relationships'
+        doc_to_kg_data: Dict mapping document_id (UUID) to kg_data dict
         resolutions: List of resolution decisions from Stage 3
+
+    Returns:
+        dict with entities_created, entities_linked, relationships_created
     """
-    # Import DBOS workflow (lazy import to avoid circular dependency)
+    # Try DBOS workflow first (production)
     try:
         from kurt.workflows.entity_resolution import entity_resolution_workflow
 
-        # Call the new DBOS workflow
         result = entity_resolution_workflow(doc_to_kg_data, resolutions)
         logger.info(
             f"Stage 4: Created {result['entities_created']} new entities, "
             f"linked {result['entities_linked']} to existing for {len(result['document_ids'])} documents"
         )
         return result
-
-    except ImportError:
-        # DBOS not available - fall back to old implementation
-        logger.warning("DBOS not available, using legacy entity resolution (no checkpointing)")
-        return _create_entities_and_relationships_legacy(doc_to_kg_data, resolutions)
-
-
-def _create_entities_and_relationships_legacy(doc_to_kg_data: dict, resolutions: list[dict]):
-    """
-    Legacy implementation of entity resolution without DBOS workflows.
-
-    This is the old 400-line monolithic function kept for backward compatibility
-    when DBOS is not available.
-
-    Args:
-        doc_to_kg_data: Dict mapping document_id (UUID) to kg_data dict with 'new_entities' and 'relationships'
-        resolutions: List of resolution decisions from Stage 3
-    """
-    session = get_session()
-
-    try:
-        # Clean up old data for all documents (when re-indexing)
-        # IMPORTANT: Delete ALL old links EXCEPT:
-        # - Links to entities being linked via Stage 2 (existing_entities)
-        # - Links to entities being created in Stage 4 (new_entities)
-        all_document_ids = list(doc_to_kg_data.keys())
-        all_old_entity_ids = set()
-
-        for document_id in all_document_ids:
-            kg_data = doc_to_kg_data[document_id]
-
-            # Get entity IDs that should be kept (from Stage 2)
-            existing_entity_ids_to_keep = set()
-            for entity_id_str in kg_data.get("existing_entities", []):
-                try:
-                    existing_entity_ids_to_keep.add(UUID(entity_id_str.strip()))
-                except (ValueError, AttributeError):
-                    pass
-
-            # Get entity names being created (from Stage 4)
-            new_entity_names = {e["name"] for e in kg_data.get("new_entities", [])}
-
-            # Step 1: Get all entities that were linked to this document
-            stmt = select(DocumentEntity).where(DocumentEntity.document_id == document_id)
-            old_doc_entities = session.exec(stmt).all()
-
-            # Only clean links to entities that are NOT in current run
-            old_entity_ids_to_clean = set()
-            for de in old_doc_entities:
-                # Keep if it's an existing entity from Stage 2
-                if de.entity_id in existing_entity_ids_to_keep:
-                    continue
-
-                # Keep if it's being recreated in Stage 4
-                entity = session.get(Entity, de.entity_id)
-                if entity and entity.name in new_entity_names:
-                    # This will be recreated, so keep it (don't clean up)
-                    continue
-                else:
-                    # Entity is no longer mentioned - orphan it
-                    old_entity_ids_to_clean.add(de.entity_id)
-
-            all_old_entity_ids.update(old_entity_ids_to_clean)
-
-            if old_entity_ids_to_clean:
-                # Step 2: Delete old relationships where BOTH source and target were from this document
-                for entity_id in old_entity_ids_to_clean:
-                    stmt_rel = select(EntityRelationship).where(
-                        EntityRelationship.source_entity_id == entity_id,
-                        EntityRelationship.target_entity_id.in_(old_entity_ids_to_clean),
-                    )
-                    old_relationships = session.exec(stmt_rel).all()
-                    for old_rel in old_relationships:
-                        session.delete(old_rel)
-
-                # Step 3: Delete old DocumentEntity links for entities being recreated
-                for de in old_doc_entities:
-                    if de.entity_id in old_entity_ids_to_clean:
-                        session.delete(de)
-
-                logger.debug(
-                    f"Deleted {len([de for de in old_doc_entities if de.entity_id in old_entity_ids_to_clean])} old document-entity links for doc {document_id}"
-                )
-
-        # Step 4: Clean up orphaned entities (entities with no remaining document links)
-        if all_old_entity_ids:
-            orphaned_count = 0
-            for entity_id in all_old_entity_ids:
-                # Check if this entity still has any document links
-                stmt_check = select(DocumentEntity).where(DocumentEntity.entity_id == entity_id)
-                remaining_links = session.exec(stmt_check).first()
-
-                if not remaining_links:
-                    # This entity has no more document links - delete it
-                    entity = session.get(Entity, entity_id)
-                    if entity:
-                        # Also delete any remaining relationships involving this entity
-                        stmt_rel_cleanup = select(EntityRelationship).where(
-                            (EntityRelationship.source_entity_id == entity_id)
-                            | (EntityRelationship.target_entity_id == entity_id)
-                        )
-                        orphan_rels = session.exec(stmt_rel_cleanup).all()
-                        for rel in orphan_rels:
-                            session.delete(rel)
-
-                        session.delete(entity)
-                        orphaned_count += 1
-
-            if orphaned_count > 0:
-                logger.debug(
-                    f"Cleaned up {orphaned_count} orphaned entities with no remaining links"
-                )
-
-        # Map entity names to IDs (for relationship creation)
-        entity_name_to_id = {}
-        # Map entity names to which documents mention them
-        entity_name_to_docs = {}
-
-        # Build mapping of which documents mention which entity names
-        for doc_id, kg_data in doc_to_kg_data.items():
-            for new_entity in kg_data["new_entities"]:
-                entity_name = new_entity["name"]
-                if entity_name not in entity_name_to_docs:
-                    entity_name_to_docs[entity_name] = []
-                entity_name_to_docs[entity_name].append(
-                    {
-                        "document_id": doc_id,
-                        "confidence": new_entity["confidence"],
-                        "quote": new_entity.get("quote"),
-                    }
-                )
-
-        # First pass: Handle MERGE_WITH decisions to build canonical entity map
-        # This maps entity names to their canonical merge target
-        merge_map = {}  # entity_name -> canonical_entity_name
-        all_entity_names = {r["entity_name"] for r in resolutions}
-
-        for resolution in resolutions:
-            entity_name = resolution["entity_name"]
-            decision = resolution["decision"]
-
-            if decision.startswith("MERGE_WITH:"):
-                merge_target = decision.replace("MERGE_WITH:", "").strip()
-
-                # Validate that merge target exists in the group
-                if merge_target not in all_entity_names:
-                    logger.warning(
-                        f"Invalid MERGE_WITH target '{merge_target}' for entity '{entity_name}'. "
-                        f"Target not found in group {list(all_entity_names)}. "
-                        f"Treating as CREATE_NEW instead."
-                    )
-                    # Change decision to CREATE_NEW since target is invalid
-                    resolution["decision"] = "CREATE_NEW"
-                    continue
-
-                merge_map[entity_name] = merge_target
-
-        # Build transitive closure of merges (A->B, B->C => A->C)
-        # This ensures all entities in a merge chain point to the final canonical entity
-        # Also detect and break cycles
-        def find_canonical_with_cycle_detection(entity_name: str, visited: set) -> str | None:
-            """
-            Follow merge chain to find canonical entity.
-            Returns None if a cycle is detected.
-            """
-            if entity_name not in merge_map:
-                # This is a canonical entity (not merging with anyone)
-                return entity_name
-
-            if entity_name in visited:
-                # Cycle detected!
-                return None
-
-            visited.add(entity_name)
-            return find_canonical_with_cycle_detection(merge_map[entity_name], visited)
-
-        # Detect cycles and resolve them
-        cycles_detected = []
-        for entity_name in list(merge_map.keys()):
-            canonical = find_canonical_with_cycle_detection(entity_name, set())
-            if canonical is None:
-                # Cycle detected - find all entities in the cycle
-                cycle_entities = []
-                current = entity_name
-                visited = set()
-                while current not in visited:
-                    visited.add(current)
-                    cycle_entities.append(current)
-                    if current not in merge_map:
-                        break
-                    current = merge_map[current]
-
-                cycles_detected.append(cycle_entities)
-                logger.warning(
-                    f"Cycle detected in merge chain: {' -> '.join(cycle_entities)} -> {current}. "
-                    f"Breaking cycle by choosing '{cycle_entities[0]}' as canonical entity."
-                )
-
-                # Break the cycle by picking the first entity as canonical
-                # and making all others merge into it
-                canonical_entity = cycle_entities[0]
-                for ent in cycle_entities:
-                    if ent == canonical_entity:
-                        # Remove from merge_map - it's now canonical
-                        if ent in merge_map:
-                            del merge_map[ent]
-                        # Update its resolution to CREATE_NEW
-                        for res in resolutions:
-                            if res["entity_name"] == ent:
-                                res["decision"] = "CREATE_NEW"
-                                break
-                    else:
-                        # Point to canonical entity
-                        merge_map[ent] = canonical_entity
-
-        # Now build transitive closure for remaining (non-cyclic) chains
-        changed = True
-        max_iterations = 10
-        iteration = 0
-        while changed and iteration < max_iterations:
-            changed = False
-            iteration += 1
-            for entity_name, merge_target in list(merge_map.items()):
-                if merge_target in merge_map:
-                    # Follow the chain
-                    final_target = merge_map[merge_target]
-                    if merge_map[entity_name] != final_target:
-                        merge_map[entity_name] = final_target
-                        changed = True
-
-        # Group resolutions by canonical entity
-        # For merged entities, use the canonical name from the merge target's resolution
-        canonical_groups = {}  # canonical_name -> list of resolutions
-        for resolution in resolutions:
-            entity_name = resolution["entity_name"]
-
-            if entity_name in merge_map:
-                # This entity merges with a peer - find the canonical resolution
-                canonical_name = merge_map[entity_name]
-                # Find the canonical entity's resolution to get its canonical_name
-                canonical_resolution = next(
-                    (r for r in resolutions if r["entity_name"] == canonical_name), None
-                )
-                if canonical_resolution:
-                    canonical_key = canonical_resolution["canonical_name"]
-                else:
-                    canonical_key = canonical_name
-            else:
-                # This entity is canonical (CREATE_NEW or links to existing)
-                canonical_key = resolution["canonical_name"]
-
-            if canonical_key not in canonical_groups:
-                canonical_groups[canonical_key] = []
-            canonical_groups[canonical_key].append(resolution)
-
-        # Process each canonical group
-        for canonical_name, group_resolutions in canonical_groups.items():
-            # Find the primary resolution (the one that's not a MERGE_WITH)
-            primary_resolution = next(
-                (r for r in group_resolutions if not r["decision"].startswith("MERGE_WITH:")),
-                None,  # Will be None if all are merges (should not happen after cycle detection)
+    except Exception as e:
+        # Fallback for tests where DBOS isn't initialized
+        if "DBOS" in str(e):
+            logger.debug("DBOS not initialized, calling graph_resolution functions directly")
+            from kurt.db.database import get_session
+            from kurt.db.graph_resolution import (
+                build_entity_docs_mapping,
+                cleanup_old_entities,
+                create_entities,
+                create_relationships,
+                group_by_canonical_entity,
+                resolve_merge_chains,
             )
 
-            # Defensive check: if all resolutions are MERGE_WITH (shouldn't happen after cycle detection)
-            if primary_resolution is None:
-                logger.error(
-                    f"All resolutions for '{canonical_name}' are MERGE_WITH decisions after cycle detection. "
-                    f"This should not happen - indicates a bug in cycle detection. "
-                    f"Converting to CREATE_NEW as fallback."
+            session = get_session()
+            try:
+                # Execute same logic as workflow, without DBOS decorators
+                cleanup_old_entities(session, doc_to_kg_data)
+                entity_name_to_docs = build_entity_docs_mapping(doc_to_kg_data)
+                merge_map = resolve_merge_chains(resolutions)
+                canonical_groups = group_by_canonical_entity(resolutions, merge_map)
+                entity_name_to_id = create_entities(session, canonical_groups, entity_name_to_docs)
+                relationships_created = create_relationships(
+                    session, doc_to_kg_data, entity_name_to_id
                 )
-                # Use first resolution and convert to CREATE_NEW
-                primary_resolution = group_resolutions[0]
-                primary_resolution["decision"] = "CREATE_NEW"
+                session.commit()
 
-            decision = primary_resolution["decision"]
-
-            # Handle re-indexing: check if entity already exists before creating
-            if decision == "CREATE_NEW":
-                entity_data = primary_resolution["entity_details"]
-                existing = find_existing_entity(session, canonical_name, entity_data["type"])
-                if existing:
-                    logger.debug(
-                        f"Re-indexing: Entity '{canonical_name}' exists, linking to {existing.id}"
-                    )
-                    decision = str(existing.id)
-
-            if decision == "CREATE_NEW":
-                # Create new entity using helper function
-                entity_data = primary_resolution["entity_details"]
-                entity = create_entity_with_document_edges(
-                    session=session,
-                    canonical_name=canonical_name,
-                    group_resolutions=group_resolutions,
-                    entity_name_to_docs=entity_name_to_docs,
-                    entity_name_to_id=entity_name_to_id,
-                    entity_data=entity_data,
+                entities_created = len(
+                    [
+                        g
+                        for g, resols in canonical_groups.items()
+                        if any(r["decision"] == "CREATE_NEW" for r in resols)
+                    ]
                 )
+                entities_linked = len(canonical_groups) - entities_created
 
-            else:  # Link to existing entity (should be a UUID)
-                try:
-                    entity_id = UUID(decision)
-                except ValueError:
-                    logger.warning(
-                        f"Invalid entity ID in decision: '{decision}' for entity '{group_resolutions[0]['entity_name']}'. "
-                        f"Expected UUID format (e.g., '123e4567-e89b-12d3-a456-426614174000'). "
-                        f"This might be an entity name instead of UUID. Creating new entity instead."
-                    )
-                    # Log the full resolution for debugging
-                    logger.debug(f"Full resolution data: {primary_resolution}")
-
-                    # Fallback to CREATE_NEW logic using helper function
-                    entity_data = primary_resolution["entity_details"]
-                    entity = create_entity_with_document_edges(
-                        session=session,
-                        canonical_name=canonical_name,
-                        group_resolutions=group_resolutions,
-                        entity_name_to_docs=entity_name_to_docs,
-                        entity_name_to_id=entity_name_to_id,
-                        entity_data=entity_data,
-                    )
-
-                    # Continue to next group
-                    continue
-
-                entity = session.get(Entity, entity_id)
-
-                if entity:
-                    # Collect all entity names in this group
-                    all_entity_names = [r["entity_name"] for r in group_resolutions]
-
-                    # Collect all aliases from all resolutions
-                    all_aliases = set(entity.aliases or [])
-                    for r in group_resolutions:
-                        all_aliases.update(r["aliases"])
-                    entity.aliases = list(all_aliases)
-
-                    # Count unique docs mentioning any entity in this group
-                    unique_docs = set()
-                    for ent_name in all_entity_names:
-                        for doc_info in entity_name_to_docs.get(ent_name, []):
-                            unique_docs.add(doc_info["document_id"])
-                    entity.source_mentions += len(unique_docs)
-                    entity.updated_at = datetime.utcnow()
-
-                    # Map all names to this entity
-                    for ent_name in all_entity_names:
-                        entity_name_to_id[ent_name] = entity_id
-
-                    # Create document-entity edges for ALL documents that mention any entity in this group
-                    docs_to_link = {}
-                    for ent_name in all_entity_names:
-                        for doc_info in entity_name_to_docs.get(ent_name, []):
-                            doc_id = doc_info["document_id"]
-                            # Keep the highest confidence if a doc mentions multiple variations
-                            if (
-                                doc_id not in docs_to_link
-                                or doc_info["confidence"] > docs_to_link[doc_id]["confidence"]
-                            ):
-                                docs_to_link[doc_id] = doc_info
-
-                    for doc_info in docs_to_link.values():
-                        find_or_create_document_entity_link(
-                            session=session,
-                            document_id=doc_info["document_id"],
-                            entity_id=entity_id,
-                            confidence=doc_info["confidence"],
-                            context=doc_info.get("quote"),
-                        )
-
-        # Create relationships from all documents
-        for doc_id, kg_data in doc_to_kg_data.items():
-            for rel in kg_data["relationships"]:
-                source_id = entity_name_to_id.get(rel["source_entity"])
-                target_id = entity_name_to_id.get(rel["target_entity"])
-
-                if not source_id or not target_id:
-                    continue  # Skip if entities not found
-
-                # Check if relationship already exists
-                stmt = select(EntityRelationship).where(
-                    EntityRelationship.source_entity_id == source_id,
-                    EntityRelationship.target_entity_id == target_id,
-                    EntityRelationship.relationship_type == rel["relationship_type"],
+                logger.info(
+                    f"Stage 4: Created {entities_created} new entities, "
+                    f"linked {entities_linked} to existing for {len(doc_to_kg_data)} documents"
                 )
-                existing_rel = session.exec(stmt).first()
-
-                if existing_rel:
-                    # Update evidence count
-                    existing_rel.evidence_count += 1
-                    existing_rel.updated_at = datetime.utcnow()
-                else:
-                    # Create new relationship
-                    relationship = EntityRelationship(
-                        id=uuid4(),
-                        source_entity_id=source_id,
-                        target_entity_id=target_id,
-                        relationship_type=rel["relationship_type"],
-                        confidence=rel["confidence"],
-                        evidence_count=1,
-                        context=rel.get("context"),
-                        created_at=datetime.utcnow(),
-                        updated_at=datetime.utcnow(),
-                    )
-                    session.add(relationship)
-
-        session.commit()
-
-        # Count actual entities created/linked (not individual resolutions, but canonical groups)
-        entities_created = len(
-            [
-                g
-                for g, resols in canonical_groups.items()
-                if any(r["decision"] == "CREATE_NEW" for r in resols)
-            ]
-        )
-        entities_linked = len(canonical_groups) - entities_created
-
-        logger.info(
-            f"Stage 4: Created {entities_created} new entities, "
-            f"linked {entities_linked} to existing entities for {len(all_document_ids)} documents "
-            f"(from {len(resolutions)} individual entity resolutions)"
-        )
-
-    except Exception as e:
-        logger.error(f"Error creating entities and relationships: {e}")
-        session.rollback()
-        raise
-    finally:
-        session.close()
+                return {
+                    "entities_created": entities_created,
+                    "entities_linked": entities_linked,
+                    "relationships_created": relationships_created,
+                }
+            except Exception:
+                session.rollback()
+                raise
+            finally:
+                session.close()
+        else:
+            raise
 
 
 # ============================================================================
