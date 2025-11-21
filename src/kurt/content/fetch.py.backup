@@ -13,12 +13,7 @@ Fetch Engine Selection:
 
 Key Functions:
 - add_document: Create document record (NOT_FETCHED status)
-- resolve_or_create_document: Find or create document by ID/URL
-- fetch_content_from_source: Download content from URL/CMS
-- generate_document_embedding: Create embedding vector (LLM)
-- save_document_content_and_metadata: Save to filesystem + DB
-- extract_and_save_document_links: Parse and save internal links
-- fetch_document: Legacy monolithic fetch (delegates to helpers)
+- fetch_document: Download and store content for a document
 - fetch_documents_batch: Async batch fetch for multiple documents
 """
 
@@ -46,11 +41,6 @@ if dotenv_path:
 else:
     # If no .env found from cwd, try the default search (from module location)
     load_dotenv(override=False)
-
-
-# ============================================================================
-# Configuration & Engine Selection
-# ============================================================================
 
 
 def _get_fetch_engine(override: str = None) -> str:
@@ -170,308 +160,6 @@ def _fetch_from_cms(platform: str, instance: str, doc: Document) -> tuple[str, d
         )
 
 
-# ============================================================================
-# Core Helper Functions (For DBOS Workflows)
-# ============================================================================
-
-
-def resolve_or_create_document(identifier: str | UUID) -> dict:
-    """
-    Find existing document or create new one.
-
-    Fast database operation - returns lightweight dict to minimize checkpoint data.
-
-    Args:
-        identifier: Document UUID or source URL
-
-    Returns:
-        dict with keys:
-            - id: str (document UUID)
-            - source_url: str
-            - cms_platform: str | None
-            - cms_instance: str | None
-            - cms_document_id: str | None
-
-    Example:
-        >>> doc_info = resolve_or_create_document("https://example.com/page1")
-        >>> # Returns: {'id': 'uuid...', 'source_url': 'https://...', ...}
-    """
-    from sqlmodel import select
-
-    session = get_session()
-
-    # Try UUID lookup
-    try:
-        doc_id = UUID(identifier) if not isinstance(identifier, UUID) else identifier
-        doc = session.get(Document, doc_id)
-        if doc:
-            return {
-                "id": str(doc.id),
-                "source_url": doc.source_url,
-                "cms_platform": doc.cms_platform,
-                "cms_instance": doc.cms_instance,
-                "cms_document_id": doc.cms_document_id,
-            }
-    except (ValueError, AttributeError):
-        pass
-
-    # Try URL lookup
-    stmt = select(Document).where(Document.source_url == str(identifier))
-    doc = session.exec(stmt).first()
-
-    if not doc:
-        # Create new document
-        doc_id = add_document(str(identifier))
-        doc = session.get(Document, doc_id)
-
-    return {
-        "id": str(doc.id),
-        "source_url": doc.source_url,
-        "cms_platform": doc.cms_platform,
-        "cms_instance": doc.cms_instance,
-        "cms_document_id": doc.cms_document_id,
-    }
-
-
-def fetch_content_from_source(
-    source_url: str,
-    cms_platform: str = None,
-    cms_instance: str = None,
-    cms_document_id: str = None,
-    fetch_engine: str = None,
-) -> tuple[str, dict]:
-    """
-    Fetch raw content from URL or CMS.
-
-    Network I/O - can fail due to timeouts, rate limits, etc.
-    Should be wrapped in @DBOS.step() for checkpointing.
-
-    Args:
-        source_url: Source URL to fetch
-        cms_platform: CMS platform name (optional)
-        cms_instance: CMS instance name (optional)
-        cms_document_id: CMS document ID (optional)
-        fetch_engine: Optional engine override ('firecrawl', 'trafilatura', 'httpx')
-
-    Returns:
-        Tuple of (content: str, metadata: dict)
-
-    Example:
-        >>> content, metadata = fetch_content_from_source("https://example.com/page1")
-        >>> # Returns: ("# Title\n\nContent...", {"title": "...", ...})
-    """
-    # CMS fetch
-    if cms_platform and cms_instance:
-        # Need document object for CMS fetch
-        session = get_session()
-        from sqlmodel import select
-
-        doc = session.exec(select(Document).where(Document.source_url == source_url)).first()
-        if not doc:
-            raise ValueError(f"Document not found for CMS fetch: {source_url}")
-
-        return _fetch_from_cms(cms_platform, cms_instance, doc)
-
-    # Web fetch
-    # First check if it looks like a CMS URL pattern (legacy check)
-    source_type, parsed_data = parse_source_identifier(source_url)
-
-    if source_type == "cms":
-        raise ValueError(
-            f"CMS URL pattern detected but missing platform/instance fields. "
-            f"URL: {source_url}. Please recreate this document using 'kurt content map cms'."
-        )
-
-    # Standard web fetch
-    engine = _get_fetch_engine(override=fetch_engine)
-
-    if engine == "firecrawl":
-        return fetch_with_firecrawl(source_url)
-    elif engine == "httpx":
-        return fetch_with_httpx(source_url)
-    else:
-        return fetch_with_trafilatura(source_url)
-
-
-def generate_document_embedding(content: str) -> bytes:
-    """
-    Generate embedding vector for content.
-
-    EXPENSIVE LLM CALL - must be wrapped in @DBOS.step() for checkpointing!
-
-    Args:
-        content: Document content (uses first 1000 chars)
-
-    Returns:
-        Embedding as bytes (numpy float32 array)
-
-    Raises:
-        Exception: If embedding generation fails
-
-    Example:
-        >>> embedding = generate_document_embedding("Document content here...")
-        >>> # Returns: b'\\x00\\x00\\x00...' (bytes)
-    """
-    import dspy
-    import numpy as np
-
-    config = load_config()
-    embedding_model = config.EMBEDDING_MODEL
-
-    # Use first 1000 chars
-    content_sample = content[:1000] if len(content) > 1000 else content
-
-    embedding_vector = dspy.Embedder(model=embedding_model)([content_sample])[0]
-    logger.info(f"Generated embedding ({len(embedding_vector)} dims)")
-
-    return np.array(embedding_vector, dtype=np.float32).tobytes()
-
-
-def save_document_content_and_metadata(
-    doc_id: UUID, content: str, metadata: dict, embedding: bytes | None
-) -> dict:
-    """
-    Save content to filesystem and update database.
-
-    Transactional operation - should be wrapped in @DBOS.transaction().
-
-    Args:
-        doc_id: Document UUID
-        content: Markdown content
-        metadata: Metadata dict (title, author, date, etc.)
-        embedding: Optional embedding bytes
-
-    Returns:
-        dict with keys:
-            - content_path: str (path to saved file)
-            - status: str ('FETCHED')
-
-    Example:
-        >>> result = save_document_content_and_metadata(
-        ...     doc_id, "# Title\\n\\nContent", {"title": "..."}, embedding_bytes
-        ... )
-        >>> # Returns: {'content_path': 'sources/example.com/page1.md', ...}
-    """
-    session = get_session()
-    doc = session.get(Document, doc_id)
-
-    if not doc:
-        raise ValueError(f"Document not found: {doc_id}")
-
-    # Update metadata
-    if metadata:
-        # Title (prefer metadata title over URL-derived title)
-        if metadata.get("title"):
-            doc.title = metadata["title"]
-
-        # Content hash (fingerprint for deduplication)
-        if metadata.get("fingerprint"):
-            doc.content_hash = metadata["fingerprint"]
-
-        # Description
-        if metadata.get("description"):
-            doc.description = metadata["description"]
-
-        # Author(s) - convert to list if single author
-        author = metadata.get("author")
-        if author:
-            doc.author = [author] if isinstance(author, str) else list(author)
-
-        # Published date
-        if metadata.get("date"):
-            from datetime import datetime
-
-            try:
-                doc.published_date = datetime.fromisoformat(metadata["date"])
-            except (ValueError, AttributeError):
-                pass
-
-    # Store embedding
-    if embedding:
-        doc.embedding = embedding
-
-    # Determine content path
-    config = load_config()
-
-    if doc.cms_platform and doc.cms_instance:
-        content_path = create_cms_content_path(
-            platform=doc.cms_platform,
-            instance=doc.cms_instance,
-            doc_id=doc.cms_document_id,
-            config=config,
-            source_url=doc.source_url,
-        )
-    else:
-        content_path = create_content_path(doc.source_url, config)
-
-    # Write file
-    content_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(content_path, "w", encoding="utf-8") as f:
-        f.write(content)
-
-    # Update document record
-    source_base = config.get_absolute_sources_path()
-    doc.content_path = str(content_path.relative_to(source_base))
-    doc.ingestion_status = IngestionStatus.FETCHED
-
-    session.commit()
-
-    return {
-        "content_path": str(content_path),
-        "status": "FETCHED",
-    }
-
-
-def extract_and_save_document_links(doc_id: UUID, content: str, source_url: str) -> int:
-    """
-    Extract markdown links and save to database.
-
-    Fast operation, but separate from main save to isolate failures.
-
-    Args:
-        doc_id: Document UUID
-        content: Markdown content
-        source_url: Source URL for resolving relative links
-
-    Returns:
-        Number of links saved
-
-    Example:
-        >>> links_count = extract_and_save_document_links(
-        ...     doc_id, "See [other page](./other)", "https://example.com/page1"
-        ... )
-        >>> # Returns: 1
-    """
-    session = get_session()
-    doc = session.get(Document, doc_id)
-
-    if not doc or not source_url:
-        return 0
-
-    # Get base_url for CMS documents
-    base_url = None
-    if doc.cms_platform and doc.cms_instance:
-        try:
-            from kurt.integrations.cms.config import get_platform_config
-
-            cms_config = get_platform_config(doc.cms_platform, doc.cms_instance)
-            base_url = cms_config.get("base_url")
-        except Exception:
-            pass
-
-    links = extract_document_links(content, source_url, base_url=base_url)
-    links_saved = save_document_links(doc_id, links)
-
-    logger.debug(f"Extracted {len(links)} links, saved {links_saved} to database")
-
-    return links_saved
-
-
-# ============================================================================
-# Document Creation
-# ============================================================================
-
-
 def add_document(url: str, title: str = None) -> UUID:
     """
     Create document record with NOT_FETCHED status.
@@ -519,17 +207,9 @@ def add_document(url: str, title: str = None) -> UUID:
     return doc.id
 
 
-# ============================================================================
-# Legacy Monolithic Fetch (For Backward Compatibility)
-# ============================================================================
-
-
 def fetch_document(identifier: str | UUID, fetch_engine: str = None) -> dict:
     """
     Fetch content for document (by ID or URL).
-
-    LEGACY FUNCTION: This delegates to the new helper functions.
-    For new code, prefer using DBOS workflows with individual steps.
 
     If identifier is a URL and document doesn't exist, creates it first.
     Downloads content using the specified fetch engine or config default.
@@ -544,8 +224,6 @@ def fetch_document(identifier: str | UUID, fetch_engine: str = None) -> dict:
             - title: str
             - content_length: int
             - status: str ('FETCHED' or 'ERROR')
-            - content: str
-            - metadata fields...
 
     Raises:
         ValueError: If document not found or download fails
@@ -554,54 +232,189 @@ def fetch_document(identifier: str | UUID, fetch_engine: str = None) -> dict:
         # Fetch by ID (string)
         result = fetch_document("550e8400-e29b-41d4-a716-446655440000")
 
+        # Fetch by ID (UUID object)
+        result = fetch_document(UUID("550e8400-e29b-41d4-a716-446655440000"))
+
         # Fetch by URL (creates if doesn't exist)
         result = fetch_document("https://example.com/page1")
 
+        # Fetch using specific engine
+        result = fetch_document("https://example.com/page1", fetch_engine="firecrawl")
+
         # Returns: {'document_id': UUID(...), 'title': 'Page 1', ...}
     """
+    from sqlmodel import select
+
     session = get_session()
+    doc = None
+
+    # Try to find document
+    try:
+        # If already a UUID object, use it directly; otherwise try to parse as UUID
+        if isinstance(identifier, UUID):
+            doc_id = identifier
+        else:
+            doc_id = UUID(identifier)
+
+        doc = session.get(Document, doc_id)
+        if not doc:
+            raise ValueError(f"Document not found: {identifier}")
+
+    except (ValueError, AttributeError):
+        # Not a UUID, treat as URL
+        stmt = select(Document).where(Document.source_url == identifier)
+        doc = session.exec(stmt).first()
+
+        if not doc:
+            # Create new document for this URL
+            doc_id = add_document(str(identifier))
+            doc = session.get(Document, doc_id)
+
+    # Update status to indicate we're fetching
+    doc.ingestion_status = IngestionStatus.FETCHED  # Will set to ERROR if fails
 
     try:
-        # Step 1: Resolve or create document
-        doc_info = resolve_or_create_document(identifier)
-        doc_id = UUID(doc_info["id"])
-        doc = session.get(Document, doc_id)
+        # Check if this is a CMS document (using stored fields)
+        if doc.cms_platform and doc.cms_instance:
+            # CMS document - use stored platform/instance fields
+            content, metadata_dict = _fetch_from_cms(
+                platform=doc.cms_platform, instance=doc.cms_instance, doc=doc
+            )
+        else:
+            # Web URL - use web scraping engines
+            # First check if it looks like a CMS URL pattern (legacy check)
+            source_type, parsed_data = parse_source_identifier(doc.source_url)
 
-        # Step 2: Fetch content from source
-        content, metadata_dict = fetch_content_from_source(
-            source_url=doc_info["source_url"],
-            cms_platform=doc_info.get("cms_platform"),
-            cms_instance=doc_info.get("cms_instance"),
-            cms_document_id=doc_info.get("cms_document_id"),
-            fetch_engine=fetch_engine,
-        )
+            if source_type == "cms":
+                # CMS URL detected but missing platform/instance fields
+                # This shouldn't happen with new documents
+                raise ValueError(
+                    f"Document {doc.id} has CMS URL pattern but missing cms_platform/cms_instance fields. "
+                    f"URL: {doc.source_url}. Please recreate this document using 'kurt content map cms'."
+                )
 
-        # Step 3: Generate embedding (optional)
-        embedding = None
+            # Standard web fetch
+            engine = _get_fetch_engine(override=fetch_engine)
+
+            if engine == "firecrawl":
+                content, metadata_dict = fetch_with_firecrawl(doc.source_url)
+            elif engine == "httpx":
+                content, metadata_dict = fetch_with_httpx(doc.source_url)
+            else:
+                content, metadata_dict = fetch_with_trafilatura(doc.source_url)
+
+        # Update document with extracted metadata
+        if metadata_dict:
+            # Title (prefer metadata title over URL-derived title)
+            if metadata_dict.get("title"):
+                doc.title = metadata_dict["title"]
+
+            # Content hash (fingerprint for deduplication)
+            if metadata_dict.get("fingerprint"):
+                doc.content_hash = metadata_dict["fingerprint"]
+
+            # Description
+            if metadata_dict.get("description"):
+                doc.description = metadata_dict["description"]
+
+            # Author(s) - convert to list if single author
+            author = metadata_dict.get("author")
+            if author:
+                if isinstance(author, str):
+                    doc.author = [author]
+                else:
+                    doc.author = list(author) if author else None
+
+            # Published date
+            date_str = metadata_dict.get("date")
+            if date_str:
+                # metadata.date is a string in YYYY-MM-DD format
+                from datetime import datetime
+
+                try:
+                    doc.published_date = datetime.fromisoformat(date_str)
+                except (ValueError, AttributeError):
+                    # If parsing fails, store as None
+                    doc.published_date = None
+
+        # Generate document embedding for knowledge graph (Stage 0)
         try:
-            embedding = generate_document_embedding(content)
-            logger.info(f"Generated document embedding for {doc_id}")
+            import dspy
+            import numpy as np
+
+            # Get configured embedding model
+            embed_config = load_config()
+            embedding_model = embed_config.EMBEDDING_MODEL
+
+            # Use first 1000 chars of content for embedding
+            content_sample = content[:1000] if len(content) > 1000 else content
+            embedding_vector = dspy.Embedder(model=embedding_model)([content_sample])[0]
+            doc.embedding = np.array(embedding_vector, dtype=np.float32).tobytes()
+            logger.info(f"Generated document embedding ({len(embedding_vector)} dims) for {doc.id}")
         except Exception as e:
             logger.warning(f"Could not generate document embedding: {e}")
+            # Continue without embedding - it's optional
 
-        # Step 4: Save to filesystem + database
-        save_result = save_document_content_and_metadata(doc_id, content, metadata_dict, embedding)
+        # Store content to filesystem
+        config = load_config()
 
-        # Step 5: Extract and save links (optional)
-        try:
-            extract_and_save_document_links(doc_id, content, doc_info["source_url"])
-        except Exception as e:
-            logger.warning(f"Could not extract document links: {e}")
+        # Choose path based on document type (CMS vs Web)
+        if doc.cms_platform and doc.cms_instance:
+            # CMS: sources/cms/{platform}/{instance}/{schema}/{slug}.md (if source_url available)
+            # Fallback: sources/cms/{platform}/{instance}/{cms_document_id}.md
+            content_path = create_cms_content_path(
+                platform=doc.cms_platform,
+                instance=doc.cms_instance,
+                doc_id=doc.cms_document_id,
+                config=config,
+                source_url=doc.source_url,
+            )
+        else:
+            # Web: sources/{domain}/{path}/page_name.md
+            content_path = create_content_path(doc.source_url, config)
 
-        # Refresh document to get updated fields
-        session.refresh(doc)
+        # Create directory structure
+        content_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Write markdown content
+        with open(content_path, "w", encoding="utf-8") as f:
+            f.write(content)
+
+        # Store relative path in document
+        source_base = config.get_absolute_sources_path()
+        doc.content_path = str(content_path.relative_to(source_base))
+        doc.ingestion_status = IngestionStatus.FETCHED
+
+        # Extract and save document links (internal references)
+        if doc.source_url:
+            try:
+                # For CMS documents, use base_url for domain matching
+                base_url_for_links = None
+                if doc.cms_platform and doc.cms_instance:
+                    try:
+                        from kurt.integrations.cms.config import get_platform_config
+
+                        cms_config = get_platform_config(doc.cms_platform, doc.cms_instance)
+                        base_url_for_links = cms_config.get("base_url")
+                    except Exception:
+                        # CMS config not available - fall back to source_url
+                        pass
+
+                links = extract_document_links(content, doc.source_url, base_url=base_url_for_links)
+                links_saved = save_document_links(doc.id, links)
+                logger.debug(f"Extracted {len(links)} links, saved {links_saved} to database")
+            except Exception as e:
+                logger.warning(f"Could not extract document links: {e}")
+                # Continue without links - they're optional
+
+        session.commit()
 
         return {
             "document_id": doc.id,
             "title": doc.title,
             "content_length": len(content),
-            "status": save_result["status"],
-            "content_path": save_result["content_path"],
+            "status": "FETCHED",
+            "content_path": str(content_path),
             "content": content,  # Return content for immediate use
             # Metadata fields
             "content_hash": doc.content_hash,
@@ -612,16 +425,9 @@ def fetch_document(identifier: str | UUID, fetch_engine: str = None) -> dict:
 
     except Exception as e:
         # Mark as ERROR
-        doc = session.get(Document, UUID(doc_info["id"]))
-        if doc:
-            doc.ingestion_status = IngestionStatus.ERROR
-            session.commit()
+        doc.ingestion_status = IngestionStatus.ERROR
+        session.commit()
         raise e
-
-
-# ============================================================================
-# Batch Fetching
-# ============================================================================
 
 
 async def _fetch_one_async(
@@ -742,11 +548,6 @@ def fetch_documents_batch(
         logger.info(f"  Failed: {len(failed)}")
 
     return results
-
-
-# ============================================================================
-# High-Level Fetch Orchestration (CLI Entry Point)
-# ============================================================================
 
 
 def fetch_content(

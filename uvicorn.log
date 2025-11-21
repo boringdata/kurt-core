@@ -1,0 +1,45 @@
+Traceback (most recent call last):
+  File "/Users/julien/.local/share/uv/python/cpython-3.10.15-macos-aarch64-none/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/Users/julien/.local/share/uv/python/cpython-3.10.15-macos-aarch64-none/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/.venv/lib/python3.10/site-packages/uvicorn/__main__.py", line 4, in <module>
+    uvicorn.main()
+  File "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/.venv/lib/python3.10/site-packages/click/core.py", line 1462, in __call__
+    return self.main(*args, **kwargs)
+  File "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/.venv/lib/python3.10/site-packages/click/core.py", line 1383, in main
+    rv = self.invoke(ctx)
+  File "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/.venv/lib/python3.10/site-packages/click/core.py", line 1246, in invoke
+    return ctx.invoke(self.callback, **ctx.params)
+  File "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/.venv/lib/python3.10/site-packages/click/core.py", line 814, in invoke
+    return callback(*args, **kwargs)
+  File "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/.venv/lib/python3.10/site-packages/uvicorn/main.py", line 423, in main
+    run(
+  File "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/.venv/lib/python3.10/site-packages/uvicorn/main.py", line 593, in run
+    server.run()
+  File "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/.venv/lib/python3.10/site-packages/uvicorn/server.py", line 67, in run
+    return asyncio_run(self.serve(sockets=sockets), loop_factory=self.config.get_loop_factory())
+  File "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/.venv/lib/python3.10/site-packages/uvicorn/_compat.py", line 60, in asyncio_run
+    return loop.run_until_complete(main)
+  File "/Users/julien/.local/share/uv/python/cpython-3.10.15-macos-aarch64-none/lib/python3.10/asyncio/base_events.py", line 649, in run_until_complete
+    return future.result()
+  File "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/.venv/lib/python3.10/site-packages/uvicorn/server.py", line 71, in serve
+    await self._serve(sockets)
+  File "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/.venv/lib/python3.10/site-packages/uvicorn/server.py", line 78, in _serve
+    config.load()
+  File "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/.venv/lib/python3.10/site-packages/uvicorn/config.py", line 439, in load
+    self.loaded_app = import_from_string(self.app)
+  File "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/.venv/lib/python3.10/site-packages/uvicorn/importer.py", line 22, in import_from_string
+    raise exc from None
+  File "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/.venv/lib/python3.10/site-packages/uvicorn/importer.py", line 19, in import_from_string
+    module = importlib.import_module(module_str)
+  File "/Users/julien/.local/share/uv/python/cpython-3.10.15-macos-aarch64-none/lib/python3.10/importlib/__init__.py", line 126, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+  File "<frozen importlib._bootstrap>", line 1050, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1027, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 992, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+  File "<frozen importlib._bootstrap>", line 1050, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1027, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1004, in _find_and_load_unlocked
+ModuleNotFoundError: No module named 'kurt.web_api'
