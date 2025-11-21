@@ -7,6 +7,7 @@ Provides isolated temporary project setup for running tests.
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pytest_postgresql import factories
 
 
 @pytest.fixture
@@ -475,3 +476,129 @@ def mock_all_llm_calls():
                 "lm": mock_lm_instance,
                 "configure": mock_configure,
             }
+
+
+# Create custom PostgreSQL fixtures using pytest-postgresql
+
+# Session-scoped PostgreSQL process
+postgresql_my_proc = factories.postgresql_proc(port=None, unixsocketdir="/tmp")
+
+# Per-test PostgreSQL database connection
+postgresql = factories.postgresql("postgresql_my_proc")
+
+
+@pytest.fixture
+def postgres_db(postgresql, monkeypatch):
+    """
+    Create a temporary PostgreSQL database for testing.
+
+    This fixture:
+    - Uses pytest-postgresql's built-in fixtures
+    - Configures Kurt to use this PostgreSQL instance
+    - Installs pgvector extension
+    - Runs Kurt migrations
+    - Cleans up after test
+
+    Usage:
+        def test_workspace_isolation(postgres_db):
+            # Test runs with real PostgreSQL database
+            # DATABASE_URL is set in environment
+            # Migrations are applied
+            # pgvector extension is installed
+    """
+    conn = postgresql
+
+    # Get connection info
+    info = conn.info
+    database_url = f"postgresql://{info.user}@{info.host}:{info.port}/{info.dbname}"
+
+    # Set environment variables for Kurt to use this database
+    monkeypatch.setenv("DATABASE_URL", database_url)
+
+    # Set a test workspace ID
+    test_workspace_id = "00000000-0000-0000-0000-000000000001"
+    monkeypatch.setenv("WORKSPACE_ID", test_workspace_id)
+
+    # Clear any cached config
+    try:
+        import kurt.config.base as config_module
+
+        if hasattr(config_module, "_cached_config"):
+            config_module._cached_config = None
+    except (ImportError, AttributeError):
+        pass
+
+    # Install pgvector extension
+    cursor = conn.cursor()
+    try:
+        cursor.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+        conn.commit()
+    except Exception as e:
+        # pgvector might not be installed, skip for now
+        print(f"Warning: Could not install pgvector extension: {e}")
+        conn.rollback()
+
+    # Run Kurt migrations
+    from kurt.db.migrations.utils import apply_migrations
+
+    apply_migrations(auto_confirm=True)
+
+    yield conn
+
+    # Connection cleanup handled by postgresql fixture
+
+
+@pytest.fixture
+def postgres_cli_runner(postgres_db, tmp_path, monkeypatch):
+    """
+    Click CLI runner with PostgreSQL database.
+
+    Combines postgres_db fixture with Click's CliRunner for testing
+    CLI commands against a real PostgreSQL database.
+
+    Usage:
+        def test_workspace_create_command(postgres_cli_runner):
+            runner, db_url = postgres_cli_runner
+
+            from kurt.commands.workspace import workspace
+            result = runner.invoke(workspace, ['create', 'Test Workspace'])
+            assert result.exit_code == 0
+            assert 'Created workspace' in result.output
+    """
+    import os
+
+    from click.testing import CliRunner
+
+    # Get DATABASE_URL from environment (set by postgres_db fixture)
+    database_url = os.getenv("DATABASE_URL")
+    workspace_id = os.getenv("WORKSPACE_ID")
+
+    # Create temp project directory
+    project_dir = tmp_path / "test-kurt-project"
+    project_dir.mkdir()
+
+    # Create standard directories
+    (project_dir / "sources").mkdir()
+    (project_dir / "projects").mkdir()
+    (project_dir / "rules").mkdir()
+
+    # Change to temp project directory
+    monkeypatch.chdir(project_dir)
+
+    # Create kurt.config
+    from kurt.config.base import create_config
+
+    create_config()
+
+    # Create CLI runner with PostgreSQL environment
+    runner = CliRunner(
+        env={
+            "DATABASE_URL": database_url,
+            "WORKSPACE_ID": workspace_id,
+            "KURT_PROJECT_ROOT": str(project_dir),
+        }
+    )
+
+    yield runner, database_url
+
+    # Cleanup happens automatically

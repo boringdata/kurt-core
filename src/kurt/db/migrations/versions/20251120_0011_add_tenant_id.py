@@ -23,7 +23,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "20251120_0011"
-down_revision = "20251118_0010"
+down_revision = "010_drop_metadata_fields"
 branch_labels = None
 depends_on = None
 

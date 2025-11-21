@@ -77,3 +77,8 @@ filterwarnings = [
 markers = [
     "integration: marks tests as integration tests (require database and API access)",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest-postgresql>=7.0.2",
+]
