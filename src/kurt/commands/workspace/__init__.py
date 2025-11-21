@@ -16,7 +16,7 @@ def workspace():
 
 
 @workspace.command("list")
-@track_command()
+@track_command
 def list_workspaces():
     """List all workspaces you have access to."""
     from sqlmodel import select
@@ -63,7 +63,7 @@ def list_workspaces():
 @click.option("--slug", help="URL-friendly identifier (auto-generated if not provided)")
 @click.option("--plan", default="free", type=click.Choice(["free", "pro", "enterprise"]))
 @click.option("--owner-email", help="Owner email address")
-@track_command()
+@track_command
 def create_workspace(name: str, slug: str, plan: str, owner_email: str):
     """Create a new workspace."""
     import re
@@ -110,7 +110,7 @@ def create_workspace(name: str, slug: str, plan: str, owner_email: str):
 
 @workspace.command("info")
 @click.argument("workspace_id", required=False)
-@track_command()
+@track_command
 def workspace_info(workspace_id: str):
     """Show detailed workspace information.
 
@@ -172,7 +172,7 @@ def workspace_info(workspace_id: str):
 @click.argument("email")
 @click.option("--workspace-id", help="Workspace ID (defaults to WORKSPACE_ID env var)")
 @click.option("--role", type=click.Choice(["owner", "admin", "member", "viewer"]), default="member")
-@track_command()
+@track_command
 def add_user(email: str, workspace_id: str, role: str):
     """Add a user to a workspace with specified role.
 
@@ -236,7 +236,7 @@ def add_user(email: str, workspace_id: str, role: str):
 
 @workspace.command("list-users")
 @click.option("--workspace-id", help="Workspace ID (defaults to WORKSPACE_ID env var)")
-@track_command()
+@track_command
 def list_users(workspace_id: str):
     """List all users in a workspace."""
     from uuid import UUID
