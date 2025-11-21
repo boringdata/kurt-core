@@ -2,9 +2,12 @@
 Document utility functions for Kurt.
 
 These functions provide CRUD operations for documents:
-- list_documents: List all documents with filtering
+- add_document: Create new document record (NOT_FETCHED status)
+- resolve_or_create_document: Find or create document by ID/URL
 - get_document: Get document by ID
+- list_documents: List all documents with filtering
 - load_document_content: Load document content from filesystem
+- save_document_content_and_metadata: Update document content and metadata
 - delete_document: Delete document by ID
 - get_document_stats: Get statistics about documents
 
@@ -16,9 +19,269 @@ from uuid import UUID
 
 from sqlmodel import select
 
+from kurt.config import load_config
 from kurt.db.database import get_session
-from kurt.db.models import Document, IngestionStatus, PageAnalytics
+from kurt.db.models import Document, IngestionStatus, PageAnalytics, SourceType
 from kurt.integrations.analytics.utils import normalize_url_for_analytics
+
+# ============================================================================
+# Document Creation (CRUD - Create)
+# ============================================================================
+
+
+def add_documents_for_urls(url_list: list[str]) -> tuple[list[Document], int]:
+    """
+    Create document records for URLs (auto-creates if don't exist).
+
+    Basic CRUD operation - no discovery metadata.
+    For discovery operations, use map-specific functions in content/map/.
+
+    Args:
+        url_list: List of URLs
+
+    Returns:
+        Tuple of (list of Document objects, count of newly created documents)
+
+    Example:
+        >>> docs, new_count = add_documents_for_urls(["https://example.com/page1", "https://example.com/page2"])
+        >>> # Returns: ([Document(...), Document(...)], 2)
+    """
+    session = get_session()
+
+    # Check which URLs already exist (using IN for efficiency)
+    from sqlmodel import select
+
+    existing_urls_stmt = select(Document).where(Document.source_url.in_(url_list))
+    existing_docs = list(session.exec(existing_urls_stmt).all())
+    existing_urls = {doc.source_url for doc in existing_docs}
+
+    # Create documents for new URLs
+    new_urls = [url for url in url_list if url not in existing_urls]
+    new_count = 0
+
+    if new_urls:
+        for url in new_urls:
+            add_document(url)
+        session.commit()
+        new_count = len(new_urls)
+
+    # Return all documents (existing + newly created)
+    all_docs_stmt = select(Document).where(Document.source_url.in_(url_list))
+    all_docs = list(session.exec(all_docs_stmt).all())
+
+    return all_docs, new_count
+
+
+def add_documents_for_files(
+    file_list: list[str],
+) -> tuple[list[Document], int, list[str], list[str]]:
+    """
+    Create document records for local files.
+
+    Files outside sources directory are copied to sources/local/.
+    Documents are marked as FETCHED since content already exists.
+
+    Args:
+        file_list: List of file paths
+
+    Returns:
+        Tuple of (list of Document objects, count of newly created, list of errors, list of copied file messages)
+
+    Example:
+        >>> docs, new_count, errors, copied = add_documents_for_files(["./docs/page1.md", "./docs/page2.md"])
+        >>> # Returns: ([Document(...), Document(...)], 2, [], [])
+    """
+    from pathlib import Path
+
+    from sqlmodel import select
+
+    session = get_session()
+    config = load_config()
+    source_base = config.get_absolute_sources_path()
+
+    created_docs = []
+    errors = []
+    copied_files = []
+
+    for file_path_str in file_list:
+        file_path = Path(file_path_str).resolve()
+
+        # Validate file exists
+        if not file_path.exists():
+            errors.append(f"File not found: {file_path_str}")
+            continue
+
+        if not file_path.is_file():
+            errors.append(f"Not a file: {file_path_str}")
+            continue
+
+        # Determine content path relative to sources directory
+        try:
+            relative_path = file_path.relative_to(source_base)
+            content_path_str = str(relative_path)
+        except ValueError:
+            # File is outside sources directory - copy it there
+            file_name = file_path.name
+            dest_path = source_base / "local" / file_name
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
+
+            import shutil
+
+            shutil.copy2(file_path, dest_path)
+
+            relative_path = dest_path.relative_to(source_base)
+            content_path_str = str(relative_path)
+            copied_files.append(f"Copied {file_path.name} to sources/local/")
+
+        # Check if document exists
+        existing_stmt = select(Document).where(Document.content_path == content_path_str)
+        existing_doc = session.exec(existing_stmt).first()
+
+        if existing_doc:
+            created_docs.append(existing_doc)
+            continue
+
+        # Create new document
+        title = file_path.stem
+
+        # Read content to extract title from first line if it's a markdown heading
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+                first_line = content.split("\n")[0].strip()
+                if first_line.startswith("#"):
+                    title = first_line.lstrip("#").strip()
+        except Exception:
+            pass
+
+        new_doc = Document(
+            title=title,
+            source_type=SourceType.FILE_UPLOAD,
+            content_path=content_path_str,
+            ingestion_status=IngestionStatus.FETCHED,  # Already have the file
+        )
+
+        session.add(new_doc)
+        created_docs.append(new_doc)
+
+    # Commit all new documents
+    if created_docs:
+        session.commit()
+        # Refresh to get IDs
+        for doc in created_docs:
+            session.refresh(doc)
+
+    new_count = len(
+        [d for d in created_docs if d.id and d.ingestion_status == IngestionStatus.FETCHED]
+    )
+
+    return created_docs, new_count, errors, copied_files
+
+
+def add_document(url: str, title: str = None) -> UUID:
+    """
+    Create document record with NOT_FETCHED status.
+
+    If document with URL already exists, returns existing document ID.
+
+    Args:
+        url: Source URL
+        title: Optional title (defaults to last path segment)
+
+    Returns:
+        UUID of created or existing document
+
+    Example:
+        doc_id = add_document("https://example.com/page1", "Page 1")
+        # Returns: UUID('550e8400-e29b-41d4-a716-446655440000')
+    """
+    session = get_session()
+
+    # Check if document already exists
+    stmt = select(Document).where(Document.source_url == url)
+    existing_doc = session.exec(stmt).first()
+
+    if existing_doc:
+        return existing_doc.id
+
+    # Generate title from URL if not provided
+    if not title:
+        title = url.rstrip("/").split("/")[-1] or url
+
+    # Create document
+    doc = Document(
+        title=title,
+        source_type=SourceType.URL,
+        source_url=url,
+        ingestion_status=IngestionStatus.NOT_FETCHED,
+    )
+
+    session.add(doc)
+    session.commit()
+    session.refresh(doc)
+
+    return doc.id
+
+
+def resolve_or_create_document(identifier: str | UUID) -> dict:
+    """
+    Find existing document or create new one.
+
+    Fast database operation - returns lightweight dict to minimize checkpoint data.
+
+    Args:
+        identifier: Document UUID or source URL
+
+    Returns:
+        dict with keys:
+            - id: str (document UUID)
+            - source_url: str
+            - cms_platform: str | None
+            - cms_instance: str | None
+            - cms_document_id: str | None
+
+    Example:
+        >>> doc_info = resolve_or_create_document("https://example.com/page1")
+        >>> # Returns: {'id': 'uuid...', 'source_url': 'https://...', ...}
+    """
+    session = get_session()
+
+    # Try UUID lookup
+    try:
+        doc_id = UUID(identifier) if not isinstance(identifier, UUID) else identifier
+        doc = session.get(Document, doc_id)
+        if doc:
+            return {
+                "id": str(doc.id),
+                "source_url": doc.source_url,
+                "cms_platform": doc.cms_platform,
+                "cms_instance": doc.cms_instance,
+                "cms_document_id": doc.cms_document_id,
+            }
+    except (ValueError, AttributeError):
+        pass
+
+    # Try URL lookup
+    stmt = select(Document).where(Document.source_url == str(identifier))
+    doc = session.exec(stmt).first()
+
+    if not doc:
+        # Create new document
+        doc_id = add_document(str(identifier))
+        doc = session.get(Document, doc_id)
+
+    return {
+        "id": str(doc.id),
+        "source_url": doc.source_url,
+        "cms_platform": doc.cms_platform,
+        "cms_instance": doc.cms_instance,
+        "cms_document_id": doc.cms_document_id,
+    }
+
+
+# ============================================================================
+# Document Retrieval (CRUD - Read)
+# ============================================================================
 
 
 def list_documents(
@@ -332,6 +595,128 @@ def _strip_frontmatter(content: str) -> str:
 
     # If no closing delimiter found, return original content
     return content
+
+
+# ============================================================================
+# Document Update (CRUD - Update)
+# ============================================================================
+
+
+def save_document_content_and_metadata(
+    doc_id: UUID,
+    content: str,
+    metadata: dict,
+    embedding: bytes | None,
+    public_url: str | None = None,
+) -> dict:
+    """
+    Save content to filesystem and update database.
+
+    Transactional operation - should be wrapped in @DBOS.transaction() for workflows.
+
+    Args:
+        doc_id: Document UUID
+        content: Markdown content
+        metadata: Metadata dict (title, author, date, etc.)
+        embedding: Optional embedding bytes
+        public_url: Optional public URL (for CMS documents, stored in discovery_url for link matching)
+
+    Returns:
+        dict with keys:
+            - content_path: str (path to saved file)
+            - status: str ('FETCHED')
+
+    Example:
+        >>> result = save_document_content_and_metadata(
+        ...     doc_id, "# Title\\n\\nContent", {"title": "..."}, embedding_bytes
+        ... )
+        >>> # Returns: {'content_path': 'sources/example.com/page1.md', ...}
+
+        >>> # CMS document with public URL
+        >>> result = save_document_content_and_metadata(
+        ...     doc_id, content, metadata, embedding, public_url="https://technically.dev/posts/slug"
+        ... )
+    """
+    from datetime import datetime
+
+    from kurt.config import load_config
+    from kurt.content.paths import create_cms_content_path, create_content_path
+
+    session = get_session()
+    doc = session.get(Document, doc_id)
+
+    if not doc:
+        raise ValueError(f"Document not found: {doc_id}")
+
+    # Update metadata
+    if metadata:
+        # Title (prefer metadata title over URL-derived title)
+        if metadata.get("title"):
+            doc.title = metadata["title"]
+
+        # Content hash (fingerprint for deduplication)
+        if metadata.get("fingerprint"):
+            doc.content_hash = metadata["fingerprint"]
+
+        # Description
+        if metadata.get("description"):
+            doc.description = metadata["description"]
+
+        # Author(s) - convert to list if single author
+        author = metadata.get("author")
+        if author:
+            doc.author = [author] if isinstance(author, str) else list(author)
+
+        # Published date
+        if metadata.get("date"):
+            try:
+                doc.published_date = datetime.fromisoformat(metadata["date"])
+            except (ValueError, AttributeError):
+                pass
+
+    # Store public URL (for CMS documents - used for link matching)
+    if public_url:
+        doc.discovery_url = public_url
+
+    # Store embedding
+    if embedding:
+        doc.embedding = embedding
+
+    # Determine content path
+    config = load_config()
+
+    if doc.cms_platform and doc.cms_instance:
+        content_path = create_cms_content_path(
+            platform=doc.cms_platform,
+            instance=doc.cms_instance,
+            doc_id=doc.cms_document_id,
+            config=config,
+            source_url=doc.source_url,
+        )
+    else:
+        content_path = create_content_path(doc.source_url, config)
+
+    # Write file
+    content_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(content_path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+    # Update document record
+    source_base = config.get_absolute_sources_path()
+    doc.content_path = str(content_path.relative_to(source_base))
+    doc.ingestion_status = IngestionStatus.FETCHED
+
+    session.commit()
+
+    return {
+        "content_path": str(content_path),
+        "status": "FETCHED",
+    }
+
+
+# ============================================================================
+# Document Deletion (CRUD - Delete)
+# ============================================================================
 
 
 def delete_document(document_id: str, delete_content: bool = False) -> dict:
@@ -780,7 +1165,7 @@ def list_content(
 
     # Apply entity filtering (knowledge graph only)
     if entity_name:
-        from kurt.db.knowledge_graph import find_documents_with_entity
+        from kurt.db.graph_queries import find_documents_with_entity
 
         graph_doc_ids = {
             str(doc_id)
@@ -792,7 +1177,7 @@ def list_content(
 
     # Apply relationship filtering (knowledge graph only)
     if relationship_type:
-        from kurt.db.knowledge_graph import find_documents_with_relationship
+        from kurt.db.graph_queries import find_documents_with_relationship
 
         relationship_doc_ids = {
             str(doc_id)
@@ -989,3 +1374,183 @@ def list_documents_for_indexing(
     raise ValueError(
         "Must provide either ids, include_pattern, in_cluster, with_status, with_content_type, or all_flag=True"
     )
+
+
+# ============================================================================
+# Document Link Resolution (Helper for workflows)
+# ============================================================================
+
+
+def resolve_urls_to_doc_ids(url_list: list[str]) -> dict[str, UUID]:
+    """
+    Resolve URLs to document IDs.
+
+    Checks both source_url and discovery_url fields to match URLs.
+    Used by link saving logic to find target documents.
+
+    Args:
+        url_list: List of URLs to resolve
+
+    Returns:
+        Dictionary mapping URL -> document UUID
+
+    Example:
+        >>> url_to_id = resolve_urls_to_doc_ids(["https://example.com/page1", "https://example.com/page2"])
+        >>> # Returns: {"https://example.com/page1": UUID(...), ...}
+    """
+    from sqlmodel import or_
+
+    session = get_session()
+
+    if not url_list:
+        return {}
+
+    # Query for documents matching these URLs
+    # Check both source_url and discovery_url (for CMS documents with public URLs)
+    stmt = select(Document).where(
+        or_(Document.source_url.in_(url_list), Document.discovery_url.in_(url_list))
+    )
+
+    # Build mapping of URL -> doc_id (check both source_url and discovery_url)
+    url_to_id = {}
+    for doc in session.exec(stmt).all():
+        if doc.source_url in url_list:
+            url_to_id[doc.source_url] = doc.id
+        if doc.discovery_url in url_list:
+            url_to_id[doc.discovery_url] = doc.id
+
+    return url_to_id
+
+
+def save_document_links(doc_id: UUID, links: list[dict]) -> int:
+    """
+    Save document links to database, replacing existing links.
+
+    Args:
+        doc_id: Source document UUID
+        links: List of link dicts with "url" and "anchor_text"
+
+    Returns:
+        Number of links saved
+    """
+    from kurt.db.models import DocumentLink
+
+    session = get_session()
+
+    # Delete existing links (for refetch)
+    existing_links = session.exec(
+        select(DocumentLink).where(DocumentLink.source_document_id == doc_id)
+    ).all()
+    for link in existing_links:
+        session.delete(link)
+
+    # Early return if no links
+    target_urls = [link["url"] for link in links]
+    if not target_urls:
+        session.commit()
+        return 0
+
+    # Resolve URLs to document IDs
+    url_to_doc_id = resolve_urls_to_doc_ids(target_urls)
+
+    # Create links for URLs with matching documents
+    saved_count = 0
+    for link in links:
+        target_url = link["url"]
+        if target_url in url_to_doc_id:
+            document_link = DocumentLink(
+                source_document_id=doc_id,
+                target_document_id=url_to_doc_id[target_url],
+                anchor_text=link["anchor_text"],
+            )
+            session.add(document_link)
+            saved_count += 1
+
+    session.commit()
+    return saved_count
+
+
+def get_document_links(document_id: UUID, direction: str) -> list[dict]:
+    """
+    Get document links from the DocumentLink table.
+
+    Args:
+        document_id: Document UUID
+        direction: "outbound" (links FROM this document) or "inbound" (links TO this document)
+
+    Returns:
+        List of dicts with link information:
+        - source_document_id: UUID of source document
+        - target_document_id: UUID of target document
+        - source_title: Title of source document
+        - target_title: Title of target document
+        - anchor_text: Link anchor text
+
+    Raises:
+        ValueError: If direction is invalid or document doesn't exist
+
+    Example:
+        >>> # Get all links FROM a document
+        >>> outbound = get_document_links(doc_id, direction="outbound")
+        >>> # Get all links TO a document
+        >>> inbound = get_document_links(doc_id, direction="inbound")
+    """
+    from sqlmodel import select
+
+    from kurt.db.models import Document, DocumentLink
+
+    if direction not in ("inbound", "outbound"):
+        raise ValueError(f"Invalid direction: {direction}. Must be 'inbound' or 'outbound'")
+
+    session = get_session()
+
+    # Verify document exists
+    doc = session.get(Document, document_id)
+    if not doc:
+        raise ValueError(f"Document not found: {document_id}")
+
+    # Build query based on direction
+    if direction == "outbound":
+        # Links FROM this document
+        stmt = (
+            select(DocumentLink, Document)
+            .join(Document, DocumentLink.target_document_id == Document.id)
+            .where(DocumentLink.source_document_id == document_id)
+        )
+    else:  # inbound
+        # Links TO this document
+        stmt = (
+            select(DocumentLink, Document)
+            .join(Document, DocumentLink.source_document_id == Document.id)
+            .where(DocumentLink.target_document_id == document_id)
+        )
+
+    results = session.exec(stmt).all()
+
+    # Format results
+    links = []
+    for link, related_doc in results:
+        if direction == "outbound":
+            # related_doc is the target
+            links.append(
+                {
+                    "source_document_id": link.source_document_id,
+                    "target_document_id": link.target_document_id,
+                    "source_title": doc.title or doc.source_url,
+                    "target_title": related_doc.title or related_doc.source_url,
+                    "anchor_text": link.anchor_text,
+                }
+            )
+        else:  # inbound
+            # related_doc is the source
+            links.append(
+                {
+                    "source_document_id": link.source_document_id,
+                    "target_document_id": link.target_document_id,
+                    "source_title": related_doc.title or related_doc.source_url,
+                    "target_title": doc.title or doc.source_url,
+                    "anchor_text": link.anchor_text,
+                }
+            )
+
+    return links

@@ -46,6 +46,29 @@ class ContentType(str, Enum):
     OTHER = "other"
 
 
+class EntityType(str, Enum):
+    """Canonical entity types for knowledge graph."""
+
+    PRODUCT = "Product"
+    FEATURE = "Feature"
+    TECHNOLOGY = "Technology"
+    TOPIC = "Topic"
+    COMPANY = "Company"
+    INTEGRATION = "Integration"
+
+
+class RelationshipType(str, Enum):
+    """Canonical relationship types for knowledge graph."""
+
+    MENTIONS = "mentions"
+    PART_OF = "part_of"
+    INTEGRATES_WITH = "integrates_with"
+    ENABLES = "enables"
+    RELATED_TO = "related_to"
+    DEPENDS_ON = "depends_on"
+    REPLACES = "replaces"
+
+
 class Document(SQLModel, table=True):
     """Document metadata."""
 

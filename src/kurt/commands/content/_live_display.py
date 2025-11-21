@@ -2,8 +2,8 @@
 
 This module provides both interactive and static display utilities:
 - LiveProgressDisplay: Interactive progress bars with live log scrolling
-- create_fetch_progress_callback: Progress callbacks for batch operations
 - display_knowledge_graph: Static knowledge graph formatting
+- Generic stream display framework for reading DBOS workflow streams
 - Reusable display building blocks for consistent CLI UX
 
 REUSABLE DISPLAY BUILDING BLOCKS
@@ -67,7 +67,6 @@ Example structure:
 Consolidated from _display.py and _live_display.py for cleaner organization.
 """
 
-import time
 from collections import deque
 
 from rich.console import Console, Group
@@ -188,6 +187,151 @@ def print_divider(console: Console, char: str = "─", length: int = 60):
         length: Length of divider
     """
     console.print(f"[dim]{char * length}[/dim]")
+
+
+# ============================================================================
+# Generic Stream Display Framework
+# ============================================================================
+
+
+def format_display_timestamp() -> str:
+    """
+    Get current timestamp formatted for display in messages.
+
+    Returns:
+        "[HH:MM:SS.mmm] " for message prefix
+
+    Example:
+        ts = format_display_timestamp()
+        # ts = "[15:03:12.123] "
+
+    Note: DBOS automatically attaches timestamps to stream events.
+          This is only for formatting the message prefix for display.
+    """
+    from datetime import datetime
+
+    now = datetime.now()
+    iso_timestamp = now.isoformat()
+    time_str = iso_timestamp.split("T")[1][:12]  # Get HH:MM:SS.mmm
+
+    return f"[{time_str}] "
+
+
+def read_stream_with_display(
+    workflow_id: str,
+    stream_name: str,
+    display: "LiveProgressDisplay",
+    on_event: callable = None,
+):
+    """
+    Generic stream reader - just displays what the workflow emits.
+
+    The workflow is responsible for formatting messages. This just reads and displays.
+
+    Args:
+        workflow_id: DBOS workflow ID
+        stream_name: Name of the stream (e.g., "doc_0_progress", "entity_resolution_progress")
+        display: LiveProgressDisplay instance
+        on_event: Optional callback(event) called for each event (e.g., to update progress bar)
+
+    Event format (from workflow):
+        {
+            "message": "[15:03:12.123] ⠋ Fetched [abc123] (2543ms)",  # Display-ready message
+            "style": "dim cyan",                                        # Rich style
+            "advance_progress": True,                                   # Optional: advance progress bar
+            ...  # Any other fields for callback
+        }
+
+    Note:
+    - DBOS automatically attaches timestamps to stream events for sorting
+    - Use format_display_timestamp() to add timestamp prefix to messages
+    - CLI can sort events by DBOS native timestamp if needed
+
+    Example:
+        def on_event(event):
+            if event.get("advance_progress"):
+                display.update_progress(advance=1)
+
+        read_stream_with_display(
+            workflow_id="abc-123",
+            stream_name="doc_0_progress",
+            display=display,
+            on_event=on_event
+        )
+    """
+    from dbos import DBOS
+
+    try:
+        for event in DBOS.read_stream(workflow_id, stream_name):
+            # Display the message
+            message = event.get("message", "")
+            style = event.get("style", "dim")
+
+            if message:
+                display.log(message, style=style)
+
+            # Call event callback if provided
+            if on_event:
+                on_event(event)
+
+    except Exception as e:
+        display.log(f"Stream error for {stream_name}: {str(e)}", style="dim red")
+
+
+def read_multiple_streams_parallel(
+    workflow_id: str,
+    stream_names: list[str],
+    display: "LiveProgressDisplay",
+    on_event: callable = None,
+):
+    """
+    Read multiple streams in parallel using threads.
+
+    Args:
+        workflow_id: DBOS workflow ID
+        stream_names: List of stream names to read
+        display: LiveProgressDisplay instance
+        on_event: Optional callback(stream_name, event) called for each event
+
+    Example:
+        # Read doc_0_progress, doc_1_progress, doc_2_progress in parallel
+        def on_event(stream_name, event):
+            if event.get("advance_progress"):
+                display.update_progress(advance=1)
+
+        read_multiple_streams_parallel(
+            workflow_id="abc-123",
+            stream_names=["doc_0_progress", "doc_1_progress", "doc_2_progress"],
+            display=display,
+            on_event=on_event
+        )
+    """
+    import threading
+
+    def read_one_stream(stream_name: str):
+        """Read a single stream."""
+
+        def wrapped_on_event(event):
+            if on_event:
+                on_event(stream_name, event)
+
+        read_stream_with_display(
+            workflow_id=workflow_id,
+            stream_name=stream_name,
+            display=display,
+            on_event=wrapped_on_event,
+        )
+
+    # Start thread for each stream
+    threads = []
+    for stream_name in stream_names:
+        t = threading.Thread(target=read_one_stream, args=(stream_name,))
+        t.start()
+        threads.append(t)
+
+    # Wait for all to complete
+    for t in threads:
+        t.join()
 
 
 # ============================================================================
@@ -489,124 +633,6 @@ class LiveProgressDisplay:
         self.update_display()
 
 
-def create_fetch_progress_callback(display: LiveProgressDisplay, total_docs: int):
-    """
-    Create progress callback for fetch + index operations.
-
-    Args:
-        display: LiveProgressDisplay instance
-        total_docs: Total documents to process
-
-    Returns:
-        Callback function
-    """
-    indexed_count = 0
-    doc_start_times = {}
-    doc_step_times = {}
-
-    def callback(
-        doc_id: str, title: str, status: str, activity: str = None, skip_reason: str = None
-    ):
-        nonlocal indexed_count
-
-        if activity:
-            # Activity update - track timing
-            if doc_id not in doc_start_times:
-                doc_start_times[doc_id] = time.time()
-                doc_step_times[doc_id] = {}
-
-            doc_step_times[doc_id][activity] = time.time()
-
-            # Update progress bar description
-            display.update_progress(
-                description=f"Indexing ({indexed_count}/{total_docs}): {activity}"
-            )
-        else:
-            # Completion update
-            indexed_count += 1
-
-            # Use doc_id and title directly (no prefix extraction needed)
-            display_doc_id = doc_id
-            display_title = title
-
-            # Calculate timing
-            if doc_id in doc_start_times:
-                total_time = time.time() - doc_start_times[doc_id]
-
-                # Calculate step timings
-                step_times = doc_step_times.get(doc_id, {})
-                steps = list(step_times.keys())
-
-                timing_breakdown = {}
-                for i, step in enumerate(steps):
-                    step_start = step_times[step]
-                    if i < len(steps) - 1:
-                        step_end = step_times[steps[i + 1]]
-                    else:
-                        step_end = time.time()
-
-                    duration = step_end - step_start
-
-                    # Shorten step names
-                    step_short = step.replace("Loading existing entities...", "load")
-                    step_short = step_short.replace("Calling LLM to extract metadata...", "llm")
-                    step_short = step_short.replace("Updating database...", "db")
-
-                    timing_breakdown[step_short] = duration
-
-                # Log based on status (use display_doc_id for showing, display_title for text)
-                counter = (indexed_count, total_docs)
-                if status == "success":
-                    display.log_success(
-                        display_doc_id,
-                        display_title,
-                        total_time,
-                        timing_breakdown,
-                        operation="Indexed",
-                        counter=counter,
-                    )
-                elif status == "skipped":
-                    display.log_skip(
-                        display_doc_id,
-                        display_title,
-                        skip_reason or "content unchanged",
-                        operation="Skipped",
-                        counter=counter,
-                    )
-                elif status == "error":
-                    display.log_error(
-                        display_doc_id, display_title, operation="Index failed", counter=counter
-                    )
-
-                # Cleanup
-                doc_start_times.pop(doc_id, None)
-                doc_step_times.pop(doc_id, None)
-            else:
-                # No timing info, just log
-                counter = (indexed_count, total_docs)
-                if status == "success":
-                    display.log_success(
-                        display_doc_id, display_title, operation="Indexed", counter=counter
-                    )
-                elif status == "skipped":
-                    display.log_skip(
-                        display_doc_id,
-                        display_title,
-                        skip_reason or "content unchanged",
-                        operation="Skipped",
-                        counter=counter,
-                    )
-                elif status == "error":
-                    display.log_error(
-                        display_doc_id, display_title, operation="Index failed", counter=counter
-                    )
-
-            # Update progress bar
-            display.update_progress(completed=indexed_count)
-
-    return callback
-
-
 def display_knowledge_graph(kg: dict, console: Console, title: str = "Knowledge Graph"):
     """
     Display knowledge graph in a consistent format.
@@ -669,240 +695,6 @@ def display_knowledge_graph(kg: dict, console: Console, title: str = "Knowledge 
                 console.print(f'    [dim italic]"{context}"[/dim italic]')
 
 
-def index_single_document_with_progress(doc, console, force: bool = False):
-    """
-    Index a single document with live display and activity tracking.
-
-    This is a CLI display helper that wraps the indexing service
-    with interactive progress display.
-
-    Args:
-        doc: Document object to index
-        console: Rich Console instance
-        force: Force re-indexing even if already indexed
-
-    Returns:
-        dict with keys:
-            - success: bool
-            - result: dict (if successful)
-            - error: str (if failed)
-            - skipped: bool
-    """
-    import time
-
-    from kurt.content.indexing import extract_document_metadata
-
-    doc_id = str(doc.id)
-
-    with LiveProgressDisplay(console, max_log_lines=10) as display:
-        display.start_stage("Indexing document", total=None)
-
-        try:
-            # Activity callback for single document
-            def activity_callback(activity: str):
-                display.log_info(activity)
-
-            # Extract and persist metadata + entities with activity tracking
-            start_time = time.time()
-
-            result = extract_document_metadata(
-                doc_id, force=force, activity_callback=activity_callback
-            )
-
-            elapsed = time.time() - start_time
-
-            if result.get("skipped", False):
-                skip_reason = result.get("skip_reason", "content unchanged")
-                title = result.get("title", "Untitled")
-                display.log_skip(doc_id, title, skip_reason)
-                display.complete_stage()
-                return {"success": True, "result": result, "skipped": True}
-            else:
-                display.log_success(doc_id, result["title"], elapsed)
-                display.complete_stage()
-                return {"success": True, "result": result, "skipped": False}
-
-        except Exception as e:
-            display.log_error(doc_id, str(e))
-            display.complete_stage()
-            return {"success": False, "error": str(e), "skipped": False}
-
-
-def index_multiple_documents_with_progress(documents, console, force: bool = False):
-    """
-    Index multiple documents with live display and activity tracking.
-
-    This is a CLI display helper that wraps the batch indexing service
-    with interactive progress display.
-
-    Args:
-        documents: List of Document objects to index
-        console: Rich Console instance
-        force: Force re-indexing even if already indexed
-
-    Returns:
-        dict with keys from batch_extract_document_metadata:
-            - results: list of result dicts
-            - errors: list of error dicts
-            - succeeded: int
-            - failed: int
-            - skipped: int
-            - elapsed_time: float (total seconds)
-    """
-    import asyncio
-    import time
-
-    from kurt.config import load_config
-    from kurt.content.indexing import batch_extract_document_metadata
-
-    # Extract document IDs
-    document_ids = [str(doc.id) for doc in documents]
-
-    # Get max concurrent from config
-    config = load_config()
-    max_concurrent = config.MAX_CONCURRENT_INDEXING
-
-    # Track overall timing
-    start_time = time.time()
-
-    with LiveProgressDisplay(console, max_log_lines=10) as display:
-        # Start indexing stage
-        display.start_stage("Indexing documents", total=len(document_ids))
-
-        # Create progress callback with activity updates and logging
-        update_progress = create_fetch_progress_callback(display, len(document_ids))
-
-        # Run async batch extraction with progress callback
-        batch_result = asyncio.run(
-            batch_extract_document_metadata(
-                document_ids,
-                max_concurrent=max_concurrent,
-                force=force,
-                progress_callback=update_progress,
-            )
-        )
-
-        display.complete_stage()
-
-    # Add elapsed time to result
-    batch_result["elapsed_time"] = time.time() - start_time
-
-    return batch_result
-
-
-def finalize_knowledge_graph_with_progress(index_results, console, display=None):
-    """
-    Finalize knowledge graph with live progress display.
-
-    This wraps the entity resolution process with an interactive progress bar
-    and scrolling log window showing entity resolution decisions.
-
-    Args:
-        index_results: List of indexing results to finalize
-        console: Rich Console instance
-        display: Optional existing LiveProgressDisplay instance (for multi-stage display)
-
-    Returns:
-        Result dict from finalize_knowledge_graph_from_index_results
-    """
-    import re
-
-    from kurt.content.indexing_entity_resolution import finalize_knowledge_graph_from_index_results
-
-    # Use provided display or create a new one
-    own_display = display is None
-    if own_display:
-        display = LiveProgressDisplay(console, max_log_lines=10)
-        display.__enter__()
-
-    try:
-        # Start stage (total will be updated when we know group count)
-        display.start_stage("Entity resolution", total=None)
-
-        # Track current stage for progress updates
-        group_count = 0
-        stage_started = False  # Track if we've set the total
-
-        def activity_callback(activity: str):
-            nonlocal group_count, stage_started
-
-            # Parse different activity messages and update display accordingly
-            if "Aggregating" in activity:
-                display.log_info(activity)
-
-            elif "Linking" in activity and "existing entities" in activity:
-                # Extract count from message like "Linking 5 existing entities..."
-                match = re.search(r"(\d+) existing entities", activity)
-                count = match.group(1) if match else "?"
-                display.log_info(f"→ Linking {count} existing entities")
-
-            elif "Resolving" in activity and "new entities" in activity:
-                # Extract count from message like "Resolving 110 new entities..."
-                match = re.search(r"(\d+) new entities", activity)
-                count = match.group(1) if match else "?"
-                display.log_info(f"→ Resolving {count} new entities")
-
-            elif "Clustering" in activity:
-                display.log_info(f"→ {activity}")
-
-            elif "Found" in activity and "entity groups" in activity:
-                # Extract group count from message like "Found 29 entity groups, resolving entities with LLM..."
-                match = re.search(r"(\d+) entity groups", activity)
-                if match and not stage_started:
-                    group_count = int(match.group(1))
-                    # Update the total instead of starting a new stage
-                    display.update_stage_total(group_count)
-                    stage_started = True
-
-            elif "Resolved group" in activity:
-                # Parse: "Resolved group 1/29: Dagster → NEW, Dagster Cloud → MERGE(Dagster) (2.4s)"
-                match = re.search(r"Resolved group (\d+)/(\d+): (.+) \((.+?)\)$", activity)
-                if match:
-                    current, total, decisions, timing = match.groups()
-                    display.update_progress(completed=int(current))
-                    display.log(f"{decisions} ({timing})", style="dim green")
-                else:
-                    display.log(activity, style="dim")
-
-            elif "Creating entities and relationships" in activity:
-                display.log_info(f"→ {activity}")
-
-            elif "Resolved:" in activity:
-                # Final summary: "Resolved: 42 new entities, 55 merged with existing"
-                display.log_info(f"→ {activity}")
-
-            else:
-                # Generic activity message
-                display.log_info(activity)
-
-        # Run the finalization with our activity callback
-        kg_result = finalize_knowledge_graph_from_index_results(
-            index_results, activity_callback=activity_callback
-        )
-
-        display.complete_stage()
-
-    finally:
-        # Only exit if we created the display
-        if own_display:
-            display.__exit__(None, None, None)
-
-    # Print final summary (only if we created our own display)
-    if own_display:
-        console.print("\n[bold]Finalizing knowledge graph...[/bold]")
-        if "error" in kg_result:
-            console.print(f"  [red]✗[/red] KG finalization failed: {kg_result['error']}")
-        else:
-            console.print(f"  [green]✓[/green] Created {kg_result['entities_created']} entities")
-            console.print(f"  [green]✓[/green] Linked {kg_result['entities_linked']} entities")
-            if kg_result.get("relationships_created", 0) > 0:
-                console.print(
-                    f"  [green]✓[/green] Created {kg_result['relationships_created']} relationships"
-                )
-
-    return kg_result
-
-
 def index_and_finalize_with_two_stage_progress(documents, console, force: bool = False):
     """
     Index documents and finalize KG with two-stage live progress display.
@@ -918,11 +710,9 @@ def index_and_finalize_with_two_stage_progress(documents, console, force: bool =
     Returns:
         dict with both indexing and KG results
     """
-    import asyncio
     import time
 
     from kurt.config import load_config
-    from kurt.content.indexing import batch_extract_document_metadata
 
     # Extract document IDs
     document_ids = [str(doc.id) for doc in documents]
@@ -932,30 +722,67 @@ def index_and_finalize_with_two_stage_progress(documents, console, force: bool =
     start_time = time.time()
 
     # ====================================================================
-    # STAGE 1: Document Indexing (Metadata Extraction)
+    # Run workflow with live display
     # ====================================================================
+    from dbos import DBOS
+
+    from kurt.content.indexing.workflow_indexing import complete_indexing_workflow
+    from kurt.workflows import get_dbos
+
+    # Initialize DBOS
+    get_dbos()
+
     print_stage_header(console, 1, "METADATA EXTRACTION")
 
+    # Start indexing workflow (runs both metadata extraction + entity resolution)
+    index_handle = DBOS.start_workflow(
+        complete_indexing_workflow,
+        document_ids=document_ids,
+        force=force,
+        enable_kg=True,
+        max_concurrent=max_concurrent,
+    )
+
     with LiveProgressDisplay(console, max_log_lines=10) as display:
+        # Stage 1: Metadata extraction
         display.start_stage("Metadata extraction", total=len(document_ids))
 
-        # Create progress callback for indexing
-        update_progress = create_fetch_progress_callback(display, len(document_ids))
-
-        # Run async batch extraction
-        batch_result = asyncio.run(
-            batch_extract_document_metadata(
-                document_ids,
-                max_concurrent=max_concurrent,
-                force=force,
-                progress_callback=update_progress,
-            )
+        # Read document progress streams in parallel
+        read_multiple_streams_parallel(
+            workflow_id=index_handle.workflow_id,
+            stream_names=[f"doc_{i}_progress" for i in range(len(document_ids))],
+            display=display,
+            on_event=lambda _stream, event: display.update_progress(advance=1)
+            if event.get("advance_progress")
+            else None,
         )
 
         display.complete_stage()
 
+        # Stage 2: Entity resolution
+        print_stage_header(console, 2, "ENTITY RESOLUTION")
+        display.start_stage("Entity resolution", total=1)
+
+        # Read entity resolution stream
+        read_stream_with_display(
+            workflow_id=index_handle.workflow_id,
+            stream_name="entity_resolution_progress",
+            display=display,
+            on_event=None,
+        )
+
+        display.complete_stage()
+
+    # Get final result (workflow should be complete now)
+    index_result = index_handle.get_result()
+
+    # Extract batch_result from workflow result
+    batch_result = index_result.get("extract_results", {})
+
     # Stage 1 summary
-    indexed_count = batch_result["succeeded"] - batch_result["skipped"]
+    # Note: In workflow_indexing.py, "succeeded" already excludes skipped documents
+    # (unlike the legacy extract.py which included them)
+    indexed_count = batch_result["succeeded"]
     skipped_count = batch_result["skipped"]
     error_count = batch_result["failed"]
 
@@ -968,30 +795,15 @@ def index_and_finalize_with_two_stage_progress(documents, console, force: bool =
         ],
     )
 
-    # ====================================================================
-    # STAGE 2: Entity Resolution
-    # ====================================================================
-    results_for_kg = [
-        r
-        for r in batch_result.get("results", [])
-        if not r.get("skipped", False) and "error" not in r
-    ]
+    # Stage 2 summary
+    kg_result = index_result.get("kg_stats")
 
-    if results_for_kg:
-        print_stage_header(console, 2, "ENTITY RESOLUTION")
-
-        # New live display for stage 2
-        with LiveProgressDisplay(console, max_log_lines=10) as display:
-            kg_result = finalize_knowledge_graph_with_progress(
-                results_for_kg, console, display=display
-            )
-
-        # Stage 2 summary
+    if kg_result:
         print_stage_summary(
             console,
             [
-                ("✓", "Entities created", str(kg_result["entities_created"])),
-                ("✓", "Entities linked", str(kg_result["entities_linked"])),
+                ("✓", "Entities created", str(kg_result.get("entities_created", 0))),
+                ("✓", "Entities linked", str(kg_result.get("entities_linked_existing", 0))),
                 (
                     "✓",
                     "Relationships created",
@@ -999,8 +811,6 @@ def index_and_finalize_with_two_stage_progress(documents, console, force: bool =
                 ),
             ],
         )
-    else:
-        kg_result = None
 
     # ====================================================================
     # Global Command Summary
@@ -1014,7 +824,7 @@ def index_and_finalize_with_two_stage_progress(documents, console, force: bool =
         summary_items.extend(
             [
                 ("✓", "Entities created", str(kg_result["entities_created"])),
-                ("✓", "Entities linked", str(kg_result["entities_linked"])),
+                ("✓", "Entities linked", str(kg_result.get("entities_linked_existing", 0))),
                 (
                     "✓",
                     "Relationships created",
@@ -1034,27 +844,3 @@ def index_and_finalize_with_two_stage_progress(documents, console, force: bool =
         "indexing": batch_result,
         "kg_result": kg_result,
     }
-
-
-def display_kg_finalization_summary(kg_result, console):
-    """
-    Display knowledge graph finalization summary (static version).
-
-    This is a display utility for CLI commands (legacy static version).
-    Use finalize_knowledge_graph_with_progress for interactive display.
-
-    Args:
-        kg_result: Result dict from finalize_knowledge_graph_from_index_results
-        console: Rich Console instance
-    """
-    console.print("\n[bold]Finalizing knowledge graph...[/bold]")
-
-    if "error" in kg_result:
-        console.print(f"  [red]✗[/red] KG finalization failed: {kg_result['error']}")
-    else:
-        console.print(f"  [green]✓[/green] Created {kg_result['entities_created']} entities")
-        console.print(f"  [green]✓[/green] Linked {kg_result['entities_linked']} entities")
-        if kg_result.get("relationships_created", 0) > 0:
-            console.print(
-                f"  [green]✓[/green] Created {kg_result['relationships_created']} relationships"
-            )

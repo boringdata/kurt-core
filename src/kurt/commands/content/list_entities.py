@@ -8,7 +8,7 @@ from rich.console import Console
 from rich.table import Table
 
 from kurt.admin.telemetry.decorators import track_command
-from kurt.content.indexing_models import EntityType
+from kurt.db.models import EntityType
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -58,7 +58,7 @@ def list_entities_cmd(entity_type: str, min_docs: int, include_pattern: str, out
         kurt content list-entities all --include "*/docs/*"
         kurt content list-entities product --format json
     """
-    from kurt.db.knowledge_graph import list_entities_by_type
+    from kurt.db.graph_queries import list_entities_by_type
 
     try:
         # Normalize entity_type to EntityType enum value format (Title case)

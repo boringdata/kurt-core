@@ -85,10 +85,20 @@ def init_dbos(db_path: str | None = None) -> None:
 
         def cleanup_dbos():
             try:
-                # Shutdown the executor WITHOUT canceling futures
-                # This allows enqueued workflows to complete
-                if hasattr(_dbos_instance, "_executor"):
-                    _dbos_instance._executor.shutdown(wait=False, cancel_futures=False)
+                # Properly destroy DBOS instance with a short timeout
+                # This waits for workflows to complete and closes connections
+                DBOS.destroy(workflow_completion_timeout_sec=5)
+            except Exception:  # noqa: S110
+                pass  # Ignore cleanup errors
+
+            # Also cleanup async database engine if it exists
+            try:
+                import asyncio
+
+                from kurt.db.database import dispose_async_resources
+
+                # Dispose async database connections
+                asyncio.run(dispose_async_resources())
             except Exception:  # noqa: S110
                 pass  # Ignore cleanup errors
 

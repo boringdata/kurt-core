@@ -252,14 +252,16 @@ def mock_map_functions():
     Returns:
         Dict with mock functions for customization
     """
+    # Patch at sitemap module level - this mocks the HTTP/network calls
+    # but lets the rest of the logic (document creation, etc.) run normally
     with (
-        patch("kurt.content.map._discover_sitemap_urls") as mock_sitemap,
-        patch("kurt.content.map.identify_blogroll_candidates") as mock_blogroll,
-        patch("kurt.content.map.extract_chronological_content") as mock_extract,
+        patch("kurt.content.map.sitemap.discover_sitemap_urls") as mock_discover_sitemap,
+        patch("kurt.content.map.blogroll.identify_blogroll_candidates") as mock_blogroll,
+        patch("kurt.content.map.blogroll.extract_chronological_content") as mock_extract,
         patch("kurt.content.map.crawl_website") as mock_crawler,
     ):
-        # Default return values
-        mock_sitemap.return_value = [
+        # Default return values for discover_sitemap_urls
+        mock_discover_sitemap.return_value = [
             "https://example.com/page1",
             "https://example.com/page2",
             "https://example.com/page3",
@@ -272,7 +274,7 @@ def mock_map_functions():
         mock_crawler.return_value = []  # No crawled URLs by default
 
         yield {
-            "mock_sitemap": mock_sitemap,
+            "mock_sitemap": mock_discover_sitemap,
             "mock_blogroll": mock_blogroll,
             "mock_extract": mock_extract,
             "mock_crawler": mock_crawler,
@@ -402,10 +404,22 @@ def mock_dspy_signature():
                     output = return_value(**kwargs)
                     return create_mock_result(output)
 
+                async def async_side_effect(*args, **kwargs):
+                    output = return_value(**kwargs)
+                    return create_mock_result(output)
+
                 mock_module.side_effect = side_effect
+                mock_module.acall = MagicMock(side_effect=async_side_effect)
             else:
                 # Static return value
-                mock_module.return_value = create_mock_result(return_value)
+                mock_result = create_mock_result(return_value)
+                mock_module.return_value = mock_result
+
+                # For async calls, return a coroutine
+                async def async_return_value(*args, **kwargs):
+                    return mock_result
+
+                mock_module.acall = MagicMock(side_effect=async_return_value)
 
             mock_cot.return_value = mock_module
             yield mock_module
@@ -431,10 +445,8 @@ def mock_all_llm_calls():
     """
     with (
         patch("kurt.content.embeddings.generate_embeddings") as mock_gen_embeddings,
-        patch(
-            "kurt.content.indexing_entity_resolution.generate_embeddings"
-        ) as mock_gen_embeddings2,
-        patch("kurt.db.knowledge_graph.generate_embeddings") as mock_gen_embeddings3,
+        patch("kurt.db.graph_similarity.generate_embeddings") as mock_gen_embeddings2,
+        patch("kurt.db.graph_entities.generate_embeddings") as mock_gen_embeddings3,
         patch("dspy.Embedder") as mock_embedder_class,
         patch("dspy.LM") as mock_lm_class,
         patch("dspy.configure") as mock_configure,

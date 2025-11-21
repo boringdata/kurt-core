@@ -381,7 +381,7 @@ def links_cmd(identifier: str, direction: str, output_format: str):
         kurt content links 550e8400 --format json
     """
     from kurt.content.document import get_document
-    from kurt.db.knowledge_graph import get_document_links
+    from kurt.db.graph_queries import get_document_links
 
     try:
         # Resolve identifier to UUID

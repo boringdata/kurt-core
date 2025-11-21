@@ -34,28 +34,28 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
     get_dbos()
 
     # Import workflow modules to register them
-    from kurt.workflows import map as _map  # noqa
-    from kurt.workflows import fetch as _fetch  # noqa
-    from kurt.workflows import index as _index  # noqa
+    from kurt.content.map import workflow as _map  # noqa
+    from kurt.content.fetch import workflow as _fetch  # noqa
+    from kurt.content.indexing import workflow_indexing as _indexing_workflow  # noqa
 
     # Get the workflow function
     workflow_func = None
     queue = None
     if workflow_name == "map_url_workflow":
-        from kurt.workflows.map import get_map_queue, map_url_workflow
+        from kurt.content.map.workflow import get_map_queue, map_url_workflow
 
         workflow_func = map_url_workflow
         queue = get_map_queue()
-    elif workflow_name == "fetch_batch_workflow":
-        from kurt.workflows.fetch import fetch_batch_workflow, fetch_queue
+    elif workflow_name == "fetch_workflow":
+        from kurt.content.fetch.workflow import fetch_queue, fetch_workflow
 
-        workflow_func = fetch_batch_workflow
+        workflow_func = fetch_workflow
         queue = fetch_queue
-    elif workflow_name == "index_documents_workflow":
-        from kurt.workflows.index import index_documents_workflow, index_queue
+    elif workflow_name == "complete_indexing_workflow":
+        from kurt.content.indexing.workflow_indexing import complete_indexing_workflow
 
-        workflow_func = index_documents_workflow
-        queue = index_queue
+        workflow_func = complete_indexing_workflow
+        queue = None  # No queue needed for direct workflow invocation
     else:
         sys.exit(1)  # Unknown workflow
 
@@ -71,7 +71,13 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
 
     # Enqueue the workflow
     with SetEnqueueOptions(priority=priority):
-        handle = queue.enqueue(workflow_func, **workflow_args)
+        if queue:
+            handle = queue.enqueue(workflow_func, **workflow_args)
+        else:
+            # For workflows without a queue, call directly
+            from dbos import DBOS
+
+            handle = DBOS.start_workflow(workflow_func, **workflow_args)
 
     # Now we know the workflow ID, set up proper logging
     from pathlib import Path

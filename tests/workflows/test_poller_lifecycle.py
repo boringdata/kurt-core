@@ -309,10 +309,10 @@ class TestKurtCommandDBOSIntegration:
         # For now, we'll test the initialization path
 
         # Mock the actual discovery functions to avoid network calls
-        with patch("kurt.content.map._discover_sitemap_urls") as mock_sitemap:
+        with patch("kurt.content.map.sitemap.discover_sitemap_urls") as mock_sitemap:
             mock_sitemap.return_value = []
 
-            with patch("kurt.workflows.map.get_map_queue") as mock_queue:
+            with patch("kurt.content.map.workflow.get_map_queue") as mock_queue:
                 mock_handle = MagicMock()
                 mock_handle.workflow_id = "test-123"
                 mock_handle.get_status.return_value.status = "SUCCESS"
