@@ -49,6 +49,40 @@ class Workspace(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class WorkspaceRole(str, Enum):
+    """Roles for workspace members."""
+
+    OWNER = "owner"  # Full control
+    ADMIN = "admin"  # Can manage users and content
+    MEMBER = "member"  # Can view and edit content
+    VIEWER = "viewer"  # Read-only access
+
+
+class WorkspaceMember(SQLModel, table=True):
+    """Workspace membership and access control."""
+
+    __tablename__ = "workspace_members"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    workspace_id: UUID = Field(foreign_key="workspaces.id", index=True)
+    user_email: str = Field(index=True)  # User's email address
+    user_id: Optional[str] = Field(
+        default=None, index=True
+    )  # External auth provider ID (Supabase, Auth0, etc.)
+
+    # Role and permissions
+    role: WorkspaceRole = Field(default=WorkspaceRole.MEMBER)
+
+    # Status
+    is_active: bool = Field(default=True)
+    invited_at: datetime = Field(default_factory=datetime.utcnow)
+    joined_at: Optional[datetime] = None
+    invited_by: Optional[str] = None  # Email of inviter
+
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 # ============================================================================
 # Document Models
 # ============================================================================
