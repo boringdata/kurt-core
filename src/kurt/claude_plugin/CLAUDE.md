@@ -68,11 +68,11 @@ When a user shares a URL or pastes content, or when you need to update existing 
 - Updating existing sources to discover new content
 - Content fetching and indexing workflows
 
-## Format templates 
+## Format templates
 Kurt provides the following default format templates (see `kurt/templates/formats/` for full list) out of the box:
 
-### Internal artifacts 
-- Positioning + messaging 
+### Internal artifacts
+- Positioning + messaging
 - ICP segmentation
 - Persona segmentation
 - Campaign brief
@@ -82,14 +82,21 @@ Kurt provides the following default format templates (see `kurt/templates/format
 - Web pages: product pages, solution pages, homepage, integration pages
 - Product documentation, tutorials or guides
 - Blog posts (eg thought leadership)
-- Product update newsletters 
+- Product update newsletters
 - Social media posts
-- Explainer video scripts 
+- Explainer video scripts
 - Podcast interview plans
 - Drip marketing emails
-- Marketing emails  
+- Marketing emails
 
-Users can add or update format templates to Kurt following the process in `.claude/instructions/add-format-template.md`.
+**IMPORTANT: Proactively create missing templates**
+
+When a user requests content in a format that doesn't match existing templates:
+1. Check `kurt/templates/formats/` to confirm no match exists
+2. **Immediately follow `.claude/instructions/add-format-template.md`** to create the template
+3. Do NOT proceed with writing until the format template exists
+
+Users can also explicitly request to add or update format templates by following `.claude/instructions/add-format-template.md`.
 
 ## Research
 During project planning, writing, or just ad-hoc exploration, a user might need to conduct external research on the web (using Perplexity, by searching HackerNews / Reddit, accessing RSS feeds, websites, GitHub repos, etc). 
