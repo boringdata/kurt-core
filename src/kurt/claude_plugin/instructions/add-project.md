@@ -55,6 +55,78 @@ We'll gather further details on these in the following steps, but cannot proceed
    - See Analytics Integration section in CLAUDE.md for full details
 
 9. Identify + perform research: based on the <format_template>, identify any research that must be performed before completing the project plan.  Confirm with the user before performing that research.
-10. Confirm with the user to review the <project_level_details> of the <project_plan> once you've reached a reasonable point of completeness.  Iterate with the user as needed, returning to any steps that need refinement.
-11. Populate the <project_tracking> and <project_level_details> sections of the <project_plan> based on what's been agreed to with the user in <project_level_details>.
-12. Ask the user if they'd like to proceed with executing the <project_plan>.  Follow the instructions in each <format_template> for each <project_tracking> step.
+
+10. **Extract citations from sources:** After gathering sources and completing research, create a `research/citations.md` file in the <project_folder> to document research findings and extract relevant passages from source documents.
+
+    **Citation extraction workflow:**
+    - Load the citation template from `kurt/templates/citations-template.md`
+    - Create `research/citations.md` in the <project_folder> based on the template
+    - **Add Research Findings section** (at top): Document common questions/topics identified from external research (Reddit, HackerNews, Perplexity, etc.)
+    - Read through each source document identified in steps 8-9
+    - Extract specific passages (quotes, facts, statistics, definitions, examples) that will be cited in the final documents
+    - Organize citations by document/topic/question (matching the structure of your drafts)
+    - Include source attribution for each citation (file path, ID, section)
+    - Tag citations with intended use (e.g., "Use for: Training FAQ Q1 (definition)")
+    - Update the "Coverage Assessment" section to track well-covered vs. gap areas
+
+    **See `kurt/templates/citations-template.md` for:**
+    - Complete format specification with Research Findings section
+    - Example citation structure
+    - Usage instructions for draft outline and prose writing
+    - Notes section for tracking additional sources needed
+
+    **Why extract citations:**
+    - Centralizes all research (findings + source passages) in one file
+    - Reduces token usage during drafting (don't need to re-read full source documents)
+    - Increases transparency (specific passages ready to cite)
+    - Improves accuracy (grounded in exact source text)
+    - Enables reuse across multiple documents in the project
+
+    **When to extract:**
+    - After all sources are gathered and research is complete
+    - Before creating draft files
+    - Update citations.md if new sources are added later
+
+11. Confirm with the user to review the <project_level_details> of the <project_plan> once you've reached a reasonable point of completeness.  Iterate with the user as needed, returning to any steps that need refinement.
+12. Populate the <project_tracking> and <project_level_details> sections of the <project_plan> based on what's been agreed to with the user in <project_level_details>.
+13. Ask the user if they'd like to proceed with executing the <project_plan>.  Follow the instructions in each <format_template> for each <project_tracking> step.
+
+---
+
+## Maintaining Project Tracking
+
+**IMPORTANT: The `<project_tracking>` section of plan.md is the source of truth for project status. You MUST update it after completing each task to maintain visibility.**
+
+### When to Update
+
+Update the `<project_tracking>` section **immediately after completing each task**, including:
+- Completing a research document
+- Extracting citations
+- Creating an outline
+- Drafting a document
+- Editing a document
+- Publishing a document
+- Any other task listed in the project plan
+
+### How to Update
+
+1. Open `projects/<project-name>/plan.md`
+2. Locate the task you just completed in the `<project_tracking>` section
+3. Change `- [ ]` to `- [x]` for that task
+4. Save the file
+
+**Example:**
+```markdown
+### Phase 1: Research & Source Gathering
+- [x] Research: Common questions on "training AI models"  ← Just completed, checked off
+- [ ] Research: Common questions on "pre-training"        ← Still pending
+```
+
+### Why This Matters
+
+- **Visibility:** User can see project progress at a glance
+- **Context:** When returning to a project later, you know exactly what's done
+- **Accountability:** Completed work is tracked and visible
+- **Planning:** Easy to see what tasks remain
+
+**Do NOT batch updates** - update after each individual task completion, not after completing a whole phase.

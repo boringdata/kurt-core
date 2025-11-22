@@ -63,22 +63,34 @@ Examples based on project type:
 
 <project_tracking>
 ## Project Plan
-<!-- A checklist of items to execute in order to complete the project.  See /CLAUDE.md for more information on each step of the workflow.  
+<!-- A checklist of items to execute in order to complete the project.  See /CLAUDE.md for more information on each step of the workflow.
 
-REQUIRED: Each document must be first outlined, then drafted, then edited.  Analysis, research and publishing are optional steps.
+REQUIRED: Update checkboxes immediately after completing each task to maintain project visibility.
+
+Universal workflow:
+1. Research & Citations (optional research, extract citations to research/citations.md)
+2. Draft outline (create draft file with status: outline)
+3. Draft prose (update same file with status: draft)
+4. Edit (refine draft)
+5. Publish (optional)
 
 -->
 
-- [ ] Analysis {{ANALYSIS_QUERY_1}}
-- [ ] Research {{RESEARCH_SOURCE_1}}
-- [ ] Outline {{DOCUMENT_1}}
-- [ ] Draft {{DOCUMENT_1}}
-- [ ] Edit {{DOCUMENT_1}}
-- [ ] Outline {{DOCUMENT_2}}
-- [ ] Draft {{DOCUMENT_2}}
-- [ ] Edit {{DOCUMENT_2}}
-- [ ] Publish {{DOCUMENT_2}} to {{CMS}}
-...etc
+### Phase 1: Research & Citations
+- [ ] External research: {{RESEARCH_SOURCE_1}} → research/[output-file].md
+- [ ] Extract citations from sources → research/citations.md
+
+### Phase 2: Draft Documents
+- [ ] Draft: {{DOCUMENT_1}} (outline) → drafts/{{DOCUMENT_1}}.md
+- [ ] Draft: {{DOCUMENT_1}} (prose) → drafts/{{DOCUMENT_1}}.md
+- [ ] Draft: {{DOCUMENT_2}} (outline) → drafts/{{DOCUMENT_2}}.md
+- [ ] Draft: {{DOCUMENT_2}} (prose) → drafts/{{DOCUMENT_2}}.md
+
+### Phase 3: Edit & Publish
+- [ ] Edit: {{DOCUMENT_1}}
+- [ ] Edit: {{DOCUMENT_2}}
+- [ ] Publish: {{DOCUMENT_1}} to {{CMS}}
+- [ ] Publish: {{DOCUMENT_2}} to {{CMS}}
 
 </project_tracking>
 
