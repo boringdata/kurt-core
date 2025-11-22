@@ -13,6 +13,81 @@ from sqlmodel import Field, SQLModel
 logger = logging.getLogger(__name__)
 
 
+# ============================================================================
+# Multi-Tenancy Models
+# ============================================================================
+
+
+class Workspace(SQLModel, table=True):
+    """Workspace for multi-tenant isolation.
+
+    In cloud mode, each workspace represents a separate tenant.
+    In local mode, a default workspace is used (00000000-0000-0000-0000-000000000000).
+    """
+
+    __tablename__ = "workspaces"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    name: str = Field(index=True)
+    slug: str = Field(unique=True, index=True)  # URL-friendly identifier
+
+    # Owner/organization info
+    owner_email: Optional[str] = Field(default=None, index=True)
+    organization: Optional[str] = None
+
+    # Subscription/billing (for cloud mode)
+    plan: str = Field(default="free")  # free, pro, enterprise
+    max_documents: Optional[int] = None
+    max_users: Optional[int] = None
+
+    # Settings
+    settings: Optional[dict] = Field(default=None, sa_column=Column(JSON))
+
+    # Status
+    is_active: bool = Field(default=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class WorkspaceRole(str, Enum):
+    """Roles for workspace members."""
+
+    OWNER = "owner"  # Full control
+    ADMIN = "admin"  # Can manage users and content
+    MEMBER = "member"  # Can view and edit content
+    VIEWER = "viewer"  # Read-only access
+
+
+class WorkspaceMember(SQLModel, table=True):
+    """Workspace membership and access control."""
+
+    __tablename__ = "workspace_members"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    workspace_id: UUID = Field(foreign_key="workspaces.id", index=True)
+    user_email: str = Field(index=True)  # User's email address
+    user_id: Optional[str] = Field(
+        default=None, index=True
+    )  # External auth provider ID (Supabase, Auth0, etc.)
+
+    # Role and permissions
+    role: WorkspaceRole = Field(default=WorkspaceRole.MEMBER)
+
+    # Status
+    is_active: bool = Field(default=True)
+    invited_at: datetime = Field(default_factory=datetime.utcnow)
+    joined_at: Optional[datetime] = None
+    invited_by: Optional[str] = None  # Email of inviter
+
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+# ============================================================================
+# Document Models
+# ============================================================================
+
+
 class IngestionStatus(str, Enum):
     """Status of document content ingestion."""
 
@@ -54,6 +129,15 @@ class Document(SQLModel, table=True):
     model_config = ConfigDict(extra="allow")  # Allow dynamic attributes like analytics
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
+
+    # Multi-tenancy: workspace isolation for cloud mode
+    # In local SQLite mode, uses default value '00000000-0000-0000-0000-000000000000'
+    tenant_id: Optional[UUID] = Field(
+        default=UUID("00000000-0000-0000-0000-000000000000"),
+        index=True,
+        description="Workspace ID for multi-tenant isolation (cloud mode)",
+    )
+
     title: Optional[str] = None
     source_type: SourceType
     source_url: Optional[str] = Field(default=None, unique=True, index=True)
@@ -161,6 +245,14 @@ class Entity(SQLModel, table=True):
     __tablename__ = "entities"
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
+
+    # Multi-tenancy: workspace isolation for cloud mode
+    tenant_id: Optional[UUID] = Field(
+        default=UUID("00000000-0000-0000-0000-000000000000"),
+        index=True,
+        description="Workspace ID for multi-tenant isolation (cloud mode)",
+    )
+
     name: str = Field(index=True)  # Entity name (as mentioned in documents)
     entity_type: str = Field(index=True)  # Entity type (Product, Feature, Technology, etc.)
 
@@ -188,6 +280,14 @@ class EntityRelationship(SQLModel, table=True):
     __tablename__ = "entity_relationships"
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
+
+    # Multi-tenancy: workspace isolation for cloud mode
+    tenant_id: Optional[UUID] = Field(
+        default=UUID("00000000-0000-0000-0000-000000000000"),
+        index=True,
+        description="Workspace ID for multi-tenant isolation (cloud mode)",
+    )
+
     source_entity_id: UUID = Field(foreign_key="entities.id", index=True)
     target_entity_id: UUID = Field(foreign_key="entities.id", index=True)
     relationship_type: str = Field(index=True)  # mentions, part_of, integrates_with, etc.
@@ -206,6 +306,14 @@ class DocumentEntity(SQLModel, table=True):
     __tablename__ = "document_entities"
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
+
+    # Multi-tenancy: workspace isolation for cloud mode
+    tenant_id: Optional[UUID] = Field(
+        default=UUID("00000000-0000-0000-0000-000000000000"),
+        index=True,
+        description="Workspace ID for multi-tenant isolation (cloud mode)",
+    )
+
     document_id: UUID = Field(foreign_key="documents.id", index=True)
     entity_id: UUID = Field(foreign_key="entities.id", index=True)
 

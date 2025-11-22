@@ -5,6 +5,7 @@ Loads configuration from .kurt file in the current directory.
 This file stores project-specific settings like database path and project root.
 """
 
+import os
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -110,6 +111,15 @@ class KurtConfig(BaseModel):
         description="Maximum number of concurrent LLM calls during indexing (default: 50)",
         ge=1,  # Must be at least 1
         le=100,  # Cap at 100 to avoid overwhelming the LLM API
+    )
+    # Multi-tenant PostgreSQL configuration (cloud mode)
+    DATABASE_URL: str | None = Field(
+        default=None,
+        description="PostgreSQL connection URL for cloud mode (if None, uses local SQLite)",
+    )
+    WORKSPACE_ID: str | None = Field(
+        default=None,
+        description="Workspace/tenant ID for multi-tenant cloud deployments",
     )
     # Telemetry configuration
     TELEMETRY_ENABLED: bool = Field(
@@ -234,6 +244,13 @@ def load_config() -> KurtConfig:
                 value = value.strip().strip('"').strip("'")  # Remove quotes
                 config_data[key] = value
 
+    # Override with environment variables for cloud mode
+    # DATABASE_URL and WORKSPACE_ID come from environment (not stored in kurt.config)
+    if os.getenv("DATABASE_URL"):
+        config_data["DATABASE_URL"] = os.getenv("DATABASE_URL")
+    if os.getenv("WORKSPACE_ID"):
+        config_data["WORKSPACE_ID"] = os.getenv("WORKSPACE_ID")
+
     # Pydantic will handle type validation via field_validator
     return KurtConfig(**config_data)
 
@@ -314,7 +331,13 @@ def get_config_or_default() -> KurtConfig:
         return load_config()
     else:
         # Return default config (without creating file)
-        return KurtConfig()
+        # Check for environment variables for cloud mode
+        config_data = {}
+        if os.getenv("DATABASE_URL"):
+            config_data["DATABASE_URL"] = os.getenv("DATABASE_URL")
+        if os.getenv("WORKSPACE_ID"):
+            config_data["WORKSPACE_ID"] = os.getenv("WORKSPACE_ID")
+        return KurtConfig(**config_data)
 
 
 def update_config(config: KurtConfig) -> None:
