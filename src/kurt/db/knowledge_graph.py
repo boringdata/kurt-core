@@ -326,7 +326,7 @@ def list_entities_by_type(
             doc_stmt = select(Document).where(Document.ingestion_status == IngestionStatus.FETCHED)
             matching_docs = s.exec(doc_stmt).all()
             matching_doc_ids = {
-                str(d.id)
+                d.id
                 for d in matching_docs
                 if (d.source_url and fnmatch(d.source_url, include_pattern))
                 or (d.content_path and fnmatch(d.content_path, include_pattern))
