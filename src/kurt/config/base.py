@@ -20,6 +20,7 @@ class KurtConfig(BaseModel):
     DEFAULT_PROJECTS_PATH: ClassVar[str] = "projects"
     DEFAULT_RULES_PATH: ClassVar[str] = "rules"
     DEFAULT_INDEXING_LLM_MODEL: ClassVar[str] = "openai/gpt-4o-mini"
+    DEFAULT_ANSWER_LLM_MODEL: ClassVar[str] = "openai/gpt-4o"
     DEFAULT_EMBEDDING_MODEL: ClassVar[str] = "openai/text-embedding-3-small"
     DEFAULT_FETCH_ENGINE: ClassVar[str] = "trafilatura"
     DEFAULT_MAX_CONCURRENT_INDEXING: ClassVar[int] = 50
@@ -96,6 +97,10 @@ class KurtConfig(BaseModel):
     INDEXING_LLM_MODEL: str = Field(
         default=DEFAULT_INDEXING_LLM_MODEL,
         description="LLM model for indexing documents (metadata extraction, classification)",
+    )
+    ANSWER_LLM_MODEL: str = Field(
+        default=DEFAULT_ANSWER_LLM_MODEL,
+        description="LLM model for answering questions using GraphRAG retrieval",
     )
     EMBEDDING_MODEL: str = Field(
         default=DEFAULT_EMBEDDING_MODEL,
@@ -279,6 +284,7 @@ def create_config(
         f.write(f'PATH_PROJECTS="{config.PATH_PROJECTS}"\n')
         f.write(f'PATH_RULES="{config.PATH_RULES}"\n')
         f.write(f'INDEXING_LLM_MODEL="{config.INDEXING_LLM_MODEL}"\n')
+        f.write(f'ANSWER_LLM_MODEL="{config.ANSWER_LLM_MODEL}"\n')
         f.write(f'EMBEDDING_MODEL="{config.EMBEDDING_MODEL}"\n')
         f.write(f'INGESTION_FETCH_ENGINE="{config.INGESTION_FETCH_ENGINE}"\n')
         f.write(f"MAX_CONCURRENT_INDEXING={config.MAX_CONCURRENT_INDEXING}\n")
@@ -335,6 +341,7 @@ def update_config(config: KurtConfig) -> None:
         f.write(f'PATH_PROJECTS="{config.PATH_PROJECTS}"\n')
         f.write(f'PATH_RULES="{config.PATH_RULES}"\n')
         f.write(f'INDEXING_LLM_MODEL="{config.INDEXING_LLM_MODEL}"\n')
+        f.write(f'ANSWER_LLM_MODEL="{config.ANSWER_LLM_MODEL}"\n')
         f.write(f'EMBEDDING_MODEL="{config.EMBEDDING_MODEL}"\n')
         f.write(f'INGESTION_FETCH_ENGINE="{config.INGESTION_FETCH_ENGINE}"\n')
         f.write("\n# Telemetry Configuration\n")
