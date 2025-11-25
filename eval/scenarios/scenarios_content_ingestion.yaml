@@ -1,0 +1,205 @@
+# Kurt Evaluation Scenarios - Content Ingestion
+#
+# Tests for content discovery, fetching, and indexing workflows.
+
+scenarios:
+  # ========================================================================
+  # Scenario 01: Discover and Fetch Content from URL
+  # ========================================================================
+  - name: 01_fetch_from_url
+    description: Initialize Kurt and discover/fetch content from mocked URL
+
+    notes: |
+      Tests content discovery and fetching using mock HTTP server.
+      Mock data includes sitemap with 6 URLs (home, about, pricing, 3 blog posts).
+      HTTP requests are intercepted by local proxy server - no real network calls!
+      Uses HTTP (not HTTPS) to avoid SSL complications in testing.
+      The httpx fetch engine is automatically configured in kurt.config.
+
+    initial_prompt: >
+      Initialize a Kurt project, then discover and fetch content from
+      http://acme-corp.com/
+
+    assertions:
+      - type: FileExists
+        path: kurt.config
+
+      - type: FileExists
+        path: .kurt/kurt.sqlite
+
+      - type: MetricEquals
+        metric_path: files.config_exists
+        expected_value: true
+
+      - type: MetricEquals
+        metric_path: files.db_exists
+        expected_value: true
+
+      # Verify content discovery worked (ACME sitemap has 6 URLs)
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) >= 5 FROM documents WHERE source_url LIKE 'http://acme-corp.com/%'
+
+      # Check that documents were fetched
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) >= 3 FROM documents WHERE source_url LIKE 'http://acme-corp.com/%' AND ingestion_status='FETCHED'
+
+  # ========================================================================
+  # Scenario 02: Build Knowledge Graph from Documentation
+  # ========================================================================
+  - name: 02_index_and_build_graph
+    description: Fetch and index ACME documentation to build knowledge graph
+
+    notes: |
+      Tests the complete workflow of building a knowledge graph:
+      1. Initialize Kurt project
+      2. Fetch ACME documentation from mock server
+      3. Index content to extract entities
+      4. Build knowledge graph with entity relationships
+
+      Expected results:
+      - 4+ documents fetched from docs.acme-corp.com
+      - 8+ entities extracted (ACME, Node.js, Python, API Keys, JWT, OAuth, etc.)
+      - Document-entity links created in document_entities table
+
+    initial_prompt: |
+      Please set up a knowledge graph for ACME API documentation:
+
+      1. Initialize a Kurt project
+      2. Fetch documentation from http://docs.acme-corp.com
+      3. Index all fetched content to build the knowledge graph
+
+      Show me a summary of what entities were extracted.
+
+    assertions:
+      # Verify project was initialized
+      - type: FileExists
+        path: kurt.config
+
+      - type: FileExists
+        path: .kurt/kurt.sqlite
+
+      # Verify content was fetched
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) >= 4 FROM documents WHERE ingestion_status='FETCHED'
+
+      # Verify entities were extracted
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) >= 8 FROM entities
+
+      # Verify key entities exist
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) >= 1 FROM entities WHERE LOWER(name) LIKE '%acme%'
+
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) >= 1 FROM entities WHERE LOWER(name) IN ('node.js', 'python', 'nodejs')
+
+      # Verify document-entity links
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) >= 5 FROM document_entities
+
+      # Verify conversation completed
+      - type: MetricEquals
+        metric_path: conversation.completed
+        expected_value: true
+
+  # ========================================================================
+  # Scenario 03: Fetch with Filters
+  # ========================================================================
+  - name: 03_fetch_with_include_filter
+    description: Test selective fetching using --include filter
+
+    notes: |
+      Tests the --include flag to selectively fetch only documents
+      matching a specific URL pattern.
+
+    setup_commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt init
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt content map url http://docs.acme-corp.com
+
+    initial_prompt: |
+      Fetch only the getting-started documentation from the ACME docs.
+      Use the --include filter to match only URLs containing "getting-started".
+
+    assertions:
+      # Verify at least one document was fetched
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) >= 1 FROM documents WHERE ingestion_status='FETCHED'
+
+      # Verify getting-started doc was fetched
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) >= 1 FROM documents WHERE source_url LIKE '%getting-started%' AND ingestion_status='FETCHED'
+
+      # Verify conversation completed
+      - type: MetricEquals
+        metric_path: conversation.completed
+        expected_value: true
+
+  # ========================================================================
+  # Scenario 04: Index with Skip Index Flag
+  # ========================================================================
+  - name: 04_fetch_skip_index
+    description: Test fetching without automatic entity extraction
+
+    notes: |
+      Tests the --skip-index flag to fetch documents without
+      immediately extracting entities.
+
+    setup_commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt init
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt content map url http://docs.acme-corp.com
+
+    initial_prompt: |
+      Fetch the ACME documentation but skip the indexing step.
+      Use the --skip-index flag.
+
+    assertions:
+      # Verify documents were fetched
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) >= 1 FROM documents WHERE ingestion_status='FETCHED'
+
+      # Verify NO entities were extracted (since we skipped indexing)
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) = 0 FROM entities
+
+      # Verify conversation completed
+      - type: MetricEquals
+        metric_path: conversation.completed
+        expected_value: true
+
+  # ========================================================================
+  # Scenario 05: Multiple Source Integration
+  # ========================================================================
+  - name: 05_multi_source_fetch
+    description: Fetch and index content from multiple sources
+
+    notes: |
+      Tests fetching from multiple domains and building a unified
+      knowledge graph that combines entities from different sources.
+
+    initial_prompt: |
+      Initialize Kurt and fetch content from these two sources:
+      1. http://acme-corp.com (company blog)
+      2. http://docs.acme-corp.com (documentation)
+
+      Then index all content to build a unified knowledge graph.
+
+    assertions:
+      # Verify content from both sources was fetched
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) >= 3 FROM documents WHERE source_url LIKE 'http://acme-corp.com/%'
+
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) >= 4 FROM documents WHERE source_url LIKE 'http://docs.acme-corp.com/%'
+
+      # Verify entities extracted from multiple sources
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) >= 10 FROM entities
+
+      # Verify entity relationships were discovered
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) >= 1 FROM entity_relationships
+
+      # Verify conversation completed
+      - type: MetricEquals
+        metric_path: conversation.completed
+        expected_value: true

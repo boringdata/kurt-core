@@ -1,0 +1,345 @@
+# Kurt Evaluation Scenarios - Retrieval & Answer
+#
+# Tests for the answer command and knowledge graph retrieval capabilities.
+
+scenarios:
+  # ========================================================================
+  # Scenario 01: Answer Multiple Questions
+  # ========================================================================
+  - name: 01_answer_multiple_questions
+    description: Answer multiple domain-specific questions using pre-built graph
+
+    notes: |
+      Tests the answer command's ability to answer multiple domain-specific
+      questions using a pre-populated knowledge graph.
+
+      Questions tested:
+      1. General overview - "What is ACME API?"
+      2. Authentication - "How do I authenticate with ACME API?"
+      3. Deployment - "How do I deploy my API to production?"
+      4. Technologies - "What programming languages does ACME support?"
+
+      Correctness metrics verify answers contain expected keywords from docs:
+      - Q1: "ACME", "API", "deploy"
+      - Q2: "API key", "JWT"
+      - Q3: "deploy"
+      - Q4: "Node", "Python"
+
+    # Pre-setup for standalone execution (using JSONL dump for speed)
+    setup_commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt init
+      - python3 eval/mock/generators/load_dump.py acme-docs
+
+    initial_prompt: |
+      The ACME API documentation has been indexed. Please answer these questions:
+
+      1. What is ACME API?
+      2. How do I authenticate with ACME API?
+      3. How do I deploy my API to production?
+      4. What programming languages does ACME support?
+
+      For each answer, show me the confidence score and key entities found.
+
+    assertions:
+      # Verify knowledge graph is populated
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) >= 8 FROM entities
+
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) >= 4 FROM documents WHERE ingestion_status='FETCHED'
+
+      # Verify multiple answer invocations (at least 4 for 4 questions)
+      - type: MetricGreaterThan
+        metric_path: conversation.tool_calls
+        expected_value: 4
+
+      # CORRECTNESS METRICS for Question 1 (What is ACME?)
+      - type: ConversationContains
+        text: "ACME"
+        case_sensitive: false
+
+      - type: ConversationContains
+        text: "API"
+        case_sensitive: false
+
+      - type: ConversationContains
+        text: "deploy"
+        case_sensitive: false
+
+      # CORRECTNESS METRICS for Question 2 (Authentication)
+      - type: ConversationContains
+        text: "API key"
+        case_sensitive: false
+
+      - type: ConversationContains
+        text: "JWT"
+        case_sensitive: false
+
+      # CORRECTNESS METRICS for Question 4 (Languages)
+      - type: ConversationContains
+        text: "Node"
+        case_sensitive: false
+
+      - type: ConversationContains
+        text: "Python"
+        case_sensitive: false
+
+      # Verify answer format appears multiple times
+      - type: ConversationContains
+        text: "Confidence"
+        case_sensitive: false
+
+      - type: ConversationContains
+        text: "Key Entities"
+        case_sensitive: false
+
+      # Verify conversation completed
+      - type: MetricEquals
+        metric_path: conversation.completed
+        expected_value: true
+
+  # ========================================================================
+  # Scenario 02: Answer with Verbose Output
+  # ========================================================================
+  - name: 02_answer_with_verbose
+    description: Test answer command with verbose retrieval statistics
+
+    notes: |
+      Tests the --verbose flag to show detailed retrieval statistics
+      including entities found, documents retrieved, and similarity scores.
+
+    setup_commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt init
+      - python3 eval/mock/generators/load_dump.py acme-docs
+
+    initial_prompt: |
+      Answer this question with verbose output:
+      "How does authentication work in ACME API?"
+
+      Use the --verbose flag to show me the retrieval statistics.
+
+    assertions:
+      # Verify knowledge graph is populated
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) >= 5 FROM entities
+
+      # Verify verbose output includes retrieval stats
+      - type: ConversationContains
+        text: "Retrieval Stats"
+        case_sensitive: false
+
+      - type: ConversationContains
+        text: "Entities found"
+        case_sensitive: false
+
+      - type: ConversationContains
+        text: "Documents found"
+        case_sensitive: false
+
+      # CORRECTNESS METRICS
+      - type: ConversationContains
+        text: "API key"
+        case_sensitive: false
+
+      - type: ConversationContains
+        text: "JWT"
+        case_sensitive: false
+
+  # ========================================================================
+  # Scenario 03: Answer with Document Limit
+  # ========================================================================
+  - name: 03_answer_max_docs
+    description: Test answer command with --max-docs flag to control retrieval
+
+    notes: |
+      Tests the --max-docs parameter to verify that document retrieval
+      can be controlled and limited as needed.
+
+    setup_commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt init
+      - python3 eval/mock/generators/load_dump.py acme-docs
+
+    initial_prompt: |
+      Answer this question using only the top 3 most relevant documents:
+      "What are the main features of ACME API?"
+
+      Use --max-docs 3 flag.
+
+    assertions:
+      # Verify knowledge graph is populated
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) >= 3 FROM documents WHERE ingestion_status='FETCHED'
+
+      # Verify answer was generated
+      - type: ConversationContains
+        text: "Answer:"
+        case_sensitive: false
+
+      - type: ConversationContains
+        text: "Confidence"
+        case_sensitive: false
+
+      # Verify command used Bash tool
+      - type: ToolWasUsed
+        tool_name: Bash
+
+  # ========================================================================
+  # Scenario 04: Answer from Scratch (Full Workflow)
+  # ========================================================================
+  - name: 04_answer_full_workflow
+    description: Test complete workflow - setup, fetch, index, then answer
+
+    notes: |
+      Tests the complete end-to-end workflow without pre-setup.
+      The agent must:
+      1. Initialize a Kurt project
+      2. Fetch and index ACME documentation
+      3. Answer questions using the indexed content
+
+      This simulates a real user starting from scratch.
+
+    # No setup_commands - agent does everything
+
+    initial_prompt: |
+      I want to learn about ACME API. Please:
+
+      1. Initialize a Kurt project if needed
+      2. Fetch and index documentation from http://docs.acme-corp.com
+      3. Then answer these questions:
+         - What is ACME API?
+         - What authentication methods are supported?
+
+      Show me the confidence scores and entities for each answer.
+
+    assertions:
+      # Verify project was initialized
+      - type: FileExists
+        path: kurt.config
+
+      - type: FileExists
+        path: .kurt/kurt.sqlite
+
+      # Verify content was fetched and indexed
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) >= 4 FROM documents WHERE ingestion_status='FETCHED'
+
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) >= 5 FROM entities
+
+      # Verify answers were generated
+      - type: ConversationContains
+        text: "Answer:"
+        case_sensitive: false
+
+      - type: ConversationContains
+        text: "Confidence"
+        case_sensitive: false
+
+      # CORRECTNESS METRICS
+      - type: ConversationContains
+        text: "ACME"
+        case_sensitive: false
+
+      - type: ConversationContains
+        text: "API key"
+        case_sensitive: false
+
+      # Verify multi-step workflow
+      - type: MetricGreaterThan
+        metric_path: conversation.turns
+        expected_value: 5
+
+      - type: MetricGreaterThan
+        metric_path: conversation.tool_calls
+        expected_value: 10
+
+  # ========================================================================
+  # Scenario 05: Answer with Empty Knowledge Graph
+  # ========================================================================
+  - name: 05_answer_empty_graph
+    description: Test answer command behavior with empty knowledge graph
+
+    notes: |
+      Tests graceful handling when no entities or documents are indexed.
+      The answer command should provide a helpful message rather than failing.
+
+    setup_commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt init
+
+    initial_prompt: |
+      Answer this question: "What is ACME API?"
+
+      Note: No content has been indexed yet.
+
+    assertions:
+      # Verify project exists
+      - type: FileExists
+        path: kurt.config
+
+      # Verify knowledge graph is empty
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) = 0 FROM entities
+
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) = 0 FROM documents WHERE ingestion_status='FETCHED'
+
+      # Verify answer command was attempted
+      - type: ToolWasUsed
+        tool_name: Bash
+
+      # Verify conversation completed (even though no data available)
+      - type: MetricEquals
+        metric_path: conversation.completed
+        expected_value: true
+
+  # ========================================================================
+  # Scenario 06: Cross-Source Synthesis
+  # ========================================================================
+  - name: 06_answer_multi_source
+    description: Answer questions that require synthesizing information from multiple sources
+
+    notes: |
+      Tests the answer command's ability to synthesize information from multiple
+      documents across different sources. Uses both ACME Corp blog and documentation.
+
+    setup_commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt init
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt content map url http://acme-corp.com
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt content map url http://docs.acme-corp.com
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt content fetch
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt content index
+
+    initial_prompt: |
+      Based on both the company blog and technical documentation,
+      answer this question:
+
+      "What makes ACME API different from traditional API platforms?"
+
+      Show me which entities and documents were most relevant.
+
+    assertions:
+      # Verify both sources were indexed
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) >= 5 FROM documents WHERE source_url LIKE 'http://acme-corp.com/%' OR source_url LIKE 'http://docs.acme-corp.com/%'
+
+      # Verify entities extracted
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) >= 10 FROM entities
+
+      # Verify answer components
+      - type: ConversationContains
+        text: "Answer:"
+        case_sensitive: false
+
+      - type: ConversationContains
+        text: "Key Entities"
+        case_sensitive: false
+
+      - type: ConversationContains
+        text: "Sources"
+        case_sensitive: false
+
+      # Verify ACME content referenced
+      - type: ConversationContains
+        text: "ACME"
+        case_sensitive: false
