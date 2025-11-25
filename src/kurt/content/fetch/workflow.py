@@ -27,6 +27,7 @@ from kurt.content.fetch import (
     DocumentFetchFilters,
     _get_fetch_engine,
     extract_document_links,
+    fetch_batch_from_web,
     fetch_from_cms,
     fetch_from_web,
 )
@@ -82,6 +83,50 @@ def fetch_content_step(
         "content_length": len(content),
         "public_url": public_url,
     }
+
+
+@DBOS.step()
+def fetch_batch_content_step(
+    urls: list[str],
+    fetch_engine: str | None = None,
+    max_concurrent: int = None,
+) -> dict[str, dict[str, Any]]:
+    """
+    Fetch multiple URLs using batch API (Firecrawl only).
+
+    Returns dict mapping URL to fetch result (content, metadata, content_length).
+    """
+    # Determine engine to use
+    engine = _get_fetch_engine(override=fetch_engine)
+
+    if engine != "firecrawl" or len(urls) < 2:
+        # Don't use batch API - fall back to individual fetches
+        return {}
+
+    logger.info(f"Using Firecrawl batch API for {len(urls)} URLs")
+
+    # Fetch all URLs in one batch
+    results = fetch_batch_from_web(urls, engine, max_concurrency=max_concurrent)
+
+    # Convert to workflow result format
+    formatted_results = {}
+    for url, result in results.items():
+        if isinstance(result, Exception):
+            # Store error for this URL
+            formatted_results[url] = {
+                "error": str(result),
+                "status": "ERROR",
+            }
+        else:
+            content, metadata = result
+            formatted_results[url] = {
+                "content": content,
+                "metadata": metadata,
+                "content_length": len(content),
+                "public_url": None,
+            }
+
+    return formatted_results
 
 
 @DBOS.step()
