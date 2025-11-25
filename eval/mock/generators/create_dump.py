@@ -71,19 +71,27 @@ def create_dump(project_path: Path, dump_name: str):
 
             print(f"✓ Exported {count} rows from {table_name}")
 
-        # Copy source files from .kurt/sources/ to project sources/
+        # Copy source files - check both .kurt/sources/ and sources/ directories
+        target_sources = project_dir / "sources"
+
+        # Try .kurt/sources/ first (newer Kurt projects)
         sources_dir = project_path / ".kurt" / "sources"
+        if not sources_dir.exists():
+            # Fall back to sources/ (legacy location)
+            sources_dir = project_path / "sources"
+
         if sources_dir.exists():
-            target_sources = project_dir / "sources"
             if target_sources.exists():
                 shutil.rmtree(target_sources)
             shutil.copytree(sources_dir, target_sources)
 
             # Count files
             file_count = sum(1 for _ in target_sources.rglob("*") if _.is_file())
-            print(f"✓ Copied {file_count} source files from .kurt/sources/")
+            print(
+                f"✓ Copied {file_count} source files from {sources_dir.relative_to(project_path)}"
+            )
         else:
-            print("⚠ No .kurt/sources/ directory found - skipping")
+            print("⚠ No source files found - skipping")
 
         print(f"\n✅ Dump created successfully in {project_dir}")
         print("\nUsage in scenarios:")

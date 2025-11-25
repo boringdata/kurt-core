@@ -58,6 +58,7 @@ packages = ["src/kurt", "eval"]
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+exclude = ["eval/mock/projects/"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W"]
