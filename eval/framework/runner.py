@@ -771,6 +771,15 @@ def run_scenario_by_name(
         except ValueError:
             pass  # Scenario not in scenarios.yaml, try other files
 
+    # Try all scenarios_*.yaml files (e.g., scenarios_answer.yaml, scenarios_retrieval.yaml)
+    if scenario is None:
+        for multi_yaml in scenarios_dir.glob("scenarios_*.yaml"):
+            try:
+                scenario = load_yaml_scenario(multi_yaml, scenario_name=scenario_name)
+                break  # Found it
+            except ValueError:
+                continue  # Not in this file
+
     # Try individual files if not found in scenarios.yaml
     if scenario is None:
         if yaml_file.exists():
