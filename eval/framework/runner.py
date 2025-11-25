@@ -221,13 +221,22 @@ class ScenarioRunner:
                 plugin_path = kurt_core / plugin_path
             claude_source_path = plugin_path
 
+        # Build setup commands - add project loading if specified
+        setup_commands = scenario.setup_commands or []
+        if scenario.project:
+            # Prepend project load command
+            project_cmd = f"python {Path(__file__).parent.parent / 'mock' / 'generators' / 'load_dump.py'} {scenario.project}"
+            setup_commands = [project_cmd] + list(setup_commands)
+
         workspace = IsolatedWorkspace(
             preserve_on_error=self.preserve_on_error,
             preserve_always=self.preserve_on_success,
             init_kurt=True,  # Always init kurt
             install_claude_plugin=needs_claude,  # Always install by default
             claude_plugin_source=claude_source_path,  # Use path from config
-            setup_commands=scenario.setup_commands,  # Pass setup commands from scenario
+            setup_commands=setup_commands
+            if setup_commands
+            else None,  # Pass setup commands from scenario
         )
         metrics_collector = MetricsCollector()
         had_error = False

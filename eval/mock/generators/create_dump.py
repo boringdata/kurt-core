@@ -6,6 +6,7 @@ Usage:
 """
 
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -24,60 +25,32 @@ def create_dump(project_path: Path, dump_name: str):
     if not db_path.exists():
         raise FileNotFoundError(f"No database found at {db_path}")
 
-    # Create dump directory
-    dump_dir = Path(__file__).parent / dump_name
-    dump_dir.mkdir(exist_ok=True)
+    # Create dump directory in mock/data/projects/{dump_name}
+    dump_dir = Path(__file__).parent.parent / "data" / "projects" / dump_name
+    dump_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"Creating dump from: {db_path}")
+    print(f"Creating dump from: {project_path}")
     print(f"Output directory: {dump_dir}")
 
-    # Tables to export
-    tables = {
-        "documents": [
-            "id",
-            "source_url",
-            "title",
-            "content_path",
-            "ingestion_status",
-            "content_type",
-            "discovered_at",
-            "fetched_at",
-            "indexed_at",
-        ],
-        "entities": [
-            "id",
-            "name",
-            "entity_type",
-            "canonical_name",
-            "description",
-            "confidence_score",
-            "source_mentions",
-            "created_at",
-        ],
-        "document_entities": [
-            "document_id",
-            "entity_id",
-            "mention_count",
-            "confidence",
-            "created_at",
-        ],
-        "entity_relationships": [
-            "id",
-            "source_entity_id",
-            "target_entity_id",
-            "relationship_type",
-            "confidence",
-            "evidence_count",
-            "context",
-            "created_at",
-        ],
-    }
+    # Tables to export (we'll get columns dynamically from the schema)
+    tables = ["documents", "entities", "document_entities", "entity_relationships"]
 
     session = get_session()
 
     try:
-        for table_name, columns in tables.items():
+        for table_name in tables:
             output_file = dump_dir / f"{table_name}.jsonl"
+
+            # Get all columns from the table dynamically
+            pragma_query = text(f"PRAGMA table_info({table_name})")
+            columns_info = session.execute(pragma_query).fetchall()
+
+            # Skip binary/blob columns (like embedding)
+            columns = [
+                col[1]
+                for col in columns_info
+                if col[2].upper() not in ["BLOB"]  # col[1] is name, col[2] is type
+            ]
 
             # Query all rows
             cols_str = ", ".join(columns)
@@ -94,11 +67,25 @@ def create_dump(project_path: Path, dump_name: str):
 
             print(f"✓ Exported {count} rows from {table_name}")
 
+        # Copy source files from .kurt/sources/ to dump
+        sources_dir = project_path / ".kurt" / "sources"
+        if sources_dir.exists():
+            target_sources = dump_dir / "sources"
+            if target_sources.exists():
+                shutil.rmtree(target_sources)
+            shutil.copytree(sources_dir, target_sources)
+
+            # Count files
+            file_count = sum(1 for _ in target_sources.rglob("*") if _.is_file())
+            print(f"✓ Copied {file_count} source files from .kurt/sources/")
+        else:
+            print("⚠ No .kurt/sources/ directory found - skipping")
+
         print(f"\n✅ Dump created successfully in {dump_dir}")
         print("\nUsage in scenarios:")
         print("  setup_commands:")
         print("    - KURT_TELEMETRY_DISABLED=1 uv run kurt init")
-        print(f"    - python eval/mock/db_dumps/load_dump.py {dump_name}")
+        print(f"    - python eval/mock/generators/load_dump.py {dump_name}")
 
     finally:
         session.close()
@@ -109,7 +96,14 @@ def main():
     if len(sys.argv) != 3:
         print("Usage: python create_dump.py /path/to/kurt/project dump_name")
         print("\nExample:")
-        print("  python create_dump.py ~/my-kurt-project acme_docs")
+        print("  python create_dump.py ~/my-kurt-project my-demo")
+        print("\nThis will create:")
+        print("  eval/mock/data/projects/my-demo/")
+        print("    ├── documents.jsonl")
+        print("    ├── entities.jsonl")
+        print("    ├── document_entities.jsonl")
+        print("    ├── entity_relationships.jsonl")
+        print("    └── sources/  (content files)")
         sys.exit(1)
 
     project_path = Path(sys.argv[1]).expanduser().resolve()
