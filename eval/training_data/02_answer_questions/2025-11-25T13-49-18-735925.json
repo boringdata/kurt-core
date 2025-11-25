@@ -1,0 +1,38 @@
+{
+  "scenario": "02_answer_questions",
+  "prompt": "The ACME API documentation has been indexed. Please answer these questions:\n\n1. What is ACME API?\n2. How do I authenticate with ACME API?\n3. How do I deploy my API to production?\n4. What programming languages does ACME support?\n\nFor each answer, show me the confidence score and key entities found.\n",
+  "tool_sequence": null,
+  "agent_responses": null,
+  "final_state": null,
+  "conversation": [
+    {
+      "speaker": "user",
+      "message": "The ACME API documentation has been indexed. Please answer these questions:\n\n1. What is ACME API?\n2. How do I authenticate with ACME API?\n3. How do I deploy my API to production?\n4. What programming languages does ACME support?\n\nFor each answer, show me the confidence score and key entities found.\n",
+      "timestamp": "2025-11-25T13:48:14.081059"
+    }
+  ],
+  "tool_calls": [],
+  "skill_context": {},
+  "outcome": {
+    "success": false,
+    "workspace_state": {
+      "files": {
+        "config_exists": true,
+        "db_exists": true,
+        "sources_count": 0,
+        "projects_count": 0
+      },
+      "database": {
+        "total_documents": 1,
+        "fetched_documents": 0,
+        "not_fetched_documents": 1
+      }
+    },
+    "tool_count": 0,
+    "turn_count": 1,
+    "duration_seconds": null,
+    "error": "Control request timeout: initialize",
+    "failure_type": "timeout"
+  },
+  "timestamp": "2025-11-25T13:49:18.735925"
+}
