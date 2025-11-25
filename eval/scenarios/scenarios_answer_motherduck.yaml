@@ -6,13 +6,16 @@ scenarios:
     setup_commands:
       - KURT_TELEMETRY_DISABLED=1 uv run kurt init
       - python eval/mock/generators/load_dump.py motherduck
-    commands:
-      - KURT_TELEMETRY_DISABLED=1 uv run kurt answer "What file formats are most efficient for loading data into MotherDuck?"
-    expected_outcomes:
-      - check_type: output_contains
-        value: "Parquet"
-      - check_type: output_contains
-        value: "file format"
+    initial_prompt: |
+      Run the kurt answer command to find out what file formats are most efficient for loading data into MotherDuck.
+
+      Use this exact command:
+      KURT_TELEMETRY_DISABLED=1 uv run kurt answer "What file formats are most efficient for loading data into MotherDuck?"
+    assertions:
+      - type: ConversationContains
+        pattern: "Parquet"
+      - type: ConversationContains
+        pattern: "file format"
 
   - name: "answer_motherduck_unsupported_features"
     description: "Test answering questions about DuckDB features not supported in MotherDuck"
