@@ -9,77 +9,49 @@ import os
 logger = logging.getLogger(__name__)
 
 
-def fetch_with_firecrawl(url: str) -> tuple[str, dict]:
-    """
-    Fetch content using Firecrawl API.
-
-    Args:
-        url: URL to fetch
-
-    Returns:
-        Tuple of (content_markdown, metadata_dict)
-
-    Raises:
-        ValueError: If fetch fails
-    """
-    from firecrawl import FirecrawlApp
-
-    api_key = os.getenv("FIRECRAWL_API_KEY")
-    if not api_key:
-        raise ValueError("[Firecrawl] FIRECRAWL_API_KEY not set in environment")
-
-    try:
-        app = FirecrawlApp(api_key=api_key)
-        # Scrape the URL and get markdown using the v2 API
-        result = app.scrape(url, formats=["markdown", "html"])
-    except Exception as e:
-        raise ValueError(f"[Firecrawl] API error: {type(e).__name__}: {str(e)}") from e
-
-    if not result or not hasattr(result, "markdown"):
-        raise ValueError(f"[Firecrawl] No content extracted from: {url}")
-
-    content = result.markdown
-
-    # Extract metadata from Firecrawl response
+def _extract_metadata(result_item) -> dict:
+    """Extract and normalize metadata from Firecrawl response."""
     metadata = {}
-    if hasattr(result, "metadata") and result.metadata:
-        metadata = result.metadata if isinstance(result.metadata, dict) else {}
+    if hasattr(result_item, "metadata") and result_item.metadata:
+        metadata = result_item.metadata if isinstance(result_item.metadata, dict) else {}
 
     # Ensure we have a title - Firecrawl may use different keys
-    # Try common metadata fields for title
     if "title" not in metadata and metadata:
-        # Check alternate keys that might contain the title
         for key in ["ogTitle", "og:title", "twitter:title", "pageTitle"]:
             if key in metadata and metadata[key]:
                 metadata["title"] = metadata[key]
                 break
 
-    return content, metadata
+    return metadata
 
 
-def fetch_batch_with_firecrawl(
-    urls: list[str], max_concurrency: int = None, batch_size: int = 100
-) -> dict[str, tuple[str, dict] | Exception]:
+def fetch_with_firecrawl(
+    url: str | list[str], max_concurrency: int = None, batch_size: int = 100
+) -> tuple[str, dict] | dict[str, tuple[str, dict] | Exception]:
     """
-    Fetch multiple URLs using Firecrawl's batch scrape API.
+    Fetch content using Firecrawl API.
 
-    This is more efficient than individual scrapes as it:
-    - Uses a single API request for multiple URLs
-    - Reduces rate limit issues
-    - Processes URLs in parallel on Firecrawl's infrastructure
+    Supports both single URL and batch fetching. When multiple URLs are provided,
+    uses Firecrawl's batch API which is more efficient and reduces rate limiting.
 
     Args:
-        urls: List of URLs to fetch
-        max_concurrency: Maximum concurrent scrapes (uses team default if None)
-        batch_size: Maximum URLs per batch request (default: 100)
+        url: Single URL string or list of URLs to fetch
+        max_concurrency: For batch mode only - max concurrent scrapes (uses team default if None)
+        batch_size: For batch mode only - max URLs per batch request (default: 100)
 
     Returns:
-        Dict mapping URL to either:
-            - (content_markdown, metadata_dict) on success
-            - Exception on failure
+        - Single URL: Tuple of (content_markdown, metadata_dict)
+        - Multiple URLs: Dict mapping URL to either (content_markdown, metadata_dict) or Exception
 
-    Example:
-        >>> results = fetch_batch_with_firecrawl(["https://example.com", "https://example.org"])
+    Raises:
+        ValueError: If single URL fetch fails or FIRECRAWL_API_KEY not set
+
+    Examples:
+        Single URL:
+        >>> content, metadata = fetch_with_firecrawl("https://example.com")
+
+        Multiple URLs (batch mode):
+        >>> results = fetch_with_firecrawl(["https://example.com", "https://example.org"])
         >>> for url, result in results.items():
         ...     if isinstance(result, Exception):
         ...         print(f"Failed {url}: {result}")
@@ -93,10 +65,28 @@ def fetch_batch_with_firecrawl(
     if not api_key:
         raise ValueError("[Firecrawl] FIRECRAWL_API_KEY not set in environment")
 
+    app = FirecrawlApp(api_key=api_key)
+
+    # Single URL mode - use scrape API
+    if isinstance(url, str):
+        try:
+            result = app.scrape(url, formats=["markdown", "html"])
+        except Exception as e:
+            raise ValueError(f"[Firecrawl] API error: {type(e).__name__}: {str(e)}") from e
+
+        if not result or not hasattr(result, "markdown"):
+            raise ValueError(f"[Firecrawl] No content extracted from: {url}")
+
+        content = result.markdown
+        metadata = _extract_metadata(result)
+
+        return content, metadata
+
+    # Batch mode - use batch_scrape API
+    urls = url
     if not urls:
         return {}
 
-    app = FirecrawlApp(api_key=api_key)
     results = {}
 
     # Process URLs in batches to avoid potential size limits
@@ -121,32 +111,21 @@ def fetch_batch_with_firecrawl(
             # Process successful results
             if hasattr(batch_response, "data") and batch_response.data:
                 for item in batch_response.data:
-                    url = item.url if hasattr(item, "url") else None
-                    if not url:
+                    item_url = item.url if hasattr(item, "url") else None
+                    if not item_url:
                         continue
 
                     # Extract content
                     if hasattr(item, "markdown") and item.markdown:
                         content = item.markdown
+                        metadata = _extract_metadata(item)
 
-                        # Extract metadata
-                        metadata = {}
-                        if hasattr(item, "metadata") and item.metadata:
-                            metadata = item.metadata if isinstance(item.metadata, dict) else {}
-
-                        # Ensure we have a title - try alternate keys
-                        if "title" not in metadata and metadata:
-                            for key in ["ogTitle", "og:title", "twitter:title", "pageTitle"]:
-                                if key in metadata and metadata[key]:
-                                    metadata["title"] = metadata[key]
-                                    break
-
-                        results[url] = (content, metadata)
-                        logger.debug(f"[Firecrawl] ✓ Fetched {url} ({len(content)} chars)")
+                        results[item_url] = (content, metadata)
+                        logger.debug(f"[Firecrawl] ✓ Fetched {item_url} ({len(content)} chars)")
                     else:
-                        error = ValueError(f"[Firecrawl] No content extracted from: {url}")
-                        results[url] = error
-                        logger.warning(f"[Firecrawl] ✗ Failed {url}: No content")
+                        error = ValueError(f"[Firecrawl] No content extracted from: {item_url}")
+                        results[item_url] = error
+                        logger.warning(f"[Firecrawl] ✗ Failed {item_url}: No content")
 
             # Track invalid URLs
             if hasattr(batch_response, "invalid_urls") and batch_response.invalid_urls:
@@ -158,9 +137,9 @@ def fetch_batch_with_firecrawl(
         except Exception as e:
             # If batch fails, mark all URLs in this batch as failed
             logger.error(f"[Firecrawl] Batch {batch_num} failed: {type(e).__name__}: {str(e)}")
-            for url in batch_urls:
-                if url not in results:  # Don't override successful results
-                    results[url] = ValueError(f"[Firecrawl] Batch error: {str(e)}")
+            for batch_url in batch_urls:
+                if batch_url not in results:  # Don't override successful results
+                    results[batch_url] = ValueError(f"[Firecrawl] Batch error: {str(e)}")
 
     logger.info(
         f"[Firecrawl] Batch complete: {sum(1 for r in results.values() if not isinstance(r, Exception))}/{len(results)} successful"
