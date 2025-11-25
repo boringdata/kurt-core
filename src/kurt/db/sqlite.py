@@ -144,8 +144,11 @@ class SQLiteClient(DatabaseClient):
         """
         Ensure vector search tables exist.
 
-        Creates vec0 virtual tables for entity and document embeddings if sqlite-vec is available.
+        Creates vec0 virtual table for entity embeddings if sqlite-vec is available.
         This must be called after migrations are run.
+
+        Note: Document embeddings are stored directly in the documents table,
+        not in a separate vec0 table for simplicity.
         """
         session = self.get_session()
         try:
@@ -160,21 +163,10 @@ class SQLiteClient(DatabaseClient):
                 """
             )
 
-            # Document embeddings
-            session.exec(
-                """
-                CREATE VIRTUAL TABLE IF NOT EXISTS document_embeddings
-                USING vec0(
-                    document_id TEXT PRIMARY KEY,
-                    embedding float[512]
-                )
-                """
-            )
-
             session.commit()
-            logger.info("Created entity_embeddings and document_embeddings vector tables")
+            logger.info("Created entity_embeddings vector table")
         except Exception as e:
-            logger.warning(f"Could not create vector tables (sqlite-vec not available): {e}")
+            logger.warning(f"Could not create vector table (sqlite-vec not available): {e}")
             # This is OK - vector search features just won't work
         finally:
             session.close()
