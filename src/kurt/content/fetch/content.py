@@ -11,7 +11,7 @@ Pattern:
 
 import logging
 
-from kurt.content.fetch.engines_firecrawl import fetch_batch_with_firecrawl, fetch_with_firecrawl
+from kurt.content.fetch.engines_firecrawl import fetch_with_firecrawl
 from kurt.content.fetch.engines_trafilatura import fetch_with_httpx, fetch_with_trafilatura
 from kurt.content.paths import parse_source_identifier
 
@@ -130,48 +130,7 @@ def fetch_from_web(source_url: str, fetch_engine: str) -> tuple[str, dict]:
         return fetch_with_trafilatura(source_url)
 
 
-def fetch_batch_from_web(
-    urls: list[str], fetch_engine: str, max_concurrency: int = None
-) -> dict[str, tuple[str, dict] | Exception]:
-    """
-    Fetch multiple URLs from web using batch API (Firecrawl only).
-
-    Pure business logic - Network I/O only, no DB operations.
-    Uses Firecrawl's batch scrape API for efficient bulk fetching.
-
-    Args:
-        urls: List of web URLs to fetch
-        fetch_engine: Engine to use (only 'firecrawl' supports batch)
-        max_concurrency: Maximum concurrent scrapes (Firecrawl only)
-
-    Returns:
-        Dict mapping URL to either:
-            - (content_markdown, metadata_dict) on success
-            - Exception on failure
-
-    Raises:
-        ValueError: If engine doesn't support batch or other errors
-
-    Example:
-        >>> results = fetch_batch_from_web(
-        ...     ["https://example.com/page1", "https://example.com/page2"],
-        ...     "firecrawl"
-        ... )
-        >>> for url, result in results.items():
-        ...     if isinstance(result, Exception):
-        ...         print(f"Failed: {url}")
-        ...     else:
-        ...         content, metadata = result
-        ...         print(f"Success: {url}")
-    """
-    if fetch_engine != "firecrawl":
-        raise ValueError(f"Batch fetching only supported for firecrawl, got: {fetch_engine}")
-
-    return fetch_batch_with_firecrawl(urls, max_concurrency=max_concurrency)
-
-
 __all__ = [
     "fetch_from_cms",
     "fetch_from_web",
-    "fetch_batch_from_web",
 ]
