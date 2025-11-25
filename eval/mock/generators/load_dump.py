@@ -24,11 +24,16 @@ def load_dump(dump_name: str):
     The load is schema-adaptive - it only inserts columns that exist in the
     target database, so dumps from different schema versions will work.
     """
-    # Look for dump in mock/data/projects/{dump_name}/
-    dump_dir = Path(__file__).parent.parent / "data" / "projects" / dump_name
+    # Look for dump in mock/projects/{dump_name}/
+    project_dir = Path(__file__).parent.parent / "projects" / dump_name
 
+    if not project_dir.exists():
+        raise FileNotFoundError(f"Project directory not found: {project_dir}")
+
+    # Database dumps are in the database/ subdirectory
+    dump_dir = project_dir / "database"
     if not dump_dir.exists():
-        raise FileNotFoundError(f"Dump directory not found: {dump_dir}")
+        raise FileNotFoundError(f"Database directory not found: {dump_dir}")
 
     # Check that we're in a Kurt project
     if not Path(".kurt/kurt.sqlite").exists():
@@ -88,8 +93,8 @@ def load_dump(dump_name: str):
             session.commit()
             print(f"✓ Loaded {count} rows into {table_name}")
 
-        # Copy source files if they exist in the dump
-        sources_dir = dump_dir / "sources"
+        # Copy source files if they exist in the project
+        sources_dir = project_dir / "sources"
         if sources_dir.exists():
             target_sources = Path(".kurt") / "sources"
             target_sources.mkdir(parents=True, exist_ok=True)
@@ -126,12 +131,13 @@ def main():
         print("\nAvailable project dumps:")
 
         # List all project dumps
-        projects_dir = Path(__file__).parent.parent / "data" / "projects"
+        projects_dir = Path(__file__).parent.parent / "projects"
         if projects_dir.exists():
             for item in sorted(projects_dir.iterdir()):
                 if item.is_dir() and not item.name.startswith("."):
                     # Show summary of what's in the dump
-                    jsonl_files = list(item.glob("*.jsonl"))
+                    db_dir = item / "database"
+                    jsonl_files = list(db_dir.glob("*.jsonl")) if db_dir.exists() else []
                     has_sources = (item / "sources").exists()
                     info = f"{len(jsonl_files)} tables"
                     if has_sources:

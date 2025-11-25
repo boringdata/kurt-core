@@ -25,12 +25,16 @@ def create_dump(project_path: Path, dump_name: str):
     if not db_path.exists():
         raise FileNotFoundError(f"No database found at {db_path}")
 
-    # Create dump directory in mock/data/projects/{dump_name}
-    dump_dir = Path(__file__).parent.parent / "data" / "projects" / dump_name
+    # Create project directory in mock/projects/{dump_name}
+    project_dir = Path(__file__).parent.parent / "projects" / dump_name
+    project_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create database subdirectory
+    dump_dir = project_dir / "database"
     dump_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Creating dump from: {project_path}")
-    print(f"Output directory: {dump_dir}")
+    print(f"Output directory: {project_dir}")
 
     # Tables to export (we'll get columns dynamically from the schema)
     tables = ["documents", "entities", "document_entities", "entity_relationships"]
@@ -67,10 +71,10 @@ def create_dump(project_path: Path, dump_name: str):
 
             print(f"✓ Exported {count} rows from {table_name}")
 
-        # Copy source files from .kurt/sources/ to dump
+        # Copy source files from .kurt/sources/ to project sources/
         sources_dir = project_path / ".kurt" / "sources"
         if sources_dir.exists():
-            target_sources = dump_dir / "sources"
+            target_sources = project_dir / "sources"
             if target_sources.exists():
                 shutil.rmtree(target_sources)
             shutil.copytree(sources_dir, target_sources)
@@ -81,7 +85,7 @@ def create_dump(project_path: Path, dump_name: str):
         else:
             print("⚠ No .kurt/sources/ directory found - skipping")
 
-        print(f"\n✅ Dump created successfully in {dump_dir}")
+        print(f"\n✅ Dump created successfully in {project_dir}")
         print("\nUsage in scenarios:")
         print("  setup_commands:")
         print("    - KURT_TELEMETRY_DISABLED=1 uv run kurt init")
@@ -98,11 +102,12 @@ def main():
         print("\nExample:")
         print("  python create_dump.py ~/my-kurt-project my-demo")
         print("\nThis will create:")
-        print("  eval/mock/data/projects/my-demo/")
-        print("    ├── documents.jsonl")
-        print("    ├── entities.jsonl")
-        print("    ├── document_entities.jsonl")
-        print("    ├── entity_relationships.jsonl")
+        print("  eval/mock/projects/my-demo/")
+        print("    ├── database/")
+        print("    │   ├── documents.jsonl")
+        print("    │   ├── entities.jsonl")
+        print("    │   ├── document_entities.jsonl")
+        print("    │   └── entity_relationships.jsonl")
         print("    └── sources/  (content files)")
         sys.exit(1)
 
