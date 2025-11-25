@@ -5,12 +5,12 @@ from pathlib import Path
 from typing import Any
 
 import dspy
+from sqlalchemy import text
 
 from kurt.config import load_config
 from kurt.content.embeddings import generate_embeddings
-from kurt.db.database import get_db_connection
-from kurt.db.domain import Document, Entity
-from kurt.db.knowledge_graph import get_document_entities
+from kurt.db.database import get_session
+from kurt.db.models import Document, Entity
 
 
 @dataclass
@@ -66,136 +66,222 @@ def retrieve_context(question: str, max_documents: int = 10) -> RetrievedContext
     Returns:
         RetrievedContext with entities, documents, and scores
     """
-    conn = get_db_connection()
-
-    # Step 1: Generate question embedding
-    question_embedding = generate_embeddings([question])[0]
-
-    # Convert to bytes for sqlite-vec
-    import struct
-
     import numpy as np
 
-    embedding_bytes = np.array(question_embedding, dtype=np.float32).tobytes()
+    session = get_session()
 
-    # Step 2: Find similar entities using vector similarity search
-    # Query entity_embeddings virtual table
-    cursor = conn.execute(
-        """
-        SELECT
-            entity_id,
-            distance
-        FROM entity_embeddings
-        WHERE embedding MATCH ?
-        ORDER BY distance
-        LIMIT 10
-        """,
-        (embedding_bytes,),
-    )
+    try:
+        # Step 1: Generate question embedding
+        question_embedding = generate_embeddings([question])[0]
 
-    similar_entity_ids = []
-    entity_similarities = {}
-    for row in cursor.fetchall():
-        entity_id = row[0]
-        distance = row[1]
-        # Convert distance to similarity (sqlite-vec returns cosine distance)
-        # Cosine similarity = 1 - cosine distance
-        similarity = 1.0 - distance
-        similar_entity_ids.append(entity_id)
-        entity_similarities[entity_id] = similarity
+        # Convert to bytes for sqlite-vec
+        embedding_bytes = np.array(question_embedding, dtype=np.float32).tobytes()
 
-    if not similar_entity_ids:
-        # No entities found - return empty context
+        # Step 2: Find similar entities using vector similarity search
+        # Try vector search first, fall back to keyword matching if not available
+        similar_entity_ids = []
+        entity_similarities = {}
+
+        try:
+            # Query entity_embeddings virtual table
+            result = session.execute(
+                text(
+                    """
+                    SELECT
+                        entity_id,
+                        distance
+                    FROM entity_embeddings
+                    WHERE embedding MATCH :embedding
+                    ORDER BY distance
+                    LIMIT 10
+                    """
+                ),
+                {"embedding": embedding_bytes},
+            )
+
+            for row in result:
+                entity_id = row[0]
+                distance = row[1]
+                # Convert distance to similarity (sqlite-vec returns cosine distance)
+                # Cosine similarity = 1 - cosine distance
+                similarity = 1.0 - distance
+                similar_entity_ids.append(entity_id)
+                entity_similarities[entity_id] = similarity
+
+        except Exception as e:
+            # Fallback: Use keyword matching if vector search not available
+            if "no such table: entity_embeddings" in str(e) or "no such module: vec0" in str(e):
+                # Extract keywords from question
+                keywords = question.lower().split()
+                # Filter out common words
+                stop_words = {"what", "who", "where", "when", "why", "how", "is", "are", "the", "a", "an", "in", "on", "at", "to", "for", "of", "with", "by", "from", "about"}
+                keywords = [k for k in keywords if k not in stop_words and len(k) > 2]
+
+                if keywords:
+                    # Search for entities matching keywords
+                    keyword_patterns = " OR ".join([f"LOWER(e.name) LIKE :kw{i}" for i in range(len(keywords))])
+                    params = {f"kw{i}": f"%{kw}%" for i, kw in enumerate(keywords)}
+
+                    result = session.execute(
+                        text(f"""
+                            SELECT e.id, e.name, e.source_mentions
+                            FROM entities e
+                            WHERE {keyword_patterns}
+                            ORDER BY e.source_mentions DESC
+                            LIMIT 10
+                        """),
+                        params
+                    )
+
+                    # Assign similarity based on source mentions (more mentions = more relevant)
+                    max_mentions = 1
+                    for row in result:
+                        entity_id = row[0]
+                        mentions = row[2] or 1
+                        max_mentions = max(max_mentions, mentions)
+                        similar_entity_ids.append(entity_id)
+
+                    # Normalize similarities
+                    for row in session.execute(
+                        text(f"""
+                            SELECT e.id, e.source_mentions
+                            FROM entities e
+                            WHERE {keyword_patterns}
+                            ORDER BY e.source_mentions DESC
+                            LIMIT 10
+                        """),
+                        params
+                    ):
+                        entity_id = row[0]
+                        mentions = row[1] or 1
+                        entity_similarities[entity_id] = mentions / max_mentions
+
+                # If no keyword matches, return top entities by mentions
+                if not similar_entity_ids:
+                    result = session.execute(
+                        text("""
+                            SELECT e.id, e.source_mentions
+                            FROM entities e
+                            ORDER BY e.source_mentions DESC
+                            LIMIT 10
+                        """)
+                    )
+
+                    max_mentions = 1
+                    for row in result:
+                        entity_id = row[0]
+                        mentions = row[1] or 1
+                        max_mentions = max(max_mentions, mentions)
+                        similar_entity_ids.append(entity_id)
+                        entity_similarities[entity_id] = 0.5  # Lower similarity for fallback
+            else:
+                raise
+
+        if not similar_entity_ids:
+            # No entities found - return empty context
+            return RetrievedContext(
+                entities=[], documents=[], entity_similarities={}, document_scores={}
+            )
+
+        # Step 3: Expand context by traversing relationships (1 hop)
+        # Get entities related to the similar entities
+        placeholders = ",".join([":id" + str(i) for i in range(len(similar_entity_ids))])
+        params = {f"id{i}": eid for i, eid in enumerate(similar_entity_ids)}
+
+        result = session.execute(
+            text(
+                f"""
+                SELECT DISTINCT target_entity_id
+                FROM entity_relationships
+                WHERE source_entity_id IN ({placeholders})
+                  AND confidence >= 0.5
+                """
+            ),
+            params,
+        )
+
+        related_entity_ids = [row[0] for row in result]
+
+        # Combine similar and related entities
+        all_entity_ids = list(set(similar_entity_ids + related_entity_ids))
+
+        # Fetch entity details
+        placeholders = ",".join([":id" + str(i) for i in range(len(all_entity_ids))])
+        params = {f"id{i}": eid for i, eid in enumerate(all_entity_ids)}
+
+        result = session.execute(
+            text(
+                f"""
+                SELECT id, name, entity_type, canonical_name, description, confidence_score, source_mentions
+                FROM entities
+                WHERE id IN ({placeholders})
+                ORDER BY source_mentions DESC
+                """
+            ),
+            params,
+        )
+
+        entities = []
+        for row in result:
+            entity = Entity(
+                id=row[0],
+                name=row[1],
+                entity_type=row[2],
+                canonical_name=row[3],
+                description=row[4],
+                confidence_score=row[5],
+                source_mentions=row[6],
+            )
+            entities.append(entity)
+
+        # Step 4: Retrieve documents connected to these entities
+        placeholders = ",".join([":id" + str(i) for i in range(len(all_entity_ids))])
+        params = {f"id{i}": eid for i, eid in enumerate(all_entity_ids)}
+        params["max_docs"] = max_documents
+
+        result = session.execute(
+            text(
+                f"""
+                SELECT DISTINCT
+                    d.id,
+                    d.title,
+                    d.source_url,
+                    d.content_path,
+                    de.mention_count,
+                    de.confidence
+                FROM documents d
+                JOIN document_entities de ON d.id = de.document_id
+                WHERE de.entity_id IN ({placeholders})
+                  AND d.ingestion_status = 'FETCHED'
+                ORDER BY de.mention_count DESC, de.confidence DESC
+                LIMIT :max_docs
+                """
+            ),
+            params,
+        )
+
+        documents = []
+        document_scores = {}
+        for row in result:
+            doc = Document(
+                id=row[0],
+                title=row[1],
+                source_url=row[2],
+                content_path=row[3],
+            )
+            documents.append(doc)
+            # Score based on mention count and confidence
+            score = row[4] * row[5]
+            document_scores[doc.id] = score
+
         return RetrievedContext(
-            entities=[], documents=[], entity_similarities={}, document_scores={}
+            entities=entities,
+            documents=documents,
+            entity_similarities=entity_similarities,
+            document_scores=document_scores,
         )
-
-    # Step 3: Expand context by traversing relationships (1 hop)
-    # Get entities related to the similar entities
-    placeholders = ",".join(["?"] * len(similar_entity_ids))
-    cursor = conn.execute(
-        f"""
-        SELECT DISTINCT target_entity_id
-        FROM entity_relationships
-        WHERE source_entity_id IN ({placeholders})
-          AND confidence >= 0.5
-        """,
-        similar_entity_ids,
-    )
-
-    related_entity_ids = [row[0] for row in cursor.fetchall()]
-
-    # Combine similar and related entities
-    all_entity_ids = list(set(similar_entity_ids + related_entity_ids))
-
-    # Fetch entity details
-    placeholders = ",".join(["?"] * len(all_entity_ids))
-    cursor = conn.execute(
-        f"""
-        SELECT id, name, entity_type, canonical_name, description, confidence_score, source_mentions
-        FROM entities
-        WHERE id IN ({placeholders})
-        ORDER BY source_mentions DESC
-        """,
-        all_entity_ids,
-    )
-
-    entities = []
-    for row in cursor.fetchall():
-        entity = Entity(
-            id=row[0],
-            name=row[1],
-            entity_type=row[2],
-            canonical_name=row[3],
-            description=row[4],
-            confidence_score=row[5],
-            source_mentions=row[6],
-        )
-        entities.append(entity)
-
-    # Step 4: Retrieve documents connected to these entities
-    placeholders = ",".join(["?"] * len(all_entity_ids))
-    cursor = conn.execute(
-        f"""
-        SELECT DISTINCT
-            d.id,
-            d.title,
-            d.source_url,
-            d.content_path,
-            de.mention_count,
-            de.confidence
-        FROM documents d
-        JOIN document_entities de ON d.id = de.document_id
-        WHERE de.entity_id IN ({placeholders})
-          AND d.ingestion_status = 'FETCHED'
-        ORDER BY de.mention_count DESC, de.confidence DESC
-        LIMIT ?
-        """,
-        all_entity_ids + [max_documents],
-    )
-
-    documents = []
-    document_scores = {}
-    for row in cursor.fetchall():
-        doc = Document(
-            id=row[0],
-            title=row[1],
-            source_url=row[2],
-            content_path=row[3],
-        )
-        documents.append(doc)
-        # Score based on mention count and confidence
-        score = row[4] * row[5]
-        document_scores[doc.id] = score
-
-    conn.close()
-
-    return RetrievedContext(
-        entities=entities,
-        documents=documents,
-        entity_similarities=entity_similarities,
-        document_scores=document_scores,
-    )
+    finally:
+        session.close()
 
 
 def generate_answer(question: str, context: RetrievedContext) -> AnswerResult:
@@ -225,35 +311,44 @@ def generate_answer(question: str, context: RetrievedContext) -> AnswerResult:
 
     # Relationships between entities
     relationships_text = []
-    conn = get_db_connection()
-    entity_ids = [e.id for e in context.entities[:10]]
-    if entity_ids:
-        placeholders = ",".join(["?"] * len(entity_ids))
-        cursor = conn.execute(
-            f"""
-            SELECT
-                e1.name,
-                er.relationship_type,
-                e2.name,
-                er.context
-            FROM entity_relationships er
-            JOIN entities e1 ON er.source_entity_id = e1.id
-            JOIN entities e2 ON er.target_entity_id = e2.id
-            WHERE er.source_entity_id IN ({placeholders})
-              AND er.target_entity_id IN ({placeholders})
-              AND er.confidence >= 0.5
-            ORDER BY er.evidence_count DESC
-            LIMIT 20
-            """,
-            entity_ids + entity_ids,
-        )
+    session = get_session()
+    try:
+        entity_ids = [e.id for e in context.entities[:10]]
+        if entity_ids:
+            placeholders_source = ",".join([":src_id" + str(i) for i in range(len(entity_ids))])
+            placeholders_target = ",".join([":tgt_id" + str(i) for i in range(len(entity_ids))])
+            params = {f"src_id{i}": eid for i, eid in enumerate(entity_ids)}
+            params.update({f"tgt_id{i}": eid for i, eid in enumerate(entity_ids)})
 
-        for row in cursor.fetchall():
-            source, rel_type, target, ctx = row
-            rel_text = f"- {source} {rel_type} {target}"
-            if ctx:
-                rel_text += f" (context: {ctx[:100]}...)"
-            relationships_text.append(rel_text)
+            result = session.execute(
+                text(
+                    f"""
+                    SELECT
+                        e1.name,
+                        er.relationship_type,
+                        e2.name,
+                        er.context
+                    FROM entity_relationships er
+                    JOIN entities e1 ON er.source_entity_id = e1.id
+                    JOIN entities e2 ON er.target_entity_id = e2.id
+                    WHERE er.source_entity_id IN ({placeholders_source})
+                      AND er.target_entity_id IN ({placeholders_target})
+                      AND er.confidence >= 0.5
+                    ORDER BY er.evidence_count DESC
+                    LIMIT 20
+                    """
+                ),
+                params,
+            )
+
+            for row in result:
+                source, rel_type, target, ctx = row
+                rel_text = f"- {source} {rel_type} {target}"
+                if ctx:
+                    rel_text += f" (context: {ctx[:100]}...)"
+                relationships_text.append(rel_text)
+    finally:
+        session.close()
 
     # Documents with excerpts
     documents_text = []
@@ -281,8 +376,6 @@ def generate_answer(question: str, context: RetrievedContext) -> AnswerResult:
             doc_text += f"\n  Source: {doc.source_url}"
 
         documents_text.append(doc_text)
-
-    conn.close()
 
     # Build context strings
     entities_context = "\n".join(entities_text) if entities_text else "No entities found"
