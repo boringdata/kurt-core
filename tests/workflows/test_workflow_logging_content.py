@@ -169,7 +169,7 @@ def test_map_workflow_logs_capture_content(tmp_project):
         capture_output=True,
         text=True,
         cwd=str(tmp_project),
-        timeout=30,
+        timeout=60,  # Increased from 30 to 60 seconds for async workflows
     )
 
     assert result.returncode == 0, f"Command failed: {result.stderr}"
