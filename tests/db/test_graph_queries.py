@@ -7,6 +7,7 @@ from kurt.db.graph_queries import (
     _normalize_entity_type,
     find_documents_with_entity,
     get_document_entities,
+    list_entities_by_type,
 )
 from kurt.db.models import (
     Document,
@@ -327,6 +328,217 @@ def test_find_documents_with_entity_partial_match(tmp_project):
     assert len(find_documents_with_entity("FAST", session=session)) == 1
     assert len(find_documents_with_entity("api", session=session)) == 1
     assert len(find_documents_with_entity("FastAPI", session=session)) == 1
+
+
+# ============================================================================
+# list_entities_by_type Tests
+# ============================================================================
+
+
+def test_list_entities_by_type_basic(tmp_project):
+    """Test list_entities_by_type returns entities with document counts."""
+    session = get_session()
+
+    # Create test documents
+    doc1 = Document(
+        id=uuid4(),
+        title="Doc 1",
+        source_type=SourceType.URL,
+        source_url="https://example.com/doc1",
+        ingestion_status=IngestionStatus.FETCHED,
+    )
+    doc2 = Document(
+        id=uuid4(),
+        title="Doc 2",
+        source_type=SourceType.URL,
+        source_url="https://example.com/doc2",
+        ingestion_status=IngestionStatus.FETCHED,
+    )
+    session.add_all([doc1, doc2])
+
+    # Create entities
+    python = Entity(id=uuid4(), name="Python", entity_type="Topic", canonical_name="Python")
+    fastapi = Entity(id=uuid4(), name="FastAPI", entity_type="Technology", canonical_name="FastAPI")
+
+    session.add_all([python, fastapi])
+    session.flush()
+
+    # Link Python to both documents
+    session.add(
+        DocumentEntity(document_id=doc1.id, entity_id=python.id, mention_count=1, confidence=0.9)
+    )
+    session.add(
+        DocumentEntity(document_id=doc2.id, entity_id=python.id, mention_count=1, confidence=0.9)
+    )
+
+    # Link FastAPI to only one document
+    session.add(
+        DocumentEntity(document_id=doc1.id, entity_id=fastapi.id, mention_count=1, confidence=0.9)
+    )
+    session.commit()
+
+    # Test listing all entities
+    result = list_entities_by_type(entity_type=None, session=session)
+
+    assert isinstance(result, list)
+    assert len(result) == 2
+
+    # Check structure
+    for item in result:
+        assert "entity" in item
+        assert "entity_type" in item
+        assert "doc_count" in item
+
+    # Check specific results
+    python_result = next(r for r in result if r["entity"] == "Python")
+    assert python_result["entity_type"] == "Topic"
+    assert python_result["doc_count"] == 2
+
+    fastapi_result = next(r for r in result if r["entity"] == "FastAPI")
+    assert fastapi_result["entity_type"] == "Technology"
+    assert fastapi_result["doc_count"] == 1
+
+
+def test_list_entities_by_type_with_type_filter(tmp_project):
+    """Test filtering entities by type."""
+    session = get_session()
+
+    # Create test document
+    doc = Document(
+        id=uuid4(),
+        title="Test Doc",
+        source_type=SourceType.URL,
+        source_url="https://example.com/test",
+        ingestion_status=IngestionStatus.FETCHED,
+    )
+    session.add(doc)
+
+    # Create entities of different types
+    python = Entity(id=uuid4(), name="Python", entity_type="Topic", canonical_name="Python")
+    fastapi = Entity(id=uuid4(), name="FastAPI", entity_type="Technology", canonical_name="FastAPI")
+
+    session.add_all([python, fastapi])
+    session.flush()
+
+    # Link both to document
+    session.add(
+        DocumentEntity(document_id=doc.id, entity_id=python.id, mention_count=1, confidence=0.9)
+    )
+    session.add(
+        DocumentEntity(document_id=doc.id, entity_id=fastapi.id, mention_count=1, confidence=0.9)
+    )
+    session.commit()
+
+    # Test filtering by Technology type
+    result = list_entities_by_type(entity_type="Technology", session=session)
+
+    assert len(result) == 1
+    assert result[0]["entity"] == "FastAPI"
+    assert result[0]["entity_type"] == "Technology"
+
+
+def test_list_entities_by_type_min_docs_filter(tmp_project):
+    """Test filtering entities by minimum document count."""
+    session = get_session()
+
+    # Create test documents
+    doc1 = Document(
+        id=uuid4(),
+        title="Doc 1",
+        source_type=SourceType.URL,
+        source_url="https://example.com/doc1",
+        ingestion_status=IngestionStatus.FETCHED,
+    )
+    doc2 = Document(
+        id=uuid4(),
+        title="Doc 2",
+        source_type=SourceType.URL,
+        source_url="https://example.com/doc2",
+        ingestion_status=IngestionStatus.FETCHED,
+    )
+    doc3 = Document(
+        id=uuid4(),
+        title="Doc 3",
+        source_type=SourceType.URL,
+        source_url="https://example.com/doc3",
+        ingestion_status=IngestionStatus.FETCHED,
+    )
+    session.add_all([doc1, doc2, doc3])
+
+    # Create entities
+    popular = Entity(id=uuid4(), name="Popular", entity_type="Topic", canonical_name="Popular")
+    rare = Entity(id=uuid4(), name="Rare", entity_type="Topic", canonical_name="Rare")
+
+    session.add_all([popular, rare])
+    session.flush()
+
+    # Link Popular to 3 documents
+    for doc in [doc1, doc2, doc3]:
+        session.add(
+            DocumentEntity(
+                document_id=doc.id, entity_id=popular.id, mention_count=1, confidence=0.9
+            )
+        )
+
+    # Link Rare to only 1 document
+    session.add(
+        DocumentEntity(document_id=doc1.id, entity_id=rare.id, mention_count=1, confidence=0.9)
+    )
+    session.commit()
+
+    # Test with min_docs=2 (should only return Popular)
+    result = list_entities_by_type(entity_type=None, min_docs=2, session=session)
+
+    assert len(result) == 1
+    assert result[0]["entity"] == "Popular"
+    assert result[0]["doc_count"] == 3
+
+
+def test_list_entities_by_type_include_pattern(tmp_project):
+    """Test filtering entities by document URL pattern."""
+    session = get_session()
+
+    # Create test documents with different URLs
+    doc_docs = Document(
+        id=uuid4(),
+        title="Docs",
+        source_type=SourceType.URL,
+        source_url="https://example.com/docs/guide",
+        ingestion_status=IngestionStatus.FETCHED,
+    )
+    doc_blog = Document(
+        id=uuid4(),
+        title="Blog",
+        source_type=SourceType.URL,
+        source_url="https://example.com/blog/post",
+        ingestion_status=IngestionStatus.FETCHED,
+    )
+    session.add_all([doc_docs, doc_blog])
+
+    # Create entity
+    python = Entity(id=uuid4(), name="Python", entity_type="Topic", canonical_name="Python")
+    session.add(python)
+    session.flush()
+
+    # Link to both documents
+    session.add(
+        DocumentEntity(
+            document_id=doc_docs.id, entity_id=python.id, mention_count=1, confidence=0.9
+        )
+    )
+    session.add(
+        DocumentEntity(
+            document_id=doc_blog.id, entity_id=python.id, mention_count=1, confidence=0.9
+        )
+    )
+    session.commit()
+
+    # Test filtering by docs pattern (should only count doc_docs)
+    result = list_entities_by_type(entity_type=None, include_pattern="*/docs/*", session=session)
+
+    assert len(result) == 1
+    assert result[0]["entity"] == "Python"
+    assert result[0]["doc_count"] == 1  # Only counted in /docs/ URL
 
 
 # ============================================================================

@@ -347,7 +347,7 @@ def list_entities_by_type(
     query = (
         query.group_by(Entity.canonical_name, Entity.entity_type)
         .having(func.count(func.distinct(DocumentEntity.document_id)) >= min_docs)
-        .order_by(col("doc_count").desc())
+        .order_by(func.count(func.distinct(DocumentEntity.document_id)).desc())
         .limit(limit)
     )
 
