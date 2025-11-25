@@ -178,8 +178,8 @@ def map_url(
             # Use workflow system for background mode only
             # For foreground, use original function with progress UI
             if background:
+                from kurt.content.map.workflow import map_url_workflow
                 from kurt.workflows.cli_helpers import run_with_background_support
-                from kurt.workflows.map import map_url_workflow
 
                 result = run_with_background_support(
                     workflow_func=map_url_workflow,

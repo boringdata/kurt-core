@@ -96,7 +96,7 @@ def write_frontmatter_to_file(doc, session=None) -> None:
         content_without_frontmatter = remove_frontmatter(content)
 
         # Fetch all entities from knowledge graph generically
-        from kurt.db.knowledge_graph import get_document_entities
+        from kurt.db.graph_queries import get_document_entities
 
         # Get all entities with their types
         all_entities = get_document_entities(

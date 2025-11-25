@@ -108,8 +108,8 @@ class TestWorkerDBOSInitialization:
         # We need to patch ALL uses of time.time throughout the call chain
         with patch("time.time", return_value=0):  # Don't timeout
             with patch("time.sleep"):
-                with patch("kurt.workflows.map.map_url_workflow"):
-                    with patch("kurt.workflows.map.get_map_queue", return_value=mock_queue):
+                with patch("kurt.content.map.workflow.map_url_workflow"):
+                    with patch("kurt.content.map.workflow.get_map_queue", return_value=mock_queue):
                         with patch("sys.exit"):
                             try:
                                 run_workflow_worker(workflow_name, workflow_args_json, priority=10)
@@ -150,8 +150,8 @@ class TestWorkerLogFileHandling:
 
         with patch("time.time", side_effect=[0, 100, 200]):
             with patch("time.sleep"):
-                with patch("kurt.workflows.map.map_url_workflow"):
-                    with patch("kurt.workflows.map.get_map_queue", return_value=mock_queue):
+                with patch("kurt.content.map.workflow.map_url_workflow"):
+                    with patch("kurt.content.map.workflow.get_map_queue", return_value=mock_queue):
                         with patch("sys.exit"):
                             try:
                                 run_workflow_worker(workflow_name, workflow_args_json, priority=10)
@@ -221,8 +221,8 @@ class TestWorkerStatusPolling:
 
         with patch("time.time", return_value=0):  # Don't timeout
             with patch("time.sleep") as mock_sleep:
-                with patch("kurt.workflows.map.map_url_workflow"):
-                    with patch("kurt.workflows.map.get_map_queue", return_value=mock_queue):
+                with patch("kurt.content.map.workflow.map_url_workflow"):
+                    with patch("kurt.content.map.workflow.get_map_queue", return_value=mock_queue):
                         with patch("sys.exit"):
                             try:
                                 run_workflow_worker(workflow_name, workflow_args_json, priority=10)
@@ -264,8 +264,8 @@ class TestWorkerStatusPolling:
 
         with patch("time.time", return_value=0):
             with patch("time.sleep"):
-                with patch("kurt.workflows.map.map_url_workflow"):
-                    with patch("kurt.workflows.map.get_map_queue", return_value=mock_queue):
+                with patch("kurt.content.map.workflow.map_url_workflow"):
+                    with patch("kurt.content.map.workflow.get_map_queue", return_value=mock_queue):
                         with patch("sys.exit") as mock_exit:
                             run_workflow_worker(workflow_name, workflow_args_json, priority=10)
 
@@ -302,8 +302,8 @@ class TestWorkerStatusPolling:
         # Simulate time passing beyond 600 seconds
         with patch("time.time", side_effect=[0, 300, 601]):  # Start, middle, timeout
             with patch("time.sleep"):
-                with patch("kurt.workflows.map.map_url_workflow"):
-                    with patch("kurt.workflows.map.get_map_queue", return_value=mock_queue):
+                with patch("kurt.content.map.workflow.map_url_workflow"):
+                    with patch("kurt.content.map.workflow.get_map_queue", return_value=mock_queue):
                         with patch("sys.exit") as mock_exit:
                             run_workflow_worker(workflow_name, workflow_args_json, priority=10)
 
@@ -335,8 +335,8 @@ class TestWorkerWorkflowSelection:
 
         with patch("time.time", side_effect=[0, 100, 200]):
             with patch("time.sleep"):
-                with patch("kurt.workflows.map.map_url_workflow"):
-                    with patch("kurt.workflows.map.get_map_queue", return_value=mock_queue):
+                with patch("kurt.content.map.workflow.map_url_workflow"):
+                    with patch("kurt.content.map.workflow.get_map_queue", return_value=mock_queue):
                         with patch("sys.exit"):
                             run_workflow_worker(
                                 "map_url_workflow", json.dumps({"url": "https://example.com"})
