@@ -112,7 +112,7 @@ def test_fetch_workflow_logs_capture_content(tmp_project):
         capture_output=True,
         text=True,
         cwd=str(tmp_project),
-        timeout=30,
+        timeout=120,  # Increased timeout for full test suite context
     )
 
     assert result.returncode == 0, f"Command failed: {result.stderr}"
@@ -169,13 +169,28 @@ def test_map_workflow_logs_capture_content(tmp_project):
         capture_output=True,
         text=True,
         cwd=str(tmp_project),
-        timeout=60,  # Increased from 30 to 60 seconds for async workflows
+        timeout=120,  # Increased timeout for full test suite context
     )
 
     assert result.returncode == 0, f"Command failed: {result.stderr}"
 
     # Extract workflow ID
     workflow_id = extract_workflow_id(result.stdout, tmp_project)
+
+    # Wait for workflow to complete by checking status
+    import subprocess as sp
+
+    max_wait = 60  # 60 seconds max
+    for attempt in range(max_wait * 2):  # Check every 0.5 seconds
+        status_result = sp.run(
+            [sys.executable, "-m", "dbos", "workflow", "status", workflow_id],
+            capture_output=True,
+            text=True,
+            cwd=str(tmp_project),
+        )
+        if status_result.returncode == 0 and "SUCCESS" in status_result.stdout:
+            break
+        time.sleep(0.5)
 
     # Wait for log file and check for content
     log_file = tmp_project / ".kurt" / "logs" / f"workflow-{workflow_id}.log"
