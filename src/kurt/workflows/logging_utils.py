@@ -64,10 +64,12 @@ def setup_workflow_logging(log_file: Path) -> None:
         This should be called after stdout/stderr redirection to avoid
         duplicate output.
     """
-    # Remove any existing handlers
+    # Remove and close any existing handlers
     root_logger = logging.getLogger()
     for handler in root_logger.handlers[:]:
+        handler.flush()  # Ensure any buffered logs are written
         root_logger.removeHandler(handler)
+        handler.close()
 
     # Add single file handler
     file_handler = logging.FileHandler(str(log_file))
