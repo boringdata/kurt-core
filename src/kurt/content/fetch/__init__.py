@@ -16,7 +16,7 @@ Pattern:
 
 # Business logic exports
 from kurt.content.document import add_document, resolve_or_create_document
-from kurt.content.fetch.content import fetch_batch_from_web, fetch_from_cms, fetch_from_web
+from kurt.content.fetch.content import fetch_from_cms, fetch_from_web
 from kurt.content.fetch.filtering import (
     DocumentFetchFilters,
     build_document_filters,
@@ -37,7 +37,6 @@ __all__ = [
     # Content fetching (pure - Network I/O)
     "fetch_from_cms",
     "fetch_from_web",
-    "fetch_batch_from_web",
     # Filtering (pure - no DB)
     "DocumentFetchFilters",
     "build_document_filters",
