@@ -62,14 +62,26 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
     # Parse arguments
     workflow_args = json.loads(workflow_args_json)
 
-    # Temporarily redirect to /dev/null until we know the workflow ID
-    # This prevents DBOS initialization logs from going to the wrong place
-    devnull = os.open(os.devnull, os.O_RDWR)
-    os.dup2(devnull, sys.stdout.fileno())
-    os.dup2(devnull, sys.stderr.fileno())
-    os.close(devnull)
+    # Set up a temporary log file BEFORE starting the workflow
+    # This ensures logging is configured when the workflow starts executing
+    from pathlib import Path
 
-    # Enqueue the workflow
+    log_dir = Path(".kurt/logs")
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create temporary log file for workflow (we'll rename it once we know the ID)
+    temp_log_file = log_dir / f"workflow-temp-{os.getpid()}.log"
+
+    # Configure Python logging early - before workflow starts
+    setup_workflow_logging(temp_log_file)
+
+    # Redirect stdout/stderr to the temp log file
+    log_fd = os.open(str(temp_log_file), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+    os.dup2(log_fd, sys.stdout.fileno())
+    os.dup2(log_fd, sys.stderr.fileno())
+    os.close(log_fd)
+
+    # Enqueue the workflow (now logging is already configured)
     with SetEnqueueOptions(priority=priority):
         if queue:
             handle = queue.enqueue(workflow_func, **workflow_args)
@@ -79,12 +91,18 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
 
             handle = DBOS.start_workflow(workflow_func, **workflow_args)
 
-    # Now we know the workflow ID, set up proper logging
-    from pathlib import Path
-
-    log_dir = Path(".kurt/logs")
-    log_dir.mkdir(parents=True, exist_ok=True)
+    # Now we know the workflow ID, rename the log file
     final_log_file = log_dir / f"workflow-{handle.workflow_id}.log"
+    temp_log_file.rename(final_log_file)
+
+    # Update logging to point to the renamed file
+    setup_workflow_logging(final_log_file)
+
+    # Redirect stdout/stderr to the final log file
+    log_fd = os.open(str(final_log_file), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+    os.dup2(log_fd, sys.stdout.fileno())
+    os.dup2(log_fd, sys.stderr.fileno())
+    os.close(log_fd)
 
     # Write workflow ID to a file so parent process can retrieve it
     # Use environment variable if provided
@@ -92,15 +110,6 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
     if id_file:
         with open(id_file, "w") as f:
             f.write(handle.workflow_id)
-
-    # Redirect stdout/stderr to the workflow-specific log file
-    log_fd = os.open(str(final_log_file), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
-    os.dup2(log_fd, sys.stdout.fileno())
-    os.dup2(log_fd, sys.stderr.fileno())
-    os.close(log_fd)
-
-    # Configure Python logging to write to the log file
-    setup_workflow_logging(final_log_file)
 
     # Wait for workflow to complete by polling its status
     # This keeps the process alive AND the ThreadPoolExecutor running

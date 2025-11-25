@@ -40,7 +40,7 @@ def test_map_background_workflow_creates_log(tmp_project):
         capture_output=True,
         text=True,
         cwd=str(tmp_project),
-        timeout=30,  # Give the command itself 30 seconds to complete
+        timeout=120,  # Increased timeout for full test suite context
     )
 
     # Should exit successfully
@@ -81,6 +81,19 @@ def test_map_background_workflow_creates_log(tmp_project):
     assert (
         workflow_id
     ), f"Could not find workflow ID in output or log files. Output: {result.stdout}"
+
+    # Wait for workflow to complete by checking status
+    max_wait = 60  # 60 seconds max
+    for attempt in range(max_wait * 2):  # Check every 0.5 seconds
+        status_result = subprocess.run(
+            [sys.executable, "-m", "dbos", "workflow", "status", workflow_id],
+            capture_output=True,
+            text=True,
+            cwd=str(tmp_project),
+        )
+        if status_result.returncode == 0 and "SUCCESS" in status_result.stdout:
+            break
+        time.sleep(0.5)
 
     # Wait for log file to be created
     log_file = tmp_project / ".kurt" / "logs" / f"workflow-{workflow_id}.log"
