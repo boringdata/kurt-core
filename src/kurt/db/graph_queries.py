@@ -303,38 +303,63 @@ def get_document_links(
 
 
 def list_entities_by_type(
-    entity_type: Union[EntityType, str], limit: int = 100, session: Optional[Session] = None
+    entity_type: Optional[Union[EntityType, str]] = None,
+    limit: int = 100,
+    min_docs: int = 1,
+    include_pattern: Optional[str] = None,
+    session: Optional[Session] = None,
 ) -> list[dict]:
-    """List entities of a specific type."""
+    """List entities of a specific type with optional filtering.
+
+    Args:
+        entity_type: Filter by entity type (None means all types)
+        limit: Maximum number of entities to return
+        min_docs: Minimum number of documents an entity must appear in
+        include_pattern: Filter to documents matching glob pattern (e.g., '*/docs/*')
+        session: SQLModel session (optional)
+
+    Returns:
+        List of entity dictionaries with entity, entity_type, and doc_count fields
+    """
     if session is None:
         session = get_session()
 
     normalized_type = _normalize_entity_type(entity_type)
 
-    if not normalized_type:
-        logger.error(f"Invalid entity type: {entity_type}")
-        return []
+    # Build query that counts documents per entity
+    query = select(
+        Entity.canonical_name,
+        Entity.entity_type,
+        func.count(func.distinct(DocumentEntity.document_id)).label("doc_count"),
+    ).join(DocumentEntity, Entity.id == DocumentEntity.entity_id)
 
+    # Filter by entity type if specified
+    if normalized_type:
+        query = query.where(Entity.entity_type == normalized_type)
+
+    # Filter by document pattern if specified
+    if include_pattern:
+        query = query.join(Document, DocumentEntity.document_id == Document.id).where(
+            Document.source_url.like(include_pattern.replace("*", "%"))
+        )
+
+    # Group by entity and filter by minimum document count
     query = (
-        select(Entity)
-        .where(Entity.entity_type == normalized_type)
-        .order_by(col(Entity.source_mentions).desc())
+        query.group_by(Entity.canonical_name, Entity.entity_type)
+        .having(func.count(func.distinct(DocumentEntity.document_id)) >= min_docs)
+        .order_by(col("doc_count").desc())
         .limit(limit)
     )
 
-    entities = session.exec(query).all()
+    results = session.exec(query).all()
 
     return [
         {
-            "id": str(entity.id),
-            "name": entity.name,
-            "canonical_name": entity.canonical_name,
-            "type": entity.entity_type,
-            "aliases": entity.aliases,
-            "description": entity.description,
-            "source_mentions": entity.source_mentions,
+            "entity": canonical_name,
+            "entity_type": etype,
+            "doc_count": doc_count,
         }
-        for entity in entities
+        for canonical_name, etype, doc_count in results
     ]
 
 
