@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.11'",
@@ -1443,6 +1443,11 @@ eval = [
     { name = "responses" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "pre-commit" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "aiosqlite", specifier = ">=0.19.0" },
@@ -1475,6 +1480,9 @@ requires-dist = [
     { name = "trafilatura", specifier = ">=2.0.0" },
 ]
 provides-extras = ["dev", "eval"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pre-commit", specifier = ">=4.3.0" }]
 
 [[package]]
 name = "litellm"

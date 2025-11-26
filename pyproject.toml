@@ -77,3 +77,8 @@ markers = [
     "integration: marks tests as integration tests (require database and API access)",
     "slow: marks tests as slow running tests (E2E with real workflows)",
 ]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.3.0",
+]

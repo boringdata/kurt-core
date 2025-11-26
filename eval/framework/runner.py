@@ -226,7 +226,7 @@ class ScenarioRunner:
         if scenario.project:
             # Prepend project load command
             kurt_root = Path(__file__).parent.parent.parent
-            load_script = Path(__file__).parent.parent / 'mock' / 'generators' / 'load_dump.py'
+            load_script = Path(__file__).parent.parent / "mock" / "generators" / "load_dump.py"
             project_cmd = f"uv run --project {kurt_root} python {load_script} {scenario.project}"
             setup_commands = [project_cmd] + list(setup_commands)
 
@@ -359,6 +359,8 @@ class ScenarioRunner:
                 passed,
                 error_message,
                 raw_transcript=self.raw_transcript,
+                command_outputs=workspace.command_outputs,
+                conversational=scenario.conversational,
             )
 
             # Cleanup

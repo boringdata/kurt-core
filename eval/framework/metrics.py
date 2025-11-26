@@ -171,6 +171,8 @@ def save_results(
     passed: bool,
     error: str | None = None,
     raw_transcript: list | None = None,
+    command_outputs: list | None = None,
+    conversational: bool = True,
 ):
     """Save scenario results to JSON and transcript to Markdown.
 
@@ -183,6 +185,9 @@ def save_results(
         output_dir: Directory to save results
         passed: Whether all assertions passed
         error: Error message if scenario failed
+        raw_transcript: Raw terminal output (for conversational scenarios)
+        command_outputs: Command outputs (for non-conversational scenarios)
+        conversational: Whether this is a conversational scenario
     """
     # Create scenario-specific folder
     scenario_dir = output_dir / scenario_name
@@ -210,14 +215,20 @@ def save_results(
     with open(json_filepath, "w") as f:
         json.dump(results, f, indent=2)
 
-    # Save raw transcript as markdown
-    if raw_transcript:
+    # Save transcript as markdown
+    if conversational and raw_transcript:
+        # Conversational mode: use raw terminal transcript
         _save_raw_transcript(md_filepath, scenario_name, raw_transcript, passed)
         print(f"📊 Metrics saved: {json_filepath}")
         print(f"📝 Transcript saved: {md_filepath}")
+    elif not conversational and command_outputs:
+        # Non-conversational mode: use command outputs
+        _save_command_outputs(md_filepath, scenario_name, command_outputs, passed)
+        print(f"📊 Metrics saved: {json_filepath}")
+        print(f"📝 Command outputs saved: {md_filepath}")
     else:
         print(f"📊 Metrics saved: {json_filepath}")
-        print("⚠️  No transcript available")
+        print("⚠️  No transcript/outputs available")
 
     # Generate training data for DSPy optimization
     try:
@@ -263,3 +274,66 @@ def _save_raw_transcript(
             if not line.endswith("\n"):
                 f.write("\n")
         f.write("```\n")
+
+
+def _save_command_outputs(
+    filepath: Path,
+    scenario_name: str,
+    command_outputs: list,
+    passed: bool,
+):
+    """Save command outputs from non-conversational scenario execution.
+
+    Args:
+        filepath: Path to save the command outputs
+        scenario_name: Name of the scenario
+        command_outputs: List of command output dictionaries
+        passed: Whether the scenario passed
+    """
+    with open(filepath, "w") as f:
+        status = "✅ PASSED" if passed else "❌ FAILED"
+        f.write(f"# Command Outputs: {scenario_name}\n\n")
+        f.write(f"**Status**: {status}\n\n")
+        f.write("**Mode**: Non-conversational (command-based)\n\n")
+
+        if not command_outputs:
+            f.write("*No commands were executed.*\n")
+            return
+
+        f.write(f"Executed {len(command_outputs)} command(s):\n\n")
+
+        for cmd_output in command_outputs:
+            cmd = cmd_output.get("command", "")
+            index = cmd_output.get("index", 0)
+            returncode = cmd_output.get("returncode")
+            stdout = cmd_output.get("stdout", "")
+            stderr = cmd_output.get("stderr", "")
+            error = cmd_output.get("error")
+
+            f.write("---\n\n")
+            f.write(f"## Command {index}\n\n")
+            f.write("```bash\n")
+            f.write(f"{cmd}\n")
+            f.write("```\n\n")
+
+            if error:
+                f.write(f"**Error**: {error}\n\n")
+            elif returncode is not None:
+                status_icon = "✅" if returncode == 0 else "❌"
+                f.write(f"**Exit Code**: {status_icon} {returncode}\n\n")
+
+            if stdout:
+                f.write("**Standard Output**:\n\n")
+                f.write("```\n")
+                f.write(stdout)
+                if not stdout.endswith("\n"):
+                    f.write("\n")
+                f.write("```\n\n")
+
+            if stderr:
+                f.write("**Standard Error**:\n\n")
+                f.write("```\n")
+                f.write(stderr)
+                if not stderr.endswith("\n"):
+                    f.write("\n")
+                f.write("```\n\n")
