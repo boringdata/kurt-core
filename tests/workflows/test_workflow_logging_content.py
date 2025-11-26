@@ -217,10 +217,24 @@ def test_map_workflow_logs_capture_content(tmp_project):
 
     assert log_file.exists(), f"Log file not found: {log_file}"
 
+    # DEBUG: Look for debug file in /tmp
+    import glob
+    import tempfile
+    debug_files = glob.glob(f"{tempfile.gettempdir()}/kurt_debug_*.txt")
+    debug_content = ""
+    if debug_files:
+        print(f"\nDEBUG: Found {len(debug_files)} debug files")
+        for df in debug_files:
+            with open(df, "r") as f:
+                content = f.read()
+                print(f"DEBUG FILE {df}:\n{content}\n")
+                debug_content += content
+
     # Map workflows should have logs because they do actual work (sitemap fetching, etc)
     assert found_expected_logs, (
         f"Expected map workflow logging messages not found. "
-        f"Content: {log_file.read_text() if log_file.exists() else '(empty)'}"
+        f"Content: {log_file.read_text() if log_file.exists() else '(empty)'}\n"
+        f"Debug info:\n{debug_content}"
     )
 
 

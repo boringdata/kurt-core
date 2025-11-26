@@ -129,11 +129,24 @@ def test_map_background_workflow_creates_log(tmp_project):
 
         time.sleep(0.1)
 
+    # DEBUG: Look for debug file in /tmp
+    import tempfile
+    debug_files = glob.glob(f"{tempfile.gettempdir()}/kurt_debug_*.txt")
+    debug_content = ""
+    if debug_files:
+        print(f"\nDEBUG: Found {len(debug_files)} debug files")
+        for df in debug_files:
+            with open(df, "r") as f:
+                content = f.read()
+                print(f"DEBUG FILE {df}:\n{content}\n")
+                debug_content += content
+
     # Log file should have content from the workflow
     assert found_workflow_logs, (
         f"Missing workflow execution logs after 30s. "
         f"File size: {log_file.stat().st_size if log_file.exists() else 'N/A'} bytes. "
-        f"Log content preview: {log_content[:500] if log_content else '(empty)'}"
+        f"Log content preview: {log_content[:500] if log_content else '(empty)'}\n"
+        f"Debug info:\n{debug_content}"
     )
 
 

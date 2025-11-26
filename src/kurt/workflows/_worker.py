@@ -41,6 +41,18 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
         workflow_args_json: JSON-encoded workflow arguments
         priority: Priority for workflow execution (1=highest, default=10)
     """
+    # DEBUG: Write immediate debug info to understand CI environment
+    import tempfile
+    debug_file = tempfile.gettempdir() + f"/kurt_debug_{os.getpid()}.txt"
+    with open(debug_file, "w") as f:
+        f.write(f"Worker started: PID={os.getpid()}\n")
+        f.write(f"Workflow: {workflow_name}\n")
+        f.write(f"Args: {workflow_args_json}\n")
+        f.write(f"Python: {sys.version}\n")
+        f.write(f"CWD: {os.getcwd()}\n")
+        f.flush()
+        os.fsync(f.fileno())
+
     # Initialize DBOS fresh in this process
     from dbos import SetEnqueueOptions
 
@@ -88,8 +100,18 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
     # Create temporary log file for workflow (we'll rename it once we know the ID)
     temp_log_file = log_dir / f"workflow-temp-{os.getpid()}.log"
 
+    # DEBUG: Write to debug file about log file creation
+    with open(debug_file, "a") as f:
+        f.write(f"Creating temp log: {temp_log_file}\n")
+        f.flush()
+
     # Configure Python logging early - before workflow starts
     setup_workflow_logging(temp_log_file)
+
+    # DEBUG: Test that logging works immediately
+    test_logger = logging.getLogger("kurt.test.debug")
+    test_logger.info(f"DEBUG: Logger setup complete for PID {os.getpid()}")
+    flush_all_handlers()
 
     # Register exit handler to ensure logs are flushed even on abrupt termination
     atexit.register(flush_all_handlers)
@@ -99,6 +121,15 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
     os.dup2(log_fd, sys.stdout.fileno())
     os.dup2(log_fd, sys.stderr.fileno())
     os.close(log_fd)
+
+    # DEBUG: Write to both stdout and logger after redirect
+    print(f"DEBUG: Stdout redirected for PID {os.getpid()}")
+    test_logger.info(f"DEBUG: After redirect for PID {os.getpid()}")
+    flush_all_handlers()
+
+    with open(debug_file, "a") as f:
+        f.write(f"Log file setup complete, size: {temp_log_file.stat().st_size if temp_log_file.exists() else 'N/A'}\n")
+        f.flush()
 
     # Enqueue the workflow (now logging is already configured)
     with SetEnqueueOptions(priority=priority):
@@ -116,7 +147,23 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
     # 2. Creating a new handler would create a NEW file, leaving logs in the renamed temp file
     # 3. The logging handler and stdout/stderr are already correctly configured
     final_log_file = log_dir / f"workflow-{handle.workflow_id}.log"
+
+    # DEBUG: Log before rename
+    with open(debug_file, "a") as f:
+        f.write(f"Before rename - temp file size: {temp_log_file.stat().st_size if temp_log_file.exists() else 'N/A'}\n")
+        f.write(f"Renaming {temp_log_file} -> {final_log_file}\n")
+        f.flush()
+
     temp_log_file.rename(final_log_file)
+
+    # DEBUG: Log after rename
+    test_logger.info(f"DEBUG: After rename - workflow ID: {handle.workflow_id}")
+    print(f"DEBUG: After rename print - workflow ID: {handle.workflow_id}")
+    flush_all_handlers()
+
+    with open(debug_file, "a") as f:
+        f.write(f"After rename - final file size: {final_log_file.stat().st_size if final_log_file.exists() else 'N/A'}\n")
+        f.flush()
 
     # Write workflow ID to a file so parent process can retrieve it
     # Use environment variable if provided
@@ -153,6 +200,13 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
 
     # Flush all logging handlers and file descriptors before exit
     flush_all_handlers()
+
+    # DEBUG: Final debug info
+    with open(debug_file, "a") as f:
+        f.write(f"Worker exiting - final log size: {final_log_file.stat().st_size if final_log_file.exists() else 'N/A'}\n")
+        f.write(f"Worker complete at {time.time()}\n")
+        f.flush()
+        os.fsync(f.fileno())
 
     # Exit cleanly
     sys.exit(0)
