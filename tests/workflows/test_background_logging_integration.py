@@ -33,7 +33,7 @@ def test_map_background_workflow_creates_log(tmp_project):
         timeout=10,
     )
     if test_import.returncode != 0:
-        print(f"CRITICAL: Cannot import worker module!")
+        print("CRITICAL: Cannot import worker module!")
         print(f"STDERR: {test_import.stderr}")
         print(f"STDOUT: {test_import.stdout}")
         # Continue anyway to see full failure
