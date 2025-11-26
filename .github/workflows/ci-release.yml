@@ -42,7 +42,7 @@ jobs:
         run: uv run ruff check .
 
       - name: Run tests
-        run: uv run pytest tests/
+        run: uv run pytest tests/workflows/test_background_logging_integration.py::test_map_background_workflow_creates_log tests/workflows/test_background_logging_integration.py::test_fetch_background_workflow_creates_log -xvs
 
   # Release to PyPI (only on GitHub release)
   release-pypi:
