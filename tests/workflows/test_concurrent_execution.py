@@ -331,8 +331,12 @@ class TestConcurrentWorkflowExecution:
             # Clean up
             proc1.terminate()
             proc2.terminate()
-            proc1.wait(timeout=2)
-            proc2.wait(timeout=2)
+            proc1.wait(
+                timeout=20
+            )  # Increased timeout for CI - worker needs time to prime thread pool
+            proc2.wait(
+                timeout=20
+            )  # Increased timeout for CI - worker needs time to prime thread pool
 
         finally:
             # Clean up temp files

@@ -77,6 +77,11 @@ def test_fetch_workflow_logs_capture_content(tmp_project):
     """Test that fetch workflow logs contain actual progress information."""
     import subprocess
     import sys
+    import uuid
+
+    # Use unique URL to prevent deduplication
+    test_id = uuid.uuid4().hex[:8]
+    test_url = f"https://example.com?test={test_id}"
 
     # First, create a document to fetch
     subprocess.run(
@@ -87,7 +92,7 @@ def test_fetch_workflow_logs_capture_content(tmp_project):
             "content",
             "map",
             "url",
-            "https://example.com",
+            test_url,
             "--max-pages",
             "1",
         ],
@@ -105,7 +110,7 @@ def test_fetch_workflow_logs_capture_content(tmp_project):
             "content",
             "fetch",
             "--url",
-            "https://example.com",
+            test_url,
             "--limit",
             "1",
             "--background",
@@ -152,6 +157,11 @@ def test_map_workflow_logs_capture_content(tmp_project):
     """Test that map workflow logs contain actual progress information."""
     import subprocess
     import sys
+    import uuid
+
+    # Use unique URL to prevent deduplication
+    test_id = uuid.uuid4().hex[:8]
+    test_url = f"https://example.com?test={test_id}"
 
     # Run map in background mode
     result = subprocess.run(
@@ -162,7 +172,7 @@ def test_map_workflow_logs_capture_content(tmp_project):
             "content",
             "map",
             "url",
-            "https://example.com",
+            test_url,
             "--max-pages",
             "1",
             "--background",
@@ -197,7 +207,10 @@ def test_map_workflow_logs_capture_content(tmp_project):
     log_file = tmp_project / ".kurt" / "logs" / f"workflow-{workflow_id}.log"
     found_expected_logs = False
 
-    for attempt in range(200):  # 20 seconds max (map can take longer)
+    # In CI, give the worker more time to start up
+    time.sleep(2)  # Give worker 2 seconds to initialize before checking
+
+    for attempt in range(600):  # 60 seconds max (map can take longer in CI)
         if log_file.exists():
             content = log_file.read_text()
             # Check for expected log messages from map workflow

@@ -129,8 +129,18 @@ class TestWorkerLogFileHandling:
     @patch("os.dup2")
     @patch("os.close")
     @patch("pathlib.Path.mkdir")
+    @patch("pathlib.Path.rename")  # Mock file rename
+    @patch("kurt.workflows.logging_utils.setup_workflow_logging")  # Mock logging setup
     def test_redirect_to_workflow_log_file(
-        self, mock_mkdir, mock_close, mock_dup2, mock_open, mock_get_dbos, mock_init_dbos
+        self,
+        mock_setup_logging,
+        mock_rename,
+        mock_mkdir,
+        mock_close,
+        mock_dup2,
+        mock_open,
+        mock_get_dbos,
+        mock_init_dbos,
     ):
         """Worker should redirect to .kurt/logs/workflow-{id}.log."""
         from kurt.workflows._worker import run_workflow_worker
@@ -148,7 +158,16 @@ class TestWorkerLogFileHandling:
         workflow_name = "map_url_workflow"
         workflow_args_json = json.dumps({"url": "https://example.com"})
 
-        with patch("time.time", side_effect=[0, 100, 200]):
+        # Mock time.time with a function that returns monotonically increasing values
+        # This is needed because many libraries (litellm, diskcache) call it during import
+        _time_counter = [0]
+
+        def mock_time():
+            val = _time_counter[0]
+            _time_counter[0] += 1
+            return val
+
+        with patch("time.time", side_effect=mock_time):
             with patch("time.sleep"):
                 with patch("kurt.content.map.workflow.map_url_workflow"):
                     with patch("kurt.content.map.workflow.get_map_queue", return_value=mock_queue):
@@ -171,7 +190,9 @@ class TestWorkerLogFileHandling:
         assert len(log_file_calls) >= 1
 
         # Verify stdout and stderr were redirected
-        assert mock_dup2.call_count >= 4  # 2 for devnull, 2 for log file
+        # After fix: we only redirect once (to temp file), then rename the file
+        # The OS file descriptor remains valid after rename, so no second redirect needed
+        assert mock_dup2.call_count >= 2  # 2 for temp log file (stdout + stderr)
 
     def test_workflow_id_file_env_var_checked(self):
         """Worker should check KURT_WORKFLOW_ID_FILE environment variable."""
@@ -300,7 +321,9 @@ class TestWorkerStatusPolling:
         workflow_args_json = json.dumps({"url": "https://example.com"})
 
         # Simulate time passing beyond 600 seconds
-        with patch("time.time", side_effect=[0, 300, 601]):  # Start, middle, timeout
+        # Need more values now because periodic flushing checks time.time() more frequently
+        time_values = [0] + [0.5 * i for i in range(1, 1300)] + [601]  # Enough for all calls
+        with patch("time.time", side_effect=time_values):
             with patch("time.sleep"):
                 with patch("kurt.content.map.workflow.map_url_workflow"):
                     with patch("kurt.content.map.workflow.get_map_queue", return_value=mock_queue):

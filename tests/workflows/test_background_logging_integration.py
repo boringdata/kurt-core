@@ -18,6 +18,7 @@ def test_map_background_workflow_creates_log(tmp_project):
     import re
     import subprocess
     import sys
+    import uuid
 
     # tmp_project fixture provides:
     # - Working directory changed to temp path
@@ -25,6 +26,10 @@ def test_map_background_workflow_creates_log(tmp_project):
     # - .kurt directory already exists
 
     # Run map command with background flag using new command structure
+    # Add timestamp to URL to prevent DBOS deduplication between test runs
+    test_id = uuid.uuid4().hex[:8]
+    test_url = f"https://example.com?test={test_id}"
+
     result = subprocess.run(
         [
             sys.executable,
@@ -33,7 +38,7 @@ def test_map_background_workflow_creates_log(tmp_project):
             "content",
             "map",
             "url",
-            "https://example.com",
+            test_url,
             "--max-pages",
             "1",
             "--background",
@@ -52,8 +57,10 @@ def test_map_background_workflow_creates_log(tmp_project):
     assert result.returncode == 0, f"Command failed: {result.stderr}"
 
     # Should mention workflow and background mode
+    # Accept both old format "Workflow start" and new format "✓ Workflow started"
     assert (
-        "Workflow start" in result.stdout and "background" in result.stdout
+        ("Workflow start" in result.stdout or "✓ Workflow start" in result.stdout)
+        and "background" in result.stdout
     ), f"Missing background start message. Output: {result.stdout}"
 
     # Extract workflow ID from output (if present)
@@ -84,7 +91,7 @@ def test_map_background_workflow_creates_log(tmp_project):
     ), f"Could not find workflow ID in output or log files. Output: {result.stdout}"
 
     # Wait for workflow to complete by checking status
-    max_wait = 60  # 60 seconds max
+    max_wait = 20  # 20 seconds max (should be plenty)
     for attempt in range(max_wait * 2):  # Check every 0.5 seconds
         status_result = subprocess.run(
             [sys.executable, "-m", "dbos", "workflow", "status", workflow_id],
@@ -111,7 +118,10 @@ def test_map_background_workflow_creates_log(tmp_project):
     log_content = ""
     found_workflow_logs = False
 
-    for attempt in range(300):  # 30 seconds max (reasonable for CI environments)
+    # In CI, give the worker a moment to start up
+    time.sleep(1)  # Give worker 1 second to initialize before checking
+
+    for attempt in range(150):  # 15 seconds max (should be plenty with fixes)
         try:
             log_content = log_file.read_text()
             # Check if the workflow has actually logged something meaningful
@@ -144,6 +154,7 @@ def test_fetch_background_workflow_creates_log(tmp_project):
     """Test that fetch workflow in background mode creates a log file."""
     import subprocess
     import sys
+    import uuid
 
     # tmp_project fixture provides:
     # - Working directory changed to temp path
@@ -152,6 +163,10 @@ def test_fetch_background_workflow_creates_log(tmp_project):
 
     # First, we need to have a document in the database to fetch
     # Use map command to discover a URL first (this will run synchronously)
+    # Use unique URL to prevent deduplication
+    test_id = uuid.uuid4().hex[:8]
+    test_url = f"https://example.com?test={test_id}"
+
     subprocess.run(
         [
             sys.executable,
@@ -160,7 +175,7 @@ def test_fetch_background_workflow_creates_log(tmp_project):
             "content",
             "map",
             "url",
-            "https://example.com",
+            test_url,
             "--max-pages",
             "1",
         ],
@@ -178,7 +193,7 @@ def test_fetch_background_workflow_creates_log(tmp_project):
             "content",
             "fetch",
             "--url",
-            "https://example.com",
+            test_url,
             "--limit",
             "1",
             "--background",
@@ -195,8 +210,10 @@ def test_fetch_background_workflow_creates_log(tmp_project):
     # The message can be either:
     # - "✓ Workflow started in background: {workflow_id}" (with actual ID)
     # - "✓ Workflow starting in background..." (without ID, placeholder)
+    # Accept both old format "Workflow start" and new format "✓ Workflow started"
     assert (
-        "Workflow start" in result.stdout and "background" in result.stdout
+        ("Workflow start" in result.stdout or "✓ Workflow start" in result.stdout)
+        and "background" in result.stdout
     ), f"Missing background start message. Output: {result.stdout}"
     assert (
         ".kurt/logs/workflow-" in result.stdout or "Logs" in result.stdout
