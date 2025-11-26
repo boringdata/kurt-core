@@ -231,7 +231,9 @@ class TestDBOSPollerLifecycle:
             for proc in processes:
                 if proc.poll() is None:
                     proc.terminate()
-                    proc.wait(timeout=2)
+                    proc.wait(
+                        timeout=20
+                    )  # Increased timeout for CI - worker needs time to prime thread pool
 
             for f in temp_files:
                 Path(f).unlink(missing_ok=True)

@@ -83,14 +83,14 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
             dummy_handle = DBOS.start_workflow(dummy_workflow, workflow_id=dummy_id)
 
             # Wait for dummy to complete (proves threads are working)
-            max_prime_wait = 10  # 10 seconds max
+            max_prime_wait = 3  # Reduced to 3 seconds for faster CI startup
             prime_start = time.time()
             while (time.time() - prime_start) < max_prime_wait:
                 status = dummy_handle.get_status()
                 if status and status.status in ["SUCCESS", "ERROR"]:
                     prime_logger.info(f"Thread pool primed successfully (status={status.status})")
                     break
-                time.sleep(0.2)
+                time.sleep(0.1)  # Check more frequently
             else:
                 prime_logger.warning("Thread pool priming timed out but continuing anyway")
         except Exception as e:
@@ -177,7 +177,7 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
         # Give the queue processing thread time to dequeue the workflow
         # DBOS polls the queue periodically (about every 1 second)
         # In CI, we need more aggressive waiting to ensure the workflow starts
-        time.sleep(3)  # Give queue thread time to dequeue
+        time.sleep(5)  # Increased wait time for CI - queue thread needs time to dequeue
 
         # Force a status check to wake up DBOS if needed
         try:
