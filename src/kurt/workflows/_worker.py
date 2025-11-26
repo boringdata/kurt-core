@@ -80,8 +80,18 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
         init_dbos()
         dbos_instance = get_dbos()
 
+        # CRITICAL: Ensure DBOS is fully launched with executor threads running
+        # Without this, the queue processing threads won't start
+        from dbos import DBOS
+        if not DBOS._initialized:
+            with open(debug_file, "a") as f:
+                f.write("WARNING: DBOS not initialized after init_dbos(), calling launch again\n")
+                f.flush()
+            DBOS.launch()
+
         with open(debug_file, "a") as f:
             f.write(f"DBOS initialized: {dbos_instance}\n")
+            f.write(f"DBOS._initialized: {DBOS._initialized}\n")
             f.write(f"DBOS executor: {getattr(dbos_instance, '_executor', 'no executor')}\n")
             if hasattr(dbos_instance, '_executor') and dbos_instance._executor:
                 f.write(f"Executor threads: {dbos_instance._executor._max_workers if hasattr(dbos_instance._executor, '_max_workers') else 'unknown'}\n")
@@ -223,15 +233,12 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
             f.flush()
             os.fsync(f.fileno())
 
-        # CRITICAL: We need to process the queue! The workflow is enqueued but DBOS
-        # needs to actually execute it. The executor should be running from DBOS.launch()
-        # but we need to make sure it stays alive and processes the queue.
+        # CRITICAL: DBOS needs its executor threads to be running to process the queue
+        # The executor should be running from DBOS.launch() - we verify this above
 
         with open(debug_file, "a") as f:
-            f.write("Starting DBOS executor to process the queue...\n")
-            f.write(f"DBOS instance: {dbos_instance}\n")
-            f.write(f"DBOS _initialized: {getattr(dbos_instance, '_initialized', False)}\n")
-            f.write(f"DBOS _executor: {getattr(dbos_instance, '_executor', None)}\n")
+            f.write("DBOS executor should now be processing the queue...\n")
+            f.write(f"DBOS._initialized status: {DBOS._initialized}\n")
             f.flush()
 
         # IMPORTANT: Give the queue processing thread time to dequeue the workflow!
