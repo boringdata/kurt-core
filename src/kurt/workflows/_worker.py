@@ -176,12 +176,12 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
 
         # Give the queue processing thread time to dequeue the workflow
         # DBOS polls the queue periodically (about every 1 second)
-        time.sleep(3)  # Wait for queue thread to dequeue in CI environment
+        time.sleep(5)  # Increased wait for CI environment to ensure queue processing starts
 
         # Force multiple status checks to trigger DBOS executor threads
         # This helps ensure the workflow transitions from PENDING to RUNNING
         status_logger = logging.getLogger("kurt.worker.status")
-        for i in range(10):  # More attempts in CI environment
+        for i in range(20):  # Many more attempts for CI environment
             try:
                 initial_status = handle.get_status()
                 if initial_status:
