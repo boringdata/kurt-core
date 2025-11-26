@@ -27,11 +27,9 @@ from kurt.content.fetch import (
     DocumentFetchFilters,
     _get_fetch_engine,
     extract_document_links,
-    fetch_batch_from_cms,
     fetch_from_cms,
     fetch_from_web,
 )
-from kurt.content.fetch.engines_firecrawl import fetch_with_firecrawl
 
 logger = logging.getLogger(__name__)
 
@@ -261,135 +259,6 @@ def fetch_document_step(
         return {"identifier": str(identifier), "status": "ERROR", "error": str(e)}
 
 
-@DBOS.step()
-def batch_fetch_content_step(
-    doc_infos: list[dict[str, Any]],
-    fetch_engine: str | None = None,
-) -> dict[str, dict[str, Any]]:
-    """
-    Batch fetch content from multiple sources using appropriate batch APIs.
-
-    Groups documents by source type and uses:
-    - CMS batch API for CMS documents (grouped by platform/instance)
-    - Firecrawl batch API for web documents (when using firecrawl engine)
-
-    Args:
-        doc_infos: List of resolved document info dicts (from resolve_document_step)
-        fetch_engine: Optional engine override
-
-    Returns:
-        Dict mapping document_id to fetch result dict with content, metadata, etc.
-        For failures, includes "error" key with Exception
-    """
-    from collections import defaultdict
-
-    results = {}
-    engine = _get_fetch_engine(override=fetch_engine)
-
-    # Separate CMS and web documents
-    cms_groups = defaultdict(list)  # (platform, instance) -> [doc_info, ...]
-    web_docs = []
-
-    for doc_info in doc_infos:
-        doc_id = doc_info["id"]
-
-        if (
-            doc_info.get("cms_platform")
-            and doc_info.get("cms_instance")
-            and doc_info.get("cms_document_id")
-        ):
-            # CMS document
-            key = (doc_info["cms_platform"], doc_info["cms_instance"])
-            cms_groups[key].append(doc_info)
-        else:
-            # Web document
-            web_docs.append(doc_info)
-
-    # Process CMS documents using batch API
-    for (platform, instance), group_docs in cms_groups.items():
-        cms_doc_ids = [d["cms_document_id"] for d in group_docs]
-        discovery_urls = {
-            d["cms_document_id"]: d.get("discovery_url")
-            for d in group_docs
-            if d.get("discovery_url")
-        }
-
-        logger.info(f"[Batch] Fetching {len(cms_doc_ids)} CMS docs from {platform}/{instance}")
-
-        try:
-            batch_results = fetch_batch_from_cms(platform, instance, cms_doc_ids, discovery_urls)
-
-            for doc_info in group_docs:
-                doc_id = doc_info["id"]
-                cms_doc_id = doc_info["cms_document_id"]
-
-                result = batch_results.get(cms_doc_id)
-                if isinstance(result, Exception):
-                    results[doc_id] = {"error": result}
-                else:
-                    content, metadata, public_url = result
-                    results[doc_id] = {
-                        "content": content,
-                        "metadata": metadata,
-                        "content_length": len(content),
-                        "public_url": public_url,
-                    }
-        except Exception as e:
-            logger.error(f"[Batch] CMS batch fetch failed for {platform}/{instance}: {e}")
-            for doc_info in group_docs:
-                results[doc_info["id"]] = {"error": e}
-
-    # Process web documents - use Firecrawl batch if engine is firecrawl and multiple docs
-    if web_docs:
-        if engine == "firecrawl" and len(web_docs) > 1:
-            logger.info(f"[Batch] Fetching {len(web_docs)} web docs with Firecrawl batch API")
-
-            urls = [d["source_url"] for d in web_docs]
-            url_to_doc = {d["source_url"]: d for d in web_docs}
-
-            try:
-                batch_results = fetch_with_firecrawl(urls)
-
-                for url, result in batch_results.items():
-                    doc_info = url_to_doc[url]
-                    doc_id = doc_info["id"]
-
-                    if isinstance(result, Exception):
-                        results[doc_id] = {"error": result}
-                    else:
-                        content, metadata = result
-                        results[doc_id] = {
-                            "content": content,
-                            "metadata": metadata,
-                            "content_length": len(content),
-                            "public_url": None,
-                        }
-            except Exception as e:
-                logger.error(f"[Batch] Firecrawl batch fetch failed: {e}")
-                for doc_info in web_docs:
-                    results[doc_info["id"]] = {"error": e}
-        else:
-            # Fetch individually (trafilatura/httpx don't have batch APIs)
-            for doc_info in web_docs:
-                doc_id = doc_info["id"]
-                try:
-                    content, metadata = fetch_from_web(doc_info["source_url"], engine)
-                    results[doc_id] = {
-                        "content": content,
-                        "metadata": metadata,
-                        "content_length": len(content),
-                        "public_url": None,
-                    }
-                except Exception as e:
-                    results[doc_id] = {"error": e}
-
-    logger.info(
-        f"[Batch] Fetch complete: {sum(1 for r in results.values() if 'error' not in r)}/{len(results)} successful"
-    )
-
-    return results
-
-
 @DBOS.workflow()
 async def fetch_workflow(
     identifiers: str | UUID | list[str | UUID],
@@ -419,79 +288,79 @@ async def fetch_workflow(
         return result
 
     else:
-        # BATCH: Optimized batch fetching using batch APIs
+        # BATCH: Parallel gather with events
         total = len(id_list)
 
         # Step 1: Batch start
         DBOS.set_event("batch_total", total)
         DBOS.set_event("batch_status", "processing")
 
-        # Step 2: Resolve all documents first (needed for grouping)
-        import time
-        from datetime import datetime
-
-        loop = asyncio.get_event_loop()
-
-        logger.info(f"[Batch Workflow] Resolving {total} documents...")
-        resolve_start = time.time()
-        doc_infos = await asyncio.gather(
-            *[
-                loop.run_in_executor(None, lambda i=identifier: resolve_document_step(i))
-                for identifier in id_list
-            ]
-        )
-        resolve_duration = time.time() - resolve_start
-        logger.info(f"[Batch Workflow] Resolved {total} documents in {resolve_duration:.2f}s")
-
-        # Step 3: Batch fetch content using appropriate batch APIs
-        logger.info("[Batch Workflow] Batch fetching content...")
-        fetch_start = time.time()
-        fetch_results = await loop.run_in_executor(
-            None, lambda: batch_fetch_content_step(doc_infos, fetch_engine)
-        )
-        fetch_duration = time.time() - fetch_start
-        successful_fetches = sum(1 for r in fetch_results.values() if "error" not in r)
-        logger.info(
-            f"[Batch Workflow] Batch fetch complete: {successful_fetches}/{total} successful in {fetch_duration:.2f}s"
-        )
-
-        # Step 4: Process each document (embed, save, links) in parallel
+        # Step 2: Parallel gather
         semaphore = asyncio.Semaphore(max_concurrent)
 
-        async def process_fetched_document(doc_info: dict, index: int) -> dict[str, Any]:
-            """Process already-fetched document: embed, save, extract links."""
-            key = f"doc_{index}"
-            doc_id = doc_info["id"]
-            start_time = time.time()
+        async def fetch_with_semaphore(identifier: str | UUID, index: int) -> dict[str, Any]:
+            """Fetch one document with semaphore control and streaming progress."""
+            import time
+            from datetime import datetime
 
-            # Get fetch result from batch fetch
-            fetch_result = fetch_results.get(doc_id)
+            key = f"doc_{index}"
+            loop = asyncio.get_event_loop()
+            start_time = time.time()
 
             async with semaphore:
                 try:
-                    # Check if fetch failed
-                    if "error" in fetch_result:
-                        error = fetch_result["error"]
-                        logger.error(f"[{doc_id}] Fetch failed: {error}")
-                        await loop.run_in_executor(
-                            None, lambda: mark_document_error_transaction(doc_id, str(error))
-                        )
-                        return {"document_id": doc_id, "status": "ERROR", "error": str(error)}
-
-                    # Get fetched content
-                    content = fetch_result["content"]
-                    metadata = fetch_result["metadata"]
-
+                    # Stream: Started
                     DBOS.write_stream(
                         f"{key}_progress",
                         {
-                            "status": "fetched",
-                            "document_id": doc_id,
+                            "status": "started",
+                            "identifier": str(identifier),
                             "timestamp": datetime.now().isoformat(),
                         },
                     )
 
-                    # Step 1: Embed
+                    # Step 1: Resolve
+                    resolve_start = time.time()
+                    doc_info = await loop.run_in_executor(
+                        None, lambda: resolve_document_step(identifier)
+                    )
+                    resolve_duration = time.time() - resolve_start
+                    doc_id = doc_info["id"]
+                    DBOS.write_stream(
+                        f"{key}_progress",
+                        {
+                            "status": "resolved",
+                            "document_id": doc_id,
+                            "duration_ms": int(resolve_duration * 1000),
+                            "timestamp": datetime.now().isoformat(),
+                        },
+                    )
+
+                    # Step 2: Fetch
+                    fetch_start = time.time()
+                    fetch_result = await loop.run_in_executor(
+                        None,
+                        lambda: fetch_content_step(
+                            source_url=doc_info["source_url"],
+                            cms_platform=doc_info.get("cms_platform"),
+                            cms_instance=doc_info.get("cms_instance"),
+                            cms_document_id=doc_info.get("cms_document_id"),
+                            fetch_engine=fetch_engine,
+                        ),
+                    )
+                    fetch_duration = time.time() - fetch_start
+                    content = fetch_result["content"]
+                    metadata = fetch_result["metadata"]
+                    DBOS.write_stream(
+                        f"{key}_progress",
+                        {
+                            "status": "fetched",
+                            "duration_ms": int(fetch_duration * 1000),
+                            "timestamp": datetime.now().isoformat(),
+                        },
+                    )
+
+                    # Step 3: Embed
                     embed_start = time.time()
                     embedding_result = await loop.run_in_executor(
                         None, lambda: generate_embedding_step(content)
@@ -508,7 +377,7 @@ async def fetch_workflow(
 
                     # Step 4: Save
                     save_start = time.time()
-                    await loop.run_in_executor(
+                    save_result = await loop.run_in_executor(
                         None,
                         lambda: save_document_step(
                             doc_id=doc_id,
@@ -562,6 +431,7 @@ async def fetch_workflow(
                             "timestamp": datetime.now().isoformat(),
                         },
                     )
+                    DBOS.close_stream(f"{key}_progress")
 
                     return {
                         "document_id": doc_id,
@@ -574,36 +444,25 @@ async def fetch_workflow(
                 except Exception as e:
                     # Stream: Error
                     error_msg = str(e)
-                    DBOS.write_stream(
-                        f"{key}_progress",
-                        {
-                            "status": "error",
-                            "error": error_msg,
-                            "timestamp": datetime.now().isoformat(),
-                        },
-                    )
+                    DBOS.write_stream(f"{key}_progress", {"status": "error", "error": error_msg})
+                    DBOS.close_stream(f"{key}_progress")
 
                     # Try to mark document as error if we have doc_id
-                    if doc_id:
-                        try:
+                    try:
+                        if "doc_id" in locals():
                             await loop.run_in_executor(
                                 None, lambda: mark_document_error_transaction(doc_id, error_msg)
                             )
-                        except Exception:
-                            pass
+                    except Exception:
+                        pass
 
-                    return {"document_id": doc_id, "status": "ERROR", "error": error_msg}
+                    return {"identifier": str(identifier), "status": "ERROR", "error": error_msg}
 
-                finally:
-                    # ALWAYS close stream in finally block to ensure deterministic behavior
-                    DBOS.close_stream(f"{key}_progress")
-
-        # Process all documents in parallel
         results = await asyncio.gather(
-            *[process_fetched_document(doc_info, i) for i, doc_info in enumerate(doc_infos)]
+            *[fetch_with_semaphore(id, i) for i, id in enumerate(id_list)]
         )
 
-        # Step 5: Batch completion
+        # Step 3: Batch completion
         successful = sum(1 for r in results if r.get("status") == "FETCHED")
         failed = total - successful
 
