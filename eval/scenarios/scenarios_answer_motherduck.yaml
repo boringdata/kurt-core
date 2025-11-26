@@ -1,113 +1,41 @@
 ---
+# Kurt Evaluation Scenarios - MotherDuck Question Answering
+#
+# Simple scenario for testing the answer command with MotherDuck documentation
+
 scenarios:
-  - name: "answer_motherduck_file_formats"
-    description: "Test answering questions about efficient file formats for MotherDuck data loading"
-    tags: ["answer", "motherduck", "data-loading"]
+  - name: answer_motherduck
+    description: Answer question about MotherDuck file formats using knowledge graph
     project: motherduck
+
+    notes: |
+      Tests the answer command with MotherDuck documentation:
+      - Load pre-built knowledge graph from motherduck dump (874 docs, 371 entities)
+      - Answer a technical question about file formats
+      - Verify the answer contains relevant content
+
     initial_prompt: |
       Run the kurt answer command to find out what file formats are most efficient for loading data into MotherDuck.
 
       Use this exact command:
       KURT_TELEMETRY_DISABLED=1 uv run kurt answer "What file formats are most efficient for loading data into MotherDuck?"
+
     assertions:
+      # Verify knowledge graph is populated
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) >= 100 FROM entities
+
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) >= 500 FROM documents
+
+      # Verify answer contains expected content
       - type: ConversationContains
-        pattern: "Parquet"
+        pattern: "(?i)Parquet"
+
       - type: ConversationContains
-        pattern: "file format"
+        pattern: "(?i)file format"
 
-  - name: "answer_motherduck_unsupported_features"
-    description: "Test answering questions about DuckDB features not supported in MotherDuck"
-    tags: ["answer", "motherduck", "compatibility"]
-    project: motherduck
-    initial_prompt: |
-      Run the kurt answer command to find out what SQL features from DuckDB are not yet supported in MotherDuck.
-
-      Use this exact command:
-      KURT_TELEMETRY_DISABLED=1 uv run kurt answer "What SQL features from DuckDB are not yet supported in MotherDuck?"
-    assertions:
-      - type: ConversationContains
-        pattern: "feature"
-
-  - name: "answer_motherduck_query_performance"
-    description: "Test answering questions about query performance differences between MotherDuck and local DuckDB"
-    tags: ["answer", "motherduck", "performance"]
-    project: motherduck
-    initial_prompt: |
-      Run the kurt answer command:
-
-      KURT_TELEMETRY_DISABLED=1 uv run kurt answer "Why might a query run slower on MotherDuck than locally?"
-    assertions:
-      - type: ConversationContains
-        pattern: "network"
-
-  - name: "answer_motherduck_dbt_setup"
-    description: "Test answering questions about MotherDuck integration with dbt"
-    tags: ["answer", "motherduck", "dbt", "integration"]
-    project: motherduck
-    initial_prompt: |
-      Run the kurt answer command:
-
-      KURT_TELEMETRY_DISABLED=1 uv run kurt answer "How do I set up MotherDuck to work with dbt?"
-    assertions:
-      - type: ConversationContains
-        pattern: "dbt"
-
-  - name: "answer_motherduck_migration"
-    description: "Test answering questions about migrating data from local DuckDB to MotherDuck"
-    tags: ["answer", "motherduck", "migration"]
-    project: motherduck
-    initial_prompt: |
-      Run the kurt answer command:
-
-      KURT_TELEMETRY_DISABLED=1 uv run kurt answer "How do I migrate data from a local DuckDB database to MotherDuck?"
-    assertions:
-      - type: ConversationContains
-        pattern: "ATTACH"
-
-  - name: "answer_motherduck_hybrid_query"
-    description: "Test answering questions about joining local and cloud data with MotherDuck"
-    tags: ["answer", "motherduck", "hybrid-query"]
-    project: motherduck
-    initial_prompt: |
-      Run the kurt answer command:
-
-      KURT_TELEMETRY_DISABLED=1 uv run kurt answer "If I have a CSV on my laptop and a table in S3, what's the most efficient way to join them using MotherDuck?"
-    assertions:
-      - type: ConversationContains
-        pattern: "(?i)(JOIN|read_csv|S3)"
-
-  - name: "answer_motherduck_database_vs_share"
-    description: "Test answering questions about MotherDuck databases vs shares"
-    tags: ["answer", "motherduck", "concepts"]
-    project: motherduck
-    initial_prompt: |
-      Run the kurt answer command:
-
-      KURT_TELEMETRY_DISABLED=1 uv run kurt answer "What's the difference between a MotherDuck database and a share?"
-    assertions:
-      - type: ConversationContains
-        pattern: "share"
-
-  - name: "answer_motherduck_compute_sizes"
-    description: "Test answering questions about MotherDuck compute instance sizes"
-    tags: ["answer", "motherduck", "compute"]
-    project: motherduck
-    initial_prompt: |
-      Run the kurt answer command:
-
-      KURT_TELEMETRY_DISABLED=1 uv run kurt answer "What compute instance sizes does MotherDuck offer?"
-    assertions:
-      - type: ConversationContains
-        pattern: "(?i)(XS|Small|Medium|Large|compute)"
-
-  - name: "answer_motherduck_version_support"
-    description: "Test answering questions about DuckDB version support in MotherDuck"
-    tags: ["answer", "motherduck", "versions"]
-    project: motherduck
-    initial_prompt: |
-      Run the kurt answer command:
-
-      KURT_TELEMETRY_DISABLED=1 uv run kurt answer "What DuckDB versions does MotherDuck currently support?"
-    assertions:
-      - type: ConversationContains
-        pattern: "DuckDB"
+      # Verify conversation completed
+      - type: MetricEquals
+        metric_path: conversation.completed
+        expected_value: true

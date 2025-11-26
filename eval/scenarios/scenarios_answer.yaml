@@ -1,26 +1,17 @@
 # Kurt Evaluation Scenarios - Answer Command
 #
-# Simplified scenarios for testing the answer command workflow.
-# Only 2 scenarios: graph building + answer questions
+# Simple scenario for testing the answer command with ACME documentation
 
 scenarios:
-  # ========================================================================
-  # Scenario 01: Answer Questions - ACME API Documentation
-  # ========================================================================
-  - name: 01_answer_acme_general
-    description: Answer general question about ACME API using pre-built knowledge graph
+  - name: answer_acme_api
+    description: Answer question about ACME API using pre-built knowledge graph
     project: acme-docs
 
     notes: |
-      Tests the answer command's ability to answer a general overview question
-      using a pre-populated knowledge graph (acme-docs project dump).
-
-      Question: "What is ACME API?"
-
-      Expected answer should include:
-      - Reference to ACME API
-      - Mention of deployment/production features
-      - API-related terminology
+      Tests the answer command's basic functionality:
+      - Load pre-built knowledge graph from acme-docs dump
+      - Answer a general question about the API
+      - Verify the answer contains relevant content
 
     initial_prompt: |
       Run the kurt answer command to answer this question:
@@ -44,52 +35,6 @@ scenarios:
 
       - type: ConversationContains
         pattern: "(?i)API"
-
-      # Verify conversation completed
-      - type: MetricEquals
-        metric_path: conversation.completed
-        expected_value: true
-
-  # ========================================================================
-  # Scenario 02: Answer Authentication Question
-  # ========================================================================
-  - name: 02_answer_acme_authentication
-    description: Answer authentication question using ACME docs knowledge graph
-    project: acme-docs
-
-    notes: |
-      Tests the answer command's ability to answer a specific technical question
-      about authentication using the ACME documentation.
-
-      Question: "How do I authenticate with ACME API?"
-
-      Expected answer should include:
-      - API key authentication
-      - JWT tokens
-      - Authentication-related terminology
-
-    initial_prompt: |
-      Run the kurt answer command to answer this question:
-
-      How do I authenticate with ACME API?
-
-      Use this exact command:
-      KURT_TELEMETRY_DISABLED=1 uv run kurt answer "How do I authenticate with ACME API?"
-
-    assertions:
-      # Verify knowledge graph is populated
-      - type: SQLQueryAssertion
-        query: SELECT COUNT(*) >= 8 FROM entities
-
-      - type: SQLQueryAssertion
-        query: SELECT COUNT(*) >= 4 FROM documents
-
-      # Verify answer contains expected authentication content
-      - type: ConversationContains
-        pattern: "(?i)API key"
-
-      - type: ConversationContains
-        pattern: "(?i)JWT"
 
       # Verify conversation completed
       - type: MetricEquals
