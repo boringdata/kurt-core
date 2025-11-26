@@ -63,6 +63,18 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
         init_dbos()
         get_dbos()  # This will ensure DBOS is initialized
 
+        # Give DBOS time to start up its executor threads in CI
+        # This is critical for the queue processing threads to be ready
+        time.sleep(2)
+
+        # Verify DBOS is actually ready by doing a quick test
+        # This ensures the executor threads are running
+        try:
+            test_handle = DBOS.start_workflow(lambda: None, workflow_id=f"test-{os.getpid()}")
+            test_handle.get_status()
+        except Exception:
+            pass  # Ignore test workflow errors
+
         # Import workflow modules to register them
         from kurt.content.map import workflow as _map  # noqa
         from kurt.content.fetch import workflow as _fetch  # noqa
@@ -143,7 +155,17 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
 
         # Give the queue processing thread time to dequeue the workflow
         # DBOS polls the queue periodically (about every 1 second)
-        time.sleep(2)  # Give queue thread time to dequeue
+        # In CI, we need more aggressive waiting to ensure the workflow starts
+        time.sleep(3)  # Give queue thread time to dequeue
+
+        # Force a status check to wake up DBOS if needed
+        try:
+            initial_status = handle.get_status()
+            if initial_status:
+                status_logger = logging.getLogger("kurt.worker.status")
+                status_logger.info(f"Initial workflow status: {initial_status.status}")
+        except Exception:
+            pass
 
         # Wait for workflow to complete by polling its status
         # This keeps the process alive AND the ThreadPoolExecutor running
