@@ -358,22 +358,3 @@ def _save_command_outputs(
                     if not stderr.endswith("\n"):
                         f.write("\n")
                     f.write("```\n\n")
-
-        # Append technical details in a collapsed section
-        f.write("\n\n---\n\n")
-        f.write("<details>\n")
-        f.write("<summary>Technical Details (Click to expand)</summary>\n\n")
-        f.write(f"### Commands Executed ({len(command_outputs)})\n\n")
-
-        for cmd_output in command_outputs:
-            cmd = cmd_output.get("command", "")
-            index = cmd_output.get("index", 0)
-            returncode = cmd_output.get("returncode")
-
-            f.write(f"{index}. **Command**: `{cmd[:100]}{'...' if len(cmd) > 100 else ''}`\n")
-            if returncode is not None:
-                status_icon = "✅" if returncode == 0 else "❌"
-                f.write(f"   - Exit Code: {status_icon} {returncode}\n")
-            f.write("\n")
-
-        f.write("</details>\n")
