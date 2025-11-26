@@ -30,10 +30,12 @@ scenarios:
 
       # Verify answer contains expected content
       - type: ConversationContains
-        pattern: "(?i)Parquet"
+        text: "Parquet"
+        case_sensitive: false
 
       - type: ConversationContains
-        pattern: "(?i)file format"
+        text: "file format"
+        case_sensitive: false
 
       # Verify conversation completed
       - type: MetricEquals

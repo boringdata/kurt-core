@@ -64,6 +64,14 @@ def load_dump(dump_name: str):
             table_columns_info = session.execute(pragma_query).fetchall()
             valid_columns = {col[1] for col in table_columns_info}  # col[1] is column name
 
+            # Build a map of required columns (NOT NULL without default)
+            # col = (cid, name, type, notnull, dflt_value, pk)
+            required_columns = {
+                col[1]: col[2]  # name -> type
+                for col in table_columns_info
+                if col[3] == 1 and col[4] is None and col[5] == 0  # notnull=1, no default, not pk
+            }
+
             # Read JSONL and insert rows
             count = 0
             with open(input_file, "r") as f:
@@ -72,6 +80,19 @@ def load_dump(dump_name: str):
 
                     # Only use columns that exist in the target table
                     filtered_record = {k: v for k, v in record.items() if k in valid_columns}
+
+                    # Add default values for missing required columns
+                    for col_name, col_type in required_columns.items():
+                        if col_name not in filtered_record:
+                            # Provide empty/zero defaults based on type
+                            if col_type == 'BLOB':
+                                filtered_record[col_name] = b''  # Empty blob for embeddings
+                            elif 'INT' in col_type.upper():
+                                filtered_record[col_name] = 0
+                            elif 'FLOAT' in col_type.upper() or 'REAL' in col_type.upper():
+                                filtered_record[col_name] = 0.0
+                            else:
+                                filtered_record[col_name] = ''  # Empty string for VARCHAR/TEXT
 
                     if not filtered_record:
                         print(f"⚠ No matching columns for record in {table_name}")

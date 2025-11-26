@@ -225,7 +225,9 @@ class ScenarioRunner:
         setup_commands = scenario.setup_commands or []
         if scenario.project:
             # Prepend project load command
-            project_cmd = f"python {Path(__file__).parent.parent / 'mock' / 'generators' / 'load_dump.py'} {scenario.project}"
+            kurt_root = Path(__file__).parent.parent.parent
+            load_script = Path(__file__).parent.parent / 'mock' / 'generators' / 'load_dump.py'
+            project_cmd = f"uv run --project {kurt_root} python {load_script} {scenario.project}"
             setup_commands = [project_cmd] + list(setup_commands)
 
         workspace = IsolatedWorkspace(
