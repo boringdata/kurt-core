@@ -186,6 +186,7 @@ class Scenario:
 
     # Workspace setup options
     needs_claude_plugin: bool = True  # If True, installs .claude/ from kurt-demo (default: True)
+    project: Optional[str] = None  # Project dump to load from eval/mock/data/projects/
     setup_commands: Optional[List[str]] = (
         None  # Optional bash commands to run during workspace setup
     )

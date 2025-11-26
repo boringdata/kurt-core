@@ -221,13 +221,22 @@ class ScenarioRunner:
                 plugin_path = kurt_core / plugin_path
             claude_source_path = plugin_path
 
+        # Build setup commands - add project loading if specified
+        setup_commands = scenario.setup_commands or []
+        if scenario.project:
+            # Prepend project load command
+            project_cmd = f"python {Path(__file__).parent.parent / 'mock' / 'generators' / 'load_dump.py'} {scenario.project}"
+            setup_commands = [project_cmd] + list(setup_commands)
+
         workspace = IsolatedWorkspace(
             preserve_on_error=self.preserve_on_error,
             preserve_always=self.preserve_on_success,
             init_kurt=True,  # Always init kurt
             install_claude_plugin=needs_claude,  # Always install by default
             claude_plugin_source=claude_source_path,  # Use path from config
-            setup_commands=scenario.setup_commands,  # Pass setup commands from scenario
+            setup_commands=setup_commands
+            if setup_commands
+            else None,  # Pass setup commands from scenario
         )
         metrics_collector = MetricsCollector()
         had_error = False
@@ -751,7 +760,7 @@ def run_scenario_by_name(
     Returns:
         Results dictionary
     """
-    # Try scenarios.yaml first (multi-scenario file), then individual files
+    # Try scenarios.yaml first (multi-scenario file), then individual files, then all YAML files
     import importlib.util
 
     from .yaml_loader import load_yaml_scenario
@@ -792,11 +801,23 @@ def run_scenario_by_name(
 
             scenario = module.create()
 
-        else:
-            raise ValueError(
-                f"Scenario not found: {scenario_name}\n"
-                f"  Tried: scenarios.yaml, {yaml_file.name}, {yml_file.name}, {py_file.name}"
-            )
+    # If still not found, search all YAML files in scenarios directory
+    if scenario is None:
+        for yaml_path in scenarios_dir.glob("scenarios_*.yaml"):
+            try:
+                scenario = load_yaml_scenario(yaml_path, scenario_name=scenario_name)
+                break  # Found it
+            except ValueError:
+                continue  # Not in this file, try next
+            except Exception:
+                continue  # YAML syntax error or other issue, skip this file
+
+    if scenario is None:
+        raise ValueError(
+            f"Scenario not found: {scenario_name}\n"
+            f"  Tried: scenarios.yaml, {yaml_file.name}, {yml_file.name}, {py_file.name}, "
+            f"and all scenarios_*.yaml files"
+        )
 
     # Run it with guardrails
     runner = ScenarioRunner(

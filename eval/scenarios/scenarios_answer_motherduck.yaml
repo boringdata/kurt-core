@@ -1,0 +1,130 @@
+---
+scenarios:
+  - name: "answer_motherduck_file_formats"
+    description: "Test answering questions about efficient file formats for MotherDuck data loading"
+    tags: ["answer", "motherduck", "data-loading"]
+    setup_commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt init
+      - python eval/mock/generators/load_dump.py motherduck
+    initial_prompt: |
+      Run the kurt answer command to find out what file formats are most efficient for loading data into MotherDuck.
+
+      Use this exact command:
+      KURT_TELEMETRY_DISABLED=1 uv run kurt answer "What file formats are most efficient for loading data into MotherDuck?"
+    assertions:
+      - type: ConversationContains
+        pattern: "Parquet"
+      - type: ConversationContains
+        pattern: "file format"
+
+  - name: "answer_motherduck_unsupported_features"
+    description: "Test answering questions about DuckDB features not supported in MotherDuck"
+    tags: ["answer", "motherduck", "compatibility"]
+    setup_commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt init
+      - python eval/mock/generators/load_dump.py motherduck
+    commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt answer "What SQL features from DuckDB are not yet supported in MotherDuck?"
+    expected_outcomes:
+      - check_type: output_contains
+        value: "feature"
+      - check_type: exit_code
+        value: 0
+
+  - name: "answer_motherduck_query_performance"
+    description: "Test answering questions about query performance differences between MotherDuck and local DuckDB"
+    tags: ["answer", "motherduck", "performance"]
+    setup_commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt init
+      - python eval/mock/generators/load_dump.py motherduck
+    commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt answer "Why might a query run slower on MotherDuck than locally?"
+    expected_outcomes:
+      - check_type: output_contains
+        value: "network"
+      - check_type: exit_code
+        value: 0
+
+  - name: "answer_motherduck_dbt_setup"
+    description: "Test answering questions about MotherDuck integration with dbt"
+    tags: ["answer", "motherduck", "dbt", "integration"]
+    setup_commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt init
+      - python eval/mock/generators/load_dump.py motherduck
+    commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt answer "How do I set up MotherDuck to work with dbt?"
+    expected_outcomes:
+      - check_type: output_contains
+        value: "dbt"
+      - check_type: exit_code
+        value: 0
+
+  - name: "answer_motherduck_migration"
+    description: "Test answering questions about migrating data from local DuckDB to MotherDuck"
+    tags: ["answer", "motherduck", "migration"]
+    setup_commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt init
+      - python eval/mock/generators/load_dump.py motherduck
+    commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt answer "How do I migrate data from a local DuckDB database to MotherDuck?"
+    expected_outcomes:
+      - check_type: output_contains
+        value: "ATTACH"
+      - check_type: exit_code
+        value: 0
+
+  - name: "answer_motherduck_hybrid_query"
+    description: "Test answering questions about joining local and cloud data with MotherDuck"
+    tags: ["answer", "motherduck", "hybrid-query"]
+    setup_commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt init
+      - python eval/mock/generators/load_dump.py motherduck
+    commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt answer "If I have a CSV on my laptop and a table in S3, what's the most efficient way to join them using MotherDuck?"
+    expected_outcomes:
+      - check_type: output_contains_any
+        values: ["JOIN", "read_csv", "S3"]
+      - check_type: exit_code
+        value: 0
+
+  - name: "answer_motherduck_database_vs_share"
+    description: "Test answering questions about MotherDuck databases vs shares"
+    tags: ["answer", "motherduck", "concepts"]
+    setup_commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt init
+      - python eval/mock/generators/load_dump.py motherduck
+    commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt answer "What's the difference between a MotherDuck database and a share?"
+    expected_outcomes:
+      - check_type: output_contains
+        value: "share"
+      - check_type: exit_code
+        value: 0
+
+  - name: "answer_motherduck_compute_sizes"
+    description: "Test answering questions about MotherDuck compute instance sizes"
+    tags: ["answer", "motherduck", "compute"]
+    setup_commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt init
+      - python eval/mock/generators/load_dump.py motherduck
+    commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt answer "What compute instance sizes does MotherDuck offer?"
+    expected_outcomes:
+      - check_type: output_contains_any
+        values: ["XS", "Small", "Medium", "Large", "compute"]
+      - check_type: exit_code
+        value: 0
+
+  - name: "answer_motherduck_version_support"
+    description: "Test answering questions about DuckDB version support in MotherDuck"
+    tags: ["answer", "motherduck", "versions"]
+    setup_commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt init
+      - python eval/mock/generators/load_dump.py motherduck
+    commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt answer "What DuckDB versions does MotherDuck currently support?"
+    expected_outcomes:
+      - check_type: output_contains
+        value: "DuckDB"
+      - check_type: exit_code
+        value: 0
