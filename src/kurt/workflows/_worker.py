@@ -245,6 +245,10 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
         last_flush_time = start_time
         poll_count = 0
 
+        # Log to the workflow log file that we're monitoring
+        monitor_logger = logging.getLogger("kurt.worker.monitor")
+        monitor_logger.info(f"Worker process monitoring workflow {handle.workflow_id}")
+
         while (time.time() - start_time) < max_wait_time:
             poll_count += 1
 
@@ -254,6 +258,11 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
                     f.write(f"Poll #{poll_count} at {time.time() - start_time:.1f}s\n")
                     f.flush()
                     os.fsync(f.fileno())
+
+                # Also log to workflow log file every 5 seconds
+                monitor_logger.info(
+                    f"Still monitoring workflow (poll #{poll_count}, {time.time() - start_time:.1f}s elapsed)"
+                )
 
             try:
                 # Get workflow status from handle
@@ -284,6 +293,13 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
             if current_time - last_flush_time >= 5.0:
                 flush_all_handlers()
                 last_flush_time = current_time
+                # Make sure the file size increases as we add logs
+                if final_log_file.exists():
+                    with open(debug_file, "a") as f:
+                        f.write(
+                            f"Log file size after flush: {final_log_file.stat().st_size} bytes\n"
+                        )
+                        f.flush()
 
         # Flush all logging handlers and file descriptors before exit
         flush_all_handlers()
