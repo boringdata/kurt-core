@@ -11,14 +11,19 @@ scenarios:
     notes: |
       Tests the answer command with MotherDuck documentation:
       - Load pre-built knowledge graph from motherduck dump (874 docs, 371 entities)
-      - Answer a technical question about file formats
+      - Run kurt answer command and save output to file
       - Verify the answer contains relevant content
 
-    initial_prompt: |
-      Run the kurt answer command to find out what file formats are most efficient for loading data into MotherDuck.
+      This is a command-based scenario that runs kurt answer directly via setup_commands
+      rather than using a conversational agent.
 
-      Use this exact command:
-      KURT_TELEMETRY_DISABLED=1 uv run kurt answer "What file formats are most efficient for loading data into MotherDuck?"
+    setup_commands:
+      # Run the answer command and save output to a file
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt answer "What file formats are most efficient for loading data into MotherDuck?" > answer_output.txt 2>&1 || true
+
+    # No conversational prompt needed - this is pure command execution
+    initial_prompt: |
+      The kurt answer command has been executed. Please confirm the test completed successfully.
 
     assertions:
       # Verify knowledge graph is populated
@@ -28,16 +33,16 @@ scenarios:
       - type: SQLQueryAssertion
         query: SELECT COUNT(*) >= 500 FROM documents
 
-      # Verify answer contains expected content
-      - type: ConversationContains
-        text: "Parquet"
-        case_sensitive: false
+      # Verify answer output file exists and contains expected content
+      - type: FileExists
+        path: answer_output.txt
 
-      - type: ConversationContains
-        text: "file format"
-        case_sensitive: false
+      - type: FileContains
+        path: answer_output.txt
+        content: "(?i)Parquet"
+        is_regex: true
 
-      # Verify conversation completed
-      - type: MetricEquals
-        metric_path: conversation.completed
-        expected_value: true
+      - type: FileContains
+        path: answer_output.txt
+        content: "(?i)file format"
+        is_regex: true
