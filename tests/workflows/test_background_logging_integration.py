@@ -17,6 +17,7 @@ def test_map_background_workflow_creates_log(tmp_project):
     import re
     import subprocess
     import sys
+    import uuid
 
     # tmp_project fixture provides:
     # - Working directory changed to temp path
@@ -25,7 +26,6 @@ def test_map_background_workflow_creates_log(tmp_project):
 
     # Run map command with background flag using new command structure
     # Add timestamp to URL to prevent DBOS deduplication between test runs
-    import uuid
     test_id = uuid.uuid4().hex[:8]
     test_url = f"https://example.com?test={test_id}"
 
@@ -163,6 +163,7 @@ def test_fetch_background_workflow_creates_log(tmp_project):
     """Test that fetch workflow in background mode creates a log file."""
     import subprocess
     import sys
+    import uuid
 
     # tmp_project fixture provides:
     # - Working directory changed to temp path
@@ -172,7 +173,6 @@ def test_fetch_background_workflow_creates_log(tmp_project):
     # First, we need to have a document in the database to fetch
     # Use map command to discover a URL first (this will run synchronously)
     # Use unique URL to prevent deduplication
-    import uuid
     test_id = uuid.uuid4().hex[:8]
     test_url = f"https://example.com?test={test_id}"
 
