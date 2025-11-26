@@ -176,23 +176,51 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
             with open(id_file, "w") as f:
                 f.write(handle.workflow_id)
 
+        # DEBUG: Log before entering polling loop
+        with open(debug_file, "a") as f:
+            f.write(f"Entering polling loop for workflow {handle.workflow_id}\n")
+            f.flush()
+            os.fsync(f.fileno())
+
         # Wait for workflow to complete by polling its status
         # This keeps the process alive AND the ThreadPoolExecutor running
         max_wait_time = 600  # 10 minutes max
         start_time = time.time()
         poll_interval = 0.5
         last_flush_time = start_time
+        poll_count = 0
 
         while (time.time() - start_time) < max_wait_time:
+            poll_count += 1
+
+            # DEBUG: Log every 10 polls (5 seconds)
+            if poll_count % 10 == 1:
+                with open(debug_file, "a") as f:
+                    f.write(f"Poll #{poll_count} at {time.time() - start_time:.1f}s\n")
+                    f.flush()
+                    os.fsync(f.fileno())
+
             try:
                 # Get workflow status from handle
                 status = handle.get_status()
+                if poll_count == 1:
+                    # DEBUG: Log first status
+                    with open(debug_file, "a") as f:
+                        f.write(f"First status check: {status.status if status else 'None'}\n")
+                        f.flush()
+
                 if status.status in ["SUCCESS", "ERROR", "RETRIES_EXCEEDED", "CANCELLED"]:
                     # Workflow completed
+                    with open(debug_file, "a") as f:
+                        f.write(f"Workflow completed with status: {status.status}\n")
+                        f.flush()
                     break
-            except Exception:
+            except Exception as e:
                 # If we can't get status, continue waiting
-                pass
+                if poll_count == 1:
+                    with open(debug_file, "a") as f:
+                        f.write(f"Error getting status: {e}\n")
+                        f.flush()
 
             time.sleep(poll_interval)
 
