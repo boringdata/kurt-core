@@ -228,7 +228,7 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
                 error_logger = logging.getLogger("kurt.worker.error")
                 error_logger.error(f"Worker crashed: {e}", exc_info=True)
                 flush_all_handlers()
-            except:
+            except Exception:
                 pass
 
         # Re-raise to maintain original exit behavior
