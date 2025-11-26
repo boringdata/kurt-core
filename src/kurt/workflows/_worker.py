@@ -5,12 +5,28 @@ This module provides a standalone worker that can execute workflows
 in a completely independent process, allowing the parent CLI to exit immediately.
 """
 
+import atexit
 import json
+import logging
 import os
 import sys
 import time
 
 from kurt.workflows.logging_utils import setup_workflow_logging
+
+
+def flush_all_handlers():
+    """Flush all logging handlers and their underlying file descriptors."""
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers:
+        try:
+            handler.flush()
+            # Also flush the OS buffer to ensure logs reach disk
+            if hasattr(handler, "stream") and hasattr(handler.stream, "fileno"):
+                os.fsync(handler.stream.fileno())
+        except (AttributeError, OSError, ValueError):
+            # Handler doesn't have a stream or file descriptor, or it's closed
+            pass
 
 
 def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: int = 10):
@@ -75,6 +91,9 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
     # Configure Python logging early - before workflow starts
     setup_workflow_logging(temp_log_file)
 
+    # Register exit handler to ensure logs are flushed even on abrupt termination
+    atexit.register(flush_all_handlers)
+
     # Redirect stdout/stderr to the temp log file
     log_fd = os.open(str(temp_log_file), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
     os.dup2(log_fd, sys.stdout.fileno())
@@ -92,17 +111,12 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
             handle = DBOS.start_workflow(workflow_func, **workflow_args)
 
     # Now we know the workflow ID, rename the log file
+    # Note: We DON'T recreate the FileHandler after renaming because:
+    # 1. The OS file descriptor remains valid after rename (points to same inode)
+    # 2. Creating a new handler would create a NEW file, leaving logs in the renamed temp file
+    # 3. The logging handler and stdout/stderr are already correctly configured
     final_log_file = log_dir / f"workflow-{handle.workflow_id}.log"
     temp_log_file.rename(final_log_file)
-
-    # Update logging to point to the renamed file
-    setup_workflow_logging(final_log_file)
-
-    # Redirect stdout/stderr to the final log file
-    log_fd = os.open(str(final_log_file), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
-    os.dup2(log_fd, sys.stdout.fileno())
-    os.dup2(log_fd, sys.stderr.fileno())
-    os.close(log_fd)
 
     # Write workflow ID to a file so parent process can retrieve it
     # Use environment variable if provided
@@ -116,6 +130,7 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
     max_wait_time = 600  # 10 minutes max
     start_time = time.time()
     poll_interval = 0.5
+    last_flush_time = start_time
 
     while (time.time() - start_time) < max_wait_time:
         try:
@@ -129,6 +144,15 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
             pass
 
         time.sleep(poll_interval)
+
+        # Flush logs every 5 seconds to ensure they're written even for long-running workflows
+        current_time = time.time()
+        if current_time - last_flush_time >= 5.0:
+            flush_all_handlers()
+            last_flush_time = current_time
+
+    # Flush all logging handlers and file descriptors before exit
+    flush_all_handlers()
 
     # Exit cleanly
     sys.exit(0)
