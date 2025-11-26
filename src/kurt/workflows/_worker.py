@@ -9,10 +9,16 @@ import atexit
 import json
 import logging
 import os
+import signal
 import sys
 import time
 
 from kurt.workflows.logging_utils import setup_workflow_logging
+
+
+def ignore_signal(signum, frame):
+    """Ignore signals that would terminate the process."""
+    pass
 
 
 def flush_all_handlers():
@@ -48,12 +54,17 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
     final_log_file = None
 
     try:
+        # Set up signal handlers to prevent termination
+        signal.signal(signal.SIGHUP, ignore_signal)  # Ignore hangup signal
+        signal.signal(signal.SIGTERM, ignore_signal)  # Ignore termination signal for now
+
         with open(debug_file, "w") as f:
             f.write(f"Worker started: PID={os.getpid()}\n")
             f.write(f"Workflow: {workflow_name}\n")
             f.write(f"Args: {workflow_args_json}\n")
             f.write(f"Python: {sys.version}\n")
             f.write(f"CWD: {os.getcwd()}\n")
+            f.write(f"Signal handlers installed\n")
             f.flush()
             os.fsync(f.fileno())
 

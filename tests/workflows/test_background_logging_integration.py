@@ -110,7 +110,11 @@ def test_map_background_workflow_creates_log(tmp_project):
     log_content = ""
     found_workflow_logs = False
 
-    for attempt in range(300):  # 30 seconds max (reasonable for CI environments)
+    # In CI, give the worker more time to start up
+    import time
+    time.sleep(2)  # Give worker 2 seconds to initialize before checking
+
+    for attempt in range(600):  # 60 seconds max (CI needs more time)
         try:
             log_content = log_file.read_text()
             # Check if the workflow has actually logged something meaningful

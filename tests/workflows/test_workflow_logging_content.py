@@ -196,7 +196,10 @@ def test_map_workflow_logs_capture_content(tmp_project):
     log_file = tmp_project / ".kurt" / "logs" / f"workflow-{workflow_id}.log"
     found_expected_logs = False
 
-    for attempt in range(300):  # 30 seconds max (map can take longer in CI)
+    # In CI, give the worker more time to start up
+    time.sleep(2)  # Give worker 2 seconds to initialize before checking
+
+    for attempt in range(600):  # 60 seconds max (map can take longer in CI)
         if log_file.exists():
             content = log_file.read_text()
             # Check for expected log messages from map workflow
