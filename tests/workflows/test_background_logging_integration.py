@@ -24,6 +24,20 @@ def test_map_background_workflow_creates_log(tmp_project):
     # - Kurt project initialized with database
     # - .kurt directory already exists
 
+    # DEBUG: First test if we can even import the worker module
+    test_import = subprocess.run(
+        [sys.executable, "-c", "from kurt.workflows._worker import run_workflow_worker; print('Import OK')"],
+        capture_output=True,
+        text=True,
+        cwd=str(tmp_project),
+        timeout=10,
+    )
+    if test_import.returncode != 0:
+        print(f"CRITICAL: Cannot import worker module!")
+        print(f"STDERR: {test_import.stderr}")
+        print(f"STDOUT: {test_import.stdout}")
+        # Continue anyway to see full failure
+
     # Run map command with background flag using new command structure
     # Add timestamp to URL to prevent DBOS deduplication between test runs
     test_id = uuid.uuid4().hex[:8]
