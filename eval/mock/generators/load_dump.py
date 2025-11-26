@@ -18,11 +18,15 @@ from sqlalchemy import text
 from kurt.db.database import get_session
 
 
-def load_dump(dump_name: str):
+def load_dump(dump_name: str, skip_entities: bool = False):
     """Load JSONL dumps into the current Kurt project database.
 
     The load is schema-adaptive - it only inserts columns that exist in the
     target database, so dumps from different schema versions will work.
+
+    Args:
+        dump_name: Name of the dump to load (project name)
+        skip_entities: If True, skip loading entity-related tables
     """
     # Look for dump in mock/projects/{dump_name}/
     project_dir = Path(__file__).parent.parent / "projects" / dump_name
@@ -40,14 +44,21 @@ def load_dump(dump_name: str):
         raise RuntimeError("No Kurt database found. Run 'kurt init' first.")
 
     print(f"Loading dump from: {dump_dir}")
+    if skip_entities:
+        print("⚠ Skipping entity-related tables (--skip-entities)")
 
     # Tables to import (in dependency order)
-    tables = [
-        "documents",
-        "entities",
-        "document_entities",
-        "entity_relationships",
-    ]
+    if skip_entities:
+        # Only load documents when skipping entities
+        tables = ["documents"]
+    else:
+        # Load all tables including knowledge graph
+        tables = [
+            "documents",
+            "entities",
+            "document_entities",
+            "entity_relationships",
+        ]
 
     session = get_session()
 
@@ -145,10 +156,27 @@ def load_dump(dump_name: str):
 
 def main():
     """Main entry point."""
-    if len(sys.argv) != 2:
-        print("Usage: python load_dump.py dump_name")
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Load database dumps into current Kurt project",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("dump_name", nargs="?", help="Name of the dump to load")
+    parser.add_argument(
+        "--skip-entities",
+        action="store_true",
+        help="Skip loading entity-related tables (for vector search baseline)",
+    )
+
+    args = parser.parse_args()
+
+    # If no dump name provided, show available dumps
+    if not args.dump_name:
+        print("Usage: python load_dump.py dump_name [--skip-entities]")
         print("\nExample:")
         print("  python load_dump.py acme-docs")
+        print("  python load_dump.py motherduck --skip-entities")
         print("\nAvailable project dumps:")
 
         # List all project dumps
@@ -169,8 +197,7 @@ def main():
             print("  (no dumps found)")
         sys.exit(1)
 
-    dump_name = sys.argv[1]
-    load_dump(dump_name)
+    load_dump(args.dump_name, skip_entities=args.skip_entities)
 
 
 if __name__ == "__main__":

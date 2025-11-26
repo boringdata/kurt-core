@@ -114,6 +114,140 @@ def run(scenario, no_cleanup, max_tool_calls, max_duration, max_tokens, llm_prov
 
 
 @main.command()
+@click.argument("yaml_file", type=click.Path(exists=True))
+@click.option("--prefix", type=str, help="Filter scenarios by name prefix (e.g., 'answer_motherduck_without_kg_q')")
+@click.option("--parallel", type=int, default=4, help="Number of scenarios to run in parallel (default: 4)")
+@click.option("--no-cleanup", is_flag=True, help="Preserve workspace after completion")
+@click.option("--max-tool-calls", type=int, default=None, help="Maximum tool calls allowed (default: from config)")
+@click.option("--max-duration", type=int, default=None, help="Maximum duration in seconds (default: from config)")
+@click.option("--max-tokens", type=int, default=None, help="Maximum tokens to use (default: from config)")
+@click.option("--llm-provider", type=click.Choice(["openai", "anthropic"]), default="openai", help="LLM provider for user agent")
+def run_file(yaml_file, prefix, parallel, no_cleanup, max_tool_calls, max_duration, max_tokens, llm_provider):
+    """Run all scenarios from a YAML file in parallel.
+
+    This command loads all scenarios from a YAML file, optionally filters by prefix,
+    and runs them in parallel to reduce total execution time.
+
+    Examples:
+      kurt-eval run-file scenarios_answer_motherduck_conversational.yaml --prefix answer_motherduck_conversational_q --parallel 4 --max-duration 300
+      kurt-eval run-file scenarios_answer_motherduck_conversational.yaml --no-aggregation
+    """
+    import concurrent.futures
+    import yaml
+    from datetime import datetime
+
+    config = get_config()
+    scenarios_dir = eval_dir / config.scenarios_dir
+
+    # Load scenarios from YAML file
+    yaml_path = Path(yaml_file)
+    if not yaml_path.is_absolute():
+        yaml_path = scenarios_dir / yaml_file
+
+    click.echo(f"Loading scenarios from: {yaml_path}")
+
+    with open(yaml_path) as f:
+        data = yaml.safe_load(f)
+
+    all_scenarios = data.get("scenarios", [])
+
+    if not all_scenarios:
+        click.secho("❌ No scenarios found in file", fg="red")
+        sys.exit(1)
+
+    # Filter scenarios by prefix if specified
+    # NOTE: Aggregation scenarios are excluded - use the 'compare' command instead
+    scenarios_to_run = []
+
+    for scenario in all_scenarios:
+        scenario_name = scenario["name"]
+
+        # Skip aggregation scenarios
+        if "aggregate" in scenario_name.lower():
+            continue
+
+        # Apply prefix filter
+        if prefix:
+            if scenario_name.startswith(prefix):
+                scenarios_to_run.append(scenario_name)
+        else:
+            scenarios_to_run.append(scenario_name)
+
+    if not scenarios_to_run:
+        click.secho(f"❌ No scenarios found matching filter: {prefix}", fg="red")
+        sys.exit(1)
+
+    click.echo(f"\n{'='*80}")
+    click.echo(f"Running {len(scenarios_to_run)} scenarios in parallel (max {parallel} at a time)")
+    if prefix:
+        click.echo(f"Filter: {prefix}")
+    click.echo(f"Use 'compare' command after completion to run LLM-as-judge evaluation")
+    click.echo(f"{'='*80}\n")
+
+    # Track results
+    results = {}
+    start_time = datetime.now()
+
+    def run_single_scenario(scenario_name):
+        """Run a single scenario and return results."""
+        try:
+            click.echo(f"[{datetime.now().strftime('%H:%M:%S')}] Starting: {scenario_name}")
+
+            result = run_scenario_by_name(
+                scenario_name=scenario_name,
+                scenarios_dir=scenarios_dir,
+                max_tool_calls=max_tool_calls,
+                max_duration_seconds=max_duration,
+                max_tokens=max_tokens,
+                preserve_workspace=no_cleanup,
+                llm_provider=llm_provider,
+            )
+
+            status = "✅ PASSED" if result["passed"] else "❌ FAILED"
+            click.secho(f"[{datetime.now().strftime('%H:%M:%S')}] {status}: {scenario_name}",
+                       fg="green" if result["passed"] else "red")
+
+            return scenario_name, result
+
+        except Exception as e:
+            click.secho(f"[{datetime.now().strftime('%H:%M:%S')}] ❌ ERROR: {scenario_name} - {e}", fg="red")
+            return scenario_name, {"passed": False, "error": str(e)}
+
+    # Run scenarios in parallel
+    with concurrent.futures.ThreadPoolExecutor(max_workers=parallel) as executor:
+        future_to_scenario = {executor.submit(run_single_scenario, name): name
+                              for name in scenarios_to_run}
+
+        for future in concurrent.futures.as_completed(future_to_scenario):
+            scenario_name, result = future.result()
+            results[scenario_name] = result
+
+    # Calculate summary
+    total = len(results)
+    passed = sum(1 for r in results.values() if r["passed"])
+    failed = total - passed
+
+    end_time = datetime.now()
+    duration = (end_time - start_time).total_seconds()
+
+    click.echo(f"\n{'='*80}")
+    click.echo(f"BATCH RESULTS")
+    click.echo(f"{'='*80}")
+    click.echo(f"Total scenarios: {total}")
+    click.secho(f"Passed: {passed}", fg="green", bold=True)
+    if failed > 0:
+        click.secho(f"Failed: {failed}", fg="red", bold=True)
+    click.echo(f"Duration: {duration:.1f}s")
+    click.echo(f"{'='*80}\n")
+
+    # Exit with appropriate code
+    if failed > 0:
+        sys.exit(1)
+    else:
+        sys.exit(0)
+
+
+@main.command()
 @click.option("--filter", type=str, help="Filter scenarios by name pattern")
 def list(filter):
     """List all available evaluation scenarios."""

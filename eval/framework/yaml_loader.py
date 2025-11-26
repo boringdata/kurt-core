@@ -12,6 +12,7 @@ import yaml
 from .conversation import Scenario, UserAgent
 from .evaluator import (
     Assertion,
+    CommandOutputContains,
     ConversationContains,
     DatabaseHasDocuments,
     FileContains,
@@ -107,6 +108,57 @@ def load_yaml_scenario(yaml_path: Path, scenario_name: Optional[str] = None) -> 
 
     # Parse test_cases (if specified)
     test_cases_data = data.get("test_cases", None)
+    questions_file = data.get("questions_file", None)
+    cmd_template = data.get("cmd_template", None)
+    output_file_template = data.get("output_file_template", None)
+
+    # If questions_file is specified, load questions from that file
+    if questions_file and not test_cases_data:
+        # Try relative to the project root (yaml_path is eval/scenarios/...)
+        project_root = yaml_path.parent.parent.parent
+        questions_file_path = project_root / questions_file
+
+        if not questions_file_path.exists():
+            # Try relative to yaml_path directory
+            questions_file_path = yaml_path.parent / questions_file
+
+        if questions_file_path.exists():
+            with open(questions_file_path) as f:
+                questions_data = yaml.safe_load(f)
+
+            questions = questions_data.get("questions", [])
+            test_cases_data = []
+
+            # Determine command and output templates
+            if not cmd_template:
+                # Default to answer_via_search.py
+                cmd_template = 'KURT_TELEMETRY_DISABLED=1 uv run --project /Users/julien/Documents/wik/wikumeo/projects/kurt-core python /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/mock/generators/answer_via_search.py "{question}" --output {output_file}'
+            if not output_file_template:
+                output_file_template = "/tmp/answer_cc_{i}.md"
+
+            # Generate test cases from questions
+            for i, q in enumerate(questions, start=1):
+                question_text = q.get("question")
+                output_file = output_file_template.format(i=i)
+                cmd = cmd_template.format(question=question_text, output_file=output_file, i=i)
+
+                test_case = {
+                    "question": question_text,
+                    "cmd": cmd,
+                    "use_llm_judge": True,
+                }
+                test_cases_data.append(test_case)
+
+            # Auto-generate post_scenario_commands if not already specified
+            if not post_scenario_commands and len(test_cases_data) > 0:
+                answer_files = " ".join([output_file_template.format(i=i) for i in range(1, len(test_cases_data) + 1)])
+                # Resolve questions_file path relative to project root
+                questions_file_full_path = str(questions_file_path.resolve())
+                scenario_name = data.get("name", "unknown")
+                post_scenario_commands = [
+                    f"uv run --project /Users/julien/Documents/wik/wikumeo/projects/kurt-core python /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/mock/generators/evaluate_answers.py --answer-files {answer_files} --questions-file {questions_file_full_path} --output-dir eval/results/{scenario_name}"
+                ]
+
     test_cases = None
     if test_cases_data:
         test_cases = []
@@ -116,8 +168,10 @@ def load_yaml_scenario(yaml_path: Path, scenario_name: Optional[str] = None) -> 
             test_case = {
                 "question": tc.get("question"),
                 "cmd": tc.get("cmd"),
+                "expected_answer": tc.get("expected_answer"),
                 "assertions": tc_assertions,
                 "post_cmd": tc.get("post_cmd"),
+                "use_llm_judge": tc.get("use_llm_judge", False),
             }
             test_cases.append(test_case)
 
@@ -207,6 +261,9 @@ def _create_assertion(assertion_type: str, params: Dict[str, Any]) -> Assertion:
 
     elif assertion_type == "SkillWasCalled":
         return SkillWasCalled(**params)
+
+    elif assertion_type == "CommandOutputContains":
+        return CommandOutputContains(**params)
 
     else:
         raise ValueError(f"Unknown assertion type: {assertion_type}")

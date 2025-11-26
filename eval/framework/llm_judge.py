@@ -55,10 +55,10 @@ def configure_dspy_llm(provider: str = "anthropic", model: Optional[str] = None)
             raise ValueError("ANTHROPIC_API_KEY environment variable not set")
 
         model = model or "claude-3-5-sonnet-20241022"
-        lm = dspy.Claude(
-            model=model,
+        lm = dspy.LM(
+            model=f"anthropic/{model}",
             api_key=api_key,
-            max_tokens=2048,
+            max_tokens=4096,
         )
 
     elif provider == "openai":

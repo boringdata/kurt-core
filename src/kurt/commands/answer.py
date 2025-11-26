@@ -19,12 +19,18 @@ console = Console()
     help="Maximum number of documents to retrieve (default: 10)",
 )
 @click.option(
+    "--output",
+    type=click.Path(),
+    default=None,
+    help="Write answer to markdown file instead of stdout",
+)
+@click.option(
     "--verbose",
     is_flag=True,
     help="Show detailed retrieval information",
 )
 @track_command
-def answer(question: str, max_docs: int, verbose: bool):
+def answer(question: str, max_docs: int, output: str, verbose: bool):
     """Answer a question using GraphRAG retrieval from the knowledge graph.
 
     Uses local search strategy:
@@ -44,13 +50,45 @@ def answer(question: str, max_docs: int, verbose: bool):
         console.print("Run [cyan]kurt init[/cyan] to initialize a project")
         raise click.Abort()
 
-    console.print(f"[dim]Question:[/dim] {question}\n")
+    if not output:
+        console.print(f"[dim]Question:[/dim] {question}\n")
 
     try:
         # Answer the question
         result = answer_question(question, max_documents=max_docs)
 
-        # Display answer
+        # If output file specified, write to markdown
+        if output:
+            from pathlib import Path
+
+            output_path = Path(output)
+
+            # Build markdown content
+            md_content = f"# Answer\n\n{result.answer}\n\n"
+
+            # Add sources section
+            if result.documents_cited:
+                md_content += "## Sources\n\n"
+                for doc_id, doc_title, score in result.documents_cited:
+                    md_content += f"- {doc_title} (relevance: {score:.2f})\n"
+                md_content += "\n"
+
+            # Add metadata section
+            md_content += "## Metadata\n\n"
+            md_content += f"- **Confidence**: {result.confidence:.2f}\n"
+
+            if result.entities_used:
+                md_content += f"- **Key Entities**: {', '.join([e[0] for e in result.entities_used])}\n"
+
+            md_content += f"- **Documents Retrieved**: {result.retrieval_stats['documents_found']}\n"
+            md_content += f"- **Entities Found**: {result.retrieval_stats['entities_found']}\n"
+
+            # Write to file
+            output_path.write_text(md_content, encoding="utf-8")
+            console.print(f"[green]✓[/green] Answer written to: {output_path}")
+            return
+
+        # Otherwise display to console
         console.print("[bold]Answer:[/bold]")
         console.print(result.answer)
         console.print()

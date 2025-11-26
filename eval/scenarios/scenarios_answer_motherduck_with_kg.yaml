@@ -1,0 +1,188 @@
+---
+# Kurt Evaluation Scenarios - MotherDuck Question Answering (WITH Knowledge Graph)
+#
+# Tests the answer command with full knowledge graph (GraphRAG approach)
+# Each question runs in a separate non-conversational scenario for parallel execution
+
+scenarios:
+- name: answer_motherduck_with_kg_q1
+  description: Answer Q1 using GraphRAG (WITH knowledge graph)
+  project: motherduck
+  conversational: false
+  setup_commands:
+  - KURT_TELEMETRY_DISABLED=1 uv run kurt answer "What file formats are most efficient
+    for loading data into MotherDuck?" --output /tmp/answer_with_kg_1.md
+  assertions:
+  - type: FileExists
+    path: /tmp/answer_with_kg_1.md
+  post_scenario_commands:
+  - LATEST_JSON=$(ls -t /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q1/*.json
+    2>/dev/null | grep -v '_answer.json' | head -1) && TIMESTAMP=$(basename "$LATEST_JSON"
+    .json) && mkdir -p /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q1
+    && cp /tmp/answer_with_kg_1.md /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q1/${TIMESTAMP}_answer.md
+    && uv run python /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/mock/generators/judge_answer.py
+    --results-dir /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q1
+    --question-num 1 --prefix $TIMESTAMP
+- name: answer_motherduck_with_kg_q2
+  description: Answer Q2 using GraphRAG (WITH knowledge graph)
+  project: motherduck
+  conversational: false
+  setup_commands:
+  - KURT_TELEMETRY_DISABLED=1 uv run kurt answer "How does MotherDuck integrate with
+    DuckDB?" --output /tmp/answer_with_kg_2.md
+  assertions:
+  - type: FileExists
+    path: /tmp/answer_with_kg_2.md
+  post_scenario_commands:
+  - LATEST_JSON=$(ls -t /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q2/*.json
+    2>/dev/null | grep -v '_answer.json' | head -1) && TIMESTAMP=$(basename "$LATEST_JSON"
+    .json) && mkdir -p /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q2
+    && cp /tmp/answer_with_kg_2.md /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q2/${TIMESTAMP}_answer.md
+    && uv run python /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/mock/generators/judge_answer.py
+    --results-dir /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q2
+    --question-num 2 --prefix $TIMESTAMP
+- name: answer_motherduck_with_kg_q3
+  description: Answer Q3 using GraphRAG (WITH knowledge graph)
+  project: motherduck
+  conversational: false
+  setup_commands:
+  - KURT_TELEMETRY_DISABLED=1 uv run kurt answer "What SQL features from DuckDB are
+    not yet supported in MotherDuck?" --output /tmp/answer_with_kg_3.md
+  assertions:
+  - type: FileExists
+    path: /tmp/answer_with_kg_3.md
+  post_scenario_commands:
+  - LATEST_JSON=$(ls -t /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q3/*.json
+    2>/dev/null | grep -v '_answer.json' | head -1) && TIMESTAMP=$(basename "$LATEST_JSON"
+    .json) && mkdir -p /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q3
+    && cp /tmp/answer_with_kg_3.md /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q3/${TIMESTAMP}_answer.md
+    && uv run python /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/mock/generators/judge_answer.py
+    --results-dir /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q3
+    --question-num 3 --prefix $TIMESTAMP
+- name: answer_motherduck_with_kg_q4
+  description: Answer Q4 using GraphRAG (WITH knowledge graph)
+  project: motherduck
+  conversational: false
+  setup_commands:
+  - KURT_TELEMETRY_DISABLED=1 uv run kurt answer "Why might a query run slower on
+    MotherDuck than locally?" --output /tmp/answer_with_kg_4.md
+  assertions:
+  - type: FileExists
+    path: /tmp/answer_with_kg_4.md
+  post_scenario_commands:
+  - LATEST_JSON=$(ls -t /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q4/*.json
+    2>/dev/null | grep -v '_answer.json' | head -1) && TIMESTAMP=$(basename "$LATEST_JSON"
+    .json) && mkdir -p /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q4
+    && cp /tmp/answer_with_kg_4.md /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q4/${TIMESTAMP}_answer.md
+    && uv run python /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/mock/generators/judge_answer.py
+    --results-dir /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q4
+    --question-num 4 --prefix $TIMESTAMP
+- name: answer_motherduck_with_kg_q5
+  description: Answer Q5 using GraphRAG (WITH knowledge graph)
+  project: motherduck
+  conversational: false
+  setup_commands:
+  - KURT_TELEMETRY_DISABLED=1 uv run kurt answer "How do I set up MotherDuck to work
+    with dbt?" --output /tmp/answer_with_kg_5.md
+  assertions:
+  - type: FileExists
+    path: /tmp/answer_with_kg_5.md
+  post_scenario_commands:
+  - LATEST_JSON=$(ls -t /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q5/*.json
+    2>/dev/null | grep -v '_answer.json' | head -1) && TIMESTAMP=$(basename "$LATEST_JSON"
+    .json) && mkdir -p /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q5
+    && cp /tmp/answer_with_kg_5.md /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q5/${TIMESTAMP}_answer.md
+    && uv run python /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/mock/generators/judge_answer.py
+    --results-dir /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q5
+    --question-num 5 --prefix $TIMESTAMP
+- name: answer_motherduck_with_kg_q6
+  description: Answer Q6 using GraphRAG (WITH knowledge graph)
+  project: motherduck
+  conversational: false
+  setup_commands:
+  - KURT_TELEMETRY_DISABLED=1 uv run kurt answer "How do I migrate data from a local
+    DuckDB database to MotherDuck?" --output /tmp/answer_with_kg_6.md
+  assertions:
+  - type: FileExists
+    path: /tmp/answer_with_kg_6.md
+  post_scenario_commands:
+  - LATEST_JSON=$(ls -t /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q6/*.json
+    2>/dev/null | grep -v '_answer.json' | head -1) && TIMESTAMP=$(basename "$LATEST_JSON"
+    .json) && mkdir -p /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q6
+    && cp /tmp/answer_with_kg_6.md /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q6/${TIMESTAMP}_answer.md
+    && uv run python /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/mock/generators/judge_answer.py
+    --results-dir /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q6
+    --question-num 6 --prefix $TIMESTAMP
+- name: answer_motherduck_with_kg_q7
+  description: Answer Q7 using GraphRAG (WITH knowledge graph)
+  project: motherduck
+  conversational: false
+  setup_commands:
+  - KURT_TELEMETRY_DISABLED=1 uv run kurt answer "If I have a CSV on my laptop and
+    a table in S3, what's the most efficient way to join them using MotherDuck?" --output
+    /tmp/answer_with_kg_7.md
+  assertions:
+  - type: FileExists
+    path: /tmp/answer_with_kg_7.md
+  post_scenario_commands:
+  - LATEST_JSON=$(ls -t /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q7/*.json
+    2>/dev/null | grep -v '_answer.json' | head -1) && TIMESTAMP=$(basename "$LATEST_JSON"
+    .json) && mkdir -p /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q7
+    && cp /tmp/answer_with_kg_7.md /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q7/${TIMESTAMP}_answer.md
+    && uv run python /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/mock/generators/judge_answer.py
+    --results-dir /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q7
+    --question-num 7 --prefix $TIMESTAMP
+- name: answer_motherduck_with_kg_q8
+  description: Answer Q8 using GraphRAG (WITH knowledge graph)
+  project: motherduck
+  conversational: false
+  setup_commands:
+  - KURT_TELEMETRY_DISABLED=1 uv run kurt answer "What's the difference between a
+    MotherDuck database and a share?" --output /tmp/answer_with_kg_8.md
+  assertions:
+  - type: FileExists
+    path: /tmp/answer_with_kg_8.md
+  post_scenario_commands:
+  - LATEST_JSON=$(ls -t /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q8/*.json
+    2>/dev/null | grep -v '_answer.json' | head -1) && TIMESTAMP=$(basename "$LATEST_JSON"
+    .json) && mkdir -p /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q8
+    && cp /tmp/answer_with_kg_8.md /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q8/${TIMESTAMP}_answer.md
+    && uv run python /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/mock/generators/judge_answer.py
+    --results-dir /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q8
+    --question-num 8 --prefix $TIMESTAMP
+- name: answer_motherduck_with_kg_q9
+  description: Answer Q9 using GraphRAG (WITH knowledge graph)
+  project: motherduck
+  conversational: false
+  setup_commands:
+  - KURT_TELEMETRY_DISABLED=1 uv run kurt answer "What compute instance sizes does
+    MotherDuck offer?" --output /tmp/answer_with_kg_9.md
+  assertions:
+  - type: FileExists
+    path: /tmp/answer_with_kg_9.md
+  post_scenario_commands:
+  - LATEST_JSON=$(ls -t /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q9/*.json
+    2>/dev/null | grep -v '_answer.json' | head -1) && TIMESTAMP=$(basename "$LATEST_JSON"
+    .json) && mkdir -p /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q9
+    && cp /tmp/answer_with_kg_9.md /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q9/${TIMESTAMP}_answer.md
+    && uv run python /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/mock/generators/judge_answer.py
+    --results-dir /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q9
+    --question-num 9 --prefix $TIMESTAMP
+- name: answer_motherduck_with_kg_q10
+  description: Answer Q10 using GraphRAG (WITH knowledge graph)
+  project: motherduck
+  conversational: false
+  setup_commands:
+  - KURT_TELEMETRY_DISABLED=1 uv run kurt answer "What DuckDB versions does MotherDuck
+    currently support?" --output /tmp/answer_with_kg_10.md
+  assertions:
+  - type: FileExists
+    path: /tmp/answer_with_kg_10.md
+  post_scenario_commands:
+  - LATEST_JSON=$(ls -t /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q10/*.json
+    2>/dev/null | grep -v '_answer.json' | head -1) && TIMESTAMP=$(basename "$LATEST_JSON"
+    .json) && mkdir -p /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q10
+    && cp /tmp/answer_with_kg_10.md /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q10/${TIMESTAMP}_answer.md
+    && uv run python /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/mock/generators/judge_answer.py
+    --results-dir /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg_q10
+    --question-num 10 --prefix $TIMESTAMP

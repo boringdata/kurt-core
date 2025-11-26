@@ -2,6 +2,29 @@
 
 Test Kurt agent behavior using Claude agent sessions via Anthropic SDK.
 
+## LLM Judge Evaluation Pipeline
+
+**New:** For GraphRAG (WITH KG) vs Vector-only (WITHOUT KG) comparison using LLM-as-judge evaluation, see:
+
+### [LLM_JUDGE_SETUP.md](LLM_JUDGE_SETUP.md)
+
+Complete documentation for the 3-phase evaluation pipeline:
+- **Phase 1**: Answer generation (10 questions × 2 approaches = 20 scenarios)
+- **Phase 2**: LLM judge evaluation (per-scenario, using gpt-4o)
+- **Phase 3**: Comparison report generation (aggregated metrics + analysis)
+
+Quick start:
+```bash
+# Run all scenarios (WITH KG and WITHOUT KG)
+for i in {1..10}; do
+  uv run python -m eval run answer_motherduck_with_kg_q$i --no-cleanup
+  uv run python -m eval run answer_motherduck_without_kg_q$i --no-cleanup
+done
+
+# Generate comparison report
+python eval/mock/generators/compare_approaches.py
+```
+
 ## Quick Start
 
 ### 1. Install
@@ -38,6 +61,43 @@ uv run kurt-eval run 01_basic_init
 cat eval/results/01_basic_init_*.json
 cat eval/results/01_basic_init_*.md
 ```
+
+### 5. Run Multiple Scenarios in Parallel (NEW)
+
+Run all scenarios from a YAML file in parallel for faster execution:
+
+```bash
+# Run all conversational scenarios in parallel
+KURT_TELEMETRY_DISABLED=1 uv run python -m eval run-file \
+  scenarios_answer_motherduck_conversational.yaml \
+  --prefix answer_motherduck_conversational_q \
+  --parallel 4 \
+  --max-duration 300
+
+# Run all scenarios without filtering (runs everything except aggregation)
+KURT_TELEMETRY_DISABLED=1 uv run python -m eval run-file \
+  scenarios_answer_motherduck.yaml \
+  --parallel 2
+
+# Skip aggregation step
+KURT_TELEMETRY_DISABLED=1 uv run python -m eval run-file \
+  scenarios_answer_motherduck_conversational.yaml \
+  --no-aggregation \
+  --parallel 4
+```
+
+**Options:**
+- `--prefix`: Filter scenarios by name prefix (e.g., `answer_motherduck_conversational_q`)
+- `--parallel`: Number of scenarios to run concurrently (default: 4)
+- `--max-duration`: Timeout per scenario in seconds
+- `--run-aggregation/--no-aggregation`: Run aggregation scenario after all questions (default: True)
+- `--no-cleanup`: Preserve workspaces for debugging
+
+**Benefits:**
+- **Parallel execution**: Run multiple scenarios concurrently for faster results
+- **Automatic aggregation**: Runs aggregation scenario after all questions complete
+- **Real-time progress**: See timestamped status updates as scenarios complete
+- **Batch summary**: View aggregate pass/fail stats at the end
 
 ## How It Works
 

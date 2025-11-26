@@ -474,6 +474,65 @@ class SQLQueryAssertion(Assertion):
         return True
 
 
+class CommandOutputContains(Assertion):
+    """Assert that command output contains specific text.
+
+    Checks the most recent command output's stdout for a pattern.
+    Useful for validating command results in non-conversational scenarios.
+
+    Example:
+        >>> # Check answer mentions "Parquet"
+        >>> assertion = CommandOutputContains(pattern="(?i)parquet", is_regex=True)
+        >>> assertion.evaluate(workspace, metrics)
+
+        >>> # Check confidence score is reasonable
+        >>> assertion = CommandOutputContains(pattern="Confidence: 0\\.[5-9]", is_regex=True)
+        >>> assertion.evaluate(workspace, metrics)
+    """
+
+    def __init__(self, pattern: str, is_regex: bool = False, case_sensitive: bool = False):
+        """Initialize assertion.
+
+        Args:
+            pattern: Text or regex pattern to search for
+            is_regex: Whether to treat pattern as regex
+            case_sensitive: Whether search should be case-sensitive (ignored for regex with flags)
+        """
+        self.pattern = pattern
+        self.is_regex = is_regex
+        self.case_sensitive = case_sensitive
+
+    def evaluate(self, workspace: Any, metrics: Dict[str, Any]) -> bool:
+        # Get the most recent command output
+        if not hasattr(workspace, "command_outputs") or not workspace.command_outputs:
+            raise AssertionError("No command outputs available")
+
+        last_output = workspace.command_outputs[-1]
+        stdout = last_output.get("stdout", "")
+
+        # Perform search
+        if self.is_regex:
+            # For regex, use IGNORECASE flag if not case_sensitive
+            flags = 0 if self.case_sensitive else re.IGNORECASE
+            if not re.search(self.pattern, stdout, flags):
+                raise AssertionError(
+                    f"Command output does not match pattern: {self.pattern}\n"
+                    f"Output: {stdout[:200]}..."
+                )
+        else:
+            # For plain text search
+            search_text = stdout if self.case_sensitive else stdout.lower()
+            target = self.pattern if self.case_sensitive else self.pattern.lower()
+
+            if target not in search_text:
+                raise AssertionError(
+                    f"Command output does not contain text: {self.pattern}\n"
+                    f"Output: {stdout[:200]}..."
+                )
+
+        return True
+
+
 def assert_all(assertions: list, workspace: Any, metrics: Dict[str, Any]) -> bool:
     """Run all assertions and collect results.
 

@@ -5,6 +5,7 @@ Executes test scenarios and collects metrics about agent behavior.
 
 import asyncio
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -13,6 +14,19 @@ from .conversation import Scenario
 from .evaluator import assert_all
 from .metrics import MetricsCollector, collect_metrics, save_results
 from .workspace import IsolatedWorkspace
+
+# Load environment variables from eval/.env if it exists
+_eval_dir = Path(__file__).parent.parent
+_env_file = _eval_dir / ".env"
+if _env_file.exists():
+    with open(_env_file) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, value = line.split("=", 1)
+                # Only set if not already in environment
+                if key not in os.environ:
+                    os.environ[key] = value
 
 
 # ANSI color codes for terminal output
@@ -365,6 +379,9 @@ class ScenarioRunner:
         finally:
             # Save results
             results_dir = Path(__file__).parent.parent / "results"
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            markdown_path = results_dir / scenario.name / f"{timestamp}.md"
+
             save_results(
                 scenario.name,
                 run_metrics,
@@ -376,6 +393,11 @@ class ScenarioRunner:
                 command_outputs=workspace.command_outputs,
                 conversational=scenario.conversational,
             )
+
+            # Update markdown with LLM judge results (if available)
+            # This must happen after save_results creates the markdown file
+            from .metrics import update_markdown_with_llm_judge
+            update_markdown_with_llm_judge(markdown_path, scenario.name, workspace.temp_dir)
 
             # Cleanup
             workspace.teardown(had_error=had_error)
@@ -431,12 +453,15 @@ class ScenarioRunner:
         for i, test_case in enumerate(scenario.test_cases, 1):
             question = test_case.get("question", "")
             cmd = test_case.get("cmd", "")
+            expected_answer = test_case.get("expected_answer", "")
             assertions = test_case.get("assertions", [])
             post_cmd = test_case.get("post_cmd", "")
+            use_llm_judge = test_case.get("use_llm_judge", False)
 
             self._log(f"  [{i}/{len(scenario.test_cases)}] {question}\n")
 
             # Run the command
+            generated_answer = ""
             if cmd:
                 self._log(f"     Running: {cmd[:80]}{'...' if len(cmd) > 80 else ''}")
                 try:
@@ -448,6 +473,8 @@ class ScenarioRunner:
                         timeout=120,
                         cwd=workspace.path,
                     )
+
+                    generated_answer = result.stdout
 
                     workspace.command_outputs.append(
                         {
@@ -478,6 +505,51 @@ class ScenarioRunner:
                             "question": question,
                         }
                     )
+
+            # Run LLM judge evaluation if enabled
+            if use_llm_judge and expected_answer and generated_answer:
+                self._log("     Running LLM judge evaluation...")
+                try:
+                    from .llm_judge import score_single_answer
+
+                    # Default score weights
+                    score_weights = {
+                        "accuracy": 0.4,
+                        "completeness": 0.3,
+                        "relevance": 0.2,
+                        "clarity": 0.1,
+                    }
+
+                    # Extract required topics from expected answer (simple heuristic)
+                    # TODO: Make this configurable in YAML
+                    required_topics = []
+                    if "parquet" in expected_answer.lower():
+                        required_topics.append("Parquet")
+
+                    llm_judge_result = score_single_answer(
+                        question=question,
+                        canonical_answer=expected_answer,
+                        generated_answer=generated_answer,
+                        required_topics=required_topics,
+                        score_weights=score_weights,
+                        llm_provider="openai",
+                    )
+
+                    # Store LLM judge result in the last command output
+                    if workspace.command_outputs:
+                        workspace.command_outputs[-1]["llm_judge"] = llm_judge_result
+
+                    # Log results
+                    overall_score = llm_judge_result["overall_score"]
+                    if overall_score >= 0.7:
+                        self._log(f"     ✅ LLM Judge Score: {overall_score:.2f}")
+                    else:
+                        self._log(f"     ⚠️  LLM Judge Score: {overall_score:.2f}")
+
+                    self._log(f"     Feedback: {llm_judge_result['feedback']}")
+
+                except Exception as e:
+                    self._log(f"     ⚠️  LLM judge evaluation failed: {e}")
 
             # Run test case assertions
             if assertions:

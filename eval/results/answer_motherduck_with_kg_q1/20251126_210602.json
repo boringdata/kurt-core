@@ -1,0 +1,33 @@
+{
+  "scenario": "answer_motherduck_with_kg_q1",
+  "timestamp": "2025-11-26T21:06:02.944195",
+  "passed": true,
+  "error": null,
+  "run_metrics": {
+    "tool_usage": {},
+    "tool_calls": [],
+    "conversation": [],
+    "timing": {
+      "start": "2025-11-26T21:05:55.444089",
+      "end": "2025-11-26T21:06:01.460153",
+      "duration_seconds": 6.016064
+    },
+    "counts": {
+      "total_tools": 0,
+      "conversation_turns": 0
+    }
+  },
+  "workspace_metrics": {
+    "files": {
+      "config_exists": true,
+      "db_exists": true,
+      "sources_count": 0,
+      "projects_count": 0
+    },
+    "database": {
+      "total_documents": 874,
+      "fetched_documents": 561,
+      "not_fetched_documents": 0
+    }
+  }
+}
