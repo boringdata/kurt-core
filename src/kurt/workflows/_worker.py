@@ -73,8 +73,19 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
 
         from kurt.workflows import get_dbos, init_dbos
 
+        with open(debug_file, "a") as f:
+            f.write("Initializing DBOS...\n")
+            f.flush()
+
         init_dbos()
-        get_dbos()
+        dbos_instance = get_dbos()
+
+        with open(debug_file, "a") as f:
+            f.write(f"DBOS initialized: {dbos_instance}\n")
+            f.write(f"DBOS executor: {getattr(dbos_instance, '_executor', 'no executor')}\n")
+            if hasattr(dbos_instance, '_executor') and dbos_instance._executor:
+                f.write(f"Executor threads: {dbos_instance._executor._max_workers if hasattr(dbos_instance._executor, '_max_workers') else 'unknown'}\n")
+            f.flush()
 
         # Import workflow modules to register them
         from kurt.content.map import workflow as _map  # noqa
@@ -89,6 +100,13 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
 
             workflow_func = map_url_workflow
             queue = get_map_queue()
+
+            with open(debug_file, "a") as f:
+                f.write(f"Map workflow selected, queue: {queue}\n")
+                if queue:
+                    f.write(f"Queue name: {getattr(queue, '_queue_name', 'unknown')}\n")
+                    f.write(f"Queue concurrency: {getattr(queue, '_concurrency', 'unknown')}\n")
+                f.flush()
         elif workflow_name == "fetch_workflow":
             from kurt.content.fetch.workflow import fetch_queue, fetch_workflow
 
@@ -147,9 +165,21 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
             f.flush()
 
         # Enqueue the workflow (now logging is already configured)
+        with open(debug_file, "a") as f:
+            f.write(f"About to enqueue workflow with priority: {priority}\n")
+            f.write(f"Queue available: {queue is not None}\n")
+            f.flush()
+
         with SetEnqueueOptions(priority=priority):
             if queue:
+                with open(debug_file, "a") as f:
+                    f.write(f"Calling queue.enqueue for {workflow_func.__name__}\n")
+                    f.flush()
                 handle = queue.enqueue(workflow_func, **workflow_args)
+                with open(debug_file, "a") as f:
+                    f.write(f"Workflow enqueued, handle: {handle}\n")
+                    f.write(f"Workflow ID: {handle.workflow_id}\n")
+                    f.flush()
             else:
                 # For workflows without a queue, call directly
                 from dbos import DBOS
@@ -192,6 +222,24 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
             f.write(f"Entering polling loop for workflow {handle.workflow_id}\n")
             f.flush()
             os.fsync(f.fileno())
+
+        # CRITICAL: We need to process the queue! The workflow is enqueued but DBOS
+        # needs to actually execute it. The executor should be running from DBOS.launch()
+        # but we need to make sure it stays alive and processes the queue.
+
+        with open(debug_file, "a") as f:
+            f.write("Starting DBOS executor to process the queue...\n")
+            f.write(f"DBOS instance: {dbos_instance}\n")
+            f.write(f"DBOS _initialized: {getattr(dbos_instance, '_initialized', False)}\n")
+            f.write(f"DBOS _executor: {getattr(dbos_instance, '_executor', None)}\n")
+            f.flush()
+
+        # IMPORTANT: Give the queue processing thread time to dequeue the workflow!
+        # DBOS polls the queue periodically (about every 1 second)
+        with open(debug_file, "a") as f:
+            f.write("Waiting 2 seconds for queue processing thread to pick up workflow...\n")
+            f.flush()
+        time.sleep(2)  # Give queue thread time to dequeue
 
         # Wait for workflow to complete by polling its status
         # This keeps the process alive AND the ThreadPoolExecutor running
