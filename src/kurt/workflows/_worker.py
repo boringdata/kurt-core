@@ -50,7 +50,10 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
     # DEBUG: Write immediate debug info to understand CI environment
     import tempfile
     import traceback
-    debug_file = tempfile.gettempdir() + f"/kurt_debug_{os.getpid()}.txt"
+
+    # Ensure temp directory is accessible
+    temp_dir = tempfile.gettempdir()
+    debug_file = os.path.join(temp_dir, f"kurt_debug_{os.getpid()}.txt")
     final_log_file = None
 
     try:
@@ -68,8 +71,8 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
             f.flush()
             os.fsync(f.fileno())
 
-        # Initialize DBOS fresh in this process
-        from dbos import SetEnqueueOptions
+        # Initialize DBOS fresh in this process - simplify like the old implementation
+        from dbos import DBOS, SetEnqueueOptions
 
         from kurt.workflows import get_dbos, init_dbos
 
@@ -77,24 +80,12 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
             f.write("Initializing DBOS...\n")
             f.flush()
 
+        # Simple initialization like the old implementation
         init_dbos()
-        dbos_instance = get_dbos()
-
-        # CRITICAL: Ensure DBOS is fully launched with executor threads running
-        # Without this, the queue processing threads won't start
-        from dbos import DBOS
-        if not DBOS._initialized:
-            with open(debug_file, "a") as f:
-                f.write("WARNING: DBOS not initialized after init_dbos(), calling launch again\n")
-                f.flush()
-            DBOS.launch()
+        get_dbos()  # This will ensure DBOS is initialized
 
         with open(debug_file, "a") as f:
-            f.write(f"DBOS initialized: {dbos_instance}\n")
-            f.write(f"DBOS._initialized: {DBOS._initialized}\n")
-            f.write(f"DBOS executor: {getattr(dbos_instance, '_executor', 'no executor')}\n")
-            if hasattr(dbos_instance, '_executor') and dbos_instance._executor:
-                f.write(f"Executor threads: {dbos_instance._executor._max_workers if hasattr(dbos_instance._executor, '_max_workers') else 'unknown'}\n")
+            f.write(f"DBOS initialized successfully\n")
             f.flush()
 
         # Import workflow modules to register them
@@ -233,18 +224,10 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
             f.flush()
             os.fsync(f.fileno())
 
-        # CRITICAL: DBOS needs its executor threads to be running to process the queue
-        # The executor should be running from DBOS.launch() - we verify this above
-
-        with open(debug_file, "a") as f:
-            f.write("DBOS executor should now be processing the queue...\n")
-            f.write(f"DBOS._initialized status: {DBOS._initialized}\n")
-            f.flush()
-
-        # IMPORTANT: Give the queue processing thread time to dequeue the workflow!
+        # Give the queue processing thread time to dequeue the workflow
         # DBOS polls the queue periodically (about every 1 second)
         with open(debug_file, "a") as f:
-            f.write("Waiting 2 seconds for queue processing thread to pick up workflow...\n")
+            f.write("Waiting for queue processing thread to pick up workflow...\n")
             f.flush()
         time.sleep(2)  # Give queue thread time to dequeue
 
