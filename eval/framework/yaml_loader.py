@@ -99,6 +99,9 @@ def load_yaml_scenario(yaml_path: Path, scenario_name: Optional[str] = None) -> 
     # Parse setup commands (if specified)
     setup_commands = data.get("setup_commands", None)
 
+    # Parse post-scenario commands (if specified)
+    post_scenario_commands = data.get("post_scenario_commands", None)
+
     # Parse project reference (if specified)
     project = data.get("project", None)
 
@@ -111,6 +114,7 @@ def load_yaml_scenario(yaml_path: Path, scenario_name: Optional[str] = None) -> 
         user_agent=user_agent,
         project=project,
         setup_commands=setup_commands,
+        post_scenario_commands=post_scenario_commands,
         conversational=conversational,
     )
 

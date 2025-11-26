@@ -190,6 +190,9 @@ class Scenario:
     setup_commands: Optional[List[str]] = (
         None  # Optional bash commands to run during workspace setup
     )
+    post_scenario_commands: Optional[List[str]] = (
+        None  # Optional bash commands to run after conversation/assertions
+    )
 
     # Execution mode
     conversational: bool = True  # If False, skip agent interaction and only run setup + assertions
@@ -199,7 +202,9 @@ class Scenario:
         # Non-conversational scenarios don't need a prompt
         if self.conversational:
             if not self.initial_prompt and not self.conversation:
-                raise ValueError("Conversational scenario must have either initial_prompt or conversation")
+                raise ValueError(
+                    "Conversational scenario must have either initial_prompt or conversation"
+                )
 
             if self.initial_prompt and self.conversation:
                 raise ValueError("Scenario cannot have both initial_prompt and conversation")

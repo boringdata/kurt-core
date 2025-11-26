@@ -327,6 +327,14 @@ class ScenarioRunner:
                 assert_all(scenario.assertions, workspace, combined_metrics)
                 self._log("✅ All assertions passed!")
                 passed = True
+
+                # Run post-scenario commands (if specified)
+                if scenario.post_scenario_commands:
+                    self._log(
+                        f"\n🔧 Running {len(scenario.post_scenario_commands)} post-scenario command(s)..."
+                    )
+                    workspace.run_post_commands(scenario.post_scenario_commands)
+
             except AssertionError as e:
                 self._log(f"❌ Assertion failed: {e}")
                 passed = False

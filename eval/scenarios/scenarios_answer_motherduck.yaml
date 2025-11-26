@@ -19,8 +19,21 @@ scenarios:
       rather than using a conversational agent.
 
     setup_commands:
-      # Run the answer command and save output to a file
-      - KURT_TELEMETRY_DISABLED=1 uv run kurt answer "What file formats are most efficient for loading data into MotherDuck?" > answer_output.txt 2>&1 || true
+      # Run the answer command and save to markdown file
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt answer "What file formats are most efficient for loading data into MotherDuck?" > cmd_answer.md 2>&1
+
+    post_scenario_commands:
+      # Gather all command outputs into a final result file
+      - |
+        cat > results.md <<'EOF'
+        # Answer Results - MotherDuck File Formats
+
+        ## Question
+        What file formats are most efficient for loading data into MotherDuck?
+
+        ## Answer
+        EOF
+        cat cmd_answer.md >> results.md
 
     assertions:
       # Verify knowledge graph is populated
@@ -30,16 +43,16 @@ scenarios:
       - type: SQLQueryAssertion
         query: SELECT COUNT(*) >= 500 FROM documents
 
-      # Verify answer output file exists and contains expected content
+      # Verify answer command output file exists
       - type: FileExists
-        path: answer_output.txt
+        path: cmd_answer.md
 
       - type: FileContains
-        path: answer_output.txt
+        path: cmd_answer.md
         content: "(?i)Parquet"
         is_regex: true
 
       - type: FileContains
-        path: answer_output.txt
+        path: cmd_answer.md
         content: "(?i)file format"
         is_regex: true
