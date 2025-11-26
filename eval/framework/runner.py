@@ -284,6 +284,12 @@ class ScenarioRunner:
             # Skip conversation execution for non-conversational scenarios
             if not scenario.conversational:
                 self._log("\n✅ Non-conversational scenario - skipping agent interaction\n")
+
+                # Execute test cases if specified
+                if scenario.test_cases:
+                    self._log(f"\n📝 Running {len(scenario.test_cases)} test case(s)...\n")
+                    await self._execute_test_cases(scenario, workspace)
+
                 # Still need to initialize run_metrics for result structure
                 run_metrics = {
                     "total_turns": 0,
@@ -412,6 +418,112 @@ class ScenarioRunner:
             "[skip",
         ]
         return any(ind in text_lower for ind in indicators)
+
+    async def _execute_test_cases(self, scenario, workspace):
+        """Execute test cases for non-conversational scenarios.
+
+        Args:
+            scenario: Scenario with test_cases
+            workspace: IsolatedWorkspace instance
+        """
+        import subprocess
+
+        for i, test_case in enumerate(scenario.test_cases, 1):
+            question = test_case.get("question", "")
+            cmd = test_case.get("cmd", "")
+            assertions = test_case.get("assertions", [])
+            post_cmd = test_case.get("post_cmd", "")
+
+            self._log(f"  [{i}/{len(scenario.test_cases)}] {question}\n")
+
+            # Run the command
+            if cmd:
+                self._log(f"     Running: {cmd[:80]}{'...' if len(cmd) > 80 else ''}")
+                try:
+                    result = subprocess.run(
+                        cmd,
+                        shell=True,
+                        capture_output=True,
+                        text=True,
+                        timeout=120,
+                        cwd=workspace.path,
+                    )
+
+                    workspace.command_outputs.append(
+                        {
+                            "command": cmd,
+                            "index": i,
+                            "stdout": result.stdout,
+                            "stderr": result.stderr,
+                            "returncode": result.returncode,
+                            "error": None,
+                            "question": question,
+                        }
+                    )
+
+                    if result.returncode == 0:
+                        self._log("     ✅ Command succeeded")
+                    else:
+                        self._log(f"     ⚠️  Command exited with code {result.returncode}")
+                except Exception as e:
+                    self._log(f"     ❌ Command failed: {e}")
+                    workspace.command_outputs.append(
+                        {
+                            "command": cmd,
+                            "index": i,
+                            "stdout": "",
+                            "stderr": "",
+                            "returncode": None,
+                            "error": str(e),
+                            "question": question,
+                        }
+                    )
+
+            # Run test case assertions
+            if assertions:
+                self._log(f"     Running {len(assertions)} assertion(s)...")
+                try:
+                    from .evaluator import assert_all
+
+                    assert_all(assertions, workspace, {})
+                    self._log("     ✅ All assertions passed")
+                except AssertionError as e:
+                    self._log(f"     ❌ Assertion failed: {e}")
+                    raise
+
+            # Run post command
+            if post_cmd:
+                self._log("     Running post command...")
+                try:
+                    result = subprocess.run(
+                        post_cmd,
+                        shell=True,
+                        capture_output=True,
+                        text=True,
+                        timeout=120,
+                        cwd=workspace.path,
+                    )
+
+                    workspace.command_outputs.append(
+                        {
+                            "command": post_cmd,
+                            "index": f"{i}-post",
+                            "stdout": result.stdout,
+                            "stderr": result.stderr,
+                            "returncode": result.returncode,
+                            "error": None,
+                            "question": question,
+                        }
+                    )
+
+                    if result.returncode == 0:
+                        self._log("     ✅ Post command succeeded")
+                    else:
+                        self._log(f"     ⚠️  Post command exited with code {result.returncode}")
+                except Exception as e:
+                    self._log(f"     ❌ Post command failed: {e}")
+
+            self._log("")  # Empty line between test cases
 
     async def _execute_with_sdk(
         self,

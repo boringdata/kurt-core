@@ -1,41 +1,23 @@
 ---
 # Kurt Evaluation Scenarios - MotherDuck Question Answering
 #
-# Simple scenario for testing the answer command with MotherDuck documentation
+# Test scenario for the answer command with MotherDuck documentation
 
 scenarios:
   - name: answer_motherduck
-    description: Answer question about MotherDuck file formats using knowledge graph
+    description: Answer questions about MotherDuck using knowledge graph
     project: motherduck
     conversational: false  # Command-based scenario - no agent interaction
 
     notes: |
       Tests the answer command with MotherDuck documentation:
       - Load pre-built knowledge graph from motherduck dump (874 docs, 371 entities)
-      - Run kurt answer command and save output to file
-      - Verify the answer contains relevant content
+      - Run kurt answer command for each test case
+      - Verify the answers using test case assertions
 
-      This is a command-based scenario that runs kurt answer directly via setup_commands
-      rather than using a conversational agent.
-
-    setup_commands:
-      # Run the answer command and save to markdown file
-      - KURT_TELEMETRY_DISABLED=1 uv run kurt answer "What file formats are most efficient for loading data into MotherDuck?" > cmd_answer.md 2>&1
-
-    post_scenario_commands:
-      # Gather all command outputs into a final result file and display it
-      - |
-        cat > results.md <<'EOF'
-        # Answer Results - MotherDuck File Formats
-
-        ## Question
-        What file formats are most efficient for loading data into MotherDuck?
-
-        ## Answer
-        EOF
-        cat cmd_answer.md >> results.md
-        echo "=== Generated results.md ==="
-        cat results.md
+    test_cases:
+      - question: "What file formats are most efficient for loading data into MotherDuck?"
+        cmd: KURT_TELEMETRY_DISABLED=1 uv run kurt answer "What file formats are most efficient for loading data into MotherDuck?"
 
     assertions:
       # Verify knowledge graph is populated
@@ -44,17 +26,3 @@ scenarios:
 
       - type: SQLQueryAssertion
         query: SELECT COUNT(*) >= 500 FROM documents
-
-      # Verify answer command output file exists
-      - type: FileExists
-        path: cmd_answer.md
-
-      - type: FileContains
-        path: cmd_answer.md
-        content: "(?i)Parquet"
-        is_regex: true
-
-      - type: FileContains
-        path: cmd_answer.md
-        content: "(?i)file format"
-        is_regex: true

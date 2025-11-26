@@ -300,61 +300,97 @@ def _save_command_outputs(
             f.write("*No commands were executed.*\n")
             return
 
-        # Try to extract the final result from post_scenario_commands output
-        # Look for the last command with stdout (usually the post-scenario gather command)
-        final_output = None
-        for cmd_output in reversed(command_outputs):
-            stdout = cmd_output.get("stdout", "").strip()
-            if stdout and ("Answer:" in stdout or "answer:" in stdout.lower()):
-                final_output = stdout
-                break
+        # Check if we have test_cases structure (with questions)
+        has_test_cases = any(cmd_output.get("question") for cmd_output in command_outputs)
 
-        if final_output:
-            # Clean output: remove any "=== Generated results.md ===" type markers
-            lines = final_output.split("\n")
-            cleaned_lines = [
-                line for line in lines if not line.startswith("===") and not line.endswith("===")
-            ]
-            cleaned_output = "\n".join(cleaned_lines).strip()
-
-            # Write the cleaned result
-            f.write(f"{cleaned_output}\n\n")
-        else:
-            # Fallback: show all command outputs if we couldn't find a clean answer
-            f.write(f"Executed {len(command_outputs)} command(s):\n\n")
-
+        if has_test_cases:
+            # Group outputs by question
+            questions_map = {}
             for cmd_output in command_outputs:
-                cmd = cmd_output.get("command", "")
-                index = cmd_output.get("index", 0)
-                returncode = cmd_output.get("returncode")
-                stdout = cmd_output.get("stdout", "")
-                stderr = cmd_output.get("stderr", "")
-                error = cmd_output.get("error")
+                question = cmd_output.get("question", "")
+                if question:
+                    if question not in questions_map:
+                        questions_map[question] = []
+                    questions_map[question].append(cmd_output)
+
+            # Write each question and its answer
+            for question, outputs in questions_map.items():
+                f.write(f"## Question\n{question}\n\n")
+
+                # Find the answer in the outputs
+                for cmd_output in outputs:
+                    stdout = cmd_output.get("stdout", "").strip()
+                    if stdout and ("Answer:" in stdout or "answer:" in stdout.lower()):
+                        # Clean output: remove any "=== Generated results.md ===" type markers
+                        lines = stdout.split("\n")
+                        cleaned_lines = [
+                            line
+                            for line in lines
+                            if not line.startswith("===") and not line.endswith("===")
+                        ]
+                        cleaned_output = "\n".join(cleaned_lines).strip()
+                        f.write(f"## Answer\n{cleaned_output}\n\n")
+                        break
 
                 f.write("---\n\n")
-                f.write(f"## Command {index}\n\n")
-                f.write("```bash\n")
-                f.write(f"{cmd}\n")
-                f.write("```\n\n")
 
-                if error:
-                    f.write(f"**Error**: {error}\n\n")
-                elif returncode is not None:
-                    status_icon = "✅" if returncode == 0 else "❌"
-                    f.write(f"**Exit Code**: {status_icon} {returncode}\n\n")
+        else:
+            # Original behavior: try to extract the final result from post_scenario_commands output
+            final_output = None
+            for cmd_output in reversed(command_outputs):
+                stdout = cmd_output.get("stdout", "").strip()
+                if stdout and ("Answer:" in stdout or "answer:" in stdout.lower()):
+                    final_output = stdout
+                    break
 
-                if stdout:
-                    f.write("**Standard Output**:\n\n")
-                    f.write("```\n")
-                    f.write(stdout)
-                    if not stdout.endswith("\n"):
-                        f.write("\n")
+            if final_output:
+                # Clean output: remove any "=== Generated results.md ===" type markers
+                lines = final_output.split("\n")
+                cleaned_lines = [
+                    line
+                    for line in lines
+                    if not line.startswith("===") and not line.endswith("===")
+                ]
+                cleaned_output = "\n".join(cleaned_lines).strip()
+
+                # Write the cleaned result
+                f.write(f"{cleaned_output}\n\n")
+            else:
+                # Fallback: show all command outputs if we couldn't find a clean answer
+                f.write(f"Executed {len(command_outputs)} command(s):\n\n")
+
+                for cmd_output in command_outputs:
+                    cmd = cmd_output.get("command", "")
+                    index = cmd_output.get("index", 0)
+                    returncode = cmd_output.get("returncode")
+                    stdout = cmd_output.get("stdout", "")
+                    stderr = cmd_output.get("stderr", "")
+                    error = cmd_output.get("error")
+
+                    f.write("---\n\n")
+                    f.write(f"## Command {index}\n\n")
+                    f.write("```bash\n")
+                    f.write(f"{cmd}\n")
                     f.write("```\n\n")
 
-                if stderr:
-                    f.write("**Standard Error**:\n\n")
-                    f.write("```\n")
-                    f.write(stderr)
-                    if not stderr.endswith("\n"):
-                        f.write("\n")
-                    f.write("```\n\n")
+                    if error:
+                        f.write(f"**Error**: {error}\n\n")
+                    elif returncode is not None:
+                        status_icon = "✅" if returncode == 0 else "❌"
+                        f.write(f"**Exit Code**: {status_icon} {returncode}\n\n")
+
+                    if stdout:
+                        f.write("**Standard Output**:\n\n")
+                        f.write("```\n")
+                        f.write(stdout)
+                        if not stdout.endswith("\n"):
+                            f.write("\n")
+                        f.write("```\n\n")
+
+                    if stderr:
+                        f.write("**Standard Error**:\n\n")
+                        f.write("```\n")
+                        f.write(stderr)
+                        if not stderr.endswith("\n"):
+                            f.write("\n")
+                        f.write("```\n\n")

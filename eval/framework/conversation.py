@@ -197,6 +197,11 @@ class Scenario:
     # Execution mode
     conversational: bool = True  # If False, skip agent interaction and only run setup + assertions
 
+    # Test cases (for non-conversational scenarios)
+    test_cases: Optional[List[Dict[str, Any]]] = (
+        None  # List of test cases with question, cmd, assertions, post_cmd
+    )
+
     def __post_init__(self):
         """Validate scenario definition."""
         # Non-conversational scenarios don't need a prompt

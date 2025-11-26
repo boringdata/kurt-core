@@ -105,6 +105,22 @@ def load_yaml_scenario(yaml_path: Path, scenario_name: Optional[str] = None) -> 
     # Parse project reference (if specified)
     project = data.get("project", None)
 
+    # Parse test_cases (if specified)
+    test_cases_data = data.get("test_cases", None)
+    test_cases = None
+    if test_cases_data:
+        test_cases = []
+        for tc in test_cases_data:
+            # Parse assertions for this test case
+            tc_assertions = _parse_assertions(tc.get("assertions", []))
+            test_case = {
+                "question": tc.get("question"),
+                "cmd": tc.get("cmd"),
+                "assertions": tc_assertions,
+                "post_cmd": tc.get("post_cmd"),
+            }
+            test_cases.append(test_case)
+
     # Create scenario
     return Scenario(
         name=data["name"],
@@ -116,6 +132,7 @@ def load_yaml_scenario(yaml_path: Path, scenario_name: Optional[str] = None) -> 
         setup_commands=setup_commands,
         post_scenario_commands=post_scenario_commands,
         conversational=conversational,
+        test_cases=test_cases,
     )
 
 
