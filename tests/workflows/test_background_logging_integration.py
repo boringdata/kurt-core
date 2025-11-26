@@ -29,6 +29,10 @@ def test_map_background_workflow_creates_log(tmp_project):
     test_id = uuid.uuid4().hex[:8]
     test_url = f"https://example.com?test={test_id}"
 
+    # DEBUG: For CI debugging, capture stderr from the subprocess to see what's happening
+    # We'll write the subprocess stderr to a file for inspection
+    stderr_file = tmp_project / "subprocess_stderr.txt"
+
     result = subprocess.run(
         [
             sys.executable,
@@ -47,6 +51,11 @@ def test_map_background_workflow_creates_log(tmp_project):
         cwd=str(tmp_project),
         timeout=120,  # Increased timeout for full test suite context
     )
+
+    # Write stderr for debugging
+    if result.stderr:
+        stderr_file.write_text(result.stderr)
+        print(f"STDERR from subprocess: {result.stderr}")
 
     # Should exit successfully
     if result.returncode != 0:
@@ -148,6 +157,16 @@ def test_map_background_workflow_creates_log(tmp_project):
                 content = f.read()
                 print(f"DEBUG FILE {df}:\n{content}\n")
                 debug_content += content
+
+    # Also check for stderr files
+    stderr_files = glob.glob(f"{tempfile.gettempdir()}/kurt_worker_stderr_*.txt")
+    if stderr_files:
+        print(f"\nDEBUG: Found {len(stderr_files)} stderr files")
+        for sf in stderr_files:
+            with open(sf, "r") as f:
+                content = f.read()
+                print(f"STDERR FILE {sf}:\n{content}\n")
+                debug_content += f"\nSTDERR:\n{content}"
 
     # Log file should have content from the workflow
     assert found_workflow_logs, (

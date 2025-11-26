@@ -169,11 +169,23 @@ def run_with_background_support(
         env = os.environ.copy()
         env["KURT_WORKFLOW_ID_FILE"] = id_file_path
 
+        # DEBUG: In CI, don't redirect stderr to see errors
+        # This is temporary for debugging the CI issue
+        stderr_redirect = subprocess.DEVNULL
+        if os.environ.get("CI") == "true":
+            # In CI, write stderr to a debug file
+            import tempfile
+            stderr_log = tempfile.NamedTemporaryFile(
+                mode='w', prefix='kurt_worker_stderr_', suffix='.txt', delete=False
+            )
+            stderr_redirect = stderr_log
+            print(f"DEBUG: Worker stderr will be written to {stderr_log.name}")
+
         subprocess.Popen(
             cmd,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=stderr_redirect,
             start_new_session=True,
             env=env,
         )

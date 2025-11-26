@@ -291,13 +291,20 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
 
     except Exception as e:
         # Write exception to debug file
-        with open(debug_file, "a") as f:
-            f.write(f"\n\nEXCEPTION in worker PID {os.getpid()}:\n")
-            f.write(f"Error: {str(e)}\n")
-            f.write(f"Traceback:\n{traceback.format_exc()}\n")
-            f.write(f"Final log file: {final_log_file}\n")
-            f.flush()
-            os.fsync(f.fileno())
+        try:
+            with open(debug_file, "a") as f:
+                f.write(f"\n\nEXCEPTION in worker PID {os.getpid()}:\n")
+                f.write(f"Error: {str(e)}\n")
+                f.write(f"Traceback:\n{traceback.format_exc()}\n")
+                f.write(f"Final log file: {final_log_file}\n")
+                f.flush()
+                os.fsync(f.fileno())
+        except Exception:
+            # If we can't even write to debug file, write to stderr
+            import sys
+            sys.stderr.write(f"CRITICAL: Worker {os.getpid()} crashed: {e}\n")
+            sys.stderr.write(traceback.format_exc())
+            sys.stderr.flush()
 
         # Also try to log to the workflow log if it exists
         if final_log_file:
@@ -308,8 +315,8 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
             except Exception:
                 pass
 
-        # Re-raise to maintain original exit behavior
-        raise
+        # Exit with error code instead of re-raising
+        sys.exit(1)
 
     # Exit cleanly
     sys.exit(0)
