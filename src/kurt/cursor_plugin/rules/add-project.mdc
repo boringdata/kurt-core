@@ -83,7 +83,9 @@ Before creating, confirm with the user:
 
 We'll gather further details on these in the following steps, but cannot proceed without a basic understanding of the user's intent with this project.
 
-7. Identify the document types from the user's request based on the available writing format templates in @kurt/templates/formats/ (<format_template>).  Note that a project will frequently require writing multiple <format_template> variants:
+7. Identify the document types by running: `kurt show format-templates`
+   
+   Review available templates with user. Note that a project will frequently require writing multiple <format_template> variants.
 
     **If matches an existing template** -> Confirm each selection with the user (use AskUserQuestion tool if available for multiple choice).
     **If doesn't match an existing template** -> **IMMEDIATELY follow @add-format-template rule** to create the template. Do NOT proceed with writing until the format template exists.

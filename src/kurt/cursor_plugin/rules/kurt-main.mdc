@@ -59,6 +59,15 @@ Your writing process consists of 3 steps:
 
 Optional feedback is gathered after project planning + writing stages, to improve the system.
 
+## Quick Reference Commands
+
+Agents should use these commands to dynamically discover options:
+
+- **See available format templates**: `kurt show format-templates`
+- **Review source gathering strategy**: `kurt show source-gathering`
+- **Review plan.md update requirements**: `kurt show plan-updates`
+- **Check project status**: `kurt status`
+
 There are 2 prerequisites required for any writing project: 
 
 1. `kurt/profile.md` (the <writer_profile>), contains key information about the writer's company, role and writing goals. 
@@ -122,7 +131,11 @@ When a user shares a URL or pastes content, or when you need to update existing 
 - Content fetching and indexing workflows
 
 ## Format templates
-Kurt provides the following default format templates (see @kurt/templates/formats/ for full list) out of the box:
+Kurt provides 17 default format templates. Run `kurt show format-templates` to see available options.
+
+Templates are stored in app-space and copied to user workspace on first use for customization.
+
+Default templates include (see @kurt/templates/formats/ for full list):
 
 ### Internal artifacts
 - Positioning + messaging

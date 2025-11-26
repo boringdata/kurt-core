@@ -13,6 +13,7 @@ from kurt.admin.telemetry.decorators import track_command
 from kurt.commands.admin import admin
 from kurt.commands.content import content
 from kurt.commands.integrations import integrations
+from kurt.commands.show import show
 from kurt.commands.status import status
 from kurt.commands.workflows import workflows_group
 from kurt.config.base import KurtConfig, config_file_exists, create_config, get_config_file_path
@@ -345,6 +346,7 @@ main.add_command(content)
 main.add_command(integrations)
 main.add_command(admin)
 main.add_command(status)
+main.add_command(show)
 main.add_command(workflows_group, name="workflows")
 
 

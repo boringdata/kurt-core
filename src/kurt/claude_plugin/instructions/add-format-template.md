@@ -3,6 +3,21 @@
 ## When to use this instruction
 To create a new format template or customize an existing format template's style guidelines.
 
+## Template Resolution Order
+
+When loading a format template:
+
+1. **Check user-space**: `kurt/templates/formats/{template}.md`
+   - If exists: Load this version (already customized)
+   
+2. **Check app-space**: `kurt/templates/formats/{template}.md` (from package installation)
+   - If exists: Auto-copy to user-space, then load
+   - Prompt user for customization if contains `[CUSTOMIZATION NEEDED]`
+   
+3. **If not found**: Create new template (follow "Create new format" workflow below)
+
+**Key principle**: App-space contains pristine system defaults. User-space contains customized copies. Always prefer user-space version if it exists.
+
 ## Steps to execute
 
 1. Determine the task:
@@ -16,10 +31,14 @@ Use this when a format template exists but needs its style customized for the us
 
 1. Ask: "Which format template do you want to customize?"
    - Or identify from user's request (e.g., "blog post", "tutorial")
+   - Run: `kurt show format-templates` to show available options
 
-2. List available templates: `ls kurt/templates/formats/`
+2. Check template location following resolution order:
+   - First check user-space: `kurt/templates/formats/{template}.md`
+   - If not in user-space, check app-space (package installation)
+   - If in app-space only → Copy to user-space: `kurt/templates/formats/{template}.md`
 
-3. Load the format template file
+3. Load the format template file from user-space
 
 4. Check if "[CUSTOMIZATION NEEDED]" section exists
    - If already customized → Ask if they want to update it
