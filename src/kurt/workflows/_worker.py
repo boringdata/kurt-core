@@ -47,13 +47,6 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
         workflow_args_json: JSON-encoded workflow arguments
         priority: Priority for workflow execution (1=highest, default=10)
     """
-    # DEBUG: Write immediate debug info to understand CI environment
-    import tempfile
-    import traceback
-
-    # Ensure temp directory is accessible
-    temp_dir = tempfile.gettempdir()
-    debug_file = os.path.join(temp_dir, f"kurt_debug_{os.getpid()}.txt")
     final_log_file = None
 
     try:
@@ -61,32 +54,14 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
         signal.signal(signal.SIGHUP, ignore_signal)  # Ignore hangup signal
         signal.signal(signal.SIGTERM, ignore_signal)  # Ignore termination signal for now
 
-        with open(debug_file, "w") as f:
-            f.write(f"Worker started: PID={os.getpid()}\n")
-            f.write(f"Workflow: {workflow_name}\n")
-            f.write(f"Args: {workflow_args_json}\n")
-            f.write(f"Python: {sys.version}\n")
-            f.write(f"CWD: {os.getcwd()}\n")
-            f.write("Signal handlers installed\n")
-            f.flush()
-            os.fsync(f.fileno())
-
-        # Initialize DBOS fresh in this process - simplify like the old implementation
+        # Initialize DBOS fresh in this process
         from dbos import DBOS, SetEnqueueOptions
 
         from kurt.workflows import get_dbos, init_dbos
 
-        with open(debug_file, "a") as f:
-            f.write("Initializing DBOS...\n")
-            f.flush()
-
-        # Simple initialization like the old implementation
+        # Simple initialization
         init_dbos()
         get_dbos()  # This will ensure DBOS is initialized
-
-        with open(debug_file, "a") as f:
-            f.write("DBOS initialized successfully\n")
-            f.flush()
 
         # Import workflow modules to register them
         from kurt.content.map import workflow as _map  # noqa
@@ -101,13 +76,6 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
 
             workflow_func = map_url_workflow
             queue = get_map_queue()
-
-            with open(debug_file, "a") as f:
-                f.write(f"Map workflow selected, queue: {queue}\n")
-                if queue:
-                    f.write(f"Queue name: {getattr(queue, '_queue_name', 'unknown')}\n")
-                    f.write(f"Queue concurrency: {getattr(queue, '_concurrency', 'unknown')}\n")
-                f.flush()
         elif workflow_name == "fetch_workflow":
             from kurt.content.fetch.workflow import fetch_queue, fetch_workflow
 
@@ -134,18 +102,8 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
         # Create temporary log file for workflow (we'll rename it once we know the ID)
         temp_log_file = log_dir / f"workflow-temp-{os.getpid()}.log"
 
-        # DEBUG: Write to debug file about log file creation
-        with open(debug_file, "a") as f:
-            f.write(f"Creating temp log: {temp_log_file}\n")
-            f.flush()
-
         # Configure Python logging early - before workflow starts
         setup_workflow_logging(temp_log_file)
-
-        # DEBUG: Test that logging works immediately
-        test_logger = logging.getLogger("kurt.test.debug")
-        test_logger.info(f"DEBUG: Logger setup complete for PID {os.getpid()}")
-        flush_all_handlers()
 
         # Register exit handler to ensure logs are flushed even on abrupt termination
         atexit.register(flush_all_handlers)
@@ -156,33 +114,11 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
         os.dup2(log_fd, sys.stderr.fileno())
         os.close(log_fd)
 
-        # DEBUG: Write to both stdout and logger after redirect
-        print(f"DEBUG: Stdout redirected for PID {os.getpid()}")
-        test_logger.info(f"DEBUG: After redirect for PID {os.getpid()}")
-        flush_all_handlers()
-
-        with open(debug_file, "a") as f:
-            f.write(
-                f"Log file setup complete, size: {temp_log_file.stat().st_size if temp_log_file.exists() else 'N/A'}\n"
-            )
-            f.flush()
-
         # Enqueue the workflow (now logging is already configured)
-        with open(debug_file, "a") as f:
-            f.write(f"About to enqueue workflow with priority: {priority}\n")
-            f.write(f"Queue available: {queue is not None}\n")
-            f.flush()
 
         with SetEnqueueOptions(priority=priority):
             if queue:
-                with open(debug_file, "a") as f:
-                    f.write(f"Calling queue.enqueue for {workflow_func.__name__}\n")
-                    f.flush()
                 handle = queue.enqueue(workflow_func, **workflow_args)
-                with open(debug_file, "a") as f:
-                    f.write(f"Workflow enqueued, handle: {handle}\n")
-                    f.write(f"Workflow ID: {handle.workflow_id}\n")
-                    f.flush()
             else:
                 # For workflows without a queue, call directly
                 from dbos import DBOS
@@ -196,26 +132,7 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
         # 3. The logging handler and stdout/stderr are already correctly configured
         final_log_file = log_dir / f"workflow-{handle.workflow_id}.log"
 
-        # DEBUG: Log before rename
-        with open(debug_file, "a") as f:
-            f.write(
-                f"Before rename - temp file size: {temp_log_file.stat().st_size if temp_log_file.exists() else 'N/A'}\n"
-            )
-            f.write(f"Renaming {temp_log_file} -> {final_log_file}\n")
-            f.flush()
-
         temp_log_file.rename(final_log_file)
-
-        # DEBUG: Log after rename
-        test_logger.info(f"DEBUG: After rename - workflow ID: {handle.workflow_id}")
-        print(f"DEBUG: After rename print - workflow ID: {handle.workflow_id}")
-        flush_all_handlers()
-
-        with open(debug_file, "a") as f:
-            f.write(
-                f"After rename - final file size: {final_log_file.stat().st_size if final_log_file.exists() else 'N/A'}\n"
-            )
-            f.flush()
 
         # Write workflow ID to a file so parent process can retrieve it
         # Use environment variable if provided
@@ -224,17 +141,8 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
             with open(id_file, "w") as f:
                 f.write(handle.workflow_id)
 
-        # DEBUG: Log before entering polling loop
-        with open(debug_file, "a") as f:
-            f.write(f"Entering polling loop for workflow {handle.workflow_id}\n")
-            f.flush()
-            os.fsync(f.fileno())
-
         # Give the queue processing thread time to dequeue the workflow
         # DBOS polls the queue periodically (about every 1 second)
-        with open(debug_file, "a") as f:
-            f.write("Waiting for queue processing thread to pick up workflow...\n")
-            f.flush()
         time.sleep(2)  # Give queue thread time to dequeue
 
         # Wait for workflow to complete by polling its status
@@ -252,14 +160,8 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
         while (time.time() - start_time) < max_wait_time:
             poll_count += 1
 
-            # DEBUG: Log every 10 polls (5 seconds)
+            # Log to workflow log file every 5 seconds
             if poll_count % 10 == 1:
-                with open(debug_file, "a") as f:
-                    f.write(f"Poll #{poll_count} at {time.time() - start_time:.1f}s\n")
-                    f.flush()
-                    os.fsync(f.fileno())
-
-                # Also log to workflow log file every 5 seconds
                 monitor_logger.info(
                     f"Still monitoring workflow (poll #{poll_count}, {time.time() - start_time:.1f}s elapsed)"
                 )
@@ -267,24 +169,13 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
             try:
                 # Get workflow status from handle
                 status = handle.get_status()
-                if poll_count == 1:
-                    # DEBUG: Log first status
-                    with open(debug_file, "a") as f:
-                        f.write(f"First status check: {status.status if status else 'None'}\n")
-                        f.flush()
 
                 if status.status in ["SUCCESS", "ERROR", "RETRIES_EXCEEDED", "CANCELLED"]:
                     # Workflow completed
-                    with open(debug_file, "a") as f:
-                        f.write(f"Workflow completed with status: {status.status}\n")
-                        f.flush()
                     break
-            except Exception as e:
+            except Exception:
                 # If we can't get status, continue waiting
-                if poll_count == 1:
-                    with open(debug_file, "a") as f:
-                        f.write(f"Error getting status: {e}\n")
-                        f.flush()
+                pass
 
             time.sleep(poll_interval)
 
@@ -293,43 +184,12 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
             if current_time - last_flush_time >= 5.0:
                 flush_all_handlers()
                 last_flush_time = current_time
-                # Make sure the file size increases as we add logs
-                if final_log_file.exists():
-                    with open(debug_file, "a") as f:
-                        f.write(
-                            f"Log file size after flush: {final_log_file.stat().st_size} bytes\n"
-                        )
-                        f.flush()
 
         # Flush all logging handlers and file descriptors before exit
         flush_all_handlers()
 
-        # DEBUG: Final debug info
-        with open(debug_file, "a") as f:
-            f.write(
-                f"Worker exiting - final log size: {final_log_file.stat().st_size if final_log_file.exists() else 'N/A'}\n"
-            )
-            f.write(f"Worker complete at {time.time()}\n")
-            f.flush()
-            os.fsync(f.fileno())
-
     except Exception as e:
-        # Write exception to debug file
-        try:
-            with open(debug_file, "a") as f:
-                f.write(f"\n\nEXCEPTION in worker PID {os.getpid()}:\n")
-                f.write(f"Error: {str(e)}\n")
-                f.write(f"Traceback:\n{traceback.format_exc()}\n")
-                f.write(f"Final log file: {final_log_file}\n")
-                f.flush()
-                os.fsync(f.fileno())
-        except Exception:
-            # If we can't even write to debug file, write to stderr
-            sys.stderr.write(f"CRITICAL: Worker {os.getpid()} crashed: {e}\n")
-            sys.stderr.write(traceback.format_exc())
-            sys.stderr.flush()
-
-        # Also try to log to the workflow log if it exists
+        # Log to the workflow log if it exists
         if final_log_file:
             try:
                 error_logger = logging.getLogger("kurt.worker.error")
@@ -338,7 +198,7 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
             except Exception:
                 pass
 
-        # Exit with error code instead of re-raising
+        # Exit with error code
         sys.exit(1)
 
     # Exit cleanly

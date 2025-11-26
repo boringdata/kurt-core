@@ -40,15 +40,8 @@ jobs:
       - name: Run linting
         run: uv run ruff check .
 
-      - name: Run tests (DEBUGGING - only failing tests)
-        run: |
-          echo "=== Running only the 2 flaky logging tests ==="
-          echo "=== CI Environment Info ==="
-          echo "OS: $(uname -a)"
-          echo "Python: $(python --version)"
-          echo "Runner: ${{ runner.os }}"
-          echo "================================"
-          uv run pytest -xvs tests/workflows/test_background_logging_integration.py::test_map_background_workflow_creates_log tests/workflows/test_workflow_logging_content.py::test_map_workflow_logs_capture_content --tb=short -o log_cli=true -o log_cli_level=DEBUG
+      - name: Run tests
+        run: uv run pytest tests/
 
   # Release to PyPI (only on GitHub release)
   release-pypi:

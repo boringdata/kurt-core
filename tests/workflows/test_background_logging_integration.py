@@ -24,28 +24,10 @@ def test_map_background_workflow_creates_log(tmp_project):
     # - Kurt project initialized with database
     # - .kurt directory already exists
 
-    # DEBUG: First test if we can even import the worker module
-    test_import = subprocess.run(
-        [sys.executable, "-c", "from kurt.workflows._worker import run_workflow_worker; print('Import OK')"],
-        capture_output=True,
-        text=True,
-        cwd=str(tmp_project),
-        timeout=10,
-    )
-    if test_import.returncode != 0:
-        print("CRITICAL: Cannot import worker module!")
-        print(f"STDERR: {test_import.stderr}")
-        print(f"STDOUT: {test_import.stdout}")
-        # Continue anyway to see full failure
-
     # Run map command with background flag using new command structure
     # Add timestamp to URL to prevent DBOS deduplication between test runs
     test_id = uuid.uuid4().hex[:8]
     test_url = f"https://example.com?test={test_id}"
-
-    # DEBUG: For CI debugging, capture stderr from the subprocess to see what's happening
-    # We'll write the subprocess stderr to a file for inspection
-    stderr_file = tmp_project / "subprocess_stderr.txt"
 
     result = subprocess.run(
         [
@@ -65,11 +47,6 @@ def test_map_background_workflow_creates_log(tmp_project):
         cwd=str(tmp_project),
         timeout=120,  # Increased timeout for full test suite context
     )
-
-    # Write stderr for debugging
-    if result.stderr:
-        stderr_file.write_text(result.stderr)
-        print(f"STDERR from subprocess: {result.stderr}")
 
     # Should exit successfully
     if result.returncode != 0:
@@ -160,34 +137,11 @@ def test_map_background_workflow_creates_log(tmp_project):
 
         time.sleep(0.1)
 
-    # DEBUG: Look for debug file in /tmp
-    import tempfile
-    debug_files = glob.glob(f"{tempfile.gettempdir()}/kurt_debug_*.txt")
-    debug_content = ""
-    if debug_files:
-        print(f"\nDEBUG: Found {len(debug_files)} debug files")
-        for df in debug_files:
-            with open(df, "r") as f:
-                content = f.read()
-                print(f"DEBUG FILE {df}:\n{content}\n")
-                debug_content += content
-
-    # Also check for stderr files
-    stderr_files = glob.glob(f"{tempfile.gettempdir()}/kurt_worker_stderr_*.txt")
-    if stderr_files:
-        print(f"\nDEBUG: Found {len(stderr_files)} stderr files")
-        for sf in stderr_files:
-            with open(sf, "r") as f:
-                content = f.read()
-                print(f"STDERR FILE {sf}:\n{content}\n")
-                debug_content += f"\nSTDERR:\n{content}"
-
     # Log file should have content from the workflow
     assert found_workflow_logs, (
         f"Missing workflow execution logs after 30s. "
         f"File size: {log_file.stat().st_size if log_file.exists() else 'N/A'} bytes. "
-        f"Log content preview: {log_content[:500] if log_content else '(empty)'}\n"
-        f"Debug info:\n{debug_content}"
+        f"Log content preview: {log_content[:500] if log_content else '(empty)'}"
     )
 
 
