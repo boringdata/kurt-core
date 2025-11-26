@@ -80,31 +80,29 @@
 
 ## Source Requirements
 
-**Before writing, gather these sources (documented in project.md):**
+**Before writing, gather these sources (documented in plan.md):**
 
 **Technical documentation:**
-```bash
-# Search for API/SDK docs
-kurt content search "<feature>" --include "*/api/*"
-kurt content search "<feature>" --include "*/docs/*"
+- API documentation, SDK references
+- Technical specifications for the feature/topic
 
-# If not fetched:
-kurt content fetch --urls "<doc-url>"
-```
+**Working code examples:**
+- Sample implementations
+- SDK examples
+- Working code that demonstrates the concepts
 
-**Code examples:**
-```bash
-# Search for examples
-kurt content search "example|sample|quickstart"
-```
+**Prerequisites information:**
+- Setup guides
+- Installation instructions
+- Tool requirements
+- Prerequisite knowledge documentation
 
-**Prerequisites:**
-```bash
-# Find setup guides by topic
-kurt content list --with-entity "Topic:setup"
-kurt content list --with-entity "Topic:installation"
-kurt content search "setup|install|authentication"
-```
+**Common errors/troubleshooting:**
+- Known issues documentation
+- Troubleshooting guides
+- Error handling examples
+
+**Note**: Use kurt CLI to discover and fetch sources. See rule files (@find-sources, @add-source) for methods. All sources should be documented in plan.md "Sources of Ground Truth" section.
 
 **If insufficient sources: Ask user for technical docs, code samples, or working examples**
 

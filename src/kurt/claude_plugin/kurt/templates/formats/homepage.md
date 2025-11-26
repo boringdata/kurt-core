@@ -61,51 +61,42 @@
 **Types of information needed for homepage:**
 
 1. **Company positioning** - Core value proposition
-   - Find: `kurt content list --url-contains /about`
-   - Or provide: Positioning docs, mission statement, founding story
+   - Positioning docs, mission statement, founding story
 
 2. **Product portfolio** - What you offer
-   - Find: `kurt content list --url-contains /product`
-   - Find: `kurt content list --url-contains /features`
-   - Or provide: Product briefs, feature lists, roadmap
+   - Product briefs, feature lists, roadmap
 
 3. **Customer proof** - Who trusts you
-   - Find: `kurt content list --url-contains /customer`
-   - Search Perplexity: `kurt research query "[company name] customer reviews and testimonials"`
-   - Or provide: Customer list, testimonials, case studies, metrics
+   - Customer list, testimonials, case studies, metrics
+   - Customer reviews and testimonials
 
 4. **Competitive differentiation** - What makes you different
-   - Search discussions: `kurt research search --source hackernews --query "[company] vs [competitor]"`
-   - Or provide: Competitive analysis, unique value props
+   - Competitive analysis, unique value props
 
 5. **Use cases** - How customers use you
-   - Find: `kurt content search "use-case|solution"`
-   - Or provide: Sales materials, solution briefs
+   - Sales materials, solution briefs
+
+**Note**: Use kurt CLI research commands for external research. See find-sources.md for discovery methods and add-source.md for ingestion.
 
 ---
 
 ## Source Requirements
 
-**Before writing, gather these sources (documented in frontmatter):**
+**Before writing, gather these sources (documented in plan.md):**
 
 **Company/positioning:**
-```bash
-kurt content list --include "*/about*"
-kurt content search "mission|vision|story"
-```
+- About pages, mission/vision statements
+- Company story, founding narrative
 
 **Products/offerings:**
-```bash
-kurt content list --include "*/product*"
-kurt content list --include "*/features*"
-kurt content list --include "*/pricing*"
-```
+- Product pages, feature pages
+- Pricing pages
 
 **Customer proof:**
-```bash
-kurt content list --include "*/customer*"
-kurt content search "case-stud|testimon"
-```
+- Customer testimonials, case studies
+- Customer logos, success metrics
+
+**Note**: Use kurt CLI to discover and fetch sources. See find-sources.md and add-source.md for methods. All sources should be documented in plan.md "Sources of Ground Truth" section.
 
 **If insufficient sources: Ask user for positioning materials, product info, customer proof**
 

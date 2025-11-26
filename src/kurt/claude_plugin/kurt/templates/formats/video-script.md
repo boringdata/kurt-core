@@ -44,48 +44,37 @@
    - Company/brand video
 
 2. **Existing video examples** - Style and structure reference
-   - Find: `kurt content search "video"`
-   - Or provide: Links to your existing videos, competitor videos for reference
+   - Links to your existing videos, competitor videos for reference
 
 3. **Product/feature details** - What to show
-   - Find: `kurt content list --url-contains /product`
-   - Search: `kurt content search "[feature name]"`
-   - Or provide: Product docs, feature specs, screenshots
+   - Product docs, feature specs, screenshots
+   - Product pages, feature pages
 
 4. **Target audience** - Who watches this
-   - Find: `kurt content search "persona"`
-   - Or provide: Audience description, their pain points, their goals
+   - Audience description, their pain points, their goals
+   - Persona documentation
+
+**Note**: Use kurt CLI research commands for external research. See find-sources.md for discovery methods and add-source.md for ingestion.
 
 ---
 
 ## Source Requirements
 
-**Before writing, gather these sources (documented in frontmatter):**
+**Before writing, gather these sources (documented in plan.md):**
 
 **Video references:**
-```bash
-# Find existing videos or video scripts
-kurt content search "video"
-kurt content search "demo"
-kurt content search "tutorial"
-```
+- Existing videos or video scripts
+- Demo videos, tutorial videos
 
 **Product information:**
-```bash
-# Discover product pages
-kurt content list --url-contains /product
-kurt content list --url-contains /features
-
-# Search for specific feature
-kurt content search "[feature-name]"
-```
+- Product pages, feature pages
+- Feature documentation
 
 **Audience insights:**
-```bash
-# Find persona docs
-kurt content search "persona"
-kurt content search "customer"
-```
+- Persona docs
+- Customer insights
+
+**Note**: Use kurt CLI to discover and fetch sources. See find-sources.md and add-source.md for methods. All sources should be documented in plan.md "Sources of Ground Truth" section.
 
 **If insufficient sources: Ask user for video examples, product screenshots/demo, or target audience definition**
 

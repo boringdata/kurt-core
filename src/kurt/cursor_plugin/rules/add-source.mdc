@@ -435,6 +435,13 @@ See @find-sources rule for complete discovery methods.
 
 After sources are fetched and indexed, use @find-sources rule for discovering and retrieving content (semantic search, cluster navigation, link analysis, filtered queries).
 
+**IMPORTANT: Core Principles**
+- **Tool usage**: See @kurt-main rule for mandatory requirement to use kurt CLI (never grep/filesystem operations)
+- **Iterative gathering**: See @kurt-main rule for iterative source gathering strategy (try 3-5 query variants, combine methods, fan out to related topics)
+- **plan.md updates**: See @kurt-main rule for plan.md update requirements (update "Sources of Ground Truth" section after gathering)
+
+This file provides ingestion workflows. The core principles are in @kurt-main rule.
+
 This is typically used during project planning (see @add-project rule steps 5.5, 8, 9) or referenced by format templates.
 
 ---

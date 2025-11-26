@@ -65,34 +65,25 @@
    - Or provide: Customer stats, testimonials, success metrics
 
 3. **Audience insights** - Who you're emailing
-   - Search discussions: `kurt integrations research reddit --query "[persona] pain points"`
-   - Or provide: Persona docs, customer research, survey results
+   - Persona docs, customer research, survey results
 
-**For advanced discovery/analysis**, see `.claude/instructions/find-sources.md`
+**Note**: Use kurt CLI research commands for external research. See find-sources.md for discovery methods and add-source.md for ingestion.
 
 ---
 
 ## Source Requirements
 
-**Before writing, gather these sources (documented in frontmatter):**
+**Before writing, gather these sources (documented in plan.md):**
 
 **Offer/product information:**
-```bash
-# Search for what you're promoting
-kurt content search "<offer-name>"
-kurt content list --include "*/product*"
-kurt content list --include "*/pricing*"
-
-# If not fetched:
-kurt content fetch --urls "<url>"
-```
+- Content about what you're promoting
+- Product pages, pricing pages
 
 **Supporting evidence:**
-```bash
-# Find proof points
-kurt content list --include "*/customer*"
-kurt content search "case-stud|success"
-```
+- Customer testimonials, case studies
+- Success stories, proof points
+
+**Note**: Use kurt CLI to discover and fetch sources. See find-sources.md and add-source.md for methods. All sources should be documented in plan.md "Sources of Ground Truth" section.
 
 **If insufficient sources: Ask user for offer details, proof points, or target audience info**
 

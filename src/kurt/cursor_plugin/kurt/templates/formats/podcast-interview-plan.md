@@ -34,36 +34,30 @@
    - Or provide: Host's background, their interests, their perspective
 
 3. **Your key messages** - What to emphasize
-   - Find: `kurt content search "positioning"`
-   - Or provide: Messaging doc, company positioning, recent announcements
+   - Messaging doc, company positioning, recent announcements
 
 4. **Company stories** - Anecdotes to share
-   - Find: `kurt content search "customer story"`
-   - Or provide: Founding story, pivotal moments, customer wins
+   - Founding story, pivotal moments, customer wins
+   - Customer stories
+
+**Note**: Use kurt CLI research commands for external research. See @find-sources rule for discovery methods and @add-source rule for ingestion.
 
 ---
 
 ## Source Requirements
 
-**Before creating interview plan, gather these sources (documented in frontmatter):**
+**Before creating interview plan, gather these sources (documented in plan.md):**
 
 **Podcast intel:**
-```bash
-# Research the podcast and host
-kurt research query "[podcast name] interview style and topics"
-kurt research search --source twitter --query "[host name] interests"
-```
+- Podcast and host research
+- Interview style and topics
+- Host interests and background
 
 **Your messaging:**
-```bash
-# Find positioning and messaging docs
-kurt content search "positioning"
-kurt content search "messaging"
+- Positioning and messaging docs
+- Customer stories, case studies
 
-# Find customer stories
-kurt content search "customer"
-kurt content search "case study"
-```
+**Note**: Use kurt CLI to discover and fetch sources. See rule files (@find-sources, @add-source) for methods. All sources should be documented in plan.md "Sources of Ground Truth" section.
 
 **If insufficient sources: Ask user for podcast details, host bio, or key messages to deliver**
 

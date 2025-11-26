@@ -35,56 +35,40 @@
    - Or provide: Market research, analyst reports
 
 2. **Competitive alternatives** - What customers compare you to
-   - Search discussions: `kurt research search --source reddit --query "[product] vs [competitor]"`
-   - Find competitor content: `kurt content list --url-starts-with https://[competitor.com]`
-   - Or provide: Win/loss analysis, sales competitive intelligence
+   - Win/loss analysis, sales competitive intelligence
+   - Competitor content
 
 3. **Customer problems** - What pain points you solve
-   - Search discussions: `kurt research search --source reddit --query "[category] problems"`
-   - Or provide: Customer interviews, support tickets, sales call notes
+   - Customer interviews, support tickets, sales call notes
 
 4. **Product capabilities** - What you can do
-   - Find: `kurt content list --url-contains /product`
-   - Find: `kurt content list --url-contains /features`
-   - Or provide: Product roadmap, feature list, technical specs
+   - Product roadmap, feature list, technical specs
+   - Product pages, feature pages
 
 5. **Customer proof** - Evidence of value delivered
-   - Find: `kurt content list --url-contains /customer`
-   - Or provide: Case studies, testimonials, metrics, customer interviews
+   - Case studies, testimonials, metrics, customer interviews
+
+**Note**: Use kurt CLI research commands for external research. See find-sources.md for discovery methods and add-source.md for ingestion.
 
 ---
 
 ## Source Requirements
 
-**Before writing, gather these sources (documented in frontmatter):**
+**Before writing, gather these sources (documented in plan.md):**
 
 **Market and competitive context:**
-```bash
-# Research market category
-kurt research query "[product category] market size and trends"
-
-# Find competitive alternatives
-kurt research search --source reddit --query "[category] alternatives"
-```
+- Market research, market size and trends
+- Competitive analysis, competitor content
 
 **Customer insights:**
-```bash
-# Find customer content (discover what pages exist)
-kurt content list --url-contains /customer
-
-# Search for case studies and testimonials
-kurt content search "case study"
-kurt content search "testimonial"
-
-# Research customer pain points
-kurt research search --source reddit --query "[category] challenges"
-```
+- Customer content, case studies, testimonials
+- Customer pain points research
 
 **Product information:**
-```bash
-kurt content list --url-contains /product
-kurt content list --url-contains /features
-```
+- Product pages, feature pages
+- Product roadmap, technical specs
+
+**Note**: Use kurt CLI to discover and fetch sources. See find-sources.md and add-source.md for methods. All sources should be documented in plan.md "Sources of Ground Truth" section.
 
 **If insufficient sources: Ask user for customer interviews, competitive intel, or product capability docs**
 

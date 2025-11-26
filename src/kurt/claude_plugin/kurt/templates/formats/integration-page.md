@@ -37,53 +37,40 @@
 **Types of information needed for integration page:**
 
 1. **Integration partner details** - The technology you're integrating with
-   - Find: `kurt content list --url-contains /integrations/`
-   - Research: `kurt research query "[partner technology] integration best practices"`
-   - Or provide: Partner documentation, API specs, SDKs
+   - Partner documentation, API specs, SDKs
+   - Integration best practices
 
 2. **Existing integration examples** - How other integrations are documented
-   - Find: `kurt content list --with-entity "Topic:integration"`
-   - Search: `kurt content search "integration"`
-   - Or provide: Examples of well-documented integrations
+   - Examples of well-documented integrations
 
 3. **Use cases** - Why customers need this integration
-   - Find: `kurt content search "use case"`
-   - Research: `kurt research search --source reddit --query "[your-product] [partner] integration"`
-   - Or provide: Customer requests, sales feedback
+   - Customer requests, sales feedback
+   - Use case examples
 
 4. **Technical requirements** - What's needed to make this work
-   - Find: `kurt content list --with-entity "Technology:[partner-tech]"`
-   - Or provide: API documentation, authentication requirements, rate limits
+   - API documentation, authentication requirements, rate limits
+
+**Note**: Use kurt CLI research commands for external research. See find-sources.md for discovery methods and add-source.md for ingestion.
 
 ---
 
 ## Source Requirements
 
-**Before writing, gather these sources (documented in frontmatter):**
+**Before writing, gather these sources (documented in plan.md):**
 
 **Partner technology:**
-```bash
-# Research partner platform
-kurt research query "[partner technology] API documentation"
-kurt research query "[partner technology] developer resources"
-```
+- Partner API documentation
+- Developer resources, SDKs
 
 **Your integration docs:**
-```bash
-# Find existing integration pages for style
-kurt content search "integration"
-kurt content list --with-entity "Topic:integration"
-
-# Discover what integrations exist
-kurt content list --url-contains /integrations/
-```
+- Existing integration pages for style reference
+- Integration documentation
 
 **Technical details:**
-```bash
-# Find technical documentation
-kurt content list --with-content-type reference
-kurt content search "API"
-```
+- Technical documentation
+- API reference materials
+
+**Note**: Use kurt CLI to discover and fetch sources. See find-sources.md and add-source.md for methods. All sources should be documented in plan.md "Sources of Ground Truth" section.
 
 **If insufficient sources: Ask user for partner API docs, authentication details, or example integration code**
 

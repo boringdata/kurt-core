@@ -57,47 +57,41 @@
 **Types of information needed for product pages:**
 
 1. **Product capabilities** - Features, specs, technical details
-   - Find: `kurt content list --url-contains /docs/ | grep -i "<product>"`
-   - Find: `kurt content list --url-contains /features`
-   - Or provide: Product specs, feature lists, technical documentation
+   - Product specs, feature lists, technical documentation
 
 2. **Competitive differentiation** - How you compare to alternatives
-   - Search discussions: `kurt integrations research reddit --query "[product category] alternatives"`
-   - Search Perplexity: `kurt integrations research search --query "[competitor] vs [product category] comparison"`
-   - Or provide: Competitive analysis docs, positioning materials
+   - Competitive analysis docs, positioning materials
+   - Comparison with alternatives
 
 3. **Customer proof** - Testimonials, case studies, metrics
-   - Find: `kurt content list --url-contains /customer`
-   - Find: `kurt content list --url-contains /case-stud`
-   - Or provide: Customer interview notes, success metrics, testimonials
+   - Customer interview notes, success metrics, testimonials
+   - Case studies
 
 4. **Use cases** - How customers use this product
-   - Find: `kurt content list | grep -i "use-case\|example"`
-   - Or provide: Sales notes, customer stories, implementation examples
+   - Sales notes, customer stories, implementation examples
+
+**Note**: Use kurt CLI research commands for external research. See find-sources.md for discovery methods and add-source.md for ingestion.
 
 ---
 
 ## Source Requirements
 
-**Before writing, gather these sources (documented in frontmatter):**
+**Before writing, gather these sources (documented in plan.md):**
 
-### Discovery Using Clusters (Recommended)
+**Product information:**
+- Product documentation, feature lists
+- Technical specifications
+- Product pages, feature pages
 
-If content has been clustered, use topic clusters for intelligent discovery:
+**Customer proof:**
+- Customer testimonials, case studies
+- Success metrics, customer stories
 
-```bash
-# See what clusters exist
-kurt content list-clusters
+**Competitive information:**
+- Competitive analysis
+- Comparison materials
 
-# Find product-related clusters
-kurt content list --in-cluster "Product Features"
-kurt content list --in-cluster "Pricing & Plans"
-kurt content list --in-cluster "Customer Case Studies"
-
-# Fetch by cluster (if not already fetched)
-kurt content fetch --in-cluster "Product Features" --priority 1
-kurt content fetch --in-cluster "Customer Case Studies" --background
-```
+**Note**: Use kurt CLI to discover and fetch sources. See find-sources.md and add-source.md for methods. All sources should be documented in plan.md "Sources of Ground Truth" section.
 
 ### Discovery Using URL Patterns (If Not Clustered)
 

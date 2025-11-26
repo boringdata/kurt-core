@@ -31,52 +31,40 @@
 **Types of information needed for launch plan:**
 
 1. **Product details** - What's launching
-   - Find: `kurt content list --url-contains /product`
-   - Or provide: PRD, product specs, feature details, technical docs
+   - PRD, product specs, feature details, technical docs
 
 2. **Positioning and messaging** - How to talk about it
-   - Find: `kurt content search "positioning"` or `kurt content search "messaging"`
-   - Or provide: Positioning doc, messaging framework
+   - Positioning doc, messaging framework
 
 3. **Market context** - Competitive and customer landscape
-   - Research: `kurt research query "[product category] market trends"`
-   - Or provide: Competitive analysis, market research
+   - Competitive analysis, market research
+   - Market trends
 
 4. **Customer insights** - Who needs this and why
-   - Find: `kurt content search "persona"` or `kurt content search "customer"`
-   - Or provide: Customer research, beta feedback, use cases
+   - Customer research, beta feedback, use cases
+   - Persona documentation
 
 5. **Past launch learnings** - What worked before
-   - Find: `kurt content search "launch"` or `kurt content search "retrospective"`
-   - Or provide: Previous launch retrospectives, metrics
+   - Previous launch retrospectives, metrics
+
+**Note**: Use kurt CLI research commands for external research. See @find-sources rule for discovery methods and @add-source rule for ingestion.
 
 ---
 
 ## Source Requirements
 
-**Before writing, gather these sources (documented in frontmatter):**
+**Before writing, gather these sources (documented in plan.md):**
 
 **Product and strategy:**
-```bash
-# Product details (discover what pages exist)
-kurt content list --url-contains /product
-
-# Search for product specs
-kurt content search "spec"
-kurt content search "PRD"
-
-# Positioning
-kurt content search "positioning"
-kurt content search "messaging"
-```
+- Product pages, product specs
+- PRD documents
+- Positioning and messaging documents
 
 **Customer and market:**
-```bash
-# Customer insights
-kurt content search "persona"
-kurt content search "customer"
+- Customer research, persona docs
+- Market research
 
-# Market research
+**Note**: Use kurt CLI to discover and fetch sources. See rule files (@find-sources, @add-source) for methods. All sources should be documented in plan.md "Sources of Ground Truth" section.
 kurt research query "[product] market opportunity"
 ```
 

@@ -51,28 +51,19 @@
 
 ## Source Requirements
 
-**Before writing, gather these sources (documented in frontmatter):**
+**Before writing, gather these sources (documented in plan.md):**
 
 **Customer insights:**
-```bash
-# Search for customer interview notes
-kurt content search "interview"
-kurt content search "customer"
-
-# Find case studies (often include persona quotes)
-kurt content search "case study"
-kurt content search "success story"
-```
+- Customer interview notes
+- Customer content, case studies
+- Success stories with persona quotes
 
 **Role research:**
-```bash
-# Research role responsibilities
-kurt research query "[role title] typical responsibilities and challenges"
+- Role responsibilities and challenges research
+- Industry discussions about the role
+- Tools and workflow information
 
-# Check discussions
-kurt research search --source reddit --query "[role] day in the life"
-kurt research search --source hackernews --query "[role] tools and workflow"
-```
+**Note**: Use kurt CLI to discover and fetch sources. See rule files (@find-sources, @add-source) for methods. All sources should be documented in plan.md "Sources of Ground Truth" section.
 
 **If insufficient sources: Ask user for customer interview notes, sales call recordings, or arrange interviews**
 

@@ -56,48 +56,38 @@
 **Types of information needed for solution pages:**
 
 1. **Customer problem/pain points** - What motivates this audience
-   - Search discussions: `kurt research search --source reddit --query "[use case] pain points"`
-   - Search discussions: `kurt research search --source hackernews --query "[use case] challenges"`
-   - Or provide: Customer research, sales call notes, support ticket themes
+   - Customer research, sales call notes, support ticket themes
 
 2. **Use case specifics** - How customers actually use this
-   - Find: `kurt content search "use-case|example|customer"`
-   - Or provide: Customer stories, implementation examples, success metrics
+   - Customer stories, implementation examples, success metrics
 
 3. **Competitive alternatives** - What customers use today
-   - Search Perplexity: `kurt research query "[use case] tools and solutions comparison"`
-   - Or provide: Competitive intelligence, G2/Capterra reviews analysis
+   - Competitive intelligence, comparison analysis
 
 4. **Proof points** - Evidence this works for this use case
-   - Find: `kurt content search "<use-case>" --include "*/customer*"`
-   - Or provide: Customer testimonials, case studies, success metrics
+   - Customer testimonials, case studies, success metrics
+
+**Note**: Use kurt CLI research commands for external research. See find-sources.md for discovery methods and add-source.md for ingestion.
 
 ---
 
 ## Source Requirements
 
-**Before writing, gather these sources (documented in frontmatter):**
+**Before writing, gather these sources (documented in plan.md):**
 
 **Customer pain points:**
-```bash
-# Search for use case mentions
-kurt content search "<use-case-keyword>"
-
-# Research customer problems
-kurt research search --source reddit --query "[use case] problems"
-```
+- Customer research, support tickets
+- Sales notes, user feedback
 
 **Product capabilities for this use case:**
-```bash
-kurt content search "<feature>" --include "*/docs/*"
-kurt content list --include "*/product*"
-```
+- Product documentation related to the use case
+- Feature pages, solution pages
 
 **Customer proof:**
-```bash
-kurt content search "<industry/use-case>" --include "*/customer*"
-kurt content search "case-stud|success"
-```
+- Customer testimonials for this use case
+- Case studies, success stories
+
+**Note**: Use kurt CLI to discover and fetch sources. See find-sources.md and add-source.md for methods. All sources should be documented in plan.md "Sources of Ground Truth" section.
 
 **If insufficient sources: Ask user for customer research, use case examples, or proof points**
 

@@ -55,6 +55,24 @@ The <project_plan> contains information on the documents to be produced, and the
 - Publishing destination
 - Status
 
+**⚠️ MANDATORY: plan.md is the Source of Truth**
+
+The <project_plan> (`projects/{{project-name}}/plan.md`) is the SINGLE SOURCE OF TRUTH for project state. You MUST:
+
+1. **Update plan.md immediately after every action:**
+   - After gathering sources → Update "Sources of Ground Truth" section
+   - After completing research → Update "Research Required" checkboxes and add findings
+   - After outlining/drafting/editing → Update document status and checkboxes in "Project Plan" section
+   - After fetching content → Add to "Sources of Ground Truth" with path and purpose
+
+2. **Update format:**
+   - Sources: Add as list items with path and purpose: `- path: /sources/domain/file.md, purpose: "why this source matters"`
+   - Status: Update document status fields (e.g., "Status: draft")
+   - Checkboxes: Mark `[x]` when tasks complete, keep `[ ]` for pending
+   - **Preferred**: Use agent's native todo/task tracking tool if available to automatically update checkboxes
+
+3. **Always read plan.md first** when working on a project to understand current state.
+
 ** When a user requests to write, edit or publish documents, or otherwise do something writing-related: 
 
 1. Identify whether they've referred to an existing project in a `/projects/` subfolder (either by direct or indirect reference).
@@ -104,6 +122,11 @@ During project planning, writing, or just ad-hoc exploration, a user might need 
 This can be done using `kurt integrations research` commands (see `kurt integrations research --help` for a full list of available research sources). Some research sources, like Perplexity, will require a user to add an API key to their <kurt_config> file (`kurt.config`).
 
 If working within a project, the outputs of research should be written as .md files to the <project_subfolder> with references added to the <project_plan>. 
+
+**IMPORTANT: Update plan.md after research:**
+- Add research findings to "Research Required" section with checkbox marked `[x]`
+- Include output file path and summary of learnings
+- Link research findings to relevant documents in document_level_details 
 
 ## Outlining, drafting and editing
 IMPORTANT! The goal of Kurt is to produce accurate, grounded and on-style marketing artifacts + assets. 
@@ -166,13 +189,63 @@ Kurt can analyze web analytics to assist with project planning and content perfo
 - Query with documents: `kurt content list --with-analytics` (documents enriched with analytics)
 
 ## Content Discovery
-Use `.claude/instructions/find-sources.md` for discovering and retrieving content:
+
+**⚠️ MANDATORY: Use kurt CLI for ALL Content Operations**
+
+You MUST use kurt CLI commands for discovering, searching, and retrieving content. **NEVER use grep, filesystem operations, or direct file reading** to find content.
+
+**Why:** Document metadata (topics, technologies, relationships, content types) is stored in the database, not in filesystem files. The kurt CLI provides access to this indexed metadata.
+
+**Correct approach:**
+- ✅ `kurt content search "query"` - Search document content
+- ✅ `kurt content list --with-entity "Topic:authentication"` - Filter by metadata
+- ✅ `kurt content list-entities topic` - Discover available topics
+- ✅ `kurt content get <doc-id>` - Get document with metadata
+- ✅ `kurt content links <doc-id>` - Find related documents
+
+**Incorrect approach:**
+- ❌ `grep -r "query" sources/` - Cannot access indexed metadata
+- ❌ Reading files directly from filesystem - Missing DB metadata
+- ❌ Using file operations to search - No access to topics/technologies/relationships
+
+**Separation of concerns:**
+- **Document metadata** (topics, technologies, relationships, content type) → In database, accessed via `kurt content` commands
+- **Source document files** → In filesystem at `/sources/` or `/projects/{project}/sources/`, but search via kurt CLI, not filesystem
+
+**IMPORTANT: Iterative Source Gathering Strategy**
+
+When gathering sources, you MUST follow an iterative, multi-method approach. **Do NOT make a single attempt and give up.**
+
+1. **Try multiple query variants** (3-5 attempts minimum):
+   - Different phrasings: "authentication" → "auth" → "login" → "user verification"
+   - Related terms: "API" → "REST API" → "GraphQL" → "webhooks"
+   - Broader/narrower: "deployment" → "Docker deployment" → "Kubernetes deployment"
+
+2. **Combine multiple discovery methods:**
+   - Start with semantic search: `kurt content search "query"`
+   - Then try entity filtering: `kurt content list --with-entity "Topic:query"`
+   - Explore related entities: `kurt content list-entities topic` → find related topics
+   - Check clusters: `kurt content list-clusters` → browse related clusters
+   - Use link analysis: `kurt content links <doc-id>` → find prerequisites/related docs
+
+3. **Fan out to related topics/technologies:**
+   - If searching for "authentication", also check: "OAuth", "JWT", "session management", "authorization"
+   - If searching for "Python", also check: "FastAPI", "Django", "Flask", "Python libraries"
+
+4. **Document ALL findings in plan.md:**
+   - Update "Sources of Ground Truth" section with all found sources
+   - Include path and purpose for each source
+   - Link sources to documents in document_level_details
+
+**Do NOT give up after a single search attempt.** Try variants and related terms before concluding no sources exist.
+
+Use `.claude/instructions/find-sources.md` for detailed discovery methods:
 - **Topic/technology discovery**: See what's covered, identify gaps (`kurt content list-entities topic`, `kurt content list-entities technology`)
-- **Semantic search**: Full-text search through fetched documents
-- **Cluster navigation**: Browse content organized by topic
-- **Link analysis**: Find related docs, prerequisites, and dependencies
-- **Indexed metadata search**: Filter by topics, technologies, content type
-- **Filtered retrieval**: Query by status, type, analytics, etc.
+- **Semantic search**: Full-text search through fetched documents (`kurt content search`)
+- **Cluster navigation**: Browse content organized by topic (`kurt content list-clusters`)
+- **Link analysis**: Find related docs, prerequisites, and dependencies (`kurt content links`)
+- **Indexed metadata search**: Filter by topics, technologies, content type (`kurt content list --with-entity`)
+- **Filtered retrieval**: Query by status, type, analytics, etc. (`kurt content list --with-status`)
 
 Used during project planning (see `.claude/instructions/add-project.md`) and referenced by format templates.
 

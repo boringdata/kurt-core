@@ -52,59 +52,42 @@
 **Types of information needed for tutorials:**
 
 1. **Technical specifications** - API docs, SDK references
-   - Find: `kurt content list --url-contains /api/`
-   - Find: `kurt content list --url-contains /docs/`
-   - Or provide: Links to technical documentation
+   - Links to technical documentation
+   - API/SDK documentation
 
 2. **Working code examples** - Sample implementations, SDK examples
-   - Find: `kurt content search "example" --include "*/docs/*"`
-   - Find: `kurt content list --url-contains /example`
-   - Or provide: GitHub repos, code samples, existing implementations
+   - GitHub repos, code samples, existing implementations
+   - Example documentation
 
 3. **Prerequisites info** - Setup guides, tool requirements
-   - Find: `kurt content search "setup\|install\|getting-started"`
-   - After finding the tutorial doc, check what links TO it (prerequisites):
-     * `kurt content links <doc-id> --direction inbound`
-     * Look for anchor text like "Prerequisites", "Before you start", "Read this first"
-   - Or check what it links FROM (dependencies it mentions):
-     * `kurt content links <doc-id> --direction outbound`
-   - Or provide: Installation guides, environment setup docs
+   - Installation guides, environment setup docs
+   - Prerequisite documentation
 
 4. **Common errors** - Troubleshooting, known issues
-   - Find: `kurt content search "troubleshoot\|error" --include "*/docs/*"`
-   - Or provide: Support docs, known issues, debugging guides
+   - Support docs, known issues, debugging guides
 
-**For advanced discovery/analysis**, see `.claude/instructions/find-sources.md`
+**Note**: Use kurt CLI research commands for external research. See instruction files (find-sources.md) for discovery methods.
 
 ---
 
 ## Source Requirements
 
-**Before writing, gather these sources (documented in project.md):**
+**Before writing, gather these sources (documented in plan.md):**
 
 **Technical documentation:**
-```bash
-# Search for API/SDK docs
-kurt content search "<feature>" --include "*/api/*"
-kurt content search "<feature>" --include "*/docs/*"
-
-# If not fetched:
-kurt content fetch --urls "<doc-url>"
-```
+- API/SDK documentation for the feature
+- Technical reference materials
 
 **Code examples:**
-```bash
-# Search for examples
-kurt content search "example|sample|quickstart"
-```
+- Example code, sample implementations
+- Quickstart guides
 
 **Prerequisites:**
-```bash
-# Find setup guides by topic
-kurt content list --with-entity "Topic:setup"
-kurt content list --with-entity "Topic:installation"
-kurt content search "setup|install|authentication"
-```
+- Setup guides
+- Installation documentation
+- Authentication/configuration guides
+
+**Note**: Use kurt CLI to discover and fetch sources. See find-sources.md and add-source.md for methods. All sources should be documented in plan.md "Sources of Ground Truth" section.
 
 **If insufficient sources: Ask user for technical docs, code samples, or working examples**
 

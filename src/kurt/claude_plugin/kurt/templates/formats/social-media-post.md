@@ -94,38 +94,31 @@
 **Types of information needed for social posts:**
 
 1. **Content/message** - What you're sharing
-   - Find: `kurt content search "<topic>"`
-   - Or provide: Blog post, product update, announcement, insight to share
+   - Blog post, product update, announcement, insight to share
 
 2. **Trending topics** - What's relevant now
-   - Search discussions: `kurt research search --source hackernews --query "[industry topic]"`
-   - Search discussions: `kurt research search --source reddit --query "[trend]"`
-   - Or provide: Industry news, current events, trending hashtags
+   - Industry news, current events, trending hashtags
 
 3. **Audience insights** - What resonates
-   - Or provide: Past post performance data, audience research, engagement patterns
+   - Past post performance data, audience research, engagement patterns
+
+**Note**: Use kurt CLI research commands for external research. See find-sources.md for discovery methods and add-source.md for ingestion.
 
 ---
 
 ## Source Requirements
 
-**Before writing, gather these sources (documented in frontmatter):**
+**Before writing, gather these sources (documented in plan.md):**
 
 **Core message/content:**
-```bash
-# If promoting content
-kurt content search "<topic>"
-
-# Get the piece you're promoting
-kurt content get <doc-id>
-```
+- Content to promote (blog post, product update, etc.)
+- Key message or topic
 
 **Context/validation:**
-```bash
-# Related content for context
-kurt content list --url-contains /blog/
-kurt content list --url-contains /docs/
-```
+- Related blog posts
+- Related documentation
+
+**Note**: Use kurt CLI to discover and fetch sources. See find-sources.md and add-source.md for methods. All sources should be documented in plan.md "Sources of Ground Truth" section.
 
 **If insufficient sources: Ask user for the content to promote, key message, or topic to discuss**
 

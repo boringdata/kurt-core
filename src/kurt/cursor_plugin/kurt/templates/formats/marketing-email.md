@@ -57,18 +57,17 @@
 **Types of information needed for marketing emails:**
 
 1. **Offer/Value details** - What you're promoting
-   - Find: `kurt content search "<offer/product>"`
-   - Or provide: Product details, offer terms, event information
+   - Product details, offer terms, event information
 
 2. **Proof points** - Why recipient should act
-   - Find: `kurt content list --url-contains /customer`
-   - Or provide: Customer stats, testimonials, success metrics
+   - Customer stats, testimonials, success metrics
+   - Case studies, customer stories
 
 3. **Audience insights** - Who you're emailing
-   - Search discussions: `kurt integrations research reddit --query "[persona] pain points"`
-   - Or provide: Persona docs, customer research, survey results
+   - Persona docs, customer research, survey results
+   - Pain points and motivations
 
-**For advanced discovery/analysis**, see @find-sources rule
+**Note**: Use kurt CLI research commands for external research. See rule files (@find-sources) for discovery methods.
 
 ---
 
@@ -77,22 +76,15 @@
 **Before writing, gather these sources (documented in frontmatter):**
 
 **Offer/product information:**
-```bash
-# Search for what you're promoting
-kurt content search "<offer-name>"
-kurt content list --include "*/product*"
-kurt content list --include "*/pricing*"
-
-# If not fetched:
-kurt content fetch --urls "<url>"
-```
+- Product pages, pricing pages
+- Offer details, terms, event information
 
 **Supporting evidence:**
-```bash
-# Find proof points
-kurt content list --include "*/customer*"
-kurt content search "case-stud|success"
-```
+- Customer testimonials
+- Case studies, success stories
+- Customer statistics
+
+**Note**: Use kurt CLI to discover and fetch sources. See rule files (@find-sources, @add-source) for methods. All sources should be documented in plan.md "Sources of Ground Truth" section.
 
 **If insufficient sources: Ask user for offer details, proof points, or target audience info**
 

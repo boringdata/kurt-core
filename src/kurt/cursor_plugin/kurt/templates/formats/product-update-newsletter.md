@@ -61,40 +61,32 @@
 **Types of information needed for product newsletters:**
 
 1. **Product changes** - What shipped, what changed
-   - Find: `kurt content search "changelog|release|update"`
-   - Find: `kurt content search "version|release" --include "*/docs/*"`
-   - Or provide: Changelog, release notes, Jira/Linear completed tickets
+   - Changelog, release notes, Jira/Linear completed tickets
 
 2. **Feature details** - What new features do
-   - Find: `kurt content list --url-contains /docs/`
-   - Or provide: Feature specs, documentation, product briefs
+   - Feature specs, documentation, product briefs
+   - Documentation pages
 
 3. **User impact** - Why users should care
-   - Or provide: Product manager notes, user research, feedback
+   - Product manager notes, user research, feedback
 
-**For advanced discovery/analysis**, see @find-sources rule
+**Note**: Use kurt CLI research commands for external research. See rule files (@find-sources) for discovery methods.
 
 ---
 
 ## Source Requirements
 
-**Before writing, gather these sources (documented in frontmatter):**
+**Before writing, gather these sources (documented in plan.md):**
 
 **Recent changes:**
-```bash
-# Search for changelogs and release notes
-kurt content search "changelog|release-note"
-kurt content search "version" --include "*/docs/*"
-
-# If not fetched:
-kurt content fetch --urls "<changelog-url>"
-```
+- Changelogs and release notes
+- Version documentation
 
 **Feature documentation:**
-```bash
-# Find docs for new features
-kurt content search "<feature-name>" --include "*/docs/*"
-```
+- Documentation for new features
+- Feature specs
+
+**Note**: Use kurt CLI to discover and fetch sources. See rule files (@find-sources, @add-source) for methods. All sources should be documented in plan.md "Sources of Ground Truth" section.
 
 **If insufficient sources: Ask user for changelog, release notes, or list of shipped items**
 

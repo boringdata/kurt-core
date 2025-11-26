@@ -13,6 +13,13 @@ Use this instruction when:
 - Need to discover related or prerequisite content
 - Exploring what content exists before fetching new sources
 
+**IMPORTANT: Core Principles**
+- **Tool usage**: See @kurt-main rule for mandatory requirement to use kurt CLI (never grep/filesystem operations)
+- **Iterative gathering**: See @kurt-main rule for iterative source gathering strategy (try 3-5 query variants, combine methods, fan out to related topics)
+- **plan.md updates**: See @kurt-main rule for plan.md update requirements (single source of truth, update after every action)
+
+This file provides detailed discovery methods. The core principles are in @kurt-main rule.
+
 ---
 
 ## Discovery Methods

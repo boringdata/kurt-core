@@ -34,48 +34,36 @@
    - Or provide: Business objectives, product launch, market opportunity
 
 2. **Target audience** - Who to reach
-   - Find: `kurt content search "persona"` or `kurt content search "audience"`
-   - Or provide: Persona docs, customer segments, audience research
+   - Persona docs, customer segments, audience research
 
 3. **Positioning and messaging** - What to say
-   - Find: `kurt content search "positioning"` or `kurt content search "messaging"`
-   - Or provide: Positioning doc, messaging framework
+   - Positioning doc, messaging framework
 
 4. **Past campaign performance** - What's worked before
-   - Or provide: Analytics from previous campaigns, learnings
+   - Analytics from previous campaigns, learnings
 
 5. **Content assets** - What exists vs what to create
-   - Find: `kurt content list --url-contains /blog/` (discover what pages exist)
-   - Search: `kurt content search "case study"` or `kurt content search "whitepaper"`
-   - Or provide: Content inventory, asset library
+   - Content inventory, asset library
+   - Existing blog posts, case studies, whitepapers
+
+**Note**: Use kurt CLI research commands for external research. See find-sources.md for discovery methods and add-source.md for ingestion.
 
 ---
 
 ## Source Requirements
 
-**Before writing, gather these sources (documented in frontmatter):**
+**Before writing, gather these sources (documented in plan.md):**
 
 **Strategic context:**
-```bash
-# Find positioning/messaging docs
-kurt content search "positioning"
-kurt content search "messaging"
-
-# Find persona/audience docs
-kurt content search "persona"
-kurt content search "audience"
-```
+- Positioning/messaging docs
+- Persona/audience docs
 
 **Content inventory:**
-```bash
-# Discover what pages exist
-kurt content list --url-contains /blog/
+- Existing blog posts
+- Case studies, guides, whitepapers
+- Content asset library
 
-# Search for content types
-kurt content search "case study"
-kurt content search "guide"
-kurt content search "whitepaper"
-```
+**Note**: Use kurt CLI to discover and fetch sources. See find-sources.md and add-source.md for methods. All sources should be documented in plan.md "Sources of Ground Truth" section.
 
 **If insufficient sources: Ask user for business objectives, target audience definition, or positioning framework**
 

@@ -31,48 +31,44 @@
 **Types of information needed for ICP segmentation:**
 
 1. **Existing customer analysis** - Who converts and succeeds
-   - Find: `kurt content search "customer"` or `kurt content search "case study"`
-   - Or provide: CRM data, customer list, win/loss analysis
+   - CRM data, customer list, win/loss analysis
+   - Customer case studies
 
 2. **Product fit** - What types of companies need your solution
-   - Find: `kurt content list --url-contains /product` (discover what pages exist)
-   - Or provide: Product capabilities, use cases, technical requirements
+   - Product capabilities, use cases, technical requirements
+   - Product pages
 
 3. **Market research** - Target market characteristics
-   - Research: `kurt research query "[product category] market segments"`
-   - Or provide: Industry reports, TAM analysis
+   - Industry reports, TAM analysis
+   - Market segments research
 
 4. **Sales insights** - Who buys and why
-   - Or provide: Win/loss analysis, sales call notes, deal data
+   - Win/loss analysis, sales call notes, deal data
 
 5. **Customer success data** - Who gets value and stays
-   - Or provide: Usage data, retention data, expansion data, NPS by segment
+   - Usage data, retention data, expansion data, NPS by segment
+
+**Note**: Use kurt CLI research commands for external research. See @find-sources rule for discovery methods and @add-source rule for ingestion.
 
 ---
 
 ## Source Requirements
 
-**Before writing, gather these sources (documented in frontmatter):**
+**Before writing, gather these sources (documented in plan.md):**
 
 **Customer data:**
-```bash
-# Search for customer content
-kurt content search "customer"
-kurt content search "case study"
-
-# Get customer examples
-kurt content get <customer-doc-id>
-```
+- Customer content, case studies
+- Customer examples
 
 **Product context:**
-```bash
-# Product capabilities
-kurt content list --url-contains /product
-kurt content list --url-contains /features
-```
+- Product pages, feature pages
+- Product capabilities documentation
 
 **Market research:**
-```bash
+- Industry reports, market analysis
+- TAM analysis, market segments
+
+**Note**: Use kurt CLI to discover and fetch sources. See rule files (@find-sources, @add-source) for methods. All sources should be documented in plan.md "Sources of Ground Truth" section.bash
 # Research market segments
 kurt research query "[product category] market segmentation"
 kurt research query "[industry] technology adoption"

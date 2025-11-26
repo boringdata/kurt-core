@@ -63,48 +63,38 @@
 **Types of information needed for drip sequences:**
 
 1. **Journey stage insights** - What recipients know/need at each stage
-   - Or provide: Customer journey map, conversion path analysis, persona research
+   - Customer journey map, conversion path analysis, persona research
 
 2. **Educational content** - Value to deliver before asking
-   - Find: `kurt content list --url-contains /blog/`
-   - Find: `kurt content list --url-contains /docs/`
-   - Or provide: Best resources, how-tos, guides for this audience
+   - Best resources, how-tos, guides for this audience
+   - Blog posts, tutorials
 
 3. **Conversion triggers** - What drives decision
-   - Search discussions: `kurt research search --source reddit --query "[product category] buying decision"`
-   - Or provide: Sales insights, customer interviews, objection handling
+   - Sales insights, customer interviews, objection handling
 
 4. **Proof points** - Evidence at each stage
-   - Find: `kurt content list --url-contains /customer`
-   - Or provide: Customer quotes, metrics, case studies
+   - Customer quotes, metrics, case studies
+
+**Note**: Use kurt CLI research commands for external research. See find-sources.md for discovery methods and add-source.md for ingestion.
 
 ---
 
 ## Source Requirements
 
-**Before writing, gather these sources (documented in frontmatter):**
+**Before writing, gather these sources (documented in plan.md):**
 
 **Educational content:**
-```bash
-# Find helpful resources
-kurt content search "<topic>" --include "*/blog/*"
-kurt content list --include "*/docs/*" --with-content-type tutorial
-
-# If not fetched:
-kurt content fetch <resource-url>
-```
+- Helpful resources, blog posts
+- Tutorials, guides
 
 **Proof points:**
-```bash
-kurt content list --include "*/customer*"
-kurt content search "case-stud|success"
-```
+- Customer testimonials, case studies
+- Success stories
 
 **Product info:**
-```bash
-kurt content list --url-contains /product
-kurt content list --url-contains /pricing
-```
+- Product pages, pricing pages
+
+**Note**: Use kurt CLI to discover and fetch sources. See find-sources.md and add-source.md for methods. All sources should be documented in plan.md "Sources of Ground Truth" section.
 
 **If insufficient sources: Ask user for journey stage goals, educational content, or proof points**
 

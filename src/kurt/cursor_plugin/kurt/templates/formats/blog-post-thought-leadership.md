@@ -54,48 +54,41 @@
 **Types of research that strengthen blog posts:**
 
 1. **Industry data/trends** - Statistics, market research, benchmarks
-   - Find existing: `kurt content list | grep -i "report\|research\|study"`
-   - Search Perplexity: `kurt integrations research search --query "latest [topic] trends in [industry] 2025"`
-   - Search discussions: `kurt integrations research hackernews --query "[topic]"`
-   - Search discussions: `kurt integrations research reddit --query "[topic]"`
-   - Or provide: URLs to industry reports, competitor analysis
-   - Or provide: Notes/transcripts from industry experts
+   - Industry reports, market research studies
+   - Competitor analysis
+   - Notes/transcripts from industry experts
 
 2. **Expert perspectives** - SME insights, customer interviews
-   - Provide: Transcripts from calls with experts/customers
-   - Provide: Notes from internal team discussions
-   - Provide: Email threads with relevant context
+   - Transcripts from calls with experts/customers
+   - Notes from internal team discussions
+   - Email threads with relevant context
 
 3. **Real examples** - Customer stories, use cases, implementations
-   - Find existing: `kurt content list --url-contains /customer`
-   - Search discussions: `kurt integrations research reddit --query "[product/topic] experience"`
-   - Or provide: Case study URLs, customer interview notes
+   - Case study URLs
+   - Customer interview notes
+   - User experience examples
+
+**Note**: Use kurt CLI research commands to gather external research (Perplexity, HackerNews, Reddit, etc.). See @find-sources rule for discovery methods and @add-source rule for ingestion. Research findings should be documented in `research/citations.md`.
 
 ---
 
 ## Source Requirements
 
-**Before writing, gather these sources (documented in project.md):**
+**Before writing, gather these sources (documented in plan.md):**
 
 **Company's existing content on topic:**
-```bash
-# Search mapped + fetched content
-kurt content list | grep -i "<topic-keyword>"
-
-# If found but not fetched yet:
-kurt content fetch --urls "<url1>,<url2>,<url3>"
-```
-
-**Related blog posts for context:**
-```bash
-kurt content list --url-contains /blog/ --status FETCHED | grep -i "<topic>"
-```
+- Existing blog posts, articles, or content about the topic
+- Related content for context and consistency
 
 **Product/feature information:**
-```bash
-kurt content list --url-contains /docs/ | grep -i "<feature-name>"
-kurt content list --url-contains /product | grep -i "<feature-name>"
-```
+- Product documentation related to the topic
+- Feature pages or product pages with relevant information
+
+**Industry data/trends (if applicable):**
+- Statistics, market research, benchmarks
+- Industry reports or studies
+
+**Note**: Use kurt CLI to discover and fetch sources. See rule files (@find-sources, @add-source) for methods. All sources should be documented in plan.md "Sources of Ground Truth" section.
 
 **If insufficient sources found: Ask user for URLs or content to ingest**
 
