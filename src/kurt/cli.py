@@ -15,6 +15,7 @@ from kurt.commands.content import content
 from kurt.commands.integrations import integrations
 from kurt.commands.show import show
 from kurt.commands.status import status
+from kurt.commands.update import update
 from kurt.commands.workflows import workflows_group
 from kurt.config.base import KurtConfig, config_file_exists, create_config, get_config_file_path
 from kurt.db.database import init_database
@@ -245,19 +246,69 @@ OPENAI_API_KEY=your_openai_api_key_here
                     ide_dir.mkdir(exist_ok=True)
 
                     if current_ide == "claude":
-                        # Create .claude/instructions/ directory and symlink
+                        # Create main CLAUDE.md symlink (primary entry point)
+                        claude_md_dest = ide_dir / "CLAUDE.md"
+                        claude_md_target = Path("../.agents/AGENTS.md")
+
+                        # Check if CLAUDE.md already exists
+                        if claude_md_dest.exists() or claude_md_dest.is_symlink():
+                            if claude_md_dest.is_symlink():
+                                # Already a symlink, update target
+                                claude_md_dest.unlink()
+                                claude_md_dest.symlink_to(claude_md_target)
+                                console.print("[green]✓[/green] Updated Claude Code symlink")
+                            else:
+                                # Regular file with user content
+                                console.print(
+                                    "[yellow]⚠[/yellow] CLAUDE.md already exists with custom content"
+                                )
+                                console.print("How would you like to proceed?")
+                                console.print(
+                                    "  1. Keep CLAUDE.md and add Kurt instructions in .claude/instructions/"
+                                )
+                                console.print(
+                                    "  2. Replace with symlink (your content will be backed up)"
+                                )
+                                console.print("  3. Skip Claude Code setup")
+                                choice = (
+                                    console.input("Choice (1/2/3) [default: 1]: ").strip() or "1"
+                                )
+
+                                if choice == "1":
+                                    # Keep existing CLAUDE.md, only create instructions symlink
+                                    console.print("[dim]Keeping your existing CLAUDE.md[/dim]")
+                                elif choice == "2":
+                                    # Backup and replace
+                                    backup_path = claude_md_dest.parent / "CLAUDE.md.backup"
+                                    shutil.copy2(claude_md_dest, backup_path)
+                                    claude_md_dest.unlink()
+                                    claude_md_dest.symlink_to(claude_md_target)
+                                    console.print(
+                                        f"[green]✓[/green] Backed up to {backup_path.name}"
+                                    )
+                                    console.print("[green]✓[/green] Created Claude Code symlink")
+                                else:
+                                    console.print("[dim]Skipping Claude Code setup[/dim]")
+                                    continue
+                        else:
+                            # Doesn't exist, create symlink
+                            claude_md_dest.symlink_to(claude_md_target)
+                            console.print("[green]✓[/green] Created Claude Code main file")
+
+                        console.print("[dim]  .claude/CLAUDE.md → .agents/AGENTS.md[/dim]")
+
+                        # Also create .claude/instructions/ directory with symlink for discoverability
                         instructions_dir = ide_dir / "instructions"
                         instructions_dir.mkdir(exist_ok=True)
-                        symlink_dest = instructions_dir / "AGENTS.md"
-                        symlink_target = Path("../../.agents/AGENTS.md")
+                        instructions_symlink = instructions_dir / "AGENTS.md"
+                        instructions_target = Path("../../.agents/AGENTS.md")
 
                         # Remove existing symlink or file
-                        if symlink_dest.exists() or symlink_dest.is_symlink():
-                            symlink_dest.unlink()
+                        if instructions_symlink.exists() or instructions_symlink.is_symlink():
+                            instructions_symlink.unlink()
 
                         # Create symlink
-                        symlink_dest.symlink_to(symlink_target)
-                        console.print("[green]✓[/green] Created Claude Code symlink")
+                        instructions_symlink.symlink_to(instructions_target)
                         console.print(
                             "[dim]  .claude/instructions/AGENTS.md → .agents/AGENTS.md[/dim]"
                         )
@@ -286,17 +337,38 @@ OPENAI_API_KEY=your_openai_api_key_here
                         # Create .cursor/rules/ directory and symlink
                         rules_dir = ide_dir / "rules"
                         rules_dir.mkdir(exist_ok=True)
-                        symlink_dest = rules_dir / "AGENTS.mdc"
+                        symlink_dest = rules_dir / "KURT.mdc"
                         symlink_target = Path("../../.agents/AGENTS.md")
 
-                        # Remove existing symlink or file
+                        # Check if KURT.mdc already exists
                         if symlink_dest.exists() or symlink_dest.is_symlink():
-                            symlink_dest.unlink()
+                            if symlink_dest.is_symlink():
+                                # Already a symlink, update target
+                                symlink_dest.unlink()
+                                symlink_dest.symlink_to(symlink_target)
+                                console.print("[green]✓[/green] Updated Cursor symlink")
+                            else:
+                                # Regular file (unusual, but handle it)
+                                console.print("[yellow]⚠[/yellow] KURT.mdc already exists")
+                                overwrite = console.input("Replace with symlink? (y/N): ")
+                                if overwrite.lower() == "y":
+                                    backup_path = symlink_dest.parent / "KURT.mdc.backup"
+                                    shutil.copy2(symlink_dest, backup_path)
+                                    symlink_dest.unlink()
+                                    symlink_dest.symlink_to(symlink_target)
+                                    console.print(
+                                        f"[green]✓[/green] Backed up to {backup_path.name}"
+                                    )
+                                    console.print("[green]✓[/green] Created Cursor symlink")
+                                else:
+                                    console.print("[dim]Skipping Cursor setup[/dim]")
+                                    continue
+                        else:
+                            # Doesn't exist, create symlink
+                            symlink_dest.symlink_to(symlink_target)
+                            console.print("[green]✓[/green] Created Cursor rule")
 
-                        # Create symlink
-                        symlink_dest.symlink_to(symlink_target)
-                        console.print("[green]✓[/green] Created Cursor symlink")
-                        console.print("[dim]  .cursor/rules/AGENTS.mdc → .agents/AGENTS.md[/dim]")
+                        console.print("[dim]  .cursor/rules/KURT.mdc → .agents/AGENTS.md[/dim]")
 
             else:
                 console.print("[yellow]⚠[/yellow] AGENTS.md not found in package")
@@ -312,11 +384,8 @@ OPENAI_API_KEY=your_openai_api_key_here
             console.print("  2. Open Claude Code in this directory")
         else:  # cursor
             console.print("  2. Open Cursor in this directory")
-        console.print(
-            "  3. Run [cyan]kurt show profile-workflow[/cyan] to create your content profile"
-        )
-        console.print("  4. Run [cyan]kurt show project-workflow[/cyan] to start a new project")
-        console.print("  5. Run [cyan]kurt show format-templates[/cyan] to see available formats")
+        console.print("  3. Start working with the AI assistant!")
+        console.print("     [dim](The assistant will guide you through any needed setup)[/dim]")
 
     except Exception as e:
         console.print(f"[bold red]Error:[/bold red] {e}")
@@ -329,6 +398,7 @@ main.add_command(integrations)
 main.add_command(admin)
 main.add_command(status)
 main.add_command(show)
+main.add_command(update)
 main.add_command(workflows_group, name="workflows")
 
 
