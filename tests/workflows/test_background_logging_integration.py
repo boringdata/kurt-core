@@ -90,7 +90,7 @@ def test_map_background_workflow_creates_log(tmp_project):
     ), f"Could not find workflow ID in output or log files. Output: {result.stdout}"
 
     # Wait for workflow to complete by checking status
-    max_wait = 60  # 60 seconds max
+    max_wait = 20  # 20 seconds max (should be plenty)
     for attempt in range(max_wait * 2):  # Check every 0.5 seconds
         status_result = subprocess.run(
             [sys.executable, "-m", "dbos", "workflow", "status", workflow_id],
@@ -117,10 +117,10 @@ def test_map_background_workflow_creates_log(tmp_project):
     log_content = ""
     found_workflow_logs = False
 
-    # In CI, give the worker more time to start up
-    time.sleep(2)  # Give worker 2 seconds to initialize before checking
+    # In CI, give the worker a moment to start up
+    time.sleep(1)  # Give worker 1 second to initialize before checking
 
-    for attempt in range(600):  # 60 seconds max (CI needs more time)
+    for attempt in range(150):  # 15 seconds max (should be plenty with fixes)
         try:
             log_content = log_file.read_text()
             # Check if the workflow has actually logged something meaningful
