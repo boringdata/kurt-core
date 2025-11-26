@@ -64,7 +64,7 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
             f.write(f"Args: {workflow_args_json}\n")
             f.write(f"Python: {sys.version}\n")
             f.write(f"CWD: {os.getcwd()}\n")
-            f.write(f"Signal handlers installed\n")
+            f.write("Signal handlers installed\n")
             f.flush()
             os.fsync(f.fileno())
 
