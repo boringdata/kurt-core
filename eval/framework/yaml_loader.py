@@ -71,8 +71,15 @@ def load_yaml_scenario(yaml_path: Path, scenario_name: Optional[str] = None) -> 
 
         data = scenario_data
 
+    # Parse conversational mode (defaults to True)
+    conversational = data.get("conversational", True)
+
     # Validate required fields
-    required = ["name", "description", "initial_prompt"]
+    required = ["name", "description"]
+    # Only require initial_prompt for conversational scenarios
+    if conversational:
+        required.append("initial_prompt")
+
     for field in required:
         if field not in data:
             raise ValueError(f"YAML scenario missing required field: {field}")
@@ -99,11 +106,12 @@ def load_yaml_scenario(yaml_path: Path, scenario_name: Optional[str] = None) -> 
     return Scenario(
         name=data["name"],
         description=data["description"],
-        initial_prompt=data["initial_prompt"],
+        initial_prompt=data.get("initial_prompt"),  # Optional for non-conversational
         assertions=assertions,
         user_agent=user_agent,
         project=project,
         setup_commands=setup_commands,
+        conversational=conversational,
     )
 
 

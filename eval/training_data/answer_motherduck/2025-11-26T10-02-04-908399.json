@@ -1,0 +1,43 @@
+{
+  "scenario": "answer_motherduck",
+  "prompt": "CLI-only scenario - no agent interaction",
+  "tool_sequence": null,
+  "agent_responses": null,
+  "final_state": null,
+  "conversation": [
+    {
+      "speaker": "user",
+      "message": "CLI-only scenario - no agent interaction",
+      "timestamp": "2025-11-26T10:01:54.896572"
+    },
+    {
+      "speaker": "agent",
+      "message": "I'm ready to help you test the Kurt CLI tool! I can see that the Kurt project has been initialized with the necessary configuration and directory structure.\n\nI'm in an automated evaluation scenario for testing Kurt CLI commands. What would you like me to test? I can:\n\n- **Discover content** from URLs using `kurt map url <url>`\n- **Fetch content** with `kurt fetch`\n- **List documents** with `kurt content list`\n- **Check project status** with `kurt status`\n- Run other Kurt CLI commands as needed\n\nJust let me know which command or workflow you'd like me to execute, and I'll run it and report the results concisely.",
+      "timestamp": "2025-11-26T10:02:03.746074"
+    }
+  ],
+  "tool_calls": [],
+  "skill_context": {},
+  "outcome": {
+    "success": false,
+    "workspace_state": {
+      "files": {
+        "config_exists": true,
+        "db_exists": true,
+        "sources_count": 0,
+        "projects_count": 0
+      },
+      "database": {
+        "total_documents": 0,
+        "fetched_documents": 0,
+        "not_fetched_documents": 0
+      }
+    },
+    "tool_count": 0,
+    "turn_count": 2,
+    "duration_seconds": 15.542218,
+    "error": "SQL assertion failed (returned 0):\nSELECT COUNT(*) >= 100 FROM entities",
+    "failure_type": "assertion_failed"
+  },
+  "timestamp": "2025-11-26T10:02:04.908399"
+}

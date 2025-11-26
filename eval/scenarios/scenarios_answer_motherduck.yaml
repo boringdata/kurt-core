@@ -7,6 +7,7 @@ scenarios:
   - name: answer_motherduck
     description: Answer question about MotherDuck file formats using knowledge graph
     project: motherduck
+    conversational: false  # Command-based scenario - no agent interaction
 
     notes: |
       Tests the answer command with MotherDuck documentation:
@@ -20,10 +21,6 @@ scenarios:
     setup_commands:
       # Run the answer command and save output to a file
       - KURT_TELEMETRY_DISABLED=1 uv run kurt answer "What file formats are most efficient for loading data into MotherDuck?" > answer_output.txt 2>&1 || true
-
-    # No conversational prompt needed - this is pure command execution
-    initial_prompt: |
-      The kurt answer command has been executed. Please confirm the test completed successfully.
 
     assertions:
       # Verify knowledge graph is populated

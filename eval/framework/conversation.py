@@ -191,13 +191,18 @@ class Scenario:
         None  # Optional bash commands to run during workspace setup
     )
 
+    # Execution mode
+    conversational: bool = True  # If False, skip agent interaction and only run setup + assertions
+
     def __post_init__(self):
         """Validate scenario definition."""
-        if not self.initial_prompt and not self.conversation:
-            raise ValueError("Scenario must have either initial_prompt or conversation")
+        # Non-conversational scenarios don't need a prompt
+        if self.conversational:
+            if not self.initial_prompt and not self.conversation:
+                raise ValueError("Conversational scenario must have either initial_prompt or conversation")
 
-        if self.initial_prompt and self.conversation:
-            raise ValueError("Scenario cannot have both initial_prompt and conversation")
+            if self.initial_prompt and self.conversation:
+                raise ValueError("Scenario cannot have both initial_prompt and conversation")
 
     def get_conversation(self) -> List[ConversationTurn]:
         """Get the conversation turns for this scenario.

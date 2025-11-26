@@ -1,0 +1,32 @@
+{
+  "scenario": "answer_motherduck",
+  "prompt": "",
+  "tool_sequence": null,
+  "agent_responses": null,
+  "final_state": null,
+  "conversation": [],
+  "tool_calls": [],
+  "skill_context": {},
+  "outcome": {
+    "success": false,
+    "workspace_state": {
+      "files": {
+        "config_exists": true,
+        "db_exists": true,
+        "sources_count": 0,
+        "projects_count": 0
+      },
+      "database": {
+        "total_documents": 874,
+        "fetched_documents": 561,
+        "not_fetched_documents": 0
+      }
+    },
+    "tool_count": 0,
+    "turn_count": 0,
+    "duration_seconds": 2.351391,
+    "error": "File does not exist: .kurt/answers/q1_file_formats.md",
+    "failure_type": "unknown"
+  },
+  "timestamp": "2025-11-26T09:28:07.064582"
+}

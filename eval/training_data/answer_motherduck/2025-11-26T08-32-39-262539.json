@@ -1,0 +1,43 @@
+{
+  "scenario": "answer_motherduck",
+  "prompt": "Run the kurt answer command to find out what file formats are most efficient for loading data into MotherDuck.\n\nUse this exact command:\nKURT_TELEMETRY_DISABLED=1 uv run kurt answer \"What file formats are most efficient for loading data into MotherDuck?\"\n",
+  "tool_sequence": null,
+  "agent_responses": null,
+  "final_state": null,
+  "conversation": [
+    {
+      "speaker": "user",
+      "message": "Run the kurt answer command to find out what file formats are most efficient for loading data into MotherDuck.\n\nUse this exact command:\nKURT_TELEMETRY_DISABLED=1 uv run kurt answer \"What file formats are most efficient for loading data into MotherDuck?\"\n",
+      "timestamp": "2025-11-26T08:32:33.863410"
+    },
+    {
+      "speaker": "agent",
+      "message": "Invalid API key \u00b7 Fix external API key",
+      "timestamp": "2025-11-26T08:32:38.243068"
+    }
+  ],
+  "tool_calls": [],
+  "skill_context": {},
+  "outcome": {
+    "success": false,
+    "workspace_state": {
+      "files": {
+        "config_exists": true,
+        "db_exists": true,
+        "sources_count": 0,
+        "projects_count": 0
+      },
+      "database": {
+        "total_documents": 874,
+        "fetched_documents": 561,
+        "not_fetched_documents": 0
+      }
+    },
+    "tool_count": 0,
+    "turn_count": 2,
+    "duration_seconds": 7.358607,
+    "error": "Conversation does not match pattern: (?i)Parquet",
+    "failure_type": "unknown"
+  },
+  "timestamp": "2025-11-26T08:32:39.262539"
+}

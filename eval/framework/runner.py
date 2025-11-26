@@ -281,24 +281,34 @@ class ScenarioRunner:
             run_metrics = {}
             workspace_metrics = {}
 
-            # Execute conversation with SDK (multi-turn by default)
-            conversation = scenario.get_conversation()
-            for turn in conversation:
-                if turn.speaker == "user":
-                    self._log(f"\n{'┌'+'─'*68+'┐'}")
-                    self._log("│ 💬 USER INPUT")
-                    self._log(f"│ {turn.message}")
-                    self._log(f"{'└'+'─'*68+'┘'}")
-                    metrics_collector.record_turn("user", turn.message)
+            # Skip conversation execution for non-conversational scenarios
+            if not scenario.conversational:
+                self._log("\n✅ Non-conversational scenario - skipping agent interaction\n")
+                # Still need to initialize run_metrics for result structure
+                run_metrics = {
+                    "total_turns": 0,
+                    "tool_calls": 0,
+                    "duration": 0.0,
+                }
+            else:
+                # Execute conversation with SDK (multi-turn by default)
+                conversation = scenario.get_conversation()
+                for turn in conversation:
+                    if turn.speaker == "user":
+                        self._log(f"\n{'┌'+'─'*68+'┐'}")
+                        self._log("│ 💬 USER INPUT")
+                        self._log(f"│ {turn.message}")
+                        self._log(f"{'└'+'─'*68+'┘'}")
+                        metrics_collector.record_turn("user", turn.message)
 
-                    # Execute message using Claude Code SDK with multi-turn support
-                    await self._execute_with_sdk(
-                        turn.message,
-                        workspace,
-                        metrics_collector,
-                        user_agent=scenario.user_agent,
-                        max_turns=self.max_conversation_turns,
-                    )
+                        # Execute message using Claude Code SDK with multi-turn support
+                        await self._execute_with_sdk(
+                            turn.message,
+                            workspace,
+                            metrics_collector,
+                            user_agent=scenario.user_agent,
+                            max_turns=self.max_conversation_turns,
+                        )
 
             # Finish timing
             metrics_collector.finish()

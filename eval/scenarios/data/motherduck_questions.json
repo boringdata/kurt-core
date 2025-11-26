@@ -1,0 +1,64 @@
+{
+  "questions": [
+    {
+      "id": "q1_file_formats",
+      "question": "What file formats are most efficient for loading data into MotherDuck?",
+      "canonical_answer": "Parquet is the most efficient format for loading data into MotherDuck because it is columnar, compressed by default, and optimized for analytical queries. CSV files with compression (gzip) are also supported but less efficient than Parquet. For best performance, use Parquet files stored in cloud storage like S3.",
+      "required_topics": ["Parquet", "columnar", "compression"]
+    },
+    {
+      "id": "q2_unsupported_features",
+      "question": "What SQL features from DuckDB are not yet supported in MotherDuck?",
+      "canonical_answer": "Some DuckDB extensions and user-defined functions (UDFs) may have limited support in MotherDuck. Features that require local file system access or certain extensions may not work the same way. Check the MotherDuck documentation for the current compatibility matrix and supported extensions.",
+      "required_topics": ["extensions", "UDFs", "compatibility"]
+    },
+    {
+      "id": "q3_query_performance",
+      "question": "Why might a query run slower on MotherDuck than locally?",
+      "canonical_answer": "Queries might run slower on MotherDuck due to network latency when transferring data, cold start times for compute instances, or data transfer costs between cloud storage and compute. However, MotherDuck can be faster for large datasets due to cloud compute scaling and efficient cloud-native storage formats like Parquet.",
+      "required_topics": ["network latency", "cold start", "data transfer"]
+    },
+    {
+      "id": "q4_dbt_setup",
+      "question": "How do I set up MotherDuck to work with dbt?",
+      "canonical_answer": "To use MotherDuck with dbt, install the dbt-duckdb adapter and configure your profiles.yml to use a MotherDuck connection string. The connection string format is 'md:database_name' or 'motherduck:database_name'. You'll need to authenticate with your MotherDuck token.",
+      "required_topics": ["dbt-duckdb", "profiles.yml", "connection string"]
+    },
+    {
+      "id": "q5_migration",
+      "question": "How do I migrate data from a local DuckDB database to MotherDuck?",
+      "canonical_answer": "To migrate from local DuckDB to MotherDuck: 1) Connect to both databases simultaneously using ATTACH, 2) Use CREATE TABLE AS to copy tables, or 3) Export local data to Parquet and load into MotherDuck. You can use ATTACH 'md:database' to attach a MotherDuck database and then use SQL to transfer tables.",
+      "required_topics": ["ATTACH", "CREATE TABLE AS", "Parquet"]
+    },
+    {
+      "id": "q6_hybrid_join",
+      "question": "If I have a CSV on my laptop and a table in S3, what's the most efficient way to join them using MotherDuck?",
+      "canonical_answer": "The most efficient approach is to use MotherDuck's hybrid execution: read the local CSV using DuckDB's local client and the S3 table through MotherDuck's cloud compute, then join them. MotherDuck can push down the join execution to where the data lives. Alternatively, upload the CSV to S3 first for better performance on repeated queries.",
+      "required_topics": ["hybrid execution", "local files", "S3"]
+    },
+    {
+      "id": "q7_database_vs_share",
+      "question": "What's the difference between a MotherDuck database and a share?",
+      "canonical_answer": "A MotherDuck database is a container for tables that you own and can modify. A share is a read-only snapshot of tables from another database that someone has shared with you. Shares allow data collaboration without copying data - you query the shared data directly but cannot modify it.",
+      "required_topics": ["database", "share", "read-only"]
+    },
+    {
+      "id": "q8_compute_sizes",
+      "question": "What compute instance sizes does MotherDuck offer?",
+      "canonical_answer": "MotherDuck offers multiple compute tiers with different memory and CPU allocations. The specific sizes include small, medium, large, and XL instances, each optimized for different workload sizes. Larger instances provide more memory and CPU cores for handling bigger datasets and more complex queries. Check MotherDuck's pricing page for current tier specifications.",
+      "required_topics": ["compute tiers", "memory", "CPU"]
+    },
+    {
+      "id": "q9_duckdb_versions",
+      "question": "What DuckDB versions does MotherDuck currently support?",
+      "canonical_answer": "MotherDuck maintains compatibility with recent stable DuckDB releases. The supported version information is available in MotherDuck's documentation and typically tracks closely with DuckDB's stable releases. You should check the official documentation for the currently supported DuckDB versions as this changes with updates.",
+      "required_topics": ["DuckDB version", "compatibility"]
+    },
+    {
+      "id": "q10_unsupported_sql",
+      "question": "What SQL features from DuckDB are not yet supported in MotherDuck?",
+      "canonical_answer": "MotherDuck may have limitations on certain DuckDB features including some extensions, user-defined functions that require system access, and features that depend on local file system operations. Certain advanced extensions or experimental features may not be available. Consult the MotherDuck documentation for a complete list of unsupported features and known limitations.",
+      "required_topics": ["extensions", "unsupported features"]
+    }
+  ]
+}
