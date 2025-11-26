@@ -23,7 +23,7 @@ scenarios:
       - KURT_TELEMETRY_DISABLED=1 uv run kurt answer "What file formats are most efficient for loading data into MotherDuck?" > cmd_answer.md 2>&1
 
     post_scenario_commands:
-      # Gather all command outputs into a final result file
+      # Gather all command outputs into a final result file and display it
       - |
         cat > results.md <<'EOF'
         # Answer Results - MotherDuck File Formats
@@ -34,6 +34,8 @@ scenarios:
         ## Answer
         EOF
         cat cmd_answer.md >> results.md
+        echo "=== Generated results.md ==="
+        cat results.md
 
     assertions:
       # Verify knowledge graph is populated
