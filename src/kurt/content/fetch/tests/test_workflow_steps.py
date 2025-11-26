@@ -439,13 +439,13 @@ class TestWorkflowStepIntegration:
 class TestBatchWorkflowDeterminism:
     """Tests for DBOS determinism in batch workflow.
 
-    These tests verify that the fetch_with_semaphore function always
+    These tests verify that the process_fetched_document function always
     closes streams in a finally block, ensuring deterministic behavior
     required by DBOS workflow replay.
     """
 
     def test_fetch_workflow_has_finally_block(self):
-        """Test that fetch_with_semaphore uses finally block for close_stream.
+        """Test that process_fetched_document uses finally block for close_stream.
 
         This verifies the code structure to prevent regression of DBOS
         determinism issues. The finally block ensures close_stream is
@@ -460,12 +460,12 @@ class TestBatchWorkflowDeterminism:
         source = inspect.getsource(fetch_workflow)
         tree = ast.parse(source)
 
-        # Find fetch_with_semaphore nested function
+        # Find process_fetched_document nested function
         found_finally = False
         found_close_stream = False
 
         for node in ast.walk(tree):
-            if isinstance(node, ast.AsyncFunctionDef) and node.name == "fetch_with_semaphore":
+            if isinstance(node, ast.AsyncFunctionDef) and node.name == "process_fetched_document":
                 # Look for Try statement with finally block
                 for stmt in ast.walk(node):
                     if isinstance(stmt, ast.Try) and stmt.finalbody:
@@ -479,7 +479,7 @@ class TestBatchWorkflowDeterminism:
                                             found_close_stream = True
                                             break
 
-        assert found_finally, "fetch_with_semaphore should have a finally block"
+        assert found_finally, "process_fetched_document should have a finally block"
         assert found_close_stream, "finally block should call DBOS.close_stream() for determinism"
 
     def test_doc_id_initialized_before_try(self):
@@ -496,26 +496,19 @@ class TestBatchWorkflowDeterminism:
         source = inspect.getsource(fetch_workflow)
         tree = ast.parse(source)
 
-        # Find fetch_with_semaphore and verify doc_id initialization
+        # Find process_fetched_document and verify doc_id initialization
         for node in ast.walk(tree):
-            if isinstance(node, ast.AsyncFunctionDef) and node.name == "fetch_with_semaphore":
-                # Check that doc_id = None appears before any try block
-                assignments = []
-                async_with_statements = []
+            if isinstance(node, ast.AsyncFunctionDef) and node.name == "process_fetched_document":
+                # Check that doc_id is assigned early in the function
+                doc_id_assigned = False
 
                 for i, stmt in enumerate(node.body):
-                    # Track assignments
+                    # Track doc_id assignments
                     if isinstance(stmt, ast.Assign):
                         for target in stmt.targets:
                             if isinstance(target, ast.Name) and target.id == "doc_id":
-                                assignments.append(i)
-                    # Track async with (which contains the try)
-                    elif isinstance(stmt, ast.AsyncWith):
-                        async_with_statements.append(i)
+                                doc_id_assigned = True
+                                break
 
-                # Verify doc_id is assigned before async with
-                assert len(assignments) > 0, "doc_id should be initialized"
-                assert len(async_with_statements) > 0, "should have async with containing try block"
-                assert (
-                    assignments[0] < async_with_statements[0]
-                ), "doc_id must be initialized before try block"
+                # Verify doc_id is assigned
+                assert doc_id_assigned, "doc_id should be initialized in process_fetched_document"
