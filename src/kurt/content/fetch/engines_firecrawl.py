@@ -5,11 +5,14 @@ This module provides the Firecrawl API-based fetch engine for premium content ex
 
 import logging
 import os
+from typing import Any
+
+from kurt.content.fetch.constants import FIRECRAWL_DEFAULT_BATCH_SIZE
 
 logger = logging.getLogger(__name__)
 
 
-def _extract_metadata(result_item) -> dict:
+def _extract_metadata(result_item: Any) -> dict:
     """Extract and normalize metadata from Firecrawl response."""
     metadata = {}
     if hasattr(result_item, "metadata") and result_item.metadata:
@@ -26,7 +29,9 @@ def _extract_metadata(result_item) -> dict:
 
 
 def fetch_with_firecrawl(
-    url: str | list[str], max_concurrency: int = None, batch_size: int = 100
+    url: str | list[str],
+    max_concurrency: int = None,
+    batch_size: int = FIRECRAWL_DEFAULT_BATCH_SIZE,
 ) -> tuple[str, dict] | dict[str, tuple[str, dict] | Exception]:
     """
     Fetch content using Firecrawl API.

@@ -10,12 +10,28 @@ Pattern:
 """
 
 import logging
+from typing import Any, Optional
 
 from kurt.content.fetch.engines_firecrawl import fetch_with_firecrawl
 from kurt.content.fetch.engines_trafilatura import fetch_with_httpx, fetch_with_trafilatura
 from kurt.content.paths import parse_source_identifier
 
 logger = logging.getLogger(__name__)
+
+
+def _build_metadata_dict(
+    title: Optional[str] = None,
+    author: Optional[str] = None,
+    date: Optional[str] = None,
+    description: Optional[str] = None,
+) -> dict[str, Any]:
+    """Build a standardized metadata dictionary."""
+    return {
+        "title": title,
+        "author": author,
+        "date": date,
+        "description": description,
+    }
 
 
 def fetch_from_cms(
@@ -72,14 +88,12 @@ def fetch_from_cms(
         public_url = cms_document.url or discovery_url
 
         # Extract metadata
-        metadata_dict = {
-            "title": cms_document.title,
-            "author": cms_document.author,
-            "date": cms_document.published_date,
-            "description": cms_document.metadata.get("description")
-            if cms_document.metadata
-            else None,
-        }
+        metadata_dict = _build_metadata_dict(
+            title=cms_document.title,
+            author=cms_document.author,
+            date=cms_document.published_date,
+            description=cms_document.metadata.get("description") if cms_document.metadata else None,
+        )
 
         return cms_document.content, metadata_dict, public_url
 
@@ -160,14 +174,14 @@ def fetch_batch_from_cms(
                 public_url = cms_document.url or discovery_urls.get(cms_doc_id)
 
                 # Extract metadata
-                metadata_dict = {
-                    "title": cms_document.title,
-                    "author": cms_document.author,
-                    "date": cms_document.published_date,
-                    "description": cms_document.metadata.get("description")
+                metadata_dict = _build_metadata_dict(
+                    title=cms_document.title,
+                    author=cms_document.author,
+                    date=cms_document.published_date,
+                    description=cms_document.metadata.get("description")
                     if cms_document.metadata
                     else None,
-                }
+                )
 
                 results[cms_doc_id] = (cms_document.content, metadata_dict, public_url)
                 logger.debug(

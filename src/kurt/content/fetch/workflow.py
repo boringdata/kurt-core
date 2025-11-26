@@ -16,7 +16,7 @@ import logging
 from typing import Any
 from uuid import UUID
 
-from dbos import DBOS, Queue
+from dbos import DBOS
 
 from kurt.content.document import (
     resolve_or_create_document,
@@ -34,10 +34,6 @@ from kurt.content.fetch import (
 from kurt.content.fetch.engines_firecrawl import fetch_with_firecrawl
 
 logger = logging.getLogger(__name__)
-
-# Create priority-enabled queue for fetch operations
-# Concurrency=5 means max 5 concurrent fetch operations
-fetch_queue = Queue("fetch_queue", priority_enabled=True, concurrency=5)
 
 
 # ============================================================================
@@ -256,8 +252,8 @@ def fetch_document_step(
         try:
             doc_info = resolve_document_step(identifier)
             mark_document_error_transaction(doc_info["id"], str(e))
-        except Exception:
-            pass
+        except Exception as mark_err:
+            logger.debug(f"Could not mark document as error: {mark_err}")
         return {"identifier": str(identifier), "status": "ERROR", "error": str(e)}
 
 
@@ -589,8 +585,8 @@ async def fetch_workflow(
                             await loop.run_in_executor(
                                 None, lambda: mark_document_error_transaction(doc_id, error_msg)
                             )
-                        except Exception:
-                            pass
+                        except Exception as mark_err:
+                            logger.debug(f"Could not mark document {doc_id} as error: {mark_err}")
 
                     return {"document_id": doc_id, "status": "ERROR", "error": error_msg}
 
@@ -624,6 +620,8 @@ __all__ = [
     "fetch_workflow",
     # Helper step
     "fetch_document_step",
+    # Batch step
+    "batch_fetch_content_step",
     # Granular steps (for custom workflows)
     "select_documents_step",
     "resolve_document_step",
@@ -634,6 +632,4 @@ __all__ = [
     "extract_links_step",
     "extract_metadata_step",
     "mark_document_error_transaction",
-    # Queue
-    "fetch_queue",
 ]
