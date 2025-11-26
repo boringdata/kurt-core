@@ -85,7 +85,7 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
         get_dbos()  # This will ensure DBOS is initialized
 
         with open(debug_file, "a") as f:
-            f.write(f"DBOS initialized successfully\n")
+            f.write("DBOS initialized successfully\n")
             f.flush()
 
         # Import workflow modules to register them
@@ -162,7 +162,9 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
         flush_all_handlers()
 
         with open(debug_file, "a") as f:
-            f.write(f"Log file setup complete, size: {temp_log_file.stat().st_size if temp_log_file.exists() else 'N/A'}\n")
+            f.write(
+                f"Log file setup complete, size: {temp_log_file.stat().st_size if temp_log_file.exists() else 'N/A'}\n"
+            )
             f.flush()
 
         # Enqueue the workflow (now logging is already configured)
@@ -196,7 +198,9 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
 
         # DEBUG: Log before rename
         with open(debug_file, "a") as f:
-            f.write(f"Before rename - temp file size: {temp_log_file.stat().st_size if temp_log_file.exists() else 'N/A'}\n")
+            f.write(
+                f"Before rename - temp file size: {temp_log_file.stat().st_size if temp_log_file.exists() else 'N/A'}\n"
+            )
             f.write(f"Renaming {temp_log_file} -> {final_log_file}\n")
             f.flush()
 
@@ -208,7 +212,9 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
         flush_all_handlers()
 
         with open(debug_file, "a") as f:
-            f.write(f"After rename - final file size: {final_log_file.stat().st_size if final_log_file.exists() else 'N/A'}\n")
+            f.write(
+                f"After rename - final file size: {final_log_file.stat().st_size if final_log_file.exists() else 'N/A'}\n"
+            )
             f.flush()
 
         # Write workflow ID to a file so parent process can retrieve it
@@ -284,7 +290,9 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
 
         # DEBUG: Final debug info
         with open(debug_file, "a") as f:
-            f.write(f"Worker exiting - final log size: {final_log_file.stat().st_size if final_log_file.exists() else 'N/A'}\n")
+            f.write(
+                f"Worker exiting - final log size: {final_log_file.stat().st_size if final_log_file.exists() else 'N/A'}\n"
+            )
             f.write(f"Worker complete at {time.time()}\n")
             f.flush()
             os.fsync(f.fileno())
@@ -301,7 +309,6 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
                 os.fsync(f.fileno())
         except Exception:
             # If we can't even write to debug file, write to stderr
-            import sys
             sys.stderr.write(f"CRITICAL: Worker {os.getpid()} crashed: {e}\n")
             sys.stderr.write(traceback.format_exc())
             sys.stderr.flush()
