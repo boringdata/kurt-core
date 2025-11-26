@@ -24,6 +24,11 @@ def test_map_background_workflow_creates_log(tmp_project):
     # - .kurt directory already exists
 
     # Run map command with background flag using new command structure
+    # Add timestamp to URL to prevent DBOS deduplication between test runs
+    import uuid
+    test_id = uuid.uuid4().hex[:8]
+    test_url = f"https://example.com?test={test_id}"
+
     result = subprocess.run(
         [
             sys.executable,
@@ -32,7 +37,7 @@ def test_map_background_workflow_creates_log(tmp_project):
             "content",
             "map",
             "url",
-            "https://example.com",
+            test_url,
             "--max-pages",
             "1",
             "--background",
@@ -166,6 +171,11 @@ def test_fetch_background_workflow_creates_log(tmp_project):
 
     # First, we need to have a document in the database to fetch
     # Use map command to discover a URL first (this will run synchronously)
+    # Use unique URL to prevent deduplication
+    import uuid
+    test_id = uuid.uuid4().hex[:8]
+    test_url = f"https://example.com?test={test_id}"
+
     subprocess.run(
         [
             sys.executable,
@@ -174,7 +184,7 @@ def test_fetch_background_workflow_creates_log(tmp_project):
             "content",
             "map",
             "url",
-            "https://example.com",
+            test_url,
             "--max-pages",
             "1",
         ],
@@ -192,7 +202,7 @@ def test_fetch_background_workflow_creates_log(tmp_project):
             "content",
             "fetch",
             "--url",
-            "https://example.com",
+            test_url,
             "--limit",
             "1",
             "--background",

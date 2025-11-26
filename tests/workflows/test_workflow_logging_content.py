@@ -76,6 +76,11 @@ def test_fetch_workflow_logs_capture_content(tmp_project):
     """Test that fetch workflow logs contain actual progress information."""
     import subprocess
     import sys
+    import uuid
+
+    # Use unique URL to prevent deduplication
+    test_id = uuid.uuid4().hex[:8]
+    test_url = f"https://example.com?test={test_id}"
 
     # First, create a document to fetch
     subprocess.run(
@@ -86,7 +91,7 @@ def test_fetch_workflow_logs_capture_content(tmp_project):
             "content",
             "map",
             "url",
-            "https://example.com",
+            test_url,
             "--max-pages",
             "1",
         ],
@@ -104,7 +109,7 @@ def test_fetch_workflow_logs_capture_content(tmp_project):
             "content",
             "fetch",
             "--url",
-            "https://example.com",
+            test_url,
             "--limit",
             "1",
             "--background",
@@ -151,6 +156,11 @@ def test_map_workflow_logs_capture_content(tmp_project):
     """Test that map workflow logs contain actual progress information."""
     import subprocess
     import sys
+    import uuid
+
+    # Use unique URL to prevent deduplication
+    test_id = uuid.uuid4().hex[:8]
+    test_url = f"https://example.com?test={test_id}"
 
     # Run map in background mode
     result = subprocess.run(
@@ -161,7 +171,7 @@ def test_map_workflow_logs_capture_content(tmp_project):
             "content",
             "map",
             "url",
-            "https://example.com",
+            test_url,
             "--max-pages",
             "1",
             "--background",
