@@ -48,32 +48,53 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
         priority: Priority for workflow execution (1=highest, default=10)
     """
     final_log_file = None
+    dbos_instance = None
 
     try:
-        # Set up signal handlers to prevent termination
-        signal.signal(signal.SIGHUP, ignore_signal)  # Ignore hangup signal
-        signal.signal(signal.SIGTERM, ignore_signal)  # Ignore termination signal for now
+        # Set up signal handlers to prevent termination from parent
+        # But still allow direct SIGINT/SIGKILL for debugging
+        signal.signal(signal.SIGHUP, signal.SIG_IGN)  # Ignore hangup signal
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)  # Ignore termination from parent
 
         # Initialize DBOS fresh in this process
         from dbos import DBOS, SetEnqueueOptions
 
         from kurt.workflows import get_dbos, init_dbos
 
-        # Simple initialization
+        # Initialize DBOS and ensure it's ready
         init_dbos()
-        get_dbos()  # This will ensure DBOS is initialized
+        dbos_instance = get_dbos()  # Store for cleanup
 
-        # Give DBOS time to start up its executor threads in CI
-        # This is critical for the queue processing threads to be ready
-        time.sleep(2)
+        # Critical: Prime the DBOS thread pool to ensure executor threads are running
+        # This forces thread creation which may not happen automatically in subprocess
+        import uuid
 
-        # Verify DBOS is actually ready by doing a quick test
-        # This ensures the executor threads are running
+        prime_logger = logging.getLogger("kurt.worker.prime")
+        prime_logger.info("Priming DBOS thread pool...")
+
+        # Submit a dummy workflow to force thread pool initialization
+        def dummy_workflow():
+            """Dummy workflow to prime thread pool."""
+            return {"status": "primed"}
+
         try:
-            test_handle = DBOS.start_workflow(lambda: None, workflow_id=f"test-{os.getpid()}")
-            test_handle.get_status()
-        except Exception:
-            pass  # Ignore test workflow errors
+            # Use unique ID to avoid deduplication
+            dummy_id = f"prime-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+            dummy_handle = DBOS.start_workflow(dummy_workflow, workflow_id=dummy_id)
+
+            # Wait for dummy to complete (proves threads are working)
+            max_prime_wait = 10  # 10 seconds max
+            prime_start = time.time()
+            while (time.time() - prime_start) < max_prime_wait:
+                status = dummy_handle.get_status()
+                if status and status.status in ["SUCCESS", "ERROR"]:
+                    prime_logger.info(f"Thread pool primed successfully (status={status.status})")
+                    break
+                time.sleep(0.2)
+            else:
+                prime_logger.warning("Thread pool priming timed out but continuing anyway")
+        except Exception as e:
+            prime_logger.warning(f"Thread pool priming failed but continuing: {e}")
 
         # Import workflow modules to register them
         from kurt.content.map import workflow as _map  # noqa
@@ -222,6 +243,29 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
 
         # Exit with error code
         sys.exit(1)
+
+    finally:
+        # Clean shutdown of DBOS
+        if dbos_instance is not None:
+            try:
+                shutdown_logger = logging.getLogger("kurt.worker.shutdown")
+                shutdown_logger.info("Shutting down DBOS...")
+                # Give workflows 5 seconds to complete gracefully
+                DBOS.destroy(workflow_completion_timeout_sec=5)
+                shutdown_logger.info("DBOS shutdown complete")
+            except Exception as e:
+                # Log but don't fail - we're exiting anyway
+                try:
+                    shutdown_logger = logging.getLogger("kurt.worker.shutdown")
+                    shutdown_logger.warning(f"Error during DBOS shutdown: {e}")
+                except Exception:
+                    pass
+
+        # Final flush of all logs
+        try:
+            flush_all_handlers()
+        except Exception:
+            pass
 
     # Exit cleanly
     sys.exit(0)
