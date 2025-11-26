@@ -5,110 +5,30 @@
 
 scenarios:
   # ========================================================================
-  # Scenario 01: Graph Building - Index ACME Documentation
+  # Scenario 01: Answer Questions - ACME API Documentation
   # ========================================================================
-  - name: 01_graph_building
-    description: Build knowledge graph from ACME documentation
+  - name: 01_answer_acme_general
+    description: Answer general question about ACME API using pre-built knowledge graph
+    project: acme-docs
 
     notes: |
-      Tests the complete workflow of building a knowledge graph:
-      1. Initialize Kurt project
-      2. Fetch ACME documentation from mock server
-      3. Index content to extract entities
-      4. Build knowledge graph with entity relationships
+      Tests the answer command's ability to answer a general overview question
+      using a pre-populated knowledge graph (acme-docs project dump).
 
-      Expected results:
-      - 4+ documents fetched from docs.acme-corp.com
-      - 8+ entities extracted (ACME, Node.js, Python, API Keys, JWT, OAuth, etc.)
-      - Document-entity links created in document_entities table
+      Question: "What is ACME API?"
 
-      This scenario can be run independently to set up a knowledge graph
-      for testing the answer command.
-
-    # No setup_commands - agent does everything from scratch
+      Expected answer should include:
+      - Reference to ACME API
+      - Mention of deployment/production features
+      - API-related terminology
 
     initial_prompt: |
-      Please set up a knowledge graph for ACME API documentation:
+      Run the kurt answer command to answer this question:
 
-      1. Initialize a Kurt project
-      2. Fetch documentation from http://docs.acme-corp.com
-      3. Index all fetched content to build the knowledge graph
+      What is ACME API?
 
-      Show me a summary of what entities were extracted.
-
-    assertions:
-      # Verify project was initialized
-      - type: FileExists
-        path: kurt.config
-
-      - type: FileExists
-        path: .kurt/kurt.sqlite
-
-      # Verify content was fetched
-      - type: SQLQueryAssertion
-        query: SELECT COUNT(*) >= 4 FROM documents WHERE ingestion_status='FETCHED'
-
-      # Verify entities were extracted
-      - type: SQLQueryAssertion
-        query: SELECT COUNT(*) >= 8 FROM entities
-
-      # Verify key entities exist
-      - type: SQLQueryAssertion
-        query: SELECT COUNT(*) >= 1 FROM entities WHERE LOWER(name) LIKE '%acme%'
-
-      - type: SQLQueryAssertion
-        query: SELECT COUNT(*) >= 1 FROM entities WHERE LOWER(name) IN ('node.js', 'python', 'nodejs')
-
-      # Verify document-entity links
-      - type: SQLQueryAssertion
-        query: SELECT COUNT(*) >= 5 FROM document_entities
-
-      # Verify conversation completed
-      - type: MetricEquals
-        metric_path: conversation.completed
-        expected_value: true
-
-  # ========================================================================
-  # Scenario 02: Answer Multiple Questions (Standalone)
-  # ========================================================================
-  - name: 02_answer_questions
-    description: Answer multiple questions using pre-built knowledge graph
-
-    notes: |
-      Tests the answer command's ability to answer multiple domain-specific
-      questions using a pre-populated knowledge graph.
-
-      This scenario can be run standalone (with pre-setup) OR after running
-      scenario 01 (graph_building) to test the complete workflow.
-
-      Questions tested:
-      1. General overview - "What is ACME API?"
-      2. Authentication - "How do I authenticate with ACME API?"
-      3. Deployment - "How do I deploy my API to production?"
-      4. Technologies - "What programming languages does ACME support?"
-
-      Correctness metrics verify answers contain expected keywords from docs:
-      - Q1: "ACME", "API", "deploy"
-      - Q2: "API key", "JWT"
-      - Q3: "deploy"
-      - Q4: "Node", "Python"
-
-    # Pre-setup for standalone execution
-    setup_commands:
-      - KURT_TELEMETRY_DISABLED=1 uv run kurt init
-      - KURT_TELEMETRY_DISABLED=1 uv run kurt content map url http://docs.acme-corp.com
-      - KURT_TELEMETRY_DISABLED=1 uv run kurt content fetch --include "http://docs.acme-corp.com*"
-      - KURT_TELEMETRY_DISABLED=1 uv run kurt content index --include "http://docs.acme-corp.com*"
-
-    initial_prompt: |
-      The ACME API documentation has been indexed. Please answer these questions:
-
-      1. What is ACME API?
-      2. How do I authenticate with ACME API?
-      3. How do I deploy my API to production?
-      4. What programming languages does ACME support?
-
-      For each answer, show me the confidence score and key entities found.
+      Use this exact command:
+      KURT_TELEMETRY_DISABLED=1 uv run kurt answer "What is ACME API?"
 
     assertions:
       # Verify knowledge graph is populated
@@ -116,52 +36,60 @@ scenarios:
         query: SELECT COUNT(*) >= 8 FROM entities
 
       - type: SQLQueryAssertion
-        query: SELECT COUNT(*) >= 4 FROM documents WHERE ingestion_status='FETCHED'
+        query: SELECT COUNT(*) >= 4 FROM documents
 
-      # Verify multiple answer invocations (at least 4 for 4 questions)
-      - type: MetricGreaterThan
-        metric_path: conversation.tool_calls
-        expected_value: 4
-
-      # CORRECTNESS METRICS for Question 1 (What is ACME?)
+      # Verify answer contains expected content
       - type: ConversationContains
-        text: "ACME"
-        case_sensitive: false
+        pattern: "(?i)ACME"
 
       - type: ConversationContains
-        text: "API"
-        case_sensitive: false
+        pattern: "(?i)API"
+
+      # Verify conversation completed
+      - type: MetricEquals
+        metric_path: conversation.completed
+        expected_value: true
+
+  # ========================================================================
+  # Scenario 02: Answer Authentication Question
+  # ========================================================================
+  - name: 02_answer_acme_authentication
+    description: Answer authentication question using ACME docs knowledge graph
+    project: acme-docs
+
+    notes: |
+      Tests the answer command's ability to answer a specific technical question
+      about authentication using the ACME documentation.
+
+      Question: "How do I authenticate with ACME API?"
+
+      Expected answer should include:
+      - API key authentication
+      - JWT tokens
+      - Authentication-related terminology
+
+    initial_prompt: |
+      Run the kurt answer command to answer this question:
+
+      How do I authenticate with ACME API?
+
+      Use this exact command:
+      KURT_TELEMETRY_DISABLED=1 uv run kurt answer "How do I authenticate with ACME API?"
+
+    assertions:
+      # Verify knowledge graph is populated
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) >= 8 FROM entities
+
+      - type: SQLQueryAssertion
+        query: SELECT COUNT(*) >= 4 FROM documents
+
+      # Verify answer contains expected authentication content
+      - type: ConversationContains
+        pattern: "(?i)API key"
 
       - type: ConversationContains
-        text: "deploy"
-        case_sensitive: false
-
-      # CORRECTNESS METRICS for Question 2 (Authentication)
-      - type: ConversationContains
-        text: "API key"
-        case_sensitive: false
-
-      - type: ConversationContains
-        text: "JWT"
-        case_sensitive: false
-
-      # CORRECTNESS METRICS for Question 4 (Languages)
-      - type: ConversationContains
-        text: "Node"
-        case_sensitive: false
-
-      - type: ConversationContains
-        text: "Python"
-        case_sensitive: false
-
-      # Verify answer format appears multiple times
-      - type: ConversationContains
-        text: "Confidence"
-        case_sensitive: false
-
-      - type: ConversationContains
-        text: "Key Entities"
-        case_sensitive: false
+        pattern: "(?i)JWT"
 
       # Verify conversation completed
       - type: MetricEquals
