@@ -179,14 +179,22 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
         # In CI, we need more aggressive waiting to ensure the workflow starts
         time.sleep(5)  # Increased wait time for CI - queue thread needs time to dequeue
 
-        # Force a status check to wake up DBOS if needed
-        try:
-            initial_status = handle.get_status()
-            if initial_status:
-                status_logger = logging.getLogger("kurt.worker.status")
-                status_logger.info(f"Initial workflow status: {initial_status.status}")
-        except Exception:
-            pass
+        # Force multiple status checks to trigger DBOS executor threads
+        # This helps ensure the workflow transitions from PENDING to RUNNING
+        status_logger = logging.getLogger("kurt.worker.status")
+        for i in range(5):
+            try:
+                initial_status = handle.get_status()
+                if initial_status:
+                    status_logger.info(
+                        f"Initial workflow status check {i+1}: {initial_status.status}"
+                    )
+                    # If the workflow has started executing, we're good
+                    if initial_status.status not in ["PENDING", "ENQUEUED"]:
+                        break
+            except Exception:
+                pass
+            time.sleep(1)
 
         # Wait for workflow to complete by polling its status
         # This keeps the process alive AND the ThreadPoolExecutor running

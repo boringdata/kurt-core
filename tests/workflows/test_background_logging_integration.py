@@ -56,8 +56,10 @@ def test_map_background_workflow_creates_log(tmp_project):
     assert result.returncode == 0, f"Command failed: {result.stderr}"
 
     # Should mention workflow and background mode
+    # Accept both old format "Workflow start" and new format "✓ Workflow started"
     assert (
-        "Workflow start" in result.stdout and "background" in result.stdout
+        ("Workflow start" in result.stdout or "✓ Workflow start" in result.stdout)
+        and "background" in result.stdout
     ), f"Missing background start message. Output: {result.stdout}"
 
     # Extract workflow ID from output (if present)
@@ -206,8 +208,10 @@ def test_fetch_background_workflow_creates_log(tmp_project):
     # The message can be either:
     # - "✓ Workflow started in background: {workflow_id}" (with actual ID)
     # - "✓ Workflow starting in background..." (without ID, placeholder)
+    # Accept both old format "Workflow start" and new format "✓ Workflow started"
     assert (
-        "Workflow start" in result.stdout and "background" in result.stdout
+        ("Workflow start" in result.stdout or "✓ Workflow start" in result.stdout)
+        and "background" in result.stdout
     ), f"Missing background start message. Output: {result.stdout}"
     assert (
         ".kurt/logs/workflow-" in result.stdout or "Logs" in result.stdout
