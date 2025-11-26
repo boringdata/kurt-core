@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 @click.command("index")
 @track_command
 @click.argument("identifier", required=False)
-@add_filter_options()
+@add_filter_options(exclude=True)
 @click.option(
     "--all",
     is_flag=True,
@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 def index(
     identifier: str,
     include_pattern: str,
+    exclude_pattern: str,
     ids: str,
     in_cluster: str,
     with_status: str,
@@ -80,6 +81,9 @@ def index(
 
         # Re-index already indexed documents
         kurt index --include "*/docs/*" --force
+
+        # Exclude certain documents from indexing
+        kurt index --all --exclude "*/test/*"
     """
     from kurt.content.document import list_documents_for_indexing
 
@@ -93,6 +97,7 @@ def index(
                 identifier=identifier,
                 ids=ids,
                 include_pattern=include_pattern,
+                exclude_pattern=exclude_pattern,
                 in_cluster=in_cluster,
                 with_status=with_status,
                 with_content_type=with_content_type,
@@ -102,6 +107,7 @@ def index(
             documents = list_documents_for_indexing(
                 ids=filters.ids,
                 include_pattern=filters.include_pattern,
+                exclude_pattern=filters.exclude_pattern,
                 in_cluster=filters.in_cluster,
                 with_status=filters.with_status,
                 with_content_type=filters.with_content_type,

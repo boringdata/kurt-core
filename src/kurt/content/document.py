@@ -1202,6 +1202,7 @@ def list_content(
 def list_documents_for_indexing(
     ids: Optional[str] = None,
     include_pattern: Optional[str] = None,
+    exclude_pattern: Optional[str] = None,
     in_cluster: Optional[str] = None,
     with_status: Optional[str] = None,
     with_content_type: Optional[str] = None,
@@ -1222,6 +1223,7 @@ def list_documents_for_indexing(
     Args:
         ids: Comma-separated list of document IDs (full/partial UUIDs, URLs, or file paths)
         include_pattern: Glob pattern to filter documents (e.g., "*/docs/*")
+        exclude_pattern: Glob pattern to exclude documents (e.g., "*/test/*")
         in_cluster: Cluster name to filter documents
         with_status: Filter by ingestion status (NOT_FETCHED, FETCHED, ERROR)
         with_content_type: Filter by content type (tutorial, guide, blog, etc.)
@@ -1244,6 +1246,9 @@ def list_documents_for_indexing(
 
         # Get all documents matching pattern
         docs = list_documents_for_indexing(include_pattern="*/docs/*")
+
+        # Exclude documents matching pattern
+        docs = list_documents_for_indexing(all_flag=True, exclude_pattern="*/test/*")
 
         # Get all FETCHED documents
         docs = list_documents_for_indexing(all_flag=True)
@@ -1367,6 +1372,17 @@ def list_documents_for_indexing(
                     f"({status_summary}), but none are {status_filter.value}.\n"
                     f"Tip: Use 'kurt content fetch --include \"{include_pattern}\"' to fetch these documents first."
                 )
+
+        # Apply exclude pattern filter if provided
+        if exclude_pattern:
+            docs = [
+                d
+                for d in docs
+                if not (
+                    (d.source_url and fnmatch(d.source_url, exclude_pattern))
+                    or (d.content_path and fnmatch(d.content_path, exclude_pattern))
+                )
+            ]
 
         return docs
 

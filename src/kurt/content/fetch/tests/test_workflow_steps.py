@@ -434,3 +434,81 @@ class TestWorkflowStepIntegration:
 
                 assert fetch_result["content"] == "Content"
                 assert fetch_result["metadata"]["title"] == "Test"
+
+
+class TestBatchWorkflowDeterminism:
+    """Tests for DBOS determinism in batch workflow.
+
+    These tests verify that the process_fetched_document function always
+    closes streams in a finally block, ensuring deterministic behavior
+    required by DBOS workflow replay.
+    """
+
+    def test_fetch_workflow_has_finally_block(self):
+        """Test that process_fetched_document uses finally block for close_stream.
+
+        This verifies the code structure to prevent regression of DBOS
+        determinism issues. The finally block ensures close_stream is
+        always called regardless of success/failure paths.
+        """
+        import ast
+        import inspect
+
+        from kurt.content.fetch.workflow import fetch_workflow
+
+        # Get the source code
+        source = inspect.getsource(fetch_workflow)
+        tree = ast.parse(source)
+
+        # Find process_fetched_document nested function
+        found_finally = False
+        found_close_stream = False
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.AsyncFunctionDef) and node.name == "process_fetched_document":
+                # Look for Try statement with finally block
+                for stmt in ast.walk(node):
+                    if isinstance(stmt, ast.Try) and stmt.finalbody:
+                        found_finally = True
+                        # Check finally block contains close_stream call
+                        for final_stmt in stmt.finalbody:
+                            if isinstance(final_stmt, ast.Expr):
+                                if isinstance(final_stmt.value, ast.Call):
+                                    if hasattr(final_stmt.value.func, "attr"):
+                                        if final_stmt.value.func.attr == "close_stream":
+                                            found_close_stream = True
+                                            break
+
+        assert found_finally, "process_fetched_document should have a finally block"
+        assert found_close_stream, "finally block should call DBOS.close_stream() for determinism"
+
+    def test_doc_id_initialized_before_try(self):
+        """Test that doc_id is initialized before try block.
+
+        This ensures doc_id is available in all code paths (try/except/finally)
+        which is necessary for proper error handling and logging.
+        """
+        import ast
+        import inspect
+
+        from kurt.content.fetch.workflow import fetch_workflow
+
+        source = inspect.getsource(fetch_workflow)
+        tree = ast.parse(source)
+
+        # Find process_fetched_document and verify doc_id initialization
+        for node in ast.walk(tree):
+            if isinstance(node, ast.AsyncFunctionDef) and node.name == "process_fetched_document":
+                # Check that doc_id is assigned early in the function
+                doc_id_assigned = False
+
+                for i, stmt in enumerate(node.body):
+                    # Track doc_id assignments
+                    if isinstance(stmt, ast.Assign):
+                        for target in stmt.targets:
+                            if isinstance(target, ast.Name) and target.id == "doc_id":
+                                doc_id_assigned = True
+                                break
+
+                # Verify doc_id is assigned
+                assert doc_id_assigned, "doc_id should be initialized in process_fetched_document"

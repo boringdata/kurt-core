@@ -69,11 +69,17 @@ def setup_workflow_logging(log_file: Path) -> None:
     for handler in root_logger.handlers[:]:
         root_logger.removeHandler(handler)
 
-    # Add single file handler
-    file_handler = logging.FileHandler(str(log_file))
+    # Add single file handler (mode='a' for append, delay=False to open immediately)
+    file_handler = logging.FileHandler(str(log_file), mode="a", delay=False)
     file_handler.setLevel(logging.INFO)
     formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     file_handler.setFormatter(formatter)
+    # Force line buffering for immediate log visibility
+    try:
+        file_handler.stream.reconfigure(line_buffering=True)
+    except (AttributeError, OSError):
+        # Python < 3.7 or file doesn't support reconfigure
+        pass
 
     # Configure root logger
     root_logger.addHandler(file_handler)

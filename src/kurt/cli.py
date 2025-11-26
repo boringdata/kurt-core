@@ -6,17 +6,27 @@ import sys
 from pathlib import Path
 
 import click
+from dotenv import load_dotenv
 from rich.console import Console
 
 from kurt import __version__
-from kurt.admin.telemetry.decorators import track_command
-from kurt.commands.admin import admin
-from kurt.commands.content import content
-from kurt.commands.integrations import integrations
-from kurt.commands.status import status
-from kurt.commands.workflows import workflows_group
-from kurt.config.base import KurtConfig, config_file_exists, create_config, get_config_file_path
-from kurt.db.database import init_database
+
+# Load environment variables from .env file in current directory
+# This must happen before any other imports that might use env vars
+load_dotenv()
+from kurt.admin.telemetry.decorators import track_command  # noqa: E402
+from kurt.commands.admin import admin  # noqa: E402
+from kurt.commands.content import content  # noqa: E402
+from kurt.commands.integrations import integrations  # noqa: E402
+from kurt.commands.status import status  # noqa: E402
+from kurt.commands.workflows import workflows_group  # noqa: E402
+from kurt.config.base import (  # noqa: E402
+    KurtConfig,
+    config_file_exists,
+    create_config,
+    get_config_file_path,
+)
+from kurt.db.database import init_database  # noqa: E402
 
 console = Console()
 
