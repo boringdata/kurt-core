@@ -121,7 +121,7 @@ def list(filter):
 
     scenarios_dir = eval_dir / "scenarios"
 
-    # Collect scenarios from all YAML files
+    # Collect scenarios from all YAML files (with source file tracking)
     all_scenarios = []
 
     # Try scenarios.yaml first
@@ -130,7 +130,9 @@ def list(filter):
         with open(scenarios_yaml) as f:
             data = yaml.safe_load(f)
             if data and "scenarios" in data:
-                all_scenarios.extend(data["scenarios"])
+                for scenario in data["scenarios"]:
+                    scenario["_source_file"] = scenarios_yaml.name
+                    all_scenarios.append(scenario)
 
     # Then collect from all scenarios_*.yaml files
     for yaml_file in sorted(scenarios_dir.glob("scenarios_*.yaml")):
@@ -138,7 +140,9 @@ def list(filter):
             with open(yaml_file) as f:
                 data = yaml.safe_load(f)
                 if data and "scenarios" in data:
-                    all_scenarios.extend(data["scenarios"])
+                    for scenario in data["scenarios"]:
+                        scenario["_source_file"] = yaml_file.name
+                        all_scenarios.append(scenario)
         except Exception as e:
             click.secho(f"Warning: Failed to load {yaml_file.name}: {e}", fg="yellow")
 
@@ -161,11 +165,12 @@ def list(filter):
     for i, scenario in enumerate(scenarios, 1):
         name = scenario["name"]
         desc = scenario.get("description", "No description")
+        source_file = scenario.get("_source_file", "unknown")
 
         # Extract scenario number from name (e.g., "03" from "03_interactive_project")
         scenario_num = name.split("_")[0] if "_" in name else str(i)
 
-        click.echo(f"  {scenario_num}. {click.style(name, fg='cyan', bold=True)}")
+        click.echo(f"  {scenario_num}. {click.style(name, fg='cyan', bold=True)} {click.style(f'({source_file})', fg='yellow', dim=True)}")
         click.echo(f"     {desc}")
 
         if "notes" in scenario:
