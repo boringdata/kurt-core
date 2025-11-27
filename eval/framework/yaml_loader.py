@@ -5,7 +5,7 @@ Supports both individual scenario files and a scenarios.yaml file with multiple 
 """
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import yaml
 
@@ -62,7 +62,9 @@ def load_yaml_scenario(yaml_path: Path, scenario_name: Optional[str] = None) -> 
     # Parse conversational mode (defaults to True)
     conversational = data.get("conversational", True)
 
-    has_question_set = bool(data.get("question_set") or data.get("questions") or data.get("questions_file"))
+    has_question_set = bool(
+        data.get("question_set") or data.get("questions") or data.get("questions_file")
+    )
 
     # Validate required fields
     required = ["name", "description"]

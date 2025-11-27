@@ -4,7 +4,7 @@ description: "Answer MotherDuck questions by searching sources directly (no KG)"
 project: motherduck
 conversational: true
 setup_commands:
-  - uv run --project /Users/julien/Documents/wik/wikumeo/projects/kurt-core python /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/mock/generators/load_dump.py motherduck --skip-entities
+  - uv run --project /Users/julien/Documents/wik/wikumeo/projects/kurt-core python /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/framework/dumps/loader.py motherduck --skip-entities
 question_set:
   file: questions_motherduck.yaml
   answer_file_template: /tmp/answer_without_kg_{question_num}.md

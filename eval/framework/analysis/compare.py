@@ -130,7 +130,9 @@ def generate_report(
     )
 
     report_lines.append("## Results Comparison\n")
-    report_lines.append("| # | With KG Score | With KG Time (s) | With KG Tokens | Without KG Score | Without KG Time (s) | Without KG Tokens | Δ Score |")
+    report_lines.append(
+        "| # | With KG Score | With KG Time (s) | With KG Tokens | Without KG Score | Without KG Time (s) | Without KG Tokens | Δ Score |"
+    )
     report_lines.append("| --- | --- | --- | --- | --- | --- | --- | --- |")
 
     combined_rows: List[Dict[str, Any]] = []
@@ -152,14 +154,20 @@ def generate_report(
         with_time = with_usage.get("duration_seconds")
         with_tokens = with_usage.get("total_tokens")
         with_time_str = f"{with_time:.1f}" if isinstance(with_time, (int, float)) else "N/A"
-        with_tokens_str = f"{int(with_tokens):,}" if isinstance(with_tokens, (int, float)) else "N/A"
+        with_tokens_str = (
+            f"{int(with_tokens):,}" if isinstance(with_tokens, (int, float)) else "N/A"
+        )
 
         # Extract usage data for without_kg
         without_usage = extract_usage(without_entry) or {}
         without_time = without_usage.get("duration_seconds")
         without_tokens = without_usage.get("total_tokens")
-        without_time_str = f"{without_time:.1f}" if isinstance(without_time, (int, float)) else "N/A"
-        without_tokens_str = f"{int(without_tokens):,}" if isinstance(without_tokens, (int, float)) else "N/A"
+        without_time_str = (
+            f"{without_time:.1f}" if isinstance(without_time, (int, float)) else "N/A"
+        )
+        without_tokens_str = (
+            f"{int(without_tokens):,}" if isinstance(without_tokens, (int, float)) else "N/A"
+        )
 
         delta_str = f"{delta:+.2f}" if delta is not None else "N/A"
         with_score_str = f"{with_score:.2f}" if with_score is not None else "N/A"
@@ -184,14 +192,18 @@ def generate_report(
                     "score": with_score,
                     "usage": extract_usage(with_entry),
                     "cached": with_entry.get("cached_response") if with_entry else None,
-                    "feedback": (with_entry or {}).get("llm_judge", {}).get("feedback") if with_entry else None,
+                    "feedback": (with_entry or {}).get("llm_judge", {}).get("feedback")
+                    if with_entry
+                    else None,
                     "source": (with_entry or {}).get("_source_file"),
                 },
                 "without_kg": {
                     "score": without_score,
                     "usage": extract_usage(without_entry),
                     "cached": without_entry.get("cached_response") if without_entry else None,
-                    "feedback": (without_entry or {}).get("llm_judge", {}).get("feedback") if without_entry else None,
+                    "feedback": (without_entry or {}).get("llm_judge", {}).get("feedback")
+                    if without_entry
+                    else None,
                     "source": (without_entry or {}).get("_source_file"),
                 },
                 "delta": delta,
@@ -239,7 +251,10 @@ def generate_report(
 
 
 def generate_report_from_dirs(
-    with_dir: Path | str, without_dir: Path | str, questions_file: Path | str, output_file: Path | str
+    with_dir: Path | str,
+    without_dir: Path | str,
+    questions_file: Path | str,
+    output_file: Path | str,
 ) -> Path:
     with_path = Path(with_dir)
     without_path = Path(without_dir)
@@ -251,7 +266,9 @@ def generate_report_from_dirs(
     without_entries = collect_question_runs(without_path)
 
     if not with_entries or not without_entries:
-        raise ValueError("Missing per-question results. Run the scenarios before generating the report.")
+        raise ValueError(
+            "Missing per-question results. Run the scenarios before generating the report."
+        )
 
     generate_report(with_entries, without_entries, questions, output_path)
     return output_path

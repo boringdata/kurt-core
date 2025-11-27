@@ -1,0 +1,49 @@
+---
+name: answer_motherduck_enhanced
+description: "Answer MotherDuck questions using kurt answer, then enhance with agent"
+project: motherduck
+conversational: true
+setup_commands:
+  - uv run --project /Users/julien/Documents/wik/wikumeo/projects/kurt-core python /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/framework/dumps/loader.py motherduck
+question_set:
+  file: questions_motherduck.yaml
+  answer_file_template: /tmp/answer_enhanced_{question_num}.md
+  initial_prompt: |
+    I need you to create an enhanced answer for this question:
+
+    {question}
+
+    Steps:
+    1. First, run the kurt answer command to get the GraphRAG-based answer:
+       KURT_TELEMETRY_DISABLED=1 uv run kurt answer "{question}" --output /tmp/kg_answer_{question_num}.md
+
+    2. Read the generated answer from /tmp/kg_answer_{question_num}.md
+
+    3. Evaluate the GraphRAG answer:
+       - If the answer is comprehensive and complete, use it as-is
+       - ONLY if you identify gaps or missing important information, search .kurt/sources/ for additional context
+       - Improve structure and clarity where needed
+       - Add examples or clarifications only if they significantly enhance understanding
+
+    4. Write your enhanced answer to: {answer_file}
+
+    The enhanced answer should:
+    - Start with the core insights from the GraphRAG answer
+    - Add additional information ONLY if the original answer has gaps
+    - Include a ## Sources section listing both KG entities used and documents referenced
+    - Be comprehensive yet clear and well-structured
+
+    Important: Do NOT search for additional files unless you've identified specific gaps in the GraphRAG answer that need to be filled.
+
+  assertions:
+    - type: FileExists
+      path: "{answer_file}"
+  llm_judge:
+    enabled: true
+    provider: openai
+    weights:
+      accuracy: 0.4
+      completeness: 0.3
+      relevance: 0.2
+      clarity: 0.1
+  results_dir: eval/results/answer_motherduck_enhanced

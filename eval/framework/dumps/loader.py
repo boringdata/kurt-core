@@ -29,7 +29,8 @@ def load_dump(dump_name: str, skip_entities: bool = False):
         skip_entities: If True, skip loading entity-related tables
     """
     # Look for dump in mock/projects/{dump_name}/
-    project_dir = Path(__file__).parent.parent / "projects" / dump_name
+    # Go up from framework/dumps/ to eval/ then to mock/projects/
+    project_dir = Path(__file__).parent.parent.parent / "mock" / "projects" / dump_name
 
     if not project_dir.exists():
         raise FileNotFoundError(f"Project directory not found: {project_dir}")

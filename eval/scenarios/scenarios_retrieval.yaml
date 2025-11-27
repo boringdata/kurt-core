@@ -28,7 +28,7 @@ scenarios:
     # Pre-setup for standalone execution (using JSONL dump for speed)
     setup_commands:
       - KURT_TELEMETRY_DISABLED=1 uv run kurt init
-      - python3 eval/mock/generators/load_dump.py acme-docs
+      - python3 eval/framework/dumps/loader.py acme-docs
 
     initial_prompt: |
       The ACME API documentation has been indexed. Please answer these questions:
@@ -110,7 +110,7 @@ scenarios:
 
     setup_commands:
       - KURT_TELEMETRY_DISABLED=1 uv run kurt init
-      - python3 eval/mock/generators/load_dump.py acme-docs
+      - python3 eval/framework/dumps/loader.py acme-docs
 
     initial_prompt: |
       Answer this question with verbose output:
@@ -157,7 +157,7 @@ scenarios:
 
     setup_commands:
       - KURT_TELEMETRY_DISABLED=1 uv run kurt init
-      - python3 eval/mock/generators/load_dump.py acme-docs
+      - python3 eval/framework/dumps/loader.py acme-docs
 
     initial_prompt: |
       Answer this question using only the top 3 most relevant documents:

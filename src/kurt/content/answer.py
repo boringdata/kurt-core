@@ -1,7 +1,6 @@
 """GraphRAG-based question answering using the knowledge graph."""
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 import dspy
@@ -11,6 +10,7 @@ from kurt.config import load_config
 from kurt.content.embeddings import generate_embeddings
 from kurt.db.database import get_session
 from kurt.db.models import Document, Entity
+from kurt.utils.dspy_usage import run_with_usage
 
 
 @dataclass
@@ -21,9 +21,6 @@ class RetrievedContext:
     documents: list[Document]
     entity_similarities: dict[str, float]  # entity_id -> similarity score
     document_scores: dict[str, float]  # document_id -> relevance score
-
-
-from kurt.utils.dspy_usage import run_with_usage
 
 
 @dataclass
@@ -118,12 +115,36 @@ def retrieve_context(question: str, max_documents: int = 10) -> RetrievedContext
                 # Extract keywords from question
                 keywords = question.lower().split()
                 # Filter out common words
-                stop_words = {"what", "who", "where", "when", "why", "how", "is", "are", "the", "a", "an", "in", "on", "at", "to", "for", "of", "with", "by", "from", "about"}
+                stop_words = {
+                    "what",
+                    "who",
+                    "where",
+                    "when",
+                    "why",
+                    "how",
+                    "is",
+                    "are",
+                    "the",
+                    "a",
+                    "an",
+                    "in",
+                    "on",
+                    "at",
+                    "to",
+                    "for",
+                    "of",
+                    "with",
+                    "by",
+                    "from",
+                    "about",
+                }
                 keywords = [k for k in keywords if k not in stop_words and len(k) > 2]
 
                 if keywords:
                     # Search for entities matching keywords
-                    keyword_patterns = " OR ".join([f"LOWER(e.name) LIKE :kw{i}" for i in range(len(keywords))])
+                    keyword_patterns = " OR ".join(
+                        [f"LOWER(e.name) LIKE :kw{i}" for i in range(len(keywords))]
+                    )
                     params = {f"kw{i}": f"%{kw}%" for i, kw in enumerate(keywords)}
 
                     result = session.execute(
@@ -134,7 +155,7 @@ def retrieve_context(question: str, max_documents: int = 10) -> RetrievedContext
                             ORDER BY e.source_mentions DESC
                             LIMIT 10
                         """),
-                        params
+                        params,
                     )
 
                     # Assign similarity based on source mentions (more mentions = more relevant)
@@ -154,7 +175,7 @@ def retrieve_context(question: str, max_documents: int = 10) -> RetrievedContext
                             ORDER BY e.source_mentions DESC
                             LIMIT 10
                         """),
-                        params
+                        params,
                     ):
                         entity_id = row[0]
                         mentions = row[1] or 1
@@ -311,7 +332,9 @@ def generate_answer(question: str, context: RetrievedContext) -> AnswerResult:
     for entity in context.entities[:10]:  # Top 10 entities
         similarity = context.entity_similarities.get(entity.id, 0.0)
         desc = f" - {entity.description}" if entity.description else ""
-        entities_text.append(f"- {entity.name} ({entity.entity_type}, relevance: {similarity:.2f}){desc}")
+        entities_text.append(
+            f"- {entity.name} ({entity.entity_type}, relevance: {similarity:.2f}){desc}"
+        )
 
     # Relationships between entities
     relationships_text = []

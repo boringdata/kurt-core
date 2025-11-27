@@ -179,7 +179,7 @@ Tests for the answer command:
 ```bash
 # In your test directory
 KURT_TELEMETRY_DISABLED=1 uv run kurt init
-python3 eval/mock/generators/load_dump.py acme-docs
+python3 eval/framework/dumps/loader.py acme-docs
 ```
 
 Now ready with 15+ entities and 4 documents!
@@ -189,7 +189,7 @@ Now ready with 15+ entities and 4 documents!
 ```yaml
 setup_commands:
   - KURT_TELEMETRY_DISABLED=1 uv run kurt init
-  - python3 eval/mock/generators/load_dump.py acme-docs
+  - python3 eval/framework/dumps/loader.py acme-docs
 ```
 
 ### Available Mock Data
@@ -341,7 +341,7 @@ assertions:
 ✅ **Do**: Pre-load with JSONL dumps (< 1s)
 ```yaml
 setup_commands:
-  - python3 eval/mock/generators/load_dump.py acme-docs
+  - python3 eval/framework/dumps/loader.py acme-docs
 ```
 
 ❌ **Don't**: Fetch + index in every test (30-60s)

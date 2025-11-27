@@ -54,7 +54,7 @@ Real-world dump from kurt-demo containing MotherDuck documentation and content.
 KURT_TELEMETRY_DISABLED=1 uv run kurt init
 
 # Load a project dump
-python eval/mock/generators/load_dump.py acme-docs
+python eval/framework/dumps/loader.py acme-docs
 ```
 
 ### Create a New Project Dump
@@ -76,7 +76,7 @@ In your scenario YAML:
 ```yaml
 setup_commands:
   - KURT_TELEMETRY_DISABLED=1 uv run kurt init
-  - python eval/mock/generators/load_dump.py acme-docs
+  - python eval/framework/dumps/loader.py acme-docs
 ```
 
 ## Benefits

@@ -26,7 +26,8 @@ def create_dump(project_path: Path, dump_name: str):
         raise FileNotFoundError(f"No database found at {db_path}")
 
     # Create project directory in mock/projects/{dump_name}
-    project_dir = Path(__file__).parent.parent / "projects" / dump_name
+    # Go up from framework/dumps/ to eval/ then to mock/projects/
+    project_dir = Path(__file__).parent.parent.parent / "mock" / "projects" / dump_name
     project_dir.mkdir(parents=True, exist_ok=True)
 
     # Create database subdirectory
@@ -97,7 +98,7 @@ def create_dump(project_path: Path, dump_name: str):
         print("\nUsage in scenarios:")
         print("  setup_commands:")
         print("    - KURT_TELEMETRY_DISABLED=1 uv run kurt init")
-        print(f"    - python eval/mock/generators/load_dump.py {dump_name}")
+        print(f"    - python eval/framework/dumps/loader.py {dump_name}")
 
     finally:
         session.close()

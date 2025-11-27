@@ -221,17 +221,9 @@ def save_results(
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    import os
-    print(f"DEBUG: CWD: {os.getcwd()}")
-    print(f"DEBUG: Saving JSON to: {json_filepath}")
-    print(f"DEBUG: Absolute path: {json_filepath.resolve()}")
-    print(f"DEBUG: File path exists before save: {json_filepath.parent.exists()}")
-
     # Save JSON (metadata and metrics only)
     with open(json_filepath, "w") as f:
         json.dump(results, f, indent=2)
-
-    print(f"DEBUG: File exists after save: {json_filepath.exists()}")
 
     # Save transcript as markdown
     if conversational and raw_transcript:

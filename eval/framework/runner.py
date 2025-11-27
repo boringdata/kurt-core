@@ -541,26 +541,31 @@ class ScenarioRunner:
             elif cached_response:
                 question_metrics.record_usage(0)
 
-            from .metrics import save_results, collect_metrics
+            from .metrics import collect_metrics, save_results
+
             question_workspace_metrics = collect_metrics(workspace)
 
             question_llm_metrics = None
             if judge_result:
                 question_llm_metrics = {
-                    "test_cases": [{
-                        "question": context["question"],
-                        "overall_score": judge_result.get("overall_score", 0),
-                        "component_scores": judge_result.get("component_scores", {}),
-                        "feedback": judge_result.get("feedback", "")
-                    }],
+                    "test_cases": [
+                        {
+                            "question": context["question"],
+                            "overall_score": judge_result.get("overall_score", 0),
+                            "component_scores": judge_result.get("component_scores", {}),
+                            "feedback": judge_result.get("feedback", ""),
+                        }
+                    ],
                     "summary": {
                         "average_score": judge_result.get("overall_score", 0),
                         "num_test_cases": 1,
-                        "passed": judge_result.get("overall_score", 0) >= 0.7
-                    }
+                        "passed": judge_result.get("overall_score", 0) >= 0.7,
+                    },
                 }
 
-            results_parent = Path(config.results_dir).parent if config.results_dir else Path("eval/results")
+            results_parent = (
+                Path(config.results_dir).parent if config.results_dir else Path("eval/results")
+            )
             save_results(
                 scenario_name=scenario.name,
                 run_metrics=question_metrics.get_metrics(),
@@ -568,19 +573,31 @@ class ScenarioRunner:
                 output_dir=results_parent,
                 passed=True,
                 error=None,
-                command_outputs=[entry for entry in workspace.command_outputs if entry.get("question") == context["question"]],
+                command_outputs=[
+                    entry
+                    for entry in workspace.command_outputs
+                    if entry.get("question") == context["question"]
+                ],
                 conversational=False,
-                filename_prefix=context["question_id"]
+                filename_prefix=context["question_id"],
             )
 
             if question_llm_metrics:
                 import json
-                results_path = Path(config.results_dir if config.results_dir else f"eval/results/{scenario.name}") / f"{context['question_id']}_{context['timestamp']}.json"
+
+                results_path = (
+                    Path(
+                        config.results_dir
+                        if config.results_dir
+                        else f"eval/results/{scenario.name}"
+                    )
+                    / f"{context['question_id']}_{context['timestamp']}.json"
+                )
                 if results_path.exists():
-                    with open(results_path, 'r') as f:
+                    with open(results_path, "r") as f:
                         data = json.load(f)
                     data["llm_judge_metrics"] = question_llm_metrics
-                    with open(results_path, 'w') as f:
+                    with open(results_path, "w") as f:
                         json.dump(data, f, indent=2)
 
             self._run_post_question_commands(config, context, workspace)
@@ -599,7 +616,9 @@ class ScenarioRunner:
             metrics_collector.record_usage(0)
         else:
             self._log("📊 No usage data captured")
-        metrics_collector.cached_response = getattr(metrics_collector, "cached_response", False) or any_cached
+        metrics_collector.cached_response = (
+            getattr(metrics_collector, "cached_response", False) or any_cached
+        )
 
     async def _execute_test_cases(self, scenario, workspace):
         """Execute test cases for non-conversational scenarios.
@@ -776,7 +795,9 @@ class ScenarioRunner:
         """Run a conversational question via the Claude SDK."""
         prompt_template = config.initial_prompt_template
         if not prompt_template:
-            raise ValueError("Question set scenario requires 'initial_prompt' for conversational mode")
+            raise ValueError(
+                "Question set scenario requires 'initial_prompt' for conversational mode"
+            )
 
         prompt = self._format_template(prompt_template, context)
         self._log(f"\n{'┌'+'─'*68+'┐'}")
@@ -798,7 +819,9 @@ class ScenarioRunner:
         if not config.assertion_templates:
             return
 
-        formatted = [self._format_template(assertion, context) for assertion in config.assertion_templates]
+        formatted = [
+            self._format_template(assertion, context) for assertion in config.assertion_templates
+        ]
         assertions = parse_assertions(formatted)
         assert_all(assertions, workspace, {})
 
@@ -933,7 +956,9 @@ class ScenarioRunner:
             answer = answer.split("# Answer", 1)[1]
         return answer.strip()
 
-    def _record_question_output(self, workspace, context, answer_text, judge_result, token_usage=None, cached_response=None):
+    def _record_question_output(
+        self, workspace, context, answer_text, judge_result, token_usage=None, cached_response=None
+    ):
         """Store the answer (and LLM judge result) as a command output entry."""
         entry = {
             "command": f"question:{context['question_id']}",
@@ -1093,7 +1118,20 @@ class ScenarioRunner:
             tool_response = hook_input.get("tool_response", "")
 
             # Format the result based on tool type
-            if isinstance(tool_response, dict):
+            # Special handling for Read tool - just show file path, not content
+            if tool_name == "read" and isinstance(tool_response, dict):
+                if "file" in tool_response and isinstance(tool_response["file"], dict):
+                    file_path = tool_response["file"].get("filePath", "unknown")
+                    content_preview = tool_response["file"].get("content", "")[:100]
+                    if content_preview:
+                        result_text = (
+                            f"Read file: {file_path} (content preview: {content_preview}...)"
+                        )
+                    else:
+                        result_text = f"Read file: {file_path}"
+                else:
+                    result_text = "Read operation completed"
+            elif isinstance(tool_response, dict):
                 # For Bash tool: extract stdout/stderr
                 if "stdout" in tool_response or "stderr" in tool_response:
                     stdout = tool_response.get("stdout", "")
@@ -1102,16 +1140,27 @@ class ScenarioRunner:
                     if stderr:
                         result_text += f"\n{Colors.RED}stderr: {stderr}{Colors.RESET}"
                 else:
-                    # For other dict responses, format as JSON
+                    # For other dict responses, format as JSON but limit size
                     import json
 
-                    result_text = json.dumps(tool_response, indent=2)
+                    # Create a summary for large responses
+                    if (
+                        "content" in tool_response
+                        and len(str(tool_response.get("content", ""))) > 200
+                    ):
+                        summary = {
+                            k: v if k != "content" else f"<{len(str(v))} chars>"
+                            for k, v in tool_response.items()
+                        }
+                        result_text = json.dumps(summary, indent=2)
+                    else:
+                        result_text = json.dumps(tool_response, indent=2)
             else:
                 result_text = str(tool_response)
 
             # Truncate if too long (unless verbose mode)
-            if not self.verbose and len(result_text) > 500:
-                result_text = result_text[:500] + f"\n{Colors.DIM}... (truncated){Colors.RESET}"
+            if not self.verbose and len(result_text) > 300:
+                result_text = result_text[:300] + f"\n{Colors.DIM}... (truncated){Colors.RESET}"
 
             self._log(f"  {Colors.GREEN}  ✓ RESULT:{Colors.RESET}")
             # Print result line by line for better formatting

@@ -14,13 +14,13 @@ sys.path.insert(0, str(project_root))
 
 # Import from framework (works for both direct execution and module import)
 try:
+    from .framework.analysis.compare import generate_report_from_dirs
     from .framework.config import get_config  # Module import
     from .framework.runner import run_scenario_by_name  # Module import
-    from .mock.generators.compare_approaches import generate_report_from_dirs
 except ImportError:
+    from framework.analysis.compare import generate_report_from_dirs  # type: ignore
     from framework.config import get_config  # Direct execution
     from framework.runner import run_scenario_by_name  # Direct execution
-    from mock.generators.compare_approaches import generate_report_from_dirs  # type: ignore
 
 
 @click.group()
@@ -473,14 +473,18 @@ def report_question(scenarios, questions_file, output):
     """Generate an LLM-judge comparison report for question-answering scenarios."""
     scenario_names = [s.strip() for s in scenarios.split(",") if s.strip()]
     if len(scenario_names) != 2:
-        raise click.UsageError("Provide exactly two scenario names via --scenarios (baseline,comparison).")
+        raise click.UsageError(
+            "Provide exactly two scenario names via --scenarios (baseline,comparison)."
+        )
 
     results_root = eval_dir / "results"
     scenario_dirs = []
     for name in scenario_names:
         scenario_dir = results_root / name
         if not scenario_dir.exists():
-            raise click.UsageError(f"Results directory not found for scenario '{name}': {scenario_dir}")
+            raise click.UsageError(
+                f"Results directory not found for scenario '{name}': {scenario_dir}"
+            )
         scenario_dirs.append(scenario_dir)
 
     output_path = Path(output)
