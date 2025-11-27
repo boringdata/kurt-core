@@ -1,0 +1,42 @@
+{
+  "question": "...How do I set up MotherDuck to work with dbt?",
+  "answer": "To set up MotherDuck to work with dbt, you need to configure a connection profile in dbt that includes the necessary credentials and connection parameters for MotherDuck. This involves specifying the target database, schema, and authentication details required by MotherDuck, similar to how you would set up dbt with other cloud data warehouses.",
+  "answer_file": "/tmp/answer_with_kg_5.md",
+  "token_usage": {
+    "models": {
+      "openai/gpt-4o": {
+        "completion_tokens": 210,
+        "prompt_tokens": 1207,
+        "total_tokens": 1417,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 0,
+          "text_tokens": null,
+          "image_tokens": null
+        }
+      }
+    },
+    "duration_seconds": 3.882408857345581,
+    "total_tokens": 1417.0
+  },
+  "cached_response": false,
+  "llm_judge": {
+    "overall_score": 0.68,
+    "component_scores": {
+      "accuracy": 0.7,
+      "completeness": 0.5,
+      "relevance": 0.8,
+      "clarity": 0.9
+    },
+    "feedback": "The generated answer is mostly accurate but misses key details about the dbt-duckdb adapter and the necessity of including a token in the configuration. While it addresses the question and is clear, it does not fully cover the required topics, leading to a lower completeness score. More specific information would enhance the answer's effectiveness."
+  },
+  "command": "question:q5",
+  "returncode": 0
+}

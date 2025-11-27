@@ -14,7 +14,7 @@ Usage:
 import argparse
 import json
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 
 def find_latest_transcript(results_dir: Path, scenario_name: str) -> Optional[Path]:
@@ -150,7 +150,7 @@ def aggregate_transcripts(
 
     print(f"✓ Aggregated transcript written to: {output_file}")
     print(f"  - Combined {num_questions} questions")
-    print(f"  - Included transcripts, answers, and LLM judge scores")
+    print("  - Included transcripts, answers, and LLM judge scores")
 
 
 def main():

@@ -5,7 +5,7 @@ Provides reusable assertions for checking files, database state, and tool usage.
 
 import re
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 
 class Assertion(ABC):
@@ -531,6 +531,62 @@ class CommandOutputContains(Assertion):
                 )
 
         return True
+
+
+def parse_assertions(assertions_data: List[Dict[str, Any]]) -> List[Assertion]:
+    """Parse assertion dictionaries into Assertion instances."""
+    assertions: List[Assertion] = []
+
+    for item in assertions_data:
+        if not isinstance(item, dict):
+            raise ValueError(f"Invalid assertion definition: {item}")
+
+        assertion_type = item.get("type")
+        if not assertion_type:
+            raise ValueError(f"Assertion missing 'type' field: {item}")
+
+        params = {k: v for k, v in item.items() if k != "type"}
+        assertions.append(_build_assertion(assertion_type, params))
+
+    return assertions
+
+
+def _build_assertion(assertion_type: str, params: Dict[str, Any]) -> Assertion:
+    """Instantiate assertions based on type name."""
+    if assertion_type == "FileExists":
+        return FileExists(**params)
+
+    if assertion_type == "FileContains":
+        return FileContains(**params)
+
+    if assertion_type == "DatabaseHasDocuments":
+        return DatabaseHasDocuments(**params)
+
+    if assertion_type == "ToolWasUsed":
+        return ToolWasUsed(**params)
+
+    if assertion_type == "MetricEquals":
+        return MetricEquals(**params)
+
+    if assertion_type == "MetricGreaterThan":
+        return MetricGreaterThan(**params)
+
+    if assertion_type == "ConversationContains":
+        return ConversationContains(**params)
+
+    if assertion_type == "SQLQueryAssertion":
+        return SQLQueryAssertion(**params)
+
+    if assertion_type == "SlashCommandWasCalled":
+        return SlashCommandWasCalled(**params)
+
+    if assertion_type == "SkillWasCalled":
+        return SkillWasCalled(**params)
+
+    if assertion_type == "CommandOutputContains":
+        return CommandOutputContains(**params)
+
+    raise ValueError(f"Unknown assertion type: {assertion_type}")
 
 
 def assert_all(assertions: list, workspace: Any, metrics: Dict[str, Any]) -> bool:

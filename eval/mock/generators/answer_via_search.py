@@ -60,9 +60,9 @@ def main():
 
     # Also output the answer content to stdout for LLM judge
     # The runner expects the answer in stdout for evaluation
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print(content)
-    print("="*80)
+    print("=" * 80)
 
 
 if __name__ == "__main__":

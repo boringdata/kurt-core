@@ -114,8 +114,8 @@ class MetricsCollector:
             },
         }
 
-        # Add usage data if available
-        if self.total_tokens > 0 or self.total_cost_usd is not None:
+        # Add usage data if available (including 0 tokens for cached responses)
+        if self.total_tokens >= 0 or self.total_cost_usd is not None:
             metrics["usage"] = {
                 "total_tokens": self.total_tokens,
                 "total_cost_usd": self.total_cost_usd,
@@ -173,6 +173,7 @@ def save_results(
     raw_transcript: list | None = None,
     command_outputs: list | None = None,
     conversational: bool = True,
+    filename_prefix: str | None = None,
 ):
     """Save scenario results to JSON and transcript to Markdown.
 
@@ -188,16 +189,18 @@ def save_results(
         raw_transcript: Raw terminal output (for conversational scenarios)
         command_outputs: Command outputs (for non-conversational scenarios)
         conversational: Whether this is a conversational scenario
+        filename_prefix: Optional prefix for result filenames (e.g., question id)
     """
     # Create scenario-specific folder
     scenario_dir = output_dir / scenario_name
     scenario_dir.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    json_filename = f"{timestamp}.json"
+    base_name = f"{filename_prefix + '_' if filename_prefix else ''}{timestamp}"
+    json_filename = f"{base_name}.json"
     json_filepath = scenario_dir / json_filename
 
-    md_filename = f"{timestamp}.md"
+    md_filename = f"{base_name}.md"
     md_filepath = scenario_dir / md_filename
 
     # Extract LLM judge metrics from command outputs if available
@@ -218,19 +221,27 @@ def save_results(
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    import os
+    print(f"DEBUG: CWD: {os.getcwd()}")
+    print(f"DEBUG: Saving JSON to: {json_filepath}")
+    print(f"DEBUG: Absolute path: {json_filepath.resolve()}")
+    print(f"DEBUG: File path exists before save: {json_filepath.parent.exists()}")
+
     # Save JSON (metadata and metrics only)
     with open(json_filepath, "w") as f:
         json.dump(results, f, indent=2)
 
+    print(f"DEBUG: File exists after save: {json_filepath.exists()}")
+
     # Save transcript as markdown
     if conversational and raw_transcript:
         # Conversational mode: use raw terminal transcript
-        _save_raw_transcript(md_filepath, scenario_name, raw_transcript, passed)
+        _save_raw_transcript(md_filepath, scenario_name, raw_transcript, passed, run_metrics)
         print(f"📊 Metrics saved: {json_filepath}")
         print(f"📝 Transcript saved: {md_filepath}")
     elif not conversational and command_outputs:
         # Non-conversational mode: use command outputs
-        _save_command_outputs(md_filepath, scenario_name, command_outputs, passed)
+        _save_command_outputs(md_filepath, scenario_name, command_outputs, passed, run_metrics)
         print(f"📊 Metrics saved: {json_filepath}")
         print(f"📝 Command outputs saved: {md_filepath}")
     else:
@@ -306,6 +317,7 @@ def _save_raw_transcript(
     scenario_name: str,
     raw_transcript: list,
     passed: bool,
+    run_metrics: Dict[str, Any],
 ):
     """Save the raw terminal output from the scenario execution.
 
@@ -319,6 +331,15 @@ def _save_raw_transcript(
         status = "✅ PASSED" if passed else "❌ FAILED"
         f.write(f"# Raw Transcript: {scenario_name}\n\n")
         f.write(f"**Status**: {status}\n\n")
+        if run_metrics:
+            duration = run_metrics.get("timing", {}).get("duration_seconds")
+            tokens = run_metrics.get("usage", {}).get("total_tokens") if run_metrics else None
+            if duration is not None:
+                f.write(f"**Duration**: {duration:.2f} seconds\n")
+            if tokens is not None:
+                f.write(f"**Tokens Used**: {tokens}\n")
+            if duration is not None or tokens is not None:
+                f.write("\n")
         f.write("```\n")
         for line in raw_transcript:
             f.write(line)
@@ -332,6 +353,7 @@ def _save_command_outputs(
     scenario_name: str,
     command_outputs: list,
     passed: bool,
+    run_metrics: Dict[str, Any],
 ):
     """Save command outputs from non-conversational scenario execution.
 
@@ -345,6 +367,15 @@ def _save_command_outputs(
         status = "✅ PASSED" if passed else "❌ FAILED"
         f.write(f"# Evaluation Report: {scenario_name}\n\n")
         f.write(f"**Status**: {status}\n\n")
+        if run_metrics:
+            duration = run_metrics.get("timing", {}).get("duration_seconds")
+            tokens = run_metrics.get("usage", {}).get("total_tokens")
+            if duration is not None:
+                f.write(f"**Duration**: {duration:.2f} seconds\n")
+            if tokens is not None:
+                f.write(f"**Tokens Used**: {tokens}\n")
+            if duration is not None or tokens is not None:
+                f.write("\n")
         f.write("---\n\n")
 
         if not command_outputs:
@@ -472,92 +503,3 @@ def _save_command_outputs(
                         if not stderr.endswith("\n"):
                             f.write("\n")
                         f.write("```\n\n")
-
-
-def update_markdown_with_llm_judge(markdown_path: Path, scenario_name: str, workspace_dir: Path):
-    """Update markdown file with LLM judge evaluation results.
-
-    This function reads the evaluation_results.json created by evaluate_answers.py
-    in the workspace directory and merges the LLM judge scores into the existing markdown file.
-
-    Args:
-        markdown_path: Path to the existing markdown file to update
-        scenario_name: Name of the scenario (used to find eval results in workspace)
-        workspace_dir: Path to the workspace directory where commands ran
-    """
-    # Look for evaluation_results.json in workspace directory
-    # Post-scenario commands run with relative paths, so the file will be in workspace
-    evaluation_json = workspace_dir / "eval" / "results" / scenario_name / "evaluation_results.json"
-    
-    if not evaluation_json.exists():
-        return  # No LLM judge results to merge
-    
-    # Load evaluation results
-    with open(evaluation_json) as f:
-        eval_data = json.load(f)
-    
-    question_results = eval_data.get("question_results", [])
-    if not question_results:
-        return
-    
-    # Read existing markdown
-    with open(markdown_path) as f:
-        content = f.read()
-    
-    # Build a map of questions to their LLM judge results
-    results_by_question = {}
-    for result in question_results:
-        question = result.get("question", "")
-        scores = result.get("scores", {})
-        results_by_question[question] = scores
-    
-    # Update markdown by inserting LLM judge results after each answer
-    lines = content.split("\n")
-    updated_lines = []
-    i = 0
-    current_question = None
-    
-    while i < len(lines):
-        line = lines[i]
-        updated_lines.append(line)
-        
-        # Track current question
-        if line.startswith("## Question"):
-            # Next line should be the question text
-            if i + 1 < len(lines):
-                current_question = lines[i + 1].strip()
-        
-        # Insert LLM judge results after "## Sources" section or before next "---"
-        if line.startswith("---") and current_question and current_question in results_by_question:
-            # Check if we just finished an answer section (look back for ## Sources)
-            found_sources = False
-            for j in range(max(0, i - 20), i):
-                if lines[j].startswith("## Sources"):
-                    found_sources = True
-                    break
-            
-            if found_sources:
-                # Insert LLM judge evaluation before the "---"
-                scores = results_by_question[current_question]
-                updated_lines.insert(-1, "")  # Add blank line before evaluation
-                updated_lines.insert(-1, "## LLM Judge Evaluation")
-                updated_lines.insert(-1, "")
-                updated_lines.insert(-1, f"**Overall Score**: {scores.get('overall', 0):.2f}")
-                updated_lines.insert(-1, "")
-                updated_lines.insert(-1, "**Component Scores**:")
-                for component in ['accuracy', 'completeness', 'relevance', 'clarity']:
-                    if component in scores:
-                        updated_lines.insert(-1, f"  - {component.capitalize()}: {scores[component]:.2f}")
-                updated_lines.insert(-1, "")
-                feedback = scores.get('feedback', '')
-                updated_lines.insert(-1, f"**Feedback**: {feedback}")
-                updated_lines.insert(-1, "")
-                
-                # Clear current question so we don't insert again
-                current_question = None
-        
-        i += 1
-    
-    # Write updated markdown
-    with open(markdown_path, "w") as f:
-        f.write("\n".join(updated_lines))

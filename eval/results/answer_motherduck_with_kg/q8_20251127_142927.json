@@ -1,0 +1,42 @@
+{
+  "question": "...What's the difference between a MotherDuck database and a share?",
+  "answer": "A MotherDuck database is a cloud data warehouse solution powered by DuckDB, designed to scale analytical queries to the cloud. In contrast, a \"share\" typically refers to a feature within a data warehousing system that allows data or resources to be shared between users or systems. Thus, MotherDuck is a specific product, while a share is a functionality that might be part of such a system.",
+  "answer_file": "/tmp/answer_with_kg_8.md",
+  "token_usage": {
+    "models": {
+      "openai/gpt-4o": {
+        "completion_tokens": 253,
+        "prompt_tokens": 1215,
+        "total_tokens": 1468,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 0,
+          "text_tokens": null,
+          "image_tokens": null
+        }
+      }
+    },
+    "duration_seconds": 4.296803951263428,
+    "total_tokens": 1468.0
+  },
+  "cached_response": false,
+  "llm_judge": {
+    "overall_score": 0.68,
+    "component_scores": {
+      "accuracy": 0.7,
+      "completeness": 0.5,
+      "relevance": 0.8,
+      "clarity": 0.9
+    },
+    "feedback": "The generated answer is mostly accurate but misses key details from the canonical answer, particularly regarding the ownership and modification aspects of a MotherDuck database and the collaborative nature of shares. While it is clear and well-written, it does not fully address all required topics, leading to lower completeness."
+  },
+  "command": "question:q8",
+  "returncode": 0
+}

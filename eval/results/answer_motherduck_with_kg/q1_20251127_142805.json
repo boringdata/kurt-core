@@ -1,0 +1,19 @@
+{
+  "question": "...... What file formats are most efficient for loading data into MotherDuck?",
+  "answer": "The most efficient file formats for loading data into MotherDuck are likely Parquet and ORC, as they are optimized for analytical queries and are commonly used in data lakehouse environments.",
+  "answer_file": "/tmp/answer_with_kg_1.md",
+  "token_usage": null,
+  "cached_response": true,
+  "llm_judge": {
+    "overall_score": 0.74,
+    "component_scores": {
+      "accuracy": 0.8,
+      "completeness": 0.5,
+      "relevance": 0.9,
+      "clarity": 0.9
+    },
+    "feedback": "The generated answer is mostly accurate as it identifies Parquet as an efficient format, but it introduces ORC without justification and omits other relevant formats like CSV and JSON. While the answer is clear and relevant, it lacks completeness in covering all required topics mentioned in the canonical answer."
+  },
+  "command": "question:q1",
+  "returncode": 0
+}

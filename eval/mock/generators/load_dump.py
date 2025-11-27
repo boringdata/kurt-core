@@ -96,14 +96,14 @@ def load_dump(dump_name: str, skip_entities: bool = False):
                     for col_name, col_type in required_columns.items():
                         if col_name not in filtered_record:
                             # Provide empty/zero defaults based on type
-                            if col_type == 'BLOB':
-                                filtered_record[col_name] = b''  # Empty blob for embeddings
-                            elif 'INT' in col_type.upper():
+                            if col_type == "BLOB":
+                                filtered_record[col_name] = b""  # Empty blob for embeddings
+                            elif "INT" in col_type.upper():
                                 filtered_record[col_name] = 0
-                            elif 'FLOAT' in col_type.upper() or 'REAL' in col_type.upper():
+                            elif "FLOAT" in col_type.upper() or "REAL" in col_type.upper():
                                 filtered_record[col_name] = 0.0
                             else:
-                                filtered_record[col_name] = ''  # Empty string for VARCHAR/TEXT
+                                filtered_record[col_name] = ""  # Empty string for VARCHAR/TEXT
 
                     if not filtered_record:
                         print(f"⚠ No matching columns for record in {table_name}")

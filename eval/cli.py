@@ -16,9 +16,11 @@ sys.path.insert(0, str(project_root))
 try:
     from .framework.config import get_config  # Module import
     from .framework.runner import run_scenario_by_name  # Module import
+    from .mock.generators.compare_approaches import generate_report_from_dirs
 except ImportError:
     from framework.config import get_config  # Direct execution
     from framework.runner import run_scenario_by_name  # Direct execution
+    from mock.generators.compare_approaches import generate_report_from_dirs  # type: ignore
 
 
 @click.group()
@@ -115,14 +117,39 @@ def run(scenario, no_cleanup, max_tool_calls, max_duration, max_tokens, llm_prov
 
 @main.command()
 @click.argument("yaml_file", type=click.Path(exists=True))
-@click.option("--prefix", type=str, help="Filter scenarios by name prefix (e.g., 'answer_motherduck_without_kg_q')")
-@click.option("--parallel", type=int, default=4, help="Number of scenarios to run in parallel (default: 4)")
+@click.option(
+    "--prefix",
+    type=str,
+    help="Filter scenarios by name prefix (e.g., 'answer_motherduck_without_kg_q')",
+)
+@click.option(
+    "--parallel", type=int, default=4, help="Number of scenarios to run in parallel (default: 4)"
+)
 @click.option("--no-cleanup", is_flag=True, help="Preserve workspace after completion")
-@click.option("--max-tool-calls", type=int, default=None, help="Maximum tool calls allowed (default: from config)")
-@click.option("--max-duration", type=int, default=None, help="Maximum duration in seconds (default: from config)")
-@click.option("--max-tokens", type=int, default=None, help="Maximum tokens to use (default: from config)")
-@click.option("--llm-provider", type=click.Choice(["openai", "anthropic"]), default="openai", help="LLM provider for user agent")
-def run_file(yaml_file, prefix, parallel, no_cleanup, max_tool_calls, max_duration, max_tokens, llm_provider):
+@click.option(
+    "--max-tool-calls",
+    type=int,
+    default=None,
+    help="Maximum tool calls allowed (default: from config)",
+)
+@click.option(
+    "--max-duration",
+    type=int,
+    default=None,
+    help="Maximum duration in seconds (default: from config)",
+)
+@click.option(
+    "--max-tokens", type=int, default=None, help="Maximum tokens to use (default: from config)"
+)
+@click.option(
+    "--llm-provider",
+    type=click.Choice(["openai", "anthropic"]),
+    default="openai",
+    help="LLM provider for user agent",
+)
+def run_file(
+    yaml_file, prefix, parallel, no_cleanup, max_tool_calls, max_duration, max_tokens, llm_provider
+):
     """Run all scenarios from a YAML file in parallel.
 
     This command loads all scenarios from a YAML file, optionally filters by prefix,
@@ -133,8 +160,9 @@ def run_file(yaml_file, prefix, parallel, no_cleanup, max_tool_calls, max_durati
       kurt-eval run-file scenarios_answer_motherduck_conversational.yaml --no-aggregation
     """
     import concurrent.futures
-    import yaml
     from datetime import datetime
+
+    import yaml
 
     config = get_config()
     scenarios_dir = eval_dir / config.scenarios_dir
@@ -181,7 +209,7 @@ def run_file(yaml_file, prefix, parallel, no_cleanup, max_tool_calls, max_durati
     click.echo(f"Running {len(scenarios_to_run)} scenarios in parallel (max {parallel} at a time)")
     if prefix:
         click.echo(f"Filter: {prefix}")
-    click.echo(f"Use 'compare' command after completion to run LLM-as-judge evaluation")
+    click.echo("Use 'compare' command after completion to run LLM-as-judge evaluation")
     click.echo(f"{'='*80}\n")
 
     # Track results
@@ -204,19 +232,24 @@ def run_file(yaml_file, prefix, parallel, no_cleanup, max_tool_calls, max_durati
             )
 
             status = "✅ PASSED" if result["passed"] else "❌ FAILED"
-            click.secho(f"[{datetime.now().strftime('%H:%M:%S')}] {status}: {scenario_name}",
-                       fg="green" if result["passed"] else "red")
+            click.secho(
+                f"[{datetime.now().strftime('%H:%M:%S')}] {status}: {scenario_name}",
+                fg="green" if result["passed"] else "red",
+            )
 
             return scenario_name, result
 
         except Exception as e:
-            click.secho(f"[{datetime.now().strftime('%H:%M:%S')}] ❌ ERROR: {scenario_name} - {e}", fg="red")
+            click.secho(
+                f"[{datetime.now().strftime('%H:%M:%S')}] ❌ ERROR: {scenario_name} - {e}", fg="red"
+            )
             return scenario_name, {"passed": False, "error": str(e)}
 
     # Run scenarios in parallel
     with concurrent.futures.ThreadPoolExecutor(max_workers=parallel) as executor:
-        future_to_scenario = {executor.submit(run_single_scenario, name): name
-                              for name in scenarios_to_run}
+        future_to_scenario = {
+            executor.submit(run_single_scenario, name): name for name in scenarios_to_run
+        }
 
         for future in concurrent.futures.as_completed(future_to_scenario):
             scenario_name, result = future.result()
@@ -231,7 +264,7 @@ def run_file(yaml_file, prefix, parallel, no_cleanup, max_tool_calls, max_durati
     duration = (end_time - start_time).total_seconds()
 
     click.echo(f"\n{'='*80}")
-    click.echo(f"BATCH RESULTS")
+    click.echo("BATCH RESULTS")
     click.echo(f"{'='*80}")
     click.echo(f"Total scenarios: {total}")
     click.secho(f"Passed: {passed}", fg="green", bold=True)
@@ -304,7 +337,9 @@ def list(filter):
         # Extract scenario number from name (e.g., "03" from "03_interactive_project")
         scenario_num = name.split("_")[0] if "_" in name else str(i)
 
-        click.echo(f"  {scenario_num}. {click.style(name, fg='cyan', bold=True)} {click.style(f'({source_file})', fg='yellow', dim=True)}")
+        click.echo(
+            f"  {scenario_num}. {click.style(name, fg='cyan', bold=True)} {click.style(f'({source_file})', fg='yellow', dim=True)}"
+        )
         click.echo(f"     {desc}")
 
         if "notes" in scenario:
@@ -413,6 +448,68 @@ def run_all(filter, stop_on_failure, max_tool_calls, max_duration, llm_provider)
             click.secho(f"  - {name}", fg="red")
 
     sys.exit(0 if failed == 0 else 1)
+
+
+@main.command(name="report-question")
+@click.option(
+    "--scenarios",
+    required=True,
+    help="Comma-separated scenario names (baseline first, comparison second).",
+)
+@click.option(
+    "--questions",
+    "questions_file",
+    required=True,
+    type=click.Path(),
+    help="Path to the questions YAML file.",
+)
+@click.option(
+    "--output",
+    type=click.Path(),
+    default="eval/results/comparison_report.md",
+    help="Output markdown path (JSON summary written alongside).",
+)
+def report_question(scenarios, questions_file, output):
+    """Generate an LLM-judge comparison report for question-answering scenarios."""
+    scenario_names = [s.strip() for s in scenarios.split(",") if s.strip()]
+    if len(scenario_names) != 2:
+        raise click.UsageError("Provide exactly two scenario names via --scenarios (baseline,comparison).")
+
+    results_root = eval_dir / "results"
+    scenario_dirs = []
+    for name in scenario_names:
+        scenario_dir = results_root / name
+        if not scenario_dir.exists():
+            raise click.UsageError(f"Results directory not found for scenario '{name}': {scenario_dir}")
+        scenario_dirs.append(scenario_dir)
+
+    output_path = Path(output)
+    if not output_path.is_absolute():
+        candidate = (Path.cwd() / output_path).resolve()
+        if not candidate.exists() and not candidate.parent.exists():
+            candidate = (eval_dir.parent / output_path).resolve()
+        output_path = candidate
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    questions_path = Path(questions_file)
+    if not questions_path.is_absolute():
+        candidate = (Path.cwd() / questions_path).resolve()
+        if not candidate.exists():
+            candidate = (eval_dir / questions_path).resolve()
+        questions_path = candidate
+
+    try:
+        generate_report_from_dirs(
+            with_dir=scenario_dirs[1],
+            without_dir=scenario_dirs[0],
+            questions_file=questions_path,
+            output_file=output_path,
+        )
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
+
+    click.echo(f"✅ Comparison report written to {output_path}")
+    click.echo(f"💾 JSON summary written to {output_path.with_suffix('.json')}")
 
 
 @main.group()

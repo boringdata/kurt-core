@@ -27,7 +27,7 @@ def run_sdk_session(prompt: str, output_file: Path) -> int:
         Exit code (0 for success, 1 for failure)
     """
     try:
-        print(f"Running SDK session (placeholder mode)")
+        print("Running SDK session (placeholder mode)")
         print(f"Prompt: {prompt[:100]}...")
         print(f"Output: {output_file}")
 
@@ -66,6 +66,7 @@ allows users to run queries seamlessly across local and cloud data."""
     except Exception as e:
         print(f"✗ Error running SDK session: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 

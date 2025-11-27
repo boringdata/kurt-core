@@ -1,0 +1,42 @@
+{
+  "question": "...How do I migrate data from a local DuckDB database to MotherDuck?",
+  "answer": "To migrate data from a local DuckDB database to MotherDuck, export your data into Parquet format, upload it to a cloud storage service like S3, and then use MotherDuck to ingest the data from there. This process leverages the integration between DuckDB and MotherDuck, allowing for efficient data migration and scaling.",
+  "answer_file": "/tmp/answer_with_kg_6.md",
+  "token_usage": {
+    "models": {
+      "openai/gpt-4o": {
+        "completion_tokens": 229,
+        "prompt_tokens": 1277,
+        "total_tokens": 1506,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 0,
+          "text_tokens": null,
+          "image_tokens": null
+        }
+      }
+    },
+    "duration_seconds": 3.829239845275879,
+    "total_tokens": 1506.0
+  },
+  "cached_response": false,
+  "llm_judge": {
+    "overall_score": 0.8,
+    "component_scores": {
+      "accuracy": 0.8,
+      "completeness": 0.6,
+      "relevance": 1.0,
+      "clarity": 1.0
+    },
+    "feedback": "The generated answer is mostly accurate and relevant, focusing on one method of migration. However, it lacks completeness as it does not mention the alternative method of using SQL statements to transfer data directly. The clarity of the response is excellent, making it easy to understand."
+  },
+  "command": "question:q6",
+  "returncode": 0
+}

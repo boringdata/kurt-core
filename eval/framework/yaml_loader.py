@@ -9,21 +9,8 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
-from .conversation import Scenario, UserAgent
-from .evaluator import (
-    Assertion,
-    CommandOutputContains,
-    ConversationContains,
-    DatabaseHasDocuments,
-    FileContains,
-    FileExists,
-    MetricEquals,
-    MetricGreaterThan,
-    SkillWasCalled,
-    SlashCommandWasCalled,
-    SQLQueryAssertion,
-    ToolWasUsed,
-)
+from .conversation import QuestionSetConfig, Scenario, UserAgent
+from .evaluator import parse_assertions
 
 
 def load_yaml_scenario(yaml_path: Path, scenario_name: Optional[str] = None) -> Scenario:
@@ -75,10 +62,12 @@ def load_yaml_scenario(yaml_path: Path, scenario_name: Optional[str] = None) -> 
     # Parse conversational mode (defaults to True)
     conversational = data.get("conversational", True)
 
+    has_question_set = bool(data.get("question_set") or data.get("questions") or data.get("questions_file"))
+
     # Validate required fields
     required = ["name", "description"]
-    # Only require initial_prompt for conversational scenarios
-    if conversational:
+    # Only require initial_prompt for conversational scenarios without question_set
+    if conversational and not has_question_set:
         required.append("initial_prompt")
 
     for field in required:
@@ -86,7 +75,7 @@ def load_yaml_scenario(yaml_path: Path, scenario_name: Optional[str] = None) -> 
             raise ValueError(f"YAML scenario missing required field: {field}")
 
     # Parse assertions
-    assertions = _parse_assertions(data.get("assertions", []))
+    assertions = parse_assertions(data.get("assertions", []))
 
     # Parse user agent (if specified)
     user_agent = None
@@ -108,63 +97,13 @@ def load_yaml_scenario(yaml_path: Path, scenario_name: Optional[str] = None) -> 
 
     # Parse test_cases (if specified)
     test_cases_data = data.get("test_cases", None)
-    questions_file = data.get("questions_file", None)
-    cmd_template = data.get("cmd_template", None)
-    output_file_template = data.get("output_file_template", None)
-
-    # If questions_file is specified, load questions from that file
-    if questions_file and not test_cases_data:
-        # Try relative to the project root (yaml_path is eval/scenarios/...)
-        project_root = yaml_path.parent.parent.parent
-        questions_file_path = project_root / questions_file
-
-        if not questions_file_path.exists():
-            # Try relative to yaml_path directory
-            questions_file_path = yaml_path.parent / questions_file
-
-        if questions_file_path.exists():
-            with open(questions_file_path) as f:
-                questions_data = yaml.safe_load(f)
-
-            questions = questions_data.get("questions", [])
-            test_cases_data = []
-
-            # Determine command and output templates
-            if not cmd_template:
-                # Default to answer_via_search.py
-                cmd_template = 'KURT_TELEMETRY_DISABLED=1 uv run --project /Users/julien/Documents/wik/wikumeo/projects/kurt-core python /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/mock/generators/answer_via_search.py "{question}" --output {output_file}'
-            if not output_file_template:
-                output_file_template = "/tmp/answer_cc_{i}.md"
-
-            # Generate test cases from questions
-            for i, q in enumerate(questions, start=1):
-                question_text = q.get("question")
-                output_file = output_file_template.format(i=i)
-                cmd = cmd_template.format(question=question_text, output_file=output_file, i=i)
-
-                test_case = {
-                    "question": question_text,
-                    "cmd": cmd,
-                    "use_llm_judge": True,
-                }
-                test_cases_data.append(test_case)
-
-            # Auto-generate post_scenario_commands if not already specified
-            if not post_scenario_commands and len(test_cases_data) > 0:
-                answer_files = " ".join([output_file_template.format(i=i) for i in range(1, len(test_cases_data) + 1)])
-                # Resolve questions_file path relative to project root
-                questions_file_full_path = str(questions_file_path.resolve())
-                scenario_name = data.get("name", "unknown")
-                post_scenario_commands = [
-                    f"uv run --project /Users/julien/Documents/wik/wikumeo/projects/kurt-core python /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/mock/generators/evaluate_answers.py --answer-files {answer_files} --questions-file {questions_file_full_path} --output-dir eval/results/{scenario_name}"
-                ]
 
     test_cases = None
     if test_cases_data:
         test_cases = []
         for tc in test_cases_data:
             # Parse assertions for this test case
-            tc_assertions = _parse_assertions(tc.get("assertions", []))
+            tc_assertions = parse_assertions(tc.get("assertions", []))
             test_case = {
                 "question": tc.get("question"),
                 "cmd": tc.get("cmd"),
@@ -174,6 +113,8 @@ def load_yaml_scenario(yaml_path: Path, scenario_name: Optional[str] = None) -> 
                 "use_llm_judge": tc.get("use_llm_judge", False),
             }
             test_cases.append(test_case)
+
+    question_set = _parse_question_set(data, yaml_path)
 
     # Create scenario
     return Scenario(
@@ -187,86 +128,103 @@ def load_yaml_scenario(yaml_path: Path, scenario_name: Optional[str] = None) -> 
         post_scenario_commands=post_scenario_commands,
         conversational=conversational,
         test_cases=test_cases,
+        question_set=question_set,
     )
 
 
-def _parse_assertions(assertions_data: List[Dict[str, Any]]) -> List[Assertion]:
-    """Parse assertion definitions from YAML.
+def _parse_question_set(data: Dict[str, Any], yaml_path: Path) -> Optional[QuestionSetConfig]:
+    """Parse question_set configuration from YAML data."""
+    scenario_name = data.get("name", "scenario")
+    question_cfg: Optional[Dict[str, Any]] = data.get("question_set")
+    questions_value = data.get("questions") or data.get("questions_file")
 
-    Args:
-        assertions_data: List of assertion dictionaries from YAML
+    if not question_cfg and not questions_value:
+        return None
 
-    Returns:
-        List of Assertion instances
-
-    Raises:
-        ValueError: If assertion type is unknown or malformed
-    """
-    assertions = []
-
-    for item in assertions_data:
-        assertion_type = item.get("type")
-        if not assertion_type:
-            raise ValueError(f"Assertion missing 'type' field: {item}")
-
-        # Map type to class
-        assertion = _create_assertion(assertion_type, item)
-        assertions.append(assertion)
-
-    return assertions
-
-
-def _create_assertion(assertion_type: str, params: Dict[str, Any]) -> Assertion:
-    """Create an assertion instance from type and parameters.
-
-    Args:
-        assertion_type: Name of assertion class
-        params: Parameters from YAML (excluding 'type')
-
-    Returns:
-        Assertion instance
-
-    Raises:
-        ValueError: If assertion type is unknown
-    """
-    # Remove 'type' from params
-    params = {k: v for k, v in params.items() if k != "type"}
-
-    if assertion_type == "FileExists":
-        return FileExists(**params)
-
-    elif assertion_type == "FileContains":
-        return FileContains(**params)
-
-    elif assertion_type == "DatabaseHasDocuments":
-        return DatabaseHasDocuments(**params)
-
-    elif assertion_type == "ToolWasUsed":
-        return ToolWasUsed(**params)
-
-    elif assertion_type == "MetricEquals":
-        return MetricEquals(**params)
-
-    elif assertion_type == "MetricGreaterThan":
-        return MetricGreaterThan(**params)
-
-    elif assertion_type == "ConversationContains":
-        return ConversationContains(**params)
-
-    elif assertion_type == "SQLQueryAssertion":
-        return SQLQueryAssertion(**params)
-
-    elif assertion_type == "SlashCommandWasCalled":
-        return SlashCommandWasCalled(**params)
-
-    elif assertion_type == "SkillWasCalled":
-        return SkillWasCalled(**params)
-
-    elif assertion_type == "CommandOutputContains":
-        return CommandOutputContains(**params)
-
+    # Support shorthand syntax: questions: path/to/file.yaml
+    if not question_cfg:
+        if isinstance(questions_value, dict):
+            question_cfg = dict(questions_value)
+        else:
+            question_cfg = {"file": questions_value}
     else:
-        raise ValueError(f"Unknown assertion type: {assertion_type}")
+        # Merge shorthand file specification into question_set
+        if isinstance(questions_value, str) and "file" not in question_cfg:
+            question_cfg["file"] = questions_value
+
+    question_file = question_cfg.get("file")
+    if not question_file:
+        raise ValueError(f"Question set for '{scenario_name}' missing 'file' field")
+
+    question_path = Path(question_file)
+    if not question_path.is_absolute():
+        question_path = (yaml_path.parent / question_path).resolve()
+
+    if not question_path.exists():
+        raise FileNotFoundError(f"Question file not found: {question_path}")
+
+    with open(question_path) as f:
+        question_data = yaml.safe_load(f) or {}
+
+    raw_questions = question_data.get("questions", question_data)
+    if not isinstance(raw_questions, list):
+        raise ValueError(f"Question file must define a list of questions: {question_path}")
+
+    questions = []
+    limit = question_cfg.get("limit")
+    for idx, entry in enumerate(raw_questions, start=1):
+        if limit and len(questions) >= limit:
+            break
+        question_text = entry.get("question")
+        if not question_text:
+            raise ValueError(f"Question entry missing 'question' field: {entry}")
+
+        questions.append(
+            {
+                "question": question_text,
+                "expected_answer": entry.get("expected_answer"),
+                "required_topics": entry.get("required_topics", []),
+                "id": entry.get("id") or f"q{idx}",
+                "metadata": entry.get("metadata", {}),
+            }
+        )
+
+    if not questions:
+        raise ValueError(f"No questions found in {question_path}")
+
+    answer_template = (
+        question_cfg.get("answer_file_template")
+        or data.get("answer_file_template")
+        or f"/tmp/{scenario_name}_answer_{{question_num}}.md"
+    )
+
+    commands = question_cfg.get("commands") or []
+    if isinstance(commands, str):
+        commands = [commands]
+
+    initial_prompt_template = question_cfg.get("initial_prompt") or data.get("initial_prompt")
+
+    assertion_templates = question_cfg.get("assertions") or []
+    post_commands = question_cfg.get("post_commands") or []
+    if isinstance(post_commands, str):
+        post_commands = [post_commands]
+
+    results_dir = question_cfg.get("results_dir")
+    llm_judge_cfg = _normalize_llm_judge_config(question_cfg.get("llm_judge"))
+    extra_context = question_cfg.get("variables") or {}
+
+    return QuestionSetConfig(
+        questions=questions,
+        file=str(question_path),
+        answer_file_template=answer_template,
+        commands=commands,
+        initial_prompt_template=initial_prompt_template,
+        assertion_templates=assertion_templates,
+        post_command_templates=post_commands,
+        results_dir=results_dir,
+        llm_judge=llm_judge_cfg,
+        extra_context=extra_context,
+    )
 
 
 def _parse_user_agent(user_agent_data: Dict[str, Any]) -> UserAgent:
@@ -298,3 +256,21 @@ def _parse_user_agent(user_agent_data: Dict[str, Any]) -> UserAgent:
     default_response = user_agent_data.get("default_response", "yes")
 
     return UserAgent(responses=responses, default_response=default_response)
+
+
+def _normalize_llm_judge_config(config: Any) -> Dict[str, Any]:
+    """Normalize llm_judge configuration into a dictionary."""
+    if not config:
+        return {"enabled": False}
+
+    if isinstance(config, bool):
+        return {"enabled": config}
+
+    normalized = {
+        "enabled": config.get("enabled", True),
+        "provider": config.get("provider", "openai"),
+        "weights": config.get(
+            "weights", {"accuracy": 0.4, "completeness": 0.3, "relevance": 0.2, "clarity": 0.1}
+        ),
+    }
+    return normalized

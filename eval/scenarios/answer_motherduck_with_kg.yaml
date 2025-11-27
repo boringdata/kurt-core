@@ -1,0 +1,22 @@
+---
+name: answer_motherduck_with_kg
+description: "Answer MotherDuck questions using kurt answer with GraphRAG enabled"
+project: motherduck
+conversational: false
+question_set:
+  file: questions_motherduck.yaml
+  answer_file_template: /tmp/answer_with_kg_{question_num}.md
+  commands:
+    - KURT_TELEMETRY_DISABLED=1 uv run kurt answer "{question}" --output {answer_file} --json-output
+  assertions:
+    - type: FileExists
+      path: "{answer_file}"
+  llm_judge:
+    enabled: true
+    provider: openai
+    weights:
+      accuracy: 0.4
+      completeness: 0.3
+      relevance: 0.2
+      clarity: 0.1
+  results_dir: eval/results/answer_motherduck_with_kg

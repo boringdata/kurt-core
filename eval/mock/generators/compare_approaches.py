@@ -1,393 +1,300 @@
 #!/usr/bin/env python3
-"""Compare WITH KG vs WITHOUT KG approaches using LLM judge evaluations.
-
-This script:
-1. Reads the latest timestamped results from eval/results/ directories
-2. Extracts LLM judge evaluation metrics from JSON files
-3. Generates a comparison report with side-by-side metrics
-4. Outputs markdown report showing which approach performed better
-
-The judge evaluations are already computed by judge_answer.py during
-post_scenario_commands, so this script just aggregates and compares them.
-
-Usage:
-    python compare_approaches.py \\
-        --results-dir eval/results \\
-        --output eval/results/comparison_report.md
-"""
+"""Compare WITH KG vs WITHOUT KG approaches using per-question artifacts."""
 
 import argparse
 import json
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import yaml
 
 
-def find_latest_result(scenario_dir: Path) -> Optional[Path]:
-    """Find the latest timestamped JSON file in a scenario results directory.
+def collect_question_runs(results_dir: Path) -> Dict[str, Dict[str, Any]]:
+    """Load the newest per-question JSON for each question id."""
+    if not results_dir.exists():
+        return {}
 
-    Args:
-        scenario_dir: Path to scenario results directory
+    latest: Dict[str, Dict[str, Any]] = {}
 
-    Returns:
-        Path to latest JSON file, or None if not found
-    """
-    if not scenario_dir.exists():
+    for path in results_dir.glob("q*_*.json"):
+        if not path.is_file():
+            continue
+
+        try:
+            with open(path) as f:
+                data = json.load(f)
+        except Exception:
+            continue
+
+        # Extract question_id from filename (e.g., "q1" from "q1_20251127_135755.json")
+        # Since the JSON doesn't contain question_id, we parse it from the filename
+        filename = path.stem  # e.g., "q1_20251127_135755"
+        parts = filename.split("_")
+        if parts and parts[0].startswith("q"):
+            question_id = parts[0]  # e.g., "q1"
+        else:
+            continue
+
+        # Add the question_id to the data
+        data["question_id"] = question_id
+
+        existing = latest.get(question_id)
+        timestamp = path.stat().st_mtime
+        if not existing or timestamp > existing["_timestamp"]:
+            data["_source_file"] = str(path)
+            data["_timestamp"] = timestamp
+            latest[question_id] = data
+
+    return latest
+
+
+def load_questions(path: Path) -> List[Dict]:
+    with open(path) as f:
+        data = yaml.safe_load(f) or {}
+    return data.get("questions", [])
+
+
+def extract_score(entry: Optional[Dict[str, Any]]) -> Optional[float]:
+    if not entry:
         return None
+    judge = entry.get("llm_judge")
+    if isinstance(judge, dict):
+        score = judge.get("overall_score")
+        if isinstance(score, (int, float)):
+            return float(score)
+    return None
 
-    json_files = list(scenario_dir.glob("*.json"))
-    if not json_files:
+
+def extract_usage(entry: Optional[Dict[str, Any]]) -> Dict[str, Any] | None:
+    if not entry:
         return None
-
-    # Return the most recently modified JSON file
-    return max(json_files, key=lambda p: p.stat().st_mtime)
-
-
-def load_judge_evaluation(json_file: Path) -> Optional[Dict]:
-    """Load LLM judge evaluation from a JSON results file.
-
-    Args:
-        json_file: Path to JSON results file
-
-    Returns:
-        Judge evaluation dict, or None if not found
-    """
-    if not json_file or not json_file.exists():
-        return None
-
-    try:
-        with open(json_file) as f:
-            data = json.load(f)
-
-        # Extract judge evaluation
-        return data.get("llm_judge_evaluation")
-
-    except Exception as e:
-        print(f"Warning: Failed to load judge evaluation from {json_file}: {e}")
-        return None
+    usage = entry.get("token_usage")
+    if isinstance(usage, dict):
+        return usage
+    return None
 
 
-def load_answer_file(scenario_dir: Path) -> Optional[str]:
-    """Load the latest answer markdown file from a scenario directory.
+def compute_summary(entries: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    scores = []
+    tokens_total = 0.0
+    duration_total = 0.0
+    cached = 0
 
-    Args:
-        scenario_dir: Path to scenario results directory
+    for entry in entries.values():
+        score = extract_score(entry)
+        if score is not None:
+            scores.append(score)
 
-    Returns:
-        Answer content as string, or None if not found
-    """
-    if not scenario_dir.exists():
-        return None
+        usage = extract_usage(entry) or {}
+        tokens = usage.get("total_tokens")
+        if isinstance(tokens, (int, float)):
+            tokens_total += float(tokens)
+        duration = usage.get("duration_seconds")
+        if isinstance(duration, (int, float)):
+            duration_total += float(duration)
 
-    answer_files = list(scenario_dir.glob("*_answer.md"))
-    if not answer_files:
-        return None
+        if entry.get("cached_response"):
+            cached += 1
 
-    # Get the most recently modified answer file
-    latest_answer = max(answer_files, key=lambda p: p.stat().st_mtime)
-
-    try:
-        return latest_answer.read_text(encoding="utf-8")
-    except Exception as e:
-        print(f"Warning: Failed to read answer file {latest_answer}: {e}")
-        return None
-
-
-def collect_results(results_dir: Path, approach: str, num_questions: int) -> List[Dict]:
-    """Collect all judge evaluations for an approach.
-
-    Args:
-        results_dir: Base results directory
-        approach: Either 'with_kg' or 'without_kg'
-        num_questions: Number of questions to collect
-
-    Returns:
-        List of result dicts with judge evaluations
-    """
-    results = []
-
-    for q_num in range(1, num_questions + 1):
-        scenario_name = f"answer_motherduck_{approach}_q{q_num}"
-        scenario_dir = results_dir / scenario_name
-
-        # Find latest JSON file
-        json_file = find_latest_result(scenario_dir)
-
-        # Load judge evaluation
-        judge_eval = load_judge_evaluation(json_file)
-
-        # Load answer file
-        answer_text = load_answer_file(scenario_dir)
-
-        result = {
-            "question_num": q_num,
-            "scenario_name": scenario_name,
-            "json_file": str(json_file) if json_file else None,
-            "judge_evaluation": judge_eval,
-            "answer_text": answer_text,
-            "has_evaluation": judge_eval is not None,
-        }
-
-        results.append(result)
-
-    return results
-
-
-def calculate_averages(results: List[Dict]) -> Dict[str, float]:
-    """Calculate average scores from judge evaluations.
-
-    Args:
-        results: List of result dicts with judge evaluations
-
-    Returns:
-        Dict with average scores
-    """
-    # Filter results that have evaluations
-    valid_results = [r for r in results if r["has_evaluation"]]
-
-    if not valid_results:
-        return {
-            "accuracy": 0.0,
-            "completeness": 0.0,
-            "clarity": 0.0,
-            "overall": 0.0,
-            "count": 0,
-        }
-
-    n = len(valid_results)
-
+    avg_score = sum(scores) / len(scores) if scores else 0.0
     return {
-        "accuracy": sum(r["judge_evaluation"]["accuracy"]["score"] for r in valid_results) / n,
-        "completeness": sum(r["judge_evaluation"]["completeness"]["score"] for r in valid_results) / n,
-        "clarity": sum(r["judge_evaluation"]["clarity"]["score"] for r in valid_results) / n,
-        "overall": sum(r["judge_evaluation"]["overall"]["score"] for r in valid_results) / n,
-        "count": n,
+        "average_score": avg_score,
+        "num_questions": len(entries),
+        "tokens_total": tokens_total,
+        "duration_total": duration_total,
+        "cached_responses": cached,
+        "passed": avg_score >= 0.7 if entries else False,
     }
 
 
-def generate_comparison_report(
-    with_kg_results: List[Dict],
-    without_kg_results: List[Dict],
+# Removed format_summary_row as we no longer need a separate summary table
+
+
+def generate_report(
+    with_entries: Dict[str, Dict[str, Any]],
+    without_entries: Dict[str, Dict[str, Any]],
     questions: List[Dict],
-    output_file: Path,
+    output: Path,
 ):
-    """Generate markdown comparison report.
+    with_summary = compute_summary(with_entries)
+    without_summary = compute_summary(without_entries)
 
-    Args:
-        with_kg_results: Results for WITH KG approach
-        without_kg_results: Results for WITHOUT KG approach
-        questions: List of question data from questions_motherduck.yaml
-        output_file: Path to write the report
-    """
-    # Calculate aggregate metrics
-    with_kg_avg = calculate_averages(with_kg_results)
-    without_kg_avg = calculate_averages(without_kg_results)
+    report_lines: List[str] = []
+    report_lines.append("# GraphRAG vs Vector-only Comparison\n")
+    report_lines.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+    report_lines.append(
+        f"Questions compared: {with_summary.get('num_questions', 0)} (with KG) / "
+        f"{without_summary.get('num_questions', 0)} (without KG)\n"
+    )
 
-    # Generate report
-    report = []
-    report.append("# GraphRAG vs Vector-Only Comparison Report\n\n")
-    report.append(f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-    report.append(f"**Total Questions:** {len(questions)}\n")
-    report.append(f"**WITH KG Evaluations:** {with_kg_avg['count']}/{len(questions)}\n")
-    report.append(f"**WITHOUT KG Evaluations:** {without_kg_avg['count']}/{len(questions)}\n\n")
+    report_lines.append("## Results Comparison\n")
+    report_lines.append("| # | With KG Score | With KG Time (s) | With KG Tokens | Without KG Score | Without KG Time (s) | Without KG Tokens | Δ Score |")
+    report_lines.append("| --- | --- | --- | --- | --- | --- | --- | --- |")
 
-    # Summary table
-    report.append("## Summary\n\n")
-    report.append("| Metric | WITH KG (GraphRAG) | WITHOUT KG (Vector-Only) | Difference | Winner |\n")
-    report.append("|--------|--------------------|--------------------------|------------|--------|\n")
+    combined_rows: List[Dict[str, Any]] = []
 
-    for metric in ["accuracy", "completeness", "clarity", "overall"]:
-        with_score = with_kg_avg[metric]
-        without_score = without_kg_avg[metric]
-        diff = with_score - without_score
-        diff_str = f"+{diff:.1f}" if diff > 0 else f"{diff:.1f}"
+    for idx, question in enumerate(questions, start=1):
+        text = question.get("question", f"Question {idx}")
+        question_id = question.get("id") or f"q{idx}"
+        with_entry = with_entries.get(question_id)
+        without_entry = without_entries.get(question_id)
 
-        if abs(diff) < 1.0:  # Less than 1 point difference
-            winner = "TIE"
-        elif diff > 0:
-            winner = "**WITH KG** ✓"
-        else:
-            winner = "**WITHOUT KG** ✓"
+        with_score = extract_score(with_entry)
+        without_score = extract_score(without_entry)
+        delta = None
+        if with_score is not None and without_score is not None:
+            delta = with_score - without_score
 
-        report.append(
-            f"| {metric.title()} | {with_score:.1f}/100 | {without_score:.1f}/100 | {diff_str} | {winner} |\n"
+        # Extract usage data for with_kg
+        with_usage = extract_usage(with_entry) or {}
+        with_time = with_usage.get("duration_seconds")
+        with_tokens = with_usage.get("total_tokens")
+        with_time_str = f"{with_time:.1f}" if isinstance(with_time, (int, float)) else "N/A"
+        with_tokens_str = f"{int(with_tokens):,}" if isinstance(with_tokens, (int, float)) else "N/A"
+
+        # Extract usage data for without_kg
+        without_usage = extract_usage(without_entry) or {}
+        without_time = without_usage.get("duration_seconds")
+        without_tokens = without_usage.get("total_tokens")
+        without_time_str = f"{without_time:.1f}" if isinstance(without_time, (int, float)) else "N/A"
+        without_tokens_str = f"{int(without_tokens):,}" if isinstance(without_tokens, (int, float)) else "N/A"
+
+        delta_str = f"{delta:+.2f}" if delta is not None else "N/A"
+        with_score_str = f"{with_score:.2f}" if with_score is not None else "N/A"
+        without_score_str = f"{without_score:.2f}" if without_score is not None else "N/A"
+
+        report_lines.append(
+            f"| {idx} | "
+            f"{with_score_str} | "
+            f"{with_time_str} | "
+            f"{with_tokens_str} | "
+            f"{without_score_str} | "
+            f"{without_time_str} | "
+            f"{without_tokens_str} | "
+            f"{delta_str} |"
         )
 
-    # Overall winner
-    report.append("\n### Overall Winner\n\n")
-    if with_kg_avg["overall"] > without_kg_avg["overall"] + 1.0:
-        report.append("**WITH KG (GraphRAG)** performs better overall.\n\n")
-    elif without_kg_avg["overall"] > with_kg_avg["overall"] + 1.0:
-        report.append("**WITHOUT KG (Vector-Only)** performs better overall.\n\n")
-    else:
-        report.append("Both approaches perform **similarly** overall.\n\n")
+        combined_rows.append(
+            {
+                "question": text,
+                "question_id": question_id,
+                "with_kg": {
+                    "score": with_score,
+                    "usage": extract_usage(with_entry),
+                    "cached": with_entry.get("cached_response") if with_entry else None,
+                    "feedback": (with_entry or {}).get("llm_judge", {}).get("feedback") if with_entry else None,
+                    "source": (with_entry or {}).get("_source_file"),
+                },
+                "without_kg": {
+                    "score": without_score,
+                    "usage": extract_usage(without_entry),
+                    "cached": without_entry.get("cached_response") if without_entry else None,
+                    "feedback": (without_entry or {}).get("llm_judge", {}).get("feedback") if without_entry else None,
+                    "source": (without_entry or {}).get("_source_file"),
+                },
+                "delta": delta,
+            }
+        )
 
-    # Per-question breakdown
-    report.append("## Per-Question Analysis\n\n")
+    # Add summary row with averages/totals
+    report_lines.append("| --- | --- | --- | --- | --- | --- | --- | --- |")
+    report_lines.append(
+        f"| **Avg/Total** | "
+        f"**{with_summary.get('average_score', 0.0):.2f}** | "
+        f"**{with_summary.get('duration_total', 0.0):.1f}** | "
+        f"**{int(with_summary.get('tokens_total', 0)):,}** | "
+        f"**{without_summary.get('average_score', 0.0):.2f}** | "
+        f"**{without_summary.get('duration_total', 0.0):.1f}** | "
+        f"**{int(without_summary.get('tokens_total', 0)):,}** | "
+        f"**{(with_summary.get('average_score', 0.0) - without_summary.get('average_score', 0.0)):+.2f}** |"
+    )
 
-    for i, (q_data, with_result, without_result) in enumerate(
-        zip(questions, with_kg_results, without_kg_results), start=1
-    ):
-        question = q_data["question"]
-        report.append(f"### Question {i}: {question}\n\n")
+    report_lines.append("")
+    report_lines.append("## Feedback Highlights\n")
+    for idx, row in enumerate(combined_rows, start=1):
+        report_lines.append(f"### Question {idx}: {row['question']}")
+        with_feedback = row["with_kg"].get("feedback")
+        without_feedback = row["without_kg"].get("feedback")
+        if with_feedback:
+            report_lines.append("**With KG:**")
+            report_lines.append(with_feedback)
+            report_lines.append("")
+        if without_feedback:
+            report_lines.append("**Without KG:**")
+            report_lines.append(without_feedback)
+            report_lines.append("")
 
-        # Check if both have evaluations
-        if not with_result["has_evaluation"] or not without_result["has_evaluation"]:
-            report.append("⚠️ **Missing evaluation data**\n\n")
-            if not with_result["has_evaluation"]:
-                report.append(f"- WITH KG: No evaluation found\n")
-            if not without_result["has_evaluation"]:
-                report.append(f"- WITHOUT KG: No evaluation found\n")
-            report.append("\n---\n\n")
-            continue
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text("\n".join(report_lines), encoding="utf-8")
 
-        with_eval = with_result["judge_evaluation"]
-        without_eval = without_result["judge_evaluation"]
+    payload = {
+        "with_kg": {"questions": with_entries, "summary": with_summary},
+        "without_kg": {"questions": without_entries, "summary": without_summary},
+        "per_question": combined_rows,
+        "generated_at": datetime.now().isoformat(),
+    }
+    output.with_suffix(".json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
-        # Scores table
-        report.append("| Metric | WITH KG | WITHOUT KG | Difference |\n")
-        report.append("|--------|---------|------------|------------|\n")
 
-        for metric in ["accuracy", "completeness", "clarity", "overall"]:
-            with_score = with_eval[metric]["score"] if metric != "overall" else with_eval[metric]["score"]
-            without_score = without_eval[metric]["score"] if metric != "overall" else without_eval[metric]["score"]
-            diff = with_score - without_score
-            diff_str = f"+{diff:.1f}" if diff > 0 else f"{diff:.1f}"
+def generate_report_from_dirs(
+    with_dir: Path | str, without_dir: Path | str, questions_file: Path | str, output_file: Path | str
+) -> Path:
+    with_path = Path(with_dir)
+    without_path = Path(without_dir)
+    questions_path = Path(questions_file)
+    output_path = Path(output_file)
 
-            # Add emoji for winner
-            if abs(diff) < 1.0:
-                emoji = "="
-            elif diff > 0:
-                emoji = "✓"
-            else:
-                emoji = "✗"
+    questions = load_questions(questions_path)
+    with_entries = collect_question_runs(with_path)
+    without_entries = collect_question_runs(without_path)
 
-            report.append(
-                f"| {metric.title()} | {with_score:.1f}/100 {emoji if diff > 0 else ''} | "
-                f"{without_score:.1f}/100 {emoji if diff < 0 else ''} | {diff_str} |\n"
-            )
+    if not with_entries or not without_entries:
+        raise ValueError("Missing per-question results. Run the scenarios before generating the report.")
 
-        # Summaries
-        report.append("\n**WITH KG Summary:**\n")
-        report.append(f"> {with_eval['overall']['summary']}\n\n")
-
-        report.append("**WITHOUT KG Summary:**\n")
-        report.append(f"> {without_eval['overall']['summary']}\n\n")
-
-        # Reasoning
-        report.append("<details>\n<summary>Detailed Reasoning</summary>\n\n")
-
-        report.append("**WITH KG:**\n")
-        report.append(f"- Accuracy: {with_eval['accuracy']['reasoning']}\n")
-        report.append(f"- Completeness: {with_eval['completeness']['reasoning']}\n")
-        report.append(f"- Clarity: {with_eval['clarity']['reasoning']}\n\n")
-
-        report.append("**WITHOUT KG:**\n")
-        report.append(f"- Accuracy: {without_eval['accuracy']['reasoning']}\n")
-        report.append(f"- Completeness: {without_eval['completeness']['reasoning']}\n")
-        report.append(f"- Clarity: {without_eval['clarity']['reasoning']}\n\n")
-
-        report.append("</details>\n\n")
-        report.append("---\n\n")
-
-    # Write report
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-    output_file.write_text("".join(report), encoding="utf-8")
+    generate_report(with_entries, without_entries, questions, output_path)
+    return output_path
 
 
 def main():
-    """Main entry point."""
     parser = argparse.ArgumentParser(
-        description="Compare WITH KG vs WITHOUT KG approaches using judge evaluations",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="Compare GraphRAG vs vector-only evaluations",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
-        "--results-dir",
-        type=Path,
-        default=Path("eval/results"),
-        help="Base results directory (default: eval/results)",
+        "--with-kg-dir",
+        required=True,
+        help="Results directory for the WITH KG scenario (e.g., eval/results/answer_motherduck_with_kg)",
+    )
+    parser.add_argument(
+        "--without-kg-dir",
+        required=True,
+        help="Results directory for the WITHOUT KG scenario",
     )
     parser.add_argument(
         "--questions-file",
-        type=Path,
-        default=Path("eval/scenarios/questions_motherduck.yaml"),
-        help="YAML file with questions (default: eval/scenarios/questions_motherduck.yaml)",
+        default="eval/scenarios/questions_motherduck.yaml",
+        help="YAML file containing the questions (used for ordering)",
     )
     parser.add_argument(
         "--output",
-        type=Path,
-        default=Path("eval/results/comparison_report.md"),
-        help="Output markdown file (default: eval/results/comparison_report.md)",
+        default="eval/results/comparison_report.md",
+        help="Output markdown file",
     )
 
     args = parser.parse_args()
 
-    print("🔍 GraphRAG vs Vector-Only Comparison")
-    print("=" * 80)
-
-    # Load questions file
-    if not args.questions_file.exists():
-        print(f"❌ Questions file not found: {args.questions_file}")
+    try:
+        output_path = generate_report_from_dirs(
+            args.with_kg_dir, args.without_kg_dir, args.questions_file, args.output
+        )
+    except ValueError as exc:
+        print(f"❌ {exc}", file=sys.stderr)
         sys.exit(1)
 
-    with open(args.questions_file) as f:
-        questions_data = yaml.safe_load(f)
-
-    questions = questions_data.get("questions", [])
-    num_questions = len(questions)
-
-    print(f"📋 Loaded {num_questions} questions from {args.questions_file}")
-
-    # Collect WITH KG results
-    print(f"\n📊 Collecting WITH KG results...")
-    with_kg_results = collect_results(args.results_dir, "with_kg", num_questions)
-
-    with_kg_found = sum(1 for r in with_kg_results if r["has_evaluation"])
-    print(f"   Found {with_kg_found}/{num_questions} judge evaluations")
-
-    # Collect WITHOUT KG results
-    print(f"\n📊 Collecting WITHOUT KG results...")
-    without_kg_results = collect_results(args.results_dir, "without_kg", num_questions)
-
-    without_kg_found = sum(1 for r in without_kg_results if r["has_evaluation"])
-    print(f"   Found {without_kg_found}/{num_questions} judge evaluations")
-
-    # Check if we have any results
-    if with_kg_found == 0 and without_kg_found == 0:
-        print("\n❌ No judge evaluations found in either approach!")
-        print(f"   Results directory: {args.results_dir.absolute()}")
-        print("\n   Make sure to run the scenarios first with judge evaluation enabled.")
-        sys.exit(1)
-
-    # Generate comparison report
-    print(f"\n📝 Generating comparison report...")
-    generate_comparison_report(with_kg_results, without_kg_results, questions, args.output)
-
-    print(f"✅ Comparison report written to: {args.output}")
-
-    # Save JSON results
-    json_output = args.output.with_suffix(".json")
-    json_data = {
-        "generated_at": datetime.now().isoformat(),
-        "num_questions": num_questions,
-        "with_kg_results": with_kg_results,
-        "without_kg_results": without_kg_results,
-        "with_kg_averages": calculate_averages(with_kg_results),
-        "without_kg_averages": calculate_averages(without_kg_results),
-    }
-
-    # Remove answer_text from JSON (too verbose)
-    for result in json_data["with_kg_results"] + json_data["without_kg_results"]:
-        result.pop("answer_text", None)
-
-    with open(json_output, "w") as f:
-        json.dump(json_data, f, indent=2)
-
-    print(f"✅ JSON results written to: {json_output}")
-    print("\n✨ Comparison complete!")
+    print(f"✅ Comparison report written to {output_path}")
+    print(f"💾 JSON summary written to {output_path.with_suffix('.json')}")
 
 
 if __name__ == "__main__":

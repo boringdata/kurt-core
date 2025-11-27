@@ -4,19 +4,26 @@ Executes test scenarios and collects metrics about agent behavior.
 """
 
 import asyncio
+import json
 import os
+import re
+import shutil
+import subprocess
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 from .config import EvalConfig, get_config
 from .conversation import Scenario
-from .evaluator import assert_all
+from .evaluator import assert_all, parse_assertions
+from .llm_judge import score_single_answer
 from .metrics import MetricsCollector, collect_metrics, save_results
 from .workspace import IsolatedWorkspace
 
 # Load environment variables from eval/.env if it exists
 _eval_dir = Path(__file__).parent.parent
+_project_root = _eval_dir.parent
 _env_file = _eval_dir / ".env"
 if _env_file.exists():
     with open(_env_file) as f:
@@ -295,8 +302,12 @@ class ScenarioRunner:
             run_metrics = {}
             workspace_metrics = {}
 
+            # Run question sets first (handles its own logging)
+            if scenario.question_set:
+                await self._execute_question_set(scenario, workspace, metrics_collector)
+
             # Skip conversation execution for non-conversational scenarios
-            if not scenario.conversational:
+            elif not scenario.conversational:
                 self._log("\n✅ Non-conversational scenario - skipping agent interaction\n")
 
                 # Execute test cases if specified
@@ -304,12 +315,6 @@ class ScenarioRunner:
                     self._log(f"\n📝 Running {len(scenario.test_cases)} test case(s)...\n")
                     await self._execute_test_cases(scenario, workspace)
 
-                # Still need to initialize run_metrics for result structure
-                run_metrics = {
-                    "total_turns": 0,
-                    "tool_calls": 0,
-                    "duration": 0.0,
-                }
             else:
                 # Execute conversation with SDK (multi-turn by default)
                 conversation = scenario.get_conversation()
@@ -339,6 +344,8 @@ class ScenarioRunner:
             # Run assertions
             self._log(f"\n🔍 Running {len(scenario.assertions)} assertions...")
             run_metrics = metrics_collector.get_metrics()
+            if hasattr(metrics_collector, "cached_response"):
+                run_metrics["cached_response"] = metrics_collector.cached_response
 
             # Merge run_metrics and workspace_metrics for assertions
             combined_metrics = {**run_metrics, **workspace_metrics}
@@ -370,6 +377,8 @@ class ScenarioRunner:
             error_message = str(e)
             had_error = True
             run_metrics = metrics_collector.get_metrics()
+            if hasattr(metrics_collector, "cached_response"):
+                run_metrics["cached_response"] = metrics_collector.cached_response
             # Try to collect workspace metrics even on failure
             try:
                 workspace_metrics = collect_metrics(workspace)
@@ -377,27 +386,22 @@ class ScenarioRunner:
                 workspace_metrics = {}
 
         finally:
-            # Save results
-            results_dir = Path(__file__).parent.parent / "results"
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            markdown_path = results_dir / scenario.name / f"{timestamp}.md"
-
-            save_results(
-                scenario.name,
-                run_metrics,
-                workspace_metrics,
-                results_dir,
-                passed,
-                error_message,
-                raw_transcript=self.raw_transcript,
-                command_outputs=workspace.command_outputs,
-                conversational=scenario.conversational,
-            )
-
-            # Update markdown with LLM judge results (if available)
-            # This must happen after save_results creates the markdown file
-            from .metrics import update_markdown_with_llm_judge
-            update_markdown_with_llm_judge(markdown_path, scenario.name, workspace.temp_dir)
+            # Save results (skip for non-conversational question sets as they save per-question)
+            skip_aggregated_save = scenario.question_set and not scenario.conversational
+            if not skip_aggregated_save:
+                results_dir = Path(__file__).parent.parent / "results"
+                save_results(
+                    scenario.name,
+                    run_metrics,
+                    workspace_metrics,
+                    results_dir,
+                    passed,
+                    error_message,
+                    raw_transcript=self.raw_transcript,
+                    command_outputs=workspace.command_outputs,
+                    conversational=scenario.conversational,
+                    filename_prefix=scenario.result_file_prefix,
+                )
 
             # Cleanup
             workspace.teardown(had_error=had_error)
@@ -441,6 +445,162 @@ class ScenarioRunner:
         ]
         return any(ind in text_lower for ind in indicators)
 
+    async def _execute_question_set(self, scenario, workspace, metrics_collector):
+        """Execute a scenario that defines a question_set."""
+        config = scenario.question_set
+        if not config:
+            return
+
+        total_questions = len(config.questions)
+        scenario.result_file_prefix = None
+        single_question_id = None
+        if total_questions == 1 and config.questions:
+            single_question_id = config.questions[0].get("id") or "q1"
+        self._log(
+            f"\n🧪 Running {total_questions} question(s) defined in {Path(config.file).name}\n"
+        )
+
+        total_usage_tokens = 0.0
+        any_cached = False
+
+        for idx, question in enumerate(config.questions, start=1):
+            context = self._build_question_context(scenario, workspace, config, question, idx)
+            header = f"❓ Question {idx}/{total_questions}"
+            self._log(f"\n{'='*70}")
+            self._log(header)
+            self._log(question["question"])
+            self._log(f"{'='*70}\n")
+
+            usage_for_question = None
+            cached_response = None
+
+            if not scenario.conversational:
+                command_entries = await self._run_question_commands(config, context, workspace)
+            else:
+                prev_tokens = getattr(metrics_collector, "total_tokens", 0)
+                question_start = time.time()
+                await self._run_question_conversation(
+                    scenario, config, context, workspace, metrics_collector
+                )
+                question_duration = time.time() - question_start
+                command_entries = []
+
+                new_total = getattr(metrics_collector, "total_tokens", 0)
+                delta_tokens = max(0.0, new_total - prev_tokens)
+                usage_for_question = {
+                    "total_tokens": delta_tokens,
+                    "duration_seconds": question_duration,
+                }
+                cached_response = delta_tokens == 0
+                if delta_tokens > 0:
+                    total_usage_tokens += delta_tokens
+                else:
+                    any_cached = True
+
+            self._run_question_assertions(config, context, workspace)
+            answer_text = self._read_answer_text(context)
+
+            for entry in command_entries:
+                usage = entry.get("usage")
+                if usage is not None:
+                    usage_for_question = usage
+                    tokens = usage.get("total_tokens")
+                    if isinstance(tokens, (int, float)) and tokens > 0:
+                        total_usage_tokens += float(tokens)
+                json_payload = entry.get("json_output")
+                if json_payload and cached_response is None:
+                    cached_response = json_payload.get("cached_response")
+                if cached_response:
+                    any_cached = True
+
+            judge_result = None
+            if config.llm_judge.get("enabled"):
+                judge_result = self._score_answer_with_llm(question, answer_text, config)
+                if judge_result:
+                    score = judge_result["overall_score"]
+                    self._log(f"   🧠 LLM Judge score: {score:.2f}")
+                else:
+                    self._log("   ⚠️  LLM judge evaluation failed for this question")
+
+            self._record_question_output(
+                workspace=workspace,
+                context=context,
+                answer_text=answer_text,
+                judge_result=judge_result,
+                token_usage=usage_for_question,
+                cached_response=cached_response,
+            )
+
+            # Save individual question results for both conversational and non-conversational scenarios
+            question_metrics = MetricsCollector()
+            question_metrics.start_time = metrics_collector.start_time
+            question_metrics.finish()
+
+            if usage_for_question and usage_for_question.get("total_tokens") is not None:
+                question_metrics.record_usage(int(usage_for_question["total_tokens"]))
+            elif cached_response:
+                question_metrics.record_usage(0)
+
+            from .metrics import save_results, collect_metrics
+            question_workspace_metrics = collect_metrics(workspace)
+
+            question_llm_metrics = None
+            if judge_result:
+                question_llm_metrics = {
+                    "test_cases": [{
+                        "question": context["question"],
+                        "overall_score": judge_result.get("overall_score", 0),
+                        "component_scores": judge_result.get("component_scores", {}),
+                        "feedback": judge_result.get("feedback", "")
+                    }],
+                    "summary": {
+                        "average_score": judge_result.get("overall_score", 0),
+                        "num_test_cases": 1,
+                        "passed": judge_result.get("overall_score", 0) >= 0.7
+                    }
+                }
+
+            results_parent = Path(config.results_dir).parent if config.results_dir else Path("eval/results")
+            save_results(
+                scenario_name=scenario.name,
+                run_metrics=question_metrics.get_metrics(),
+                workspace_metrics=question_workspace_metrics,
+                output_dir=results_parent,
+                passed=True,
+                error=None,
+                command_outputs=[entry for entry in workspace.command_outputs if entry.get("question") == context["question"]],
+                conversational=False,
+                filename_prefix=context["question_id"]
+            )
+
+            if question_llm_metrics:
+                import json
+                results_path = Path(config.results_dir if config.results_dir else f"eval/results/{scenario.name}") / f"{context['question_id']}_{context['timestamp']}.json"
+                if results_path.exists():
+                    with open(results_path, 'r') as f:
+                        data = json.load(f)
+                    data["llm_judge_metrics"] = question_llm_metrics
+                    with open(results_path, 'w') as f:
+                        json.dump(data, f, indent=2)
+
+            self._run_post_question_commands(config, context, workspace)
+            self._archive_answer_file(context)
+            if total_questions == 1:
+                single_question_id = context["question_id"]
+
+        if single_question_id:
+            scenario.result_file_prefix = single_question_id
+
+        if total_usage_tokens > 0:
+            self._log(f"📊 Total tokens collected: {total_usage_tokens}")
+            metrics_collector.record_usage(int(total_usage_tokens))
+        elif any_cached:
+            self._log("📊 No new tokens (cached response) - recording usage=0")
+            metrics_collector.record_usage(0)
+        else:
+            self._log("📊 No usage data captured")
+        metrics_collector.cached_response = getattr(metrics_collector, "cached_response", False) or any_cached
+
     async def _execute_test_cases(self, scenario, workspace):
         """Execute test cases for non-conversational scenarios.
 
@@ -448,8 +608,6 @@ class ScenarioRunner:
             scenario: Scenario with test_cases
             workspace: IsolatedWorkspace instance
         """
-        import subprocess
-
         for i, test_case in enumerate(scenario.test_cases, 1):
             question = test_case.get("question", "")
             cmd = test_case.get("cmd", "")
@@ -596,6 +754,302 @@ class ScenarioRunner:
                     self._log(f"     ❌ Post command failed: {e}")
 
             self._log("")  # Empty line between test cases
+
+    async def _run_question_commands(self, config, context, workspace):
+        """Run per-question commands for non-conversational scenarios."""
+        if not config.commands:
+            raise ValueError(
+                "Question set scenario is non-conversational but has no 'commands' defined"
+            )
+
+        entries = []
+        for cmd_template in config.commands:
+            cmd = self._format_template(cmd_template, context)
+            entry = self._run_shell_command(cmd, workspace, context, kind="cmd")
+            entries.append(entry)
+
+        return entries
+
+    async def _run_question_conversation(
+        self, scenario, config, context, workspace, metrics_collector
+    ):
+        """Run a conversational question via the Claude SDK."""
+        prompt_template = config.initial_prompt_template
+        if not prompt_template:
+            raise ValueError("Question set scenario requires 'initial_prompt' for conversational mode")
+
+        prompt = self._format_template(prompt_template, context)
+        self._log(f"\n{'┌'+'─'*68+'┐'}")
+        self._log(f"│ 💬 QUESTION {context['question_num']}")
+        self._log(f"│ {prompt}")
+        self._log(f"{'└'+'─'*68+'┘'}")
+        metrics_collector.record_turn("user", prompt)
+
+        await self._execute_with_sdk(
+            prompt,
+            workspace,
+            metrics_collector,
+            user_agent=scenario.user_agent,
+            max_turns=self.max_conversation_turns,
+        )
+
+    def _run_question_assertions(self, config, context, workspace):
+        """Run any per-question assertions."""
+        if not config.assertion_templates:
+            return
+
+        formatted = [self._format_template(assertion, context) for assertion in config.assertion_templates]
+        assertions = parse_assertions(formatted)
+        assert_all(assertions, workspace, {})
+
+    def _run_post_question_commands(self, config, context, workspace):
+        """Run templated post-question commands."""
+        for post_template in config.post_command_templates:
+            cmd = self._format_template(post_template, context)
+            self._run_shell_command(cmd, workspace, context, kind="post")
+
+    def _run_shell_command(self, cmd, workspace, context, kind="cmd"):
+        """Execute a shell command inside the workspace."""
+        label = "Command" if kind == "cmd" else "Post-command"
+        self._log(f"   ➤ {label}: {cmd}")
+
+        try:
+            result = subprocess.run(
+                cmd,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=300,
+                cwd=workspace.path,
+            )
+        except Exception as exc:
+            self._log(f"   ❌ {label} failed: {exc}")
+            workspace.command_outputs.append(
+                {
+                    "command": cmd,
+                    "index": f"{context['question_num']}-{kind}",
+                    "stdout": "",
+                    "stderr": "",
+                    "returncode": None,
+                    "error": str(exc),
+                    "question": context["question"],
+                }
+            )
+            raise
+
+        stdout_text = result.stdout or ""
+        json_payload = None
+        stripped = stdout_text.strip()
+        if stripped.startswith("{") and stripped.endswith("}"):
+            try:
+                json_payload = json.loads(stripped)
+            except json.JSONDecodeError:
+                json_payload = None
+
+        entry = {
+            "command": cmd,
+            "index": f"{context['question_num']}-{kind}",
+            "stdout": stdout_text,
+            "stderr": result.stderr,
+            "returncode": result.returncode,
+            "error": None,
+            "question": context["question"],
+        }
+        if json_payload is not None:
+            entry["json_output"] = json_payload
+            usage_data = json_payload.get("token_usage")
+            if usage_data is not None:
+                entry["usage"] = usage_data
+        workspace.command_outputs.append(entry)
+
+        if result.returncode != 0:
+            raise RuntimeError(f"{label} exited with code {result.returncode}")
+
+        self._log("   ✅ Completed")
+        return entry
+
+    def _build_question_context(self, scenario, workspace, config, question, idx):
+        """Build context dictionary for template formatting."""
+        context = {
+            "scenario_name": scenario.name,
+            "question": question["question"],
+            "question_num": idx,
+            "question_id": question.get("id") or f"q{idx}",
+            "question_slug": self._slugify(question["question"]),
+            "timestamp": datetime.now().strftime("%Y%m%d_%H%M%S"),
+        }
+        context.update(config.extra_context)
+
+        answer_path_str = config.answer_file_template.format(**context)
+        answer_path = Path(answer_path_str).expanduser()
+        if not answer_path.is_absolute():
+            answer_path = workspace.path / answer_path
+
+        context["answer_file"] = str(answer_path)
+        context["answer_path"] = answer_path
+
+        base_results_dir = config.results_dir or str((_eval_dir / "results" / scenario.name))
+        results_dir_path = Path(base_results_dir).expanduser()
+        if not results_dir_path.is_absolute():
+            results_dir_path = (_project_root / results_dir_path).resolve()
+
+        context["results_dir"] = str(results_dir_path)
+        context["results_dir_path"] = results_dir_path
+
+        return context
+
+    def _format_template(self, value, context):
+        """Format templates that may be strings, lists, or dicts."""
+        if isinstance(value, str):
+            return value.format(**context)
+        if isinstance(value, list):
+            return [self._format_template(item, context) for item in value]
+        if isinstance(value, dict):
+            return {key: self._format_template(val, context) for key, val in value.items()}
+        return value
+
+    def _slugify(self, text: str) -> str:
+        """Generate a slug from question text."""
+        slug = re.sub(r"[^a-z0-9]+", "-", text.lower())
+        slug = slug.strip("-")
+        return slug or "question"
+
+    def _read_answer_text(self, context) -> str:
+        """Read an answer file and strip metadata sections."""
+        answer_path = context["answer_path"]
+        if not answer_path.exists():
+            raise FileNotFoundError(f"Answer file not found: {answer_path}")
+
+        content = answer_path.read_text(encoding="utf-8")
+        return self._extract_answer_content(content)
+
+    def _extract_answer_content(self, content: str) -> str:
+        """Remove sources/metadata sections from answer markdown."""
+        answer = content
+        for marker in ["## Sources", "## Metadata"]:
+            if marker in answer:
+                answer = answer.split(marker, 1)[0]
+        if "# Answer" in answer:
+            answer = answer.split("# Answer", 1)[1]
+        return answer.strip()
+
+    def _record_question_output(self, workspace, context, answer_text, judge_result, token_usage=None, cached_response=None):
+        """Store the answer (and LLM judge result) as a command output entry."""
+        entry = {
+            "command": f"question:{context['question_id']}",
+            "index": context["question_num"],
+            "stdout": answer_text,
+            "stderr": "",
+            "returncode": 0,
+            "error": None,
+            "question": context["question"],
+            "answer_file": context["answer_file"],
+        }
+        if judge_result:
+            entry["llm_judge"] = judge_result
+        if token_usage:
+            entry["usage"] = token_usage
+        if cached_response is not None:
+            entry["cached_response"] = cached_response
+        workspace.command_outputs.append(entry)
+        self._save_question_artifacts(context, entry)
+
+    def _archive_answer_file(self, context):
+        """Copy answer markdown into the configured results directory."""
+        answer_path = context["answer_path"]
+        if not answer_path.exists():
+            return
+
+        results_dir = context["results_dir_path"]
+        results_dir.mkdir(parents=True, exist_ok=True)
+
+        archive_name = f"{context['question_id']}_{context['timestamp']}_answer.md"
+        try:
+            shutil.copy2(answer_path, results_dir / archive_name)
+        except Exception as exc:
+            self._log(f"   ⚠️  Failed to archive answer: {exc}")
+
+    def _save_question_artifacts(self, context, entry):
+        """Write per-question JSON and markdown logs."""
+        results_dir = context["results_dir_path"]
+        results_dir.mkdir(parents=True, exist_ok=True)
+        base_name = f"{context['question_id']}_{context['timestamp']}"
+        json_path = results_dir / f"{base_name}.json"
+        md_path = results_dir / f"{base_name}.md"
+
+        data = {
+            "question": context["question"],
+            "answer": entry.get("stdout", ""),
+            "answer_file": context.get("answer_file"),
+            "token_usage": entry.get("usage"),
+            "cached_response": entry.get("cached_response"),
+            "llm_judge": entry.get("llm_judge"),
+            "command": entry.get("command"),
+            "returncode": entry.get("returncode"),
+        }
+
+        try:
+            with open(json_path, "w") as f:
+                json.dump(data, f, indent=2)
+        except Exception as exc:
+            self._log(f"   ⚠️  Failed to write question JSON: {exc}")
+
+        try:
+            with open(md_path, "w") as f:
+                f.write(f"# Question Result: {context['question']}\n\n")
+                f.write(f"**Answer File**: {context.get('answer_file')}\n\n")
+                f.write("## Answer\n")
+                f.write(entry.get("stdout", "").strip() + "\n\n")
+                if entry.get("usage"):
+                    usage = entry["usage"]
+                    tokens = usage.get("total_tokens")
+                    duration = usage.get("duration_seconds")
+                    f.write("## Usage\n")
+                    if tokens is not None:
+                        f.write(f"- Tokens Used: {tokens}\n")
+                    if duration is not None:
+                        f.write(f"- Duration: {duration:.2f} seconds\n")
+                    f.write("\n")
+                elif entry.get("cached_response"):
+                    f.write("## Usage\n- Cached response (no new tokens)\n\n")
+
+                if entry.get("llm_judge"):
+                    judge = entry["llm_judge"]
+                    f.write("## LLM Judge Evaluation\n")
+                    f.write(f"- Overall Score: {judge.get('overall_score')}\n")
+                    components = judge.get("component_scores", {})
+                    for key, value in components.items():
+                        f.write(f"  - {key.capitalize()}: {value}\n")
+                    feedback = judge.get("feedback")
+                    if feedback:
+                        f.write(f"\n**Feedback**:\n{feedback}\n")
+        except Exception as exc:
+            self._log(f"   ⚠️  Failed to write question markdown: {exc}")
+
+    def _score_answer_with_llm(self, question, answer_text, config):
+        """Score an answer using LLM-as-judge."""
+        canonical = question.get("expected_answer")
+        if not canonical:
+            self._log("   ⚠️  Skipping LLM judge (no expected answer provided)")
+            return None
+
+        weights = config.llm_judge.get(
+            "weights", {"accuracy": 0.4, "completeness": 0.3, "relevance": 0.2, "clarity": 0.1}
+        )
+        provider = config.llm_judge.get("provider", "openai")
+
+        try:
+            return score_single_answer(
+                question=question["question"],
+                canonical_answer=canonical,
+                generated_answer=answer_text,
+                required_topics=question.get("required_topics", []),
+                score_weights=weights,
+                llm_provider=provider,
+            )
+        except Exception as exc:
+            self._log(f"   ⚠️  LLM judge error: {exc}")
+            return None
 
     async def _execute_with_sdk(
         self,

@@ -1,0 +1,22 @@
+{
+  "question": "What's the difference between a MotherDuck database and a share?",
+  "answer": "# The Difference Between a MotherDuck Database and a Share\n\n## MotherDuck Database\n\nA **MotherDuck database** is a fully functional, writable database hosted in the cloud using MotherDuck's managed DuckDB service. Key characteristics include:\n\n- **Writable**: You can create, modify, and delete tables and data\n- **Full Control**: Database owners have complete control over the schema and content\n- **Collaborative**: Multiple users can simultaneously access with dedicated compute instances (\"ducklings\") for concurrent queries\n- **Cloud Storage**: Database catalog is managed in the cloud for easy scaling and collaboration\n- **Local + Cloud**: Can be queried both locally and in the cloud with seamless integration\n\n## MotherDuck Share\n\nA **share** is a **read-only, shareable snapshot** of a MotherDuck database, purpose-built for data collaboration and ad-hoc analytics. Key characteristics include:\n\n- **Read-Only**: Recipients can query the data but cannot modify it\n- **Snapshot-Based**: Represents a point-in-time copy of the database\n- **Zero-Copy**: Shares are designed as zero-copy clones, avoiding data duplication\n- **Controlled Access**: Share creators control who can access the data and when updates are pushed\n- **Easy Distribution**: Shares can be attached by others using a simple SQL command\n\n## Key Differences\n\n| Aspect | Database | Share |\n|--------|----------|-------|\n| **Permissions** | Read and write | Read-only |\n| **Purpose** | Primary data storage and processing | Data distribution and collaboration |\n| **Updates** | Direct modification allowed | Must be updated by creator |\n| **Access** | Requires database ownership or permissions | Anyone with the share URL can attach |\n| **Data Protection** | Direct access to production data | Isolated snapshot protects production dataset |\n\n## How Shares Work\n\nCreating and using shares is straightforward:\n\n```sql\n-- Create a share from a database\nCREATE SHARE share_name FROM database_name (ACCESS UNRESTRICTED);\n\n-- Share URL is returned, e.g.:\n-- md:_share/database/373594a2-06f7-4c33-814e-cf59028482ca\n\n-- Others can attach the share:\nATTACH 'md:_share/database/373594a2-06f7-4c33-814e-cf59028482ca';\n\n-- When the database owner updates data, they update the share:\nUPDATE SHARE share_name;\n```\n\n## Use Cases\n\n**Use a Database when:**\n- You need to create, update, or delete data\n- Building data pipelines or transformations\n- Working as part of a team that needs write access\n- Managing production datasets\n\n**Use a Share when:**\n- Distributing data to external stakeholders or partners\n- Providing read-only access for analytics and reporting\n- Protecting production data from accidental modifications\n- Enabling ad-hoc data exploration without risking data integrity\n- Sharing datasets publicly or with specific users",
+  "answer_file": "/tmp/answer_without_kg_8.md",
+  "token_usage": {
+    "total_tokens": 0.0,
+    "duration_seconds": 140.38887691497803
+  },
+  "cached_response": true,
+  "llm_judge": {
+    "overall_score": 0.96,
+    "component_scores": {
+      "accuracy": 1.0,
+      "completeness": 0.9,
+      "relevance": 1.0,
+      "clarity": 0.9
+    },
+    "feedback": "The generated answer is highly accurate and relevant, effectively covering the differences between a MotherDuck database and a share. It provides comprehensive details, though it slightly exceeds the necessary information compared to the canonical answer. The clarity is good, but the length and complexity may affect readability for some users. Overall, it is a strong response with minor areas for improvement in conciseness."
+  },
+  "command": "question:q8",
+  "returncode": 0
+}

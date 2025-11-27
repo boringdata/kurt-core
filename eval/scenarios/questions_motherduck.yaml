@@ -6,70 +6,70 @@
 # - Baseline approach (manual search without knowledge graph)
 
 questions:
-  - question: "What file formats are most efficient for loading data into MotherDuck?"
+  - question: "...... What file formats are most efficient for loading data into MotherDuck?"
     expected_answer: |
       Parquet is the most efficient file format for loading data into MotherDuck.
       It's a columnar storage format optimized for analytical queries and well-supported by DuckDB.
       Other efficient formats include CSV for simple data and JSON for semi-structured data,
       but Parquet offers the best performance for large-scale analytics.
 
-  - question: "How does MotherDuck integrate with DuckDB?"
+  - question: "...How does MotherDuck integrate with DuckDB?"
     expected_answer: |
       MotherDuck is built on top of DuckDB and provides a serverless cloud data warehouse.
       It uses DuckDB as its query engine while adding cloud storage, collaboration features,
       and managed infrastructure. MotherDuck maintains full compatibility with DuckDB's SQL
       dialect and allows users to run queries seamlessly across local and cloud data.
 
-  - question: "What SQL features from DuckDB are not yet supported in MotherDuck?"
+  - question: "...What SQL features from DuckDB are not yet supported in MotherDuck?"
     expected_answer: |
       MotherDuck aims for high compatibility with DuckDB but may have some limitations with
       certain extensions, user-defined functions, or very recent DuckDB features that haven't
       been integrated yet. Check the MotherDuck documentation for the current list of unsupported
       features or limitations.
 
-  - question: "Why might a query run slower on MotherDuck than locally?"
+  - question: "...Why might a query run slower on MotherDuck than locally?"
     expected_answer: |
       Queries may run slower on MotherDuck compared to local DuckDB due to network latency,
       data transfer overhead when moving data between local and cloud, cold start times for
       serverless compute, or suboptimal data partitioning. Local queries benefit from direct
       disk access and no network overhead.
 
-  - question: "How do I set up MotherDuck to work with dbt?"
+  - question: "...How do I set up MotherDuck to work with dbt?"
     expected_answer: |
       To use MotherDuck with dbt, you need to install the dbt-duckdb adapter and configure
       your profiles.yml with MotherDuck connection details including your token. The dbt-duckdb
       adapter supports MotherDuck's cloud features while maintaining compatibility with dbt's
       standard workflow.
 
-  - question: "How do I migrate data from a local DuckDB database to MotherDuck?"
+  - question: "...How do I migrate data from a local DuckDB database to MotherDuck?"
     expected_answer: |
       To migrate from local DuckDB to MotherDuck, you can attach to MotherDuck from your local
       DuckDB instance and use INSERT INTO or CREATE TABLE AS SELECT statements to copy data
       from local tables to MotherDuck tables. Alternatively, export data to Parquet files and
       load them into MotherDuck from cloud storage.
 
-  - question: "If I have a CSV on my laptop and a table in S3, what's the most efficient way to join them using MotherDuck?"
+  - question: "...If I have a CSV on my laptop and a table in S3, what's the most efficient way to join them using MotherDuck?"
     expected_answer: |
       The most efficient approach is to create a temporary table from your local CSV, then use
       MotherDuck's ability to read directly from S3 in your join query. MotherDuck can push down
       filters and only transfer necessary data, minimizing data movement. Alternatively, if the CSV
       is small, you can upload it directly to MotherDuck.
 
-  - question: "What's the difference between a MotherDuck database and a share?"
+  - question: "...What's the difference between a MotherDuck database and a share?"
     expected_answer: |
       A MotherDuck database is a collection of tables and schemas that you own and can modify.
       A share is a read-only view of another user's database that they've shared with you,
       allowing data collaboration without copying. Shares enable secure data sharing across
       MotherDuck accounts.
 
-  - question: "What compute instance sizes does MotherDuck offer?"
+  - question: "...What compute instance sizes does MotherDuck offer?"
     expected_answer: |
       MotherDuck uses serverless compute that automatically scales based on query demands.
-      Instead of choosing fixed instance sizes, MotherDuck allocates resources dynamically
+      Instead of choosing fixed instance sizes, MotherDuck allocates iOS resources dynamically
       and charges based on usage. This provides flexibility without requiring manual instance
       sizing.
 
-  - question: "What DuckDB versions does MotherDuck currently support?"
+  - question: "...What DuckDB versions does MotherDuck currently support?"
     expected_answer: |
       MotherDuck typically supports recent stable versions of DuckDB and updates regularly
       to incorporate new features and improvements. Check the MotherDuck documentation or

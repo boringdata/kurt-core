@@ -37,9 +37,7 @@ class AnswerScorer(dspy.Signature):
     clarity_score = dspy.OutputField(
         desc="Clarity score (0.0-1.0): Is the answer well-written, clear, and easy to understand?"
     )
-    feedback = dspy.OutputField(
-        desc="Brief explanation of the scores (2-3 sentences)"
-    )
+    feedback = dspy.OutputField(desc="Brief explanation of the scores (2-3 sentences)")
 
 
 def configure_dspy_llm(provider: str = "anthropic", model: Optional[str] = None):
@@ -136,8 +134,7 @@ def score_single_answer(
 
         # Calculate weighted overall score
         overall_score = sum(
-            component_scores[component] * weight
-            for component, weight in score_weights.items()
+            component_scores[component] * weight for component, weight in score_weights.items()
         )
 
         return {

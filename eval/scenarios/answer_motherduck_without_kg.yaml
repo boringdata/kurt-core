@@ -1,0 +1,27 @@
+---
+name: answer_motherduck_without_kg
+description: "Answer MotherDuck questions by searching sources directly (no KG)"
+project: motherduck
+conversational: true
+setup_commands:
+  - uv run --project /Users/julien/Documents/wik/wikumeo/projects/kurt-core python /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/mock/generators/load_dump.py motherduck --skip-entities
+question_set:
+  file: questions_motherduck.yaml
+  answer_file_template: /tmp/answer_without_kg_{question_num}.md
+  initial_prompt: |
+    Search through the .kurt/sources/ directory to answer this question:
+
+    {question}
+
+    Steps:
+    1. Search for the most relevant markdown files in .kurt/sources/
+    2. Read those files and synthesize the answer
+    3. Write a markdown answer (with a ## Sources section) to: {answer_file}
+
+  assertions:
+    - type: FileExists
+      path: "{answer_file}"
+  llm_judge:
+    enabled: true
+    provider: openai
+  results_dir: eval/results/answer_motherduck_without_kg

@@ -1,5 +1,7 @@
 """Answer command - GraphRAG-based question answering."""
 
+import json
+
 import click
 from rich.console import Console
 
@@ -8,6 +10,20 @@ from kurt.config import config_file_exists
 from kurt.content.answer import answer_question
 
 console = Console()
+
+
+def _log_usage(token_usage: dict | None):
+    """Print token usage metrics for human-readable output."""
+    if not token_usage:
+        return
+
+    tokens = token_usage.get("total_tokens")
+    duration = token_usage.get("duration_seconds")
+
+    if tokens is not None:
+        console.print(f"[dim]Tokens Used:[/dim] {tokens}")
+    if duration is not None:
+        console.print(f"[dim]Generation Time:[/dim] {duration:.2f}s")
 
 
 @click.command()
@@ -24,13 +40,14 @@ console = Console()
     default=None,
     help="Write answer to markdown file instead of stdout",
 )
+@click.option("--verbose", is_flag=True, help="Show detailed retrieval information")
 @click.option(
-    "--verbose",
+    "--json-output",
     is_flag=True,
-    help="Show detailed retrieval information",
+    help="Print answer, metadata, and usage as a single JSON object (disables rich formatting)",
 )
 @track_command
-def answer(question: str, max_docs: int, output: str, verbose: bool):
+def answer(question: str, max_docs: int, output: str, verbose: bool, json_output: bool):
     """Answer a question using GraphRAG retrieval from the knowledge graph.
 
     Uses local search strategy:
@@ -50,12 +67,24 @@ def answer(question: str, max_docs: int, output: str, verbose: bool):
         console.print("Run [cyan]kurt init[/cyan] to initialize a project")
         raise click.Abort()
 
-    if not output:
-        console.print(f"[dim]Question:[/dim] {question}\n")
-
     try:
         # Answer the question
         result = answer_question(question, max_documents=max_docs)
+
+        if not output and not json_output:
+            console.print(f"[dim]Question:[/dim] {question}\n")
+
+        cached_response = result.token_usage is None
+        metadata = {
+            "question": question,
+            "confidence": result.confidence,
+            "documents_retrieved": result.retrieval_stats["documents_found"],
+            "entities_found": result.retrieval_stats["entities_found"],
+            "token_usage": result.token_usage or {},
+            "sources": result.documents_cited,
+            "key_entities": result.entities_used,
+            "cached_response": cached_response,
+        }
 
         # If output file specified, write to markdown
         if output:
@@ -78,14 +107,42 @@ def answer(question: str, max_docs: int, output: str, verbose: bool):
             md_content += f"- **Confidence**: {result.confidence:.2f}\n"
 
             if result.entities_used:
-                md_content += f"- **Key Entities**: {', '.join([e[0] for e in result.entities_used])}\n"
+                md_content += (
+                    f"- **Key Entities**: {', '.join([e[0] for e in result.entities_used])}\n"
+                )
 
-            md_content += f"- **Documents Retrieved**: {result.retrieval_stats['documents_found']}\n"
+            md_content += (
+                f"- **Documents Retrieved**: {result.retrieval_stats['documents_found']}\n"
+            )
             md_content += f"- **Entities Found**: {result.retrieval_stats['entities_found']}\n"
+
+            if result.token_usage:
+                tokens = result.token_usage.get("total_tokens")
+                duration = result.token_usage.get("duration_seconds")
+                if tokens is not None:
+                    md_content += f"- **Tokens Used**: {tokens}\n"
+                if duration is not None:
+                    md_content += f"- **Generation Time**: {duration:.2f} seconds\n"
+            else:
+                md_content += "- **Tokens Used**: cached result (no new tokens)\n"
 
             # Write to file
             output_path.write_text(md_content, encoding="utf-8")
-            console.print(f"[green]✓[/green] Answer written to: {output_path}")
+            if not json_output:
+                console.print(f"[green]✓[/green] Answer written to: {output_path}")
+                if cached_response:
+                    console.print("[dim]Token usage unavailable (cached response).[/dim]")
+                else:
+                    _log_usage(result.token_usage)
+                return
+
+        if json_output:
+            json_payload = {
+                "answer": result.answer,
+                **metadata,
+                "answer_file": output if output else None,
+            }
+            print(json.dumps(json_payload, ensure_ascii=False, indent=2))
             return
 
         # Otherwise display to console
@@ -94,8 +151,12 @@ def answer(question: str, max_docs: int, output: str, verbose: bool):
         console.print()
 
         # Display confidence
-        confidence_color = "green" if result.confidence >= 0.7 else "yellow" if result.confidence >= 0.5 else "red"
-        console.print(f"[bold]Confidence:[/bold] [{confidence_color}]{result.confidence:.2f}[/{confidence_color}]")
+        confidence_color = (
+            "green" if result.confidence >= 0.7 else "yellow" if result.confidence >= 0.5 else "red"
+        )
+        console.print(
+            f"[bold]Confidence:[/bold] [{confidence_color}]{result.confidence:.2f}[/{confidence_color}]"
+        )
         console.print()
 
         # Display entities used
@@ -121,6 +182,11 @@ def answer(question: str, max_docs: int, output: str, verbose: bool):
                 f"  • Top entity similarity: {result.retrieval_stats['top_entity_similarity']:.2f}"
             )
             console.print()
+
+        if cached_response:
+            console.print("[dim]Token usage unavailable (cached response).[/dim]")
+        else:
+            _log_usage(result.token_usage)
 
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")

@@ -1,0 +1,42 @@
+{
+  "question": "...What SQL features from DuckDB are not yet supported in MotherDuck?",
+  "answer": "The specific SQL features from DuckDB that are not yet supported in MotherDuck are not detailed in the provided documents or relationships. For precise information, consulting the official documentation or support resources of MotherDuck would be necessary.",
+  "answer_file": "/tmp/answer_with_kg_3.md",
+  "token_usage": {
+    "models": {
+      "openai/gpt-4o": {
+        "completion_tokens": 203,
+        "prompt_tokens": 1309,
+        "total_tokens": 1512,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 0,
+          "text_tokens": null,
+          "image_tokens": null
+        }
+      }
+    },
+    "duration_seconds": 3.1123077869415283,
+    "total_tokens": 1512.0
+  },
+  "cached_response": false,
+  "llm_judge": {
+    "overall_score": 0.63,
+    "component_scores": {
+      "accuracy": 0.7,
+      "completeness": 0.5,
+      "relevance": 0.6,
+      "clarity": 0.8
+    },
+    "feedback": "The generated answer is somewhat accurate but lacks specific details about the types of features that may not be supported, which affects its completeness. While it is clear and easy to understand, it could better address the question by including more relevant information about the limitations of MotherDuck compared to DuckDB."
+  },
+  "command": "question:q3",
+  "returncode": 0
+}

@@ -1,0 +1,22 @@
+{
+  "question": "What compute instance sizes does MotherDuck offer?",
+  "answer": "# MotherDuck Compute Instance Sizes\n\nMotherDuck offers **5 distinct compute instance types** designed for different workload requirements, following a serverless architecture with per-user tenancy. Each instance type is optimized for specific use cases ranging from lightweight ad-hoc analytics to the most demanding data transformations.\n\n## Available Instance Types\n\n### 1. **Pulse**\nThe smallest instance designed for lightweight, fully serverless analytics.\n\n**Common use cases:**\n- Ad-hoc analytics tasks with datasets in MotherDuck\n- Building read-only workloads with high volumes of concurrent users (e.g., customer-facing analytics applications)\n- Situations where a larger, dedicated instance is overkill\n\n**Billing:** Per Compute Unit (CU) second, 1 second minimum\n\n**Pricing:**\n- Free plan: Up to 10 CU hours\n- Lite plan: $0.25 per CU hour\n- Business plan: $0.40 per CU hour\n\n### 2. **Standard**\nBuilt for common data warehouse workloads including loads and transforms.\n\n**Common use cases:**\n- Typical data engineering tasks like data ingest and dbt transformations\n- Running dbt jobs with multiple transformations in parallel\n- Building standard data pipelines before moving to production\n\n**Billing:** Per second, 60 second minimum\n\n**Pricing:**\n- Lite plan: $1.20 per hour\n- Business plan: $1.80 per hour\n\n### 3. **Jumbo**\nDesigned for larger data warehouse workloads with many transformations or complex aggregations.\n\n**Common use cases:**\n- Query complexity, data volume, and transformation counts too high for Standard instances\n- Complex joins and aggregations on growing datasets with event stream data or nested JSON\n- Workloads requiring faster execution times\n\n**Billing:** Per second, 60 second minimum\n\n**Pricing:**\n- Lite plan: Not available\n- Business plan: $3.60 per hour\n\n### 4. **Mega**\nAn extremely large instance for complex transformations that need to be completed quickly.\n\n**Common use cases:**\n- Queries too complex or data volumes too high for Jumbo instances\n- Weekly jobs that rebuild all tables and must complete in minutes, not hours\n- Customers with 10x the data volume of typical users requiring consistent performance\n\n**Billing:** Per second, 5 minute minimum\n\n**Pricing:**\n- Business plan only: $10.80 per hour\n\n### 5. **Giga**\nThe largest instance type for the toughest transformations.\n\n**Common use cases:**\n- Extremely complex data workloads that exceed all other instance capabilities\n- One-time massive jobs (e.g., restating revenue for 10 years at a large company)\n- Growth path beyond Mega for 10x increases in data volume and complexity\n\n**Billing:** Per second, 10 minute minimum\n\n**Pricing:** Contact MotherDuck sales team\n\n## Plan Availability\n\n- **Free Plan:** Pulse only (1 instance type)\n- **Lite Plan:** Pulse and Standard (2 instance types)\n- **Business Plan:** Pulse, Standard, Jumbo, Mega, and Giga (5 instance types)\n\n## Additional Features\n\n### Read Scaling\nBusiness plan customers can enable up to **16 read-scaling replicas**, each backed by its own instance, for BI dashboards and read-only use cases. This provides additional concurrent query capacity for high-traffic scenarios.\n\n### Per-User Tenancy\nMotherDuck's architecture provides each organization member with an isolated instance, enabling individual, user-level configuration and ensuring workload isolation.",
+  "answer_file": "/tmp/answer_without_kg_9.md",
+  "token_usage": {
+    "total_tokens": 0.0,
+    "duration_seconds": 93.75862288475037
+  },
+  "cached_response": true,
+  "llm_judge": {
+    "overall_score": 0.7,
+    "component_scores": {
+      "accuracy": 0.5,
+      "completeness": 0.9,
+      "relevance": 0.8,
+      "clarity": 0.7
+    },
+    "feedback": "The generated answer is comprehensive and covers a wide range of instance types and their details, which contributes to a high completeness score. However, it inaccurately presents fixed instance sizes, which contradicts the canonical answer's emphasis on serverless compute and dynamic resource allocation. This discrepancy affects the accuracy score. The clarity is somewhat diminished due to the extensive detail, which may overwhelm the reader, impacting the clarity score."
+  },
+  "command": "question:q9",
+  "returncode": 0
+}

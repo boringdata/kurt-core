@@ -23,6 +23,9 @@ class RetrievedContext:
     document_scores: dict[str, float]  # document_id -> relevance score
 
 
+from kurt.utils.dspy_usage import run_with_usage
+
+
 @dataclass
 class AnswerResult:
     """Result of answering a question using GraphRAG."""
@@ -32,6 +35,7 @@ class AnswerResult:
     documents_cited: list[tuple[str, str, float]]  # (doc_id, doc_title, score)
     confidence: float
     retrieval_stats: dict[str, Any]
+    token_usage: dict[str, Any] | None = None
 
 
 class AnswerSignature(dspy.Signature):
@@ -388,15 +392,18 @@ def generate_answer(question: str, context: RetrievedContext) -> AnswerResult:
     answer_module = dspy.ChainOfThought(AnswerSignature)
 
     try:
-        result = answer_module(
-            question=question,
-            entities=entities_context,
-            relationships=relationships_context,
-            documents=documents_context,
+        answer_prediction, usage_summary = run_with_usage(
+            lambda: answer_module(
+                question=question,
+                entities=entities_context,
+                relationships=relationships_context,
+                documents=documents_context,
+            ),
+            context_kwargs={"lm": lm},
         )
 
-        answer_text = result.answer
-        confidence_str = result.confidence
+        answer_text = answer_prediction.answer
+        confidence_str = answer_prediction.confidence
 
         # Parse confidence
         try:
@@ -412,6 +419,7 @@ def generate_answer(question: str, context: RetrievedContext) -> AnswerResult:
         # Fallback if DSPy fails
         answer_text = f"Error generating answer: {e}"
         confidence = 0.0
+        usage_summary = None
 
     # Prepare entities used (top 5 with highest similarity)
     entities_used = []
@@ -447,6 +455,7 @@ def generate_answer(question: str, context: RetrievedContext) -> AnswerResult:
         documents_cited=documents_cited,
         confidence=confidence,
         retrieval_stats=retrieval_stats,
+        token_usage=usage_summary,
     )
 
 
