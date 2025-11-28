@@ -13,7 +13,7 @@ import logging
 
 import dspy
 
-from kurt.content.indexing.models import GroupResolution
+from kurt.content.indexing.models import ClaimGroupResolution, GroupResolution
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +141,129 @@ def validate_merge_decisions(resolutions: list[dict]) -> list[dict]:
             if merge_target not in all_entity_names:
                 logger.warning(
                     f"Invalid MERGE_WITH target '{merge_target}' for entity '{entity_name}'. "
+                    f"Target not found in group. Converting to CREATE_NEW."
+                )
+                resolution["decision"] = "CREATE_NEW"
+
+        validated_resolutions.append(resolution)
+
+    return validated_resolutions
+
+
+# ============================================================================
+# Claim Resolution DSPy Signature
+# ============================================================================
+
+
+class ResolveClaimGroup(dspy.Signature):
+    """Resolve a GROUP of similar NEW claims against existing claims.
+
+    You are given:
+    1. A group of similar NEW claims (clustered together by similarity)
+    2. Existing claims from the knowledge base that might match
+
+    Your task is to decide for EACH CLAIM in the group:
+    - CREATE_NEW: Create a new claim (novel assertion not in database)
+    - MERGE_WITH:<exact_claim_text>: Merge with another claim in THIS group (same meaning, different wording)
+    - <existing_claim_id>: Link to an existing claim by using the EXACT UUID from existing_candidates
+
+    Resolution rules:
+    - If an existing claim is semantically equivalent, return its EXACT UUID
+    - If multiple claims in the group express the same assertion, merge them
+    - If this is a novel claim, return CREATE_NEW
+    - Provide canonical_text (normalized form) and aliases for each resolution
+
+    CRITICAL: When using MERGE_WITH, the target text MUST exactly match a claim_text in group_claims.
+    CRITICAL: When linking to existing claim, use the UUID (id field), NOT the text.
+
+    IMPORTANT: Return one resolution decision for EACH claim in the group.
+    """
+
+    group_claims: list[dict] = dspy.InputField(
+        desc="Group of similar claims to resolve: [{claim_text, claim_type, entities, confidence}, ...]"
+    )
+    existing_candidates: list[dict] = dspy.InputField(
+        default=[],
+        desc="Similar existing claims from KB: [{id, claim_text, claim_type, canonical_text}, ...]. Use the 'id' field for linking.",
+    )
+    resolutions: ClaimGroupResolution = dspy.OutputField(
+        desc="Resolution decision for EACH claim in the group"
+    )
+
+
+# ============================================================================
+# Claim Resolution Functions
+# ============================================================================
+
+
+async def resolve_single_claim_group(
+    group_claims: list[dict], existing_candidates: list[dict]
+) -> list[dict]:
+    """Resolve a single group of claims using LLM.
+
+    This is PURE LLM logic - no DB calls, no clustering, no orchestration.
+
+    Args:
+        group_claims: List of similar claims in this group
+        existing_candidates: List of similar existing claims from DB
+
+    Returns:
+        List of resolution dicts with: claim_text, claim_details, decision, canonical_text, aliases, reasoning
+    """
+    resolution_module = dspy.ChainOfThought(ResolveClaimGroup)
+
+    result = await resolution_module.acall(
+        group_claims=group_claims,
+        existing_candidates=existing_candidates,
+    )
+
+    # Convert ClaimGroupResolution output to individual resolution dicts
+    group_resolutions = []
+    for idx, claim_resolution in enumerate(result.resolutions.resolutions):
+        if idx < len(group_claims):
+            claim_details = group_claims[idx]
+        else:
+            claim_details = next(
+                (c for c in group_claims if c["claim_text"] == claim_resolution.claim_text),
+                group_claims[0],
+            )
+
+        group_resolutions.append(
+            {
+                "claim_text": claim_resolution.claim_text,
+                "claim_details": claim_details,
+                "decision": claim_resolution.resolution_decision,
+                "canonical_text": claim_resolution.canonical_text,
+                "aliases": claim_resolution.aliases,
+                "reasoning": claim_resolution.reasoning,
+            }
+        )
+
+    return group_resolutions
+
+
+def validate_claim_merge_decisions(resolutions: list[dict]) -> list[dict]:
+    """Validate MERGE_WITH decisions for claims and fix invalid ones.
+
+    Args:
+        resolutions: List of claim resolution dicts
+
+    Returns:
+        List of validated resolution dicts
+    """
+    all_claim_texts = {r["claim_text"] for r in resolutions}
+    validated_resolutions = []
+
+    for resolution in resolutions:
+        decision = resolution["decision"]
+        claim_text = resolution["claim_text"]
+
+        if decision.startswith("MERGE_WITH:"):
+            merge_target = decision.replace("MERGE_WITH:", "").strip()
+
+            if merge_target not in all_claim_texts:
+                logger.warning(
+                    f"Invalid MERGE_WITH target for claim. "
                     f"Target not found in group. Converting to CREATE_NEW."
                 )
                 resolution["decision"] = "CREATE_NEW"

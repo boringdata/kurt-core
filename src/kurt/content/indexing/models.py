@@ -10,7 +10,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from kurt.db.models import ContentType, EntityType, RelationshipType
+from kurt.db.models import ClaimEntityRole, ClaimType, ContentType, EntityType, RelationshipType
 
 # ============================================================================
 # Document Metadata Models (used by IndexDocument DSPy signature)
@@ -81,4 +81,65 @@ class GroupResolution(BaseModel):
 
     resolutions: list[EntityResolution] = Field(
         description="Resolution decision for each entity in the group"
+    )
+
+
+# ============================================================================
+# Claim Extraction Models (used by IndexDocument DSPy signature)
+# ============================================================================
+
+
+class ClaimEntityReference(BaseModel):
+    """Reference to an entity involved in a claim."""
+
+    entity_name: str = Field(description="Name of the entity")
+    role: ClaimEntityRole = Field(description="Role: source (who made claim), subject (claim about), object (compared to)")
+
+
+class ClaimExtraction(BaseModel):
+    """Claim extracted from document with resolution status."""
+
+    claim_text: str = Field(description="The claim as stated in the document (50-200 chars)")
+    claim_type: ClaimType = Field(description="Type of claim: factual, comparative, capability, performance, benefit, limitation, integration, other")
+    entities: list[ClaimEntityReference] = Field(
+        default=[],
+        description="Entities involved in this claim with their roles"
+    )
+    confidence: float = Field(description="Confidence score 0.0-1.0")
+    quote: Optional[str] = Field(
+        default=None,
+        description="Exact quote from document where claim appears (50-200 chars)"
+    )
+    resolution_status: str = Field(
+        default="NEW",
+        description="'EXISTING' if matches existing claim, 'NEW' if novel"
+    )
+    matched_claim_index: Optional[int] = Field(
+        default=None,
+        description="If EXISTING, the index from existing_claims list"
+    )
+
+
+# ============================================================================
+# Claim Resolution Models (used by ResolveClaimGroup DSPy signature)
+# ============================================================================
+
+
+class ClaimResolution(BaseModel):
+    """Resolution decision for a single claim."""
+
+    claim_text: str = Field(description="The claim being resolved")
+    resolution_decision: str = Field(
+        description="Decision: 'CREATE_NEW' to create new claim, 'MERGE_WITH:<claim_text>' to merge with peer, or UUID of existing claim to link to"
+    )
+    canonical_text: str = Field(description="Canonical form of the claim for deduplication")
+    aliases: list[str] = Field(default=[], description="Alternative phrasings of this claim")
+    reasoning: str = Field(description="Brief explanation of the resolution decision")
+
+
+class ClaimGroupResolution(BaseModel):
+    """Resolution decisions for all claims in a group."""
+
+    resolutions: list[ClaimResolution] = Field(
+        description="Resolution decision for each claim in the group"
     )

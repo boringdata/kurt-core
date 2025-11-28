@@ -16,12 +16,13 @@ import dspy
 
 from kurt.content.document import load_document_content
 from kurt.content.indexing.models import (
+    ClaimExtraction,
     DocumentMetadataOutput,
     EntityExtraction,
     RelationshipExtraction,
 )
 from kurt.db.database import get_session
-from kurt.db.graph_queries import get_top_entities
+from kurt.db.graph_queries import get_top_claims, get_top_entities
 from kurt.utils import calculate_content_hash, get_git_commit_hash
 
 logger = logging.getLogger(__name__)
@@ -41,7 +42,7 @@ def _get_index_document_signature():
     import dspy
 
     class IndexDocument(dspy.Signature):
-        """Index a document: extract metadata, entities, and relationships.
+        """Index a document: extract metadata, entities, relationships, and claims.
 
         This is the core indexing operation that understands a document's:
 
@@ -64,14 +65,25 @@ def _get_index_document_signature():
            - Types: mentions, part_of, integrates_with, enables, related_to, etc.
            - Provide context snippet showing the relationship
 
-        Be accurate - only list prominently discussed topics/tools/entities.
-        Always include exact quotes from the document for entities and relationships.
+        4. Claims:
+           - Extract factual assertions, capabilities, comparisons, performance metrics, benefits, limitations
+           - Types: factual, comparative, capability, performance, benefit, limitation, integration, other
+           - Link claims to entities (source: who made claim, subject: what it's about, object: compared to)
+           - Provide exact quote from document
+           - Check if it matches existing claims (mark EXISTING with matched_claim_index, or NEW)
+
+        Be accurate - only list prominently discussed topics/tools/entities/claims.
+        Always include exact quotes from the document for entities, relationships, and claims.
         """
 
         document_content: str = dspy.InputField(desc="Markdown document content (first 5000 chars)")
         existing_entities: list[dict] = dspy.InputField(
             default=[],
             desc="Known entities: [{index, name, type, description, aliases}, ...] where index is the position in this list",
+        )
+        existing_claims: list[dict] = dspy.InputField(
+            default=[],
+            desc="Known claims: [{index, claim_text, claim_type, canonical_text}, ...] where index is the position in this list",
         )
 
         # Outputs
@@ -83,6 +95,9 @@ def _get_index_document_signature():
         )
         relationships: list[RelationshipExtraction] = dspy.OutputField(
             desc="Relationships between entities"
+        )
+        claims: list[ClaimExtraction] = dspy.OutputField(
+            desc="Extracted claims with type, linked entities, confidence, and resolution status (EXISTING or NEW)"
         )
 
     return IndexDocument
@@ -199,19 +214,24 @@ def extract_document_metadata(
         }
 
     logger.info(f"Indexing document {doc.id} ({len(content)} chars)")
-    logger.info("  → Loading existing entities for resolution...")
+    logger.info("  → Loading existing entities and claims for resolution...")
 
     # Report activity: loading entities
     if activity_callback:
-        activity_callback("Loading existing entities...")
+        activity_callback("Loading existing entities and claims...")
 
     # Get existing entities for resolution
     existing_entities_raw = get_top_entities(limit=100, session=session)
     logger.info(f"  → Loaded {len(existing_entities_raw)} existing entities")
 
+    # Get existing claims for resolution
+    existing_claims_raw = get_top_claims(limit=100, session=session)
+    logger.info(f"  → Loaded {len(existing_claims_raw)} existing claims")
+
     # Create index-to-UUID mapping for efficient LLM processing
     # Instead of passing full UUIDs to LLM, we pass simple indices (0, 1, 2, ...)
     entity_index_to_uuid = {i: e["id"] for i, e in enumerate(existing_entities_raw)}
+    claim_index_to_uuid = {i: c["id"] for i, c in enumerate(existing_claims_raw)}
 
     # Prepare entities for LLM with index instead of UUID
     existing_entities_for_llm = [
@@ -225,7 +245,18 @@ def extract_document_metadata(
         for i, e in enumerate(existing_entities_raw)
     ]
 
-    logger.info("  → Calling LLM to extract metadata + entities...")
+    # Prepare claims for LLM with index instead of UUID
+    existing_claims_for_llm = [
+        {
+            "index": i,  # Simple number instead of UUID
+            "claim_text": c["claim_text"],
+            "claim_type": c["claim_type"],
+            "canonical_text": c["canonical_text"],
+        }
+        for i, c in enumerate(existing_claims_raw)
+    ]
+
+    logger.info("  → Calling LLM to extract metadata + entities + claims...")
 
     # Report activity: calling LLM
     if activity_callback:
@@ -254,11 +285,13 @@ def extract_document_metadata(
     result = extractor(
         document_content=content[:5000],  # Limit to first 5000 chars
         existing_entities=existing_entities_for_llm,
+        existing_claims=existing_claims_for_llm,
     )
     metadata_output = result.metadata
 
     logger.info("  ✓ LLM call completed")
     logger.info(f"  → Extracted: type={metadata_output.content_type.value}")
+    logger.info(f"  → Extracted: {len(result.claims)} claims")
     logger.info("  → Updating document in database...")
 
     # Report activity: updating database
@@ -344,9 +377,42 @@ def extract_document_metadata(
         for r in result.relationships
     ]
 
+    # Separate claims by resolution status
+    # Map claim indices back to UUIDs
+    existing_claim_ids = []
+    for c in result.claims:
+        if c.resolution_status == "EXISTING" and c.matched_claim_index is not None:
+            # Validate index is in range
+            if 0 <= c.matched_claim_index < len(claim_index_to_uuid):
+                uuid = claim_index_to_uuid[c.matched_claim_index]
+                existing_claim_ids.append(uuid)
+            else:
+                logger.warning(
+                    f"Claim has invalid index {c.matched_claim_index} "
+                    f"(max: {len(claim_index_to_uuid)-1}), skipping"
+                )
+    new_claims = [
+        {
+            "claim_text": c.claim_text,
+            "claim_type": c.claim_type.value,  # Convert enum to string
+            "entities": [
+                {"entity_name": e.entity_name, "role": e.role.value}
+                for e in c.entities
+            ],
+            "confidence": c.confidence,
+            "quote": c.quote,  # Store the exact quote from the document
+        }
+        for c in result.claims
+        if c.resolution_status == "NEW"
+    ]
+
     logger.info(
         f"  → Found: {len(existing_entity_ids)} existing entities, "
         f"{len(new_entities)} new entities, {len(relationships)} relationships"
+    )
+    logger.info(
+        f"  → Found: {len(existing_claim_ids)} existing claims, "
+        f"{len(new_claims)} new claims"
     )
     logger.info("  ✓ Indexing complete")
 
@@ -355,12 +421,15 @@ def extract_document_metadata(
         "title": doc.title,
         "content_type": metadata_output.content_type.value,
         "entities": new_entities,  # All entities extracted
+        "claims": new_claims,  # All claims extracted
         "skipped": False,
         # Knowledge graph data
         "kg_data": {
             "existing_entities": existing_entity_ids,
             "new_entities": new_entities,
             "relationships": relationships,
+            "existing_claims": existing_claim_ids,
+            "new_claims": new_claims,
         },
     }
 

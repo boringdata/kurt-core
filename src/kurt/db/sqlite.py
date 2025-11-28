@@ -217,6 +217,79 @@ class SQLiteClient(DatabaseClient):
         finally:
             session.close()
 
+    def ensure_claim_vector_tables(self) -> None:
+        """
+        Ensure vector search tables exist for claims.
+
+        Creates vec0 virtual tables for claim embeddings if sqlite-vec is available.
+        This must be called after migrations are run.
+        """
+        session = self.get_session()
+        try:
+            # Create claim_embeddings vector table
+            session.exec(
+                """
+                CREATE VIRTUAL TABLE IF NOT EXISTS claim_embeddings
+                USING vec0(
+                    claim_id TEXT PRIMARY KEY,
+                    embedding float[512]
+                )
+                """
+            )
+            session.commit()
+            logger.info("Created claim_embeddings vector table")
+        except Exception as e:
+            logger.warning(f"Could not create claim vector tables (sqlite-vec not available): {e}")
+            # This is OK - vector search features just won't work
+        finally:
+            session.close()
+
+    def search_similar_claims(
+        self, query_embedding: bytes, limit: int = 50, min_similarity: float = 0.75
+    ) -> list[tuple[str, float]]:
+        """
+        Search for claims similar to the query embedding.
+
+        Args:
+            query_embedding: Query embedding as bytes (512 float32 values)
+            limit: Maximum number of results to return
+            min_similarity: Minimum cosine similarity threshold (0.0-1.0)
+
+        Returns:
+            List of (claim_id, similarity_score) tuples
+        """
+        session = self.get_session()
+        try:
+            # Convert bytes to list of floats for vec_search
+            import struct
+
+            from sqlalchemy import text
+
+            floats = struct.unpack(f"{len(query_embedding)//4}f", query_embedding)
+            query_vector = "[" + ",".join(str(f) for f in floats) + "]"
+
+            # Use vec_search to find similar claims
+            # Note: vec_search returns distance, we convert to similarity (1 - distance)
+            result = session.exec(
+                text(
+                    """
+                SELECT claim_id, 1.0 - distance as similarity
+                FROM claim_embeddings
+                WHERE embedding MATCH :query_vector
+                  AND 1.0 - distance >= :min_similarity
+                ORDER BY distance
+                LIMIT :limit
+                """
+                ),
+                {"query_vector": query_vector, "min_similarity": min_similarity, "limit": limit},
+            )
+            return [(row[0], row[1]) for row in result]
+        except Exception as e:
+            logger.debug(f"Claim vector search not available (will use fallback): {e}")
+            return []
+        finally:
+            session.close()
+
     # ========== ASYNC METHODS ==========
 
     def get_async_database_url(self) -> str:

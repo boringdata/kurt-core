@@ -8,6 +8,7 @@ from .fetch import fetch_cmd
 from .get import get_document_cmd
 from .index import index
 from .list import list_documents_cmd
+from .list_claims import list_claims_cmd
 from .list_clusters import list_clusters_cmd
 from .list_entities import list_entities_cmd
 from .map import map_cmd
@@ -30,6 +31,7 @@ def content():
     - cluster: Organize documents into topic clusters
     - list: View all documents with filters
     - list-entities: List entities from knowledge graph (topics, technologies, etc.)
+    - list-claims: List claims from knowledge graph (factual, capability, etc.)
     - get: View single document details
     - index: Extract metadata with LLM
     - delete: Remove documents
@@ -48,6 +50,7 @@ content.add_command(links_cmd, name="links")
 content.add_command(cluster_urls_cmd, name="cluster")
 content.add_command(list_documents_cmd, name="list")
 content.add_command(list_entities_cmd, name="list-entities")
+content.add_command(list_claims_cmd, name="list-claims")
 content.add_command(get_document_cmd, name="get")
 content.add_command(index)
 content.add_command(delete_document_cmd, name="delete")

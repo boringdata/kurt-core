@@ -15,7 +15,10 @@ from sqlmodel import Session, and_, col, func, or_, select
 
 from kurt.db.database import get_session
 from kurt.db.models import (
+    Claim,
+    ClaimEntity,
     Document,
+    DocumentClaim,
     DocumentEntity,
     Entity,
     EntityRelationship,
@@ -503,3 +506,172 @@ def get_document_knowledge_graph(document_id: str) -> dict:
             ),
         },
     }
+
+
+# ============================================================================
+# Claim Queries
+# ============================================================================
+
+
+def get_top_claims(limit: int = 100, session: Optional[Session] = None) -> list[dict]:
+    """Get top claims by source mentions."""
+    if session is None:
+        session = get_session()
+
+    # Query top claims by source_mentions
+    query = select(Claim).order_by(col(Claim.source_mentions).desc()).limit(limit)
+
+    claims = session.exec(query).all()
+
+    return [
+        {
+            "id": str(claim.id),
+            "claim_text": claim.claim_text,
+            "claim_type": claim.claim_type,
+            "canonical_text": claim.canonical_text,
+            "aliases": claim.aliases,
+            "confidence_score": claim.confidence_score,
+            "source_mentions": claim.source_mentions,
+        }
+        for claim in claims
+    ]
+
+
+def get_document_claims(
+    document_id: UUID,
+    claim_type: Optional[str] = None,
+    session: Optional[Session] = None,
+) -> list[dict]:
+    """Get claims found in a document.
+
+    Args:
+        document_id: Document UUID
+        claim_type: Filter by claim type (optional)
+        session: SQLModel session (optional)
+
+    Returns:
+        List of claim dicts with type, text, confidence, and linked entities
+    """
+    if session is None:
+        session = get_session()
+
+    # Query DocumentClaim join Claim
+    query = (
+        select(Claim, DocumentClaim)
+        .join(DocumentClaim, Claim.id == DocumentClaim.claim_id)
+        .where(DocumentClaim.document_id == document_id)
+    )
+
+    if claim_type:
+        query = query.where(Claim.claim_type == claim_type)
+
+    results = session.exec(query).all()
+
+    claims = []
+    for claim, doc_claim in results:
+        # Get linked entities for this claim
+        entity_links = session.exec(
+            select(ClaimEntity, Entity)
+            .join(Entity, ClaimEntity.entity_id == Entity.id)
+            .where(ClaimEntity.claim_id == claim.id)
+        ).all()
+
+        linked_entities = [
+            {
+                "entity_name": entity.name,
+                "entity_type": entity.entity_type,
+                "role": claim_entity.role,
+            }
+            for claim_entity, entity in entity_links
+        ]
+
+        claims.append(
+            {
+                "id": str(claim.id),
+                "claim_text": claim.claim_text,
+                "claim_type": claim.claim_type,
+                "canonical_text": claim.canonical_text,
+                "confidence": doc_claim.confidence,
+                "quote": doc_claim.quote,
+                "entities": linked_entities,
+            }
+        )
+
+    return claims
+
+
+def list_claims_by_type(
+    claim_type: Optional[str] = None,
+    limit: int = 100,
+    session: Optional[Session] = None,
+) -> list[dict]:
+    """List claims, optionally filtered by type.
+
+    Args:
+        claim_type: Filter by claim type (optional)
+        limit: Maximum number of claims to return
+        session: SQLModel session (optional)
+
+    Returns:
+        List of claim dicts with document counts
+    """
+    if session is None:
+        session = get_session()
+
+    query = select(Claim).order_by(col(Claim.source_mentions).desc()).limit(limit)
+
+    if claim_type:
+        query = query.where(Claim.claim_type == claim_type)
+
+    claims = session.exec(query).all()
+
+    return [
+        {
+            "id": str(claim.id),
+            "claim_text": claim.claim_text,
+            "claim_type": claim.claim_type,
+            "canonical_text": claim.canonical_text,
+            "aliases": claim.aliases or [],
+            "confidence_score": claim.confidence_score,
+            "source_mentions": claim.source_mentions,
+        }
+        for claim in claims
+    ]
+
+
+def find_documents_with_claim(
+    claim_text: str,
+    claim_type: Optional[str] = None,
+    session: Optional[Session] = None,
+) -> set[UUID]:
+    """Find documents containing a specific claim (partial match).
+
+    Args:
+        claim_text: Claim text to search for (partial match)
+        claim_type: Filter by claim type (optional)
+        session: SQLModel session (optional)
+
+    Returns:
+        Set of document UUIDs
+    """
+    if session is None:
+        session = get_session()
+
+    # Find matching claims
+    query = (
+        select(DocumentClaim.document_id)
+        .join(Claim, DocumentClaim.claim_id == Claim.id)
+        .where(
+            or_(
+                Claim.claim_text.ilike(f"%{claim_text}%"),
+                Claim.canonical_text.ilike(f"%{claim_text}%"),
+            )
+        )
+    )
+
+    if claim_type:
+        query = query.where(Claim.claim_type == claim_type)
+
+    doc_ids = session.exec(query).all()
+
+    return {doc_id for doc_id in doc_ids}

@@ -69,6 +69,27 @@ class RelationshipType(str, Enum):
     REPLACES = "replaces"
 
 
+class ClaimType(str, Enum):
+    """Types of claims extracted from documents."""
+
+    FACTUAL = "factual"  # Objective statements ("X has 99.9% uptime")
+    COMPARATIVE = "comparative"  # Comparisons ("X is faster than Y")
+    CAPABILITY = "capability"  # What something can do ("X supports 10k connections")
+    PERFORMANCE = "performance"  # Performance metrics ("reduces latency by 50%")
+    BENEFIT = "benefit"  # Value propositions ("saves engineering time")
+    LIMITATION = "limitation"  # Constraints or caveats ("requires minimum 8GB RAM")
+    INTEGRATION = "integration"  # Integration claims ("works seamlessly with Z")
+    OTHER = "other"
+
+
+class ClaimEntityRole(str, Enum):
+    """Role of an entity in relation to a claim."""
+
+    SOURCE = "source"  # Entity making the claim (e.g., "Acme Corp claims...")
+    SUBJECT = "subject"  # Entity the claim is about (e.g., "...Widget Pro is fast")
+    OBJECT = "object"  # Entity being compared to (e.g., "...faster than Competitor")
+
+
 class Document(SQLModel, table=True):
     """Document metadata."""
 
@@ -420,3 +441,83 @@ class DocumentAnalytics(SQLModel, table=True):
 
     # Sync metadata
     synced_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+# ============================================================================
+# Claims Knowledge Graph
+# ============================================================================
+
+
+class Claim(SQLModel, table=True):
+    """Claim extracted from documents (knowledge graph nodes).
+
+    Claims are factual assertions, capabilities, comparisons, or other
+    statements that can be sourced and verified. Claims are linked to
+    entities (who made the claim, what is it about) and documents.
+    """
+
+    __tablename__ = "claims"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+
+    # Claim content
+    claim_text: str = Field(index=True)  # The claim as extracted
+    claim_type: str = Field(index=True)  # ClaimType enum value
+    canonical_text: Optional[str] = Field(
+        default=None, index=True
+    )  # Normalized/canonical form for deduplication
+
+    # Source tracking
+    source_entity_id: Optional[UUID] = Field(
+        default=None, foreign_key="entities.id", index=True
+    )  # Entity making the claim (e.g., company)
+
+    # Resolution and disambiguation
+    aliases: Optional[list] = Field(default=None, sa_column=Column(JSON))  # Alternative phrasings
+
+    # Vector embedding for similarity search (required in production)
+    embedding: bytes = b""  # 512-dim float32 vector (2048 bytes)
+
+    # Confidence and usage metrics
+    confidence_score: float = Field(default=0.0, index=True)  # Extraction confidence (0.0-1.0)
+    source_mentions: int = Field(default=0)  # Number of documents containing this claim
+
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class DocumentClaim(SQLModel, table=True):
+    """Junction table linking documents to claims they contain."""
+
+    __tablename__ = "document_claims"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    document_id: UUID = Field(foreign_key="documents.id", index=True)
+    claim_id: UUID = Field(foreign_key="claims.id", index=True)
+
+    # Context and confidence
+    quote: Optional[str] = None  # Exact quote from document (50-200 chars)
+    confidence: float = Field(default=0.0)  # Mention confidence (0.0-1.0)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ClaimEntity(SQLModel, table=True):
+    """Junction table linking claims to related entities with roles.
+
+    A claim can involve multiple entities in different roles:
+    - SOURCE: The entity making the claim (e.g., "Acme Corp says...")
+    - SUBJECT: The entity the claim is about (e.g., "...Widget Pro is fast")
+    - OBJECT: The entity being compared to (e.g., "...faster than Competitor")
+    """
+
+    __tablename__ = "claim_entities"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    claim_id: UUID = Field(foreign_key="claims.id", index=True)
+    entity_id: UUID = Field(foreign_key="entities.id", index=True)
+
+    role: str = Field(index=True)  # ClaimEntityRole enum value (source, subject, object)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow)

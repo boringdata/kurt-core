@@ -11,7 +11,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from kurt.content.embeddings import embedding_to_bytes, generate_embeddings
 from kurt.db.database import async_session_scope
-from kurt.db.models import Entity, EntityType
+from kurt.db.models import Claim, Entity, EntityType
 
 if TYPE_CHECKING:
     pass
@@ -111,3 +111,68 @@ async def search_similar_entities(
                 similar_entities.append(entity_dict)
 
         return similar_entities
+
+
+# ============================================================================
+# Claim Search and Similarity
+# ============================================================================
+
+
+async def search_similar_claims(
+    claim_text: str,
+    claim_type: str,
+    limit: int = 20,
+    session: Optional[AsyncSession] = None,
+) -> list[dict]:
+    """Search for claims similar to the given text using vector search.
+
+    Args:
+        claim_text: Claim text to find similar claims for
+        claim_type: Claim type filter (only return same type)
+        limit: Maximum number of results
+        session: Optional AsyncSession
+
+    Returns:
+        List of dicts with id, claim_text, claim_type, canonical_text, similarity
+    """
+    async with async_session_scope(session) as s:
+        # Try to get stored embedding first
+        result = await s.exec(
+            select(Claim).where(Claim.claim_text == claim_text, Claim.claim_type == claim_type)
+        )
+        existing_claim = result.first()
+
+        # Get event loop once for all async operations
+        loop = asyncio.get_event_loop()
+
+        if existing_claim and existing_claim.embedding:
+            embedding_bytes = existing_claim.embedding
+        else:
+            # Generate new embedding (sync operation - run in executor)
+            embedding_vector = await loop.run_in_executor(
+                None, lambda: generate_embeddings([claim_text])[0]
+            )
+            embedding_bytes = embedding_to_bytes(embedding_vector)
+
+        # Vector search is sync (SQLite limitation) - run in executor
+        from kurt.db.sqlite import SQLiteClient
+
+        client = SQLiteClient()
+        search_results = await loop.run_in_executor(
+            None,
+            lambda: client.search_similar_claims(
+                embedding_bytes, limit=limit, min_similarity=0.70
+            ),
+        )
+
+        # Load and filter claim details
+        similar_claims = []
+        for claim_id, similarity in search_results:
+            claim = await s.get(Claim, UUID(claim_id))
+            if claim and claim.claim_type == claim_type:
+                claim_dict = claim.model_dump(exclude={"embedding"}, mode="python")
+                claim_dict["id"] = str(claim_dict["id"])
+                claim_dict["similarity"] = similarity
+                similar_claims.append(claim_dict)
+
+        return similar_claims
