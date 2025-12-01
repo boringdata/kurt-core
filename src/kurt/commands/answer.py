@@ -68,19 +68,30 @@ def answer(question: str, max_docs: int, output: str, verbose: bool, json_output
         raise click.Abort()
 
     try:
+        import time
+        start_time = time.time()
+
         # Answer the question
         result = answer_question(question, max_documents=max_docs)
+
+        duration = time.time() - start_time
 
         if not output and not json_output:
             console.print(f"[dim]Question:[/dim] {question}\n")
 
         cached_response = result.token_usage is None
+
+        # Prepare token_usage with duration
+        token_usage = result.token_usage or {}
+        # Always add duration_seconds
+        token_usage["duration_seconds"] = duration
+
         metadata = {
             "question": question,
             "confidence": result.confidence,
             "documents_retrieved": result.retrieval_stats["documents_found"],
             "entities_found": result.retrieval_stats["entities_found"],
-            "token_usage": result.token_usage or {},
+            "token_usage": token_usage,
             "sources": result.documents_cited,
             "key_entities": result.entities_used,
             "cached_response": cached_response,
@@ -95,21 +106,65 @@ def answer(question: str, max_docs: int, output: str, verbose: bool, json_output
             # Build markdown content
             md_content = f"# Answer\n\n{result.answer}\n\n"
 
-            # Add sources section
+            # Add reasoning section if available
+            if hasattr(result, 'reasoning') and result.reasoning:
+                md_content += "## Reasoning\n\n"
+                md_content += f"{result.reasoning}\n\n"
+
+            # Add sources section with documents and entities
+            md_content += "## Sources\n\n"
+
+            # Documents section
             if result.documents_cited:
-                md_content += "## Sources\n\n"
-                for doc_id, doc_title, score in result.documents_cited:
-                    md_content += f"- {doc_title} (relevance: {score:.2f})\n"
+                md_content += "### Documents Used\n\n"
+                for doc_id, doc_title, content_path, score in result.documents_cited:
+                    # Use content_path if available, otherwise fall back to doc_title
+                    if content_path:
+                        md_content += f"- {content_path} (relevance: {score:.2f})\n"
+                    else:
+                        md_content += f"- {doc_title} (relevance: {score:.2f})\n"
                 md_content += "\n"
+
+            # Entities section
+            if result.entities_used:
+                md_content += "### Entities Used\n\n"
+                for entity_name, similarity in result.entities_used:
+                    md_content += f"- **{entity_name}** (similarity: {similarity:.2f})\n"
+                md_content += "\n"
+
+            # Relationships section
+            if hasattr(result, 'relationships_used') and result.relationships_used:
+                md_content += "### Entity Relationships\n\n"
+                for source, rel_type, target, context in result.relationships_used:
+                    rel_text = f"- **{source}** → _{rel_type}_ → **{target}**"
+                    if context:
+                        # Truncate context if too long
+                        ctx_display = context[:150] + "..." if len(context) > 150 else context
+                        rel_text += f"\n  - Context: _{ctx_display}_"
+                    md_content += rel_text + "\n"
+                md_content += "\n"
+
+            # Knowledge Graph Usage Details
+            md_content += "### Knowledge Graph Usage\n\n"
+            md_content += f"- **Total Entities Found**: {result.retrieval_stats['entities_found']}\n"
+            md_content += f"- **Total Documents Retrieved**: {result.retrieval_stats['documents_found']}\n"
+            if 'top_entity_similarity' in result.retrieval_stats:
+                md_content += f"- **Top Entity Similarity**: {result.retrieval_stats['top_entity_similarity']:.2f}\n"
+            if hasattr(result, 'relationships_used') and result.relationships_used:
+                md_content += f"- **Relationships Explored**: {len(result.relationships_used)}\n"
+            md_content += "\n"
 
             # Add metadata section
             md_content += "## Metadata\n\n"
             md_content += f"- **Confidence**: {result.confidence:.2f}\n"
 
             if result.entities_used:
-                md_content += (
-                    f"- **Key Entities**: {', '.join([e[0] for e in result.entities_used])}\n"
-                )
+                # Only show entities with positive similarity in the summary
+                key_entities = [e[0] for e in result.entities_used if e[1] > 0]
+                if key_entities:
+                    md_content += (
+                        f"- **Key Entities**: {', '.join(key_entities)}\n"
+                    )
 
             md_content += (
                 f"- **Documents Retrieved**: {result.retrieval_stats['documents_found']}\n"
@@ -150,6 +205,12 @@ def answer(question: str, max_docs: int, output: str, verbose: bool, json_output
         console.print(result.answer)
         console.print()
 
+        # Display reasoning in verbose mode
+        if verbose and hasattr(result, 'reasoning') and result.reasoning:
+            console.print("[bold]Reasoning:[/bold]")
+            console.print(result.reasoning)
+            console.print()
+
         # Display confidence
         confidence_color = (
             "green" if result.confidence >= 0.7 else "yellow" if result.confidence >= 0.5 else "red"
@@ -169,8 +230,10 @@ def answer(question: str, max_docs: int, output: str, verbose: bool, json_output
         # Display documents cited
         if result.documents_cited:
             console.print("[bold]Sources:[/bold]")
-            for doc_id, doc_title, score in result.documents_cited:
-                console.print(f"  • {doc_title} [dim](score: {score:.2f})[/dim]")
+            for doc_id, doc_title, content_path, score in result.documents_cited:
+                # Use content_path if available, otherwise fall back to doc_title
+                display_name = content_path if content_path else doc_title
+                console.print(f"  • {display_name} [dim](score: {score:.2f})[/dim]")
             console.print()
 
         # Display retrieval stats (verbose mode)

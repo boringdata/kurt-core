@@ -29,10 +29,12 @@ class AnswerResult:
 
     answer: str
     entities_used: list[tuple[str, float]]  # (entity_name, similarity)
-    documents_cited: list[tuple[str, str, float]]  # (doc_id, doc_title, score)
+    documents_cited: list[tuple[str, str, str | None, float]]  # (doc_id, doc_title, content_path, score)
     confidence: float
     retrieval_stats: dict[str, Any]
     token_usage: dict[str, Any] | None = None
+    reasoning: str | None = None  # Step-by-step reasoning process
+    relationships_used: list[tuple[str, str, str, str | None]] | None = None  # (source, rel_type, target, context)
 
 
 class AnswerSignature(dspy.Signature):
@@ -46,6 +48,7 @@ class AnswerSignature(dspy.Signature):
     entities = dspy.InputField(desc="Relevant entities from the knowledge graph")
     relationships = dspy.InputField(desc="Key relationships between entities")
     documents = dspy.InputField(desc="Relevant document excerpts with titles")
+    reasoning = dspy.OutputField(desc="Step-by-step reasoning process leading to the answer")
     answer = dspy.OutputField(desc="Clear, concise answer to the question")
     confidence = dspy.OutputField(desc="Confidence level (0.0-1.0)")
 
@@ -329,7 +332,7 @@ def generate_answer(question: str, context: RetrievedContext) -> AnswerResult:
     # Prepare context for LLM
     # Entities with similarity scores
     entities_text = []
-    for entity in context.entities[:10]:  # Top 10 entities
+    for entity in context.entities[:20]:  # Top 20 entities
         similarity = context.entity_similarities.get(entity.id, 0.0)
         desc = f" - {entity.description}" if entity.description else ""
         entities_text.append(
@@ -338,9 +341,10 @@ def generate_answer(question: str, context: RetrievedContext) -> AnswerResult:
 
     # Relationships between entities
     relationships_text = []
+    relationships_data = []  # Store structured relationship data
     session = get_session()
     try:
-        entity_ids = [e.id for e in context.entities[:10]]
+        entity_ids = [e.id for e in context.entities[:20]]
         if entity_ids:
             placeholders_source = ",".join([":src_id" + str(i) for i in range(len(entity_ids))])
             placeholders_target = ",".join([":tgt_id" + str(i) for i in range(len(entity_ids))])
@@ -374,6 +378,7 @@ def generate_answer(question: str, context: RetrievedContext) -> AnswerResult:
                 if ctx:
                     rel_text += f" (context: {ctx[:100]}...)"
                 relationships_text.append(rel_text)
+                relationships_data.append((source, rel_type, target, ctx))
     finally:
         session.close()
 
@@ -381,7 +386,7 @@ def generate_answer(question: str, context: RetrievedContext) -> AnswerResult:
     documents_text = []
     sources_path = config.get_absolute_sources_path()
 
-    for doc in context.documents[:10]:  # Top 10 documents
+    for doc in context.documents[:20]:  # Top 20 documents
         score = context.document_scores.get(doc.id, 0.0)
         doc_text = f"[{doc.title or 'Untitled'}] (relevance: {score:.2f})"
 
@@ -427,6 +432,8 @@ def generate_answer(question: str, context: RetrievedContext) -> AnswerResult:
 
         answer_text = answer_prediction.answer
         confidence_str = answer_prediction.confidence
+        # Capture reasoning if available
+        reasoning_text = getattr(answer_prediction, 'reasoning', None)
 
         # Parse confidence
         try:
@@ -443,25 +450,25 @@ def generate_answer(question: str, context: RetrievedContext) -> AnswerResult:
         answer_text = f"Error generating answer: {e}"
         confidence = 0.0
         usage_summary = None
+        reasoning_text = None
 
-    # Prepare entities used (top 5 with highest similarity)
+    # Prepare entities used (all entities, sorted by similarity)
     entities_used = []
-    for entity in context.entities:
+    for entity in context.entities[:20]:  # Include top 20 entities
         similarity = context.entity_similarities.get(entity.id, 0.0)
-        if similarity > 0:
-            entities_used.append((entity.name, similarity))
+        entities_used.append((entity.name, similarity))
 
     entities_used.sort(key=lambda x: x[1], reverse=True)
-    entities_used = entities_used[:5]
 
-    # Prepare documents cited (top 5 with highest scores)
+    # Prepare documents cited (all documents, sorted by score)
     documents_cited = []
     for doc in context.documents:
         score = context.document_scores.get(doc.id, 0.0)
-        documents_cited.append((doc.id, doc.title or "Untitled", score))
+        # Try to get content_path if available
+        content_path = getattr(doc, 'content_path', None)
+        documents_cited.append((doc.id, doc.title or "Untitled", content_path, score))
 
-    documents_cited.sort(key=lambda x: x[2], reverse=True)
-    documents_cited = documents_cited[:5]
+    documents_cited.sort(key=lambda x: x[3], reverse=True)  # Sort by score (now index 3)
 
     # Retrieval stats
     retrieval_stats = {
@@ -479,10 +486,12 @@ def generate_answer(question: str, context: RetrievedContext) -> AnswerResult:
         confidence=confidence,
         retrieval_stats=retrieval_stats,
         token_usage=usage_summary,
+        reasoning=reasoning_text,
+        relationships_used=relationships_data if relationships_data else None,
     )
 
 
-def answer_question(question: str, max_documents: int = 10) -> AnswerResult:
+def answer_question(question: str, max_documents: int = 20) -> AnswerResult:
     """Answer a question using GraphRAG retrieval and generation.
 
     Args:

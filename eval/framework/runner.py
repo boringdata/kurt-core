@@ -247,7 +247,7 @@ class ScenarioRunner:
         if scenario.project:
             # Prepend project load command
             kurt_root = Path(__file__).parent.parent.parent
-            load_script = Path(__file__).parent.parent / "mock" / "generators" / "load_dump.py"
+            load_script = Path(__file__).parent / "dumps" / "loader.py"
             project_cmd = f"uv run --project {kurt_root} python {load_script} {scenario.project}"
             setup_commands = [project_cmd] + list(setup_commands)
 
@@ -402,6 +402,8 @@ class ScenarioRunner:
                     conversational=scenario.conversational,
                     filename_prefix=scenario.result_file_prefix,
                 )
+
+            # CSV generation now happens automatically in save_results for question-based scenarios
 
             # Cleanup
             workspace.teardown(had_error=had_error)

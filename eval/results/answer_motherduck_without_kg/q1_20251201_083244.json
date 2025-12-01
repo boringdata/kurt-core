@@ -1,0 +1,22 @@
+{
+  "question": "...... What file formats are most efficient for loading data into MotherDuck?",
+  "answer": "Based on the MotherDuck documentation, **Parquet is the most efficient file format for loading data into MotherDuck**, followed by native DuckDB database files. Here's why:\n\n## Parquet: The Recommended Format\n\n**Parquet is specifically optimized for analytical workloads** because it uses a compressed columnar format, which provides the best performance for large-scale aggregations. DuckDB (which powers MotherDuck) stores data in compressed columnar format internally, making Parquet a natural fit that requires minimal transformation during loading.\n\n### Key Efficiency Factors for Parquet:\n\n1. **Columnar Storage**: Parquet stores data in columns rather than rows, which is ideal for analytical queries that typically scan specific columns across many rows.\n\n2. **Built-in Compression**: The format includes efficient compression algorithms that reduce storage size and I/O requirements during data loading.\n\n3. **Native DuckDB Support**: DuckDB can query Parquet files directly without importing them first, using commands like:\n   ```sql\n   SELECT * FROM read_parquet('path/to/file.parquet');\n   ```\n\n4. **Fast Loading**: The documentation notes that MotherDuck native storage can provide 2-10x faster query performance compared to other formats, and Parquet aligns well with this architecture.\n\n## Other Efficient Formats\n\n### Native DuckDB Database Files (.db, .duckdb, .ddb)\n- Uses DuckDB's custom single-file format with compressed columnar storage\n- Includes ACID transaction support and metadata\n- Optimal for persistence and internal operations\n- Supports incremental updates efficiently\n\n### CSV Files\nWhile CSV is universally supported and easy to work with, it's **significantly less efficient** than Parquet for loading data:\n- CSV files are text-based and uncompressed, requiring more storage and bandwidth\n- DuckDB must parse and infer types during reading, adding processing overhead\n- However, DuckDB's CSV reader is highly optimized and ranked #1 in the Pollock benchmark for handling problematic CSV files\n\n## Loading Best Practices\n\nThe documentation recommends:\n\n1. **Convert CSV to Parquet** for better performance:\n   ```bash\n   duckdb -c \"COPY (SELECT * FROM 'data.csv') TO 'data.parquet' (FORMAT 'PARQUET');\"\n   ```\n\n2. **Use COPY command** for efficient bulk loading:\n   ```sql\n   COPY table_name FROM 'file.parquet' (FORMAT 'PARQUET');\n   ```\n\n3. **Read directly from cloud storage** - DuckDB can efficiently read Parquet files from S3, GCS, or Azure Blob Storage without downloading them first.\n\n4. **Consider MotherDuck native storage** - For production workloads, loading data into MotherDuck's native storage format provides the absolute best performance (2-10x faster than DuckLake/external formats) with optimized caching and read/write throughput.\n\n## Summary\n\n**Parquet is the most efficient general-purpose format for loading data into MotherDuck** due to its columnar compression, native DuckDB support, and minimal transformation requirements. For production systems requiring maximum performance, loading data into MotherDuck's native storage format (which also uses compressed columnar storage) provides the best query performance.",
+  "answer_file": "/tmp/answer_without_kg_1.md",
+  "token_usage": {
+    "total_tokens": 3930,
+    "duration_seconds": 114.57053995132446
+  },
+  "cached_response": false,
+  "llm_judge": {
+    "overall_score": 1.0,
+    "component_scores": {
+      "accuracy": 1.0,
+      "completeness": 1.0,
+      "relevance": 1.0,
+      "clarity": 1.0
+    },
+    "feedback": "The generated answer is highly accurate, complete, relevant, and clear. It not only confirms that Parquet is the most efficient format but also elaborates on its advantages and compares it with other formats, fulfilling the requirements of the question comprehensively."
+  },
+  "command": "question:q1",
+  "returncode": 0
+}

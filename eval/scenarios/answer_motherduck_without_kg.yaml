@@ -9,14 +9,37 @@ question_set:
   file: questions_motherduck.yaml
   answer_file_template: /tmp/answer_without_kg_{question_num}.md
   initial_prompt: |
-    Search through the .kurt/sources/ directory to answer this question:
+    Answer this question by searching through the .kurt/sources/ directory:
 
     {question}
 
-    Steps:
-    1. Search for the most relevant markdown files in .kurt/sources/
-    2. Read those files and synthesize the answer
-    3. Write a markdown answer (with a ## Sources section) to: {answer_file}
+    Required Steps:
+    1. Search for relevant markdown files in .kurt/sources/ using glob and grep
+    2. Read the most relevant files (aim for 3-5 most relevant sources)
+    3. As you read each file, keep track of:
+       - The file path
+       - The file title/name
+       - Key information extracted from that file
+    4. Synthesize a comprehensive answer based on the information found
+    5. Write your answer to: {answer_file}
+
+    IMPORTANT - Your answer MUST have this structure:
+    ```markdown
+    # Answer
+
+    [Your comprehensive answer here, drawing from the sources you read]
+
+    ## Sources
+
+    List each source file you actually read and used, showing the EXACT LOCAL FILE PATH:
+    - .kurt/sources/motherduck.com/[path/to/file.md] - Brief description of key information used from this file
+    - .kurt/sources/motherduck.com/[path/to/file.md] - Brief description of key information used from this file
+    [etc.]
+
+    DO NOT use URLs or document titles as links. Show the actual file path you read with the Read tool.
+    ```
+
+    The Sources section is MANDATORY - you must list every file you read to answer the question.
 
   assertions:
     - type: FileExists

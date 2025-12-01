@@ -27,10 +27,28 @@ question_set:
 
     4. Write your enhanced answer to: {answer_file}
 
-    The enhanced answer should:
+    Your enhanced answer MUST follow this structure:
+    ```markdown
+    # Answer
+
+    [Your enhanced answer, starting with core GraphRAG insights and adding any necessary enhancements]
+
+    ## Sources
+
+    ### From Knowledge Graph:
+    [Extract and list the sources from the GraphRAG answer's ## Sources section]
+
+    ### Additional Sources (if any):
+    [Only if you searched for additional files, list them here with descriptions]
+    - [Document Title] (path: .kurt/sources/filename.md) - What information it added
+    ```
+
+    REQUIREMENTS:
     - Start with the core insights from the GraphRAG answer
     - Add additional information ONLY if the original answer has gaps
-    - Include a ## Sources section listing both KG entities used and documents referenced
+    - The ## Sources section is MANDATORY
+    - Extract and preserve the sources from the KG answer
+    - If you read additional files, list them separately
     - Be comprehensive yet clear and well-structured
 
     Important: Do NOT search for additional files unless you've identified specific gaps in the GraphRAG answer that need to be filled.
