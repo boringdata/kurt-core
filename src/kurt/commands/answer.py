@@ -69,6 +69,7 @@ def answer(question: str, max_docs: int, output: str, verbose: bool, json_output
 
     try:
         import time
+
         start_time = time.time()
 
         # Answer the question
@@ -107,7 +108,7 @@ def answer(question: str, max_docs: int, output: str, verbose: bool, json_output
             md_content = f"# Answer\n\n{result.answer}\n\n"
 
             # Add reasoning section if available
-            if hasattr(result, 'reasoning') and result.reasoning:
+            if hasattr(result, "reasoning") and result.reasoning:
                 md_content += "## Reasoning\n\n"
                 md_content += f"{result.reasoning}\n\n"
 
@@ -133,7 +134,7 @@ def answer(question: str, max_docs: int, output: str, verbose: bool, json_output
                 md_content += "\n"
 
             # Relationships section
-            if hasattr(result, 'relationships_used') and result.relationships_used:
+            if hasattr(result, "relationships_used") and result.relationships_used:
                 md_content += "### Entity Relationships\n\n"
                 for source, rel_type, target, context in result.relationships_used:
                     rel_text = f"- **{source}** → _{rel_type}_ → **{target}**"
@@ -146,11 +147,15 @@ def answer(question: str, max_docs: int, output: str, verbose: bool, json_output
 
             # Knowledge Graph Usage Details
             md_content += "### Knowledge Graph Usage\n\n"
-            md_content += f"- **Total Entities Found**: {result.retrieval_stats['entities_found']}\n"
-            md_content += f"- **Total Documents Retrieved**: {result.retrieval_stats['documents_found']}\n"
-            if 'top_entity_similarity' in result.retrieval_stats:
+            md_content += (
+                f"- **Total Entities Found**: {result.retrieval_stats['entities_found']}\n"
+            )
+            md_content += (
+                f"- **Total Documents Retrieved**: {result.retrieval_stats['documents_found']}\n"
+            )
+            if "top_entity_similarity" in result.retrieval_stats:
                 md_content += f"- **Top Entity Similarity**: {result.retrieval_stats['top_entity_similarity']:.2f}\n"
-            if hasattr(result, 'relationships_used') and result.relationships_used:
+            if hasattr(result, "relationships_used") and result.relationships_used:
                 md_content += f"- **Relationships Explored**: {len(result.relationships_used)}\n"
             md_content += "\n"
 
@@ -162,9 +167,7 @@ def answer(question: str, max_docs: int, output: str, verbose: bool, json_output
                 # Only show entities with positive similarity in the summary
                 key_entities = [e[0] for e in result.entities_used if e[1] > 0]
                 if key_entities:
-                    md_content += (
-                        f"- **Key Entities**: {', '.join(key_entities)}\n"
-                    )
+                    md_content += f"- **Key Entities**: {', '.join(key_entities)}\n"
 
             md_content += (
                 f"- **Documents Retrieved**: {result.retrieval_stats['documents_found']}\n"
@@ -206,7 +209,7 @@ def answer(question: str, max_docs: int, output: str, verbose: bool, json_output
         console.print()
 
         # Display reasoning in verbose mode
-        if verbose and hasattr(result, 'reasoning') and result.reasoning:
+        if verbose and hasattr(result, "reasoning") and result.reasoning:
             console.print("[bold]Reasoning:[/bold]")
             console.print(result.reasoning)
             console.print()

@@ -29,12 +29,16 @@ class AnswerResult:
 
     answer: str
     entities_used: list[tuple[str, float]]  # (entity_name, similarity)
-    documents_cited: list[tuple[str, str, str | None, float]]  # (doc_id, doc_title, content_path, score)
+    documents_cited: list[
+        tuple[str, str, str | None, float]
+    ]  # (doc_id, doc_title, content_path, score)
     confidence: float
     retrieval_stats: dict[str, Any]
     token_usage: dict[str, Any] | None = None
     reasoning: str | None = None  # Step-by-step reasoning process
-    relationships_used: list[tuple[str, str, str, str | None]] | None = None  # (source, rel_type, target, context)
+    relationships_used: list[tuple[str, str, str, str | None]] | None = (
+        None  # (source, rel_type, target, context)
+    )
 
 
 class AnswerSignature(dspy.Signature):
@@ -433,7 +437,7 @@ def generate_answer(question: str, context: RetrievedContext) -> AnswerResult:
         answer_text = answer_prediction.answer
         confidence_str = answer_prediction.confidence
         # Capture reasoning if available
-        reasoning_text = getattr(answer_prediction, 'reasoning', None)
+        reasoning_text = getattr(answer_prediction, "reasoning", None)
 
         # Parse confidence
         try:
@@ -465,7 +469,7 @@ def generate_answer(question: str, context: RetrievedContext) -> AnswerResult:
     for doc in context.documents:
         score = context.document_scores.get(doc.id, 0.0)
         # Try to get content_path if available
-        content_path = getattr(doc, 'content_path', None)
+        content_path = getattr(doc, "content_path", None)
         documents_cited.append((doc.id, doc.title or "Untitled", content_path, score))
 
     documents_cited.sort(key=lambda x: x[3], reverse=True)  # Sort by score (now index 3)

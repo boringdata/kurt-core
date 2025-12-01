@@ -171,78 +171,93 @@ def extract_sources_from_answer(answer_text: str) -> List[str]:
     if "## Sources" in answer_text:
         sources_section = answer_text.split("## Sources")[1]
         patterns = [
-            r'^\s*-\s*\.kurt/sources/[^\s\)]+',  # Direct path format
-            r'path:\s*\.kurt/sources/[^\s\)]+',  # Path in parentheses format
+            r"^\s*-\s*\.kurt/sources/[^\s\)]+",  # Direct path format
+            r"path:\s*\.kurt/sources/[^\s\)]+",  # Path in parentheses format
         ]
-        for line in sources_section.split('\n'):
+        for line in sources_section.split("\n"):
             for pattern in patterns:
                 match = re.search(pattern, line)
                 if match:
-                    path = match.group(0).replace('path:', '').strip()
+                    path = match.group(0).replace("path:", "").strip()
                     # Remove leading dash and whitespace if present
-                    path = path.lstrip('- ').strip()
+                    path = path.lstrip("- ").strip()
                     if path not in sources:
                         sources.append(path)
                     break
     return sources
 
 
-def update_comparison_csv(scenario_dir: Path, scenario_name: str, question_num: int,
-                         question: str, answer_text: str, llm_judge: Dict[str, Any] | None,
-                         tokens_used: int | None, duration: float | None):
+def update_comparison_csv(
+    scenario_dir: Path,
+    scenario_name: str,
+    question_num: int,
+    question: str,
+    answer_text: str,
+    llm_judge: Dict[str, Any] | None,
+    tokens_used: int | None,
+    duration: float | None,
+):
     """Update or create the comparison CSV file with results from all scenarios."""
     comparison_csv = scenario_dir.parent / "scenario_comparison.csv"
 
     # Read existing data if file exists
     existing_data = {}
     if comparison_csv.exists():
-        with open(comparison_csv, 'r', encoding='utf-8') as f:
-            reader = csv.DictReader(f, delimiter='|')
+        with open(comparison_csv, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f, delimiter="|")
             for row in reader:
-                q_num = int(row['Question #'].strip())
+                q_num = int(row["Question #"].strip())
                 if q_num not in existing_data:
-                    existing_data[q_num] = {'Question Text': row.get('Question Text', '').strip()}
+                    existing_data[q_num] = {"Question Text": row.get("Question Text", "").strip()}
                 # Store all scenario-specific columns
                 for key, value in row.items():
-                    if key not in ['Question #', 'Question Text']:
-                        existing_data[q_num][key.strip()] = value.strip() if value else ''
+                    if key not in ["Question #", "Question Text"]:
+                        existing_data[q_num][key.strip()] = value.strip() if value else ""
 
     # Add or update current scenario data
     if question_num not in existing_data:
-        existing_data[question_num] = {'Question Text': question}
+        existing_data[question_num] = {"Question Text": question}
 
     # Clean answer for CSV - escape pipe delimiter
-    clean_answer = answer_text.replace('\n', ' ').replace('|', '\\|')
+    clean_answer = answer_text.replace("\n", " ").replace("|", "\\|")
     if len(clean_answer) > 1000:
-        clean_answer = clean_answer[:997] + '...'
+        clean_answer = clean_answer[:997] + "..."
 
     # Extract sources
     sources = extract_sources_from_answer(answer_text)
 
     # Add scenario columns
-    existing_data[question_num][f'{scenario_name}_answer'] = clean_answer
+    existing_data[question_num][f"{scenario_name}_answer"] = clean_answer
 
     # Add all sources combined in one column (semicolon separated)
-    sources_combined = '; '.join(sources) if sources else ''
-    existing_data[question_num][f'{scenario_name}_sources'] = sources_combined
+    sources_combined = "; ".join(sources) if sources else ""
+    existing_data[question_num][f"{scenario_name}_sources"] = sources_combined
 
     # Add judge columns if available
     if llm_judge:
-        existing_data[question_num][f'{scenario_name}_judge_overall_score'] = str(llm_judge.get('overall_score', ''))
-        component_scores = llm_judge.get('component_scores', {})
-        for component in ['accuracy', 'completeness', 'relevance', 'clarity']:
-            existing_data[question_num][f'{scenario_name}_judge_{component}_score'] = str(component_scores.get(component, ''))
-        feedback = llm_judge.get('feedback', '').replace('\n', ' ').replace('|', '\\|')
-        existing_data[question_num][f'{scenario_name}_judge_feedback'] = feedback
+        existing_data[question_num][f"{scenario_name}_judge_overall_score"] = str(
+            llm_judge.get("overall_score", "")
+        )
+        component_scores = llm_judge.get("component_scores", {})
+        for component in ["accuracy", "completeness", "relevance", "clarity"]:
+            existing_data[question_num][f"{scenario_name}_judge_{component}_score"] = str(
+                component_scores.get(component, "")
+            )
+        feedback = llm_judge.get("feedback", "").replace("\n", " ").replace("|", "\\|")
+        existing_data[question_num][f"{scenario_name}_judge_feedback"] = feedback
     else:
-        existing_data[question_num][f'{scenario_name}_judge_overall_score'] = ''
-        for component in ['accuracy', 'completeness', 'relevance', 'clarity']:
-            existing_data[question_num][f'{scenario_name}_judge_{component}_score'] = ''
-        existing_data[question_num][f'{scenario_name}_judge_feedback'] = ''
+        existing_data[question_num][f"{scenario_name}_judge_overall_score"] = ""
+        for component in ["accuracy", "completeness", "relevance", "clarity"]:
+            existing_data[question_num][f"{scenario_name}_judge_{component}_score"] = ""
+        existing_data[question_num][f"{scenario_name}_judge_feedback"] = ""
 
     # Add metrics
-    existing_data[question_num][f'{scenario_name}_tokens_used'] = str(tokens_used) if tokens_used else ''
-    existing_data[question_num][f'{scenario_name}_duration_seconds'] = str(duration) if duration else ''
+    existing_data[question_num][f"{scenario_name}_tokens_used"] = (
+        str(tokens_used) if tokens_used else ""
+    )
+    existing_data[question_num][f"{scenario_name}_duration_seconds"] = (
+        str(duration) if duration else ""
+    )
 
     # Determine all columns needed
     all_scenarios = {scenario_name}  # Always include the current scenario
@@ -251,40 +266,48 @@ def update_comparison_csv(scenario_dir: Path, scenario_name: str, question_num: 
     # Look for patterns ending with _answer, _sources, etc.
     for q_data in existing_data.values():
         for key in q_data.keys():
-            if key not in ['Question #', 'Question Text']:
+            if key not in ["Question #", "Question Text"]:
                 # Check for known column suffixes
-                for suffix in ['_answer', '_sources', '_judge_overall_score', '_tokens_used', '_duration_seconds']:
+                for suffix in [
+                    "_answer",
+                    "_sources",
+                    "_judge_overall_score",
+                    "_tokens_used",
+                    "_duration_seconds",
+                ]:
                     if key.endswith(suffix):
-                        scenario = key[:-len(suffix)]
+                        scenario = key[: -len(suffix)]
                         if scenario:
                             all_scenarios.add(scenario)
                         break
 
     # Build header
-    header = ['Question #', 'Question Text']
+    header = ["Question #", "Question Text"]
     for scenario in sorted(all_scenarios):
-        header.extend([
-            f'{scenario}_answer',
-            f'{scenario}_sources',
-            f'{scenario}_judge_overall_score',
-            f'{scenario}_judge_accuracy_score',
-            f'{scenario}_judge_completeness_score',
-            f'{scenario}_judge_relevance_score',
-            f'{scenario}_judge_clarity_score',
-            f'{scenario}_judge_feedback',
-            f'{scenario}_tokens_used',
-            f'{scenario}_duration_seconds',
-        ])
+        header.extend(
+            [
+                f"{scenario}_answer",
+                f"{scenario}_sources",
+                f"{scenario}_judge_overall_score",
+                f"{scenario}_judge_accuracy_score",
+                f"{scenario}_judge_completeness_score",
+                f"{scenario}_judge_relevance_score",
+                f"{scenario}_judge_clarity_score",
+                f"{scenario}_judge_feedback",
+                f"{scenario}_tokens_used",
+                f"{scenario}_duration_seconds",
+            ]
+        )
 
     # Write CSV with pipe delimiter
-    with open(comparison_csv, 'w', newline='', encoding='utf-8') as f:
-        writer = csv.writer(f, delimiter='|')
+    with open(comparison_csv, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f, delimiter="|")
         writer.writerow(header)
 
         for q_num in sorted(existing_data.keys()):
-            row = [str(q_num), existing_data[q_num].get('Question Text', '')]
+            row = [str(q_num), existing_data[q_num].get("Question Text", "")]
             for col in header[2:]:  # Skip Question # and Question Text
-                row.append(existing_data[q_num].get(col, ''))
+                row.append(existing_data[q_num].get(col, ""))
             writer.writerow(row)
 
 
@@ -353,26 +376,26 @@ def save_results(
     # Generate CSV for question-based scenarios
     if command_outputs and not conversational:
         for cmd_output in command_outputs:
-            if 'question' in cmd_output and 'answer_file' in cmd_output:
+            if "question" in cmd_output and "answer_file" in cmd_output:
                 # Extract question number from command (e.g., "question:q1")
-                cmd = cmd_output.get('command', '')
-                if 'question:q' in cmd:
+                cmd = cmd_output.get("command", "")
+                if "question:q" in cmd:
                     try:
-                        q_num_str = cmd.split('question:q')[1].split()[0]
+                        q_num_str = cmd.split("question:q")[1].split()[0]
                         question_num = int(q_num_str)
 
                         # Read answer file content
-                        answer_file = cmd_output.get('answer_file', '')
-                        answer_text = ''
+                        answer_file = cmd_output.get("answer_file", "")
+                        answer_text = ""
                         if answer_file and Path(answer_file).exists():
-                            with open(answer_file, 'r') as f:
+                            with open(answer_file, "r") as f:
                                 answer_text = f.read()
 
                         # Extract question and judge info
-                        question = cmd_output.get('question', '')
-                        llm_judge = cmd_output.get('llm_judge')
-                        tokens = cmd_output.get('token_usage', {}).get('total_tokens')
-                        duration = cmd_output.get('token_usage', {}).get('duration_seconds')
+                        question = cmd_output.get("question", "")
+                        llm_judge = cmd_output.get("llm_judge")
+                        tokens = cmd_output.get("token_usage", {}).get("total_tokens")
+                        duration = cmd_output.get("token_usage", {}).get("duration_seconds")
 
                         # Update comparison CSV
                         update_comparison_csv(
@@ -383,7 +406,7 @@ def save_results(
                             answer_text=answer_text,
                             llm_judge=llm_judge,
                             tokens_used=tokens,
-                            duration=duration
+                            duration=duration,
                         )
                     except (ValueError, IndexError):
                         pass  # Skip if we can't parse question number
