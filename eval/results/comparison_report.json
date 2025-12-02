@@ -1,309 +1,12 @@
 {
   "with_kg": {
     "questions": {
-      "q9": {
-        "question": "...What compute instance sizes does MotherDuck offer?",
-        "answer": "The specific compute instance sizes offered by MotherDuck are not detailed in the provided context. For precise information, it would be best to consult MotherDuck's official documentation or contact their support team.\n\n## Reasoning\n\nTo determine the compute instance sizes offered by MotherDuck, we need to examine the provided entities, relationships, and documents. The entities list includes MotherDuck, which is a cloud data warehouse powered by DuckDB. However, there is no direct mention of specific compute instance sizes in the entities or relationships. The documents provided are relevant to understanding MotherDuck's offerings and its integration with DuckDB, but they do not explicitly list the compute instance sizes. Given the lack of specific information in the provided context, it is likely that the details about compute instance sizes are either not publicly detailed in the documents or require access to specific product documentation or a direct inquiry with MotherDuck.",
-        "answer_file": "/tmp/answer_with_kg_9.md",
-        "token_usage": {
-          "duration_seconds": 0.09443211555480957
-        },
-        "cached_response": true,
-        "llm_judge": {
-          "overall_score": 0.63,
-          "component_scores": {
-            "accuracy": 0.7,
-            "completeness": 0.5,
-            "relevance": 0.6,
-            "clarity": 0.8
-          },
-          "feedback": "The generated answer provides a reasonable response by indicating the lack of specific instance sizes and suggesting further inquiry. However, it fails to mention the key feature of MotherDuck's serverless compute model, which is crucial to understanding their offering. This results in a lower completeness and relevance score, despite being clear and well-written."
-        },
-        "command": "question:q9",
-        "returncode": 0,
-        "question_id": "q9",
-        "_source_file": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg/q9_20251201_221449.json",
-        "_timestamp": 1764623692.9274805
-      },
-      "q1": {
-        "question": "...... What file formats are most efficient for loading data into MotherDuck?",
-        "answer": "The most efficient file formats for loading data into MotherDuck are Parquet and ORC, as they are optimized for analytical queries and are well-suited for use with DuckDB.\n\n## Reasoning\n\nTo determine the most efficient file formats for loading data into MotherDuck, we need to consider the architecture and capabilities of MotherDuck, which is based on DuckDB. DuckDB is known for its efficient handling of columnar data formats, which are typically used in data lakehouses and data warehouses. The entities and relationships suggest a focus on modern data architectures like data lakehouses, which often utilize columnar storage formats such as Parquet and ORC for their efficiency in both storage and query performance.\n\nThe document titled \"data-lake-vs-data-warehouse-vs-lakehouse\" likely discusses the advantages of different storage formats in these architectures. Additionally, the \"duckdb-ecosystem-newsletter-february-2025\" might provide insights into the latest developments and best practices for using DuckDB, which would include preferred file formats.\n\nGiven this context, Parquet and ORC are likely the most efficient file formats for loading data into MotherDuck, as they are optimized for analytical queries and are commonly used in environments that leverage DuckDB.",
-        "answer_file": "/tmp/answer_with_kg_1.md",
-        "token_usage": {
-          "duration_seconds": 0.10959887504577637
-        },
-        "cached_response": true,
-        "llm_judge": {
-          "overall_score": 0.79,
-          "component_scores": {
-            "accuracy": 0.8,
-            "completeness": 0.7,
-            "relevance": 0.9,
-            "clarity": 0.8
-          },
-          "feedback": "The generated answer is mostly accurate, correctly identifying Parquet as the most efficient format, but it introduces ORC, which is not mentioned in the canonical answer. The completeness score is slightly lower due to the introduction of an additional format that wasn't required. The answer is relevant and clear, but it could be improved by focusing solely on the canonical answer's content."
-        },
-        "command": "question:q1",
-        "returncode": 0,
-        "question_id": "q1",
-        "_source_file": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg/q1_20251201_221314.json",
-        "_timestamp": 1764623598.4263618
-      },
-      "q8": {
-        "question": "...What's the difference between a MotherDuck database and a share?",
-        "answer": "The difference between a MotherDuck database and a share is that a MotherDuck database is a cloud data warehouse solution powered by DuckDB for scalable analytics, while a share refers to the capability to provide access to data or resources across different users or systems.\n\n## Reasoning\n\nTo determine the difference between a MotherDuck database and a share, we need to understand what each term represents in the context of data management and cloud services.\n\n1. **MotherDuck Database**: MotherDuck is a cloud data warehouse that leverages DuckDB to scale analytical queries to the cloud. It integrates with DuckDB, providing a managed service that allows users to perform complex analytical queries efficiently. MotherDuck is designed to be a \"Smart Hub,\" offering a lean and efficient solution for data warehousing, contrasting with larger, more complex systems like Snowflake and Databricks.\n\n2. **Share**: In the context of data management, a \"share\" typically refers to the ability to share data or resources between different users or systems. This can involve sharing access to a database, specific datasets, or computational resources. Sharing is a feature that allows collaboration and data accessibility across different platforms or users.\n\nThe key difference lies in their functions: a MotherDuck database is a specific cloud-based data warehousing solution that uses DuckDB for analytics, while a share is a feature or capability that allows data or resources to be accessed by multiple parties. MotherDuck focuses on providing a scalable and efficient data processing environment, whereas sharing is about data accessibility and collaboration.",
-        "answer_file": "/tmp/answer_with_kg_8.md",
-        "token_usage": {
-          "models": {
-            "openai/gpt-4o": {
-              "completion_tokens": 325,
-              "prompt_tokens": 1338,
-              "total_tokens": 1663,
-              "completion_tokens_details": {
-                "accepted_prediction_tokens": 0,
-                "audio_tokens": 0,
-                "reasoning_tokens": 0,
-                "rejected_prediction_tokens": 0,
-                "text_tokens": null
-              },
-              "prompt_tokens_details": {
-                "audio_tokens": 0,
-                "cached_tokens": 0,
-                "text_tokens": null,
-                "image_tokens": null
-              }
-            }
-          },
-          "duration_seconds": 12.425944805145264,
-          "total_tokens": 1663.0
-        },
-        "cached_response": false,
-        "llm_judge": {
-          "overall_score": 0.68,
-          "component_scores": {
-            "accuracy": 0.7,
-            "completeness": 0.6,
-            "relevance": 0.7,
-            "clarity": 0.8
-          },
-          "feedback": "The generated answer provides a good overview of the concepts but lacks specific details from the canonical answer, particularly regarding the ownership and modification aspects of a MotherDuck database and the read-only nature of a share. While the clarity is decent, the completeness and accuracy could be improved by aligning more closely with the key points from the canonical answer."
-        },
-        "command": "question:q8",
-        "returncode": 0,
-        "question_id": "q8",
-        "_source_file": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg/q8_20251201_221428.json",
-        "_timestamp": 1764623689.539169
-      },
-      "q3": {
-        "question": "...What SQL features from DuckDB are not yet supported in MotherDuck?",
-        "answer": "The specific SQL features from DuckDB that are not yet supported in MotherDuck are not detailed in the provided information. It is likely that any limitations would be related to the cloud integration or specific optimizations for MotherDuck's environment.\n\n## Reasoning\n\nTo determine which SQL features from DuckDB are not yet supported in MotherDuck, we need to analyze the integration and capabilities of both systems. DuckDB is an embedded database management system designed for fast analytical queries, and it powers MotherDuck, a cloud data warehouse. The relationship between DuckDB and MotherDuck suggests that MotherDuck leverages DuckDB's capabilities to scale to the cloud. However, the specific SQL features that might be missing in MotherDuck compared to DuckDB are not explicitly detailed in the provided documents or relationships.\n\nGiven the lack of direct information on unsupported SQL features in MotherDuck, we can infer that any limitations would likely stem from the cloud integration or specific optimizations for cloud environments that might not yet fully replicate all of DuckDB's standalone features. The documents and relationships focus more on the integration and benefits of using DuckDB within MotherDuck rather than detailing specific unsupported features.",
-        "answer_file": "/tmp/answer_with_kg_3.md",
-        "token_usage": {
-          "models": {
-            "openai/gpt-4o": {
-              "completion_tokens": 248,
-              "prompt_tokens": 1786,
-              "total_tokens": 2034,
-              "completion_tokens_details": {
-                "accepted_prediction_tokens": 0,
-                "audio_tokens": 0,
-                "reasoning_tokens": 0,
-                "rejected_prediction_tokens": 0,
-                "text_tokens": null
-              },
-              "prompt_tokens_details": {
-                "audio_tokens": 0,
-                "cached_tokens": 0,
-                "text_tokens": null,
-                "image_tokens": null
-              }
-            }
-          },
-          "duration_seconds": 7.5222179889678955,
-          "total_tokens": 2034.0
-        },
-        "cached_response": false,
-        "llm_judge": {
-          "overall_score": 0.43,
-          "component_scores": {
-            "accuracy": 0.5,
-            "completeness": 0.3,
-            "relevance": 0.4,
-            "clarity": 0.6
-          },
-          "feedback": "The generated answer lacks specific details about the unsupported SQL features in MotherDuck, which is the core of the question. While it touches on relevant topics like cloud integration, it does not provide a clear or complete response, leading to lower scores in accuracy and completeness. The clarity is moderate, but the lack of direct information diminishes its overall effectiveness."
-        },
-        "command": "question:q3",
-        "returncode": 0,
-        "question_id": "q3",
-        "_source_file": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg/q3_20251201_221321.json",
-        "_timestamp": 1764623616.533444
-      },
-      "q7": {
-        "question": "...If I have a CSV on my laptop and a table in S3, what's the most efficient way to join them using MotherDuck?",
-        "answer": "The most efficient way to join a CSV on your laptop with a table in S3 using MotherDuck is to load the CSV into a Pandas DataFrame, load the S3 table into DuckDB, and perform the join operation within DuckDB.\n\n## Reasoning\n\nTo efficiently join a CSV file on your laptop with a table stored in S3 using MotherDuck, you can leverage DuckDB, which is integrated with MotherDuck. DuckDB is designed for efficient data processing and can handle data from various sources, including local files and cloud storage like S3.\n\n1. **Load the CSV into a DataFrame**: Use Pandas to read the CSV file into a DataFrame. This is a straightforward operation and Pandas is well-suited for handling CSV files.\n\n2. **Load the S3 Table into DuckDB**: DuckDB can directly query data stored in S3. You can use DuckDB's SQL interface to connect to the S3 bucket and load the table into a DuckDB table.\n\n3. **Perform the Join in DuckDB**: Once both datasets are loaded into DuckDB, you can perform the join operation using SQL. DuckDB is optimized for such operations and can handle them efficiently.\n\n4. **Export or Analyze the Result**: After performing the join, you can either export the result back to a CSV or another format, or continue to analyze the data within DuckDB.\n\nThis approach leverages the strengths of both Pandas for local data manipulation and DuckDB for efficient querying and joining of large datasets, especially those stored in cloud environments like S3.",
-        "answer_file": "/tmp/answer_with_kg_7.md",
-        "token_usage": {
-          "models": {
-            "openai/gpt-4o": {
-              "completion_tokens": 341,
-              "prompt_tokens": 1086,
-              "total_tokens": 1427,
-              "completion_tokens_details": {
-                "accepted_prediction_tokens": 0,
-                "audio_tokens": 0,
-                "reasoning_tokens": 0,
-                "rejected_prediction_tokens": 0,
-                "text_tokens": null
-              },
-              "prompt_tokens_details": {
-                "audio_tokens": 0,
-                "cached_tokens": 0,
-                "text_tokens": null,
-                "image_tokens": null
-              }
-            }
-          },
-          "duration_seconds": 10.502903699874878,
-          "total_tokens": 1427.0
-        },
-        "cached_response": false,
-        "llm_judge": {
-          "overall_score": 0.71,
-          "component_scores": {
-            "accuracy": 0.7,
-            "completeness": 0.6,
-            "relevance": 0.8,
-            "clarity": 0.9
-          },
-          "feedback": "The generated answer is mostly accurate and relevant, but it lacks some key details from the canonical answer, such as the creation of a temporary table and the efficiency of data transfer. While it is clear and well-structured, it could be improved by incorporating all required topics and methods mentioned in the canonical answer."
-        },
-        "command": "question:q7",
-        "returncode": 0,
-        "question_id": "q7",
-        "_source_file": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg/q7_20251201_221410.json",
-        "_timestamp": 1764623668.590999
-      },
-      "q6": {
-        "question": "...How do I migrate data from a local DuckDB database to MotherDuck?",
-        "answer": "To migrate data from a local DuckDB database to MotherDuck, export your data from DuckDB in a format like Parquet, upload it to a cloud storage service such as S3, and then use MotherDuck's ingestion capabilities to load the data. This process leverages the seamless integration between DuckDB and MotherDuck.\n\n## Reasoning\n\nTo migrate data from a local DuckDB database to MotherDuck, we need to consider the integration capabilities and the data formats supported by both systems. DuckDB is an embedded database designed for fast analytical queries, and it integrates seamlessly with MotherDuck, which is a cloud data warehouse powered by DuckDB. This integration allows DuckDB to scale to the cloud, making the migration process straightforward.\n\n1. **Data Export**: First, export the data from the local DuckDB database. DuckDB supports exporting data in various formats, including Parquet, which is a columnar storage file format optimized for analytical queries.\n\n2. **Data Transfer**: Transfer the exported data to a cloud storage service that MotherDuck can access. Since MotherDuck is designed to work with open storage formats like Parquet on S3, uploading the Parquet files to an S3 bucket would be a suitable approach.\n\n3. **Data Ingestion**: Once the data is in the cloud storage, use MotherDuck's ingestion capabilities to load the data into the MotherDuck environment. MotherDuck's architecture allows it to efficiently query data stored in Parquet format, leveraging DuckDB's analytical engine.\n\n4. **Verification**: After the data is ingested into MotherDuck, verify the integrity and completeness of the data by running sample queries and comparing results with the original DuckDB database.\n\nThe integration between DuckDB and MotherDuck, along with the use of Parquet files, facilitates a smooth migration process.",
-        "answer_file": "/tmp/answer_with_kg_6.md",
-        "token_usage": {
-          "models": {
-            "openai/gpt-4o": {
-              "completion_tokens": 385,
-              "prompt_tokens": 1759,
-              "total_tokens": 2144,
-              "completion_tokens_details": {
-                "accepted_prediction_tokens": 0,
-                "audio_tokens": 0,
-                "reasoning_tokens": 0,
-                "rejected_prediction_tokens": 0,
-                "text_tokens": null
-              },
-              "prompt_tokens_details": {
-                "audio_tokens": 0,
-                "cached_tokens": 0,
-                "text_tokens": null,
-                "image_tokens": null
-              }
-            }
-          },
-          "duration_seconds": 8.1087167263031,
-          "total_tokens": 2144.0
-        },
-        "cached_response": false,
-        "llm_judge": {
-          "overall_score": 0.89,
-          "component_scores": {
-            "accuracy": 0.9,
-            "completeness": 0.8,
-            "relevance": 1.0,
-            "clarity": 0.9
-          },
-          "feedback": "The generated answer is mostly accurate and relevant, providing a clear and comprehensive overview of the migration process. However, it lacks mention of the alternative methods (INSERT INTO or CREATE TABLE AS SELECT) outlined in the canonical answer, which affects its completeness score. Overall, it effectively addresses the question and is well-written."
-        },
-        "command": "question:q6",
-        "returncode": 0,
-        "question_id": "q6",
-        "_source_file": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg/q6_20251201_221354.json",
-        "_timestamp": 1764623650.6796029
-      },
-      "q2": {
-        "question": "...How does MotherDuck integrate with DuckDB?",
-        "answer": "MotherDuck integrates with DuckDB by using it as the core database engine, allowing DuckDB to scale to the cloud through MotherDuck's managed service. This integration supports open storage and serverless compute, enabling efficient and scalable analytical workloads.\n\n## Reasoning\n\nMotherDuck integrates with DuckDB by leveraging DuckDB's capabilities as an embedded database management system designed for fast analytical queries. The integration allows DuckDB to scale to the cloud through MotherDuck's infrastructure. MotherDuck provides a managed service that works seamlessly with the DuckDB Python client, enabling users to perform complex analytical workloads efficiently. The relationship between MotherDuck and DuckDB is characterized by MotherDuck being powered by DuckDB, which allows for open storage using Parquet on S3 and serverless compute. This setup facilitates a cloud data warehouse environment that is both scalable and efficient, aligning with MotherDuck's goal of providing a lean and smart data hub.",
-        "answer_file": "/tmp/answer_with_kg_2.md",
-        "token_usage": {
-          "duration_seconds": 0.0963590145111084
-        },
-        "cached_response": true,
-        "llm_judge": {
-          "overall_score": 0.89,
-          "component_scores": {
-            "accuracy": 0.9,
-            "completeness": 0.8,
-            "relevance": 1.0,
-            "clarity": 0.9
-          },
-          "feedback": "The generated answer is mostly accurate and relevant, effectively covering the integration of MotherDuck with DuckDB. However, it lacks some details from the canonical answer, such as the mention of SQL dialect compatibility and the ability to run queries across local and cloud data. Overall, it is clear and well-written, but could be improved by including all key points from the canonical answer."
-        },
-        "command": "question:q2",
-        "returncode": 0,
-        "question_id": "q2",
-        "_source_file": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg/q2_20251201_221318.json",
-        "_timestamp": 1764623601.8009691
-      },
-      "q10": {
-        "question": "...What DuckDB versions does MotherDuck currently support?",
-        "answer": "MotherDuck likely supports the latest stable versions of DuckDB, but specific version details are not explicitly provided in the available information.\n\n## Reasoning\n\nTo determine which DuckDB versions MotherDuck currently supports, we need to consider the integration and relationship between MotherDuck and DuckDB. MotherDuck is a cloud data warehouse that is powered by DuckDB, allowing it to scale to the cloud. This implies that MotherDuck is designed to work with the latest stable versions of DuckDB to ensure compatibility and performance. However, the specific versions supported are not explicitly mentioned in the provided documents or relationships. Typically, such platforms support the latest stable releases to leverage new features and improvements. Therefore, it is reasonable to infer that MotherDuck supports the latest stable versions of DuckDB, but without explicit documentation, this remains an assumption.",
-        "answer_file": "/tmp/answer_with_kg_10.md",
-        "token_usage": {
-          "models": {
-            "openai/gpt-4o": {
-              "completion_tokens": 182,
-              "prompt_tokens": 1648,
-              "total_tokens": 1830,
-              "completion_tokens_details": {
-                "accepted_prediction_tokens": 0,
-                "audio_tokens": 0,
-                "reasoning_tokens": 0,
-                "rejected_prediction_tokens": 0,
-                "text_tokens": null
-              },
-              "prompt_tokens_details": {
-                "audio_tokens": 0,
-                "cached_tokens": 0,
-                "text_tokens": null,
-                "image_tokens": null
-              }
-            }
-          },
-          "duration_seconds": 9.229467868804932,
-          "total_tokens": 1830.0
-        },
-        "cached_response": false,
-        "llm_judge": {
-          "overall_score": 0.71,
-          "component_scores": {
-            "accuracy": 0.7,
-            "completeness": 0.6,
-            "relevance": 0.8,
-            "clarity": 0.9
-          },
-          "feedback": "The generated answer is mostly accurate but lacks explicit mention of checking the MotherDuck documentation for the most current supported versions, which is a key aspect of the canonical answer. While it provides a reasonable inference about version support, it does not fully address the completeness of the information required. The clarity of the writing is good, making it easy to understand. Overall, it addresses the question well but could improve in completeness and accuracy."
-        },
-        "command": "question:q10",
-        "returncode": 0,
-        "question_id": "q10",
-        "_source_file": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg/q10_20251201_221452.json",
-        "_timestamp": 1764623710.8351097
-      },
       "q5": {
         "question": "...How do I set up MotherDuck to work with dbt?",
         "answer": "To set up MotherDuck to work with dbt, configure a connection profile in dbt that specifies MotherDuck as the data warehouse. This involves setting the database type, host, port, and user credentials in dbt's configuration files. Since MotherDuck is powered by DuckDB, it should support standard SQL connection protocols compatible with dbt.\n\n## Reasoning\n\nTo set up MotherDuck to work with dbt, we need to consider the integration capabilities of MotherDuck, which is powered by DuckDB. MotherDuck provides a managed service that works seamlessly with the DuckDB Python client, which suggests that it can be integrated with dbt, a data transformation tool that uses SQL. The key steps would involve configuring dbt to connect to MotherDuck as a data warehouse. This typically involves setting up a connection profile in dbt that specifies the database type, host, port, user credentials, and any other necessary parameters. Since MotherDuck is a cloud data warehouse, it likely supports standard connection protocols that dbt can utilize. The documents provided do not explicitly detail the setup process with dbt, but given the integration with DuckDB and the nature of dbt's compatibility with SQL-based systems, the setup should be straightforward.",
         "answer_file": "/tmp/answer_with_kg_5.md",
         "token_usage": {
-          "duration_seconds": 0.09886479377746582
+          "duration_seconds": 0.0962209701538086
         },
         "cached_response": true,
         "llm_judge": {
@@ -319,38 +22,137 @@
         "command": "question:q5",
         "returncode": 0,
         "question_id": "q5",
-        "_source_file": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg/q5_20251201_221351.json",
-        "_timestamp": 1764623634.8505611
+        "_source_file": "eval/results/answer_motherduck_with_kg/q5_20251202_072841.json",
+        "_timestamp": 1764656924.847796
+      },
+      "q1": {
+        "question": "...... What file formats are most efficient for loading data into MotherDuck?",
+        "answer": "The most efficient file formats for loading data into MotherDuck are Parquet and ORC, as they are optimized for analytical queries and are well-suited for use with DuckDB.\n\n## Reasoning\n\nTo determine the most efficient file formats for loading data into MotherDuck, we need to consider the architecture and capabilities of MotherDuck, which is based on DuckDB. DuckDB is known for its efficient handling of columnar data formats, which are typically used in data lakehouses and data warehouses. The entities and relationships suggest a focus on modern data architectures like data lakehouses, which often utilize columnar storage formats such as Parquet and ORC for their efficiency in both storage and query performance.\n\nThe document titled \"data-lake-vs-data-warehouse-vs-lakehouse\" likely discusses the advantages of different storage formats in these architectures. Additionally, the \"duckdb-ecosystem-newsletter-february-2025\" might provide insights into the latest developments and best practices for using DuckDB, which would include preferred file formats.\n\nGiven this context, Parquet and ORC are likely the most efficient file formats for loading data into MotherDuck, as they are optimized for analytical queries and are commonly used in environments that leverage DuckDB.",
+        "answer_file": "/tmp/answer_with_kg_1.md",
+        "token_usage": {
+          "duration_seconds": 0.09214591979980469
+        },
+        "cached_response": true,
+        "llm_judge": {
+          "overall_score": 0.79,
+          "component_scores": {
+            "accuracy": 0.8,
+            "completeness": 0.7,
+            "relevance": 0.9,
+            "clarity": 0.8
+          },
+          "feedback": "The generated answer is mostly accurate, correctly identifying Parquet as the most efficient format, but it introduces ORC, which is not mentioned in the canonical answer. The completeness score is slightly lower due to the introduction of an additional format that wasn't required. The answer is relevant and clear, but it could be improved by focusing solely on the canonical answer's content."
+        },
+        "command": "question:q1",
+        "returncode": 0,
+        "question_id": "q1",
+        "_source_file": "eval/results/answer_motherduck_with_kg/q1_20251202_072828.json",
+        "_timestamp": 1764656911.5661106
+      },
+      "q9": {
+        "question": "...What compute instance sizes does MotherDuck offer?",
+        "answer": "The specific compute instance sizes offered by MotherDuck are not detailed in the provided context. For precise information, it would be best to consult MotherDuck's official documentation or contact their support team.\n\n## Reasoning\n\nTo determine the compute instance sizes offered by MotherDuck, we need to examine the provided entities, relationships, and documents. The entities list includes MotherDuck, which is a cloud data warehouse powered by DuckDB. However, there is no direct mention of specific compute instance sizes in the entities or relationships. The documents provided are relevant to understanding MotherDuck's offerings and its integration with DuckDB, but they do not explicitly list the compute instance sizes. Given the lack of specific information in the provided context, it is likely that the details about compute instance sizes are either not publicly detailed in the documents or require access to specific product documentation or a direct inquiry with MotherDuck.",
+        "answer_file": "/tmp/answer_with_kg_9.md",
+        "token_usage": {
+          "duration_seconds": 0.10112595558166504
+        },
+        "cached_response": true,
+        "llm_judge": {
+          "overall_score": 0.63,
+          "component_scores": {
+            "accuracy": 0.7,
+            "completeness": 0.5,
+            "relevance": 0.6,
+            "clarity": 0.8
+          },
+          "feedback": "The generated answer provides a reasonable response by indicating the lack of specific instance sizes and suggesting further inquiry. However, it fails to mention the key feature of MotherDuck's serverless compute model, which is crucial to understanding their offering. This results in a lower completeness and relevance score, despite being clear and well-written."
+        },
+        "command": "question:q9",
+        "returncode": 0,
+        "question_id": "q9",
+        "_source_file": "eval/results/answer_motherduck_with_kg/q9_20251202_072854.json",
+        "_timestamp": 1764656938.3427303
+      },
+      "q7": {
+        "question": "...If I have a CSV on my laptop and a table in S3, what's the most efficient way to join them using MotherDuck?",
+        "answer": "The most efficient way to join a CSV on your laptop with a table in S3 using MotherDuck is to load the CSV into a Pandas DataFrame, load the S3 table into DuckDB, and perform the join operation within DuckDB.\n\n## Reasoning\n\nTo efficiently join a CSV file on your laptop with a table stored in S3 using MotherDuck, you can leverage DuckDB, which is integrated with MotherDuck. DuckDB is designed for efficient data processing and can handle data from various sources, including local files and cloud storage like S3.\n\n1. **Load the CSV into a DataFrame**: Use Pandas to read the CSV file into a DataFrame. This is a straightforward operation and Pandas is well-suited for handling CSV files.\n\n2. **Load the S3 Table into DuckDB**: DuckDB can directly query data stored in S3. You can use DuckDB's SQL interface to connect to the S3 bucket and load the table into a DuckDB table.\n\n3. **Perform the Join in DuckDB**: Once both datasets are loaded into DuckDB, you can perform the join operation using SQL. DuckDB is optimized for such operations and can handle them efficiently.\n\n4. **Export or Analyze the Result**: After performing the join, you can either export the result back to a CSV or another format, or continue to analyze the data within DuckDB.\n\nThis approach leverages the strengths of both Pandas for local data manipulation and DuckDB for efficient querying and joining of large datasets, especially those stored in cloud environments like S3.",
+        "answer_file": "/tmp/answer_with_kg_7.md",
+        "token_usage": {
+          "duration_seconds": 0.10154986381530762
+        },
+        "cached_response": true,
+        "llm_judge": {
+          "overall_score": 0.71,
+          "component_scores": {
+            "accuracy": 0.7,
+            "completeness": 0.6,
+            "relevance": 0.8,
+            "clarity": 0.9
+          },
+          "feedback": "The generated answer is mostly accurate and relevant, but it lacks some key details from the canonical answer, such as the creation of a temporary table and the efficiency of data transfer. While it is clear and well-structured, it could be improved by incorporating all required topics and methods mentioned in the canonical answer."
+        },
+        "command": "question:q7",
+        "returncode": 0,
+        "question_id": "q7",
+        "_source_file": "eval/results/answer_motherduck_with_kg/q7_20251202_072848.json",
+        "_timestamp": 1764656931.5586004
+      },
+      "q3": {
+        "question": "...What SQL features from DuckDB are not yet supported in MotherDuck?",
+        "answer": "The specific SQL features from DuckDB that are not yet supported in MotherDuck are not detailed in the provided information. It is likely that any limitations would be related to the cloud integration or specific optimizations for MotherDuck's environment.\n\n## Reasoning\n\nTo determine which SQL features from DuckDB are not yet supported in MotherDuck, we need to analyze the integration and capabilities of both systems. DuckDB is an embedded database management system designed for fast analytical queries, and it powers MotherDuck, a cloud data warehouse. The relationship between DuckDB and MotherDuck suggests that MotherDuck leverages DuckDB's capabilities to scale to the cloud. However, the specific SQL features that might be missing in MotherDuck compared to DuckDB are not explicitly detailed in the provided documents or relationships.\n\nGiven the lack of direct information on unsupported SQL features in MotherDuck, we can infer that any limitations would likely stem from the cloud integration or specific optimizations for cloud environments that might not yet fully replicate all of DuckDB's standalone features. The documents and relationships focus more on the integration and benefits of using DuckDB within MotherDuck rather than detailing specific unsupported features.",
+        "answer_file": "/tmp/answer_with_kg_3.md",
+        "token_usage": {
+          "duration_seconds": 0.09349203109741211
+        },
+        "cached_response": true,
+        "llm_judge": {
+          "overall_score": 0.43,
+          "component_scores": {
+            "accuracy": 0.5,
+            "completeness": 0.3,
+            "relevance": 0.4,
+            "clarity": 0.6
+          },
+          "feedback": "The generated answer lacks specific details about the unsupported SQL features in MotherDuck, which is the core of the question. While it touches on relevant topics like cloud integration, it does not provide a clear or complete response, leading to lower scores in accuracy and completeness. The clarity is moderate, but the lack of direct information diminishes its overall effectiveness."
+        },
+        "command": "question:q3",
+        "returncode": 0,
+        "question_id": "q3",
+        "_source_file": "eval/results/answer_motherduck_with_kg/q3_20251202_072834.json",
+        "_timestamp": 1764656918.185089
+      },
+      "q8": {
+        "question": "...What's the difference between a MotherDuck database and a share?",
+        "answer": "The difference between a MotherDuck database and a share is that a MotherDuck database is a cloud data warehouse solution powered by DuckDB for scalable analytics, while a share refers to the capability to provide access to data or resources across different users or systems.\n\n## Reasoning\n\nTo determine the difference between a MotherDuck database and a share, we need to understand what each term represents in the context of data management and cloud services.\n\n1. **MotherDuck Database**: MotherDuck is a cloud data warehouse that leverages DuckDB to scale analytical queries to the cloud. It integrates with DuckDB, providing a managed service that allows users to perform complex analytical queries efficiently. MotherDuck is designed to be a \"Smart Hub,\" offering a lean and efficient solution for data warehousing, contrasting with larger, more complex systems like Snowflake and Databricks.\n\n2. **Share**: In the context of data management, a \"share\" typically refers to the ability to share data or resources between different users or systems. This can involve sharing access to a database, specific datasets, or computational resources. Sharing is a feature that allows collaboration and data accessibility across different platforms or users.\n\nThe key difference lies in their functions: a MotherDuck database is a specific cloud-based data warehousing solution that uses DuckDB for analytics, while a share is a feature or capability that allows data or resources to be accessed by multiple parties. MotherDuck focuses on providing a scalable and efficient data processing environment, whereas sharing is about data accessibility and collaboration.",
+        "answer_file": "/tmp/answer_with_kg_8.md",
+        "token_usage": {
+          "duration_seconds": 0.09478187561035156
+        },
+        "cached_response": true,
+        "llm_judge": {
+          "overall_score": 0.68,
+          "component_scores": {
+            "accuracy": 0.7,
+            "completeness": 0.6,
+            "relevance": 0.7,
+            "clarity": 0.8
+          },
+          "feedback": "The generated answer provides a good overview of the concepts but lacks specific details from the canonical answer, particularly regarding the ownership and modification aspects of a MotherDuck database and the read-only nature of a share. While the clarity is decent, the completeness and accuracy could be improved by aligning more closely with the key points from the canonical answer."
+        },
+        "command": "question:q8",
+        "returncode": 0,
+        "question_id": "q8",
+        "_source_file": "eval/results/answer_motherduck_with_kg/q8_20251202_072851.json",
+        "_timestamp": 1764656934.9143906
       },
       "q4": {
         "question": "...Why might a query run slower on MotherDuck than locally?",
         "answer": "A query might run slower on MotherDuck than locally due to network latency and resource contention in the cloud environment, which are not factors when running queries locally with DuckDB.\n\n## Reasoning\n\nTo determine why a query might run slower on MotherDuck compared to locally, we need to consider the architecture and operational differences between local and cloud-based systems. MotherDuck is a cloud data warehouse powered by DuckDB, which allows DuckDB to scale to the cloud. This means that when queries are run on MotherDuck, they are executed in a cloud environment, which can introduce latency due to network communication and data transfer between the local environment and the cloud. Additionally, cloud-based systems often involve shared resources, which can lead to contention and variability in performance depending on the current load on the system.\n\nIn contrast, running queries locally with DuckDB means that the data and computation are handled on the same machine, eliminating network latency and allowing for more predictable performance as the resources are dedicated to the local machine. Furthermore, local execution can leverage the full power of the local machine's CPU and memory without the overhead of cloud orchestration.\n\nThe documents and relationships indicate that MotherDuck integrates with DuckDB to provide a managed service that scales to the cloud, which is beneficial for large-scale data processing but may introduce overhead for smaller or less complex queries that could be handled more efficiently locally.",
         "answer_file": "/tmp/answer_with_kg_4.md",
         "token_usage": {
-          "models": {
-            "openai/gpt-4o": {
-              "completion_tokens": 292,
-              "prompt_tokens": 1473,
-              "total_tokens": 1765,
-              "completion_tokens_details": {
-                "accepted_prediction_tokens": 0,
-                "audio_tokens": 0,
-                "reasoning_tokens": 0,
-                "rejected_prediction_tokens": 0,
-                "text_tokens": null
-              },
-              "prompt_tokens_details": {
-                "audio_tokens": 0,
-                "cached_tokens": 0,
-                "text_tokens": null,
-                "image_tokens": null
-              }
-            }
-          },
-          "duration_seconds": 6.3993730545043945,
-          "total_tokens": 1765.0
+          "duration_seconds": 0.09011197090148926
         },
-        "cached_response": false,
+        "cached_response": true,
         "llm_judge": {
           "overall_score": 0.77,
           "component_scores": {
@@ -364,16 +166,88 @@
         "command": "question:q4",
         "returncode": 0,
         "question_id": "q4",
-        "_source_file": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg/q4_20251201_221336.json",
-        "_timestamp": 1764623631.2834308
+        "_source_file": "eval/results/answer_motherduck_with_kg/q4_20251202_072838.json",
+        "_timestamp": 1764656921.461003
+      },
+      "q6": {
+        "question": "...How do I migrate data from a local DuckDB database to MotherDuck?",
+        "answer": "To migrate data from a local DuckDB database to MotherDuck, export your data from DuckDB in a format like Parquet, upload it to a cloud storage service such as S3, and then use MotherDuck's ingestion capabilities to load the data. This process leverages the seamless integration between DuckDB and MotherDuck.\n\n## Reasoning\n\nTo migrate data from a local DuckDB database to MotherDuck, we need to consider the integration capabilities and the data formats supported by both systems. DuckDB is an embedded database designed for fast analytical queries, and it integrates seamlessly with MotherDuck, which is a cloud data warehouse powered by DuckDB. This integration allows DuckDB to scale to the cloud, making the migration process straightforward.\n\n1. **Data Export**: First, export the data from the local DuckDB database. DuckDB supports exporting data in various formats, including Parquet, which is a columnar storage file format optimized for analytical queries.\n\n2. **Data Transfer**: Transfer the exported data to a cloud storage service that MotherDuck can access. Since MotherDuck is designed to work with open storage formats like Parquet on S3, uploading the Parquet files to an S3 bucket would be a suitable approach.\n\n3. **Data Ingestion**: Once the data is in the cloud storage, use MotherDuck's ingestion capabilities to load the data into the MotherDuck environment. MotherDuck's architecture allows it to efficiently query data stored in Parquet format, leveraging DuckDB's analytical engine.\n\n4. **Verification**: After the data is ingested into MotherDuck, verify the integrity and completeness of the data by running sample queries and comparing results with the original DuckDB database.\n\nThe integration between DuckDB and MotherDuck, along with the use of Parquet files, facilitates a smooth migration process.",
+        "answer_file": "/tmp/answer_with_kg_6.md",
+        "token_usage": {
+          "duration_seconds": 0.09089374542236328
+        },
+        "cached_response": true,
+        "llm_judge": {
+          "overall_score": 0.89,
+          "component_scores": {
+            "accuracy": 0.9,
+            "completeness": 0.8,
+            "relevance": 1.0,
+            "clarity": 0.9
+          },
+          "feedback": "The generated answer is mostly accurate and relevant, providing a clear and comprehensive overview of the migration process. However, it lacks mention of the alternative methods (INSERT INTO or CREATE TABLE AS SELECT) outlined in the canonical answer, which affects its completeness score. Overall, it effectively addresses the question and is well-written."
+        },
+        "command": "question:q6",
+        "returncode": 0,
+        "question_id": "q6",
+        "_source_file": "eval/results/answer_motherduck_with_kg/q6_20251202_072844.json",
+        "_timestamp": 1764656928.1735175
+      },
+      "q2": {
+        "question": "...How does MotherDuck integrate with DuckDB?",
+        "answer": "MotherDuck integrates with DuckDB by using it as the core database engine, allowing DuckDB to scale to the cloud through MotherDuck's managed service. This integration supports open storage and serverless compute, enabling efficient and scalable analytical workloads.\n\n## Reasoning\n\nMotherDuck integrates with DuckDB by leveraging DuckDB's capabilities as an embedded database management system designed for fast analytical queries. The integration allows DuckDB to scale to the cloud through MotherDuck's infrastructure. MotherDuck provides a managed service that works seamlessly with the DuckDB Python client, enabling users to perform complex analytical workloads efficiently. The relationship between MotherDuck and DuckDB is characterized by MotherDuck being powered by DuckDB, which allows for open storage using Parquet on S3 and serverless compute. This setup facilitates a cloud data warehouse environment that is both scalable and efficient, aligning with MotherDuck's goal of providing a lean and smart data hub.",
+        "answer_file": "/tmp/answer_with_kg_2.md",
+        "token_usage": {
+          "duration_seconds": 0.09129905700683594
+        },
+        "cached_response": true,
+        "llm_judge": {
+          "overall_score": 0.89,
+          "component_scores": {
+            "accuracy": 0.9,
+            "completeness": 0.8,
+            "relevance": 1.0,
+            "clarity": 0.9
+          },
+          "feedback": "The generated answer is mostly accurate and relevant, effectively covering the integration of MotherDuck with DuckDB. However, it lacks some details from the canonical answer, such as the mention of SQL dialect compatibility and the ability to run queries across local and cloud data. Overall, it is clear and well-written, but could be improved by including all key points from the canonical answer."
+        },
+        "command": "question:q2",
+        "returncode": 0,
+        "question_id": "q2",
+        "_source_file": "eval/results/answer_motherduck_with_kg/q2_20251202_072831.json",
+        "_timestamp": 1764656914.8714516
+      },
+      "q10": {
+        "question": "...What DuckDB versions does MotherDuck currently support?",
+        "answer": "MotherDuck likely supports the latest stable versions of DuckDB, but specific version details are not explicitly provided in the available information.\n\n## Reasoning\n\nTo determine which DuckDB versions MotherDuck currently supports, we need to consider the integration and relationship between MotherDuck and DuckDB. MotherDuck is a cloud data warehouse that is powered by DuckDB, allowing it to scale to the cloud. This implies that MotherDuck is designed to work with the latest stable versions of DuckDB to ensure compatibility and performance. However, the specific versions supported are not explicitly mentioned in the provided documents or relationships. Typically, such platforms support the latest stable releases to leverage new features and improvements. Therefore, it is reasonable to infer that MotherDuck supports the latest stable versions of DuckDB, but without explicit documentation, this remains an assumption.",
+        "answer_file": "/tmp/answer_with_kg_10.md",
+        "token_usage": {
+          "duration_seconds": 0.09692096710205078
+        },
+        "cached_response": true,
+        "llm_judge": {
+          "overall_score": 0.71,
+          "component_scores": {
+            "accuracy": 0.7,
+            "completeness": 0.6,
+            "relevance": 0.8,
+            "clarity": 0.9
+          },
+          "feedback": "The generated answer is mostly accurate but lacks explicit mention of checking the MotherDuck documentation for the most current supported versions, which is a key aspect of the canonical answer. While it provides a reasonable inference about version support, it does not fully address the completeness of the information required. The clarity of the writing is good, making it easy to understand. Overall, it addresses the question well but could improve in completeness and accuracy."
+        },
+        "command": "question:q10",
+        "returncode": 0,
+        "question_id": "q10",
+        "_source_file": "eval/results/answer_motherduck_with_kg/q10_20251202_072858.json",
+        "_timestamp": 1764656941.6940424
       }
     },
     "summary": {
       "average_score": 0.718,
       "num_questions": 10,
-      "tokens_total": 10863.0,
-      "duration_total": 54.587878942489624,
-      "cached_responses": 4,
+      "tokens_total": 0.0,
+      "duration_total": 0.9485423564910889,
+      "cached_responses": 10,
       "passed": true
     }
   },
@@ -401,7 +275,7 @@
         "command": "question:q8",
         "returncode": 0,
         "question_id": "q8",
-        "_source_file": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_without_kg/q8_20251127_141415.json",
+        "_source_file": "eval/results/answer_motherduck_without_kg/q8_20251127_141415.json",
         "_timestamp": 1764249399.6018484
       },
       "q3": {
@@ -426,7 +300,7 @@
         "command": "question:q3",
         "returncode": 0,
         "question_id": "q3",
-        "_source_file": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_without_kg/q3_20251127_140111.json",
+        "_source_file": "eval/results/answer_motherduck_without_kg/q3_20251127_140111.json",
         "_timestamp": 1764248707.6777034
       },
       "q7": {
@@ -451,7 +325,7 @@
         "command": "question:q7",
         "returncode": 0,
         "question_id": "q7",
-        "_source_file": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_without_kg/q7_20251127_141156.json",
+        "_source_file": "eval/results/answer_motherduck_without_kg/q7_20251127_141156.json",
         "_timestamp": 1764249255.3791366
       },
       "q1": {
@@ -476,7 +350,7 @@
         "command": "question:q1",
         "returncode": 0,
         "question_id": "q1",
-        "_source_file": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_without_kg/q1_20251201_083244.json",
+        "_source_file": "eval/results/answer_motherduck_without_kg/q1_20251201_083244.json",
         "_timestamp": 1764574483.517196
       },
       "q5": {
@@ -501,7 +375,7 @@
         "command": "question:q5",
         "returncode": 0,
         "question_id": "q5",
-        "_source_file": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_without_kg/q5_20251127_140732.json",
+        "_source_file": "eval/results/answer_motherduck_without_kg/q5_20251127_140732.json",
         "_timestamp": 1764248964.7927766
       },
       "q9": {
@@ -526,7 +400,7 @@
         "command": "question:q9",
         "returncode": 0,
         "question_id": "q9",
-        "_source_file": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_without_kg/q9_20251127_141639.json",
+        "_source_file": "eval/results/answer_motherduck_without_kg/q9_20251127_141639.json",
         "_timestamp": 1764249498.0759037
       },
       "q2": {
@@ -551,7 +425,7 @@
         "command": "question:q2",
         "returncode": 0,
         "question_id": "q2",
-        "_source_file": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_without_kg/q2_20251201_083443.json",
+        "_source_file": "eval/results/answer_motherduck_without_kg/q2_20251201_083443.json",
         "_timestamp": 1764574592.7070158
       },
       "q10": {
@@ -576,7 +450,7 @@
         "command": "question:q10",
         "returncode": 0,
         "question_id": "q10",
-        "_source_file": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_without_kg/q10_20251127_141818.json",
+        "_source_file": "eval/results/answer_motherduck_without_kg/q10_20251127_141818.json",
         "_timestamp": 1764249594.489876
       },
       "q6": {
@@ -601,7 +475,7 @@
         "command": "question:q6",
         "returncode": 0,
         "question_id": "q6",
-        "_source_file": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_without_kg/q6_20251127_140924.json",
+        "_source_file": "eval/results/answer_motherduck_without_kg/q6_20251127_140924.json",
         "_timestamp": 1764249116.5226388
       },
       "q4": {
@@ -626,7 +500,7 @@
         "command": "question:q4",
         "returncode": 0,
         "question_id": "q4",
-        "_source_file": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_without_kg/q4_20251127_140507.json",
+        "_source_file": "eval/results/answer_motherduck_without_kg/q4_20251127_140507.json",
         "_timestamp": 1764248852.8822308
       }
     },
@@ -646,11 +520,11 @@
       "with_kg": {
         "score": 0.79,
         "usage": {
-          "duration_seconds": 0.10959887504577637
+          "duration_seconds": 0.09214591979980469
         },
         "cached": true,
         "feedback": "The generated answer is mostly accurate, correctly identifying Parquet as the most efficient format, but it introduces ORC, which is not mentioned in the canonical answer. The completeness score is slightly lower due to the introduction of an additional format that wasn't required. The answer is relevant and clear, but it could be improved by focusing solely on the canonical answer's content.",
-        "source": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg/q1_20251201_221314.json"
+        "source": "eval/results/answer_motherduck_with_kg/q1_20251202_072828.json"
       },
       "without_kg": {
         "score": 1.0,
@@ -660,7 +534,7 @@
         },
         "cached": false,
         "feedback": "The generated answer is highly accurate, complete, relevant, and clear. It not only confirms that Parquet is the most efficient format but also elaborates on its advantages and compares it with other formats, fulfilling the requirements of the question comprehensively.",
-        "source": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_without_kg/q1_20251201_083244.json"
+        "source": "eval/results/answer_motherduck_without_kg/q1_20251201_083244.json"
       },
       "delta": -0.20999999999999996
     },
@@ -670,11 +544,11 @@
       "with_kg": {
         "score": 0.89,
         "usage": {
-          "duration_seconds": 0.0963590145111084
+          "duration_seconds": 0.09129905700683594
         },
         "cached": true,
         "feedback": "The generated answer is mostly accurate and relevant, effectively covering the integration of MotherDuck with DuckDB. However, it lacks some details from the canonical answer, such as the mention of SQL dialect compatibility and the ability to run queries across local and cloud data. Overall, it is clear and well-written, but could be improved by including all key points from the canonical answer.",
-        "source": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg/q2_20251201_221318.json"
+        "source": "eval/results/answer_motherduck_with_kg/q2_20251202_072831.json"
       },
       "without_kg": {
         "score": 1.0,
@@ -684,7 +558,7 @@
         },
         "cached": false,
         "feedback": "The generated answer is highly accurate, complete, relevant, and clear. It thoroughly addresses the question by explaining the integration of MotherDuck with DuckDB, covering all necessary topics and providing a well-structured response. The clarity of the writing makes it easy to understand the complex concepts involved.",
-        "source": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_without_kg/q2_20251201_083443.json"
+        "source": "eval/results/answer_motherduck_without_kg/q2_20251201_083443.json"
       },
       "delta": -0.10999999999999999
     },
@@ -694,32 +568,11 @@
       "with_kg": {
         "score": 0.43,
         "usage": {
-          "models": {
-            "openai/gpt-4o": {
-              "completion_tokens": 248,
-              "prompt_tokens": 1786,
-              "total_tokens": 2034,
-              "completion_tokens_details": {
-                "accepted_prediction_tokens": 0,
-                "audio_tokens": 0,
-                "reasoning_tokens": 0,
-                "rejected_prediction_tokens": 0,
-                "text_tokens": null
-              },
-              "prompt_tokens_details": {
-                "audio_tokens": 0,
-                "cached_tokens": 0,
-                "text_tokens": null,
-                "image_tokens": null
-              }
-            }
-          },
-          "duration_seconds": 7.5222179889678955,
-          "total_tokens": 2034.0
+          "duration_seconds": 0.09349203109741211
         },
-        "cached": false,
+        "cached": true,
         "feedback": "The generated answer lacks specific details about the unsupported SQL features in MotherDuck, which is the core of the question. While it touches on relevant topics like cloud integration, it does not provide a clear or complete response, leading to lower scores in accuracy and completeness. The clarity is moderate, but the lack of direct information diminishes its overall effectiveness.",
-        "source": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg/q3_20251201_221321.json"
+        "source": "eval/results/answer_motherduck_with_kg/q3_20251202_072834.json"
       },
       "without_kg": {
         "score": 1.0,
@@ -729,7 +582,7 @@
         },
         "cached": false,
         "feedback": "The generated answer is highly accurate, complete, relevant, and clear. It effectively addresses the question by detailing the specific SQL features from DuckDB that are not supported in MotherDuck, while also providing context and potential workarounds. The structured format enhances readability and understanding, making it an excellent response.",
-        "source": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_without_kg/q3_20251127_140111.json"
+        "source": "eval/results/answer_motherduck_without_kg/q3_20251127_140111.json"
       },
       "delta": -0.5700000000000001
     },
@@ -739,32 +592,11 @@
       "with_kg": {
         "score": 0.77,
         "usage": {
-          "models": {
-            "openai/gpt-4o": {
-              "completion_tokens": 292,
-              "prompt_tokens": 1473,
-              "total_tokens": 1765,
-              "completion_tokens_details": {
-                "accepted_prediction_tokens": 0,
-                "audio_tokens": 0,
-                "reasoning_tokens": 0,
-                "rejected_prediction_tokens": 0,
-                "text_tokens": null
-              },
-              "prompt_tokens_details": {
-                "audio_tokens": 0,
-                "cached_tokens": 0,
-                "text_tokens": null,
-                "image_tokens": null
-              }
-            }
-          },
-          "duration_seconds": 6.3993730545043945,
-          "total_tokens": 1765.0
+          "duration_seconds": 0.09011197090148926
         },
-        "cached": false,
+        "cached": true,
         "feedback": "The generated answer is mostly accurate and relevant, addressing key points like network latency and resource contention. However, it misses some important factors mentioned in the canonical answer, such as data transfer overhead and cold start times, which affects its completeness. The clarity of the response is high, making it easy to understand.",
-        "source": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg/q4_20251201_221336.json"
+        "source": "eval/results/answer_motherduck_with_kg/q4_20251202_072838.json"
       },
       "without_kg": {
         "score": 0.87,
@@ -774,7 +606,7 @@
         },
         "cached": true,
         "feedback": "The generated answer is mostly accurate and covers the main reasons for slower query performance on MotherDuck, aligning well with the canonical answer. It provides additional context and examples that enhance understanding, though it may include some extraneous details that could detract from the focus on the question. Overall, it is clear and well-structured, making it easy to follow.",
-        "source": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_without_kg/q4_20251127_140507.json"
+        "source": "eval/results/answer_motherduck_without_kg/q4_20251127_140507.json"
       },
       "delta": -0.09999999999999998
     },
@@ -784,11 +616,11 @@
       "with_kg": {
         "score": 0.68,
         "usage": {
-          "duration_seconds": 0.09886479377746582
+          "duration_seconds": 0.0962209701538086
         },
         "cached": true,
         "feedback": "The generated answer is mostly accurate but misses key details about the dbt-duckdb adapter and the necessity of including a token in the configuration. While it addresses the question and is clear, it does not fully cover the required setup steps, leading to a lower completeness score. Overall, it provides a good starting point but lacks essential specifics for a complete setup.",
-        "source": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg/q5_20251201_221351.json"
+        "source": "eval/results/answer_motherduck_with_kg/q5_20251202_072841.json"
       },
       "without_kg": {
         "score": 1.0,
@@ -798,7 +630,7 @@
         },
         "cached": true,
         "feedback": "The generated answer is highly accurate, complete, relevant, and clear. It not only addresses the question directly but also expands on the canonical answer by providing additional context, examples, and best practices, making it a valuable resource for users looking to set up MotherDuck with dbt.",
-        "source": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_without_kg/q5_20251127_140732.json"
+        "source": "eval/results/answer_motherduck_without_kg/q5_20251127_140732.json"
       },
       "delta": -0.31999999999999995
     },
@@ -808,32 +640,11 @@
       "with_kg": {
         "score": 0.89,
         "usage": {
-          "models": {
-            "openai/gpt-4o": {
-              "completion_tokens": 385,
-              "prompt_tokens": 1759,
-              "total_tokens": 2144,
-              "completion_tokens_details": {
-                "accepted_prediction_tokens": 0,
-                "audio_tokens": 0,
-                "reasoning_tokens": 0,
-                "rejected_prediction_tokens": 0,
-                "text_tokens": null
-              },
-              "prompt_tokens_details": {
-                "audio_tokens": 0,
-                "cached_tokens": 0,
-                "text_tokens": null,
-                "image_tokens": null
-              }
-            }
-          },
-          "duration_seconds": 8.1087167263031,
-          "total_tokens": 2144.0
+          "duration_seconds": 0.09089374542236328
         },
-        "cached": false,
+        "cached": true,
         "feedback": "The generated answer is mostly accurate and relevant, providing a clear and comprehensive overview of the migration process. However, it lacks mention of the alternative methods (INSERT INTO or CREATE TABLE AS SELECT) outlined in the canonical answer, which affects its completeness score. Overall, it effectively addresses the question and is well-written.",
-        "source": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg/q6_20251201_221354.json"
+        "source": "eval/results/answer_motherduck_with_kg/q6_20251202_072844.json"
       },
       "without_kg": {
         "score": 1.0,
@@ -843,7 +654,7 @@
         },
         "cached": false,
         "feedback": "The generated answer is highly accurate, complete, relevant, and clear. It effectively covers the migration process with multiple methods and detailed explanations, which enhances the user's understanding. The clarity of the writing and the structured format make it easy to follow, ensuring that all required topics are addressed thoroughly.",
-        "source": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_without_kg/q6_20251127_140924.json"
+        "source": "eval/results/answer_motherduck_without_kg/q6_20251127_140924.json"
       },
       "delta": -0.10999999999999999
     },
@@ -853,32 +664,11 @@
       "with_kg": {
         "score": 0.71,
         "usage": {
-          "models": {
-            "openai/gpt-4o": {
-              "completion_tokens": 341,
-              "prompt_tokens": 1086,
-              "total_tokens": 1427,
-              "completion_tokens_details": {
-                "accepted_prediction_tokens": 0,
-                "audio_tokens": 0,
-                "reasoning_tokens": 0,
-                "rejected_prediction_tokens": 0,
-                "text_tokens": null
-              },
-              "prompt_tokens_details": {
-                "audio_tokens": 0,
-                "cached_tokens": 0,
-                "text_tokens": null,
-                "image_tokens": null
-              }
-            }
-          },
-          "duration_seconds": 10.502903699874878,
-          "total_tokens": 1427.0
+          "duration_seconds": 0.10154986381530762
         },
-        "cached": false,
+        "cached": true,
         "feedback": "The generated answer is mostly accurate and relevant, but it lacks some key details from the canonical answer, such as the creation of a temporary table and the efficiency of data transfer. While it is clear and well-structured, it could be improved by incorporating all required topics and methods mentioned in the canonical answer.",
-        "source": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg/q7_20251201_221410.json"
+        "source": "eval/results/answer_motherduck_with_kg/q7_20251202_072848.json"
       },
       "without_kg": {
         "score": 0.81,
@@ -888,7 +678,7 @@
         },
         "cached": true,
         "feedback": "The generated answer is mostly accurate and covers the required topics well, but it introduces additional concepts that may not be directly relevant to the question. While it provides a comprehensive overview, the focus on Dual Execution could distract from the simpler solution presented in the canonical answer. Overall, it is clear and well-structured, but slightly less relevant to the specific question asked.",
-        "source": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_without_kg/q7_20251127_141156.json"
+        "source": "eval/results/answer_motherduck_without_kg/q7_20251127_141156.json"
       },
       "delta": -0.10000000000000009
     },
@@ -898,32 +688,11 @@
       "with_kg": {
         "score": 0.68,
         "usage": {
-          "models": {
-            "openai/gpt-4o": {
-              "completion_tokens": 325,
-              "prompt_tokens": 1338,
-              "total_tokens": 1663,
-              "completion_tokens_details": {
-                "accepted_prediction_tokens": 0,
-                "audio_tokens": 0,
-                "reasoning_tokens": 0,
-                "rejected_prediction_tokens": 0,
-                "text_tokens": null
-              },
-              "prompt_tokens_details": {
-                "audio_tokens": 0,
-                "cached_tokens": 0,
-                "text_tokens": null,
-                "image_tokens": null
-              }
-            }
-          },
-          "duration_seconds": 12.425944805145264,
-          "total_tokens": 1663.0
+          "duration_seconds": 0.09478187561035156
         },
-        "cached": false,
+        "cached": true,
         "feedback": "The generated answer provides a good overview of the concepts but lacks specific details from the canonical answer, particularly regarding the ownership and modification aspects of a MotherDuck database and the read-only nature of a share. While the clarity is decent, the completeness and accuracy could be improved by aligning more closely with the key points from the canonical answer.",
-        "source": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg/q8_20251201_221428.json"
+        "source": "eval/results/answer_motherduck_with_kg/q8_20251202_072851.json"
       },
       "without_kg": {
         "score": 0.96,
@@ -933,7 +702,7 @@
         },
         "cached": true,
         "feedback": "The generated answer is highly accurate and relevant, effectively covering the differences between a MotherDuck database and a share. It provides comprehensive details, though it slightly exceeds the necessary information compared to the canonical answer. The clarity is good, but the length and complexity may affect readability for some users. Overall, it is a strong response with minor areas for improvement in conciseness.",
-        "source": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_without_kg/q8_20251127_141415.json"
+        "source": "eval/results/answer_motherduck_without_kg/q8_20251127_141415.json"
       },
       "delta": -0.2799999999999999
     },
@@ -943,11 +712,11 @@
       "with_kg": {
         "score": 0.63,
         "usage": {
-          "duration_seconds": 0.09443211555480957
+          "duration_seconds": 0.10112595558166504
         },
         "cached": true,
         "feedback": "The generated answer provides a reasonable response by indicating the lack of specific instance sizes and suggesting further inquiry. However, it fails to mention the key feature of MotherDuck's serverless compute model, which is crucial to understanding their offering. This results in a lower completeness and relevance score, despite being clear and well-written.",
-        "source": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg/q9_20251201_221449.json"
+        "source": "eval/results/answer_motherduck_with_kg/q9_20251202_072854.json"
       },
       "without_kg": {
         "score": 0.7,
@@ -957,7 +726,7 @@
         },
         "cached": true,
         "feedback": "The generated answer is comprehensive and covers a wide range of instance types and their details, which contributes to a high completeness score. However, it inaccurately presents fixed instance sizes, which contradicts the canonical answer's emphasis on serverless compute and dynamic resource allocation. This discrepancy affects the accuracy score. The clarity is somewhat diminished due to the extensive detail, which may overwhelm the reader, impacting the clarity score.",
-        "source": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_without_kg/q9_20251127_141639.json"
+        "source": "eval/results/answer_motherduck_without_kg/q9_20251127_141639.json"
       },
       "delta": -0.06999999999999995
     },
@@ -967,32 +736,11 @@
       "with_kg": {
         "score": 0.71,
         "usage": {
-          "models": {
-            "openai/gpt-4o": {
-              "completion_tokens": 182,
-              "prompt_tokens": 1648,
-              "total_tokens": 1830,
-              "completion_tokens_details": {
-                "accepted_prediction_tokens": 0,
-                "audio_tokens": 0,
-                "reasoning_tokens": 0,
-                "rejected_prediction_tokens": 0,
-                "text_tokens": null
-              },
-              "prompt_tokens_details": {
-                "audio_tokens": 0,
-                "cached_tokens": 0,
-                "text_tokens": null,
-                "image_tokens": null
-              }
-            }
-          },
-          "duration_seconds": 9.229467868804932,
-          "total_tokens": 1830.0
+          "duration_seconds": 0.09692096710205078
         },
-        "cached": false,
+        "cached": true,
         "feedback": "The generated answer is mostly accurate but lacks explicit mention of checking the MotherDuck documentation for the most current supported versions, which is a key aspect of the canonical answer. While it provides a reasonable inference about version support, it does not fully address the completeness of the information required. The clarity of the writing is good, making it easy to understand. Overall, it addresses the question well but could improve in completeness and accuracy.",
-        "source": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_with_kg/q10_20251201_221452.json"
+        "source": "eval/results/answer_motherduck_with_kg/q10_20251202_072858.json"
       },
       "without_kg": {
         "score": 0.82,
@@ -1002,10 +750,10 @@
         },
         "cached": false,
         "feedback": "The generated answer is mostly accurate and provides a comprehensive overview of the supported DuckDB versions, but it includes excessive detail that may not be relevant to the question. While it is clear and well-structured, it could be improved by focusing more on the current support status and less on historical context. The accuracy score reflects the factual correctness, while the completeness score acknowledges the thoroughness of the information provided. The relevance score is lower due to the inclusion of extraneous details.",
-        "source": "/Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/results/answer_motherduck_without_kg/q10_20251127_141818.json"
+        "source": "eval/results/answer_motherduck_without_kg/q10_20251127_141818.json"
       },
       "delta": -0.10999999999999999
     }
   ],
-  "generated_at": "2025-12-01T22:15:15.359194"
+  "generated_at": "2025-12-02T07:38:01.484363"
 }

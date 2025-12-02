@@ -101,10 +101,10 @@ def retrieve_context(question: str, max_documents: int = 10) -> RetrievedContext
                     FROM entity_embeddings
                     WHERE embedding MATCH :embedding
                     ORDER BY distance
-                    LIMIT 10
+                    LIMIT :max_entities
                     """
                 ),
-                {"embedding": embedding_bytes},
+                {"embedding": embedding_bytes, "max_entities": max_documents},
             )
 
             for row in result:
@@ -160,9 +160,9 @@ def retrieve_context(question: str, max_documents: int = 10) -> RetrievedContext
                             FROM entities e
                             WHERE {keyword_patterns}
                             ORDER BY e.source_mentions DESC
-                            LIMIT 10
+                            LIMIT :max_entities
                         """),
-                        params,
+                        {**params, "max_entities": max_documents},
                     )
 
                     # Assign similarity based on source mentions (more mentions = more relevant)
@@ -180,9 +180,9 @@ def retrieve_context(question: str, max_documents: int = 10) -> RetrievedContext
                             FROM entities e
                             WHERE {keyword_patterns}
                             ORDER BY e.source_mentions DESC
-                            LIMIT 10
+                            LIMIT :max_entities
                         """),
-                        params,
+                        {**params, "max_entities": max_documents},
                     ):
                         entity_id = row[0]
                         mentions = row[1] or 1
@@ -195,8 +195,9 @@ def retrieve_context(question: str, max_documents: int = 10) -> RetrievedContext
                             SELECT e.id, e.source_mentions
                             FROM entities e
                             ORDER BY e.source_mentions DESC
-                            LIMIT 10
-                        """)
+                            LIMIT :max_entities
+                        """),
+                        {"max_entities": max_documents},
                     )
 
                     max_mentions = 1

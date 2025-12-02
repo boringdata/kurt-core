@@ -2,7 +2,9 @@
 """Compare WITH KG vs WITHOUT KG approaches using per-question artifacts."""
 
 import argparse
+import csv
 import json
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -109,7 +111,147 @@ def compute_summary(entries: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-# Removed format_summary_row as we no longer need a separate summary table
+def extract_sources_from_answer(answer_text: str, scenario_name: str = "") -> str:
+    """Extract source information from answer markdown.
+
+    For with_kg scenarios, returns the full Sources section including docs, entities, and KG info.
+    For other scenarios, returns just the source file paths.
+    """
+
+    # Special handling for with_kg scenario - get full Sources section
+    if "with_kg" in scenario_name and "## Sources" in answer_text:
+        sources_section = answer_text.split("## Sources")[1]
+        # Stop at the next major section (## Metadata or end)
+        if "## Metadata" in sources_section:
+            sources_section = sources_section.split("## Metadata")[0]
+
+        # Clean up the formatting for CSV display
+        # Remove extra newlines and format nicely
+        lines = sources_section.strip().split("\n")
+        cleaned_lines = []
+        for line in lines:
+            line = line.strip()
+            if line:  # Skip empty lines
+                # Replace markdown formatting for better CSV display
+                line = line.replace("**", "")  # Remove bold
+                line = line.replace("###", "[")  # Convert subsection headers
+                if line.startswith("["):
+                    line = line + "]"
+                cleaned_lines.append(line)
+
+        # Join with semicolon for CSV format (escape pipes for CSV)
+        full_sources = "; ".join(cleaned_lines)
+        # Escape pipe characters since we use pipe as delimiter
+        full_sources = full_sources.replace("|", "\\|")
+        return full_sources
+
+    # Default behavior for other scenarios - extract individual sources
+    sources = []
+
+    # Look for the Sources section (both ## Sources and ### Documents Used)
+    if "## Sources" in answer_text or "### Documents Used" in answer_text:
+        # Try to find the sources section
+        sources_section = ""
+
+        # First try "### Documents Used" (with_kg format)
+        if "### Documents Used" in answer_text:
+            sources_section = answer_text.split("### Documents Used")[1]
+            # Stop at the next section if any
+            if "###" in sources_section:
+                sources_section = sources_section.split("###")[0]
+            elif "##" in sources_section:
+                sources_section = sources_section.split("##")[0]
+        # Then try "## Sources" (general format)
+        elif "## Sources" in answer_text:
+            sources_section = answer_text.split("## Sources")[1]
+            # Stop at the next section if any
+            if "## " in sources_section:
+                sources_section = sources_section.split("## ")[0]
+
+        # Extract sources from list items
+        for line in sources_section.split("\n"):
+            line = line.strip()
+            if line.startswith("-"):
+                # Try to extract file paths first
+                patterns = [
+                    r"\.kurt/sources/[^\s\)]+",  # Direct path format
+                    r"path:\s*\.kurt/sources/[^\s\)]+",  # Path in parentheses format
+                ]
+
+                found_path = False
+                for pattern in patterns:
+                    match = re.search(pattern, line)
+                    if match:
+                        path = match.group(0).replace("path:", "").strip()
+                        if path not in sources:
+                            sources.append(path)
+                        found_path = True
+                        break
+
+                # If no path found, extract document name (for with_kg format)
+                if not found_path:
+                    # Format: "- Document Name (relevance: 0.95)"
+                    # Remove leading dash and extract up to parenthesis
+                    source = line.lstrip("- ").strip()
+                    if "(relevance:" in source:
+                        source = source.split("(relevance:")[0].strip()
+                    if source and source not in sources and not source.startswith("#"):
+                        sources.append(source)
+
+    return "; ".join(sources) if sources else ""
+
+
+def calculate_source_overlap(sources1_str: str, sources2_str: str) -> str:
+    """Calculate overlap between two sets of sources."""
+
+    # Extract document names from sources strings
+    def extract_doc_names(sources_str):
+        docs = set()
+        if not sources_str:
+            return docs
+
+        # For with_kg format, extract from the full sources string
+        if "[ Documents Used]" in sources_str:
+            # Split by semicolon and look for document names
+            parts = sources_str.split(";")
+            for part in parts:
+                part = part.strip()
+                if ".md" in part and not part.startswith("["):
+                    # Extract just the filename
+                    if "/" in part:
+                        doc_name = part.split("/")[-1].replace(".md", "").strip()
+                    else:
+                        doc_name = part.replace(".md", "").strip()
+                    # Remove relevance scores if present
+                    if "(relevance:" in doc_name:
+                        doc_name = doc_name.split("(relevance:")[0].strip()
+                    docs.add(doc_name)
+        else:
+            # For without_kg format, extract from semicolon-separated paths
+            parts = sources_str.split(";")
+            for part in parts:
+                part = part.strip()
+                if ".md" in part:
+                    # Extract just the filename from the path
+                    doc_name = part.split("/")[-1].replace(".md", "").strip()
+                    docs.add(doc_name)
+
+        return docs
+
+    docs1 = extract_doc_names(sources1_str)
+    docs2 = extract_doc_names(sources2_str)
+
+    if not docs1 and not docs2:
+        return "N/A"
+
+    # Calculate overlap
+    common = docs1 & docs2
+    unique_to_1 = docs1 - docs2
+    unique_to_2 = docs2 - docs1
+
+    overlap_pct = (len(common) / max(len(docs1), len(docs2), 1)) * 100 if (docs1 or docs2) else 0
+
+    return f"{overlap_pct:.0f}% ({len(common)} common, {len(unique_to_1)} unique to with_kg, {len(unique_to_2)} unique to without_kg)"
 
 
 def generate_report(
@@ -118,9 +260,258 @@ def generate_report(
     questions: List[Dict],
     output: Path,
 ):
+    """Generate both markdown report and CSV with one line per scenario per question."""
     with_summary = compute_summary(with_entries)
     without_summary = compute_summary(without_entries)
 
+    # Build CSV data with one line per scenario per question
+    csv_rows = []
+
+    for idx, question in enumerate(questions, start=1):
+        question_text = question.get("question", f"Question {idx}")
+        question_id = question.get("id") or f"q{idx}"
+
+        # Process with_kg scenario
+        with_entry = with_entries.get(question_id)
+        if with_entry:
+            # Read answer file if specified
+            answer_text = with_entry.get("answer", "")
+            answer_file = with_entry.get("answer_file", "")
+            if answer_file:
+                answer_path = Path(answer_file)
+                if answer_path.exists():
+                    with open(answer_path) as f:
+                        answer_text = f.read()
+
+            # Extract sources for with_kg
+            sources = extract_sources_from_answer(answer_text, "answer_motherduck_with_kg")
+
+            # Clean answer for CSV
+            clean_answer = answer_text
+            if "## Sources" in clean_answer:
+                clean_answer = clean_answer.split("## Sources")[0]
+            if "## Metadata" in clean_answer:
+                clean_answer = clean_answer.split("## Metadata")[0]
+
+            # Remove markdown formatting
+            clean_answer = re.sub(r"^#\s*Answer\s*\n+", "", clean_answer, flags=re.MULTILINE)
+            clean_answer = re.sub(r"^#+\s+", "", clean_answer, flags=re.MULTILINE)
+            clean_answer = re.sub(r"\n#+\s+", " ", clean_answer)
+            clean_answer = re.sub(r"\*\*(.*?)\*\*", r"\1", clean_answer)
+            clean_answer = re.sub(r"\*(.*?)\*", r"\1", clean_answer)
+            clean_answer = re.sub(r"```[\s\S]*?```", "", clean_answer)
+            clean_answer = re.sub(r"`([^`]+)`", r"\1", clean_answer)
+            clean_answer = re.sub(r"^\s*[-*+]\s+", "• ", clean_answer, flags=re.MULTILINE)
+            clean_answer = re.sub(r"^\s*\d+\.\s+", "", clean_answer, flags=re.MULTILINE)
+            clean_answer = re.sub(r"\n\s*\n", " ", clean_answer)
+            clean_answer = re.sub(r"\n", " ", clean_answer)
+            clean_answer = re.sub(r"\s+", " ", clean_answer)
+            clean_answer = clean_answer.strip()
+            clean_answer = clean_answer.replace("|", "\\|")
+
+            if len(clean_answer) > 500:
+                clean_answer = clean_answer[:497] + "..."
+
+            llm_judge = with_entry.get("llm_judge", {})
+            token_usage = with_entry.get("token_usage", {})
+
+            csv_rows.append(
+                {
+                    "question_num": idx,
+                    "scenario": "answer_motherduck_with_kg",
+                    "question": question_text,
+                    "answer": clean_answer,
+                    "answer_file": answer_file,
+                    "sources": sources,
+                    "judge_overall_score": str(llm_judge.get("overall_score", ""))
+                    if llm_judge
+                    else "",
+                    "judge_accuracy": str(llm_judge.get("component_scores", {}).get("accuracy", ""))
+                    if llm_judge
+                    else "",
+                    "judge_completeness": str(
+                        llm_judge.get("component_scores", {}).get("completeness", "")
+                    )
+                    if llm_judge
+                    else "",
+                    "judge_relevance": str(
+                        llm_judge.get("component_scores", {}).get("relevance", "")
+                    )
+                    if llm_judge
+                    else "",
+                    "judge_clarity": str(llm_judge.get("component_scores", {}).get("clarity", ""))
+                    if llm_judge
+                    else "",
+                    "judge_feedback": llm_judge.get("feedback", "")
+                    .replace("\n", " ")
+                    .replace("|", "\\|")
+                    if llm_judge
+                    else "",
+                    "tokens_used": str(token_usage.get("total_tokens", "")) if token_usage else "",
+                    "duration_seconds": str(token_usage.get("duration_seconds", ""))
+                    if token_usage
+                    else "",
+                }
+            )
+
+        # Process without_kg scenario
+        without_entry = without_entries.get(question_id)
+        if without_entry:
+            # Read answer file if specified
+            answer_text = without_entry.get("answer", "")
+            answer_file = without_entry.get("answer_file", "")
+            if answer_file:
+                answer_path = Path(answer_file)
+                if answer_path.exists():
+                    with open(answer_path) as f:
+                        answer_text = f.read()
+
+            # Extract sources for without_kg
+            sources = extract_sources_from_answer(answer_text, "answer_motherduck_without_kg")
+
+            # Clean answer for CSV (same as above)
+            clean_answer = answer_text
+            if "## Sources" in clean_answer:
+                clean_answer = clean_answer.split("## Sources")[0]
+            if "## Metadata" in clean_answer:
+                clean_answer = clean_answer.split("## Metadata")[0]
+
+            clean_answer = re.sub(r"^#\s*Answer\s*\n+", "", clean_answer, flags=re.MULTILINE)
+            clean_answer = re.sub(r"^#+\s+", "", clean_answer, flags=re.MULTILINE)
+            clean_answer = re.sub(r"\n#+\s+", " ", clean_answer)
+            clean_answer = re.sub(r"\*\*(.*?)\*\*", r"\1", clean_answer)
+            clean_answer = re.sub(r"\*(.*?)\*", r"\1", clean_answer)
+            clean_answer = re.sub(r"```[\s\S]*?```", "", clean_answer)
+            clean_answer = re.sub(r"`([^`]+)`", r"\1", clean_answer)
+            clean_answer = re.sub(r"^\s*[-*+]\s+", "• ", clean_answer, flags=re.MULTILINE)
+            clean_answer = re.sub(r"^\s*\d+\.\s+", "", clean_answer, flags=re.MULTILINE)
+            clean_answer = re.sub(r"\n\s*\n", " ", clean_answer)
+            clean_answer = re.sub(r"\n", " ", clean_answer)
+            clean_answer = re.sub(r"\s+", " ", clean_answer)
+            clean_answer = clean_answer.strip()
+            clean_answer = clean_answer.replace("|", "\\|")
+
+            if len(clean_answer) > 500:
+                clean_answer = clean_answer[:497] + "..."
+
+            llm_judge = without_entry.get("llm_judge", {})
+            token_usage = without_entry.get("token_usage", {})
+
+            csv_rows.append(
+                {
+                    "question_num": idx,
+                    "scenario": "answer_motherduck_without_kg",
+                    "question": question_text,
+                    "answer": clean_answer,
+                    "answer_file": answer_file,
+                    "sources": sources,
+                    "judge_overall_score": str(llm_judge.get("overall_score", ""))
+                    if llm_judge
+                    else "",
+                    "judge_accuracy": str(llm_judge.get("component_scores", {}).get("accuracy", ""))
+                    if llm_judge
+                    else "",
+                    "judge_completeness": str(
+                        llm_judge.get("component_scores", {}).get("completeness", "")
+                    )
+                    if llm_judge
+                    else "",
+                    "judge_relevance": str(
+                        llm_judge.get("component_scores", {}).get("relevance", "")
+                    )
+                    if llm_judge
+                    else "",
+                    "judge_clarity": str(llm_judge.get("component_scores", {}).get("clarity", ""))
+                    if llm_judge
+                    else "",
+                    "judge_feedback": llm_judge.get("feedback", "")
+                    .replace("\n", " ")
+                    .replace("|", "\\|")
+                    if llm_judge
+                    else "",
+                    "tokens_used": str(token_usage.get("total_tokens", "")) if token_usage else "",
+                    "duration_seconds": str(token_usage.get("duration_seconds", ""))
+                    if token_usage
+                    else "",
+                }
+            )
+
+    # Sort by question number, then by scenario name
+    csv_rows.sort(key=lambda x: (x["question_num"], x["scenario"]))
+
+    # Calculate source deltas
+    source_deltas = {}
+    for row in csv_rows:
+        q_num = row["question_num"]
+        scenario = row["scenario"]
+
+        if q_num not in source_deltas:
+            source_deltas[q_num] = {}
+
+        source_deltas[q_num][scenario] = row["sources"]
+
+    # Add delta information to results
+    for row in csv_rows:
+        q_num = row["question_num"]
+        q_sources = source_deltas.get(q_num, {})
+
+        with_kg_sources = q_sources.get("answer_motherduck_with_kg", "")
+        without_kg_sources = q_sources.get("answer_motherduck_without_kg", "")
+
+        if with_kg_sources and without_kg_sources:
+            row["source_delta"] = calculate_source_overlap(with_kg_sources, without_kg_sources)
+        else:
+            row["source_delta"] = "N/A"
+
+    # Write CSV with pipe delimiter
+    csv_path = output.parent / "scenario_comparison.csv"
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f, delimiter="|")
+
+        # Write header
+        header = [
+            "Question #",
+            "Scenario",
+            "Question Text",
+            "Answer",
+            "Answer File",
+            "Sources",
+            "Source Delta",
+            "Judge Overall Score",
+            "Judge Accuracy",
+            "Judge Completeness",
+            "Judge Relevance",
+            "Judge Clarity",
+            "Judge Feedback",
+            "Tokens Used",
+            "Duration (seconds)",
+        ]
+        writer.writerow(header)
+
+        # Write data rows
+        for row in csv_rows:
+            csv_row = [
+                str(row["question_num"]),
+                row["scenario"],
+                row["question"],
+                row["answer"],
+                row.get("answer_file", ""),
+                row["sources"],
+                row.get("source_delta", ""),
+                row["judge_overall_score"],
+                row["judge_accuracy"],
+                row["judge_completeness"],
+                row["judge_relevance"],
+                row["judge_clarity"],
+                row["judge_feedback"],
+                row["tokens_used"],
+                row["duration_seconds"],
+            ]
+            writer.writerow(csv_row)
+
+    print(f"📊 CSV report written to {csv_path}")
+
+    # Generate original markdown report
     report_lines: List[str] = []
     report_lines.append("# GraphRAG vs Vector-only Comparison\n")
     report_lines.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
