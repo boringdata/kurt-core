@@ -13,6 +13,7 @@ from kurt.admin.telemetry.decorators import track_command
 from kurt.commands.admin import admin
 from kurt.commands.answer import answer
 from kurt.commands.content import content
+from kurt.commands.context import context
 from kurt.commands.integrations import integrations
 from kurt.commands.status import status
 from kurt.commands.workflows import workflows_group
@@ -348,6 +349,7 @@ main.add_command(admin)
 main.add_command(status)
 main.add_command(workflows_group, name="workflows")
 main.add_command(answer)
+main.add_command(context)
 
 
 if __name__ == "__main__":

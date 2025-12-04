@@ -1,212 +1,234 @@
-"""Metrics collection for scenario evaluation.
+"""
+Metrics collection and reporting for the evaluation framework.
 
-Collects data about tool usage, file operations, database state, and performance.
+This module provides functionality for:
+- Collecting runtime metrics (tokens, timing, etc.)
+- Saving evaluation results
+- Tracking conversation turns and tool usage
 """
 
 import csv
+import fcntl
 import json
+import os
 import re
+import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+
+# Make anthropic import optional - only needed for judge_answer function
+try:
+    import anthropic
+except ImportError:
+    anthropic = None
 
 
-class MetricsCollector:
-    """Collects metrics during scenario execution.
-
-    Tracks:
-    - Tool usage (types and counts)
-    - Conversation turns
-    - Timing information
-    - File operations
-
-    Example:
-        >>> collector = MetricsCollector()
-        >>> collector.record_tool_use("bash", {"command": "kurt init"})
-        >>> collector.record_turn("user", "Initialize project")
-        >>> metrics = collector.get_metrics()
-    """
-
-    def __init__(self):
-        self.tool_calls: List[Dict[str, Any]] = []
-        self.conversation: List[Dict[str, Any]] = []
-        self.start_time: datetime = datetime.now()
-        self.end_time: datetime | None = None
-        self.total_tokens: int = 0
-        self.total_cost_usd: float | None = None
-
-    def record_tool_use(self, tool_name: str, parameters: Dict[str, Any]):
-        """Record a tool invocation.
-
-        Args:
-            tool_name: Name of the tool
-            parameters: Tool parameters
-        """
-        self.tool_calls.append(
-            {
-                "tool": tool_name.lower(),
-                "parameters": parameters,
-                "timestamp": datetime.now().isoformat(),
-            }
-        )
-
-    def record_turn(self, speaker: str, message: str):
-        """Record a conversation turn.
-
-        Args:
-            speaker: Who is speaking ('user' or 'agent')
-            message: The message content
-        """
-        self.conversation.append(
-            {
-                "speaker": speaker,
-                "message": message,
-                "timestamp": datetime.now().isoformat(),
-            }
-        )
-
-    def finish(self):
-        """Mark the scenario as finished."""
-        self.end_time = datetime.now()
-
-    def record_usage(self, tokens: int, cost_usd: float | None = None):
-        """Record token usage and cost.
-
-        Args:
-            tokens: Total tokens used
-            cost_usd: Total cost in USD (optional)
-        """
-        self.total_tokens = tokens
-        self.total_cost_usd = cost_usd
-
-    def get_tool_usage_summary(self) -> Dict[str, int]:
-        """Get summary of tool usage.
-
-        Returns:
-            Dictionary mapping tool names to usage counts
-        """
-        summary: Dict[str, int] = {}
-        for call in self.tool_calls:
-            tool = call["tool"]
-            summary[tool] = summary.get(tool, 0) + 1
-        return summary
-
-    def get_metrics(self) -> Dict[str, Any]:
-        """Get all collected metrics.
-
-        Returns:
-            Dictionary with all metrics
-        """
-        duration = None
-        if self.end_time:
-            duration = (self.end_time - self.start_time).total_seconds()
-
-        metrics = {
-            "tool_usage": self.get_tool_usage_summary(),
-            "tool_calls": self.tool_calls,
-            "conversation": self.conversation,
-            "timing": {
-                "start": self.start_time.isoformat(),
-                "end": self.end_time.isoformat() if self.end_time else None,
-                "duration_seconds": duration,
-            },
-            "counts": {
-                "total_tools": len(self.tool_calls),
-                "conversation_turns": len(self.conversation),
-            },
-        }
-
-        # Add usage data if available (including 0 tokens for cached responses)
-        if self.total_tokens >= 0 or self.total_cost_usd is not None:
-            metrics["usage"] = {
-                "total_tokens": self.total_tokens,
-                "total_cost_usd": self.total_cost_usd,
-            }
-
-        return metrics
-
-
-def collect_metrics(workspace: Any) -> Dict[str, Any]:
-    """Collect metrics from a workspace after scenario execution.
+def collect_metrics(workspace) -> Dict[str, Any]:
+    """Collect metrics from an IsolatedWorkspace.
 
     Args:
-        workspace: IsolatedWorkspace instance
+        workspace: The workspace to collect metrics from
 
     Returns:
-        Dictionary with collected metrics
+        Dictionary of collected metrics
     """
-    metrics = {
-        "files": {
-            "config_exists": workspace.file_exists("kurt.config"),
-            "db_exists": workspace.file_exists(".kurt/kurt.sqlite"),
-            "sources_count": workspace.count_files("sources/**/*.md"),
-            "projects_count": workspace.count_files("projects/*/project.md"),
-        },
-        "database": {},
-    }
+    # Basic implementation to collect workspace state
+    metrics = {}
 
-    # Try to collect database metrics
-    if workspace.file_exists(".kurt/kurt.sqlite"):
-        try:
-            metrics["database"] = {
-                "total_documents": workspace.query_db("SELECT COUNT(*) FROM documents") or 0,
-                "fetched_documents": workspace.query_db(
-                    "SELECT COUNT(*) FROM documents WHERE ingestion_status='FETCHED'"
-                )
-                or 0,
-                "not_fetched_documents": workspace.query_db(
-                    "SELECT COUNT(*) FROM documents WHERE ingestion_status='NOT_FETCHED'"
-                )
-                or 0,
-            }
-        except Exception as e:
-            metrics["database"]["error"] = str(e)
+    # Collect command outputs if available
+    if hasattr(workspace, "command_outputs"):
+        metrics["command_outputs"] = workspace.command_outputs
 
+    # Collect any files that were created
+    if hasattr(workspace, "files_created"):
+        metrics["files_created"] = workspace.files_created
+
+    # Add more metrics as needed
     return metrics
 
 
-def extract_sources_from_answer(answer_text: str) -> List[str]:
-    """Extract source file paths from answer markdown."""
-    sources = []
-    if "## Sources" in answer_text:
-        sources_section = answer_text.split("## Sources")[1]
-        patterns = [
-            r"^\s*-\s*\.kurt/sources/[^\s\)]+",  # Direct path format
-            r"path:\s*\.kurt/sources/[^\s\)]+",  # Path in parentheses format
-        ]
-        for line in sources_section.split("\n"):
-            for pattern in patterns:
-                match = re.search(pattern, line)
-                if match:
-                    path = match.group(0).replace("path:", "").strip()
-                    # Remove leading dash and whitespace if present
-                    path = path.lstrip("- ").strip()
-                    if path not in sources:
-                        sources.append(path)
-                    break
-    return sources
+class MetricsCollector:
+    """Collects and aggregates metrics during evaluation runs."""
+
+    def __init__(self):
+        self.metrics = {
+            "usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+            "timing": {"start_time": None, "end_time": None, "duration_seconds": 0},
+            "conversation_turns": 0,
+            "tool_calls": [],
+        }
+        self.conversation = []
+
+    def start_timing(self):
+        """Start timing the evaluation."""
+        self.metrics["timing"]["start_time"] = time.time()
+
+    def end_timing(self):
+        """End timing and calculate duration."""
+        if self.metrics["timing"]["start_time"]:
+            self.metrics["timing"]["end_time"] = time.time()
+            self.metrics["timing"]["duration_seconds"] = (
+                self.metrics["timing"]["end_time"] - self.metrics["timing"]["start_time"]
+            )
+
+    def add_usage(self, usage_data):
+        """Add token usage data."""
+        if usage_data:
+            for key in ["input_tokens", "output_tokens"]:
+                if key in usage_data:
+                    self.metrics["usage"][key] += usage_data[key]
+            self.metrics["usage"]["total_tokens"] = (
+                self.metrics["usage"]["input_tokens"] + self.metrics["usage"]["output_tokens"]
+            )
+
+    def add_conversation_turn(self, turn_data):
+        """Track a conversation turn.
+
+        Args:
+            turn_data: Either a dict with 'role' and 'content'/'message' keys,
+                      or a single parameter that will be treated as a message dict
+        """
+        self.metrics["conversation_turns"] += 1
+
+        # Handle dict with role and content/message
+        if isinstance(turn_data, dict):
+            role = turn_data.get("role", "unknown")
+            message = turn_data.get("content") or turn_data.get("message", "")
+            self.conversation.append({"role": role, "message": message})
+        else:
+            # Backward compatibility - if called with old signature
+            self.conversation.append(turn_data)
+
+    def add_tool_call(self, tool_name: str, params: dict):
+        """Track a tool call."""
+        self.metrics["tool_calls"].append({"tool": tool_name, "params": params})
+
+    def get_metrics(self) -> Dict[str, Any]:
+        """Get the collected metrics."""
+        return self.metrics
+
+    def get_conversation(self) -> List[Dict[str, Any]]:
+        """Get the conversation history."""
+        return self.conversation
 
 
-def update_comparison_csv(
-    scenario_dir: Path,
+def save_results(
     scenario_name: str,
-    question_num: int,
-    question: str,
-    answer_text: str,
-    llm_judge: Dict[str, Any] | None,
-    tokens_used: int | None,
-    duration: float | None,
+    run_metrics: Dict[str, Any],
+    workspace_metrics: Dict[str, Any],
+    output_dir: Path,
+    passed: bool = True,
+    error: Optional[str] = None,
+    command_outputs: Optional[List[Dict]] = None,
+    conversational: bool = False,
+    filename_prefix: Optional[str] = None,
+    raw_transcript: Optional[Any] = None,
+    timestamp: Optional[str] = None,
 ):
-    """Update or create the comparison CSV file with results from all scenarios."""
-    comparison_csv = scenario_dir.parent / "scenario_comparison.csv"
+    """Save evaluation results to files.
 
-    # Read existing data if file exists
+    Args:
+        scenario_name: Name of the scenario being evaluated
+        run_metrics: Metrics from the evaluation run
+        workspace_metrics: Metrics from the workspace (command outputs, etc.)
+        output_dir: Directory to save results
+        passed: Whether the scenario passed
+        error: Error message if failed
+        command_outputs: List of command outputs for non-conversational scenarios
+        conversational: Whether this is a conversational scenario
+        filename_prefix: Optional prefix for the filename (e.g., 'q1' for question 1)
+        raw_transcript: Raw conversation transcript for conversational scenarios
+    """
+    # Ensure output directory exists
+    scenario_dir = output_dir / scenario_name
+    scenario_dir.mkdir(parents=True, exist_ok=True)
+
+    # Use provided timestamp or generate a new one
+    if timestamp is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    base_filename = f"{filename_prefix}_{timestamp}" if filename_prefix else timestamp
+
+    # Save JSON results
+    json_path = scenario_dir / f"{base_filename}.json"
+    try:
+        with open(json_path, "w") as f:
+            json.dump(
+                {
+                    "scenario": scenario_name,
+                    "passed": passed,
+                    "error": error,
+                    "metrics": run_metrics,
+                    "workspace": workspace_metrics,
+                    "timestamp": timestamp,
+                },
+                f,
+                indent=2,
+            )
+        print(f"📊 Metrics saved: {json_path}")
+    except Exception as e:
+        print(f"❌ ERROR saving JSON: {e}")
+        import traceback
+
+        traceback.print_exc()
+
+    # Save transcript based on scenario type
+    if conversational:
+        # Handle conversational scenarios with raw transcript
+        _save_raw_transcript(
+            scenario_dir / f"{base_filename}.md",
+            scenario_name,
+            raw_transcript,
+            passed,
+            run_metrics,
+        )
+    else:
+        # Handle non-conversational scenarios with command outputs
+        _save_command_outputs(
+            scenario_dir / f"{base_filename}.md",
+            scenario_name,
+            command_outputs or [],
+            passed,
+            run_metrics,
+        )
+
+
+def update_csv_results(
+    csv_path: Path,
+    scenario_name: str,
+    question: str,
+    question_num: str,
+    answer_text: str,
+    llm_judge: Optional[Dict[str, Any]] = None,
+    tokens_used: Optional[int] = None,
+    duration: Optional[float] = None,
+):
+    """Update the CSV file with results for a specific question.
+
+    Args:
+        csv_path: Path to the CSV file
+        scenario_name: Name of the scenario
+        question: The question text
+        question_num: The question number (e.g., "Q1")
+        answer_text: The answer text
+        llm_judge: LLM judge results (optional)
+        tokens_used: Total tokens used (optional)
+        duration: Duration in seconds (optional)
+    """
+    # Read existing data
     existing_data = {}
-    if comparison_csv.exists():
-        with open(comparison_csv, "r", encoding="utf-8") as f:
+    headers = set(["Question #", "Question Text"])
+
+    if csv_path.exists():
+        with open(csv_path, "r", encoding="utf-8") as f:
             reader = csv.DictReader(f, delimiter="|")
+            if reader.fieldnames:
+                headers.update(reader.fieldnames)
             for row in reader:
-                q_num = int(row["Question #"].strip())
+                q_num = row.get("Question #", "").strip()
+                if q_num:
+                    # Ensure we have all columns from this row
+                    headers.update(row.keys())
                 if q_num not in existing_data:
                     existing_data[q_num] = {"Question Text": row.get("Question Text", "").strip()}
                 # Store all scenario-specific columns
@@ -259,271 +281,257 @@ def update_comparison_csv(
         str(duration) if duration else ""
     )
 
-    # Determine all columns needed
-    all_scenarios = {scenario_name}  # Always include the current scenario
+    # Update headers with new columns
+    headers.add(f"{scenario_name}_answer")
+    headers.add(f"{scenario_name}_sources")
+    headers.add(f"{scenario_name}_judge_overall_score")
+    headers.add(f"{scenario_name}_judge_accuracy_score")
+    headers.add(f"{scenario_name}_judge_completeness_score")
+    headers.add(f"{scenario_name}_judge_relevance_score")
+    headers.add(f"{scenario_name}_judge_clarity_score")
+    headers.add(f"{scenario_name}_judge_feedback")
+    headers.add(f"{scenario_name}_tokens_used")
+    headers.add(f"{scenario_name}_duration_seconds")
 
-    # Extract scenario names from existing columns
-    # Look for patterns ending with _answer, _sources, etc.
-    for q_data in existing_data.values():
-        for key in q_data.keys():
-            if key not in ["Question #", "Question Text"]:
-                # Check for known column suffixes
-                for suffix in [
-                    "_answer",
-                    "_sources",
-                    "_judge_overall_score",
-                    "_tokens_used",
-                    "_duration_seconds",
-                ]:
-                    if key.endswith(suffix):
-                        scenario = key[: -len(suffix)]
-                        if scenario:
-                            all_scenarios.add(scenario)
-                        break
+    # Define header order
+    ordered_headers = ["Question #", "Question Text"]
+    scenario_columns = sorted([h for h in headers if h not in ordered_headers])
+    ordered_headers.extend(scenario_columns)
 
-    # Build header
-    header = ["Question #", "Question Text"]
-    for scenario in sorted(all_scenarios):
-        header.extend(
-            [
-                f"{scenario}_answer",
-                f"{scenario}_sources",
-                f"{scenario}_judge_overall_score",
-                f"{scenario}_judge_accuracy_score",
-                f"{scenario}_judge_completeness_score",
-                f"{scenario}_judge_relevance_score",
-                f"{scenario}_judge_clarity_score",
-                f"{scenario}_judge_feedback",
-                f"{scenario}_tokens_used",
-                f"{scenario}_duration_seconds",
-            ]
-        )
+    # Write back to CSV with file locking for concurrency safety
+    # Use a temporary file and atomic rename to prevent corruption
+    temp_path = csv_path.with_suffix(".tmp")
 
-    # Write CSV with pipe delimiter
-    with open(comparison_csv, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f, delimiter="|")
-        writer.writerow(header)
+    with open(temp_path, "w", encoding="utf-8", newline="") as f:
+        # Try to acquire exclusive lock (non-blocking on Unix, ignored on Windows)
+        try:
+            if hasattr(fcntl, "flock"):  # Unix/Linux/Mac
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except (AttributeError, IOError):
+            # Windows or lock failed - proceed anyway but log warning
+            pass
 
-        for q_num in sorted(existing_data.keys()):
-            row = [str(q_num), existing_data[q_num].get("Question Text", "")]
-            for col in header[2:]:  # Skip Question # and Question Text
-                row.append(existing_data[q_num].get(col, ""))
+        writer = csv.DictWriter(f, fieldnames=ordered_headers, delimiter="|")
+        writer.writeheader()
+        for q_num in sorted(
+            existing_data.keys(), key=lambda x: int(x[1:]) if x.startswith("Q") else 999
+        ):
+            row = {"Question #": q_num}
+            row.update(existing_data[q_num])
+            # Ensure all fields have values (empty string if missing)
+            for field in ordered_headers:
+                if field not in row:
+                    row[field] = ""
             writer.writerow(row)
 
+    # Atomic rename (works on Unix, best-effort on Windows)
+    try:
+        os.replace(temp_path, csv_path)
+    except OSError:
+        # Fallback for Windows where replace might fail if file is in use
+        import shutil
 
-def save_results(
-    scenario_name: str,
-    run_metrics: Dict[str, Any],
-    workspace_metrics: Dict[str, Any],
-    output_dir: Path,
-    passed: bool,
-    error: str | None = None,
-    raw_transcript: list | None = None,
-    command_outputs: list | None = None,
-    conversational: bool = True,
-    filename_prefix: str | None = None,
-):
-    """Save scenario results to JSON and transcript to Markdown.
+        shutil.move(temp_path, csv_path)
 
-    Also automatically generates training data for DSPy optimization.
+
+def extract_sources_from_answer(answer: str) -> List[str]:
+    """Extract sources from the answer text.
 
     Args:
-        scenario_name: Name of the scenario
-        run_metrics: Metrics from the scenario run (tools, conversation, timing)
-        workspace_metrics: Metrics from workspace inspection (files, db)
-        output_dir: Directory to save results
-        passed: Whether all assertions passed
-        error: Error message if scenario failed
-        raw_transcript: Raw terminal output (for conversational scenarios)
-        command_outputs: Command outputs (for non-conversational scenarios)
-        conversational: Whether this is a conversational scenario
-        filename_prefix: Optional prefix for result filenames (e.g., question id)
-    """
-    # Create scenario-specific folder
-    scenario_dir = output_dir / scenario_name
-    scenario_dir.mkdir(parents=True, exist_ok=True)
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    base_name = f"{filename_prefix + '_' if filename_prefix else ''}{timestamp}"
-    json_filename = f"{base_name}.json"
-    json_filepath = scenario_dir / json_filename
-
-    md_filename = f"{base_name}.md"
-    md_filepath = scenario_dir / md_filename
-
-    # Extract LLM judge metrics from command outputs if available
-    llm_judge_metrics = _extract_llm_judge_metrics(command_outputs)
-
-    results = {
-        "scenario": scenario_name,
-        "timestamp": datetime.now().isoformat(),
-        "passed": passed,
-        "error": error,
-        "run_metrics": run_metrics,
-        "workspace_metrics": workspace_metrics,
-    }
-
-    # Add LLM judge metrics if available
-    if llm_judge_metrics:
-        results["llm_judge_metrics"] = llm_judge_metrics
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # Save JSON (metadata and metrics only)
-    with open(json_filepath, "w") as f:
-        json.dump(results, f, indent=2)
-
-    # Generate CSV for question-based scenarios
-    if command_outputs and not conversational:
-        for cmd_output in command_outputs:
-            if "question" in cmd_output and "answer_file" in cmd_output:
-                # Extract question number from command (e.g., "question:q1")
-                cmd = cmd_output.get("command", "")
-                if "question:q" in cmd:
-                    try:
-                        q_num_str = cmd.split("question:q")[1].split()[0]
-                        question_num = int(q_num_str)
-
-                        # Read answer file content
-                        answer_file = cmd_output.get("answer_file", "")
-                        answer_text = ""
-                        if answer_file and Path(answer_file).exists():
-                            with open(answer_file, "r") as f:
-                                answer_text = f.read()
-
-                        # Extract question and judge info
-                        question = cmd_output.get("question", "")
-                        llm_judge = cmd_output.get("llm_judge")
-                        tokens = cmd_output.get("token_usage", {}).get("total_tokens")
-                        duration = cmd_output.get("token_usage", {}).get("duration_seconds")
-
-                        # Update comparison CSV
-                        update_comparison_csv(
-                            scenario_dir=scenario_dir,
-                            scenario_name=scenario_name,
-                            question_num=question_num,
-                            question=question,
-                            answer_text=answer_text,
-                            llm_judge=llm_judge,
-                            tokens_used=tokens,
-                            duration=duration,
-                        )
-                    except (ValueError, IndexError):
-                        pass  # Skip if we can't parse question number
-
-    # Save transcript as markdown
-    if conversational and raw_transcript:
-        # Conversational mode: use raw terminal transcript
-        _save_raw_transcript(md_filepath, scenario_name, raw_transcript, passed, run_metrics)
-        print(f"📊 Metrics saved: {json_filepath}")
-        print(f"📝 Transcript saved: {md_filepath}")
-    elif not conversational and command_outputs:
-        # Non-conversational mode: use command outputs
-        _save_command_outputs(md_filepath, scenario_name, command_outputs, passed, run_metrics)
-        print(f"📊 Metrics saved: {json_filepath}")
-        print(f"📝 Command outputs saved: {md_filepath}")
-    else:
-        print(f"📊 Metrics saved: {json_filepath}")
-        print("⚠️  No transcript/outputs available")
-
-    # Generate training data for DSPy optimization (DISABLED)
-    # try:
-    #     from .training_data import save_training_data
-
-    #     training_dir = output_dir.parent / "training_data"
-    #     training_file = save_training_data(
-    #         scenario_name=scenario_name,
-    #         run_metrics=run_metrics,
-    #         workspace_metrics=workspace_metrics,
-    #         training_dir=training_dir,
-    #         passed=passed,
-    #         error=error,
-    #     )
-    #     print(f"🎓 Training data saved: {training_file}")
-    # except Exception as e:
-    #     print(f"⚠️  Failed to save training data: {e}")
-
-    return json_filepath
-
-
-def _extract_llm_judge_metrics(command_outputs: list | None) -> Dict[str, Any] | None:
-    """Extract LLM judge metrics from command outputs.
-
-    Args:
-        command_outputs: List of command output dictionaries
+        answer: The answer text
 
     Returns:
-        Dictionary with LLM judge metrics or None if not available
+        List of source references found in the answer
     """
-    if not command_outputs:
+    sources = []
+
+    # Pattern for numbered sources like [1], [2], etc.
+    numbered_pattern = r"\[(\d+)\]"
+    numbered_matches = re.findall(numbered_pattern, answer)
+    for match in numbered_matches:
+        sources.append(f"[{match}]")
+
+    # Pattern for doc references like [doc:filename]
+    doc_pattern = r"\[doc:([^\]]+)\]"
+    doc_matches = re.findall(doc_pattern, answer)
+    for match in doc_matches:
+        sources.append(f"[doc:{match}]")
+
+    # Pattern for Source: lines
+    source_line_pattern = r"Source:\s*(.+)$"
+    source_lines = re.findall(source_line_pattern, answer, re.MULTILINE)
+    sources.extend(source_lines)
+
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_sources = []
+    for source in sources:
+        if source not in seen:
+            seen.add(source)
+            unique_sources.append(source)
+
+    return unique_sources
+
+
+def _extract_answer_from_conversation(raw_transcript) -> Optional[str]:
+    """Extract the final answer from a conversation transcript.
+
+    Args:
+        raw_transcript: The raw conversation data (can be a list or Claude conversation object)
+
+    Returns:
+        The extracted answer text or None if no answer found
+    """
+    if not raw_transcript:
         return None
 
-    test_cases = []
-    overall_scores = []
+    answer_text = None
 
-    for cmd_output in command_outputs:
-        llm_judge = cmd_output.get("llm_judge")
-        if llm_judge:
-            question = cmd_output.get("question", "")
-            test_case_result = {
-                "question": question,
-                "overall_score": llm_judge["overall_score"],
-                "component_scores": llm_judge["component_scores"],
-                "feedback": llm_judge["feedback"],
-            }
-            test_cases.append(test_case_result)
-            overall_scores.append(llm_judge["overall_score"])
+    # Handle different transcript formats
+    if hasattr(raw_transcript, "turns"):
+        # Claude conversation object - get last assistant message
+        for turn in reversed(raw_transcript.turns):
+            if turn.role == "assistant":
+                answer_text = turn.content
+                break
+    elif isinstance(raw_transcript, list):
+        # List of message dictionaries - get last assistant message
+        for msg in reversed(raw_transcript):
+            if msg.get("role") == "assistant":
+                answer_text = msg.get("message") or msg.get("content", "")
+                break
+    elif isinstance(raw_transcript, str):
+        # Plain string transcript - return as is
+        answer_text = raw_transcript
 
-    if not test_cases:
-        return None
+    return answer_text
 
-    # Calculate average score across all test cases
-    average_score = sum(overall_scores) / len(overall_scores) if overall_scores else 0.0
 
-    return {
-        "test_cases": test_cases,
-        "summary": {
-            "average_score": round(average_score, 2),
-            "num_test_cases": len(test_cases),
-            "passed": average_score >= 0.7,  # Default threshold
-        },
-    }
+def format_conversation_transcript(raw_transcript) -> str:
+    """Format a raw conversation transcript for display.
+
+    Args:
+        raw_transcript: The raw conversation data (can be a list of console output lines,
+                       conversation turns, or Claude conversation object)
+
+    Returns:
+        Formatted transcript string
+    """
+    if not raw_transcript:
+        return "No conversation data available.\n"
+
+    # Check if this is a list of console output lines (strings)
+    if isinstance(raw_transcript, list) and raw_transcript and isinstance(raw_transcript[0], str):
+        # It's console output - just join the lines
+        return "\n".join(raw_transcript) + "\n"
+
+    formatted = []
+
+    # Handle different transcript formats
+    if hasattr(raw_transcript, "turns"):
+        # Claude conversation object
+        for turn in raw_transcript.turns:
+            if turn.role == "user":
+                formatted.append(f"## User\n{turn.content}\n")
+            elif turn.role == "assistant":
+                formatted.append(f"## Assistant\n{turn.content}\n")
+                # Include tool calls if present
+                if hasattr(turn, "tool_calls") and turn.tool_calls:
+                    for tool_call in turn.tool_calls:
+                        formatted.append(f"\n**Tool Call**: {tool_call.tool}")
+                        formatted.append(
+                            f"```json\n{json.dumps(tool_call.params, indent=2)}\n```\n"
+                        )
+    elif isinstance(raw_transcript, list):
+        # List of message dictionaries
+        for msg in raw_transcript:
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+            if role == "user":
+                formatted.append(f"## User\n{content}\n")
+            elif role == "assistant":
+                formatted.append(f"## Assistant\n{content}\n")
+    elif isinstance(raw_transcript, str):
+        # Plain string transcript
+        formatted.append(raw_transcript)
+    else:
+        # Try to convert to string
+        formatted.append(str(raw_transcript))
+
+    return "\n".join(formatted)
 
 
 def _save_raw_transcript(
     filepath: Path,
     scenario_name: str,
-    raw_transcript: list,
+    raw_transcript: Optional[Any],
     passed: bool,
     run_metrics: Dict[str, Any],
 ):
-    """Save the raw terminal output from the scenario execution.
+    """Save raw transcript for conversational scenarios.
 
     Args:
-        filepath: Path to save the raw transcript
+        filepath: Path to save the transcript
         scenario_name: Name of the scenario
-        raw_transcript: List of strings (console output lines)
+        raw_transcript: Raw conversation transcript
         passed: Whether the scenario passed
+        run_metrics: Metrics from the run
     """
-    with open(filepath, "w") as f:
-        status = "✅ PASSED" if passed else "❌ FAILED"
-        f.write(f"# Raw Transcript: {scenario_name}\n\n")
-        f.write(f"**Status**: {status}\n\n")
+    # Create transcript file with proper naming
+    transcript_path = filepath.parent / filepath.name.replace(".md", "_transcript.md")
+
+    with open(transcript_path, "w") as f:
+        f.write(f"# Conversation Transcript: {scenario_name}\n\n")
+        f.write(f"**Status**: {'✅ PASSED' if passed else '❌ FAILED'}\n")
+        f.write(f"**Generated**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+
+        # Add metrics if available
         if run_metrics:
             duration = run_metrics.get("timing", {}).get("duration_seconds")
-            tokens = run_metrics.get("usage", {}).get("total_tokens") if run_metrics else None
+            tokens = run_metrics.get("usage", {}).get("total_tokens")
             if duration is not None:
                 f.write(f"**Duration**: {duration:.2f} seconds\n")
             if tokens is not None:
                 f.write(f"**Tokens Used**: {tokens}\n")
             if duration is not None or tokens is not None:
                 f.write("\n")
-        f.write("```\n")
-        for line in raw_transcript:
-            f.write(line)
-            if not line.endswith("\n"):
+
+        f.write("---\n\n")
+        f.write("## Conversation\n\n")
+
+        # Format and write the transcript
+        formatted_transcript = format_conversation_transcript(raw_transcript)
+
+        # Only add code block wrapper if transcript is empty or plain text
+        if not formatted_transcript or formatted_transcript == "No conversation data available.\n":
+            f.write("*No conversation data captured.*\n")
+        elif not any(
+            marker in formatted_transcript for marker in ["## User", "## Assistant", "```"]
+        ):
+            f.write("```\n")
+            f.write(formatted_transcript)
+            if not formatted_transcript.endswith("\n"):
                 f.write("\n")
-        f.write("```\n")
+            f.write("```\n")
+        else:
+            f.write(formatted_transcript)
+            if not formatted_transcript.endswith("\n"):
+                f.write("\n")
+
+    print(f"📝 Transcript saved: {transcript_path}")
+
+    # Extract and save answer from conversation if available
+    if raw_transcript:
+        answer_content = _extract_answer_from_conversation(raw_transcript)
+        if answer_content:
+            answer_path = filepath.parent / filepath.name.replace(".md", "_answer.md")
+            with open(answer_path, "w") as af:
+                af.write("# Answer\n\n")
+                af.write("---\n\n")
+                af.write(answer_content)
+                if not answer_content.endswith("\n"):
+                    af.write("\n")
+            print(f"📝 Answer saved: {answer_path}")
 
 
 def _save_command_outputs(
@@ -541,143 +549,180 @@ def _save_command_outputs(
         command_outputs: List of command output dictionaries
         passed: Whether the scenario passed
     """
-    with open(filepath, "w") as f:
-        status = "✅ PASSED" if passed else "❌ FAILED"
-        f.write(f"# Evaluation Report: {scenario_name}\n\n")
-        f.write(f"**Status**: {status}\n\n")
-        if run_metrics:
-            duration = run_metrics.get("timing", {}).get("duration_seconds")
-            tokens = run_metrics.get("usage", {}).get("total_tokens")
-            if duration is not None:
-                f.write(f"**Duration**: {duration:.2f} seconds\n")
-            if tokens is not None:
-                f.write(f"**Tokens Used**: {tokens}\n")
-            if duration is not None or tokens is not None:
-                f.write("\n")
+    # Create a transcript file with full command output
+    transcript_path = filepath.parent / filepath.name.replace(".md", "_transcript.md")
+
+    # Note: We are NOT creating the main .md report file anymore - only transcript, answer, and json
+
+    # Save answer file if we have answer content in command outputs
+    answer_saved = False
+    for cmd_output in command_outputs:
+        if cmd_output.get("answer_file") and cmd_output.get("stdout") and not answer_saved:
+            answer_path = filepath.parent / filepath.name.replace(".md", "_answer.md")
+            with open(answer_path, "w") as af:
+                af.write("# Answer\n\n")
+                if cmd_output.get("question"):
+                    af.write(f"**Question**: {cmd_output.get('question')}\n\n")
+                af.write("---\n\n")
+                answer_content = cmd_output.get("stdout", "")
+                af.write(answer_content)
+                if not answer_content.endswith("\n"):
+                    af.write("\n")
+            answer_saved = True
+            print(f"📝 Answer saved: {answer_path}")
+
+    # Write the transcript file with full command outputs
+    with open(transcript_path, "w") as f:
+        f.write(f"# Full Command Transcript: {scenario_name}\n\n")
+        f.write(f"**Status**: {'✅ PASSED' if passed else '❌ FAILED'}\n")
+        f.write(f"**Generated**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
         f.write("---\n\n")
 
         if not command_outputs:
             f.write("*No commands were executed.*\n")
+            print(f"📝 Full transcript saved: {transcript_path}")
             return
 
-        # Check if we have test_cases structure (with questions)
-        has_test_cases = any(cmd_output.get("question") for cmd_output in command_outputs)
+        # Write all command outputs with full details
+        for cmd_output in command_outputs:
+            cmd = cmd_output.get("command", "")
+            index = cmd_output.get("index", 0)
+            question = cmd_output.get("question", "")
+            returncode = cmd_output.get("returncode")
+            stdout = cmd_output.get("stdout", "")
+            stderr = cmd_output.get("stderr", "")
+            error = cmd_output.get("error")
 
-        if has_test_cases:
-            # Group outputs by question
-            questions_map = {}
-            for cmd_output in command_outputs:
-                question = cmd_output.get("question", "")
-                if question:
-                    if question not in questions_map:
-                        questions_map[question] = []
-                    questions_map[question].append(cmd_output)
+            f.write("## Command Entry\n\n")
 
-            # Write each question and its answer
-            for question, outputs in questions_map.items():
-                f.write(f"## Question\n{question}\n\n")
+            if question:
+                f.write(f"**Question**: {question}\n\n")
 
-                # Find the answer in the outputs
-                llm_judge_result = None
-                for cmd_output in outputs:
-                    stdout = cmd_output.get("stdout", "").strip()
-                    # Check for answers in various formats
-                    has_answer = (
-                        "Answer:" in stdout
-                        or "answer:" in stdout.lower()
-                        or "# Answer" in stdout
-                        or "## Answer" in stdout
-                    )
-                    if stdout and has_answer:
-                        # Clean output: remove any "=== Generated results.md ===" type markers
-                        # and status lines like "✓ Answer written to:"
-                        lines = stdout.split("\n")
-                        cleaned_lines = [
-                            line
-                            for line in lines
-                            if not line.startswith("===")
-                            and not line.endswith("===")
-                            and not line.startswith("✓ Answer written to:")
-                        ]
-                        cleaned_output = "\n".join(cleaned_lines).strip()
-                        f.write(f"## Answer\n{cleaned_output}\n\n")
+            f.write(f"**Index**: {index}\n")
+            f.write(f"**Command**: `{cmd}`\n")
 
-                        # Check for LLM judge results
-                        llm_judge_result = cmd_output.get("llm_judge")
-                        break
+            if error:
+                f.write(f"**Error**: {error}\n")
+            elif returncode is not None:
+                f.write(f"**Return Code**: {returncode}\n")
 
-                # Write LLM judge evaluation if available
-                if llm_judge_result:
-                    f.write("## LLM Judge Evaluation\n\n")
-                    overall_score = llm_judge_result["overall_score"]
-                    component_scores = llm_judge_result["component_scores"]
-                    feedback = llm_judge_result["feedback"]
+            f.write("\n")
 
-                    f.write(f"**Overall Score**: {overall_score:.2f}\n\n")
-                    f.write("**Component Scores**:\n")
-                    for component, score in component_scores.items():
-                        f.write(f"  - {component.capitalize()}: {score:.2f}\n")
-                    f.write(f"\n**Feedback**: {feedback}\n\n")
+            if stdout:
+                f.write("### STDOUT\n\n")
+                f.write("```\n")
+                f.write(stdout)
+                if not stdout.endswith("\n"):
+                    f.write("\n")
+                f.write("```\n\n")
 
-                f.write("---\n\n")
+            if stderr:
+                f.write("### STDERR\n\n")
+                f.write("```\n")
+                f.write(stderr)
+                if not stderr.endswith("\n"):
+                    f.write("\n")
+                f.write("```\n\n")
 
+            f.write("---\n\n")
+
+    print(f"📝 Full transcript saved: {transcript_path}")
+
+
+def judge_answer(
+    question: str,
+    answer: str,
+    client: Any,  # anthropic.Client when available
+    expected_answer: Optional[str] = None,
+    grading_rubric: Optional[str] = None,
+    model: str = "claude-3-5-haiku-20241022",
+) -> Dict[str, Any]:
+    """Use an LLM to judge the quality of an answer.
+
+    Args:
+        question: The question that was asked
+        answer: The answer provided
+        client: Anthropic client for making API calls
+        expected_answer: Optional expected answer for comparison
+        grading_rubric: Optional custom grading rubric
+        model: Model to use for judging
+
+    Returns:
+        Dict containing overall score, component scores, and feedback
+    """
+    # Default rubric if none provided
+    default_rubric = """
+    Evaluate the answer on these dimensions (0-10 scale):
+    - Accuracy: Is the information correct and factual?
+    - Completeness: Does it fully address the question?
+    - Relevance: Is the content directly related to what was asked?
+    - Clarity: Is it well-written and easy to understand?
+
+    Overall score should be the weighted average of these components.
+    """
+
+    rubric = grading_rubric or default_rubric
+
+    prompt = f"""You are an expert evaluator. Please judge this answer to the given question.
+
+Question: {question}
+
+Answer provided:
+{answer}
+
+{f'Expected answer (for reference): {expected_answer}' if expected_answer else ''}
+
+{rubric}
+
+Provide your evaluation in this exact JSON format:
+{{
+    "overall_score": <float 0-10>,
+    "component_scores": {{
+        "accuracy": <float 0-10>,
+        "completeness": <float 0-10>,
+        "relevance": <float 0-10>,
+        "clarity": <float 0-10>
+    }},
+    "feedback": "<brief explanation of scores>"
+}}"""
+
+    try:
+        response = client.messages.create(
+            model=model,
+            max_tokens=500,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+        )
+
+        # Parse the JSON response
+        content = response.content[0].text
+        # Extract JSON from the response (it might have markdown formatting)
+        import re
+
+        json_match = re.search(r"\{.*\}", content, re.DOTALL)
+        if json_match:
+            result = json.loads(json_match.group())
+            return result
         else:
-            # Original behavior: try to extract the final result from post_scenario_commands output
-            final_output = None
-            for cmd_output in reversed(command_outputs):
-                stdout = cmd_output.get("stdout", "").strip()
-                if stdout and ("Answer:" in stdout or "answer:" in stdout.lower()):
-                    final_output = stdout
-                    break
-
-            if final_output:
-                # Clean output: remove any "=== Generated results.md ===" type markers
-                lines = final_output.split("\n")
-                cleaned_lines = [
-                    line
-                    for line in lines
-                    if not line.startswith("===") and not line.endswith("===")
-                ]
-                cleaned_output = "\n".join(cleaned_lines).strip()
-
-                # Write the cleaned result
-                f.write(f"{cleaned_output}\n\n")
-            else:
-                # Fallback: show all command outputs if we couldn't find a clean answer
-                f.write(f"Executed {len(command_outputs)} command(s):\n\n")
-
-                for cmd_output in command_outputs:
-                    cmd = cmd_output.get("command", "")
-                    index = cmd_output.get("index", 0)
-                    returncode = cmd_output.get("returncode")
-                    stdout = cmd_output.get("stdout", "")
-                    stderr = cmd_output.get("stderr", "")
-                    error = cmd_output.get("error")
-
-                    f.write("---\n\n")
-                    f.write(f"## Command {index}\n\n")
-                    f.write("```bash\n")
-                    f.write(f"{cmd}\n")
-                    f.write("```\n\n")
-
-                    if error:
-                        f.write(f"**Error**: {error}\n\n")
-                    elif returncode is not None:
-                        status_icon = "✅" if returncode == 0 else "❌"
-                        f.write(f"**Exit Code**: {status_icon} {returncode}\n\n")
-
-                    if stdout:
-                        f.write("**Standard Output**:\n\n")
-                        f.write("```\n")
-                        f.write(stdout)
-                        if not stdout.endswith("\n"):
-                            f.write("\n")
-                        f.write("```\n\n")
-
-                    if stderr:
-                        f.write("**Standard Error**:\n\n")
-                        f.write("```\n")
-                        f.write(stderr)
-                        if not stderr.endswith("\n"):
-                            f.write("\n")
-                        f.write("```\n\n")
+            # Fallback if parsing fails
+            return {
+                "overall_score": 5.0,
+                "component_scores": {
+                    "accuracy": 5.0,
+                    "completeness": 5.0,
+                    "relevance": 5.0,
+                    "clarity": 5.0,
+                },
+                "feedback": "Unable to parse judge response",
+            }
+    except Exception as e:
+        return {
+            "overall_score": 0.0,
+            "component_scores": {
+                "accuracy": 0.0,
+                "completeness": 0.0,
+                "relevance": 0.0,
+                "clarity": 0.0,
+            },
+            "feedback": f"Judge error: {str(e)}",
+        }

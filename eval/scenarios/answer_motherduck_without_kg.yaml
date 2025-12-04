@@ -46,5 +46,5 @@ question_set:
       path: "{answer_file}"
   llm_judge:
     enabled: true
-    provider: openai
+    provider: anthropic
   results_dir: eval/results/answer_motherduck_without_kg

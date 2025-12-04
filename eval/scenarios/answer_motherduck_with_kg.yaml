@@ -13,7 +13,7 @@ question_set:
       path: "{answer_file}"
   llm_judge:
     enabled: true
-    provider: openai
+    provider: anthropic
     weights:
       accuracy: 0.4
       completeness: 0.3

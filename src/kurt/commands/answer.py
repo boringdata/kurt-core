@@ -1,4 +1,4 @@
-"""Answer command - GraphRAG-based question answering."""
+"""Answer command - GraphRAG-based question answering (context retrieval + synthesis)."""
 
 import json
 
@@ -48,13 +48,19 @@ def _log_usage(token_usage: dict | None):
 )
 @track_command
 def answer(question: str, max_docs: int, output: str, verbose: bool, json_output: bool):
-    """Answer a question using GraphRAG retrieval from the knowledge graph.
+    """Answer a question using GraphRAG retrieval + LLM synthesis.
 
-    Uses local search strategy:
-    1. Find relevant entities via embedding similarity
-    2. Traverse relationships to expand context
-    3. Retrieve connected documents
-    4. Generate answer with citations
+    This command combines:
+    1. Context retrieval (same as 'kurt context'): Find relevant documents via KG
+    2. Synthesis: Generate comprehensive answer using LLM
+
+    The retrieval uses local search strategy:
+    - Find relevant entities via embedding similarity
+    - Traverse relationships to expand context
+    - Retrieve connected documents
+    - Pass context to LLM for answer generation
+
+    For just the context without synthesis, use 'kurt context' instead.
 
     Example:
         kurt answer "What is FastAPI?"

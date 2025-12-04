@@ -499,6 +499,10 @@ def generate_answer(question: str, context: RetrievedContext) -> AnswerResult:
 def answer_question(question: str, max_documents: int = 20) -> AnswerResult:
     """Answer a question using GraphRAG retrieval and generation.
 
+    This function implements: answer = context + synthesis
+    - Context retrieval: Uses retrieve_context() (same as 'kurt context' command)
+    - Synthesis: Uses generate_answer() to create comprehensive response with LLM
+
     Args:
         question: User's question
         max_documents: Maximum number of documents to retrieve
@@ -506,10 +510,10 @@ def answer_question(question: str, max_documents: int = 20) -> AnswerResult:
     Returns:
         AnswerResult with answer, citations, and metadata
     """
-    # Retrieve context from knowledge graph
+    # Step 1: Retrieve context from knowledge graph (shared with 'context' command)
     context = retrieve_context(question, max_documents=max_documents)
 
-    # Generate answer using LLM
+    # Step 2: Generate answer using LLM (synthesis step - unique to 'answer' command)
     result = generate_answer(question, context)
 
     return result
