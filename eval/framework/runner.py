@@ -924,8 +924,7 @@ class ScenarioRunner:
     def _format_template(self, value, context):
         """Format template strings with context variables.
 
-        Note: In practice, this is only called with string values from YAML configs.
-        The list/dict handling is unnecessary complexity.
+        Handles strings, lists, and dictionaries recursively.
         """
         if isinstance(value, str):
             # Simple string formatting with context variables
@@ -934,6 +933,12 @@ class ScenarioRunner:
             except KeyError as e:
                 self._log(f"Warning: Template variable not found: {e}")
                 return value
+        elif isinstance(value, dict):
+            # Recursively format dictionary values
+            return {k: self._format_template(v, context) for k, v in value.items()}
+        elif isinstance(value, list):
+            # Recursively format list items
+            return [self._format_template(item, context) for item in value]
         return value
 
     def _slugify(self, text: str) -> str:

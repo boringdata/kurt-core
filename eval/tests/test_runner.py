@@ -286,6 +286,50 @@ class TestScenarioRunner:
         assert call_kwargs["passed"] is False
         assert call_kwargs["error"] is not None
 
+    @pytest.mark.asyncio
+    async def test_format_template_with_assertions(self):
+        """Test that assertion templates with placeholders are formatted correctly."""
+        runner = ScenarioRunner()
+
+        # Test context with answer_file
+        context = {
+            "question": "What is Python?",
+            "answer_file": "/tmp/answer_1.md",
+            "question_num": 1,
+        }
+
+        # Test formatting a dictionary assertion (like FileExists with path placeholder)
+        assertion_dict = {"type": "FileExists", "path": "{answer_file}"}
+
+        formatted = runner._format_template(assertion_dict, context)
+
+        # Verify the path was formatted
+        assert formatted["type"] == "FileExists"
+        assert formatted["path"] == "/tmp/answer_1.md"
+
+        # Test formatting a list of assertions
+        assertions_list = [
+            {"type": "FileExists", "path": "{answer_file}"},
+            {"type": "FileContains", "path": "{answer_file}", "content": "Answer to: {question}"},
+        ]
+
+        formatted_list = runner._format_template(assertions_list, context)
+
+        assert len(formatted_list) == 2
+        assert formatted_list[0]["path"] == "/tmp/answer_1.md"
+        assert formatted_list[1]["path"] == "/tmp/answer_1.md"
+        assert formatted_list[1]["content"] == "Answer to: What is Python?"
+
+        # Test nested structures
+        nested = {
+            "assertions": [{"type": "FileExists", "path": "{answer_file}"}],
+            "description": "Check answer file {question_num}",
+        }
+
+        formatted_nested = runner._format_template(nested, context)
+        assert formatted_nested["assertions"][0]["path"] == "/tmp/answer_1.md"
+        assert formatted_nested["description"] == "Check answer file 1"
+
     @patch("framework.runner.IsolatedWorkspace")
     @patch("framework.runner.save_results")
     @pytest.mark.asyncio
