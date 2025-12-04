@@ -1,0 +1,144 @@
+# Kurt Evaluation Scenarios - Setup & Initialization
+#
+# Tests for basic Kurt project setup, initialization, and configuration.
+
+scenarios:
+  # ========================================================================
+  # Scenario 01: Basic Initialization
+  # ========================================================================
+  - name: 01_basic_init
+    description: Initialize a new Kurt project from scratch
+
+    initial_prompt: Check the Kurt project status and verify it is initialized correctly. If not initialize the project.
+
+    assertions:
+      - type: FileExists
+        path: kurt.config
+
+      - type: FileExists
+        path: .kurt/kurt.sqlite
+
+      - type: FileExists
+        path: sources
+
+      - type: FileExists
+        path: rules
+
+      - type: FileExists
+        path: projects
+
+      - type: MetricEquals
+        metric_path: files.config_exists
+        expected_value: true
+
+      - type: MetricEquals
+        metric_path: files.db_exists
+        expected_value: true
+
+  # ========================================================================
+  # Scenario 02: Interactive Project Creation (No Sources)
+  # ========================================================================
+  - name: 02_project_no_sources
+    description: Multi-turn conversation to create a project without sources using /create-project
+
+    initial_prompt: run /create-project
+
+    # User agent system prompt (defines how the user responds to questions)
+    user_agent_prompt: |
+      You are a user responding to an AI agent's questions about creating a Kurt project.
+
+      When asked about:
+      - Project name: respond "test-blog"
+      - Goal: respond "Write technical blog posts about Python"
+      - Intent or purpose: respond "a" (for positioning updates)
+      - Sources: respond "no"
+      - Targets: respond "no"
+      - Additional details: respond "none"
+      Keep responses brief and direct.
+
+    assertions:
+      # Verify project directory was created
+      - type: FileExists
+        path: projects/test-blog
+
+      # Verify project config exists
+      - type: FileExists
+        path: projects/test-blog/project.yaml
+
+      # Verify conversation completed
+      - type: MetricEquals
+        metric_path: conversation.completed
+        expected_value: true
+
+  # ========================================================================
+  # Scenario 03: Interactive Project Creation (With Sources)
+  # ========================================================================
+  - name: 03_project_with_sources
+    description: Multi-turn conversation to create a project with source URLs
+
+    initial_prompt: run /create-project
+
+    user_agent_prompt: |
+      You are a user responding to an AI agent's questions about creating a Kurt project.
+
+      When asked about:
+      - Project name: respond "api-docs"
+      - Goal: respond "Document our REST API"
+      - Intent or purpose: respond "b" (for content generation)
+      - Sources: respond "yes"
+      - Source URLs: respond "https://docs.example.com"
+      - More sources: respond "no"
+      - Targets: respond "no"
+      - Additional details: respond "none"
+      Keep responses brief and direct.
+
+    assertions:
+      # Verify project directory and config
+      - type: FileExists
+        path: projects/api-docs
+
+      - type: FileExists
+        path: projects/api-docs/project.yaml
+
+      # Verify conversation shows source was added
+      - type: ConversationContains
+        text: "docs.example.com"
+        case_sensitive: false
+
+      # Verify conversation completed
+      - type: MetricEquals
+        metric_path: conversation.completed
+        expected_value: true
+
+  # ========================================================================
+  # Scenario 04: Preconfigured Project Setup
+  # ========================================================================
+  - name: 04_preconfigured_project
+    description: Test setup with pre-existing project configuration
+
+    notes: |
+      Tests handling of a scenario where project files already exist.
+      The agent should recognize existing configuration and work with it.
+
+    setup_commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt init
+      - mkdir -p projects/existing-project
+      - 'printf "name: existing-project\ngoal: Test project" > projects/existing-project/project.yaml'
+
+    initial_prompt: |
+      Check if there are any existing projects configured and list them.
+
+    assertions:
+      # Verify existing project is recognized
+      - type: FileExists
+        path: projects/existing-project/project.yaml
+
+      # Verify conversation mentions the project
+      - type: ConversationContains
+        text: "existing-project"
+        case_sensitive: false
+
+      # Verify conversation completed
+      - type: MetricEquals
+        metric_path: conversation.completed
+        expected_value: true

@@ -5,7 +5,7 @@ from rich.console import Console
 from rich.table import Table
 
 from kurt.admin.telemetry.decorators import track_command
-from kurt.content.indexing_models import EntityType, RelationshipType
+from kurt.db.models import EntityType, RelationshipType
 
 console = Console()
 

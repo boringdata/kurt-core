@@ -117,18 +117,36 @@ def run(scenario, no_cleanup, max_tool_calls, max_duration, max_tokens, llm_prov
 @click.option("--filter", type=str, help="Filter scenarios by name pattern")
 def list(filter):
     """List all available evaluation scenarios."""
-    scenarios_yaml = eval_dir / "scenarios" / "scenarios.yaml"
-
-    if not scenarios_yaml.exists():
-        click.secho("❌ No scenarios.yaml found", fg="red")
-        sys.exit(1)
-
     import yaml
 
-    with open(scenarios_yaml) as f:
-        data = yaml.safe_load(f)
+    scenarios_dir = eval_dir / "scenarios"
 
-    scenarios = data.get("scenarios", [])
+    # Collect scenarios from all YAML files
+    all_scenarios = []
+
+    # Try scenarios.yaml first
+    scenarios_yaml = scenarios_dir / "scenarios.yaml"
+    if scenarios_yaml.exists():
+        with open(scenarios_yaml) as f:
+            data = yaml.safe_load(f)
+            if data and "scenarios" in data:
+                all_scenarios.extend(data["scenarios"])
+
+    # Then collect from all scenarios_*.yaml files
+    for yaml_file in sorted(scenarios_dir.glob("scenarios_*.yaml")):
+        try:
+            with open(yaml_file) as f:
+                data = yaml.safe_load(f)
+                if data and "scenarios" in data:
+                    all_scenarios.extend(data["scenarios"])
+        except Exception as e:
+            click.secho(f"Warning: Failed to load {yaml_file.name}: {e}", fg="yellow")
+
+    if not all_scenarios:
+        click.secho("❌ No scenarios found", fg="red")
+        sys.exit(1)
+
+    scenarios = all_scenarios
 
     if filter:
         scenarios = [

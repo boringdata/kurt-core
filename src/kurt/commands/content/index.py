@@ -132,84 +132,42 @@ def index(
 
         print_intro_block(console, intro_messages)
 
-        # Use shared indexing utilities
+        # Use workflow-based indexing for all documents (single or batch)
         from kurt.commands.content._live_display import (
-            index_single_document_with_progress,
+            index_and_finalize_with_two_stage_progress,
         )
 
-        # Use async batch processing for multiple documents (>1)
-        if len(documents) > 1:
-            from kurt.commands.content._live_display import (
-                index_and_finalize_with_two_stage_progress,
-            )
+        # Two-stage indexing: metadata extraction + entity resolution
+        result = index_and_finalize_with_two_stage_progress(documents, console, force=force)
 
-            # Two-stage indexing: metadata extraction + entity resolution
-            result = index_and_finalize_with_two_stage_progress(documents, console, force=force)
+        batch_result = result["indexing"]
+        # Note: "succeeded" already excludes skipped documents (from workflow_indexing.py)
+        indexed_count = batch_result["succeeded"]
+        _skipped_count = batch_result["skipped"]  # noqa: F841
+        _error_count = batch_result["failed"]  # noqa: F841
 
-            batch_result = result["indexing"]
-            indexed_count = batch_result["succeeded"] - batch_result["skipped"]
-            skipped_count = batch_result["skipped"]
-            error_count = batch_result["failed"]
-            # elapsed_time available in batch_result if needed later
+        # Display the knowledge graph for single document
+        if len(documents) == 1 and indexed_count > 0:
+            from kurt.commands.content._live_display import display_knowledge_graph
+            from kurt.db.graph_queries import get_document_knowledge_graph
 
-        else:
-            # Single document indexing
-            indexed_count = 0
-            skipped_count = 0
-            error_count = 0
-            results_for_kg = []
-
-            for doc in documents:
-                result = index_single_document_with_progress(doc, console, force=force)
-
-                if result["success"]:
-                    if result["skipped"]:
-                        skipped_count += 1
-                    else:
-                        indexed_count += 1
-                        results_for_kg.append(result["result"])
-                else:
-                    error_count += 1
-                    logger.exception(f"Failed to index document {doc.id}")
-
-            # Finalize knowledge graph (entity resolution + storage) with live progress
-            if indexed_count > 0 and results_for_kg:
-                from kurt.commands.content._live_display import (
-                    finalize_knowledge_graph_with_progress,
-                )
-
-                finalize_knowledge_graph_with_progress(results_for_kg, console)
-
-                # Display the knowledge graph for single document
-                if len(documents) == 1:
-                    from kurt.commands.content._live_display import display_knowledge_graph
-                    from kurt.content.indexing import get_document_knowledge_graph
-
-                    try:
-                        doc_id = str(documents[0].id)
-                        kg = get_document_knowledge_graph(doc_id)
-                        if kg:
-                            display_knowledge_graph(kg, console)
-                    except Exception as e:
-                        logger.debug(f"Could not retrieve KG for display: {e}")
+            try:
+                doc_id = str(documents[0].id)
+                kg = get_document_knowledge_graph(doc_id)
+                if kg:
+                    display_knowledge_graph(kg, console)
+            except Exception as e:
+                logger.debug(f"Could not retrieve KG for display: {e}")
 
         # Process any pending metadata sync queue items
         # (handles SQL/agent updates that bypassed normal indexing)
         from kurt.db.metadata_sync import process_metadata_sync_queue
 
         queue_result = process_metadata_sync_queue()
-        queue_synced = queue_result["processed"]
+        _queue_synced = queue_result["processed"]  # noqa: F841
 
-        # Summary (only for single document, multi-doc summary is in two-stage function)
-        if len(documents) == 1:
-            console.print("\n[bold]Summary:[/bold]")
-            console.print(f"  Indexed: {indexed_count}")
-            if skipped_count > 0:
-                console.print(f"  Skipped: {skipped_count}")
-            if error_count > 0:
-                console.print(f"  Errors: {error_count}")
-            if queue_synced > 0:
-                console.print(f"  Queue synced: {queue_synced}")
+        # Note: Summary is now displayed by index_and_finalize_with_two_stage_progress for all documents
+        # No need for separate single-document summary
 
     except Exception as e:
         console.print(f"[bold red]Error:[/bold red] {e}")

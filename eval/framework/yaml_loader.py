@@ -92,6 +92,9 @@ def load_yaml_scenario(yaml_path: Path, scenario_name: Optional[str] = None) -> 
     # Parse setup commands (if specified)
     setup_commands = data.get("setup_commands", None)
 
+    # Parse project reference (if specified)
+    project = data.get("project", None)
+
     # Create scenario
     return Scenario(
         name=data["name"],
@@ -99,6 +102,7 @@ def load_yaml_scenario(yaml_path: Path, scenario_name: Optional[str] = None) -> 
         initial_prompt=data["initial_prompt"],
         assertions=assertions,
         user_agent=user_agent,
+        project=project,
         setup_commands=setup_commands,
     )
 

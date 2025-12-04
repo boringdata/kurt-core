@@ -40,7 +40,7 @@ def get_document_cmd(identifier: str, format: str):
 
         # Get knowledge graph (always included)
         kg = None
-        from kurt.content.indexing import get_document_knowledge_graph
+        from kurt.db.graph_queries import get_document_knowledge_graph
 
         try:
             kg = get_document_knowledge_graph(doc_id)
