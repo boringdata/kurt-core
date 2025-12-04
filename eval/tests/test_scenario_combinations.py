@@ -218,8 +218,8 @@ class TestScenarioCombinations:
         mock_workspace.read_file = MagicMock(return_value="Test content")
 
         # Create runner and execute
-        runner = ScenarioRunner(scenario)
-        result = await runner._run_async()
+        runner = ScenarioRunner()
+        result = await runner._run_async(scenario)
 
         return result, mock_workspace, mock_save_results
 

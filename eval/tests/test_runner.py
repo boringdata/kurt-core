@@ -52,7 +52,6 @@ class TestScenarioRunner:
     @pytest.mark.asyncio
     @patch("framework.runner.IsolatedWorkspace")
     @patch("framework.runner.save_results")
-    @pytest.mark.asyncio
     async def test_non_conversational_execution(self, mock_save_results, mock_workspace_class):
         """Test non-conversational scenario execution."""
         # Create scenario
@@ -66,11 +65,11 @@ class TestScenarioRunner:
         mock_workspace.command_outputs = []
         mock_workspace_class.return_value = mock_workspace
 
-        # Create runner
-        runner = ScenarioRunner(scenario)
+        # Create runner with no config (uses defaults)
+        runner = ScenarioRunner()
 
         # Run scenario
-        result = await runner._run_async()
+        result = await runner._run_async(scenario)
 
         # Verify workspace was set up
         mock_workspace.setup.assert_called_once()
@@ -103,10 +102,10 @@ class TestScenarioRunner:
         mock_workspace_class.return_value = mock_workspace
 
         # Create runner
-        runner = ScenarioRunner(scenario)
+        runner = ScenarioRunner()
 
         # Run scenario
-        result = await runner._run_async()
+        result = await runner._run_async(scenario)
 
         # Verify each question was processed
         assert mock_workspace.run_command.call_count == 2  # Two questions
@@ -150,10 +149,10 @@ class TestScenarioRunner:
         mock_conv_runner_class.return_value = mock_conv_runner
 
         # Create runner
-        runner = ScenarioRunner(scenario)
+        runner = ScenarioRunner()
 
         # Run scenario
-        result = await runner._run_async()
+        result = await runner._run_async(scenario)
 
         # Verify conversation runner was used
         mock_conv_runner.run.assert_called_once()
@@ -202,10 +201,10 @@ class TestScenarioRunner:
         }
 
         # Create runner
-        runner = ScenarioRunner(scenario)
+        runner = ScenarioRunner()
 
         # Run scenario
-        result = await runner._run_async()
+        _ = await runner._run_async(scenario)
 
         # Verify LLM judge was called for each question
         assert mock_score_answer.call_count == 2  # Two questions
@@ -245,10 +244,10 @@ class TestScenarioRunner:
             mock_assert_all.return_value = (True, [])
 
             # Create runner
-            runner = ScenarioRunner(scenario)
+            runner = ScenarioRunner()
 
             # Run scenario
-            result = await runner._run_async()
+            result = await runner._run_async(scenario)
 
             # Verify assertions were checked
             mock_assert_all.assert_called_once()
@@ -271,10 +270,10 @@ class TestScenarioRunner:
         mock_workspace_class.return_value = mock_workspace
 
         # Create runner
-        runner = ScenarioRunner(scenario)
+        runner = ScenarioRunner()
 
         # Run scenario
-        result = await runner._run_async()
+        result = await runner._run_async(scenario)
 
         # Verify error was captured
         assert result["passed"] is False
@@ -304,10 +303,10 @@ class TestScenarioRunner:
         mock_workspace_class.return_value = mock_workspace
 
         # Create runner
-        runner = ScenarioRunner(scenario)
+        runner = ScenarioRunner()
 
         # Run scenario
-        result = await runner._run_async()
+        result = await runner._run_async(scenario)
 
         # Verify metrics were collected
         assert "metrics" in result
@@ -341,7 +340,7 @@ class TestScenarioRunner:
         mock_workspace_class.return_value = mock_workspace
 
         # Create runner
-        runner = ScenarioRunner(scenario)
+        runner = ScenarioRunner()
 
         # Run scenario
         with patch("framework.runner.datetime") as mock_datetime:
@@ -349,7 +348,7 @@ class TestScenarioRunner:
             mock_now.strftime.return_value = "20241203_120000"
             mock_datetime.now.return_value = mock_now
 
-            result = await runner._run_async()
+            _ = await runner._run_async(scenario)
 
             # Verify timestamp was generated
             mock_now.strftime.assert_called_with("%Y%m%d_%H%M%S")
@@ -399,7 +398,7 @@ class TestQuestionSetProcessing:
         mock_workspace.run_command = track_command
 
         # Create runner
-        runner = ScenarioRunner(scenario)
+        runner = ScenarioRunner()
 
         # Run scenario
         with patch("framework.runner.datetime") as mock_datetime:
@@ -407,7 +406,7 @@ class TestQuestionSetProcessing:
             mock_now.strftime.return_value = "20241203_120000"
             mock_datetime.now.return_value = mock_now
 
-            await runner._run_async()
+            await runner._run_async(scenario)
 
             # Verify commands were built with proper context
             assert len(executed_commands) == 2
@@ -441,12 +440,12 @@ class TestQuestionSetProcessing:
         mock_workspace_class.return_value = mock_workspace
 
         # Track file operations
-        with patch("shutil.copy2") as mock_copy:
+        with patch("shutil.copy2") as _:
             # Create runner
-            runner = ScenarioRunner(scenario)
+            runner = ScenarioRunner()
 
             # Run scenario
-            await runner._run_async()
+            await runner._run_async(scenario)
 
             # Verify answer file was copied
             # Note: Implementation may vary, check if copy was attempted
