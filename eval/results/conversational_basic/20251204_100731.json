@@ -1,0 +1,21 @@
+{
+  "scenario": "conversational_basic",
+  "passed": true,
+  "error": null,
+  "metrics": {
+    "usage": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0
+    },
+    "timing": {
+      "start_time": 1764839251.094353,
+      "end_time": 1764839251.094442,
+      "duration_seconds": 8.893013000488281e-05
+    },
+    "conversation_turns": 1,
+    "tool_calls": []
+  },
+  "workspace": {
+    "command_outputs": [],
+    "files_created": 

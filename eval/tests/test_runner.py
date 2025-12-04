@@ -52,7 +52,7 @@ class TestScenarioRunner:
 
     @pytest.mark.asyncio
     @patch("framework.runner.IsolatedWorkspace")
-    @patch("framework.runner.save_results")
+    @patch("framework.metrics.save_results")
     async def test_non_conversational_execution(self, mock_save_results, mock_workspace_class):
         """Test non-conversational scenario execution."""
         # Create scenario
@@ -60,32 +60,36 @@ class TestScenarioRunner:
 
         # Mock workspace
         mock_workspace = MagicMock()
+        mock_workspace.path = Path("/tmp/test_workspace")
         mock_workspace.setup.return_value = Path("/tmp/test_workspace")
         mock_workspace.teardown = MagicMock()
         mock_workspace.run_command = MagicMock(return_value=(0, "Test output", ""))
         mock_workspace.command_outputs = []
         mock_workspace_class.return_value = mock_workspace
 
-        # Create runner with no config (uses defaults)
-        runner = ScenarioRunner()
+        # Mock Path operations
+        with patch("pathlib.Path.exists", return_value=True):
+            with patch("pathlib.Path.iterdir", return_value=[]):
+                # Create runner with no config (uses defaults)
+                runner = ScenarioRunner()
 
-        # Run scenario
-        result = await runner._run_async(scenario)
+                # Run scenario
+                result = await runner._run_async(scenario)
 
-        # Verify workspace was set up
-        mock_workspace.setup.assert_called_once()
-        mock_workspace.teardown.assert_called_once()
+                # Verify workspace was set up
+                mock_workspace.setup.assert_called_once()
+                mock_workspace.teardown.assert_called_once()
 
-        # Verify result
-        assert result["passed"] is True
-        assert result["error"] is None
+                # Verify result
+                assert result["passed"] is True
+                assert result["error"] is None
 
-        # Verify save_results was called
-        mock_save_results.assert_called()
+                # Verify save_results was called
+                mock_save_results.assert_called()
 
     @pytest.mark.asyncio
     @patch("framework.runner.IsolatedWorkspace")
-    @patch("framework.runner.save_results")
+    @patch("framework.metrics.save_results")
     @pytest.mark.asyncio
     async def test_question_set_execution(self, mock_save_results, mock_workspace_class):
         """Test question set execution."""
@@ -115,14 +119,16 @@ class TestScenarioRunner:
             with patch("pathlib.Path.exists", return_value=True):
                 # Mock iterdir to return empty list (no skills/commands)
                 with patch("pathlib.Path.iterdir", return_value=[]):
-                    # Create runner
-                    runner = ScenarioRunner()
+                    # Mock read_text to return answer content
+                    with patch("pathlib.Path.read_text", return_value="Answer content"):
+                        # Create runner
+                        runner = ScenarioRunner()
 
-                    # Run scenario
-                    result = await runner._run_async(scenario)
+                        # Run scenario
+                        result = await runner._run_async(scenario)
 
-                    # Verify each question was processed (now via subprocess.run)
-                    assert mock_subprocess.call_count == 2  # Two questions
+                        # Verify each question was processed (now via subprocess.run)
+                        assert mock_subprocess.call_count == 2  # Two questions
 
         # Verify save_results was called for each question
         assert mock_save_results.call_count >= 2  # At least once per question
@@ -131,7 +137,7 @@ class TestScenarioRunner:
         assert result["passed"] is True
 
     @patch("framework.runner.IsolatedWorkspace")
-    @patch("framework.runner.save_results")
+    @patch("framework.metrics.save_results")
     @pytest.mark.asyncio
     async def test_conversational_execution(self, mock_save_results, mock_workspace_class):
         """Test conversational scenario execution."""
@@ -140,41 +146,51 @@ class TestScenarioRunner:
 
         # Mock workspace
         mock_workspace = MagicMock()
+        mock_workspace.path = Path("/tmp/test_workspace")
         mock_workspace.setup.return_value = Path("/tmp/test_workspace")
         mock_workspace.teardown = MagicMock()
         mock_workspace.command_outputs = []
         mock_workspace_class.return_value = mock_workspace
 
-        # Mock the SDK client execution
-        with patch.object(ScenarioRunner, "_execute_with_sdk") as mock_execute_sdk:
-            mock_execute_sdk.return_value = {
-                "messages": [
-                    {"role": "user", "content": "Test question"},
-                    {"role": "assistant", "content": "Test answer"},
-                ],
-                "usage": {"input_tokens": 100, "output_tokens": 50, "total_tokens": 150},
-                "raw_transcript": "Full conversation transcript",
-            }
+        # Mock Path operations and SDK client execution
+        with patch("pathlib.Path.exists", return_value=True):
+            with patch("pathlib.Path.iterdir", return_value=[]):
+                with patch.object(ScenarioRunner, "_execute_with_sdk") as mock_execute_sdk:
+                    mock_execute_sdk.return_value = {
+                        "messages": [
+                            {"role": "user", "content": "Test question"},
+                            {"role": "assistant", "content": "Test answer"},
+                        ],
+                        "usage": {"input_tokens": 100, "output_tokens": 50, "total_tokens": 150},
+                        "raw_transcript": [
+                            {"role": "user", "content": "Test question"},
+                            {"role": "assistant", "content": "Test answer"},
+                        ],
+                    }
 
-            # Create runner
-            runner = ScenarioRunner()
+                    # Create runner
+                    runner = ScenarioRunner()
 
-            # Run scenario
-            result = await runner._run_async(scenario)
+                    # Run scenario
+                    result = await runner._run_async(scenario)
 
-            # Verify SDK was used
-            mock_execute_sdk.assert_called_once()
+                    # Verify SDK was used
+                    mock_execute_sdk.assert_called_once()
 
-        # Verify result
-        assert result["passed"] is True
-        assert "metrics" in result
+                    # Verify workspace was set up
+                    mock_workspace.setup.assert_called_once()
+                    mock_workspace.teardown.assert_called_once()
 
-        # Verify save_results was called
-        mock_save_results.assert_called()
+                    # Verify result
+                    assert result["passed"] is True
+                    assert "metrics" in result
+
+                    # Verify save_results was called
+                    mock_save_results.assert_called()
 
     @patch("framework.runner.IsolatedWorkspace")
-    @patch("framework.runner.save_results")
-    @patch("framework.runner.score_single_answer")
+    @patch("framework.metrics.save_results")
+    @patch("framework.llm_judge.score_single_answer")
     @pytest.mark.asyncio
     async def test_llm_judge_integration(
         self, mock_score_answer, mock_save_results, mock_workspace_class
@@ -221,11 +237,16 @@ class TestScenarioRunner:
             with patch("pathlib.Path.exists", return_value=True):
                 # Mock iterdir to return empty list (no skills/commands)
                 with patch("pathlib.Path.iterdir", return_value=[]):
-                    # Create runner
-                    runner = ScenarioRunner()
+                    # Mock read_text to return answer content
+                    with patch(
+                        "pathlib.Path.read_text",
+                        return_value="Answer: Python is a programming language",
+                    ):
+                        # Create runner
+                        runner = ScenarioRunner()
 
-                    # Run scenario
-                    _ = await runner._run_async(scenario)
+                        # Run scenario
+                        _ = await runner._run_async(scenario)
 
         # Verify LLM judge was called for each question
         assert mock_score_answer.call_count == 2  # Two questions
@@ -239,7 +260,7 @@ class TestScenarioRunner:
                 assert output["llm_judge"]["score"] == 0.85
 
     @patch("framework.runner.IsolatedWorkspace")
-    @patch("framework.runner.save_results")
+    @patch("framework.metrics.save_results")
     @pytest.mark.asyncio
     async def test_assertion_execution(self, mock_save_results, mock_workspace_class):
         """Test that assertions are executed."""
@@ -278,7 +299,7 @@ class TestScenarioRunner:
             assert result["passed"] is True
 
     @patch("framework.runner.IsolatedWorkspace")
-    @patch("framework.runner.save_results")
+    @patch("framework.metrics.save_results")
     @pytest.mark.asyncio
     async def test_error_handling(self, mock_save_results, mock_workspace_class):
         """Test error handling during execution."""
@@ -288,6 +309,8 @@ class TestScenarioRunner:
         # Mock workspace to raise an error
         mock_workspace = MagicMock()
         mock_workspace.setup.side_effect = Exception("Setup failed")
+        mock_workspace.command_outputs = []  # Ensure this is a list, not MagicMock
+        mock_workspace.teardown = MagicMock()
         mock_workspace_class.return_value = mock_workspace
 
         # Create runner
@@ -352,7 +375,7 @@ class TestScenarioRunner:
         assert formatted_nested["description"] == "Check answer file 1"
 
     @patch("framework.runner.IsolatedWorkspace")
-    @patch("framework.runner.save_results")
+    @patch("framework.metrics.save_results")
     @pytest.mark.asyncio
     async def test_metrics_collection(self, mock_save_results, mock_workspace_class):
         """Test that metrics are collected throughout execution."""
@@ -361,33 +384,37 @@ class TestScenarioRunner:
 
         # Mock workspace
         mock_workspace = MagicMock()
+        mock_workspace.path = Path("/tmp/test_workspace")
         mock_workspace.setup.return_value = Path("/tmp/test_workspace")
         mock_workspace.teardown = MagicMock()
         mock_workspace.run_command = MagicMock(return_value=(0, "Test output", ""))
         mock_workspace.command_outputs = []
         mock_workspace_class.return_value = mock_workspace
 
-        # Create runner
-        runner = ScenarioRunner()
+        # Mock Path operations
+        with patch("pathlib.Path.exists", return_value=True):
+            with patch("pathlib.Path.iterdir", return_value=[]):
+                # Create runner
+                runner = ScenarioRunner()
 
-        # Run scenario
-        result = await runner._run_async(scenario)
+                # Run scenario
+                result = await runner._run_async(scenario)
 
-        # Verify metrics were collected
-        assert "metrics" in result
-        metrics = result["metrics"]
-        assert "usage" in metrics
-        assert "timing" in metrics
-        assert metrics["timing"]["duration_seconds"] >= 0
+                # Verify metrics were collected
+                assert "metrics" in result
+                metrics = result["metrics"]
+                assert "usage" in metrics
+                assert "timing" in metrics
+                assert metrics["timing"]["duration_seconds"] >= 0
 
-        # Verify metrics were passed to save_results
-        mock_save_results.assert_called()
-        call_kwargs = mock_save_results.call_args[1]
-        assert "run_metrics" in call_kwargs
-        assert call_kwargs["run_metrics"]["timing"]["duration_seconds"] >= 0
+                # Verify metrics were passed to save_results
+                mock_save_results.assert_called()
+                call_kwargs = mock_save_results.call_args[1]
+                assert "run_metrics" in call_kwargs
+                assert call_kwargs["run_metrics"]["timing"]["duration_seconds"] >= 0
 
     @patch("framework.runner.IsolatedWorkspace")
-    @patch("framework.runner.save_results")
+    @patch("framework.metrics.save_results")
     @pytest.mark.asyncio
     async def test_timestamp_generation(self, mock_save_results, mock_workspace_class):
         """Test that timestamps are generated correctly."""
@@ -417,16 +444,18 @@ class TestScenarioRunner:
             with patch("pathlib.Path.exists", return_value=True):
                 # Mock iterdir to return empty list (no skills/commands)
                 with patch("pathlib.Path.iterdir", return_value=[]):
-                    # Create runner
-                    runner = ScenarioRunner()
+                    # Mock read_text to return answer content
+                    with patch("pathlib.Path.read_text", return_value="Answer content"):
+                        # Create runner
+                        runner = ScenarioRunner()
 
-                    # Run scenario
-                    with patch("framework.runner.datetime") as mock_datetime:
-                        mock_now = Mock()
-                        mock_now.strftime.return_value = "20241203_120000"
-                        mock_datetime.now.return_value = mock_now
+                        # Run scenario
+                        with patch("framework.runner.datetime") as mock_datetime:
+                            mock_now = Mock()
+                            mock_now.strftime.return_value = "20241203_120000"
+                            mock_datetime.now.return_value = mock_now
 
-                        _ = await runner._run_async(scenario)
+                            _ = await runner._run_async(scenario)
 
             # Verify timestamp was generated
             mock_now.strftime.assert_called_with("%Y%m%d_%H%M%S")
@@ -443,7 +472,7 @@ class TestQuestionSetProcessing:
     """Test question set specific functionality."""
 
     @patch("framework.runner.IsolatedWorkspace")
-    @patch("framework.runner.save_results")
+    @patch("framework.metrics.save_results")
     @pytest.mark.asyncio
     async def test_question_context_building(self, mock_save_results, mock_workspace_class):
         """Test that question context is built correctly."""
@@ -487,12 +516,13 @@ class TestQuestionSetProcessing:
         with patch("framework.runner.subprocess.run", side_effect=mock_run):
             with patch("pathlib.Path.exists", return_value=True):
                 with patch("pathlib.Path.iterdir", return_value=[]):
-                    with patch("framework.runner.datetime") as mock_datetime:
-                        mock_now = Mock()
-                        mock_now.strftime.return_value = "20241203_120000"
-                        mock_datetime.now.return_value = mock_now
+                    with patch("pathlib.Path.read_text", return_value="Answer content"):
+                        with patch("framework.runner.datetime") as mock_datetime:
+                            mock_now = Mock()
+                            mock_now.strftime.return_value = "20241203_120000"
+                            mock_datetime.now.return_value = mock_now
 
-                        await runner._run_async(scenario)
+                            await runner._run_async(scenario)
 
             # Verify commands were built with proper context
             assert len(executed_commands) == 2
@@ -502,7 +532,7 @@ class TestQuestionSetProcessing:
             assert "/tmp/answer_q2_20241203_120000.md" in executed_commands[1]
 
     @patch("framework.runner.IsolatedWorkspace")
-    @patch("framework.runner.save_results")
+    @patch("framework.metrics.save_results")
     @pytest.mark.asyncio
     async def test_answer_file_archiving(self, mock_save_results, mock_workspace_class):
         """Test that answer files are archived to results directory."""
@@ -539,11 +569,12 @@ class TestQuestionSetProcessing:
             with patch("shutil.copy2") as _:
                 with patch("pathlib.Path.exists", return_value=True):
                     with patch("pathlib.Path.iterdir", return_value=[]):
-                        # Create runner
-                        runner = ScenarioRunner()
+                        with patch("pathlib.Path.read_text", return_value="Answer content"):
+                            # Create runner
+                            runner = ScenarioRunner()
 
-                        # Run scenario
-                        await runner._run_async(scenario)
+                            # Run scenario
+                            await runner._run_async(scenario)
 
             # Verify answer file was copied
             # Note: Implementation may vary, check if copy was attempted

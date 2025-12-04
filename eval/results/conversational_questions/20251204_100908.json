@@ -1,0 +1,75 @@
+{
+  "scenario": "conversational_questions",
+  "passed": true,
+  "error": null,
+  "metrics": {
+    "usage": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0
+    },
+    "timing": {
+      "start_time": 1764839348.904395,
+      "end_time": 1764839348.904865,
+      "duration_seconds": 0.0004699230194091797
+    },
+    "conversation_turns": 2,
+    "tool_calls": [],
+    "cached_response": true
+  },
+  "workspace": {
+    "command_outputs": [
+      {
+        "command": "question:q1",
+        "index": 1,
+        "stdout": "Answer content",
+        "stderr": "",
+        "returncode": 0,
+        "error": null,
+        "question": "Help me understand Python",
+        "answer_file": "/tmp/answer_q1.md",
+        "usage": {
+          "total_tokens": 0.0,
+          "duration_seconds": 2.5033950805664062e-05
+        },
+        "cached_response": true,
+        "conversation": [
+          {
+            "role": "user",
+            "message": "I need help with: Help me understand Python"
+          },
+          {
+            "role": "user",
+            "message": "I need help with: Help me understand JavaScript"
+          }
+        ],
+        "tool_calls": []
+      },
+      {
+        "command": "question:q2",
+        "index": 2,
+        "stdout": "Answer content",
+        "stderr": "",
+        "returncode": 0,
+        "error": null,
+        "question": "Help me understand JavaScript",
+        "answer_file": "/tmp/answer_q2.md",
+        "usage": {
+          "total_tokens": 0.0,
+          "duration_seconds": 2.002716064453125e-05
+        },
+        "cached_response": true,
+        "conversation": [
+          {
+            "role": "user",
+            "message": "I need help with: Help me understand Python"
+          },
+          {
+            "role": "user",
+            "message": "I need help with: Help me understand JavaScript"
+          }
+        ],
+        "tool_calls": []
+      }
+    ],
+    "files_created": 

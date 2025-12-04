@@ -1,0 +1,60 @@
+{
+  "scenario": "questions_no_judge",
+  "passed": true,
+  "error": null,
+  "metrics": {
+    "usage": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0
+    },
+    "timing": {
+      "start_time": 1764838627.9332328,
+      "end_time": 1764838627.93439,
+      "duration_seconds": 0.0011572837829589844
+    },
+    "conversation_turns": 0,
+    "tool_calls": []
+  },
+  "workspace": {
+    "command_outputs": [
+      {
+        "command": "echo 'What is Python?' > /tmp/answer_q1.md",
+        "index": "1-cmd",
+        "stdout": "Success",
+        "stderr": "",
+        "returncode": 0,
+        "error": null,
+        "question": "What is Python?"
+      },
+      {
+        "command": "question:q1",
+        "index": 1,
+        "stdout": "Answer content",
+        "stderr": "",
+        "returncode": 0,
+        "error": null,
+        "question": "What is Python?",
+        "answer_file": "/tmp/answer_q1.md"
+      },
+      {
+        "command": "echo 'What is JavaScript?' > /tmp/answer_q2.md",
+        "index": "2-cmd",
+        "stdout": "Success",
+        "stderr": "",
+        "returncode": 0,
+        "error": null,
+        "question": "What is JavaScript?"
+      },
+      {
+        "command": "question:q2",
+        "index": 2,
+        "stdout": "Answer content",
+        "stderr": "",
+        "returncode": 0,
+        "error": null,
+        "question": "What is JavaScript?",
+        "answer_file": "/tmp/answer_q2.md"
+      }
+    ],
+    "files_created": 

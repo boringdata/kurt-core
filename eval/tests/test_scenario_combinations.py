@@ -16,7 +16,7 @@ import json
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -120,6 +120,7 @@ class ScenarioBuilder:
             conversational=False,
         )
         scenario.question_set = QuestionSetConfig(
+            file="test_questions.yaml",
             questions=[
                 {"id": "q1", "question": "Explain Python's GIL"},
                 {"id": "q2", "question": "Explain JavaScript's event loop"},
@@ -142,12 +143,15 @@ class ScenarioBuilder:
             name="conversational_questions",
             description="Conversational with questions",
             conversational=True,
+            initial_prompt="Help me understand programming",  # Required for conversational
         )
         scenario.question_set = QuestionSetConfig(
+            file="test_questions.yaml",
             questions=[
                 {"id": "q1", "question": "Help me understand Python"},
                 {"id": "q2", "question": "Help me understand JavaScript"},
             ],
+            answer_file_template="/tmp/answer_{question_id}.md",
             initial_prompt_template="I need help with: {question}",
             results_dir="eval/results/test_conv",
         )
@@ -171,11 +175,13 @@ class ScenarioBuilder:
             name="full_featured",
             description="All features enabled",
             conversational=True,
+            initial_prompt="Analyze the loaded project",  # Required for conversational scenarios
             project="test_project",
             setup_commands=["echo 'Starting setup'", "mkdir -p output", "echo 'Setup done'"],
             post_scenario_commands=["echo 'Cleanup'", "rm -rf output"],
         )
         scenario.question_set = QuestionSetConfig(
+            file="test_questions.yaml",
             questions=[
                 {
                     "id": "q1",
@@ -211,6 +217,7 @@ class TestScenarioCombinations:
     async def run_scenario_test(self, scenario, mock_workspace, mock_save_results):
         """Helper to run a scenario test with standard mocks."""
         # Setup mocks
+        mock_workspace.path = Path("/tmp/test_workspace")
         mock_workspace.setup.return_value = Path("/tmp/test_workspace")
         mock_workspace.teardown = MagicMock()
         mock_workspace.run_command = MagicMock(return_value=(0, "Success", ""))
@@ -218,13 +225,21 @@ class TestScenarioCombinations:
         mock_workspace.file_exists = MagicMock(return_value=True)
         mock_workspace.read_file = MagicMock(return_value="Test content")
 
-        # Create runner and execute
-        runner = ScenarioRunner()
-        result = await runner._run_async(scenario)
+        # Mock Path operations for question sets
+        with patch("pathlib.Path.exists", return_value=True):
+            with patch("pathlib.Path.iterdir", return_value=[]):
+                with patch("pathlib.Path.read_text", return_value="Answer content"):
+                    with patch("framework.runner.subprocess.run") as mock_subprocess:
+                        mock_subprocess.return_value = MagicMock(
+                            returncode=0, stdout="Success", stderr=""
+                        )
+                        # Create runner and execute
+                        runner = ScenarioRunner()
+                        result = await runner._run_async(scenario)
 
         return result, mock_workspace, mock_save_results
 
-    @patch("framework.runner.save_results")
+    @patch("framework.metrics.save_results")
     @patch("framework.runner.IsolatedWorkspace")
     @pytest.mark.asyncio
     async def test_minimal_scenario(self, mock_workspace_class, mock_save_results):
@@ -244,7 +259,7 @@ class TestScenarioCombinations:
         # No commands should be run for minimal scenario
         assert workspace.run_command.call_count == 0
 
-    @patch("framework.runner.save_results")
+    @patch("framework.metrics.save_results")
     @patch("framework.runner.IsolatedWorkspace")
     @pytest.mark.asyncio
     async def test_setup_commands_only(self, mock_workspace_class, mock_save_results):
@@ -261,7 +276,7 @@ class TestScenarioCombinations:
         assert result["passed"] is True
         workspace.setup.assert_called_once()
 
-    @patch("framework.runner.save_results")
+    @patch("framework.metrics.save_results")
     @patch("framework.runner.IsolatedWorkspace")
     @pytest.mark.asyncio
     async def test_initial_prompt_only(self, mock_workspace_class, mock_save_results):
@@ -282,7 +297,7 @@ class TestScenarioCombinations:
         # So initial_prompt is ignored in non-conversational mode
         assert workspace.run_command.call_count == 0
 
-    @patch("framework.runner.save_results")
+    @patch("framework.metrics.save_results")
     @patch("framework.runner.IsolatedWorkspace")
     @pytest.mark.asyncio
     async def test_conversational_basic(self, mock_workspace_class, mock_save_results):
@@ -310,7 +325,7 @@ class TestScenarioCombinations:
             mock_execute_sdk.assert_called_once()
 
     @patch("framework.runner.assert_all")
-    @patch("framework.runner.save_results")
+    @patch("framework.metrics.save_results")
     @patch("framework.runner.IsolatedWorkspace")
     @pytest.mark.asyncio
     async def test_with_assertions(self, mock_workspace_class, mock_save_results, mock_assert_all):
@@ -331,7 +346,7 @@ class TestScenarioCombinations:
         # Verify assertions were passed
         assert len(mock_assert_all.call_args[0][0]) == 2
 
-    @patch("framework.runner.save_results")
+    @patch("framework.metrics.save_results")
     @patch("framework.runner.IsolatedWorkspace")
     @pytest.mark.asyncio
     async def test_questions_without_judge(self, mock_workspace_class, mock_save_results):
@@ -350,8 +365,8 @@ class TestScenarioCombinations:
         # Save results should be called for each question + final
         assert mock_save_results.call_count >= 2
 
-    @patch("framework.runner.score_answer")
-    @patch("framework.runner.save_results")
+    @patch("framework.llm_judge.score_single_answer")
+    @patch("framework.metrics.save_results")
     @patch("framework.runner.IsolatedWorkspace")
     @pytest.mark.asyncio
     async def test_questions_with_judge(
@@ -380,22 +395,18 @@ class TestScenarioCombinations:
         # Judge should be called for each question
         assert mock_score_answer.call_count == 2
 
-    @patch("framework.runner.ConversationRunner")
-    @patch("framework.runner.save_results")
+    @patch("framework.metrics.save_results")
     @patch("framework.runner.IsolatedWorkspace")
     @pytest.mark.asyncio
-    async def test_conversational_with_questions(
-        self, mock_workspace_class, mock_save_results, mock_conv_runner_class
-    ):
+    async def test_conversational_with_questions(self, mock_workspace_class, mock_save_results):
         """Test conversational scenario with question set."""
         scenario = ScenarioBuilder.conversational_with_questions()
         mock_workspace = MagicMock()
         mock_workspace_class.return_value = mock_workspace
 
-        # Mock conversation runner
-        mock_conv_runner = AsyncMock()
-        mock_conv_runner.run = AsyncMock(
-            return_value={
+        # Mock SDK execution for conversational scenarios
+        with patch.object(ScenarioRunner, "_execute_with_sdk") as mock_execute_sdk:
+            mock_execute_sdk.return_value = {
                 "messages": [
                     {"role": "user", "content": "I need help with: Help me understand Python"},
                     {"role": "assistant", "content": "Python is a programming language..."},
@@ -403,18 +414,16 @@ class TestScenarioCombinations:
                 "usage": {"input_tokens": 100, "output_tokens": 100, "total_tokens": 200},
                 "raw_transcript": "Conversation transcript",
             }
-        )
-        mock_conv_runner_class.return_value = mock_conv_runner
 
-        result, workspace, save_results = await self.run_scenario_test(
-            scenario, mock_workspace, mock_save_results
-        )
+            result, workspace, save_results = await self.run_scenario_test(
+                scenario, mock_workspace, mock_save_results
+            )
 
         assert result["passed"] is True
-        # Should run conversation for each question
-        assert mock_conv_runner.run.call_count == 2
+        # Should run SDK for each question
+        assert mock_execute_sdk.call_count == 2
 
-    @patch("framework.runner.save_results")
+    @patch("framework.metrics.save_results")
     @patch("framework.runner.IsolatedWorkspace")
     @pytest.mark.asyncio
     async def test_with_project_dump(self, mock_workspace_class, mock_save_results):
@@ -423,26 +432,25 @@ class TestScenarioCombinations:
         mock_workspace = MagicMock()
         mock_workspace_class.return_value = mock_workspace
 
-        # Workspace should be initialized with project
-        mock_workspace_class.assert_called_with(
-            init_kurt=True,
-            install_claude_plugin=False,
-            setup_commands=scenario.setup_commands,
-            project_dump=scenario.project,
-            preserve_on_error=False,
-            preserve_on_success=False,
-        )
-
         result, workspace, save_results = await self.run_scenario_test(
             scenario, mock_workspace, mock_save_results
         )
 
         assert result["passed"] is True
 
-    @patch("framework.runner.score_answer")
-    @patch("framework.runner.ConversationRunner")
+        # Workspace should be initialized with project
+        mock_workspace_class.assert_called_with(
+            init_kurt=True,
+            install_claude_plugin=False,
+            setup_commands=None,  # with_project_dump scenario has no setup_commands
+            project_dump=scenario.project,
+            preserve_on_error=False,
+            preserve_on_success=False,
+        )
+
+    @patch("framework.llm_judge.score_single_answer")
     @patch("framework.runner.assert_all")
-    @patch("framework.runner.save_results")
+    @patch("framework.metrics.save_results")
     @patch("framework.runner.IsolatedWorkspace")
     @pytest.mark.asyncio
     async def test_full_featured_scenario(
@@ -450,7 +458,6 @@ class TestScenarioCombinations:
         mock_workspace_class,
         mock_save_results,
         mock_assert_all,
-        mock_conv_runner_class,
         mock_score_answer,
     ):
         """Test scenario with all features enabled."""
@@ -461,18 +468,15 @@ class TestScenarioCombinations:
         # Mock all components
         mock_assert_all.return_value = (True, [])
 
-        mock_conv_runner = AsyncMock()
-        mock_conv_runner.run = AsyncMock(
-            return_value={
-                "messages": [
-                    {"role": "user", "content": "Please analyze the architecture"},
-                    {"role": "assistant", "content": "The architecture consists of..."},
-                ],
-                "usage": {"input_tokens": 150, "output_tokens": 200, "total_tokens": 350},
-                "raw_transcript": "Full analysis",
-            }
-        )
-        mock_conv_runner_class.return_value = mock_conv_runner
+        # Mock SDK execution for conversational parts
+        mock_sdk_response = {
+            "messages": [
+                {"role": "user", "content": "Please analyze the architecture"},
+                {"role": "assistant", "content": "The architecture consists of..."},
+            ],
+            "usage": {"input_tokens": 150, "output_tokens": 200, "total_tokens": 350},
+            "raw_transcript": "Full analysis",
+        }
 
         mock_score_answer.return_value = {
             "score": 0.90,
@@ -483,14 +487,17 @@ class TestScenarioCombinations:
             "feedback": "Excellent analysis",
         }
 
-        result, workspace, save_results = await self.run_scenario_test(
-            scenario, mock_workspace, mock_save_results
-        )
+        with patch.object(
+            ScenarioRunner, "_execute_with_sdk", return_value=mock_sdk_response
+        ) as mock_execute_sdk:
+            result, workspace, save_results = await self.run_scenario_test(
+                scenario, mock_workspace, mock_save_results
+            )
 
         assert result["passed"] is True
         # Verify all components were used
         mock_assert_all.assert_called()
-        assert mock_conv_runner.run.call_count == 2
+        assert mock_execute_sdk.call_count == 2  # Should run SDK for each question
         assert mock_score_answer.call_count == 2
         assert mock_save_results.call_count >= 2
 

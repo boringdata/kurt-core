@@ -1,0 +1,21 @@
+{
+  "scenario": "test_scenario",
+  "passed": true,
+  "error": null,
+  "metrics": {
+    "usage": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0
+    },
+    "timing": {
+      "start_time": 1764839070.320504,
+      "end_time": 1764839070.321728,
+      "duration_seconds": 0.0012240409851074219
+    },
+    "conversation_turns": 0,
+    "tool_calls": []
+  },
+  "workspace": {
+    "command_outputs": [],
+    "files_created": 

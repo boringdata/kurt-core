@@ -1,0 +1,21 @@
+{
+  "scenario": "with_project",
+  "passed": true,
+  "error": null,
+  "metrics": {
+    "usage": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0
+    },
+    "timing": {
+      "start_time": 1764839204.7272892,
+      "end_time": 1764839204.727332,
+      "duration_seconds": 4.291534423828125e-05
+    },
+    "conversation_turns": 0,
+    "tool_calls": []
+  },
+  "workspace": {
+    "command_outputs": [],
+    "files_created": 
