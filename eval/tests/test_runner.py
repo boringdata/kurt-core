@@ -37,13 +37,13 @@ class TestScenarioRunner:
 
         if with_questions:
             scenario.question_set = QuestionSetConfig(
-                file=None,  # Not needed for inline questions
+                file="test_questions.yaml",  # Required field
                 questions=[
                     {"id": "q1", "question": "What is Python?"},
                     {"id": "q2", "question": "What is JavaScript?"},
                 ],
                 answer_file_template="/tmp/answer_{question_id}.md",
-                commands=["echo 'Answer: {question}'"] if not conversational else None,
+                commands=["echo 'Answer: {question}'"] if not conversational else [],
                 initial_prompt_template="{question}" if conversational else None,
                 results_dir="eval/results/test_scenario",
             )
@@ -94,6 +94,7 @@ class TestScenarioRunner:
 
         # Mock workspace
         mock_workspace = MagicMock()
+        mock_workspace.path = Path("/tmp/test_workspace")
         mock_workspace.setup.return_value = Path("/tmp/test_workspace")
         mock_workspace.teardown = MagicMock()
         mock_workspace.run_command = MagicMock(return_value=(0, "Answer output", ""))
@@ -102,14 +103,26 @@ class TestScenarioRunner:
         mock_workspace.read_file = MagicMock(return_value="Answer content")
         mock_workspace_class.return_value = mock_workspace
 
-        # Create runner
-        runner = ScenarioRunner()
+        # Mock subprocess.run for question commands and os.path.exists
+        with patch("framework.runner.subprocess.run") as mock_subprocess:
+            mock_subprocess.return_value = MagicMock(
+                returncode=0,
+                stdout="Answer output",
+                stderr="",
+            )
 
-        # Run scenario
-        result = await runner._run_async(scenario)
+            # Mock os.path.exists to return True for .claude folder
+            with patch("pathlib.Path.exists", return_value=True):
+                # Mock iterdir to return empty list (no skills/commands)
+                with patch("pathlib.Path.iterdir", return_value=[]):
+                    # Create runner
+                    runner = ScenarioRunner()
 
-        # Verify each question was processed
-        assert mock_workspace.run_command.call_count == 2  # Two questions
+                    # Run scenario
+                    result = await runner._run_async(scenario)
+
+                    # Verify each question was processed (now via subprocess.run)
+                    assert mock_subprocess.call_count == 2  # Two questions
 
         # Verify save_results was called for each question
         assert mock_save_results.call_count >= 2  # At least once per question
@@ -177,6 +190,7 @@ class TestScenarioRunner:
 
         # Mock workspace
         mock_workspace = MagicMock()
+        mock_workspace.path = Path("/tmp/test_workspace")
         mock_workspace.setup.return_value = Path("/tmp/test_workspace")
         mock_workspace.teardown = MagicMock()
         mock_workspace.run_command = MagicMock(return_value=(0, "Answer output", ""))
@@ -195,11 +209,23 @@ class TestScenarioRunner:
             "feedback": "Good answer",
         }
 
-        # Create runner
-        runner = ScenarioRunner()
+        # Mock subprocess.run for question commands
+        with patch("framework.runner.subprocess.run") as mock_subprocess:
+            mock_subprocess.return_value = MagicMock(
+                returncode=0,
+                stdout="Answer output",
+                stderr="",
+            )
 
-        # Run scenario
-        _ = await runner._run_async(scenario)
+            # Mock os.path.exists to return True for .claude folder
+            with patch("pathlib.Path.exists", return_value=True):
+                # Mock iterdir to return empty list (no skills/commands)
+                with patch("pathlib.Path.iterdir", return_value=[]):
+                    # Create runner
+                    runner = ScenarioRunner()
+
+                    # Run scenario
+                    _ = await runner._run_async(scenario)
 
         # Verify LLM judge was called for each question
         assert mock_score_answer.call_count == 2  # Two questions
@@ -370,6 +396,7 @@ class TestScenarioRunner:
 
         # Mock workspace
         mock_workspace = MagicMock()
+        mock_workspace.path = Path("/tmp/test_workspace")
         mock_workspace.setup.return_value = Path("/tmp/test_workspace")
         mock_workspace.teardown = MagicMock()
         mock_workspace.run_command = MagicMock(return_value=(0, "Answer output", ""))
@@ -378,16 +405,28 @@ class TestScenarioRunner:
         mock_workspace.read_file = MagicMock(return_value="Answer content")
         mock_workspace_class.return_value = mock_workspace
 
-        # Create runner
-        runner = ScenarioRunner()
+        # Mock subprocess.run for question commands
+        with patch("framework.runner.subprocess.run") as mock_subprocess:
+            mock_subprocess.return_value = MagicMock(
+                returncode=0,
+                stdout="Answer output",
+                stderr="",
+            )
 
-        # Run scenario
-        with patch("framework.runner.datetime") as mock_datetime:
-            mock_now = Mock()
-            mock_now.strftime.return_value = "20241203_120000"
-            mock_datetime.now.return_value = mock_now
+            # Mock os.path.exists to return True for .claude folder
+            with patch("pathlib.Path.exists", return_value=True):
+                # Mock iterdir to return empty list (no skills/commands)
+                with patch("pathlib.Path.iterdir", return_value=[]):
+                    # Create runner
+                    runner = ScenarioRunner()
 
-            _ = await runner._run_async(scenario)
+                    # Run scenario
+                    with patch("framework.runner.datetime") as mock_datetime:
+                        mock_now = Mock()
+                        mock_now.strftime.return_value = "20241203_120000"
+                        mock_datetime.now.return_value = mock_now
+
+                        _ = await runner._run_async(scenario)
 
             # Verify timestamp was generated
             mock_now.strftime.assert_called_with("%Y%m%d_%H%M%S")
@@ -415,6 +454,7 @@ class TestQuestionSetProcessing:
                 {"id": "q1", "question": "What is Python?", "context": "Programming"},
                 {"id": "q2", "question": "What is JavaScript?"},
             ],
+            file="test_questions.yaml",
             answer_file_template="/tmp/answer_{question_id}_{timestamp}.md",
             commands=["echo '{question}' > {answer_file}"],
             results_dir="eval/results/test",
@@ -422,6 +462,7 @@ class TestQuestionSetProcessing:
 
         # Mock workspace
         mock_workspace = MagicMock()
+        mock_workspace.path = Path("/tmp/test_workspace")
         mock_workspace.setup.return_value = Path("/tmp/test_workspace")
         mock_workspace.teardown = MagicMock()
         mock_workspace.command_outputs = []
@@ -430,22 +471,28 @@ class TestQuestionSetProcessing:
         # Track commands executed
         executed_commands = []
 
-        def track_command(cmd, **kwargs):
+        # Mock subprocess.run to track commands
+        def mock_run(cmd, **kwargs):
             executed_commands.append(cmd)
-            return (0, "Success", "")
-
-        mock_workspace.run_command = track_command
+            mock_result = MagicMock()
+            mock_result.returncode = 0
+            mock_result.stdout = "Success"
+            mock_result.stderr = ""
+            return mock_result
 
         # Create runner
         runner = ScenarioRunner()
 
         # Run scenario
-        with patch("framework.runner.datetime") as mock_datetime:
-            mock_now = Mock()
-            mock_now.strftime.return_value = "20241203_120000"
-            mock_datetime.now.return_value = mock_now
+        with patch("framework.runner.subprocess.run", side_effect=mock_run):
+            with patch("pathlib.Path.exists", return_value=True):
+                with patch("pathlib.Path.iterdir", return_value=[]):
+                    with patch("framework.runner.datetime") as mock_datetime:
+                        mock_now = Mock()
+                        mock_now.strftime.return_value = "20241203_120000"
+                        mock_datetime.now.return_value = mock_now
 
-            await runner._run_async(scenario)
+                        await runner._run_async(scenario)
 
             # Verify commands were built with proper context
             assert len(executed_commands) == 2
@@ -463,6 +510,7 @@ class TestQuestionSetProcessing:
         scenario = Scenario(name="test_scenario", description="Test", conversational=False)
         scenario.question_set = QuestionSetConfig(
             questions=[{"id": "q1", "question": "Test question"}],
+            file="test_questions.yaml",
             answer_file_template="/tmp/answer_{question_id}.md",
             commands=["echo 'Answer' > {answer_file}"],
             results_dir="eval/results/test",
@@ -470,6 +518,7 @@ class TestQuestionSetProcessing:
 
         # Mock workspace
         mock_workspace = MagicMock()
+        mock_workspace.path = Path("/tmp/test_workspace")
         mock_workspace.setup.return_value = Path("/tmp/test_workspace")
         mock_workspace.teardown = MagicMock()
         mock_workspace.run_command = MagicMock(return_value=(0, "Success", ""))
@@ -478,13 +527,23 @@ class TestQuestionSetProcessing:
         mock_workspace.read_file = MagicMock(return_value="Answer content")
         mock_workspace_class.return_value = mock_workspace
 
-        # Track file operations
-        with patch("shutil.copy2") as _:
-            # Create runner
-            runner = ScenarioRunner()
+        # Mock subprocess.run for question commands
+        with patch("framework.runner.subprocess.run") as mock_subprocess:
+            mock_subprocess.return_value = MagicMock(
+                returncode=0,
+                stdout="Answer output",
+                stderr="",
+            )
 
-            # Run scenario
-            await runner._run_async(scenario)
+            # Track file operations
+            with patch("shutil.copy2") as _:
+                with patch("pathlib.Path.exists", return_value=True):
+                    with patch("pathlib.Path.iterdir", return_value=[]):
+                        # Create runner
+                        runner = ScenarioRunner()
+
+                        # Run scenario
+                        await runner._run_async(scenario)
 
             # Verify answer file was copied
             # Note: Implementation may vary, check if copy was attempted

@@ -278,8 +278,9 @@ class TestScenarioCombinations:
         )
 
         assert result["passed"] is True
-        # Initial prompt in non-conversational becomes a command
-        assert workspace.run_command.call_count >= 1
+        # Non-conversational scenarios skip agent interaction now
+        # So initial_prompt is ignored in non-conversational mode
+        assert workspace.run_command.call_count == 0
 
     @patch("framework.runner.save_results")
     @patch("framework.runner.IsolatedWorkspace")

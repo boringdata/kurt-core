@@ -394,12 +394,12 @@ class ScenarioRunner:
             if not skip_aggregated_save:
                 results_dir = Path(__file__).parent.parent / "results"
                 save_results(
-                    scenario.name,
-                    run_metrics,
-                    workspace_metrics,
-                    results_dir,
-                    passed,
-                    error_message,
+                    scenario_name=scenario.name,
+                    run_metrics=run_metrics,
+                    workspace_metrics=workspace_metrics,
+                    output_dir=results_dir,
+                    passed=passed,
+                    error=error_message,
                     raw_transcript=self.raw_transcript,
                     command_outputs=workspace.command_outputs,
                     conversational=scenario.conversational,
