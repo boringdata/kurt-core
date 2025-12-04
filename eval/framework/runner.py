@@ -262,6 +262,7 @@ class ScenarioRunner:
             else None,  # Pass setup commands from scenario
         )
         metrics_collector = MetricsCollector()
+        metrics_collector.start_timing()  # Start timing the evaluation
         had_error = False
         error_message = None
 
@@ -434,9 +435,8 @@ class ScenarioRunner:
                 single_question_id = first_question.get("id") or "q1"
             else:
                 single_question_id = "q1"
-        self._log(
-            f"\n🧪 Running {total_questions} question(s) defined in {Path(config.file).name}\n"
-        )
+        file_name = Path(config.file).name if config.file else "inline questions"
+        self._log(f"\n🧪 Running {total_questions} question(s) defined in {file_name}\n")
 
         total_usage_tokens = 0.0
         any_cached = False
@@ -1189,6 +1189,11 @@ Execute commands as requested and report results concisely.""",
                                 output_tokens = msg.usage.get("output_tokens", 0)
                                 turn_tokens = input_tokens + output_tokens
 
+                                # Add usage to metrics collector
+                                metrics_collector.add_usage(
+                                    {"input_tokens": input_tokens, "output_tokens": output_tokens}
+                                )
+
                             turn_cost = msg.total_cost_usd or 0.0
                             cumulative_tokens += turn_tokens
                             cumulative_cost += turn_cost
@@ -1348,9 +1353,8 @@ Execute commands as requested and report results concisely.""",
                         {"role": "user", "content": current_message}
                     )
 
-                # Record final usage in metrics
-                metrics_collector.add_usage({"total_tokens": cumulative_tokens})
-                # Note: cost tracking would need to be added separately if needed
+                # Note: usage metrics already recorded per turn above
+                # Cost tracking would need to be added separately if needed
 
                 # Log final summary with stop reason
                 elapsed = time.time() - start_time

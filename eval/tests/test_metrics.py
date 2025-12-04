@@ -39,16 +39,29 @@ class TestMetricsCollector:
         """Test adding token usage."""
         collector = MetricsCollector()
 
-        # Add first usage
-        collector.add_usage({"input_tokens": 100, "output_tokens": 50, "total_tokens": 150})
+        # Add first usage with input/output tokens
+        collector.add_usage({"input_tokens": 100, "output_tokens": 50})
 
-        # Add second usage
-        collector.add_usage({"input_tokens": 200, "output_tokens": 100, "total_tokens": 300})
+        metrics = collector.get_metrics()
+        assert metrics["usage"]["input_tokens"] == 100
+        assert metrics["usage"]["output_tokens"] == 50
+        assert metrics["usage"]["total_tokens"] == 150
+
+        # Add second usage with input/output tokens
+        collector.add_usage({"input_tokens": 200, "output_tokens": 100})
 
         metrics = collector.get_metrics()
         assert metrics["usage"]["input_tokens"] == 300
         assert metrics["usage"]["output_tokens"] == 150
         assert metrics["usage"]["total_tokens"] == 450
+
+        # Test that total_tokens in input is ignored (only input/output matter)
+        collector.add_usage({"input_tokens": 50, "output_tokens": 25, "total_tokens": 999})
+
+        metrics = collector.get_metrics()
+        assert metrics["usage"]["input_tokens"] == 350
+        assert metrics["usage"]["output_tokens"] == 175
+        assert metrics["usage"]["total_tokens"] == 525  # Should be 350+175, not affected by 999
 
     def test_add_conversation_turn(self):
         """Test adding conversation turns."""

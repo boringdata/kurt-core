@@ -11,7 +11,7 @@ Tests that:
 import asyncio
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
@@ -37,6 +37,7 @@ class TestScenarioRunner:
 
         if with_questions:
             scenario.question_set = QuestionSetConfig(
+                file=None,  # Not needed for inline questions
                 questions=[
                     {"id": "q1", "question": "What is Python?"},
                     {"id": "q2", "question": "What is JavaScript?"},
@@ -116,13 +117,10 @@ class TestScenarioRunner:
         # Verify result
         assert result["passed"] is True
 
-    @patch("framework.runner.ConversationRunner")
     @patch("framework.runner.IsolatedWorkspace")
     @patch("framework.runner.save_results")
     @pytest.mark.asyncio
-    async def test_conversational_execution(
-        self, mock_save_results, mock_workspace_class, mock_conv_runner_class
-    ):
+    async def test_conversational_execution(self, mock_save_results, mock_workspace_class):
         """Test conversational scenario execution."""
         # Create conversational scenario
         scenario = self.create_test_scenario(conversational=True)
@@ -134,10 +132,9 @@ class TestScenarioRunner:
         mock_workspace.command_outputs = []
         mock_workspace_class.return_value = mock_workspace
 
-        # Mock conversation runner
-        mock_conv_runner = AsyncMock()
-        mock_conv_runner.run = AsyncMock(
-            return_value={
+        # Mock the SDK client execution
+        with patch.object(ScenarioRunner, "_execute_with_sdk") as mock_execute_sdk:
+            mock_execute_sdk.return_value = {
                 "messages": [
                     {"role": "user", "content": "Test question"},
                     {"role": "assistant", "content": "Test answer"},
@@ -145,17 +142,15 @@ class TestScenarioRunner:
                 "usage": {"input_tokens": 100, "output_tokens": 50, "total_tokens": 150},
                 "raw_transcript": "Full conversation transcript",
             }
-        )
-        mock_conv_runner_class.return_value = mock_conv_runner
 
-        # Create runner
-        runner = ScenarioRunner()
+            # Create runner
+            runner = ScenarioRunner()
 
-        # Run scenario
-        result = await runner._run_async(scenario)
+            # Run scenario
+            result = await runner._run_async(scenario)
 
-        # Verify conversation runner was used
-        mock_conv_runner.run.assert_called_once()
+            # Verify SDK was used
+            mock_execute_sdk.assert_called_once()
 
         # Verify result
         assert result["passed"] is True
@@ -166,7 +161,7 @@ class TestScenarioRunner:
 
     @patch("framework.runner.IsolatedWorkspace")
     @patch("framework.runner.save_results")
-    @patch("framework.runner.score_answer")
+    @patch("framework.runner.score_single_answer")
     @pytest.mark.asyncio
     async def test_llm_judge_integration(
         self, mock_score_answer, mock_save_results, mock_workspace_class

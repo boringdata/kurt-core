@@ -104,6 +104,7 @@ class ScenarioBuilder:
                 {"id": "q1", "question": "What is Python?"},
                 {"id": "q2", "question": "What is JavaScript?"},
             ],
+            file="test_questions.yaml",  # Add required file parameter
             answer_file_template="/tmp/answer_{question_id}.md",
             commands=["echo '{question}' > {answer_file}"],
             results_dir="eval/results/test",
@@ -280,22 +281,18 @@ class TestScenarioCombinations:
         # Initial prompt in non-conversational becomes a command
         assert workspace.run_command.call_count >= 1
 
-    @patch("framework.runner.ConversationRunner")
     @patch("framework.runner.save_results")
     @patch("framework.runner.IsolatedWorkspace")
     @pytest.mark.asyncio
-    async def test_conversational_basic(
-        self, mock_workspace_class, mock_save_results, mock_conv_runner_class
-    ):
+    async def test_conversational_basic(self, mock_workspace_class, mock_save_results):
         """Test basic conversational scenario."""
         scenario = ScenarioBuilder.conversational_basic()
         mock_workspace = MagicMock()
         mock_workspace_class.return_value = mock_workspace
 
-        # Mock conversation runner
-        mock_conv_runner = AsyncMock()
-        mock_conv_runner.run = AsyncMock(
-            return_value={
+        # Mock SDK execution for conversational mode
+        with patch.object(ScenarioRunner, "_execute_with_sdk") as mock_execute_sdk:
+            mock_execute_sdk.return_value = {
                 "messages": [
                     {"role": "user", "content": "Help me create a Python project"},
                     {"role": "assistant", "content": "I'll help you create a Python project"},
@@ -303,15 +300,13 @@ class TestScenarioCombinations:
                 "usage": {"input_tokens": 100, "output_tokens": 50, "total_tokens": 150},
                 "raw_transcript": "Full conversation",
             }
-        )
-        mock_conv_runner_class.return_value = mock_conv_runner
 
-        result, workspace, save_results = await self.run_scenario_test(
-            scenario, mock_workspace, mock_save_results
-        )
+            result, workspace, save_results = await self.run_scenario_test(
+                scenario, mock_workspace, mock_save_results
+            )
 
-        assert result["passed"] is True
-        mock_conv_runner.run.assert_called_once()
+            assert result["passed"] is True
+            mock_execute_sdk.assert_called_once()
 
     @patch("framework.runner.assert_all")
     @patch("framework.runner.save_results")
