@@ -26,7 +26,6 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
         priority: Priority for workflow execution (1=highest, default=10)
     """
     # Initialize DBOS fresh in this process
-    from dbos import SetEnqueueOptions
 
     from kurt.workflows import get_dbos, init_dbos
 
@@ -40,22 +39,18 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
 
     # Get the workflow function
     workflow_func = None
-    queue = None
     if workflow_name == "map_url_workflow":
-        from kurt.content.map.workflow import get_map_queue, map_url_workflow
+        from kurt.content.map.workflow import map_url_workflow
 
         workflow_func = map_url_workflow
-        queue = get_map_queue()
     elif workflow_name == "fetch_workflow":
-        from kurt.content.fetch.workflow import fetch_queue, fetch_workflow
+        from kurt.content.fetch.workflow import fetch_workflow
 
         workflow_func = fetch_workflow
-        queue = fetch_queue
     elif workflow_name == "complete_indexing_workflow":
         from kurt.content.indexing.workflow_indexing import complete_indexing_workflow
 
         workflow_func = complete_indexing_workflow
-        queue = None  # No queue needed for direct workflow invocation
     else:
         sys.exit(1)  # Unknown workflow
 
@@ -81,15 +76,12 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
     os.dup2(log_fd, sys.stderr.fileno())
     os.close(log_fd)
 
-    # Enqueue the workflow (now logging is already configured)
-    with SetEnqueueOptions(priority=priority):
-        if queue:
-            handle = queue.enqueue(workflow_func, **workflow_args)
-        else:
-            # For workflows without a queue, call directly
-            from dbos import DBOS
+    # Start the workflow directly (not via queue) to ensure logging works
+    # When using queues, the workflow runs in a worker thread that doesn't
+    # have our logging configuration. Starting directly ensures logs are captured.
+    from dbos import DBOS
 
-            handle = DBOS.start_workflow(workflow_func, **workflow_args)
+    handle = DBOS.start_workflow(workflow_func, **workflow_args)
 
     # Now we know the workflow ID, rename the log file
     final_log_file = log_dir / f"workflow-{handle.workflow_id}.log"
