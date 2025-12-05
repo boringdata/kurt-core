@@ -314,8 +314,8 @@ OPENAI_API_KEY=your_openai_api_key_here
                         )
 
                         # Copy settings.json for Claude hooks
-                        plugin_source = Path(__file__).parent / "claude_plugin"
-                        settings_source = plugin_source / "settings.json"
+                        agents_dir_source = Path(__file__).parent / "agents"
+                        settings_source = agents_dir_source / "claude-settings.json"
                         if settings_source.exists():
                             dest_settings = ide_dir / "settings.json"
                             with open(settings_source) as f:

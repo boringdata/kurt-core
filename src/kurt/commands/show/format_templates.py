@@ -62,18 +62,15 @@ def format_templates_cmd():
     app_space_templates = {}
     package_root = Path(__file__).parent.parent.parent
 
-    # Check both cursor and claude plugin directories
-    for plugin in ["cursor_plugin", "claude_plugin"]:
-        plugin_templates_dir = package_root / plugin / "kurt" / "templates" / "formats"
-        if plugin_templates_dir.exists():
-            for template_file in plugin_templates_dir.glob("*.md"):
-                if template_file.name not in app_space_templates:
-                    app_space_templates[template_file.stem] = {
-                        "path": template_file,
-                        "description": get_template_description(template_file),
-                        "category": categorize_template(template_file.stem),
-                    }
-            break  # Only need one plugin's templates
+    # Check agents directory for system templates
+    agents_templates_dir = package_root / "agents" / "templates" / "formats"
+    if agents_templates_dir.exists():
+        for template_file in agents_templates_dir.glob("*.md"):
+            app_space_templates[template_file.stem] = {
+                "path": template_file,
+                "description": get_template_description(template_file),
+                "category": categorize_template(template_file.stem),
+            }
 
     # Find user-space templates
     user_space_templates = {}
