@@ -148,12 +148,15 @@ class SQLiteClient(DatabaseClient):
         """
         Ensure vector search tables exist.
 
-        Creates vec0 virtual tables for entity embeddings if sqlite-vec is available.
+        Creates vec0 virtual table for entity embeddings if sqlite-vec is available.
         This must be called after migrations are run.
+
+        Note: Document embeddings are stored directly in the documents table,
+        not in a separate vec0 table for simplicity.
         """
         session = self.get_session()
         try:
-            # Check if sqlite-vec is available by trying to create a test table
+            # Entity embeddings
             session.exec(
                 """
                 CREATE VIRTUAL TABLE IF NOT EXISTS entity_embeddings
@@ -163,10 +166,11 @@ class SQLiteClient(DatabaseClient):
                 )
                 """
             )
+
             session.commit()
             logger.info("Created entity_embeddings vector table")
         except Exception as e:
-            logger.warning(f"Could not create vector tables (sqlite-vec not available): {e}")
+            logger.warning(f"Could not create vector table (sqlite-vec not available): {e}")
             # This is OK - vector search features just won't work
         finally:
             session.close()
@@ -217,6 +221,91 @@ class SQLiteClient(DatabaseClient):
         finally:
             session.close()
 
+    def search_similar_documents(
+        self, query_embedding: bytes, limit: int = 20, min_similarity: float = 0.70
+    ) -> list[tuple[str, float]]:
+        """
+        Search for documents similar to the query embedding.
+
+        Uses cosine similarity on document embeddings stored in the documents table.
+        This is a pure Python implementation that doesn't require vec0 extension.
+
+        Args:
+            query_embedding: Query embedding as bytes (512 float32 values)
+            limit: Maximum number of results to return
+            min_similarity: Minimum cosine similarity threshold (0.0-1.0)
+
+        Returns:
+            List of (document_id, similarity_score) tuples sorted by similarity desc
+        """
+        import struct
+
+        import numpy as np
+        from sqlmodel import select
+
+        from kurt.db.models import Document
+
+        session = self.get_session()
+        try:
+            # Convert query embedding bytes to numpy array
+            # Determine embedding dimension from byte length (each float32 is 4 bytes)
+            embedding_dim = len(query_embedding) // 4
+            query_floats = struct.unpack(f"{embedding_dim}f", query_embedding)
+            query_vec = np.array(query_floats)
+            query_norm = np.linalg.norm(query_vec)
+
+            if query_norm == 0:
+                logger.warning("Query embedding has zero norm")
+                return []
+
+            # Get all documents with embeddings
+            stmt = select(Document).where(
+                (Document.embedding.is_not(None)) & (Document.embedding != b"")
+            )
+            documents = session.exec(stmt).all()
+
+            # Calculate cosine similarity for each document
+            similarities = []
+            for doc in documents:
+                if not doc.embedding or len(doc.embedding) == 0:
+                    continue
+
+                try:
+                    # Convert document embedding bytes to numpy array
+                    doc_embedding_dim = len(doc.embedding) // 4
+
+                    # Skip if dimensions don't match
+                    if doc_embedding_dim != embedding_dim:
+                        logger.debug(
+                            f"Skipping document {doc.id}: embedding dimension mismatch "
+                            f"(query: {embedding_dim}, doc: {doc_embedding_dim})"
+                        )
+                        continue
+
+                    doc_floats = struct.unpack(f"{doc_embedding_dim}f", doc.embedding)
+                    doc_vec = np.array(doc_floats)
+                    doc_norm = np.linalg.norm(doc_vec)
+
+                    # Calculate cosine similarity
+                    if doc_norm > 0:
+                        similarity = float(np.dot(query_vec, doc_vec) / (query_norm * doc_norm))
+
+                        # Only include if above threshold
+                        if similarity >= min_similarity:
+                            similarities.append((str(doc.id), similarity))
+                except Exception as e:
+                    logger.debug(f"Error calculating similarity for document {doc.id}: {e}")
+                    continue
+
+            # Sort by similarity descending and limit results
+            similarities.sort(key=lambda x: x[1], reverse=True)
+            return similarities[:limit]
+
+        except Exception as e:
+            logger.error(f"Error in document similarity search: {e}")
+            return []
+        finally:
+            session.close()
     # ========== ASYNC METHODS ==========
 
     def get_async_database_url(self) -> str:
