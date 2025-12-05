@@ -18,9 +18,9 @@ from kurt.admin.telemetry.decorators import track_command  # noqa: E402
 from kurt.commands.admin import admin  # noqa: E402
 from kurt.commands.content import content  # noqa: E402
 from kurt.commands.integrations import integrations  # noqa: E402
-from kurt.commands.show import show
-from kurt.commands.update import update
+from kurt.commands.show import show  # noqa: E402
 from kurt.commands.status import status  # noqa: E402
+from kurt.commands.update import update  # noqa: E402
 from kurt.commands.workflows import workflows_group  # noqa: E402
 from kurt.config.base import (  # noqa: E402
     KurtConfig,
