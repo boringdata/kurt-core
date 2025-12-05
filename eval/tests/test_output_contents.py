@@ -237,21 +237,20 @@ class TestAnswerFileContents:
             timestamp="20241203_180000",
         )
 
-        # Check answer file
+        # Check transcript file contains the answer (answer files are created by runner, not save_results)
         scenario_dir = tmp_path / "test_answer"
-        answer_file = scenario_dir / "q1_20241203_180000_answer.md"
+        transcript_file = scenario_dir / "q1_20241203_180000_transcript.md"
 
-        assert answer_file.exists(), "Answer file should exist"
+        assert transcript_file.exists(), "Transcript file should exist"
 
-        with open(answer_file) as f:
+        with open(transcript_file) as f:
             content = f.read()
 
-            # Should contain the answer and question
-            assert "# Answer" in content
+            # Transcript should contain the answer from command output
             assert "Python" in content
             assert "high-level programming language" in content
 
-            print(f"✓ Answer file contains command output ({len(content)} chars)")
+            print(f"✓ Transcript file contains command output ({len(content)} chars)")
 
 
 class TestJSONStructure:

@@ -52,9 +52,11 @@ def configure_dspy_llm(provider: str = "anthropic", model: Optional[str] = None)
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY environment variable not set")
 
-        model = model or "claude-3-5-sonnet-20241022"
+        # Model should be provided from config, no hardcoded default
+        if not model:
+            raise ValueError("Model name must be specified in config for anthropic provider")
         lm = dspy.LM(
-            model=f"anthropic/{model}",
+            model=model,  # Don't prefix with anthropic/
             api_key=api_key,
             max_tokens=4096,
         )
@@ -85,6 +87,7 @@ def score_single_answer(
     required_topics: List[str],
     score_weights: Dict[str, float],
     llm_provider: str = "anthropic",
+    model: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Score a single answer using LLM-as-judge.
 
@@ -110,7 +113,7 @@ def score_single_answer(
         }
     """
     # Configure DSPy (if not already configured)
-    configure_dspy_llm(provider=llm_provider)
+    configure_dspy_llm(provider=llm_provider, model=model)
 
     # Create scorer module
     scorer = dspy.ChainOfThought(AnswerScorer)

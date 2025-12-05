@@ -218,11 +218,32 @@ class QuestionSetExecutor:
             self._log("   🧠 Scoring with LLM judge...")
 
             judge_config = config.llm_judge
+
+            # Get expected answer from questions config
+            expected_answer = ""
+            required_topics = []
+            for q in getattr(config, 'questions', []):
+                if isinstance(q, dict) and q.get('question') == question:
+                    expected_answer = q.get('expected_answer', '')
+                    required_topics = q.get('required_topics', [])
+                    break
+
+            # Get weights from config or use defaults
+            weights = judge_config.get("weights", {
+                "accuracy": 0.4,
+                "completeness": 0.3,
+                "relevance": 0.2,
+                "clarity": 0.1,
+            })
+
             result = score_single_answer(
                 question=question,
-                answer=answer,
-                provider=judge_config.get("provider", "anthropic"),
-                weights=judge_config.get("weights"),
+                canonical_answer=expected_answer,
+                generated_answer=answer,
+                required_topics=required_topics,
+                score_weights=weights,
+                llm_provider=judge_config.get("provider", "anthropic"),
+                model=judge_config.get("model"),
             )
 
             if result and "overall_score" in result:

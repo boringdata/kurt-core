@@ -8,7 +8,7 @@ import re
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
@@ -201,6 +201,40 @@ def extract_sources_from_answer(answer_text: str, scenario_name: str = "") -> st
     return "; ".join(sources) if sources else ""
 
 
+def create_github_link(
+    file_path: str,
+    repo: str = "https://github.com/anthropics/kurt-core",
+    branch: str = "main",
+) -> str:
+    """Create a GitHub link to a file.
+
+    Args:
+        file_path: Path to the file
+        repo: GitHub repository URL
+        branch: Branch name
+
+    Returns:
+        GitHub URL to the file
+    """
+    if not file_path or file_path == "N/A":
+        return ""
+
+    # Clean the path
+    if file_path.startswith("/tmp/"):
+        # These are temporary files, no GitHub link
+        return ""
+
+    # Remove leading slash if present
+    if file_path.startswith("/"):
+        # For absolute paths, try to extract relative part
+        if "/kurt-core/" in file_path:
+            file_path = file_path.split("/kurt-core/")[-1]
+        else:
+            return ""  # Can't determine relative path
+
+    return f"{repo}/blob/{branch}/{file_path}"
+
+
 def calculate_source_overlap(sources1_str: str, sources2_str: str) -> str:
     """Calculate overlap between two sets of sources."""
 
@@ -259,8 +293,21 @@ def generate_report(
     without_entries: Dict[str, Dict[str, Any]],
     questions: List[Dict],
     output: Path,
+    github_repo: str = "https://github.com/anthropics/kurt-core",
+    github_branch: str = "main",
+    scenario_names: Tuple[str, str] = ("answer_motherduck_with_kg", "answer_motherduck_without_kg"),
 ):
-    """Generate both markdown report and CSV with one line per scenario per question."""
+    """Generate both markdown report and CSV with one line per scenario per question.
+
+    Args:
+        with_entries: Results for with_kg scenario
+        without_entries: Results for without_kg scenario
+        questions: List of questions
+        output: Output path for reports
+        github_repo: GitHub repository URL for file links
+        github_branch: GitHub branch for file links
+        scenario_names: Tuple of (with_kg_name, without_kg_name) scenario names
+    """
     with_summary = compute_summary(with_entries)
     without_summary = compute_summary(without_entries)
 
@@ -315,13 +362,23 @@ def generate_report(
             llm_judge = with_entry.get("llm_judge", {})
             token_usage = with_entry.get("token_usage", {})
 
+            # Create GitHub link for source file if available
+            source_file = with_entry.get("_source_file", "")
+            github_link = create_github_link(source_file, github_repo, github_branch)
+
+            # Create GitHub link for scenario definition
+            scenario_def_path = f"eval/scenarios/{scenario_names[0]}.yaml"
+            scenario_def_link = create_github_link(scenario_def_path, github_repo, github_branch)
+
             csv_rows.append(
                 {
                     "question_num": idx,
-                    "scenario": "answer_motherduck_with_kg",
+                    "scenario": scenario_names[0],
+                    "scenario_definition": scenario_def_link,
                     "question": question_text,
                     "answer": clean_answer,
                     "answer_file": answer_file,
+                    "github_link": github_link,
                     "sources": sources,
                     "judge_overall_score": str(llm_judge.get("overall_score", ""))
                     if llm_judge
@@ -397,13 +454,23 @@ def generate_report(
             llm_judge = without_entry.get("llm_judge", {})
             token_usage = without_entry.get("token_usage", {})
 
+            # Create GitHub link for source file if available
+            source_file = without_entry.get("_source_file", "")
+            github_link = create_github_link(source_file, github_repo, github_branch)
+
+            # Create GitHub link for scenario definition
+            scenario_def_path = f"eval/scenarios/{scenario_names[1]}.yaml"
+            scenario_def_link = create_github_link(scenario_def_path, github_repo, github_branch)
+
             csv_rows.append(
                 {
                     "question_num": idx,
-                    "scenario": "answer_motherduck_without_kg",
+                    "scenario": scenario_names[1],
+                    "scenario_definition": scenario_def_link,
                     "question": question_text,
                     "answer": clean_answer,
                     "answer_file": answer_file,
+                    "github_link": github_link,
                     "sources": sources,
                     "judge_overall_score": str(llm_judge.get("overall_score", ""))
                     if llm_judge
@@ -455,8 +522,8 @@ def generate_report(
         q_num = row["question_num"]
         q_sources = source_deltas.get(q_num, {})
 
-        with_kg_sources = q_sources.get("answer_motherduck_with_kg", "")
-        without_kg_sources = q_sources.get("answer_motherduck_without_kg", "")
+        with_kg_sources = q_sources.get(scenario_names[0], "")
+        without_kg_sources = q_sources.get(scenario_names[1], "")
 
         if with_kg_sources and without_kg_sources:
             row["source_delta"] = calculate_source_overlap(with_kg_sources, without_kg_sources)
@@ -472,9 +539,11 @@ def generate_report(
         header = [
             "Question #",
             "Scenario",
+            "Scenario Definition",
             "Question Text",
             "Answer",
             "Answer File",
+            "Result File",
             "Sources",
             "Source Delta",
             "Judge Overall Score",
@@ -493,9 +562,11 @@ def generate_report(
             csv_row = [
                 str(row["question_num"]),
                 row["scenario"],
+                row.get("scenario_definition", ""),
                 row["question"],
                 row["answer"],
                 row.get("answer_file", ""),
+                row.get("github_link", ""),
                 row["sources"],
                 row.get("source_delta", ""),
                 row["judge_overall_score"],
@@ -630,7 +701,9 @@ def generate_report(
             report_lines.append("")
 
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text("\n".join(report_lines), encoding="utf-8")
+    # Write markdown report with .md extension
+    md_output = output.with_suffix(".md") if not str(output).endswith(".md") else output
+    md_output.write_text("\n".join(report_lines), encoding="utf-8")
 
     payload = {
         "with_kg": {"questions": with_entries, "summary": with_summary},
@@ -638,7 +711,9 @@ def generate_report(
         "per_question": combined_rows,
         "generated_at": datetime.now().isoformat(),
     }
-    output.with_suffix(".json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    # Write JSON report with consistent naming
+    json_output = output.with_suffix(".json") if not str(output).endswith(".json") else output
+    json_output.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def generate_report_from_dirs(
@@ -646,6 +721,8 @@ def generate_report_from_dirs(
     without_dir: Path | str,
     questions_file: Path | str,
     output_file: Path | str,
+    github_repo: str = "https://github.com/anthropics/kurt-core",
+    github_branch: str = "main",
 ) -> Path:
     with_path = Path(with_dir)
     without_path = Path(without_dir)
@@ -661,7 +738,15 @@ def generate_report_from_dirs(
             "Missing per-question results. Run the scenarios before generating the report."
         )
 
-    generate_report(with_entries, without_entries, questions, output_path)
+    # Extract scenario names from directory names
+    with_scenario = with_path.name
+    without_scenario = without_path.name
+    scenario_names = (with_scenario, without_scenario)
+
+    generate_report(
+        with_entries, without_entries, questions, output_path,
+        github_repo, github_branch, scenario_names
+    )
     return output_path
 
 

@@ -126,7 +126,7 @@ class TestDSPyIntegration:
 
         # Verify Anthropic was configured
         mock_dspy.LM.assert_called_with(
-            "anthropic/claude-3-5-haiku-20241022",
+            "anthropic/claude-3-5-haiku-latest",
             api_key="test-key",
             max_tokens=150,
             temperature=0.2,

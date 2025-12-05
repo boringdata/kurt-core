@@ -94,7 +94,7 @@ def get_llm_config(provider: str = "anthropic") -> Dict[str, Any]:
 
     configs = {
         "anthropic": {
-            "model": "claude-3-5-haiku-20241022",
+            "model": "claude-3-5-haiku-latest",
             "api_key": api_key,
             "max_tokens": 150,
             "temperature": 0.2,

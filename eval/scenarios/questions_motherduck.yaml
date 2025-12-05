@@ -13,19 +13,19 @@ questions:
       Other efficient formats include CSV for simple data and JSON for semi-structured data,
       but Parquet offers the best performance for large-scale analytics.
 
-  # - question: "...How does MotherDuck integrate with DuckDB?"
-  #   expected_answer: |
-  #     MotherDuck is built on top of DuckDB and provides a serverless cloud data warehouse.
-  #     It uses DuckDB as its query engine while adding cloud storage, collaboration features,
-  #     and managed infrastructure. MotherDuck maintains full compatibility with DuckDB's SQL
-  #     dialect and allows users to run queries seamlessly across local and cloud data.
+  - question: "...How does MotherDuck integrate with DuckDB?"
+    expected_answer: |
+      MotherDuck is built on top of DuckDB and provides a serverless cloud data warehouse.
+      It uses DuckDB as its query engine while adding cloud storage, collaboration features,
+      and managed infrastructure. MotherDuck maintains full compatibility with DuckDB's SQL
+      dialect and allows users to run queries seamlessly across local and cloud data.
 
-  # - question: "...What SQL features from DuckDB are not yet supported in MotherDuck?"
-  #   expected_answer: |
-  #     MotherDuck aims for high compatibility with DuckDB but may have some limitations with
-  #     certain extensions, user-defined functions, or very recent DuckDB features that haven't
-  #     been integrated yet. Check the MotherDuck documentation for the current list of unsupported
-  #     features or limitations.
+  - question: "...What SQL features from DuckDB are not yet supported in MotherDuck?"
+    expected_answer: |
+      MotherDuck aims for high compatibility with DuckDB but may have some limitations with
+      certain extensions, user-defined functions, or very recent DuckDB features that haven't
+      been integrated yet. Check the MotherDuck documentation for the current list of unsupported
+      features or limitations.
 
   # - question: "...Why might a query run slower on MotherDuck than locally?"
   #   expected_answer: |

@@ -469,7 +469,29 @@ def run_all(filter, stop_on_failure, max_tool_calls, max_duration, llm_provider)
     default="eval/results/comparison_report.md",
     help="Output markdown path (JSON summary written alongside).",
 )
-def report_question(scenarios, questions_file, output):
+@click.option(
+    "--sync-gsheet",
+    is_flag=True,
+    help="Sync report to Google Sheets (requires credentials).",
+)
+@click.option(
+    "--gsheet-name",
+    default="Kurt Eval Report",
+    help="Name for the Google Sheet.",
+)
+@click.option(
+    "--github-repo",
+    default="https://github.com/anthropics/kurt-core",
+    help="GitHub repository URL for file links.",
+)
+@click.option(
+    "--github-branch",
+    default="main",
+    help="GitHub branch for file links.",
+)
+def report_question(
+    scenarios, questions_file, output, sync_gsheet, gsheet_name, github_repo, github_branch
+):
     """Generate an LLM-judge comparison report for question-answering scenarios."""
     scenario_names = [s.strip() for s in scenarios.split(",") if s.strip()]
     if len(scenario_names) != 2:
@@ -508,7 +530,37 @@ def report_question(scenarios, questions_file, output):
             without_dir=scenario_dirs[0],
             questions_file=questions_path,
             output_file=output_path,
+            github_repo=github_repo,
+            github_branch=github_branch,
         )
+
+        # Sync to Google Sheets if requested
+        if sync_gsheet:
+            try:
+                from eval.framework.analysis.gsheet_sync import GSheetReportSync
+
+                sync = GSheetReportSync(
+                    repo_url=github_repo,
+                    branch=github_branch,
+                )
+
+                csv_path = output_path.parent / "scenario_comparison.csv"
+                json_path = output_path.with_suffix(".json")
+
+                sheet_url = sync.sync_report(
+                    csv_path=str(csv_path),
+                    json_path=str(json_path) if json_path.exists() else None,
+                    spreadsheet_name=gsheet_name,
+                )
+
+                click.echo(f"\n✅ Report synced to Google Sheets: {sheet_url}")
+            except ImportError:
+                click.echo(
+                    "\n❌ Google Sheets sync requires additional dependencies. "
+                    "Install with: pip install google-api-python-client google-auth pandas"
+                )
+            except Exception as e:
+                click.echo(f"\n❌ Failed to sync to Google Sheets: {e}")
     except ValueError as exc:
         raise click.ClickException(str(exc))
 
@@ -729,6 +781,31 @@ def training_view(scenario, index, filter_passed):
     if not example.passed and example.error:
         click.echo("\n❌ Error:")
         click.secho(f"  {example.error}", fg="red")
+
+
+@main.command()
+@click.option('--method', type=click.Choice(['service-account', 'oauth', 'auto']),
+              default='auto', help='Authentication method')
+@click.option('--credentials-file', help='Path to credentials JSON file')
+@click.option('--test', is_flag=True, help='Test the connection after setup')
+def gsheet_auth(method, credentials_file, test):
+    """Set up Google Sheets authentication for eval reports.
+
+    This command helps you configure Google API credentials to enable
+    automatic syncing of evaluation results to Google Sheets.
+
+    Examples:
+      # Interactive setup guide
+      uv run python -m eval gsheet-auth
+
+      # Set up with existing credentials
+      uv run python -m eval gsheet-auth --credentials-file ~/Downloads/key.json --test
+
+      # Force service account method
+      uv run python -m eval gsheet-auth --method service-account
+    """
+    from framework.commands.gsheet_auth import gsheet_auth as auth_cmd
+    auth_cmd.callback(method, credentials_file, test)
 
 
 if __name__ == "__main__":

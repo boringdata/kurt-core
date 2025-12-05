@@ -88,7 +88,7 @@ def check_conversation_completion_with_llm(
                 return None, "Anthropic API key not set", "low"
 
             lm = dspy.LM(
-                "anthropic/claude-3-5-haiku-20241022",
+                "anthropic/claude-3-5-haiku-latest",
                 api_key=api_key,
                 max_tokens=150,
                 temperature=0.2,

@@ -172,25 +172,43 @@ def save_results(
 
         traceback.print_exc()
 
-    # Save transcript based on scenario type
-    if conversational:
-        # Handle conversational scenarios with raw transcript
-        _save_raw_transcript(
-            scenario_dir / f"{base_filename}.md",
-            scenario_name,
-            raw_transcript,
-            passed,
-            run_metrics,
-        )
-    else:
-        # Handle non-conversational scenarios with command outputs
-        _save_command_outputs(
-            scenario_dir / f"{base_filename}.md",
-            scenario_name,
-            command_outputs or [],
-            passed,
-            run_metrics,
-        )
+    # Save transcript file
+    transcript_path = scenario_dir / f"{base_filename}_transcript.md"
+    with open(transcript_path, "w") as f:
+        f.write(f"# Scenario: {scenario_name}\n\n")
+        f.write(f"**Status**: {'✅ PASSED' if passed else '❌ FAILED'}\n")
+        f.write(f"**Timestamp**: {timestamp}\n\n")
+
+        # Add metrics summary
+        if run_metrics:
+            duration = run_metrics.get("timing", {}).get("duration_seconds")
+            tokens = run_metrics.get("usage", {}).get("total_tokens")
+            if duration is not None:
+                f.write(f"**Duration**: {duration:.2f} seconds\n")
+            if tokens is not None:
+                f.write(f"**Tokens Used**: {tokens}\n")
+            f.write("\n---\n\n")
+
+        # Write appropriate content based on scenario type
+        if conversational and raw_transcript:
+            f.write("## Conversation\n\n")
+            formatted_transcript = format_conversation_transcript(raw_transcript)
+            f.write(formatted_transcript)
+        elif command_outputs:
+            f.write("## Command Outputs\n\n")
+            for cmd_output in command_outputs:
+                if isinstance(cmd_output, dict):
+                    cmd = cmd_output.get("command", "Unknown")
+                    output = cmd_output.get("stdout", "")
+                    f.write(f"### Command: {cmd}\n\n")
+                    if output:
+                        f.write(f"```\n{output}\n```\n\n")
+                else:
+                    f.write(f"{cmd_output}\n")
+        else:
+            f.write("*No output data captured.*\n")
+
+    print(f"📝 Transcript saved: {transcript_path}")
 
 
 def update_csv_results(
@@ -395,11 +413,14 @@ def _extract_answer_from_conversation(raw_transcript) -> Optional[str]:
                 answer_text = turn.content
                 break
     elif isinstance(raw_transcript, list):
-        # List of message dictionaries - get last assistant message
+        # List of message dictionaries or strings - get last assistant message
         for msg in reversed(raw_transcript):
-            if msg.get("role") == "assistant":
-                answer_text = msg.get("message") or msg.get("content", "")
+            if isinstance(msg, dict) and msg.get("role") == "assistant":
+                answer_text = msg.get("content")
                 break
+            elif isinstance(msg, str):
+                # Handle string format - skip non-assistant lines
+                continue  # For now, skip string messages
     elif isinstance(raw_transcript, str):
         # Plain string transcript - return as is
         answer_text = raw_transcript
@@ -445,12 +466,13 @@ def format_conversation_transcript(raw_transcript) -> str:
     elif isinstance(raw_transcript, list):
         # List of message dictionaries
         for msg in raw_transcript:
-            role = msg.get("role", "")
-            content = msg.get("content", "")
-            if role == "user":
-                formatted.append(f"## User\n{content}\n")
-            elif role == "assistant":
-                formatted.append(f"## Assistant\n{content}\n")
+            if isinstance(msg, dict):
+                role = msg.get("role", "")
+                content = msg.get("content", "")
+                if role == "user":
+                    formatted.append(f"## User\n{content}\n")
+                elif role == "assistant":
+                    formatted.append(f"## Assistant\n{content}\n")
     elif isinstance(raw_transcript, str):
         # Plain string transcript
         formatted.append(raw_transcript)
@@ -459,270 +481,3 @@ def format_conversation_transcript(raw_transcript) -> str:
         formatted.append(str(raw_transcript))
 
     return "\n".join(formatted)
-
-
-def _save_raw_transcript(
-    filepath: Path,
-    scenario_name: str,
-    raw_transcript: Optional[Any],
-    passed: bool,
-    run_metrics: Dict[str, Any],
-):
-    """Save raw transcript for conversational scenarios.
-
-    Args:
-        filepath: Path to save the transcript
-        scenario_name: Name of the scenario
-        raw_transcript: Raw conversation transcript
-        passed: Whether the scenario passed
-        run_metrics: Metrics from the run
-    """
-    # Create transcript file with proper naming
-    transcript_path = filepath.parent / filepath.name.replace(".md", "_transcript.md")
-
-    with open(transcript_path, "w") as f:
-        f.write(f"# Conversation Transcript: {scenario_name}\n\n")
-        f.write(f"**Status**: {'✅ PASSED' if passed else '❌ FAILED'}\n")
-        f.write(f"**Generated**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-
-        # Add metrics if available
-        if run_metrics:
-            duration = run_metrics.get("timing", {}).get("duration_seconds")
-            tokens = run_metrics.get("usage", {}).get("total_tokens")
-            if duration is not None:
-                f.write(f"**Duration**: {duration:.2f} seconds\n")
-            if tokens is not None:
-                f.write(f"**Tokens Used**: {tokens}\n")
-            if duration is not None or tokens is not None:
-                f.write("\n")
-
-        f.write("---\n\n")
-        f.write("## Conversation\n\n")
-
-        # Format and write the transcript
-        formatted_transcript = format_conversation_transcript(raw_transcript)
-
-        # Only add code block wrapper if transcript is empty or plain text
-        if not formatted_transcript or formatted_transcript == "No conversation data available.\n":
-            f.write("*No conversation data captured.*\n")
-        elif not any(
-            marker in formatted_transcript for marker in ["## User", "## Assistant", "```"]
-        ):
-            f.write("```\n")
-            f.write(formatted_transcript)
-            if not formatted_transcript.endswith("\n"):
-                f.write("\n")
-            f.write("```\n")
-        else:
-            f.write(formatted_transcript)
-            if not formatted_transcript.endswith("\n"):
-                f.write("\n")
-
-    print(f"📝 Transcript saved: {transcript_path}")
-
-    # Extract and save answer from conversation if available
-    if raw_transcript:
-        answer_content = _extract_answer_from_conversation(raw_transcript)
-        if answer_content:
-            answer_path = filepath.parent / filepath.name.replace(".md", "_answer.md")
-            with open(answer_path, "w") as af:
-                af.write("# Answer\n\n")
-                af.write("---\n\n")
-                af.write(answer_content)
-                if not answer_content.endswith("\n"):
-                    af.write("\n")
-            print(f"📝 Answer saved: {answer_path}")
-
-
-def _save_command_outputs(
-    filepath: Path,
-    scenario_name: str,
-    command_outputs: list,
-    passed: bool,
-    run_metrics: Dict[str, Any],
-):
-    """Save command outputs from non-conversational scenario execution.
-
-    Args:
-        filepath: Path to save the command outputs
-        scenario_name: Name of the scenario
-        command_outputs: List of command output dictionaries
-        passed: Whether the scenario passed
-    """
-    # Create a transcript file with full command output
-    transcript_path = filepath.parent / filepath.name.replace(".md", "_transcript.md")
-
-    # Note: We are NOT creating the main .md report file anymore - only transcript, answer, and json
-
-    # Save answer file if we have answer content in command outputs
-    answer_saved = False
-    for cmd_output in command_outputs:
-        if cmd_output.get("answer_file") and cmd_output.get("stdout") and not answer_saved:
-            answer_path = filepath.parent / filepath.name.replace(".md", "_answer.md")
-            with open(answer_path, "w") as af:
-                af.write("# Answer\n\n")
-                if cmd_output.get("question"):
-                    af.write(f"**Question**: {cmd_output.get('question')}\n\n")
-                af.write("---\n\n")
-                answer_content = cmd_output.get("stdout", "")
-                af.write(answer_content)
-                if not answer_content.endswith("\n"):
-                    af.write("\n")
-            answer_saved = True
-            print(f"📝 Answer saved: {answer_path}")
-
-    # Write the transcript file with full command outputs
-    with open(transcript_path, "w") as f:
-        f.write(f"# Full Command Transcript: {scenario_name}\n\n")
-        f.write(f"**Status**: {'✅ PASSED' if passed else '❌ FAILED'}\n")
-        f.write(f"**Generated**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-        f.write("---\n\n")
-
-        if not command_outputs:
-            f.write("*No commands were executed.*\n")
-            print(f"📝 Full transcript saved: {transcript_path}")
-            return
-
-        # Write all command outputs with full details
-        for cmd_output in command_outputs:
-            cmd = cmd_output.get("command", "")
-            index = cmd_output.get("index", 0)
-            question = cmd_output.get("question", "")
-            returncode = cmd_output.get("returncode")
-            stdout = cmd_output.get("stdout", "")
-            stderr = cmd_output.get("stderr", "")
-            error = cmd_output.get("error")
-
-            f.write("## Command Entry\n\n")
-
-            if question:
-                f.write(f"**Question**: {question}\n\n")
-
-            f.write(f"**Index**: {index}\n")
-            f.write(f"**Command**: `{cmd}`\n")
-
-            if error:
-                f.write(f"**Error**: {error}\n")
-            elif returncode is not None:
-                f.write(f"**Return Code**: {returncode}\n")
-
-            f.write("\n")
-
-            if stdout:
-                f.write("### STDOUT\n\n")
-                f.write("```\n")
-                f.write(stdout)
-                if not stdout.endswith("\n"):
-                    f.write("\n")
-                f.write("```\n\n")
-
-            if stderr:
-                f.write("### STDERR\n\n")
-                f.write("```\n")
-                f.write(stderr)
-                if not stderr.endswith("\n"):
-                    f.write("\n")
-                f.write("```\n\n")
-
-            f.write("---\n\n")
-
-    print(f"📝 Full transcript saved: {transcript_path}")
-
-
-def judge_answer(
-    question: str,
-    answer: str,
-    client: Any,  # anthropic.Client when available
-    expected_answer: Optional[str] = None,
-    grading_rubric: Optional[str] = None,
-    model: str = "claude-3-5-haiku-20241022",
-) -> Dict[str, Any]:
-    """Use an LLM to judge the quality of an answer.
-
-    Args:
-        question: The question that was asked
-        answer: The answer provided
-        client: Anthropic client for making API calls
-        expected_answer: Optional expected answer for comparison
-        grading_rubric: Optional custom grading rubric
-        model: Model to use for judging
-
-    Returns:
-        Dict containing overall score, component scores, and feedback
-    """
-    # Default rubric if none provided
-    default_rubric = """
-    Evaluate the answer on these dimensions (0-10 scale):
-    - Accuracy: Is the information correct and factual?
-    - Completeness: Does it fully address the question?
-    - Relevance: Is the content directly related to what was asked?
-    - Clarity: Is it well-written and easy to understand?
-
-    Overall score should be the weighted average of these components.
-    """
-
-    rubric = grading_rubric or default_rubric
-
-    prompt = f"""You are an expert evaluator. Please judge this answer to the given question.
-
-Question: {question}
-
-Answer provided:
-{answer}
-
-{f'Expected answer (for reference): {expected_answer}' if expected_answer else ''}
-
-{rubric}
-
-Provide your evaluation in this exact JSON format:
-{{
-    "overall_score": <float 0-10>,
-    "component_scores": {{
-        "accuracy": <float 0-10>,
-        "completeness": <float 0-10>,
-        "relevance": <float 0-10>,
-        "clarity": <float 0-10>
-    }},
-    "feedback": "<brief explanation of scores>"
-}}"""
-
-    try:
-        response = client.messages.create(
-            model=model,
-            max_tokens=500,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,
-        )
-
-        # Parse the JSON response
-        content = response.content[0].text
-        # Extract JSON from the response (it might have markdown formatting)
-        import re
-
-        json_match = re.search(r"\{.*\}", content, re.DOTALL)
-        if json_match:
-            result = json.loads(json_match.group())
-            return result
-        else:
-            # Fallback if parsing fails
-            return {
-                "overall_score": 5.0,
-                "component_scores": {
-                    "accuracy": 5.0,
-                    "completeness": 5.0,
-                    "relevance": 5.0,
-                    "clarity": 5.0,
-                },
-                "feedback": "Unable to parse judge response",
-            }
-    except Exception as e:
-        return {
-            "overall_score": 0.0,
-            "component_scores": {
-                "accuracy": 0.0,
-                "completeness": 0.0,
-                "relevance": 0.0,
-                "clarity": 0.0,
-            },
-            "feedback": f"Judge error: {str(e)}",
-        }

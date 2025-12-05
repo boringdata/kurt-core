@@ -237,6 +237,9 @@ class Scenario:
     # Optional override for results filename prefix (used for single-question runs)
     result_file_prefix: Optional[str] = None
 
+    # LLM judge configuration for scoring answers
+    llm_judge: Dict[str, Any] = field(default_factory=dict)
+
     def __post_init__(self):
         """Validate scenario definition."""
         # Non-conversational scenarios don't need a prompt

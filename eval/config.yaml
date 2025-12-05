@@ -59,6 +59,23 @@ user_agent:
   llm_provider: openai
 
 
+# LLM Judge Configuration
+# ------------------------
+# Default settings for LLM-as-judge evaluation
+
+llm_judge:
+  # Default provider: "anthropic" or "openai"
+  provider: anthropic
+  # Default model (if not specified in scenario)
+  model: claude-sonnet-4-5-20250929
+  # Default scoring weights
+  weights:
+    accuracy: 0.4
+    completeness: 0.3
+    relevance: 0.2
+    clarity: 0.1
+
+
 # Conversation Completion Detection
 # ----------------------------------
 # Two-tier system for detecting when conversations should end

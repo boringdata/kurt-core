@@ -5,6 +5,9 @@ project: motherduck
 conversational: true
 setup_commands:
   - uv run --project /Users/julien/Documents/wik/wikumeo/projects/kurt-core python /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/framework/dumps/loader.py motherduck --skip-entities
+llm_judge:
+  enabled: true
+  provider: anthropic
 question_set:
   file: questions_motherduck.yaml
   answer_file_template: /tmp/answer_without_kg_{question_num}.md
@@ -44,7 +47,4 @@ question_set:
   assertions:
     - type: FileExists
       path: "{answer_file}"
-  llm_judge:
-    enabled: true
-    provider: anthropic
   results_dir: eval/results/answer_motherduck_without_kg

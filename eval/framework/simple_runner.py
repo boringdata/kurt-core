@@ -142,7 +142,7 @@ class SimpleRunner:
             # Simple execution - no complex hooks or tracking
             start = time.time()
             response = await client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model="claude-3-5-sonnet-latest",
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=4096,
             )
@@ -193,7 +193,7 @@ class SimpleRunner:
             client = Anthropic(api_key=get_api_key("anthropic"))
 
             response = client.messages.create(
-                model="claude-3-5-haiku-20241022",
+                model="claude-3-5-haiku-latest",
                 messages=[{"role": "user", "content": judge_prompt}],
                 max_tokens=10,
             )

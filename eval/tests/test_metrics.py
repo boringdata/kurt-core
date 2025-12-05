@@ -160,11 +160,11 @@ class TestSaveResults:
         # Check that files were created (in scenario subdirectory)
         scenario_dir = tmp_path / "test_scenario"
         json_file = scenario_dir / "q1_20241203_120000.json"
-        answer_file = scenario_dir / "q1_20241203_120000_answer.md"
+        # Note: Answer files are created by _archive_answer_file in the runner, not by save_results
         transcript_file = scenario_dir / "q1_20241203_120000_transcript.md"
 
         assert json_file.exists(), "JSON file should be created"
-        assert answer_file.exists(), "Answer file should be created"
+        # Answer file is NOT created by save_results, it's archived by the runner
         assert transcript_file.exists(), "Transcript file should be created"
 
         # Verify JSON content
@@ -175,16 +175,13 @@ class TestSaveResults:
             assert data["metrics"]["usage"]["total_tokens"] == 150
             assert data["timestamp"] == "20241203_120000"
 
-        # Verify answer content
-        with open(answer_file) as f:
-            content = f.read()
-            assert "This is the answer to question 1" in content
-
-        # Verify transcript content exists
+        # Verify transcript content exists and has command output
         with open(transcript_file) as f:
             content = f.read()
-            # Just check that some content exists
+            # Check that some content exists
             assert len(content) > 0
+            # Check that the answer is in the transcript
+            assert "This is the answer to question 1" in content
 
     def test_conversational_scenario(self, tmp_path):
         """Test saving results for a conversational scenario."""

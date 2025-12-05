@@ -118,6 +118,9 @@ def load_yaml_scenario(yaml_path: Path, scenario_name: Optional[str] = None) -> 
 
     question_set = _parse_question_set(data, yaml_path)
 
+    # Parse llm_judge configuration (if specified)
+    llm_judge = data.get("llm_judge", {})
+
     # Create scenario
     return Scenario(
         name=data["name"],
@@ -131,6 +134,7 @@ def load_yaml_scenario(yaml_path: Path, scenario_name: Optional[str] = None) -> 
         conversational=conversational,
         test_cases=test_cases,
         question_set=question_set,
+        llm_judge=llm_judge,
     )
 
 

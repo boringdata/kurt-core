@@ -389,8 +389,8 @@ class ScenarioRunner:
                 workspace_metrics = {}
 
         finally:
-            # Save results (skip for non-conversational question sets as they save per-question)
-            skip_aggregated_save = scenario.question_set and not scenario.conversational
+            # Save results (skip for ALL question sets as they save per-question)
+            skip_aggregated_save = scenario.question_set
             if not skip_aggregated_save:
                 results_dir = Path(__file__).parent.parent / "results"
                 save_results(
@@ -492,8 +492,9 @@ class ScenarioRunner:
                     any_cached = True
 
             judge_result = None
-            if config.llm_judge.get("enabled"):
-                judge_result = self._score_answer_with_llm(question, answer_text, config)
+            if hasattr(scenario, 'llm_judge') and scenario.llm_judge.get("enabled"):
+                self._log("   🧠 Running LLM judge evaluation...")
+                judge_result = self._score_answer_with_llm(question, answer_text, scenario)
                 if judge_result and "overall_score" in judge_result:
                     score = judge_result["overall_score"]
                     self._log(f"   🧠 LLM Judge score: {score:.2f}")
@@ -703,13 +704,23 @@ class ScenarioRunner:
                     if "parquet" in expected_answer.lower():
                         required_topics.append("Parquet")
 
+                    # Get provider and model from judge config or use defaults
+                    judge_config = question_set.llm_judge if question_set.llm_judge else {}
+                    llm_provider = judge_config.get("provider", "anthropic")
+                    model = judge_config.get("model")  # None will use default in llm_judge
+
+                    # Override weights if specified in config
+                    if "weights" in judge_config:
+                        score_weights = judge_config["weights"]
+
                     llm_judge_result = score_single_answer(
                         question=question,
                         canonical_answer=expected_answer,
                         generated_answer=generated_answer,
                         required_topics=required_topics,
                         score_weights=score_weights,
-                        llm_provider="openai",
+                        llm_provider=llm_provider,
+                        model=model,
                     )
 
                     # Store LLM judge result in the last command output
@@ -988,10 +999,15 @@ class ScenarioRunner:
             self._log("   ⚠️  Skipping LLM judge (no expected answer provided)")
             return None
 
+        # Get configuration from scenario, with fallbacks to global config
+        from .config import get_config
+        global_config = get_config()
+
         weights = config.llm_judge.get(
-            "weights", {"accuracy": 0.4, "completeness": 0.3, "relevance": 0.2, "clarity": 0.1}
+            "weights", global_config.llm_judge.get("weights", {"accuracy": 0.4, "completeness": 0.3, "relevance": 0.2, "clarity": 0.1})
         )
-        provider = config.llm_judge.get("provider", "openai")
+        provider = config.llm_judge.get("provider", global_config.llm_judge.get("provider", "anthropic"))
+        model = config.llm_judge.get("model") or global_config.llm_judge.get("model")
 
         try:
             return score_single_answer(
@@ -1001,6 +1017,7 @@ class ScenarioRunner:
                 required_topics=question.get("required_topics", []),
                 score_weights=weights,
                 llm_provider=provider,
+                model=model,
             )
         except Exception as exc:
             self._log(f"   ⚠️  LLM judge error: {exc}")
@@ -1340,7 +1357,7 @@ Execute commands as requested and report results concisely.""",
                     if self.llm_provider == "openai":
                         model_name = "gpt-4o-mini"
                     elif self.llm_provider == "anthropic":
-                        model_name = "claude-3-5-haiku-20241022"
+                        model_name = "claude-3-5-haiku-latest"
                     else:
                         model_name = self.llm_provider
 
