@@ -78,14 +78,18 @@ Before getting started, you'll need:
 
    This creates:
    - `.kurt/` directory with SQLite database
-   - `.claude/` directory with Claude Code instructions
-   - `.cursor/` directory with Cursor rules
-   - `kurt/` directory with all 22 content templates (shared by both IDEs)
+   - `.agents/` directory with unified agent instructions (AGENTS.md)
+   - `.claude/` directory with Claude Code setup (symlinks to `.agents/`)
+   - `.cursor/` directory with Cursor setup (symlinks to `.agents/`)
+   - `kurt/` directory for customized templates (created on first use)
    - `.env.example` with API key placeholders
 
    **Note:** You can also install for a specific IDE only:
    - `kurt init --ide claude` - Claude Code only
    - `kurt init --ide cursor` - Cursor only
+
+   **Keeping up to date:**
+   - Run `kurt update` after upgrading kurt via pip to get the latest agent instructions
 
 3. **Configure API keys:**
    ```bash
@@ -105,17 +109,17 @@ Before getting started, you'll need:
 
    **With Claude Code:**
    - Open your project in [Claude Code](https://code.claude.com)
-   - Claude automatically loads Kurt's instructions from `.claude/`
+   - Claude automatically loads Kurt's instructions from `.claude/CLAUDE.md` (symlinked to `.agents/AGENTS.md`)
    - Ask Claude: *"Create a blog post project about [topic]"*
    - Claude will guide you through template selection, source gathering, and writing
-   - See `.claude/CLAUDE.md` for full workflow details
+   - Run `kurt show format-templates` to see available content formats
 
    **With Cursor:**
    - Open your project in [Cursor](https://cursor.com)
-   - Cursor automatically loads Kurt's rules from `.cursor/rules/`
-   - Mention `@add-profile` to create your content profile
-   - Mention `@add-project` to start a new writing project
-   - See `.cursor/rules/kurt-main.mdc` for full workflow details
+   - Cursor automatically loads Kurt's rules from `.cursor/rules/KURT.mdc` (symlinked to `.agents/AGENTS.md`)
+   - Ask the AI: *"Create a blog post project about [topic]"*
+   - The AI will guide you through template selection, source gathering, and writing
+   - Run `kurt show format-templates` to see available content formats
 
    **Switch between IDEs anytime** - both share the same database and templates!
 
@@ -153,7 +157,7 @@ See [CLI Reference](#cli-reference) below for full command documentation.
 
 ### ✨ Content Templates
 
-Kurt includes 22 templates for common B2B content types:
+Kurt includes 17 built-in templates for common B2B content types:
 
 **Internal Strategy:**
 - Positioning + Messaging
@@ -190,7 +194,10 @@ All templates are customizable and include:
 - Structure templates (format and organization)
 - Research workflows (how to find information)
 
-See templates in [`src/kurt/claude_plugin/kurt/templates/`](src/kurt/claude_plugin/kurt/templates/)
+View available templates:
+- Run `kurt show format-templates` to see all available formats
+- See template source files in [`src/kurt/agents/templates/formats/`](src/kurt/agents/templates/formats/)
+- Templates are automatically copied to `kurt/templates/formats/` in your workspace for customization
 
 ### 🌐 Content Ingestion
 
@@ -277,7 +284,7 @@ Built-in research capabilities for competitive intelligence and market research:
 kurt integrations research search "B2B SaaS pricing trends 2024"
 ```
 
-Requires API keys (configured in `.env`). See [CLAUDE.md](src/kurt/claude_plugin/CLAUDE.md) for setup.
+Requires API keys (configured in `.env`). Run `kurt show cms-setup` or `kurt show analytics-setup` for configuration help.
 
 ### 📤 Publishing
 
@@ -518,9 +525,13 @@ kurt admin migrate downgrade
 
 ## Documentation
 
-- **[CLAUDE.md](src/kurt/claude_plugin/CLAUDE.md)**: Complete guide to using Kurt with Claude Code
+- **Agent Instructions**: Run `kurt show` to see available workflow commands
+  - `kurt show format-templates` - View all 17 content templates
+  - `kurt show project-workflow` - Guide to creating writing projects
+  - `kurt show source-workflow` - How to add sources and content
+  - See `.agents/AGENTS.md` in your workspace for complete instructions
 - **[INDEXING-AND-SEARCH.md](INDEXING-AND-SEARCH.md)**: Content indexing and discovery features
-- **[Template Documentation](src/kurt/claude_plugin/kurt/templates/)**: All 22 content templates
+- **[Template Files](src/kurt/agents/templates/formats/)**: Browse the 17 built-in content templates
 - **[CLI Reference](src/kurt/README.md)**: Detailed CLI command documentation
 
 ---
@@ -579,7 +590,7 @@ Available test scenarios:
 - `01_basic_init` - Initialize a Kurt project
 - `02_add_url` - Initialize and add content from a URL
 - `03_interactive_project` - Multi-turn conversation with user agent
-- `04_with_claude_plugin` - Test with Claude plugin integration
+- `04_with_claude_plugin` - Test with agent integration
 
 See [eval/scenarios/](eval/scenarios/) for scenario definitions.
 
@@ -685,4 +696,4 @@ MIT
 
 - **Issues**: [GitHub Issues](https://github.com/yourusername/kurt-core/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/yourusername/kurt-core/discussions)
-- **Documentation**: See [CLAUDE.md](src/kurt/claude_plugin/CLAUDE.md) for full usage guide
+- **Documentation**: Run `kurt show` commands or see `.agents/AGENTS.md` in your workspace for full usage guide
