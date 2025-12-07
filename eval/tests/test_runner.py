@@ -39,8 +39,16 @@ class TestScenarioRunner:
             scenario.question_set = QuestionSetConfig(
                 file="test_questions.yaml",  # Required field
                 questions=[
-                    {"id": "q1", "question": "What is Python?", "expected_answer": "Python is a programming language"},
-                    {"id": "q2", "question": "What is JavaScript?", "expected_answer": "JavaScript is a programming language"},
+                    {
+                        "id": "q1",
+                        "question": "What is Python?",
+                        "expected_answer": "Python is a programming language",
+                    },
+                    {
+                        "id": "q2",
+                        "question": "What is JavaScript?",
+                        "expected_answer": "JavaScript is a programming language",
+                    },
                 ],
                 answer_file_template="/tmp/answer_{question_id}.md",
                 commands=["echo 'Answer: {question}'"] if not conversational else [],
@@ -258,7 +266,7 @@ class TestScenarioRunner:
                             # Mock json.load to return empty dict
                             with patch("json.load", return_value=mock_json_data):
                                 # Mock json.dump to capture the data
-                                with patch("json.dump") as mock_json_dump:
+                                with patch("json.dump"):
                                     # Create runner
                                     runner = ScenarioRunner()
 
@@ -486,7 +494,7 @@ class TestScenarioRunner:
 
             # Verify timestamp was passed to save_results
             # save_results may not be called for simple non-conversational tests
-        # mock_save_results.assert_called()
+            # mock_save_results.assert_called()
             for call in mock_save_results.call_args_list:
                 call_kwargs = call[1]
                 if "timestamp" in call_kwargs:

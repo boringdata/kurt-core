@@ -2,10 +2,7 @@
 """Unit tests for report generation functionality."""
 
 import json
-import tempfile
-from datetime import datetime
 from pathlib import Path
-from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 import yaml
@@ -59,6 +56,7 @@ class TestCollectQuestionRuns:
 
         # Create newer file
         import time
+
         time.sleep(0.01)  # Ensure different timestamps
         new_file = tmp_path / "q1_20251204_100000.json"
         new_data = {"llm_judge": {"overall_score": 0.9}}
@@ -405,6 +403,7 @@ class TestGenerateReport:
     def test_generate_report_basic(self, tmp_path, sample_questions, sample_results):
         """Test basic report generation."""
         from pathlib import Path
+
         output_path = Path(tmp_path) / "test_report"
 
         # Don't need to mock file operations since we're not reading answer files
@@ -440,6 +439,7 @@ class TestGenerateReport:
     def test_generate_report_missing_data(self, tmp_path, sample_questions):
         """Test report generation with missing data."""
         from pathlib import Path
+
         output_path = Path(tmp_path) / "test_report"
 
         # One scenario has no results
@@ -470,7 +470,7 @@ class TestGenerateReport:
         # Create sample result files with more complete data
         q1_data = {
             "llm_judge": {"overall_score": 0.8, "feedback": "Good answer"},
-            "token_usage": {"total_tokens": 100, "duration_seconds": 1.0}
+            "token_usage": {"total_tokens": 100, "duration_seconds": 1.0},
         }
         (with_kg_dir / "q1_20251204_100000.json").write_text(json.dumps(q1_data))
         (without_kg_dir / "q1_20251204_100000.json").write_text(json.dumps(q1_data))
@@ -483,7 +483,7 @@ class TestGenerateReport:
         output_path = tmp_path / "report"
 
         # Don't mock - let the function work normally
-        output_file = generate_report_from_dirs(
+        generate_report_from_dirs(
             with_dir=str(with_kg_dir),
             without_dir=str(without_kg_dir),
             questions_file=str(questions_file),

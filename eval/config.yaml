@@ -128,6 +128,33 @@ output:
   results_dir: results
 
 
+# Google Sheets Integration
+# -------------------------
+# Settings for syncing evaluation results to Google Sheets
+
+google_sheets:
+  # Default spreadsheet name for reports
+  default_sheet_name: "Kurt Eval Report"
+
+  # Whether to sync to Google Sheets by default
+  sync_enabled: false
+
+  # Credentials path (if not set, will check default locations)
+  # credentials_path: ~/.config/kurt-eval/service_account.json
+
+
+# GitHub Configuration
+# --------------------
+# Settings for GitHub links in reports
+
+github:
+  # Default repository URL for file links in reports
+  repo_url: "https://github.com/anthropics/kurt-core"
+
+  # Default branch for file links
+  branch: "main"
+
+
 # Scenario Discovery
 # ------------------
 # Where to find scenario definitions

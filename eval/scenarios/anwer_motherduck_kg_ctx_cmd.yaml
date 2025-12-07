@@ -1,0 +1,60 @@
+---
+name: answer_with_context_command
+description: "Answer MotherDuck questions using kurt context command to gather information"
+project: motherduck
+conversational: true
+setup_commands:
+  - uv run --project /Users/julien/Documents/wik/wikumeo/projects/kurt-core python /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/framework/dumps/loader.py motherduck --skip-entities
+llm_judge:
+  enabled: true
+  provider: anthropic
+question_set:
+  file: questions_motherduck.yaml
+  answer_file_template: /tmp/answer_with_context_{question_num}.md
+  initial_prompt: |
+    Answer this question about MotherDuck:
+
+    {question}
+
+    Required Steps:
+    1. First, run the kurt context command to gather relevant information:
+       ```bash
+       KURT_TELEMETRY_DISABLED=1 uv run kurt context "{question}"
+       ```
+    2. Analyze the context output to understand what information is available
+    3. Based on the context, read any additional source files if needed (aim for 3-5 most relevant sources)
+    4. As you read each file, keep track of:
+       - The file path
+       - The file title/name
+       - Key information extracted from that file
+    5. Synthesize a comprehensive answer based on the context and any additional sources
+    6. Write your answer to: {answer_file}
+
+    IMPORTANT - Your answer MUST have this structure:
+    ```markdown
+    # Answer
+
+    [Your comprehensive answer here, drawing from the context command and sources you read]
+
+    ## Context Command Output
+
+    Summary of what the kurt context command revealed about the question.
+
+    ## Additional Sources
+
+    List any additional source files you read beyond what was in the context, showing the EXACT LOCAL FILE PATH:
+    - .kurt/sources/motherduck.com/[path/to/file.md] - Brief description of key information used from this file
+    - .kurt/sources/motherduck.com/[path/to/file.md] - Brief description of key information used from this file
+    [etc.]
+
+    If no additional files were read, state: "No additional sources were needed beyond the context command output."
+
+    DO NOT use URLs or document titles as links. Show the actual file path you read with the Read tool.
+    ```
+
+    The Context Command Output section is MANDATORY - you must document what the kurt context command provided.
+
+  assertions:
+    - type: FileExists
+      path: "{answer_file}"
+  results_dir: eval/results/answer_with_context_command

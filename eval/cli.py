@@ -466,8 +466,8 @@ def run_all(filter, stop_on_failure, max_tool_calls, max_duration, llm_provider)
 @click.option(
     "--output",
     type=click.Path(),
-    default="eval/results/comparison_report.md",
-    help="Output markdown path (JSON summary written alongside).",
+    default="eval/results/scenario_comparison.csv",
+    help="Output CSV file path for the comparison report.",
 )
 @click.option(
     "--sync-gsheet",
@@ -476,23 +476,40 @@ def run_all(filter, stop_on_failure, max_tool_calls, max_duration, llm_provider)
 )
 @click.option(
     "--gsheet-name",
-    default="Kurt Eval Report",
-    help="Name for the Google Sheet.",
+    default=None,
+    help="Name for the Google Sheet (uses config default if not specified).",
 )
 @click.option(
     "--github-repo",
-    default="https://github.com/anthropics/kurt-core",
-    help="GitHub repository URL for file links.",
+    default=None,
+    help="GitHub repository URL for file links (uses config default if not specified).",
 )
 @click.option(
     "--github-branch",
-    default="main",
-    help="GitHub branch for file links.",
+    default=None,
+    help="GitHub branch for file links (uses config default if not specified).",
 )
 def report_question(
     scenarios, questions_file, output, sync_gsheet, gsheet_name, github_repo, github_branch
 ):
     """Generate an LLM-judge comparison report for question-answering scenarios."""
+    # Load config for defaults
+    from eval.framework.config import EvalConfig
+
+    config = EvalConfig()
+
+    # Use config defaults if not provided via CLI
+    if gsheet_name is None:
+        gsheet_name = config.get("google_sheets", {}).get("default_sheet_name", "Kurt Eval Report")
+
+    if github_repo is None:
+        github_repo = config.get("github", {}).get(
+            "repo_url", "https://github.com/anthropics/kurt-core"
+        )
+
+    if github_branch is None:
+        github_branch = config.get("github", {}).get("branch", "main")
+
     scenario_names = [s.strip() for s in scenarios.split(",") if s.strip()]
     if len(scenario_names) != 2:
         raise click.UsageError(
@@ -525,7 +542,7 @@ def report_question(
         questions_path = candidate
 
     try:
-        generate_report_from_dirs(
+        csv_path = generate_report_from_dirs(
             with_dir=scenario_dirs[1],
             without_dir=scenario_dirs[0],
             questions_file=questions_path,
@@ -544,12 +561,9 @@ def report_question(
                     branch=github_branch,
                 )
 
-                csv_path = output_path.parent / "scenario_comparison.csv"
-                json_path = output_path.with_suffix(".json")
-
                 sheet_url = sync.sync_report(
                     csv_path=str(csv_path),
-                    json_path=str(json_path) if json_path.exists() else None,
+                    json_path=None,  # No JSON file anymore
                     spreadsheet_name=gsheet_name,
                 )
 
@@ -563,9 +577,6 @@ def report_question(
                 click.echo(f"\n❌ Failed to sync to Google Sheets: {e}")
     except ValueError as exc:
         raise click.ClickException(str(exc))
-
-    click.echo(f"✅ Comparison report written to {output_path}")
-    click.echo(f"💾 JSON summary written to {output_path.with_suffix('.json')}")
 
 
 @main.group()
@@ -784,10 +795,14 @@ def training_view(scenario, index, filter_passed):
 
 
 @main.command()
-@click.option('--method', type=click.Choice(['service-account', 'oauth', 'auto']),
-              default='auto', help='Authentication method')
-@click.option('--credentials-file', help='Path to credentials JSON file')
-@click.option('--test', is_flag=True, help='Test the connection after setup')
+@click.option(
+    "--method",
+    type=click.Choice(["service-account", "oauth", "auto"]),
+    default="auto",
+    help="Authentication method",
+)
+@click.option("--credentials-file", help="Path to credentials JSON file")
+@click.option("--test", is_flag=True, help="Test the connection after setup")
 def gsheet_auth(method, credentials_file, test):
     """Set up Google Sheets authentication for eval reports.
 
@@ -805,6 +820,7 @@ def gsheet_auth(method, credentials_file, test):
       uv run python -m eval gsheet-auth --method service-account
     """
     from framework.commands.gsheet_auth import gsheet_auth as auth_cmd
+
     auth_cmd.callback(method, credentials_file, test)
 
 

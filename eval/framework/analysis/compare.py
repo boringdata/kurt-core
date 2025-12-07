@@ -1,20 +1,30 @@
 #!/usr/bin/env python3
-"""Compare WITH KG vs WITHOUT KG approaches using per-question artifacts."""
+"""Generate CSV comparison reports for evaluation scenarios with LLM judge scores."""
 
 import argparse
 import csv
 import json
 import re
 import sys
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
+# ============================================================================
+# Data Collection Functions
+# ============================================================================
+
 
 def collect_question_runs(results_dir: Path) -> Dict[str, Dict[str, Any]]:
-    """Load the newest per-question JSON for each question id."""
+    """Load the newest per-question JSON for each question id and extract the question entry.
+
+    Args:
+        results_dir: Directory containing evaluation result JSON files
+
+    Returns:
+        Dictionary mapping question IDs to their evaluation entries
+    """
     if not results_dir.exists():
         return {}
 
@@ -31,34 +41,55 @@ def collect_question_runs(results_dir: Path) -> Dict[str, Dict[str, Any]]:
             continue
 
         # Extract question_id from filename (e.g., "q1" from "q1_20251127_135755.json")
-        # Since the JSON doesn't contain question_id, we parse it from the filename
-        filename = path.stem  # e.g., "q1_20251127_135755"
+        filename = path.stem
         parts = filename.split("_")
-        if parts and parts[0].startswith("q"):
-            question_id = parts[0]  # e.g., "q1"
-        else:
+        if not (parts and parts[0].startswith("q")):
             continue
 
-        # Add the question_id to the data
-        data["question_id"] = question_id
+        question_id = parts[0]
 
-        existing = latest.get(question_id)
-        timestamp = path.stat().st_mtime
-        if not existing or timestamp > existing["_timestamp"]:
-            data["_source_file"] = str(path)
-            data["_timestamp"] = timestamp
-            latest[question_id] = data
+        # Find the command output entry with command "question:qN"
+        question_entry = _extract_question_entry(data, question_id)
+
+        if question_entry:
+            # Add metadata
+            question_entry["question_id"] = question_id
+            question_entry["_source_file"] = str(path)
+            question_entry["_timestamp"] = path.stat().st_mtime
+
+            existing = latest.get(question_id)
+            if not existing or question_entry["_timestamp"] > existing["_timestamp"]:
+                latest[question_id] = question_entry
 
     return latest
 
 
+def _extract_question_entry(data: Dict, question_id: str) -> Optional[Dict]:
+    """Extract the question entry from the evaluation data."""
+    if "workspace" not in data:
+        return None
+
+    command_outputs = data.get("workspace", {}).get("command_outputs", [])
+    for entry in command_outputs:
+        if entry.get("command") == f"question:{question_id}":
+            return entry
+    return None
+
+
 def load_questions(path: Path) -> List[Dict]:
+    """Load questions from YAML file."""
     with open(path) as f:
         data = yaml.safe_load(f) or {}
     return data.get("questions", [])
 
 
+# ============================================================================
+# Data Extraction Functions
+# ============================================================================
+
+
 def extract_score(entry: Optional[Dict[str, Any]]) -> Optional[float]:
+    """Extract LLM judge score from entry."""
     if not entry:
         return None
     judge = entry.get("llm_judge")
@@ -70,15 +101,207 @@ def extract_score(entry: Optional[Dict[str, Any]]) -> Optional[float]:
 
 
 def extract_usage(entry: Optional[Dict[str, Any]]) -> Dict[str, Any] | None:
+    """Extract usage statistics from entry."""
     if not entry:
         return None
-    usage = entry.get("token_usage")
+    usage = entry.get("usage")
     if isinstance(usage, dict):
         return usage
     return None
 
 
+def extract_judge_data(entry: Optional[Dict[str, Any]]) -> Dict[str, str]:
+    """Extract all judge-related data from entry."""
+    if not entry:
+        return _empty_judge_data()
+
+    judge = entry.get("llm_judge", {})
+    if not judge:
+        return _empty_judge_data()
+
+    component_scores = judge.get("component_scores", {})
+
+    return {
+        "overall_score": str(judge.get("overall_score", "")),
+        "accuracy": str(component_scores.get("accuracy", "")),
+        "completeness": str(component_scores.get("completeness", "")),
+        "relevance": str(component_scores.get("relevance", "")),
+        "clarity": str(component_scores.get("clarity", "")),
+        "feedback": _clean_for_csv(judge.get("feedback", "")),
+    }
+
+
+def _empty_judge_data() -> Dict[str, str]:
+    """Return empty judge data structure."""
+    return {
+        "overall_score": "",
+        "accuracy": "",
+        "completeness": "",
+        "relevance": "",
+        "clarity": "",
+        "feedback": "",
+    }
+
+
+# ============================================================================
+# Text Processing Functions
+# ============================================================================
+
+
+def extract_answer_text(entry: Dict[str, Any]) -> str:
+    """Extract answer text from entry, trying answer_file first, then stdout."""
+    answer_text = ""
+    answer_file = entry.get("answer_file", "")
+
+    if answer_file:
+        answer_path = Path(answer_file)
+        if answer_path.exists():
+            try:
+                with open(answer_path) as f:
+                    answer_text = f.read()
+            except Exception:
+                pass
+
+    # Fall back to stdout if no answer from file
+    if not answer_text:
+        answer_text = entry.get("stdout", "")
+
+    return answer_text
+
+
+def clean_answer_text(answer_text: str) -> str:
+    """Clean answer text for CSV format by removing markdown and formatting."""
+    if not answer_text:
+        return ""
+
+    # Remove sources and metadata sections
+    if "## Sources" in answer_text:
+        answer_text = answer_text.split("## Sources")[0]
+    if "## Metadata" in answer_text:
+        answer_text = answer_text.split("## Metadata")[0]
+
+    # Remove markdown formatting
+    clean = answer_text
+    clean = re.sub(r"^#\s*Answer\s*\n+", "", clean, flags=re.MULTILINE)
+    clean = re.sub(r"^#+\s+", "", clean, flags=re.MULTILINE)
+    clean = re.sub(r"\n#+\s+", " ", clean)
+    clean = re.sub(r"\*\*(.*?)\*\*", r"\1", clean)
+    clean = re.sub(r"\*(.*?)\*", r"\1", clean)
+    clean = re.sub(r"```[\s\S]*?```", "", clean)
+    clean = re.sub(r"`([^`]+)`", r"\1", clean)
+    clean = re.sub(r"^\s*[-*+]\s+", "• ", clean, flags=re.MULTILINE)
+    clean = re.sub(r"^\s*\d+\.\s+", "", clean, flags=re.MULTILINE)
+    clean = re.sub(r"\n\s*\n", " ", clean)
+    clean = re.sub(r"\n", " ", clean)
+    clean = re.sub(r"\s+", " ", clean)
+
+    return _clean_for_csv(clean.strip())
+
+
+def _clean_for_csv(text: str) -> str:
+    """Escape text for CSV format with pipe delimiter."""
+    return text.replace("|", "\\|").replace("\n", " ")
+
+
+def extract_sources(answer_text: str, scenario_name: str = "") -> str:
+    """Extract source information from answer text.
+
+    For with_kg scenarios, returns the full Sources section.
+    For other scenarios, returns just the source file paths.
+    """
+    if not answer_text:
+        return ""
+
+    # Special handling for with_kg scenario - get full Sources section
+    if "with_kg" in scenario_name and "## Sources" in answer_text:
+        return _extract_full_sources(answer_text)
+
+    # Default behavior - extract individual source paths
+    return _extract_source_paths(answer_text)
+
+
+def _extract_full_sources(answer_text: str) -> str:
+    """Extract full sources section for with_kg scenarios."""
+    sources_section = answer_text.split("## Sources")[1]
+
+    # Stop at the next major section
+    if "## Metadata" in sources_section:
+        sources_section = sources_section.split("## Metadata")[0]
+
+    # Clean up formatting for CSV display
+    lines = sources_section.strip().split("\n")
+    cleaned_lines = []
+
+    for line in lines:
+        line = line.strip()
+        if line:
+            # Remove markdown formatting
+            line = line.replace("**", "")
+            line = line.replace("###", "[")
+            if line.startswith("["):
+                line = line + "]"
+            cleaned_lines.append(line)
+
+    full_sources = "; ".join(cleaned_lines)
+    return _clean_for_csv(full_sources)
+
+
+def _extract_source_paths(answer_text: str) -> str:
+    """Extract source file paths from answer text."""
+    sources = []
+
+    # Find the sources section
+    sources_section = ""
+    if "### Documents Used" in answer_text:
+        sources_section = answer_text.split("### Documents Used")[1]
+        if "###" in sources_section:
+            sources_section = sources_section.split("###")[0]
+    elif "## Sources" in answer_text:
+        sources_section = answer_text.split("## Sources")[1]
+        if "## " in sources_section:
+            sources_section = sources_section.split("## ")[0]
+
+    if not sources_section:
+        return ""
+
+    # Extract sources from list items
+    for line in sources_section.split("\n"):
+        line = line.strip()
+        if line.startswith("-"):
+            # Try to extract file paths
+            patterns = [
+                r"\.kurt/sources/[^\s\)]+",
+                r"path:\s*\.kurt/sources/[^\s\)]+",
+            ]
+
+            found_path = False
+            for pattern in patterns:
+                match = re.search(pattern, line)
+                if match:
+                    path = match.group(0).replace("path:", "").strip()
+                    if path not in sources:
+                        sources.append(path)
+                    found_path = True
+                    break
+
+            # If no path found, extract document name
+            if not found_path:
+                source = line.lstrip("- ").strip()
+                if "(relevance:" in source:
+                    source = source.split("(relevance:")[0].strip()
+                if source and source not in sources and not source.startswith("#"):
+                    sources.append(source)
+
+    return "; ".join(sources)
+
+
+# ============================================================================
+# Report Generation Functions
+# ============================================================================
+
+
 def compute_summary(entries: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    """Compute summary statistics for a set of evaluation entries."""
     scores = []
     tokens_total = 0.0
     duration_total = 0.0
@@ -111,94 +334,55 @@ def compute_summary(entries: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-def extract_sources_from_answer(answer_text: str, scenario_name: str = "") -> str:
-    """Extract source information from answer markdown.
+def process_scenario_entry(
+    entry: Optional[Dict[str, Any]],
+    question: Dict,
+    scenario_name: str,
+    idx: int,
+    github_repo: str,
+    github_branch: str,
+) -> Dict[str, Any]:
+    """Process a single scenario entry and return formatted row data."""
+    if not entry:
+        return None
 
-    For with_kg scenarios, returns the full Sources section including docs, entities, and KG info.
-    For other scenarios, returns just the source file paths.
-    """
+    # Extract answer text
+    answer_text = extract_answer_text(entry)
 
-    # Special handling for with_kg scenario - get full Sources section
-    if "with_kg" in scenario_name and "## Sources" in answer_text:
-        sources_section = answer_text.split("## Sources")[1]
-        # Stop at the next major section (## Metadata or end)
-        if "## Metadata" in sources_section:
-            sources_section = sources_section.split("## Metadata")[0]
+    # Extract and clean various data
+    clean_answer = clean_answer_text(answer_text)
+    sources = extract_sources(answer_text, scenario_name)
+    judge_data = extract_judge_data(entry)
+    usage = extract_usage(entry) or {}
 
-        # Clean up the formatting for CSV display
-        # Remove extra newlines and format nicely
-        lines = sources_section.strip().split("\n")
-        cleaned_lines = []
-        for line in lines:
-            line = line.strip()
-            if line:  # Skip empty lines
-                # Replace markdown formatting for better CSV display
-                line = line.replace("**", "")  # Remove bold
-                line = line.replace("###", "[")  # Convert subsection headers
-                if line.startswith("["):
-                    line = line + "]"
-                cleaned_lines.append(line)
+    # Create GitHub links
+    source_file = entry.get("_source_file", "")
+    github_link = create_github_link(source_file, github_repo, github_branch)
+    scenario_def_path = f"eval/scenarios/{scenario_name}.yaml"
+    scenario_def_link = create_github_link(scenario_def_path, github_repo, github_branch)
 
-        # Join with semicolon for CSV format (escape pipes for CSV)
-        full_sources = "; ".join(cleaned_lines)
-        # Escape pipe characters since we use pipe as delimiter
-        full_sources = full_sources.replace("|", "\\|")
-        return full_sources
+    # Get reference answer
+    expected_answer = _clean_for_csv(question.get("expected_answer", "").strip())
 
-    # Default behavior for other scenarios - extract individual sources
-    sources = []
-
-    # Look for the Sources section (both ## Sources and ### Documents Used)
-    if "## Sources" in answer_text or "### Documents Used" in answer_text:
-        # Try to find the sources section
-        sources_section = ""
-
-        # First try "### Documents Used" (with_kg format)
-        if "### Documents Used" in answer_text:
-            sources_section = answer_text.split("### Documents Used")[1]
-            # Stop at the next section if any
-            if "###" in sources_section:
-                sources_section = sources_section.split("###")[0]
-            elif "##" in sources_section:
-                sources_section = sources_section.split("##")[0]
-        # Then try "## Sources" (general format)
-        elif "## Sources" in answer_text:
-            sources_section = answer_text.split("## Sources")[1]
-            # Stop at the next section if any
-            if "## " in sources_section:
-                sources_section = sources_section.split("## ")[0]
-
-        # Extract sources from list items
-        for line in sources_section.split("\n"):
-            line = line.strip()
-            if line.startswith("-"):
-                # Try to extract file paths first
-                patterns = [
-                    r"\.kurt/sources/[^\s\)]+",  # Direct path format
-                    r"path:\s*\.kurt/sources/[^\s\)]+",  # Path in parentheses format
-                ]
-
-                found_path = False
-                for pattern in patterns:
-                    match = re.search(pattern, line)
-                    if match:
-                        path = match.group(0).replace("path:", "").strip()
-                        if path not in sources:
-                            sources.append(path)
-                        found_path = True
-                        break
-
-                # If no path found, extract document name (for with_kg format)
-                if not found_path:
-                    # Format: "- Document Name (relevance: 0.95)"
-                    # Remove leading dash and extract up to parenthesis
-                    source = line.lstrip("- ").strip()
-                    if "(relevance:" in source:
-                        source = source.split("(relevance:")[0].strip()
-                    if source and source not in sources and not source.startswith("#"):
-                        sources.append(source)
-
-    return "; ".join(sources) if sources else ""
+    return {
+        "question_num": idx,
+        "scenario": scenario_name,
+        "scenario_definition": scenario_def_link,
+        "question": question.get("question", f"Question {idx}"),
+        "answer": clean_answer,
+        "expected_answer": expected_answer,
+        "answer_file": entry.get("answer_file", ""),
+        "github_link": github_link,
+        "sources": sources,
+        "judge_overall_score": judge_data["overall_score"],
+        "judge_accuracy": judge_data["accuracy"],
+        "judge_completeness": judge_data["completeness"],
+        "judge_relevance": judge_data["relevance"],
+        "judge_clarity": judge_data["clarity"],
+        "judge_feedback": judge_data["feedback"],
+        "tokens_used": str(usage.get("total_tokens", "")),
+        "duration_seconds": str(usage.get("duration_seconds", "")),
+    }
 
 
 def create_github_link(
@@ -206,344 +390,97 @@ def create_github_link(
     repo: str = "https://github.com/anthropics/kurt-core",
     branch: str = "main",
 ) -> str:
-    """Create a GitHub link to a file.
-
-    Args:
-        file_path: Path to the file
-        repo: GitHub repository URL
-        branch: Branch name
-
-    Returns:
-        GitHub URL to the file
-    """
-    if not file_path or file_path == "N/A":
+    """Create a GitHub link to a file."""
+    if not file_path or file_path == "N/A" or file_path.startswith("/tmp/"):
         return ""
 
     # Clean the path
-    if file_path.startswith("/tmp/"):
-        # These are temporary files, no GitHub link
-        return ""
-
-    # Remove leading slash if present
     if file_path.startswith("/"):
-        # For absolute paths, try to extract relative part
         if "/kurt-core/" in file_path:
             file_path = file_path.split("/kurt-core/")[-1]
         else:
-            return ""  # Can't determine relative path
+            return ""
 
     return f"{repo}/blob/{branch}/{file_path}"
 
 
-def calculate_source_overlap(sources1_str: str, sources2_str: str) -> str:
+def calculate_source_overlap(sources1: str, sources2: str) -> str:
     """Calculate overlap between two sets of sources."""
-
-    # Extract document names from sources strings
-    def extract_doc_names(sources_str):
-        docs = set()
-        if not sources_str:
-            return docs
-
-        # For with_kg format, extract from the full sources string
-        if "[ Documents Used]" in sources_str:
-            # Split by semicolon and look for document names
-            parts = sources_str.split(";")
-            for part in parts:
-                part = part.strip()
-                if ".md" in part and not part.startswith("["):
-                    # Extract just the filename
-                    if "/" in part:
-                        doc_name = part.split("/")[-1].replace(".md", "").strip()
-                    else:
-                        doc_name = part.replace(".md", "").strip()
-                    # Remove relevance scores if present
-                    if "(relevance:" in doc_name:
-                        doc_name = doc_name.split("(relevance:")[0].strip()
-                    docs.add(doc_name)
-        else:
-            # For without_kg format, extract from semicolon-separated paths
-            parts = sources_str.split(";")
-            for part in parts:
-                part = part.strip()
-                if ".md" in part:
-                    # Extract just the filename from the path
-                    doc_name = part.split("/")[-1].replace(".md", "").strip()
-                    docs.add(doc_name)
-
-        return docs
-
-    docs1 = extract_doc_names(sources1_str)
-    docs2 = extract_doc_names(sources2_str)
+    docs1 = _extract_doc_names(sources1)
+    docs2 = _extract_doc_names(sources2)
 
     if not docs1 and not docs2:
         return "N/A"
 
-    # Calculate overlap
     common = docs1 & docs2
     unique_to_1 = docs1 - docs2
     unique_to_2 = docs2 - docs1
 
     overlap_pct = (len(common) / max(len(docs1), len(docs2), 1)) * 100 if (docs1 or docs2) else 0
 
-    return f"{overlap_pct:.0f}% ({len(common)} common, {len(unique_to_1)} unique to with_kg, {len(unique_to_2)} unique to without_kg)"
+    return (
+        f"{overlap_pct:.0f}% ({len(common)} common, "
+        f"{len(unique_to_1)} unique to with_kg, "
+        f"{len(unique_to_2)} unique to without_kg)"
+    )
 
 
-def generate_report(
-    with_entries: Dict[str, Dict[str, Any]],
-    without_entries: Dict[str, Dict[str, Any]],
-    questions: List[Dict],
-    output: Path,
-    github_repo: str = "https://github.com/anthropics/kurt-core",
-    github_branch: str = "main",
-    scenario_names: Tuple[str, str] = ("answer_motherduck_with_kg", "answer_motherduck_without_kg"),
-):
-    """Generate both markdown report and CSV with one line per scenario per question.
+def _extract_doc_names(sources_str: str) -> set:
+    """Extract document names from sources string."""
+    docs = set()
+    if not sources_str:
+        return docs
 
-    Args:
-        with_entries: Results for with_kg scenario
-        without_entries: Results for without_kg scenario
-        questions: List of questions
-        output: Output path for reports
-        github_repo: GitHub repository URL for file links
-        github_branch: GitHub branch for file links
-        scenario_names: Tuple of (with_kg_name, without_kg_name) scenario names
-    """
-    with_summary = compute_summary(with_entries)
-    without_summary = compute_summary(without_entries)
+    # Handle different source formats
+    if "[ Documents Used]" in sources_str:
+        # with_kg format
+        parts = sources_str.split(";")
+        for part in parts:
+            part = part.strip()
+            if ".md" in part and not part.startswith("["):
+                doc_name = _clean_doc_name(part)
+                if doc_name:
+                    docs.add(doc_name)
+    else:
+        # without_kg format
+        parts = sources_str.split(";")
+        for part in parts:
+            part = part.strip()
+            if ".md" in part:
+                doc_name = _clean_doc_name(part)
+                if doc_name:
+                    docs.add(doc_name)
 
-    # Build CSV data with one line per scenario per question
-    csv_rows = []
+    return docs
 
-    for idx, question in enumerate(questions, start=1):
-        question_text = question.get("question", f"Question {idx}")
-        question_id = question.get("id") or f"q{idx}"
 
-        # Process with_kg scenario
-        with_entry = with_entries.get(question_id)
-        if with_entry:
-            # Read answer file if specified
-            answer_text = with_entry.get("answer", "")
-            answer_file = with_entry.get("answer_file", "")
-            if answer_file:
-                answer_path = Path(answer_file)
-                if answer_path.exists():
-                    with open(answer_path) as f:
-                        answer_text = f.read()
+def _clean_doc_name(path_or_name: str) -> str:
+    """Clean and extract document name from path or name string."""
+    if "/" in path_or_name:
+        doc_name = path_or_name.split("/")[-1]
+    else:
+        doc_name = path_or_name
 
-            # Extract sources for with_kg
-            sources = extract_sources_from_answer(answer_text, "answer_motherduck_with_kg")
+    doc_name = doc_name.replace(".md", "").strip()
 
-            # Clean answer for CSV
-            clean_answer = answer_text
-            if "## Sources" in clean_answer:
-                clean_answer = clean_answer.split("## Sources")[0]
-            if "## Metadata" in clean_answer:
-                clean_answer = clean_answer.split("## Metadata")[0]
+    if "(relevance:" in doc_name:
+        doc_name = doc_name.split("(relevance:")[0].strip()
 
-            # Remove markdown formatting
-            clean_answer = re.sub(r"^#\s*Answer\s*\n+", "", clean_answer, flags=re.MULTILINE)
-            clean_answer = re.sub(r"^#+\s+", "", clean_answer, flags=re.MULTILINE)
-            clean_answer = re.sub(r"\n#+\s+", " ", clean_answer)
-            clean_answer = re.sub(r"\*\*(.*?)\*\*", r"\1", clean_answer)
-            clean_answer = re.sub(r"\*(.*?)\*", r"\1", clean_answer)
-            clean_answer = re.sub(r"```[\s\S]*?```", "", clean_answer)
-            clean_answer = re.sub(r"`([^`]+)`", r"\1", clean_answer)
-            clean_answer = re.sub(r"^\s*[-*+]\s+", "• ", clean_answer, flags=re.MULTILINE)
-            clean_answer = re.sub(r"^\s*\d+\.\s+", "", clean_answer, flags=re.MULTILINE)
-            clean_answer = re.sub(r"\n\s*\n", " ", clean_answer)
-            clean_answer = re.sub(r"\n", " ", clean_answer)
-            clean_answer = re.sub(r"\s+", " ", clean_answer)
-            clean_answer = clean_answer.strip()
-            clean_answer = clean_answer.replace("|", "\\|")
+    return doc_name
 
-            if len(clean_answer) > 500:
-                clean_answer = clean_answer[:497] + "..."
 
-            llm_judge = with_entry.get("llm_judge", {})
-            token_usage = with_entry.get("token_usage", {})
-
-            # Create GitHub link for source file if available
-            source_file = with_entry.get("_source_file", "")
-            github_link = create_github_link(source_file, github_repo, github_branch)
-
-            # Create GitHub link for scenario definition
-            scenario_def_path = f"eval/scenarios/{scenario_names[0]}.yaml"
-            scenario_def_link = create_github_link(scenario_def_path, github_repo, github_branch)
-
-            csv_rows.append(
-                {
-                    "question_num": idx,
-                    "scenario": scenario_names[0],
-                    "scenario_definition": scenario_def_link,
-                    "question": question_text,
-                    "answer": clean_answer,
-                    "answer_file": answer_file,
-                    "github_link": github_link,
-                    "sources": sources,
-                    "judge_overall_score": str(llm_judge.get("overall_score", ""))
-                    if llm_judge
-                    else "",
-                    "judge_accuracy": str(llm_judge.get("component_scores", {}).get("accuracy", ""))
-                    if llm_judge
-                    else "",
-                    "judge_completeness": str(
-                        llm_judge.get("component_scores", {}).get("completeness", "")
-                    )
-                    if llm_judge
-                    else "",
-                    "judge_relevance": str(
-                        llm_judge.get("component_scores", {}).get("relevance", "")
-                    )
-                    if llm_judge
-                    else "",
-                    "judge_clarity": str(llm_judge.get("component_scores", {}).get("clarity", ""))
-                    if llm_judge
-                    else "",
-                    "judge_feedback": llm_judge.get("feedback", "")
-                    .replace("\n", " ")
-                    .replace("|", "\\|")
-                    if llm_judge
-                    else "",
-                    "tokens_used": str(token_usage.get("total_tokens", "")) if token_usage else "",
-                    "duration_seconds": str(token_usage.get("duration_seconds", ""))
-                    if token_usage
-                    else "",
-                }
-            )
-
-        # Process without_kg scenario
-        without_entry = without_entries.get(question_id)
-        if without_entry:
-            # Read answer file if specified
-            answer_text = without_entry.get("answer", "")
-            answer_file = without_entry.get("answer_file", "")
-            if answer_file:
-                answer_path = Path(answer_file)
-                if answer_path.exists():
-                    with open(answer_path) as f:
-                        answer_text = f.read()
-
-            # Extract sources for without_kg
-            sources = extract_sources_from_answer(answer_text, "answer_motherduck_without_kg")
-
-            # Clean answer for CSV (same as above)
-            clean_answer = answer_text
-            if "## Sources" in clean_answer:
-                clean_answer = clean_answer.split("## Sources")[0]
-            if "## Metadata" in clean_answer:
-                clean_answer = clean_answer.split("## Metadata")[0]
-
-            clean_answer = re.sub(r"^#\s*Answer\s*\n+", "", clean_answer, flags=re.MULTILINE)
-            clean_answer = re.sub(r"^#+\s+", "", clean_answer, flags=re.MULTILINE)
-            clean_answer = re.sub(r"\n#+\s+", " ", clean_answer)
-            clean_answer = re.sub(r"\*\*(.*?)\*\*", r"\1", clean_answer)
-            clean_answer = re.sub(r"\*(.*?)\*", r"\1", clean_answer)
-            clean_answer = re.sub(r"```[\s\S]*?```", "", clean_answer)
-            clean_answer = re.sub(r"`([^`]+)`", r"\1", clean_answer)
-            clean_answer = re.sub(r"^\s*[-*+]\s+", "• ", clean_answer, flags=re.MULTILINE)
-            clean_answer = re.sub(r"^\s*\d+\.\s+", "", clean_answer, flags=re.MULTILINE)
-            clean_answer = re.sub(r"\n\s*\n", " ", clean_answer)
-            clean_answer = re.sub(r"\n", " ", clean_answer)
-            clean_answer = re.sub(r"\s+", " ", clean_answer)
-            clean_answer = clean_answer.strip()
-            clean_answer = clean_answer.replace("|", "\\|")
-
-            if len(clean_answer) > 500:
-                clean_answer = clean_answer[:497] + "..."
-
-            llm_judge = without_entry.get("llm_judge", {})
-            token_usage = without_entry.get("token_usage", {})
-
-            # Create GitHub link for source file if available
-            source_file = without_entry.get("_source_file", "")
-            github_link = create_github_link(source_file, github_repo, github_branch)
-
-            # Create GitHub link for scenario definition
-            scenario_def_path = f"eval/scenarios/{scenario_names[1]}.yaml"
-            scenario_def_link = create_github_link(scenario_def_path, github_repo, github_branch)
-
-            csv_rows.append(
-                {
-                    "question_num": idx,
-                    "scenario": scenario_names[1],
-                    "scenario_definition": scenario_def_link,
-                    "question": question_text,
-                    "answer": clean_answer,
-                    "answer_file": answer_file,
-                    "github_link": github_link,
-                    "sources": sources,
-                    "judge_overall_score": str(llm_judge.get("overall_score", ""))
-                    if llm_judge
-                    else "",
-                    "judge_accuracy": str(llm_judge.get("component_scores", {}).get("accuracy", ""))
-                    if llm_judge
-                    else "",
-                    "judge_completeness": str(
-                        llm_judge.get("component_scores", {}).get("completeness", "")
-                    )
-                    if llm_judge
-                    else "",
-                    "judge_relevance": str(
-                        llm_judge.get("component_scores", {}).get("relevance", "")
-                    )
-                    if llm_judge
-                    else "",
-                    "judge_clarity": str(llm_judge.get("component_scores", {}).get("clarity", ""))
-                    if llm_judge
-                    else "",
-                    "judge_feedback": llm_judge.get("feedback", "")
-                    .replace("\n", " ")
-                    .replace("|", "\\|")
-                    if llm_judge
-                    else "",
-                    "tokens_used": str(token_usage.get("total_tokens", "")) if token_usage else "",
-                    "duration_seconds": str(token_usage.get("duration_seconds", ""))
-                    if token_usage
-                    else "",
-                }
-            )
-
-    # Sort by question number, then by scenario name
-    csv_rows.sort(key=lambda x: (x["question_num"], x["scenario"]))
-
-    # Calculate source deltas
-    source_deltas = {}
-    for row in csv_rows:
-        q_num = row["question_num"]
-        scenario = row["scenario"]
-
-        if q_num not in source_deltas:
-            source_deltas[q_num] = {}
-
-        source_deltas[q_num][scenario] = row["sources"]
-
-    # Add delta information to results
-    for row in csv_rows:
-        q_num = row["question_num"]
-        q_sources = source_deltas.get(q_num, {})
-
-        with_kg_sources = q_sources.get(scenario_names[0], "")
-        without_kg_sources = q_sources.get(scenario_names[1], "")
-
-        if with_kg_sources and without_kg_sources:
-            row["source_delta"] = calculate_source_overlap(with_kg_sources, without_kg_sources)
-        else:
-            row["source_delta"] = "N/A"
-
-    # Write CSV with pipe delimiter
-    csv_path = output.parent / "scenario_comparison.csv"
+def write_csv_report(csv_path: Path, csv_rows: List[Dict[str, Any]]) -> None:
+    """Write CSV report to file."""
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f, delimiter="|")
 
-        # Write header
+        # Write header - with GitHub links at the end
         header = [
             "Question #",
             "Scenario",
-            "Scenario Definition",
             "Question Text",
             "Answer",
-            "Answer File",
-            "Result File",
+            "Reference Answer",
             "Sources",
             "Source Delta",
             "Judge Overall Score",
@@ -554,19 +491,20 @@ def generate_report(
             "Judge Feedback",
             "Tokens Used",
             "Duration (seconds)",
+            "Answer File",
+            "Scenario Definition",
+            "Result File",
         ]
         writer.writerow(header)
 
-        # Write data rows
+        # Write data rows - reordered to match header
         for row in csv_rows:
             csv_row = [
                 str(row["question_num"]),
                 row["scenario"],
-                row.get("scenario_definition", ""),
                 row["question"],
                 row["answer"],
-                row.get("answer_file", ""),
-                row.get("github_link", ""),
+                row.get("expected_answer", ""),
                 row["sources"],
                 row.get("source_delta", ""),
                 row["judge_overall_score"],
@@ -577,143 +515,92 @@ def generate_report(
                 row["judge_feedback"],
                 row["tokens_used"],
                 row["duration_seconds"],
+                row.get("answer_file", ""),
+                row.get("scenario_definition", ""),
+                row.get("github_link", ""),
             ]
             writer.writerow(csv_row)
 
-    print(f"📊 CSV report written to {csv_path}")
 
-    # Generate original markdown report
-    report_lines: List[str] = []
-    report_lines.append("# GraphRAG vs Vector-only Comparison\n")
-    report_lines.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-    report_lines.append(
-        f"Questions compared: {with_summary.get('num_questions', 0)} (with KG) / "
-        f"{without_summary.get('num_questions', 0)} (without KG)\n"
-    )
+# ============================================================================
+# Main Report Generation
+# ============================================================================
 
-    report_lines.append("## Results Comparison\n")
-    report_lines.append(
-        "| # | With KG Score | With KG Time (s) | With KG Tokens | Without KG Score | Without KG Time (s) | Without KG Tokens | Δ Score |"
-    )
-    report_lines.append("| --- | --- | --- | --- | --- | --- | --- | --- |")
 
-    combined_rows: List[Dict[str, Any]] = []
+def generate_report(
+    with_entries: Dict[str, Dict[str, Any]],
+    without_entries: Dict[str, Dict[str, Any]],
+    questions: List[Dict],
+    output: Path,
+    github_repo: str = "https://github.com/anthropics/kurt-core",
+    github_branch: str = "main",
+    scenario_names: Tuple[str, str] = ("with_kg", "without_kg"),
+) -> Path:
+    """Generate CSV comparison report for two scenarios.
+
+    Args:
+        with_entries: Results for first scenario (typically with_kg)
+        without_entries: Results for second scenario (typically without_kg)
+        questions: List of questions with expected answers
+        output: Output path for CSV report
+        github_repo: GitHub repository URL for file links
+        github_branch: GitHub branch for file links
+        scenario_names: Tuple of scenario names
+
+    Returns:
+        Path to generated CSV file
+    """
+    # Build CSV data with one line per scenario per question
+    csv_rows = []
 
     for idx, question in enumerate(questions, start=1):
-        text = question.get("question", f"Question {idx}")
         question_id = question.get("id") or f"q{idx}"
-        with_entry = with_entries.get(question_id)
-        without_entry = without_entries.get(question_id)
 
-        with_score = extract_score(with_entry)
-        without_score = extract_score(without_entry)
-        delta = None
-        if with_score is not None and without_score is not None:
-            delta = with_score - without_score
+        # Process both scenarios
+        for entries, scenario_name in [
+            (with_entries, scenario_names[0]),
+            (without_entries, scenario_names[1]),
+        ]:
+            entry = entries.get(question_id)
+            if entry:
+                row = process_scenario_entry(
+                    entry, question, scenario_name, idx, github_repo, github_branch
+                )
+                if row:
+                    csv_rows.append(row)
 
-        # Extract usage data for with_kg
-        with_usage = extract_usage(with_entry) or {}
-        with_time = with_usage.get("duration_seconds")
-        with_tokens = with_usage.get("total_tokens")
-        with_time_str = f"{with_time:.1f}" if isinstance(with_time, (int, float)) else "N/A"
-        with_tokens_str = (
-            f"{int(with_tokens):,}" if isinstance(with_tokens, (int, float)) else "N/A"
-        )
+    # Sort by question number, then by scenario name
+    csv_rows.sort(key=lambda x: (x["question_num"], x["scenario"]))
 
-        # Extract usage data for without_kg
-        without_usage = extract_usage(without_entry) or {}
-        without_time = without_usage.get("duration_seconds")
-        without_tokens = without_usage.get("total_tokens")
-        without_time_str = (
-            f"{without_time:.1f}" if isinstance(without_time, (int, float)) else "N/A"
-        )
-        without_tokens_str = (
-            f"{int(without_tokens):,}" if isinstance(without_tokens, (int, float)) else "N/A"
-        )
+    # Calculate source deltas
+    for q_num in set(row["question_num"] for row in csv_rows):
+        q_rows = [r for r in csv_rows if r["question_num"] == q_num]
+        if len(q_rows) == 2:
+            sources1 = q_rows[0]["sources"]
+            sources2 = q_rows[1]["sources"]
+            delta = calculate_source_overlap(sources1, sources2)
+            for row in q_rows:
+                row["source_delta"] = delta
+        else:
+            for row in q_rows:
+                row["source_delta"] = "N/A"
 
-        delta_str = f"{delta:+.2f}" if delta is not None else "N/A"
-        with_score_str = f"{with_score:.2f}" if with_score is not None else "N/A"
-        without_score_str = f"{without_score:.2f}" if without_score is not None else "N/A"
+    # Write CSV report
+    csv_path = output.parent / "scenario_comparison.csv"
+    write_csv_report(csv_path, csv_rows)
 
-        report_lines.append(
-            f"| {idx} | "
-            f"{with_score_str} | "
-            f"{with_time_str} | "
-            f"{with_tokens_str} | "
-            f"{without_score_str} | "
-            f"{without_time_str} | "
-            f"{without_tokens_str} | "
-            f"{delta_str} |"
-        )
+    # Print summary
+    with_summary = compute_summary(with_entries)
+    without_summary = compute_summary(without_entries)
 
-        combined_rows.append(
-            {
-                "question": text,
-                "question_id": question_id,
-                "with_kg": {
-                    "score": with_score,
-                    "usage": extract_usage(with_entry),
-                    "cached": with_entry.get("cached_response") if with_entry else None,
-                    "feedback": (with_entry or {}).get("llm_judge", {}).get("feedback")
-                    if with_entry
-                    else None,
-                    "source": (with_entry or {}).get("_source_file"),
-                },
-                "without_kg": {
-                    "score": without_score,
-                    "usage": extract_usage(without_entry),
-                    "cached": without_entry.get("cached_response") if without_entry else None,
-                    "feedback": (without_entry or {}).get("llm_judge", {}).get("feedback")
-                    if without_entry
-                    else None,
-                    "source": (without_entry or {}).get("_source_file"),
-                },
-                "delta": delta,
-            }
-        )
-
-    # Add summary row with averages/totals
-    report_lines.append("| --- | --- | --- | --- | --- | --- | --- | --- |")
-    report_lines.append(
-        f"| **Avg/Total** | "
-        f"**{with_summary.get('average_score', 0.0):.2f}** | "
-        f"**{with_summary.get('duration_total', 0.0):.1f}** | "
-        f"**{int(with_summary.get('tokens_total', 0)):,}** | "
-        f"**{without_summary.get('average_score', 0.0):.2f}** | "
-        f"**{without_summary.get('duration_total', 0.0):.1f}** | "
-        f"**{int(without_summary.get('tokens_total', 0)):,}** | "
-        f"**{(with_summary.get('average_score', 0.0) - without_summary.get('average_score', 0.0)):+.2f}** |"
+    print(f"✅ CSV report successfully generated: {csv_path}")
+    print(f"📊 Report contains {len(csv_rows)} rows with judge scores and usage data")
+    print(
+        f"📈 Average scores: {scenario_names[0]}={with_summary['average_score']:.2f}, "
+        f"{scenario_names[1]}={without_summary['average_score']:.2f}"
     )
 
-    report_lines.append("")
-    report_lines.append("## Feedback Highlights\n")
-    for idx, row in enumerate(combined_rows, start=1):
-        report_lines.append(f"### Question {idx}: {row['question']}")
-        with_feedback = row["with_kg"].get("feedback")
-        without_feedback = row["without_kg"].get("feedback")
-        if with_feedback:
-            report_lines.append("**With KG:**")
-            report_lines.append(with_feedback)
-            report_lines.append("")
-        if without_feedback:
-            report_lines.append("**Without KG:**")
-            report_lines.append(without_feedback)
-            report_lines.append("")
-
-    output.parent.mkdir(parents=True, exist_ok=True)
-    # Write markdown report with .md extension
-    md_output = output.with_suffix(".md") if not str(output).endswith(".md") else output
-    md_output.write_text("\n".join(report_lines), encoding="utf-8")
-
-    payload = {
-        "with_kg": {"questions": with_entries, "summary": with_summary},
-        "without_kg": {"questions": without_entries, "summary": without_summary},
-        "per_question": combined_rows,
-        "generated_at": datetime.now().isoformat(),
-    }
-    # Write JSON report with consistent naming
-    json_output = output.with_suffix(".json") if not str(output).endswith(".json") else output
-    json_output.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return csv_path
 
 
 def generate_report_from_dirs(
@@ -724,6 +611,19 @@ def generate_report_from_dirs(
     github_repo: str = "https://github.com/anthropics/kurt-core",
     github_branch: str = "main",
 ) -> Path:
+    """Generate report from result directories.
+
+    Args:
+        with_dir: Directory with first scenario results
+        without_dir: Directory with second scenario results
+        questions_file: Path to questions YAML file
+        output_file: Path for output CSV file
+        github_repo: GitHub repository URL
+        github_branch: GitHub branch name
+
+    Returns:
+        Path to generated CSV file
+    """
     with_path = Path(with_dir)
     without_path = Path(without_dir)
     questions_path = Path(questions_file)
@@ -739,26 +639,35 @@ def generate_report_from_dirs(
         )
 
     # Extract scenario names from directory names
-    with_scenario = with_path.name
-    without_scenario = without_path.name
-    scenario_names = (with_scenario, without_scenario)
+    scenario_names = (with_path.name, without_path.name)
 
-    generate_report(
-        with_entries, without_entries, questions, output_path,
-        github_repo, github_branch, scenario_names
+    csv_path = generate_report(
+        with_entries,
+        without_entries,
+        questions,
+        output_path,
+        github_repo,
+        github_branch,
+        scenario_names,
     )
-    return output_path
+    return csv_path
+
+
+# ============================================================================
+# CLI Entry Point
+# ============================================================================
 
 
 def main():
+    """Command-line interface for report generation."""
     parser = argparse.ArgumentParser(
-        description="Compare GraphRAG vs vector-only evaluations",
+        description="Generate CSV comparison report for evaluation scenarios",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
         "--with-kg-dir",
         required=True,
-        help="Results directory for the WITH KG scenario (e.g., eval/results/answer_motherduck_with_kg)",
+        help="Results directory for the WITH KG scenario",
     )
     parser.add_argument(
         "--without-kg-dir",
@@ -768,26 +677,42 @@ def main():
     parser.add_argument(
         "--questions-file",
         default="eval/scenarios/questions_motherduck.yaml",
-        help="YAML file containing the questions (used for ordering)",
+        help="YAML file containing the questions and expected answers",
     )
     parser.add_argument(
         "--output",
-        default="eval/results/comparison_report.md",
-        help="Output markdown file",
+        default="eval/results/scenario_comparison.csv",
+        help="Output CSV file path",
+    )
+    parser.add_argument(
+        "--github-repo",
+        default="https://github.com/anthropics/kurt-core",
+        help="GitHub repository URL for file links",
+    )
+    parser.add_argument(
+        "--github-branch",
+        default="main",
+        help="GitHub branch for file links",
     )
 
     args = parser.parse_args()
 
     try:
-        output_path = generate_report_from_dirs(
-            args.with_kg_dir, args.without_kg_dir, args.questions_file, args.output
+        csv_path = generate_report_from_dirs(
+            args.with_kg_dir,
+            args.without_kg_dir,
+            args.questions_file,
+            args.output,
+            args.github_repo,
+            args.github_branch,
         )
+        print(f"✅ Report successfully generated: {csv_path}")
     except ValueError as exc:
         print(f"❌ {exc}", file=sys.stderr)
         sys.exit(1)
-
-    print(f"✅ Comparison report written to {output_path}")
-    print(f"💾 JSON summary written to {output_path.with_suffix('.json')}")
+    except Exception as exc:
+        print(f"❌ Unexpected error: {exc}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

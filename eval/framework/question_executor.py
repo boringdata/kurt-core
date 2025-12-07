@@ -222,19 +222,22 @@ class QuestionSetExecutor:
             # Get expected answer from questions config
             expected_answer = ""
             required_topics = []
-            for q in getattr(config, 'questions', []):
-                if isinstance(q, dict) and q.get('question') == question:
-                    expected_answer = q.get('expected_answer', '')
-                    required_topics = q.get('required_topics', [])
+            for q in getattr(config, "questions", []):
+                if isinstance(q, dict) and q.get("question") == question:
+                    expected_answer = q.get("expected_answer", "")
+                    required_topics = q.get("required_topics", [])
                     break
 
             # Get weights from config or use defaults
-            weights = judge_config.get("weights", {
-                "accuracy": 0.4,
-                "completeness": 0.3,
-                "relevance": 0.2,
-                "clarity": 0.1,
-            })
+            weights = judge_config.get(
+                "weights",
+                {
+                    "accuracy": 0.4,
+                    "completeness": 0.3,
+                    "relevance": 0.2,
+                    "clarity": 0.1,
+                },
+            )
 
             result = score_single_answer(
                 question=question,

@@ -2,7 +2,6 @@
 """OAuth authentication handler for Google Sheets integration."""
 
 import json
-import os
 import pickle
 from pathlib import Path
 from typing import Optional
@@ -17,8 +16,8 @@ class OAuthHandler:
     """Handle OAuth 2.0 authentication for Google Sheets."""
 
     SCOPES = [
-        'https://www.googleapis.com/auth/spreadsheets',
-        'https://www.googleapis.com/auth/drive.file'
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive.file",
     ]
 
     def __init__(self, credentials_file: str = None):
@@ -60,7 +59,7 @@ class OAuthHandler:
         """
         # Try to load existing token
         if not force_new and self.token_file.exists():
-            with open(self.token_file, 'rb') as token:
+            with open(self.token_file, "rb") as token:
                 self.creds = pickle.load(token)
 
         # If there are no (valid) credentials available, let the user log in
@@ -75,19 +74,45 @@ class OAuthHandler:
                 print("🌐 Opening browser for authentication...")
                 print("Please authorize access in your browser.")
 
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    self.credentials_file, self.SCOPES)
+                flow = InstalledAppFlow.from_client_secrets_file(self.credentials_file, self.SCOPES)
 
-                # Try to use local server first, fall back to console if it fails
+                print("📋 Starting OAuth authentication...")
+                print("=" * 60)
+                print()
+
+                # Try to use the loopback flow (recommended by Google)
                 try:
-                    self.creds = flow.run_local_server(port=0)
-                except Exception:
-                    print("⚠️  Local server failed, using console authentication...")
-                    self.creds = flow.run_console()
+                    print("🌐 Opening browser for authentication...")
+                    print("✨ A local server will handle the redirect automatically")
+                    print()
+
+                    # Use run_local_server with a specific port
+                    # This will open the browser and handle the redirect automatically
+                    self.creds = flow.run_local_server(
+                        port=8080,
+                        authorization_prompt_message="Please authorize access in your browser:\n",
+                        success_message="Authentication successful! You can close this window.",
+                        open_browser=True,
+                    )
+
+                except Exception as e:
+                    print(f"⚠️  Local server failed: {e}")
+                    print()
+                    print("IMPORTANT: You need to add this redirect URI in Google Cloud Console:")
+                    print("  http://localhost:8080/")
+                    print()
+                    print("Steps to fix:")
+                    print("1. Go to: https://console.cloud.google.com/apis/credentials")
+                    print("2. Click on your OAuth 2.0 Client ID")
+                    print("3. Under 'Authorized redirect URIs', add:")
+                    print("   - http://localhost:8080/")
+                    print("   - http://127.0.0.1:8080/")
+                    print("4. Save and try again")
+                    raise
 
             # Save the credentials for the next run
             self.token_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.token_file, 'wb') as token:
+            with open(self.token_file, "wb") as token:
                 pickle.dump(self.creds, token)
             print(f"✅ Token saved to: {self.token_file}")
 
@@ -100,7 +125,7 @@ class OAuthHandler:
             Google Sheets service object
         """
         creds = self.authenticate()
-        return build('sheets', 'v4', credentials=creds)
+        return build("sheets", "v4", credentials=creds)
 
     def get_drive_service(self):
         """Get authenticated Google Drive service.
@@ -109,7 +134,7 @@ class OAuthHandler:
             Google Drive service object
         """
         creds = self.authenticate()
-        return build('drive', 'v3', credentials=creds)
+        return build("drive", "v3", credentials=creds)
 
     def test_connection(self) -> bool:
         """Test the connection by creating a test spreadsheet.
@@ -121,17 +146,13 @@ class OAuthHandler:
             service = self.get_sheets_service()
 
             # Create a test spreadsheet
-            spreadsheet = {
-                'properties': {
-                    'title': 'Kurt Eval - OAuth Test'
-                }
-            }
+            spreadsheet = {"properties": {"title": "Kurt Eval - OAuth Test"}}
 
             result = service.spreadsheets().create(body=spreadsheet).execute()
-            sheet_id = result.get('spreadsheetId')
+            sheet_id = result.get("spreadsheetId")
             sheet_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}"
 
-            print(f"✅ Successfully connected to Google Sheets!")
+            print("✅ Successfully connected to Google Sheets!")
             print(f"📊 Test spreadsheet created: {sheet_url}")
 
             return True

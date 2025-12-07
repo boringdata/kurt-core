@@ -3,11 +3,9 @@
 
 import json
 import os
-import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import quote
+from typing import Optional
 
 import pandas as pd
 
@@ -58,6 +56,7 @@ class GSheetReportSync:
                 # Check if it's a service account
                 if cred_data.get("type") == "service_account":
                     from google.oauth2 import service_account
+
                     print(f"🔑 Using Service Account credentials from: {cred_path}")
                     return service_account.Credentials.from_service_account_file(
                         cred_path,
@@ -72,12 +71,14 @@ class GSheetReportSync:
                     print(f"🔑 Using OAuth Client credentials from: {cred_path}")
                     # Use OAuth handler
                     from ..commands.oauth_handler import OAuthHandler
+
                     oauth = OAuthHandler(credentials_file=cred_path)
                     return oauth.authenticate()
 
         # If no credentials found, try OAuth without specific file
         print("🔍 No credentials file found, trying OAuth authentication...")
         from ..commands.oauth_handler import OAuthHandler
+
         oauth = OAuthHandler()
         if oauth.credentials_file:
             return oauth.authenticate()
@@ -140,11 +141,20 @@ class GSheetReportSync:
         # Read pipe-delimited CSV
         df = pd.read_csv(csv_path, delimiter="|")
 
-        # Add GitHub links for answer files
+        # The Result File column already contains GitHub links, so we can use that
+        # For Answer File column, we'll show a descriptive text instead of /tmp paths
         if "Answer File" in df.columns:
-            df["Answer Link"] = df["Answer File"].apply(
-                lambda x: self.create_github_link(x) if pd.notna(x) and x else ""
+            df["Answer File"] = df["Answer File"].apply(
+                lambda x: "Generated Answer" if pd.notna(x) and x.startswith("/tmp/") else x
             )
+
+        # Add Answer Link column that points to the Result File (which has GitHub links)
+        if "Result File" in df.columns:
+            df["Answer Link"] = df["Result File"]
+
+        # Format the Sources column to be more readable
+        if "Sources" in df.columns:
+            df["Sources"] = df["Sources"].apply(self._format_sources_for_display)
 
         # Add timestamp
         df["Last Updated"] = datetime.now().isoformat()
@@ -155,6 +165,79 @@ class GSheetReportSync:
                 df[col] = pd.to_numeric(df[col], errors="coerce")
 
         return df
+
+    def _format_sources_for_display(self, sources_str):
+        """Format sources for better display in Google Sheets."""
+        if pd.isna(sources_str) or not sources_str:
+            return ""
+
+        # Handle knowledge graph format (with_kg scenarios)
+        if "[ Documents Used]" in sources_str:
+            # Extract just the document names without all the metadata
+            parts = []
+
+            # Extract document list
+            if "[ Documents Used]" in sources_str:
+                docs_section = sources_str.split("[ Documents Used]")[1]
+                if "[ Entities Used]" in docs_section:
+                    docs_section = docs_section.split("[ Entities Used]")[0]
+
+                # Extract document names (just the filenames)
+                import re
+
+                doc_matches = re.findall(r"- ([^(]+\.md)", docs_section)
+                if doc_matches:
+                    # Format each document on its own line
+                    doc_list = []
+                    for doc in doc_matches[:10]:  # Limit to first 10 docs
+                        filename = doc.split("/")[-1].strip()
+                        doc_list.append(filename)
+
+                    docs_formatted = "Documents Used:\n" + "\n".join(doc_list)
+                    if len(doc_matches) > 10:
+                        docs_formatted += f"\n... +{len(doc_matches)-10} more"
+                    parts.append(docs_formatted)
+
+            # Extract entity count summary
+            if "[ Entities Used]" in sources_str:
+                entities_section = sources_str.split("[ Entities Used]")[1]
+                if "[ Entity Relationships]" in entities_section:
+                    entities_section = entities_section.split("[ Entity Relationships]")[0]
+                entity_count = entities_section.count("similarity:")
+                if entity_count > 0:
+                    parts.append(f"\nEntities: {entity_count} used")
+
+            # Extract relationship count summary
+            if "[ Entity Relationships]" in sources_str:
+                rel_section = sources_str.split("[ Entity Relationships]")[1]
+                if "[ Knowledge Graph Usage]" in rel_section:
+                    rel_section = rel_section.split("[ Knowledge Graph Usage]")[0]
+                rel_count = rel_section.count("→")
+                if rel_count > 0:
+                    parts.append(f"Relations: {rel_count} explored")
+
+            return "\n".join(parts) if parts else sources_str[:500] + "..."
+
+        # Handle simple file list format (without_kg scenarios)
+        elif ".kurt/sources/" in sources_str:
+            # Extract just the filenames
+            import re
+
+            files = re.findall(r"[^/;]+\.md", sources_str)
+            if files:
+                # Format each file on its own line
+                file_list = ["Files Used:"]
+                for f in files[:10]:  # Limit to first 10 files
+                    file_list.append(f)
+                if len(files) > 10:
+                    file_list.append(f"... +{len(files)-10} more")
+                return "\n".join(file_list)
+
+        # Truncate if too long
+        if len(sources_str) > 500:
+            return sources_str[:500] + "..."
+
+        return sources_str
 
     def create_or_update_sheet(
         self,
@@ -176,10 +259,14 @@ class GSheetReportSync:
 
         try:
             # Try to find existing spreadsheet
-            results = self._drive_client.files().list(
-                q=f"name='{spreadsheet_name}' and mimeType='application/vnd.google-apps.spreadsheet'",
-                fields="files(id, name)",
-            ).execute()
+            results = (
+                self._drive_client.files()
+                .list(
+                    q=f"name='{spreadsheet_name}' and mimeType='application/vnd.google-apps.spreadsheet'",
+                    fields="files(id, name)",
+                )
+                .execute()
+            )
 
             files = results.get("files", [])
 
@@ -187,25 +274,47 @@ class GSheetReportSync:
                 spreadsheet_id = files[0]["id"]
                 print(f"📝 Updating existing spreadsheet: {spreadsheet_name}")
             else:
-                # Create new spreadsheet
-                spreadsheet = self._sheets_client.spreadsheets().create(
-                    body={"properties": {"title": spreadsheet_name}}
-                ).execute()
+                # Create new spreadsheet with the specific sheet name
+                spreadsheet = (
+                    self._sheets_client.spreadsheets()
+                    .create(
+                        body={
+                            "properties": {"title": spreadsheet_name},
+                            "sheets": [{"properties": {"title": sheet_name}}],
+                        }
+                    )
+                    .execute()
+                )
                 spreadsheet_id = spreadsheet["spreadsheetId"]
                 print(f"📊 Created new spreadsheet: {spreadsheet_name}")
 
-            # Prepare data for upload
-            values = [df.columns.tolist()] + df.values.tolist()
+            # Prepare data for upload - replace NaN with empty strings
+            df_clean = df.fillna("")
+            values = [df_clean.columns.tolist()] + df_clean.values.tolist()
 
-            # Clear existing content and update with new data
-            self._sheets_client.spreadsheets().values().clear(
-                spreadsheetId=spreadsheet_id,
-                range=f"{sheet_name}!A:Z"
-            ).execute()
+            # Quote sheet name if it contains spaces or special characters
+            quoted_sheet_name = f"'{sheet_name}'" if " " in sheet_name else sheet_name
+
+            # Check if the sheet exists, create if not
+            try:
+                # Try to clear existing content
+                self._sheets_client.spreadsheets().values().clear(
+                    spreadsheetId=spreadsheet_id, range=f"{quoted_sheet_name}!A:Z"
+                ).execute()
+            except Exception:
+                # Sheet doesn't exist, create it
+                request = {"addSheet": {"properties": {"title": sheet_name}}}
+                self._sheets_client.spreadsheets().batchUpdate(
+                    spreadsheetId=spreadsheet_id, body={"requests": [request]}
+                ).execute()
+                # Try clear again after creating sheet
+                self._sheets_client.spreadsheets().values().clear(
+                    spreadsheetId=spreadsheet_id, range=f"{quoted_sheet_name}!A:Z"
+                ).execute()
 
             self._sheets_client.spreadsheets().values().update(
                 spreadsheetId=spreadsheet_id,
-                range=f"{sheet_name}!A1",
+                range=f"{quoted_sheet_name}!A1",
                 valueInputOption="RAW",
                 body={"values": values},
             ).execute()
@@ -236,12 +345,24 @@ class GSheetReportSync:
             num_cols: Number of columns
             num_rows: Number of rows including header
         """
+        # Get the actual sheet ID
+        spreadsheet = self._sheets_client.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+        sheet_id = None
+        for sheet in spreadsheet.get("sheets", []):
+            if sheet["properties"]["title"] == sheet_name:
+                sheet_id = sheet["properties"]["sheetId"]
+                break
+
+        if sheet_id is None:
+            # Skip formatting if sheet not found
+            return
+
         requests = [
             # Freeze header row
             {
                 "updateSheetProperties": {
                     "properties": {
-                        "sheetId": 0,
+                        "sheetId": sheet_id,
                         "gridProperties": {"frozenRowCount": 1},
                     },
                     "fields": "gridProperties.frozenRowCount",
@@ -251,7 +372,7 @@ class GSheetReportSync:
             {
                 "repeatCell": {
                     "range": {
-                        "sheetId": 0,
+                        "sheetId": sheet_id,
                         "startRowIndex": 0,
                         "endRowIndex": 1,
                     },
@@ -272,7 +393,7 @@ class GSheetReportSync:
             {
                 "autoResizeDimensions": {
                     "dimensions": {
-                        "sheetId": 0,
+                        "sheetId": sheet_id,
                         "dimension": "COLUMNS",
                         "startIndex": 0,
                         "endIndex": num_cols,
@@ -285,7 +406,7 @@ class GSheetReportSync:
                     "rule": {
                         "ranges": [
                             {
-                                "sheetId": 0,
+                                "sheetId": sheet_id,
                                 "startRowIndex": 1,
                                 "endRowIndex": num_rows,
                                 "startColumnIndex": 7,  # Assuming score columns start at H
@@ -339,26 +460,45 @@ class GSheetReportSync:
         for scenario in ["with_kg", "without_kg"]:
             if scenario in data:
                 summary = data[scenario].get("summary", {})
-                summaries.append({
-                    "Scenario": scenario,
-                    "Average Score": summary.get("average_score", 0),
-                    "Total Tokens": summary.get("tokens_total", 0),
-                    "Total Duration (s)": summary.get("duration_total", 0),
-                    "Cached Responses": summary.get("cached_responses", 0),
-                    "Questions Evaluated": summary.get("num_questions", 0),
-                })
+                summaries.append(
+                    {
+                        "Scenario": scenario,
+                        "Average Score": summary.get("average_score", 0),
+                        "Total Tokens": summary.get("tokens_total", 0),
+                        "Total Duration (s)": summary.get("duration_total", 0),
+                        "Cached Responses": summary.get("cached_responses", 0),
+                        "Questions Evaluated": summary.get("num_questions", 0),
+                    }
+                )
 
         df_summary = pd.DataFrame(summaries)
 
-        # Add to sheet
-        values = [df_summary.columns.tolist()] + df_summary.values.tolist()
+        # Add to sheet - replace NaN with empty strings
+        df_summary_clean = df_summary.fillna("")
+        values = [df_summary_clean.columns.tolist()] + df_summary_clean.values.tolist()
 
-        self._sheets_client.spreadsheets().values().update(
-            spreadsheetId=spreadsheet_id,
-            range="Summary!A1",
-            valueInputOption="RAW",
-            body={"values": values},
-        ).execute()
+        # Create Summary sheet if it doesn't exist
+        try:
+            self._sheets_client.spreadsheets().values().update(
+                spreadsheetId=spreadsheet_id,
+                range="Summary!A1",
+                valueInputOption="RAW",
+                body={"values": values},
+            ).execute()
+        except Exception:
+            # Sheet doesn't exist, create it first
+            request = {"addSheet": {"properties": {"title": "Summary"}}}
+            self._sheets_client.spreadsheets().batchUpdate(
+                spreadsheetId=spreadsheet_id, body={"requests": [request]}
+            ).execute()
+
+            # Now write the data
+            self._sheets_client.spreadsheets().values().update(
+                spreadsheetId=spreadsheet_id,
+                range="Summary!A1",
+                valueInputOption="RAW",
+                body={"values": values},
+            ).execute()
 
     def sync_report(
         self,
@@ -400,9 +540,7 @@ def main():
     """CLI for syncing reports to Google Sheets."""
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="Sync evaluation reports to Google Sheets"
-    )
+    parser = argparse.ArgumentParser(description="Sync evaluation reports to Google Sheets")
     parser.add_argument(
         "--csv",
         required=True,
@@ -448,7 +586,7 @@ def main():
             json_path=args.json,
             spreadsheet_name=args.name,
         )
-        print(f"\n🎉 Report successfully synced to Google Sheets!")
+        print("\n🎉 Report successfully synced to Google Sheets!")
         print(f"📋 View at: {sheet_url}")
     except Exception as e:
         print(f"\n❌ Failed to sync report: {e}")
@@ -459,4 +597,5 @@ def main():
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(main())

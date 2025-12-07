@@ -122,8 +122,16 @@ class ScenarioBuilder:
         scenario.question_set = QuestionSetConfig(
             file="test_questions.yaml",
             questions=[
-                {"id": "q1", "question": "Explain Python's GIL", "expected_answer": "The Global Interpreter Lock is a mutex..."},
-                {"id": "q2", "question": "Explain JavaScript's event loop", "expected_answer": "The event loop is a mechanism..."},
+                {
+                    "id": "q1",
+                    "question": "Explain Python's GIL",
+                    "expected_answer": "The Global Interpreter Lock is a mutex...",
+                },
+                {
+                    "id": "q2",
+                    "question": "Explain JavaScript's event loop",
+                    "expected_answer": "The event loop is a mechanism...",
+                },
             ],
             answer_file_template="/tmp/answer_{question_id}.md",
             commands=["echo 'Answer: {question}' > {answer_file}"],
@@ -434,13 +442,13 @@ class TestScenarioCombinations:
     @patch("framework.metrics.save_results")
     @patch("framework.runner.IsolatedWorkspace")
     @pytest.mark.asyncio
-    async def test_with_project_dump(self, mock_workspace_class, mock_save_results, mock_subprocess):
+    async def test_with_project_dump(
+        self, mock_workspace_class, mock_save_results, mock_subprocess
+    ):
         """Test scenario that loads a project dump."""
         # Mock the project loader subprocess call
         mock_subprocess.return_value = MagicMock(
-            returncode=0,
-            stdout="Project loaded successfully",
-            stderr=""
+            returncode=0, stdout="Project loaded successfully", stderr=""
         )
 
         scenario = ScenarioBuilder.with_project_dump()

@@ -5,7 +5,7 @@ Ensures that for each question execution:
 - No duplicate saves happen at different timestamps
 """
 
-import json
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -13,15 +13,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import sys
-from pathlib import Path
-
 # Add framework to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from framework.conversation import QuestionSetConfig, Scenario
 from framework.metrics import MetricsCollector, save_results
 from framework.runner import ScenarioRunner
-from framework.conversation import Scenario, QuestionSetConfig
 
 
 class TestNoDuplicateFiles:
@@ -75,7 +72,9 @@ class TestNoDuplicateFiles:
         answer_files = list(scenario_dir.glob("q1_*_answer.md"))
 
         assert len(json_files) == 1, f"Expected 1 JSON file, got {len(json_files)}"
-        assert len(transcript_files) == 1, f"Expected 1 transcript file, got {len(transcript_files)}"
+        assert (
+            len(transcript_files) == 1
+        ), f"Expected 1 transcript file, got {len(transcript_files)}"
         assert len(answer_files) == 1, f"Expected 1 answer file, got {len(answer_files)}"
 
     def test_no_duplicate_timestamps(self, tmp_path):
@@ -130,7 +129,9 @@ class TestNoDuplicateFiles:
         assert len(files) == 1, f"Should have 1 JSON file, got {len(files)}"
 
         transcript_files = list(scenario_dir.glob("q1_*_transcript.md"))
-        assert len(transcript_files) == 1, f"Should have 1 transcript file, got {len(transcript_files)}"
+        assert (
+            len(transcript_files) == 1
+        ), f"Should have 1 transcript file, got {len(transcript_files)}"
 
     @pytest.mark.asyncio
     async def test_runner_creates_only_expected_files(self, tmp_path):
@@ -161,9 +162,7 @@ class TestNoDuplicateFiles:
             mock_workspace_class.return_value = mock_workspace
 
             with patch("framework.runner.subprocess.run") as mock_subprocess:
-                mock_subprocess.return_value = MagicMock(
-                    returncode=0, stdout="Success", stderr=""
-                )
+                mock_subprocess.return_value = MagicMock(returncode=0, stdout="Success", stderr="")
 
                 with patch("pathlib.Path.exists", return_value=True):
                     with patch("pathlib.Path.iterdir", return_value=[]):

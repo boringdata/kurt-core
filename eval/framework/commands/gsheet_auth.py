@@ -3,7 +3,6 @@
 
 import json
 import os
-import sys
 import webbrowser
 from pathlib import Path
 from typing import Optional
@@ -14,19 +13,25 @@ import click
 def create_oauth_flow():
     """Create OAuth flow for user authentication."""
     try:
-        from google.auth.transport.requests import Request
-        from google.oauth2.credentials import Credentials
-        from google_auth_oauthlib.flow import InstalledAppFlow
+        # Test if packages are available
+        import importlib.util
+
+        if not (
+            importlib.util.find_spec("google.auth.transport.requests")
+            and importlib.util.find_spec("google.oauth2.credentials")
+            and importlib.util.find_spec("google_auth_oauthlib.flow")
+        ):
+            raise ImportError()
     except ImportError:
         click.echo("❌ Required packages not installed. Run: uv pip install google-auth-oauthlib")
         return None
 
-    SCOPES = [
-        'https://www.googleapis.com/auth/spreadsheets',
-        'https://www.googleapis.com/auth/drive.file'
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive.file",
     ]
 
-    return SCOPES
+    return scopes
 
 
 def setup_service_account():
@@ -138,6 +143,7 @@ def save_credentials(creds_path: str, target_path: Path) -> bool:
 
     # Copy the file
     import shutil
+
     shutil.copy2(source, target_path)
 
     # Set appropriate permissions (read-only for owner)
@@ -155,25 +161,20 @@ def test_connection(creds_path: Path) -> bool:
 
         # Load credentials
         credentials = service_account.Credentials.from_service_account_file(
-            str(creds_path),
-            scopes=['https://www.googleapis.com/auth/spreadsheets']
+            str(creds_path), scopes=["https://www.googleapis.com/auth/spreadsheets"]
         )
 
         # Try to connect to Sheets API
-        service = build('sheets', 'v4', credentials=credentials)
+        service = build("sheets", "v4", credentials=credentials)
 
         # Try to create a test spreadsheet
-        spreadsheet = {
-            'properties': {
-                'title': 'Kurt Eval - Test Connection'
-            }
-        }
+        spreadsheet = {"properties": {"title": "Kurt Eval - Test Connection"}}
 
         result = service.spreadsheets().create(body=spreadsheet).execute()
-        sheet_id = result.get('spreadsheetId')
+        sheet_id = result.get("spreadsheetId")
         sheet_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}"
 
-        click.echo(f"✅ Successfully connected to Google Sheets!")
+        click.echo("✅ Successfully connected to Google Sheets!")
         click.echo(f"📊 Test spreadsheet created: {sheet_url}")
 
         if click.confirm("Open test spreadsheet in browser?"):
@@ -187,10 +188,14 @@ def test_connection(creds_path: Path) -> bool:
 
 
 @click.command()
-@click.option('--method', type=click.Choice(['service-account', 'oauth', 'auto']),
-              default='auto', help='Authentication method')
-@click.option('--credentials-file', help='Path to credentials JSON file')
-@click.option('--test', is_flag=True, help='Test the connection after setup')
+@click.option(
+    "--method",
+    type=click.Choice(["service-account", "oauth", "auto"]),
+    default="auto",
+    help="Authentication method",
+)
+@click.option("--credentials-file", help="Path to credentials JSON file")
+@click.option("--test", is_flag=True, help="Test the connection after setup")
 def gsheet_auth(method: str, credentials_file: Optional[str], test: bool):
     """Set up Google Sheets authentication for eval reports.
 
@@ -203,7 +208,7 @@ def gsheet_auth(method: str, credentials_file: Optional[str], test: bool):
     # Check current status
     config_dir = Path.home() / ".config" / "kurt-eval"
     service_account_path = config_dir / "service_account.json"
-    oauth_path = config_dir / "oauth_credentials.json"
+    config_dir / "oauth_credentials.json"
     env_var = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 
     click.echo("\n📍 Current Status:")
@@ -233,7 +238,7 @@ def gsheet_auth(method: str, credentials_file: Optional[str], test: bool):
         if save_credentials(credentials_file, service_account_path):
             click.echo("\n✅ Setup complete! You can now use --sync-gsheet")
             click.echo("\nTo use these credentials, either:")
-            click.echo(f"1. Set environment variable:")
+            click.echo("1. Set environment variable:")
             click.echo(f"   export GOOGLE_APPLICATION_CREDENTIALS='{service_account_path}'")
             click.echo(f"2. Or the framework will auto-detect from: {service_account_path}")
 
@@ -243,25 +248,29 @@ def gsheet_auth(method: str, credentials_file: Optional[str], test: bool):
         return
 
     # Interactive setup
-    if method == 'auto' and not credentials_file:
+    if method == "auto" and not credentials_file:
         click.echo("\n📋 Choose authentication method:")
         click.echo("1. Service Account (Recommended - for automation)")
         click.echo("2. OAuth (Personal - requires browser)")
 
         choice = click.prompt("Enter choice", type=int, default=1)
-        method = 'service-account' if choice == 1 else 'oauth'
+        method = "service-account" if choice == 1 else "oauth"
 
-    if method == 'service-account':
+    if method == "service-account":
         if setup_service_account():
             click.echo("\n✅ Service Account Setup Instructions Complete!")
             click.echo("\nAfter downloading the JSON key file, run:")
-            click.echo(f"  uv run python -m eval gsheet-auth --credentials-file /path/to/key.json --test")
+            click.echo(
+                "  uv run python -m eval gsheet-auth --credentials-file /path/to/key.json --test"
+            )
 
-    elif method == 'oauth':
+    elif method == "oauth":
         if setup_oauth():
             click.echo("\n✅ OAuth Setup Instructions Complete!")
             click.echo("\nAfter downloading credentials.json, run:")
-            click.echo(f"  uv run python -m eval gsheet-auth --credentials-file /path/to/credentials.json")
+            click.echo(
+                "  uv run python -m eval gsheet-auth --credentials-file /path/to/credentials.json"
+            )
 
     click.echo("\n📚 Documentation:")
     click.echo("https://developers.google.com/sheets/api/quickstart/python")

@@ -492,7 +492,7 @@ class ScenarioRunner:
                     any_cached = True
 
             judge_result = None
-            if hasattr(scenario, 'llm_judge') and scenario.llm_judge.get("enabled"):
+            if hasattr(scenario, "llm_judge") and scenario.llm_judge.get("enabled"):
                 self._log("   🧠 Running LLM judge evaluation...")
                 judge_result = self._score_answer_with_llm(question, answer_text, scenario)
                 if judge_result and "overall_score" in judge_result:
@@ -705,7 +705,11 @@ class ScenarioRunner:
                         required_topics.append("Parquet")
 
                     # Get provider and model from judge config or use defaults
-                    judge_config = question_set.llm_judge if question_set.llm_judge else {}
+                    judge_config = (
+                        scenario.llm_judge
+                        if hasattr(scenario, "llm_judge") and scenario.llm_judge
+                        else {}
+                    )
                     llm_provider = judge_config.get("provider", "anthropic")
                     model = judge_config.get("model")  # None will use default in llm_judge
 
@@ -1001,12 +1005,18 @@ class ScenarioRunner:
 
         # Get configuration from scenario, with fallbacks to global config
         from .config import get_config
+
         global_config = get_config()
 
         weights = config.llm_judge.get(
-            "weights", global_config.llm_judge.get("weights", {"accuracy": 0.4, "completeness": 0.3, "relevance": 0.2, "clarity": 0.1})
+            "weights",
+            global_config.llm_judge.get(
+                "weights", {"accuracy": 0.4, "completeness": 0.3, "relevance": 0.2, "clarity": 0.1}
+            ),
         )
-        provider = config.llm_judge.get("provider", global_config.llm_judge.get("provider", "anthropic"))
+        provider = config.llm_judge.get(
+            "provider", global_config.llm_judge.get("provider", "anthropic")
+        )
         model = config.llm_judge.get("model") or global_config.llm_judge.get("model")
 
         try:
