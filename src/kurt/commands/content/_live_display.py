@@ -647,52 +647,118 @@ def display_knowledge_graph(kg: dict, console: Console, title: str = "Knowledge 
     if not kg:
         return
 
-    console.print(f"\n[bold cyan]{title}[/bold cyan]")
+    # Build entity name to ID mapping for highlighting
+    entity_map = {}
+    if kg.get("entities"):
+        for entity in kg["entities"]:
+            entity_map[entity["name"].lower()] = entity
+
+    # Claims section (first)
+    if kg.get("claims"):
+        claim_count = len(kg["claims"])
+        console.print(f"\n[bold cyan]Claims ({claim_count})[/bold cyan]")
+        console.print(f"[dim]{'─' * 60}[/dim]")
+
+        for claim in kg["claims"][:10]:
+            # Highlight entities in the claim statement
+            statement = claim["statement"]
+
+            # Find and highlight entities mentioned in the statement
+            highlighted_statement = statement
+
+            # First highlight entities from the referenced_entities list (these are properly linked)
+            entities_in_claim = claim.get("referenced_entities", [])
+            for entity_name in entities_in_claim:
+                import re
+
+                pattern = re.compile(r"\b" + re.escape(entity_name) + r"\b", re.IGNORECASE)
+                highlighted_statement = pattern.sub(
+                    f"[bold magenta]{entity_name}[/bold magenta]", highlighted_statement
+                )
+
+            # Also highlight any entities from the entity_map that appear in the text
+            for entity_name, entity_info in entity_map.items():
+                # Skip if already highlighted
+                if entity_info["name"] not in entities_in_claim:
+                    import re
+
+                    pattern = re.compile(
+                        r"\b" + re.escape(entity_info["name"]) + r"\b", re.IGNORECASE
+                    )
+                    # Use dim magenta for entities not properly linked
+                    highlighted_statement = pattern.sub(
+                        f"[dim magenta]{entity_info['name']}[/dim magenta]", highlighted_statement
+                    )
+
+            # Format claim type more compactly
+            claim_type_short = (
+                claim["claim_type"].replace("ClaimType.", "").replace("DEFINITION", "DEF")
+            )
+            console.print(f"• [[dim]{claim_type_short}[/dim]] {highlighted_statement}")
+
+            # Show all entities referenced in this claim
+            entities_in_claim = claim.get("referenced_entities", [])
+
+            if entities_in_claim:
+                console.print(f"  [dim]Entities: {', '.join(entities_in_claim)}[/dim]")
+            console.print(f"  [dim]Confidence: {claim['confidence']:.2f}[/dim]")
+            console.print()
+
+    # Entities & Relationships section
+    entity_count = kg["stats"]["entity_count"]
+    rel_count = kg["stats"]["relationship_count"]
+    console.print(
+        f"[bold cyan]Entities & Relationships ({entity_count} entities, {rel_count} relationships)[/bold cyan]"
+    )
     console.print(f"[dim]{'─' * 60}[/dim]")
 
-    # Stats
-    console.print(f"[bold]Entities:[/bold] {kg['stats']['entity_count']}")
-    console.print(f"[bold]Relationships:[/bold] {kg['stats']['relationship_count']}")
+    # Group relationships by source entity
+    relationships_by_entity = {}
+    if kg.get("relationships"):
+        for rel in kg["relationships"]:
+            source = rel["source_entity"]
+            if source not in relationships_by_entity:
+                relationships_by_entity[source] = []
+            relationships_by_entity[source].append(rel)
 
-    if kg["stats"]["entity_count"] > 0:
-        console.print(
-            f"[bold]Avg Entity Confidence:[/bold] {kg['stats']['avg_entity_confidence']:.2f}"
-        )
-
-    # Top entities
-    if kg["entities"]:
-        console.print("\n[bold]Top Entities:[/bold]")
+    # Display entities with their relationships
+    if kg.get("entities"):
         for entity in kg["entities"][:10]:
-            aliases_str = (
-                f" (aliases: {', '.join(entity['aliases'][:2])})" if entity["aliases"] else ""
-            )
-            console.print(f"  • {entity['name']} [{entity['type']}]{aliases_str}")
+            # Compact entity line
             console.print(
-                f"    [dim]Confidence: {entity['confidence']:.2f}, "
-                f"Mentions: {entity['mentions_in_doc']}[/dim]"
+                f"• [bold]{entity['name']}[/bold] [{entity['type']}] • "
+                f"Conf: {entity['confidence']:.2f} • Mentions: {entity['mentions_in_doc']}"
             )
-            if entity.get("mention_context"):
-                quote = (
-                    entity["mention_context"][:100] + "..."
-                    if len(entity["mention_context"]) > 100
-                    else entity["mention_context"]
-                )
-                console.print(f'    [dim italic]"{quote}"[/dim italic]')
 
-    # Relationships
-    if kg["relationships"]:
-        console.print("\n[bold]Relationships:[/bold]")
-        for rel in kg["relationships"][:10]:
-            console.print(
-                f"  • {rel['source_entity']} --[{rel['relationship_type']}]--> "
-                f"{rel['target_entity']}"
-            )
-            console.print(f"    [dim]Confidence: {rel['confidence']:.2f}[/dim]")
-            if rel.get("context"):
-                context = (
-                    rel["context"][:100] + "..." if len(rel["context"]) > 100 else rel["context"]
-                )
-                console.print(f'    [dim italic]"{context}"[/dim italic]')
+            # Show relationships for this entity
+            entity_rels = relationships_by_entity.get(entity["name"], [])
+            for rel in entity_rels[:3]:  # Show up to 3 relationships per entity
+                rel_type = rel.get("relationship_type", "related_to")
+                arrow = "→"
+                if len(rel.get("context", "")) > 60:
+                    console.print(
+                        f"  {arrow} [italic]{rel_type}[/italic] → {rel['target_entity']} "
+                        f"[dim]({rel['confidence']:.2f}): "
+                        f"{rel['context'][:60]}...[/dim]"
+                    )
+                else:
+                    console.print(
+                        f"  {arrow} [italic]{rel_type}[/italic] → {rel['target_entity']} "
+                        f"[dim]({rel['confidence']:.2f})[/dim]"
+                    )
+
+            # If entity has no relationships, note it
+            if not entity_rels:
+                console.print("  [dim](no relationships)[/dim]")
+
+    # Summary line
+    console.print()
+    avg_conf = kg["stats"].get("avg_entity_confidence", 0)
+    claim_count = kg["stats"].get("claim_count", 0)
+    console.print(
+        f"[dim]Summary: {entity_count} entities • {rel_count} relationships • "
+        f"{claim_count} claims • Avg confidence: {avg_conf:.2f}[/dim]"
+    )
 
 
 def index_and_finalize_with_two_stage_progress(documents, console, force: bool = False):
@@ -812,6 +878,29 @@ def index_and_finalize_with_two_stage_progress(documents, console, force: bool =
             ],
         )
 
+    # Stage 3 summary - Claims
+    claim_stats = index_result.get("claim_stats")
+
+    if claim_stats and claim_stats.get("claims_processed", 0) > 0:
+        print_stage_header(console, 3, "CLAIMS EXTRACTION")
+        print_stage_summary(
+            console,
+            [
+                ("✓", "Claims processed", str(claim_stats.get("claims_processed", 0))),
+                (
+                    "✓",
+                    "Claims created",
+                    str(claim_stats.get("claims_created", 0))
+                    if "claims_created" in claim_stats
+                    else str(claim_stats.get("claims_processed", 0)),
+                ),
+                ("⚠", "Unresolved entities", str(claim_stats.get("unresolved_entities", 0))),
+                ("⚠", "Conflicts detected", str(claim_stats.get("conflicts_detected", 0))),
+                ("○", "Duplicates skipped", str(claim_stats.get("duplicates_skipped", 0))),
+                ("✓", "Documents with claims", str(claim_stats.get("documents_with_claims", 0))),
+            ],
+        )
+
     # ====================================================================
     # Global Command Summary
     # ====================================================================
@@ -833,7 +922,40 @@ def index_and_finalize_with_two_stage_progress(documents, console, force: bool =
             ]
         )
 
+    # Add claims to summary if present
+    claim_stats = index_result.get("claim_stats")
+    if claim_stats and claim_stats.get("claims_processed", 0) > 0:
+        summary_items.extend(
+            [
+                ("✓", "Claims processed", str(claim_stats.get("claims_processed", 0))),
+            ]
+        )
+        if claim_stats.get("unresolved_entities", 0) > 0:
+            summary_items.append(
+                ("⚠", "Unresolved claim entities", str(claim_stats.get("unresolved_entities", 0)))
+            )
+        if claim_stats.get("conflicts_detected", 0) > 0:
+            summary_items.append(
+                ("⚠", "Conflicts detected", str(claim_stats.get("conflicts_detected", 0)))
+            )
+
     summary_items.append(("ℹ", "Time elapsed", f"{elapsed:.1f}s"))
+
+    # Add token usage if available
+    import dspy
+
+    total_tokens = 0
+    try:
+        if hasattr(dspy.settings, "lm") and hasattr(dspy.settings.lm, "history"):
+            for call in dspy.settings.lm.history:
+                if isinstance(call, dict) and "usage" in call:
+                    usage = call["usage"]
+                    if "total_tokens" in usage:
+                        total_tokens += usage["total_tokens"]
+            if total_tokens > 0:
+                summary_items.append(("ℹ", "Tokens used", f"{total_tokens:,}"))
+    except Exception:
+        pass  # Token tracking is optional
 
     print_command_summary(console, "Summary", summary_items)
 

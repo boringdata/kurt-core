@@ -85,9 +85,9 @@ def init_dbos(db_path: str | None = None) -> None:
 
         def cleanup_dbos():
             try:
-                # Properly destroy DBOS instance with a short timeout
+                # Properly destroy DBOS instance with sufficient timeout
                 # This waits for workflows to complete and closes connections
-                DBOS.destroy(workflow_completion_timeout_sec=5)
+                DBOS.destroy(workflow_completion_timeout_sec=10)
             except Exception:  # noqa: S110
                 pass  # Ignore cleanup errors
 

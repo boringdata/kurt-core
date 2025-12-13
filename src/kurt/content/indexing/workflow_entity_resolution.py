@@ -255,7 +255,14 @@ def create_relationships_txn(
 
 @DBOS.workflow()
 def complete_entity_resolution_workflow(index_results: list[dict]) -> dict:
-    """Complete entity resolution workflow (Stages 2-4)."""
+    """Complete entity resolution workflow (Stages 2-5).
+
+    Stages:
+    2. Link existing entities
+    3. Resolve new entities
+    4. Create entities and relationships
+    5. Resolve and store claims
+    """
     import time
     from datetime import datetime
 
@@ -388,6 +395,7 @@ def complete_entity_resolution_workflow(index_results: list[dict]) -> dict:
     # STAGE 4: Create entities and relationships (multiple steps - checkpointed)
     orphaned_count = 0
     relationships_created = 0
+    entity_name_to_id_str = {}  # Initialize here to avoid UnboundLocalError
 
     if resolutions:
         # Step 4a: Clean up old entities
@@ -466,37 +474,52 @@ def complete_entity_resolution_workflow(index_results: list[dict]) -> dict:
         f"for {len(all_document_ids)} documents"
     )
 
-    # Collect entity names for display
-    created_entity_names = [r["entity_name"] for r in resolutions if r["decision"] == "CREATE_NEW"]
+    # Build proper entity data for claim resolution
+    from uuid import UUID
 
-    # Collect linked entity names from Stage 3 (LLM resolutions)
-    stage3_linked_names = [r["entity_name"] for r in resolutions if r["decision"] != "CREATE_NEW"]
+    from kurt.db.database import get_session
+    from kurt.db.models import Entity
 
-    # Collect existing entity names from Stage 2 (direct matches from KG extract)
-    stage2_linked_names = []
-    if entities_linked_existing > 0:
-        from uuid import UUID
+    # Collect created entities with their IDs
+    created_entities = []
+    for entity_name in entity_name_to_id_str.keys():
+        # Check if this was a newly created entity
+        was_created = any(
+            r["entity_name"] == entity_name and r["decision"] == "CREATE_NEW" for r in resolutions
+        )
+        if was_created:
+            created_entities.append({"name": entity_name, "id": entity_name_to_id_str[entity_name]})
 
-        from kurt.db.database import get_session
-        from kurt.db.models import Entity
+    # Collect existing entities that were linked
+    existing_entities = []
+    session = get_session()
+    try:
+        # Get all existing entity IDs from the initial extraction
+        existing_entity_ids = set()
+        for kg_data in doc_to_kg_data.values():
+            if kg_data.get("existing_entities"):
+                existing_entity_ids.update([UUID(eid) for eid in kg_data["existing_entities"]])
 
-        session = get_session()
-        try:
-            # Collect all existing entity IDs from kg_data
-            existing_entity_ids = []
-            for kg_data in doc_to_kg_data.values():
-                if kg_data.get("existing_entities"):
-                    existing_entity_ids.extend([UUID(eid) for eid in kg_data["existing_entities"]])
+        # Also add entities that were merged/linked during resolution
+        for entity_name in entity_name_to_id_str.keys():
+            was_existing = any(
+                r["entity_name"] == entity_name and r["decision"] != "CREATE_NEW"
+                for r in resolutions
+            )
+            if was_existing:
+                existing_entity_ids.add(UUID(entity_name_to_id_str[entity_name]))
 
-            # Fetch entity names from DB
-            if existing_entity_ids:
-                entities = session.query(Entity).filter(Entity.id.in_(existing_entity_ids)).all()
-                stage2_linked_names = [e.name for e in entities]
-        finally:
-            session.close()
+        # Fetch all existing entities with their details
+        if existing_entity_ids:
+            entities = session.query(Entity).filter(Entity.id.in_(existing_entity_ids)).all()
+            for entity in entities:
+                existing_entities.append({"name": entity.name, "id": str(entity.id)})
+    finally:
+        session.close()
 
-    # Combine all linked entity names
-    linked_entity_names = stage2_linked_names + stage3_linked_names
+    # Keep the display names for backward compatibility
+    created_entity_names = [e["name"] for e in created_entities]
+    linked_entity_names = [e["name"] for e in existing_entities]
 
     return {
         "document_ids": [str(d) for d in all_document_ids],
@@ -505,6 +528,10 @@ def complete_entity_resolution_workflow(index_results: list[dict]) -> dict:
         "entities_merged": entities_merged,
         "relationships_created": relationships_created,
         "orphaned_entities_cleaned": orphaned_count,
+        # New format for claim resolution
+        "created_entities": created_entities,
+        "existing_entities": existing_entities,
+        # Keep old format for backward compatibility
         "created_entity_names": created_entity_names,
         "linked_entity_names": linked_entity_names,
         "workflow_id": DBOS.workflow_id,

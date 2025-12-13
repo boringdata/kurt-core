@@ -1,33 +1,9 @@
 """Fetch command - Download + index content (root-level command)."""
 
-import logging
-import time
-
 import click
-from rich.console import Console
-
-from kurt.admin.telemetry.decorators import track_command
-from kurt.commands.content._fetch_helpers import (
-    build_background_filter_desc,
-    build_intro_messages,
-    check_guardrails,
-    display_dry_run_preview,
-    display_json_output,
-    display_no_documents_help,
-    display_refetch_warning,
-    display_result_messages,
-    get_engine_display,
-    handle_force_flag,
-    merge_identifier_into_filters,
-)
-from kurt.utils import should_force
-
-console = Console()
-logger = logging.getLogger(__name__)
 
 
 @click.command("fetch")
-@track_command
 @click.argument("identifier", required=False)
 @click.option(
     "--include",
@@ -228,8 +204,35 @@ def fetch_cmd(
         kurt content fetch --with-status NOT_FETCHED --yes
         kurt content fetch --with-status NOT_FETCHED -y
     """
+    # Lazy import all dependencies when command is actually run
+    import logging
+    import time
+
+    from rich.console import Console
+
+    from kurt.admin.telemetry.tracker import track_event
+    from kurt.commands.content._fetch_helpers import (
+        build_background_filter_desc,
+        build_intro_messages,
+        check_guardrails,
+        display_dry_run_preview,
+        display_json_output,
+        display_no_documents_help,
+        display_refetch_warning,
+        display_result_messages,
+        get_engine_display,
+        handle_force_flag,
+        merge_identifier_into_filters,
+    )
     from kurt.content.fetch import select_documents_for_fetch
     from kurt.content.fetch.workflow import fetch_workflow
+    from kurt.utils import should_force
+
+    console = Console()
+    logger = logging.getLogger(__name__)
+
+    # Track command execution
+    track_event("command_started", properties={"command": "kurt content fetch"})
 
     # Step 1: Merge identifier into appropriate filter
     urls, files_paths, ids = merge_identifier_into_filters(

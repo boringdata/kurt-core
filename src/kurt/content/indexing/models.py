@@ -6,7 +6,7 @@ This module contains all Pydantic models used throughout the indexing pipeline:
 - Entity resolution models
 """
 
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -15,6 +15,27 @@ from kurt.db.models import ContentType, EntityType, RelationshipType
 # ============================================================================
 # Document Metadata Models (used by IndexDocument DSPy signature)
 # ============================================================================
+
+
+class ClaimExtraction(BaseModel):
+    """Claim extraction from documents during indexing.
+
+    Claims are linked to entities by their indices in the OUTPUT entities list (0-based).
+    The first index is the primary/subject entity, additional indices are referenced entities.
+    Example: If you extract entities ["Kurt", "Python"], use indices [0, 1] not indices from existing_entities.
+    """
+
+    statement: str = Field(description="The factual claim statement")
+    claim_type: str = Field(
+        description="Claim type from ClaimType enum: capability, definition, explanation, instruction, background, feature, integration, performance, limitation, requirement, compatibility, comparison, statistic, pricing, availability, process, or other. See prompt for detailed descriptions."
+    )
+    entity_indices: List[int] = Field(
+        description="Indices of entities mentioned in claim (from YOUR OUTPUT entities list, 0-based). First index is the primary subject, rest are referenced entities. Example: [0, 2] means first and third entity from YOUR entities output"
+    )
+    source_quote: str = Field(description="Exact quote from document (50-500 chars)")
+    quote_start_offset: int = Field(description="Character offset where quote starts")
+    quote_end_offset: int = Field(description="Character offset where quote ends")
+    confidence: float = Field(description="Extraction confidence (0.0-1.0)", ge=0.0, le=1.0)
 
 
 class DocumentMetadataOutput(BaseModel):
@@ -44,7 +65,7 @@ class EntityExtraction(BaseModel):
     description: str
     aliases: list[str] = []
     confidence: float  # 0.0-1.0
-    resolution_status: str  # "EXISTING" or "NEW"
+    resolution_status: str  # Must be one of ResolutionStatus enum values: "EXISTING" or "NEW"
     matched_entity_index: Optional[int] = None  # If EXISTING, the index from existing_entities list
     quote: Optional[str] = None  # Exact quote/context where entity is mentioned (50-200 chars)
 

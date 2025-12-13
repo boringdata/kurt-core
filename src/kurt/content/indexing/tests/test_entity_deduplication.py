@@ -15,6 +15,7 @@ from sqlmodel import select
 
 from kurt.content.indexing.extract import extract_document_metadata
 from kurt.content.indexing.models import (
+from kurt.db.models import ResolutionStatus
     DocumentMetadataOutput,
     EntityExtraction,
     EntityResolution,
@@ -154,7 +155,7 @@ def mock_llm_calls(mock_dspy_signature):
                         description="Programming language",
                         aliases=[],
                         confidence=0.95,
-                        resolution_status="EXISTING",
+                        resolution_status=ResolutionStatus.EXISTING.value,
                         matched_entity_index=existing_map["Python"],
                         quote="Python is a high-level programming language",
                     )
@@ -167,7 +168,7 @@ def mock_llm_calls(mock_dspy_signature):
                         description="Programming language",
                         aliases=[],
                         confidence=0.95,
-                        resolution_status="NEW",
+                        resolution_status=ResolutionStatus.NEW.value,
                         matched_entity_index=None,
                         quote="Python is a high-level programming language",
                     )
@@ -182,7 +183,7 @@ def mock_llm_calls(mock_dspy_signature):
                         description="Web framework",
                         aliases=[],
                         confidence=0.90,
-                        resolution_status="EXISTING",
+                        resolution_status=ResolutionStatus.EXISTING.value,
                         matched_entity_index=existing_map["Django"],
                         quote="Django web framework",
                     )
@@ -195,7 +196,7 @@ def mock_llm_calls(mock_dspy_signature):
                         description="Web framework",
                         aliases=[],
                         confidence=0.90,
-                        resolution_status="NEW",
+                        resolution_status=ResolutionStatus.NEW.value,
                         matched_entity_index=None,
                         quote="Django web framework",
                     )
@@ -210,7 +211,7 @@ def mock_llm_calls(mock_dspy_signature):
                         description="JavaScript library",
                         aliases=[],
                         confidence=0.95,
-                        resolution_status="EXISTING",
+                        resolution_status=ResolutionStatus.EXISTING.value,
                         matched_entity_index=existing_map["React"],
                         quote="React is a JavaScript library",
                     )
@@ -223,7 +224,7 @@ def mock_llm_calls(mock_dspy_signature):
                         description="JavaScript library",
                         aliases=[],
                         confidence=0.95,
-                        resolution_status="NEW",
+                        resolution_status=ResolutionStatus.NEW.value,
                         matched_entity_index=None,
                         quote="React is a JavaScript library",
                     )

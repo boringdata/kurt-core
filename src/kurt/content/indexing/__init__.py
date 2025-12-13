@@ -53,6 +53,7 @@ from kurt.content.indexing.extract import (
 
 # Re-export models and constants
 from kurt.content.indexing.models import (
+    ClaimExtraction,
     DocumentMetadataOutput,
     EntityExtraction,
     EntityResolution,
@@ -66,6 +67,7 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     # Models
+    "ClaimExtraction",
     "DocumentMetadataOutput",
     "EntityExtraction",
     "RelationshipExtraction",

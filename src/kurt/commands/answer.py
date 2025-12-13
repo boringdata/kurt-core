@@ -1,29 +1,6 @@
 """Answer command - GraphRAG-based question answering (context retrieval + synthesis)."""
 
-import json
-
 import click
-from rich.console import Console
-
-from kurt.admin.telemetry.decorators import track_command
-from kurt.config import config_file_exists
-from kurt.content.answer import answer_question
-
-console = Console()
-
-
-def _log_usage(token_usage: dict | None):
-    """Print token usage metrics for human-readable output."""
-    if not token_usage:
-        return
-
-    tokens = token_usage.get("total_tokens")
-    duration = token_usage.get("duration_seconds")
-
-    if tokens is not None:
-        console.print(f"[dim]Tokens Used:[/dim] {tokens}")
-    if duration is not None:
-        console.print(f"[dim]Generation Time:[/dim] {duration:.2f}s")
 
 
 @click.command()
@@ -46,7 +23,6 @@ def _log_usage(token_usage: dict | None):
     is_flag=True,
     help="Print answer, metadata, and usage as a single JSON object (disables rich formatting)",
 )
-@track_command
 def answer(question: str, max_docs: int, output: str, verbose: bool, json_output: bool):
     """Answer a question using GraphRAG retrieval + LLM synthesis.
 
@@ -67,6 +43,34 @@ def answer(question: str, max_docs: int, output: str, verbose: bool, json_output
         kurt answer "How does authentication work?" --verbose
         kurt answer "What integrations are available?" --max-docs 20
     """
+    # Lazy import all dependencies when command is actually run
+    import json
+    import time
+
+    from rich.console import Console
+
+    from kurt.admin.telemetry.tracker import track_event
+    from kurt.config import config_file_exists
+    from kurt.content.answer import answer_question
+
+    console = Console()
+
+    def _log_usage(token_usage: dict | None):
+        """Print token usage metrics for human-readable output."""
+        if not token_usage:
+            return
+
+        tokens = token_usage.get("total_tokens")
+        duration = token_usage.get("duration_seconds")
+
+        if tokens is not None:
+            console.print(f"[dim]Tokens Used:[/dim] {tokens}")
+        if duration is not None:
+            console.print(f"[dim]Generation Time:[/dim] {duration:.2f}s")
+
+    # Track command execution
+    track_event("command_started", properties={"command": "kurt answer"})
+
     # Check if project is initialized
     if not config_file_exists():
         console.print("[red]Error:[/red] Kurt project not initialized")
@@ -74,8 +78,6 @@ def answer(question: str, max_docs: int, output: str, verbose: bool, json_output
         raise click.Abort()
 
     try:
-        import time
-
         start_time = time.time()
 
         # Answer the question

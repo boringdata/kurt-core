@@ -23,23 +23,16 @@ class TestCompleteIndexingWorkflow:
         try:
             # Mock the extract step to return success
             with patch(
-                "kurt.content.indexing.workflow_indexing.extract_documents_step"
+                "kurt.content.indexing.workflow_indexing.extract_document_step"
             ) as mock_extract:
+                doc_id = str(uuid4())
                 mock_extract.return_value = {
-                    "results": [
-                        {
-                            "document_id": str(uuid4()),
-                            "kg_data": {
-                                "new_entities": [],
-                                "existing_entities": [],
-                                "relationships": [],
-                            },
-                        }
-                    ],
-                    "succeeded": 1,
-                    "failed": 0,
-                    "skipped": 0,
-                    "total": 1,
+                    "document_id": doc_id,
+                    "kg_data": {
+                        "new_entities": [],
+                        "existing_entities": [],
+                        "relationships": [],
+                    },
                 }
 
                 result = complete_indexing_workflow([str(uuid4())], force=True, enable_kg=True)
@@ -68,15 +61,9 @@ class TestCompleteIndexingWorkflow:
         try:
             # Mock extract to return success
             with patch(
-                "kurt.content.indexing.workflow_indexing.extract_documents_step"
+                "kurt.content.indexing.workflow_indexing.extract_document_step"
             ) as mock_extract:
-                mock_extract.return_value = {
-                    "results": [{"document_id": str(uuid4()), "kg_data": {}}],
-                    "succeeded": 1,
-                    "failed": 0,
-                    "skipped": 0,
-                    "total": 1,
-                }
+                mock_extract.return_value = {"document_id": str(uuid4()), "kg_data": {}}
 
                 result = complete_indexing_workflow([str(uuid4())], force=True, enable_kg=False)
 
@@ -101,16 +88,9 @@ class TestCompleteIndexingWorkflow:
         try:
             # Mock extract to return failure
             with patch(
-                "kurt.content.indexing.workflow_indexing.extract_documents_step"
+                "kurt.content.indexing.workflow_indexing.extract_document_step"
             ) as mock_extract:
-                mock_extract.return_value = {
-                    "results": [],
-                    "errors": [{"document_id": str(uuid4()), "error": "Test error"}],
-                    "succeeded": 0,
-                    "failed": 1,
-                    "skipped": 0,
-                    "total": 1,
-                }
+                mock_extract.return_value = {"error": "Test error", "document_id": str(uuid4())}
 
                 result = complete_indexing_workflow([str(uuid4())], force=True, enable_kg=True)
 

@@ -484,7 +484,8 @@ def get_document_knowledge_graph(document_id: str) -> dict:
                         }
                     )
 
-    return {
+    # Build the result dictionary
+    result = {
         "document_id": str(doc.id),
         "title": doc.title,
         "source_url": doc.source_url,
@@ -503,3 +504,57 @@ def get_document_knowledge_graph(document_id: str) -> dict:
             ),
         },
     }
+
+    # Add claims to the knowledge graph
+    from kurt.db.claim_queries import get_claims_for_document
+
+    try:
+        claims = get_claims_for_document(doc.id, session)
+
+        # Format claims for display
+        from kurt.db.claim_models import ClaimEntity
+
+        formatted_claims = []
+        for claim in claims:
+            # Get primary subject entity
+            subject_entity_name = "Unknown"
+            if claim.subject_entity_id:
+                entity = session.get(Entity, claim.subject_entity_id)
+                if entity:
+                    subject_entity_name = entity.name
+
+            # Get all entities referenced in this claim
+            referenced_entities = []
+
+            # Add the subject entity first
+            if subject_entity_name != "Unknown":
+                referenced_entities.append(subject_entity_name)
+
+            # Get additional entities from claim_entities table
+            claim_entity_stmt = select(ClaimEntity).where(ClaimEntity.claim_id == claim.id)
+            claim_entities = session.exec(claim_entity_stmt).all()
+
+            for ce in claim_entities:
+                entity = session.get(Entity, ce.entity_id)
+                if entity and entity.name not in referenced_entities:
+                    referenced_entities.append(entity.name)
+
+            formatted_claims.append(
+                {
+                    "statement": claim.statement,
+                    "claim_type": claim.claim_type,
+                    "subject_entity": subject_entity_name,
+                    "referenced_entities": referenced_entities,  # All entities in the claim
+                    "source_quote": claim.source_quote,
+                    "confidence": claim.extraction_confidence,
+                }
+            )
+
+        result["claims"] = formatted_claims
+        result["stats"]["claim_count"] = len(claims)
+    except Exception as e:
+        logger.debug(f"Could not retrieve claims for document: {e}")
+        result["claims"] = []
+        result["stats"]["claim_count"] = 0
+
+    return result
