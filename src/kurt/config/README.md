@@ -60,25 +60,25 @@ Examples:
 - `INDEXING.ENTITY_CLUSTERING.MIN_SAMPLES` - multi-word param
 - `FETCH.TRAFILATURA.FAVOR_PRECISION` - fetch module config
 
-### Implementation
+## Implementation
 
-#### 1. Step Config Schema (in each model file)
+### 1. ModelConfig Schema (in each model file)
 
-Each step declares its configurable parameters:
+Each step declares its configurable parameters using `ModelConfig`:
 
 ```python
 # step_extract_sections.py
-from kurt.content.indexing_new.framework import StepConfig, ConfigParam
+from kurt.config import ModelConfig, ConfigParam
 
-class SectionExtractionsConfig(StepConfig):
+class SectionExtractionsConfig(ModelConfig):
     """Configuration for section_extractions step."""
 
     llm_model: str = ConfigParam(
-        default=None,  # Falls back to global INDEXING_LLM_MODEL
+        fallback="INDEXING_LLM_MODEL",  # Falls back to global
         description="LLM model for extraction"
     )
     max_concurrent: int = ConfigParam(
-        default=None,  # Falls back to global MAX_CONCURRENT_INDEXING
+        fallback="MAX_CONCURRENT_INDEXING",
         ge=1, le=100,
         description="Max concurrent LLM calls"
     )
@@ -104,90 +104,46 @@ The config key is derived from the model name:
 - Parameter `llm_model` → `LLM_MODEL`
 - Full key: `INDEXING.SECTION_EXTRACTIONS.LLM_MODEL`
 
-#### 2. Config Resolution (in framework)
+### 2. ConfigParam Class
 
 ```python
-# framework/config.py
+from kurt.config import ConfigParam
 
-from pydantic import BaseModel, Field
-from typing import Optional, Any, Dict, get_type_hints
-from kurt.config import load_config
+# Simple param with default
+batch_size: int = ConfigParam(default=50)
 
+# Param with fallback to global config
+llm_model: str = ConfigParam(fallback="INDEXING_LLM_MODEL")
 
-class ConfigParam:
-    """Metadata for step config parameters with fallback support."""
-
-    def __init__(
-        self,
-        default: Any = None,
-        fallback_global: Optional[str] = None,  # e.g., "INDEXING_LLM_MODEL"
-        description: str = "",
-        ge: Optional[float] = None,
-        le: Optional[float] = None,
-    ):
-        self.default = default
-        self.fallback_global = fallback_global
-        self.description = description
-        self.ge = ge
-        self.le = le
-
-
-class StepConfig(BaseModel):
-    """Base class for step configuration."""
-
-    # Store metadata about fields (set by subclasses)
-    _config_params: Dict[str, ConfigParam] = {}
-
-    @classmethod
-    def load(cls, model_name: str) -> "StepConfig":
-        """Load config for this step with fallback resolution.
-
-        Resolution order:
-        1. Step-specific: INDEXING.SECTION_EXTRACTIONS.LLM_MODEL
-        2. Global fallback: INDEXING_LLM_MODEL
-        3. Default from schema
-
-        Args:
-            model_name: Full model name like "indexing.section_extractions"
-        """
-        kurt_config = load_config()
-
-        # Convert model name to config prefix: indexing.section_extractions -> INDEXING.SECTION_EXTRACTIONS
-        prefix = model_name.upper().replace("_", ".").replace("..", ".")
-        # Normalize: indexing.section_extractions -> INDEXING.SECTION_EXTRACTIONS
-        parts = model_name.split(".")
-        prefix = ".".join(p.upper() for p in parts)
-
-        values = {}
-        for field_name, param in cls._config_params.items():
-            # Build step-specific key: INDEXING.SECTION_EXTRACTIONS.LLM_MODEL
-            step_key = f"{prefix}.{field_name.upper()}"
-
-            # Try step-specific first
-            if hasattr(kurt_config, step_key):
-                values[field_name] = getattr(kurt_config, step_key)
-                continue
-
-            # Try global fallback (e.g., INDEXING_LLM_MODEL)
-            if param.fallback_global and hasattr(kurt_config, param.fallback_global):
-                values[field_name] = getattr(kurt_config, param.fallback_global)
-                continue
-
-            # Use default from param
-            if param.default is not None:
-                values[field_name] = param.default
-
-        return cls(**values)
+# Param with validation constraints
+eps: float = ConfigParam(default=0.25, ge=0.0, le=1.0, description="DBSCAN epsilon")
 ```
 
-#### 3. Integration with @model decorator
+### 3. ModelConfig Base Class
+
+```python
+from kurt.config import ModelConfig, ConfigParam
+
+class EntityClusteringConfig(ModelConfig):
+    eps: float = ConfigParam(default=0.25, ge=0.0, le=1.0)
+    min_samples: int = ConfigParam(default=2, ge=1)
+    llm_model: str = ConfigParam(fallback="INDEXING_LLM_MODEL")
+
+# Load config for a specific model
+config = EntityClusteringConfig.load("indexing.entity_clustering")
+print(config.eps)  # 0.25 (default) or value from INDEXING.ENTITY_CLUSTERING.EPS
+```
+
+### 4. Integration with @model decorator
+
+The decorator loads and injects the config automatically:
 
 ```python
 # framework/decorator.py
 
 def model(
     name: str,
-    config_schema: Optional[Type[StepConfig]] = None,
+    config_schema: Optional[Type[ModelConfig]] = None,
     ...
 ):
     def decorator(func):
@@ -204,82 +160,106 @@ def model(
     return decorator
 ```
 
-### Config File Parsing
+### 5. Manual Usage (without decorator)
 
-Extend `kurt/config/base.py` to handle dot notation:
+You can also use `get_step_config()` directly:
 
 ```python
-# In load_config()
+from kurt.config import load_config, get_step_config
 
-# Parse hierarchical keys with dots
-# INDEXING.SECTION_EXTRACTIONS.LLM_MODEL is stored as-is
-# Config loader should support dots in key names
+config = load_config()
+
+# Get step-specific value with fallback
+llm_model = get_step_config(
+    config,
+    module="INDEXING",
+    step="SECTION_EXTRACTIONS",
+    param="LLM_MODEL",
+    fallback_key="INDEXING_LLM_MODEL",
+    default="openai/gpt-4o-mini"
+)
 ```
 
-### Benefits
+## Resolution Order
+
+For each parameter, values are resolved in this order:
+
+1. **Step-specific**: `INDEXING.SECTION_EXTRACTIONS.LLM_MODEL`
+2. **Global fallback**: `INDEXING_LLM_MODEL` (specified via `ConfigParam.fallback`)
+3. **Default**: Value from `ConfigParam.default`
+
+## Benefits
 
 1. **Step-specific tuning**: Each step can have different LLM models, concurrency limits
 2. **Clear ownership**: Config params defined alongside the code that uses them
-3. **Fallback chain**: Step-specific -> Global -> Default
+3. **Fallback chain**: Step-specific → Global → Default
 4. **Type-safe**: Pydantic validation at load time
 5. **Self-documenting**: Each step declares what's configurable
 6. **Backwards compatible**: Global configs still work as fallbacks
 7. **Readable hierarchy**: Dots clearly show module.step.param structure
 
-### Example Usage
+## Complete Example
 
 ```python
-# In step_entity_clustering.py
+# step_entity_clustering.py
+from kurt.config import ModelConfig, ConfigParam
 
-class EntityClusteringConfig(StepConfig):
-    _config_params = {
-        "eps": ConfigParam(
-            default=0.25,
-            ge=0.0, le=1.0,
-            description="DBSCAN epsilon parameter for clustering"
-        ),
-        "min_samples": ConfigParam(
-            default=2,
-            ge=1,
-            description="DBSCAN min_samples parameter"
-        ),
-        "llm_model": ConfigParam(
-            default=None,
-            fallback_global="INDEXING_LLM_MODEL",
-            description="LLM for resolution decisions"
-        ),
-    }
+class EntityClusteringConfig(ModelConfig):
+    """Configuration for entity clustering step."""
 
-    eps: float = 0.25
-    min_samples: int = 2
-    llm_model: Optional[str] = None
+    eps: float = ConfigParam(
+        default=0.25,
+        ge=0.0, le=1.0,
+        description="DBSCAN epsilon parameter for clustering"
+    )
+    min_samples: int = ConfigParam(
+        default=2,
+        ge=1,
+        description="DBSCAN min_samples parameter"
+    )
+    llm_model: str = ConfigParam(
+        fallback="INDEXING_LLM_MODEL",
+        description="LLM for resolution decisions"
+    )
 
 
 @model(
     name="indexing.entity_clustering",
+    db_model=EntityClusterRow,
+    primary_key=["cluster_id"],
     config_schema=EntityClusteringConfig,
-    ...
 )
-def entity_clustering(sources, writer, config: EntityClusteringConfig, **kwargs):
+def entity_clustering(
+    sources,
+    writer,
+    config: EntityClusteringConfig,
+    **kwargs
+):
     # Use typed config
     clustering = DBSCAN(eps=config.eps, min_samples=config.min_samples)
+
+    # config.llm_model falls back to INDEXING_LLM_MODEL if not set
+    llm = get_llm(config.llm_model)
     ...
 ```
 
-### Migration Path
+## Migration Path
 
-1. Add `StepConfig` and `ConfigParam` classes to `framework/config.py`
-2. Update `@model` decorator to accept `config_schema` parameter
-3. Update config parser in `kurt/config/base.py` to support dot notation in keys
-4. Gradually add `config_schema` to each step (backwards compatible)
-5. Existing code continues working (uses global fallbacks)
+1. ✅ Add `ModelConfig` and `ConfigParam` classes to `kurt/config/model_config.py`
+2. ✅ Add `get_step_config()` helper to `kurt/config/base.py`
+3. ✅ Update config parser to support dot notation in keys
+4. 🔲 Update `@model` decorator to accept `config_schema` parameter
+5. 🔲 Gradually add `config_schema` to each step (backwards compatible)
+6. Existing code continues working (uses global fallbacks)
 
-### Design Decisions
+## Design Decisions
 
-1. **Naming**: `INDEXING.SECTION_EXTRACTIONS.LLM_MODEL` (dots for hierarchy, underscores for multi-word)
+1. **Naming**: `ModelConfig` (not `StepConfig`) to align with `@model` decorator terminology
 
-2. **Defaults location**: Step file owns defaults, global config is for overrides
+2. **Location**: `ModelConfig` lives in `kurt.config` (not framework) so it can be used by any module
 
-3. **Validation**: Validate on load (fail fast)
+3. **Defaults location**: Step file owns defaults, global config is for overrides
 
-4. **Backwards compatibility**: Global keys like `INDEXING_LLM_MODEL` still work as fallbacks
+4. **Validation**: Validate on load (fail fast)
+
+5. **Backwards compatibility**: Global keys like `INDEXING_LLM_MODEL` still work as fallbacks
