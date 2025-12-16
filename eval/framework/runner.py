@@ -4,15 +4,36 @@ Executes test scenarios and collects metrics about agent behavior.
 """
 
 import asyncio
+import json
 import os
+import re
+import shutil
+import subprocess
+import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 from .config import EvalConfig, get_config
 from .conversation import Scenario
-from .evaluator import assert_all
+from .evaluator import assert_all, parse_assertions
+from .llm_judge import score_single_answer
 from .metrics import MetricsCollector, collect_metrics, save_results
 from .workspace import IsolatedWorkspace
+
+# Load environment variables from eval/.env if it exists
+_eval_dir = Path(__file__).parent.parent
+_project_root = _eval_dir.parent
+_env_file = _eval_dir / ".env"
+if _env_file.exists():
+    with open(_env_file) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, value = line.split("=", 1)
+                # Only set if not already in environment
+                if key not in os.environ:
+                    os.environ[key] = value
 
 
 # ANSI color codes for terminal output
@@ -225,7 +246,9 @@ class ScenarioRunner:
         setup_commands = scenario.setup_commands or []
         if scenario.project:
             # Prepend project load command
-            project_cmd = f"python {Path(__file__).parent.parent / 'mock' / 'generators' / 'load_dump.py'} {scenario.project}"
+            kurt_root = Path(__file__).parent.parent.parent
+            load_script = Path(__file__).parent / "dumps" / "loader.py"
+            project_cmd = f"uv run --project {kurt_root} python {load_script} {scenario.project}"
             setup_commands = [project_cmd] + list(setup_commands)
 
         workspace = IsolatedWorkspace(
@@ -239,6 +262,7 @@ class ScenarioRunner:
             else None,  # Pass setup commands from scenario
         )
         metrics_collector = MetricsCollector()
+        metrics_collector.start_timing()  # Start timing the evaluation
         had_error = False
         error_message = None
 
@@ -279,27 +303,43 @@ class ScenarioRunner:
             run_metrics = {}
             workspace_metrics = {}
 
-            # Execute conversation with SDK (multi-turn by default)
-            conversation = scenario.get_conversation()
-            for turn in conversation:
-                if turn.speaker == "user":
-                    self._log(f"\n{'┌'+'─'*68+'┐'}")
-                    self._log("│ 💬 USER INPUT")
-                    self._log(f"│ {turn.message}")
-                    self._log(f"{'└'+'─'*68+'┘'}")
-                    metrics_collector.record_turn("user", turn.message)
+            # Run question sets first (handles its own logging)
+            if scenario.question_set:
+                await self._execute_question_set(scenario, workspace, metrics_collector)
 
-                    # Execute message using Claude Code SDK with multi-turn support
-                    await self._execute_with_sdk(
-                        turn.message,
-                        workspace,
-                        metrics_collector,
-                        user_agent=scenario.user_agent,
-                        max_turns=self.max_conversation_turns,
-                    )
+            # Skip conversation execution for non-conversational scenarios
+            elif not scenario.conversational:
+                self._log("\n✅ Non-conversational scenario - skipping agent interaction\n")
+
+                # Execute test cases if specified
+                if scenario.test_cases:
+                    self._log(f"\n📝 Running {len(scenario.test_cases)} test case(s)...\n")
+                    await self._execute_test_cases(scenario, workspace)
+
+            else:
+                # Execute conversation with SDK (multi-turn by default)
+                conversation = scenario.get_conversation()
+                for turn in conversation:
+                    if turn.speaker == "user":
+                        self._log(f"\n{'┌'+'─'*68+'┐'}")
+                        self._log("│ 💬 USER INPUT")
+                        self._log(f"│ {turn.message}")
+                        self._log(f"{'└'+'─'*68+'┘'}")
+                        metrics_collector.add_conversation_turn(
+                            {"role": "user", "content": turn.message}
+                        )
+
+                        # Execute message using Claude Code SDK with multi-turn support
+                        await self._execute_with_sdk(
+                            turn.message,
+                            workspace,
+                            metrics_collector,
+                            user_agent=scenario.user_agent,
+                            max_turns=self.max_conversation_turns,
+                        )
 
             # Finish timing
-            metrics_collector.finish()
+            metrics_collector.end_timing()
 
             # Collect workspace metrics
             workspace_metrics = collect_metrics(workspace)
@@ -307,6 +347,8 @@ class ScenarioRunner:
             # Run assertions
             self._log(f"\n🔍 Running {len(scenario.assertions)} assertions...")
             run_metrics = metrics_collector.get_metrics()
+            if hasattr(metrics_collector, "cached_response"):
+                run_metrics["cached_response"] = metrics_collector.cached_response
 
             # Merge run_metrics and workspace_metrics for assertions
             combined_metrics = {**run_metrics, **workspace_metrics}
@@ -315,6 +357,14 @@ class ScenarioRunner:
                 assert_all(scenario.assertions, workspace, combined_metrics)
                 self._log("✅ All assertions passed!")
                 passed = True
+
+                # Run post-scenario commands (if specified)
+                if scenario.post_scenario_commands:
+                    self._log(
+                        f"\n🔧 Running {len(scenario.post_scenario_commands)} post-scenario command(s)..."
+                    )
+                    workspace.run_post_commands(scenario.post_scenario_commands)
+
             except AssertionError as e:
                 self._log(f"❌ Assertion failed: {e}")
                 passed = False
@@ -330,6 +380,8 @@ class ScenarioRunner:
             error_message = str(e)
             had_error = True
             run_metrics = metrics_collector.get_metrics()
+            if hasattr(metrics_collector, "cached_response"):
+                run_metrics["cached_response"] = metrics_collector.cached_response
             # Try to collect workspace metrics even on failure
             try:
                 workspace_metrics = collect_metrics(workspace)
@@ -337,17 +389,24 @@ class ScenarioRunner:
                 workspace_metrics = {}
 
         finally:
-            # Save results
-            results_dir = Path(__file__).parent.parent / "results"
-            save_results(
-                scenario.name,
-                run_metrics,
-                workspace_metrics,
-                results_dir,
-                passed,
-                error_message,
-                raw_transcript=self.raw_transcript,
-            )
+            # Save results (skip for ALL question sets as they save per-question)
+            skip_aggregated_save = scenario.question_set
+            if not skip_aggregated_save:
+                results_dir = Path(__file__).parent.parent / "results"
+                save_results(
+                    scenario_name=scenario.name,
+                    run_metrics=run_metrics,
+                    workspace_metrics=workspace_metrics,
+                    output_dir=results_dir,
+                    passed=passed,
+                    error=error_message,
+                    raw_transcript=self.raw_transcript,
+                    command_outputs=workspace.command_outputs,
+                    conversational=scenario.conversational,
+                    filename_prefix=scenario.result_file_prefix,
+                )
+
+            # CSV generation now happens automatically in save_results for question-based scenarios
 
             # Cleanup
             workspace.teardown(had_error=had_error)
@@ -360,36 +419,619 @@ class ScenarioRunner:
             "workspace_metrics": workspace_metrics,
         }
 
-    def _is_agent_asking_question(self, text: str) -> bool:
-        """Detect if agent is waiting for user input.
+    async def _execute_question_set(self, scenario, workspace, metrics_collector):
+        """Execute a scenario that defines a question_set."""
+        config = scenario.question_set
+        if not config:
+            return
+
+        total_questions = len(config.questions)
+        scenario.result_file_prefix = None
+        single_question_id = None
+        if total_questions == 1 and config.questions:
+            # Handle both dict and string formats
+            first_question = config.questions[0]
+            if isinstance(first_question, dict):
+                single_question_id = first_question.get("id") or "q1"
+            else:
+                single_question_id = "q1"
+        file_name = Path(config.file).name if config.file else "inline questions"
+        self._log(f"\n🧪 Running {total_questions} question(s) defined in {file_name}\n")
+
+        total_usage_tokens = 0.0
+        any_cached = False
+
+        for idx, question in enumerate(config.questions, start=1):
+            context = self._build_question_context(scenario, workspace, config, question, idx)
+            header = f"❓ Question {idx}/{total_questions}"
+            self._log(f"\n{'='*70}")
+            self._log(header)
+            self._log(question["question"])
+            self._log(f"{'='*70}\n")
+
+            usage_for_question = None
+            cached_response = None
+
+            if not scenario.conversational:
+                command_entries = await self._run_question_commands(config, context, workspace)
+            else:
+                prev_tokens = getattr(metrics_collector, "total_tokens", 0)
+                question_start = time.time()
+                await self._run_question_conversation(
+                    scenario, config, context, workspace, metrics_collector
+                )
+                question_duration = time.time() - question_start
+                command_entries = []
+
+                new_total = getattr(metrics_collector, "total_tokens", 0)
+                delta_tokens = max(0.0, new_total - prev_tokens)
+                usage_for_question = {
+                    "total_tokens": delta_tokens,
+                    "duration_seconds": question_duration,
+                }
+                cached_response = delta_tokens == 0
+                if delta_tokens > 0:
+                    total_usage_tokens += delta_tokens
+                else:
+                    any_cached = True
+
+            self._run_question_assertions(config, context, workspace)
+            answer_text = self._read_answer_text(context)
+
+            for entry in command_entries:
+                usage = entry.get("usage")
+                if usage is not None:
+                    usage_for_question = usage
+                    tokens = usage.get("total_tokens")
+                    if isinstance(tokens, (int, float)) and tokens > 0:
+                        total_usage_tokens += float(tokens)
+                json_payload = entry.get("json_output")
+                if json_payload and cached_response is None:
+                    cached_response = json_payload.get("cached_response")
+                if cached_response:
+                    any_cached = True
+
+            judge_result = None
+            if hasattr(scenario, "llm_judge") and scenario.llm_judge.get("enabled"):
+                self._log("   🧠 Running LLM judge evaluation...")
+                judge_result = self._score_answer_with_llm(question, answer_text, scenario)
+                if judge_result and "overall_score" in judge_result:
+                    score = judge_result["overall_score"]
+                    self._log(f"   🧠 LLM Judge score: {score:.2f}")
+                else:
+                    self._log("   ⚠️  LLM judge evaluation failed for this question")
+
+            # Store the results in workspace.command_outputs for later processing
+            entry = {
+                "command": f"question:{context['question_id']}",
+                "index": context["question_num"],
+                "stdout": answer_text,
+                "stderr": "",
+                "returncode": 0,
+                "error": None,
+                "question": context["question"],
+                "answer_file": context["answer_file"],
+            }
+            if judge_result:
+                entry["llm_judge"] = judge_result
+            if usage_for_question:
+                entry["usage"] = usage_for_question
+            if cached_response is not None:
+                entry["cached_response"] = cached_response
+
+            # Add conversation/transcript data if available
+            if metrics_collector and scenario.conversational:
+                entry["conversation"] = metrics_collector.conversation
+                entry["tool_calls"] = metrics_collector.metrics["tool_calls"]
+
+            workspace.command_outputs.append(entry)
+
+            # Save individual question results for both conversational and non-conversational scenarios
+            question_metrics = MetricsCollector()
+            # Copy start time from parent metrics collector
+            question_metrics.metrics["timing"]["start_time"] = metrics_collector.metrics["timing"][
+                "start_time"
+            ]
+            question_metrics.end_timing()
+
+            if usage_for_question and usage_for_question.get("total_tokens") is not None:
+                question_metrics.add_usage(
+                    {"total_tokens": int(usage_for_question["total_tokens"])}
+                )
+            elif cached_response:
+                question_metrics.add_usage({"total_tokens": 0})
+
+            from .metrics import collect_metrics, save_results
+
+            question_workspace_metrics = collect_metrics(workspace)
+
+            question_llm_metrics = None
+            if judge_result:
+                question_llm_metrics = {
+                    "test_cases": [
+                        {
+                            "question": context["question"],
+                            "overall_score": judge_result.get("overall_score", 0),
+                            "component_scores": judge_result.get("component_scores", {}),
+                            "feedback": judge_result.get("feedback", ""),
+                        }
+                    ],
+                    "summary": {
+                        "average_score": judge_result.get("overall_score", 0),
+                        "num_test_cases": 1,
+                        "passed": judge_result.get("overall_score", 0) >= 0.7,
+                    },
+                }
+
+            # Use the same absolute path as _archive_answer_file uses
+            results_parent = context["results_dir_path"].parent
+            save_results(
+                scenario_name=scenario.name,
+                run_metrics=question_metrics.get_metrics(),
+                workspace_metrics=question_workspace_metrics,
+                output_dir=results_parent,
+                passed=True,
+                error=None,
+                command_outputs=[
+                    entry
+                    for entry in workspace.command_outputs
+                    if entry.get("question") == context["question"]
+                ],
+                conversational=scenario.conversational,
+                filename_prefix=context["question_id"],
+                raw_transcript=self.raw_transcript if scenario.conversational else None,
+                timestamp=context["timestamp"],
+            )
+
+            if question_llm_metrics:
+                import json
+
+                results_path = (
+                    Path(
+                        config.results_dir
+                        if config.results_dir
+                        else f"eval/results/{scenario.name}"
+                    )
+                    / f"{context['question_id']}_{context['timestamp']}.json"
+                )
+                if results_path.exists():
+                    with open(results_path, "r") as f:
+                        data = json.load(f)
+                    data["llm_judge_metrics"] = question_llm_metrics
+                    with open(results_path, "w") as f:
+                        json.dump(data, f, indent=2)
+
+            self._run_post_question_commands(config, context, workspace)
+            self._archive_answer_file(context)
+            if total_questions == 1:
+                single_question_id = context["question_id"]
+
+        if single_question_id:
+            scenario.result_file_prefix = single_question_id
+
+        if total_usage_tokens > 0:
+            self._log(f"📊 Total tokens collected: {total_usage_tokens}")
+            metrics_collector.add_usage({"total_tokens": int(total_usage_tokens)})
+        elif any_cached:
+            self._log("📊 No new tokens (cached response) - recording usage=0")
+            metrics_collector.add_usage({"total_tokens": 0})
+        else:
+            self._log("📊 No usage data captured")
+        metrics_collector.cached_response = (
+            getattr(metrics_collector, "cached_response", False) or any_cached
+        )
+
+    async def _execute_test_cases(self, scenario, workspace):
+        """Execute test cases for non-conversational scenarios.
 
         Args:
-            text: Agent's response text
-
-        Returns:
-            True if agent is asking a question
+            scenario: Scenario with test_cases
+            workspace: IsolatedWorkspace instance
         """
-        if not text:
-            return False
+        for i, test_case in enumerate(scenario.test_cases, 1):
+            question = test_case.get("question", "")
+            cmd = test_case.get("cmd", "")
+            expected_answer = test_case.get("expected_answer", "")
+            assertions = test_case.get("assertions", [])
+            post_cmd = test_case.get("post_cmd", "")
+            use_llm_judge = test_case.get("use_llm_judge", False)
 
-        text_lower = text.lower()
-        indicators = [
-            "?",  # Question mark
-            "would you like",
-            "do you want",
-            "please provide",
-            "what would you",
-            "which option",
-            "how should i",
-            "should i",
-            "can you provide",
-            "let me know",
-            "[press enter",  # Input prompts like [Press Enter to skip]
-            "press enter to",
-            "[enter to",
-            "[skip",
+            self._log(f"  [{i}/{len(scenario.test_cases)}] {question}\n")
+
+            # Run the command
+            generated_answer = ""
+            if cmd:
+                self._log(f"     Running: {cmd[:80]}{'...' if len(cmd) > 80 else ''}")
+                try:
+                    result = subprocess.run(
+                        cmd,
+                        shell=True,
+                        capture_output=True,
+                        text=True,
+                        timeout=120,
+                        cwd=workspace.path,
+                    )
+
+                    generated_answer = result.stdout
+
+                    workspace.command_outputs.append(
+                        {
+                            "command": cmd,
+                            "index": i,
+                            "stdout": result.stdout,
+                            "stderr": result.stderr,
+                            "returncode": result.returncode,
+                            "error": None,
+                            "question": question,
+                        }
+                    )
+
+                    if result.returncode == 0:
+                        self._log("     ✅ Command succeeded")
+                    else:
+                        self._log(f"     ⚠️  Command exited with code {result.returncode}")
+                except Exception as e:
+                    self._log(f"     ❌ Command failed: {e}")
+                    workspace.command_outputs.append(
+                        {
+                            "command": cmd,
+                            "index": i,
+                            "stdout": "",
+                            "stderr": "",
+                            "returncode": None,
+                            "error": str(e),
+                            "question": question,
+                        }
+                    )
+
+            # Run LLM judge evaluation if enabled
+            if use_llm_judge and expected_answer and generated_answer:
+                self._log("     Running LLM judge evaluation...")
+                try:
+                    from .llm_judge import score_single_answer
+
+                    # Default score weights
+                    score_weights = {
+                        "accuracy": 0.4,
+                        "completeness": 0.3,
+                        "relevance": 0.2,
+                        "clarity": 0.1,
+                    }
+
+                    # Extract required topics from expected answer (simple heuristic)
+                    # TODO: Make this configurable in YAML
+                    required_topics = []
+                    if "parquet" in expected_answer.lower():
+                        required_topics.append("Parquet")
+
+                    # Get provider and model from judge config or use defaults
+                    judge_config = (
+                        scenario.llm_judge
+                        if hasattr(scenario, "llm_judge") and scenario.llm_judge
+                        else {}
+                    )
+                    llm_provider = judge_config.get("provider", "anthropic")
+                    model = judge_config.get("model")  # None will use default in llm_judge
+
+                    # Override weights if specified in config
+                    if "weights" in judge_config:
+                        score_weights = judge_config["weights"]
+
+                    llm_judge_result = score_single_answer(
+                        question=question,
+                        canonical_answer=expected_answer,
+                        generated_answer=generated_answer,
+                        required_topics=required_topics,
+                        score_weights=score_weights,
+                        llm_provider=llm_provider,
+                        model=model,
+                    )
+
+                    # Store LLM judge result in the last command output
+                    if workspace.command_outputs:
+                        workspace.command_outputs[-1]["llm_judge"] = llm_judge_result
+
+                    # Log results
+                    overall_score = llm_judge_result["overall_score"]
+                    if overall_score >= 0.7:
+                        self._log(f"     ✅ LLM Judge Score: {overall_score:.2f}")
+                    else:
+                        self._log(f"     ⚠️  LLM Judge Score: {overall_score:.2f}")
+
+                    self._log(f"     Feedback: {llm_judge_result['feedback']}")
+
+                except Exception as e:
+                    self._log(f"     ⚠️  LLM judge evaluation failed: {e}")
+
+            # Run test case assertions
+            if assertions:
+                self._log(f"     Running {len(assertions)} assertion(s)...")
+                try:
+                    from .evaluator import assert_all
+
+                    assert_all(assertions, workspace, {})
+                    self._log("     ✅ All assertions passed")
+                except AssertionError as e:
+                    self._log(f"     ❌ Assertion failed: {e}")
+                    raise
+
+            # Run post command
+            if post_cmd:
+                self._log("     Running post command...")
+                try:
+                    result = subprocess.run(
+                        post_cmd,
+                        shell=True,
+                        capture_output=True,
+                        text=True,
+                        timeout=120,
+                        cwd=workspace.path,
+                    )
+
+                    workspace.command_outputs.append(
+                        {
+                            "command": post_cmd,
+                            "index": f"{i}-post",
+                            "stdout": result.stdout,
+                            "stderr": result.stderr,
+                            "returncode": result.returncode,
+                            "error": None,
+                            "question": question,
+                        }
+                    )
+
+                    if result.returncode == 0:
+                        self._log("     ✅ Post command succeeded")
+                    else:
+                        self._log(f"     ⚠️  Post command exited with code {result.returncode}")
+                except Exception as e:
+                    self._log(f"     ❌ Post command failed: {e}")
+
+            self._log("")  # Empty line between test cases
+
+    async def _run_question_commands(self, config, context, workspace):
+        """Run per-question commands for non-conversational scenarios."""
+        if not config.commands:
+            raise ValueError(
+                "Question set scenario is non-conversational but has no 'commands' defined"
+            )
+
+        entries = []
+        for cmd_template in config.commands:
+            cmd = self._format_template(cmd_template, context)
+            entry = self._run_shell_command(cmd, workspace, context, kind="cmd")
+            entries.append(entry)
+
+        return entries
+
+    async def _run_question_conversation(
+        self, scenario, config, context, workspace, metrics_collector
+    ):
+        """Run a conversational question via the Claude SDK."""
+        prompt_template = config.initial_prompt_template
+        if not prompt_template:
+            raise ValueError(
+                "Question set scenario requires 'initial_prompt' for conversational mode"
+            )
+
+        prompt = self._format_template(prompt_template, context)
+        self._log(f"\n{'┌'+'─'*68+'┐'}")
+        self._log(f"│ 💬 QUESTION {context['question_num']}")
+        self._log(f"│ {prompt}")
+        self._log(f"{'└'+'─'*68+'┘'}")
+        metrics_collector.add_conversation_turn({"role": "user", "content": prompt})
+
+        await self._execute_with_sdk(
+            prompt,
+            workspace,
+            metrics_collector,
+            user_agent=scenario.user_agent,
+            max_turns=self.max_conversation_turns,
+        )
+
+    def _run_question_assertions(self, config, context, workspace):
+        """Run any per-question assertions."""
+        if not config.assertion_templates:
+            return
+
+        formatted = [
+            self._format_template(assertion, context) for assertion in config.assertion_templates
         ]
-        return any(ind in text_lower for ind in indicators)
+        assertions = parse_assertions(formatted)
+        assert_all(assertions, workspace, {})
+
+    def _run_post_question_commands(self, config, context, workspace):
+        """Run templated post-question commands."""
+        for post_template in config.post_command_templates:
+            cmd = self._format_template(post_template, context)
+            self._run_shell_command(cmd, workspace, context, kind="post")
+
+    def _run_shell_command(self, cmd, workspace, context, kind="cmd"):
+        """Execute a shell command inside the workspace."""
+        label = "Command" if kind == "cmd" else "Post-command"
+        self._log(f"   ➤ {label}: {cmd}")
+
+        try:
+            result = subprocess.run(
+                cmd,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=300,
+                cwd=workspace.path,
+            )
+        except Exception as exc:
+            self._log(f"   ❌ {label} failed: {exc}")
+            workspace.command_outputs.append(
+                {
+                    "command": cmd,
+                    "index": f"{context['question_num']}-{kind}",
+                    "stdout": "",
+                    "stderr": "",
+                    "returncode": None,
+                    "error": str(exc),
+                    "question": context["question"],
+                }
+            )
+            raise
+
+        stdout_text = result.stdout or ""
+        json_payload = None
+        stripped = stdout_text.strip()
+        if stripped.startswith("{") and stripped.endswith("}"):
+            try:
+                json_payload = json.loads(stripped)
+            except json.JSONDecodeError:
+                json_payload = None
+
+        entry = {
+            "command": cmd,
+            "index": f"{context['question_num']}-{kind}",
+            "stdout": stdout_text,
+            "stderr": result.stderr,
+            "returncode": result.returncode,
+            "error": None,
+            "question": context["question"],
+        }
+        if json_payload is not None:
+            entry["json_output"] = json_payload
+            usage_data = json_payload.get("token_usage")
+            if usage_data is not None:
+                entry["usage"] = usage_data
+        workspace.command_outputs.append(entry)
+
+        if result.returncode != 0:
+            raise RuntimeError(f"{label} exited with code {result.returncode}")
+
+        self._log("   ✅ Completed")
+        return entry
+
+    def _build_question_context(self, scenario, workspace, config, question, idx):
+        """Build context dictionary for template formatting."""
+        context = {
+            "scenario_name": scenario.name,
+            "question": question["question"],
+            "question_num": idx,
+            "question_id": question.get("id") or f"q{idx}",
+            "question_slug": self._slugify(question["question"]),
+            "timestamp": datetime.now().strftime("%Y%m%d_%H%M%S"),
+        }
+        context.update(config.extra_context)
+
+        answer_path_str = config.answer_file_template.format(**context)
+        answer_path = Path(answer_path_str).expanduser()
+        if not answer_path.is_absolute():
+            answer_path = workspace.path / answer_path
+
+        context["answer_file"] = str(answer_path)
+        context["answer_path"] = answer_path
+
+        base_results_dir = config.results_dir or str((_eval_dir / "results" / scenario.name))
+        results_dir_path = Path(base_results_dir).expanduser()
+        if not results_dir_path.is_absolute():
+            results_dir_path = (_project_root / results_dir_path).resolve()
+
+        context["results_dir"] = str(results_dir_path)
+        context["results_dir_path"] = results_dir_path
+
+        return context
+
+    def _format_template(self, value, context):
+        """Format template strings with context variables.
+
+        Handles strings, lists, and dictionaries recursively.
+        """
+        if isinstance(value, str):
+            # Simple string formatting with context variables
+            try:
+                return value.format(**context)
+            except KeyError as e:
+                self._log(f"Warning: Template variable not found: {e}")
+                return value
+        elif isinstance(value, dict):
+            # Recursively format dictionary values
+            return {k: self._format_template(v, context) for k, v in value.items()}
+        elif isinstance(value, list):
+            # Recursively format list items
+            return [self._format_template(item, context) for item in value]
+        return value
+
+    def _slugify(self, text: str) -> str:
+        """Generate a slug from question text."""
+        slug = re.sub(r"[^a-z0-9]+", "-", text.lower())
+        slug = slug.strip("-")
+        return slug or "question"
+
+    def _read_answer_text(self, context) -> str:
+        """Read an answer file and strip metadata sections."""
+        answer_path = context["answer_path"]
+        if not answer_path.exists():
+            raise FileNotFoundError(f"Answer file not found: {answer_path}")
+
+        content = answer_path.read_text(encoding="utf-8")
+        return self._extract_answer_content(content)
+
+    def _extract_answer_content(self, content: str) -> str:
+        """Remove sources/metadata sections from answer markdown."""
+        answer = content
+        for marker in ["## Sources", "## Metadata"]:
+            if marker in answer:
+                answer = answer.split(marker, 1)[0]
+        if "# Answer" in answer:
+            answer = answer.split("# Answer", 1)[1]
+        return answer.strip()
+
+    def _archive_answer_file(self, context):
+        """Copy answer markdown into the configured results directory."""
+        answer_path = context["answer_path"]
+        if not answer_path.exists():
+            return
+
+        results_dir = context["results_dir_path"]
+        results_dir.mkdir(parents=True, exist_ok=True)
+
+        archive_name = f"{context['question_id']}_{context['timestamp']}_answer.md"
+        try:
+            shutil.copy2(answer_path, results_dir / archive_name)
+        except Exception as exc:
+            self._log(f"   ⚠️  Failed to archive answer: {exc}")
+
+    def _score_answer_with_llm(self, question, answer_text, config):
+        """Score an answer using LLM-as-judge."""
+        canonical = question.get("expected_answer")
+        if not canonical:
+            self._log("   ⚠️  Skipping LLM judge (no expected answer provided)")
+            return None
+
+        # Get configuration from scenario, with fallbacks to global config
+        from .config import get_config
+
+        global_config = get_config()
+
+        weights = config.llm_judge.get(
+            "weights",
+            global_config.llm_judge.get(
+                "weights", {"accuracy": 0.4, "completeness": 0.3, "relevance": 0.2, "clarity": 0.1}
+            ),
+        )
+        provider = config.llm_judge.get(
+            "provider", global_config.llm_judge.get("provider", "anthropic")
+        )
+        model = config.llm_judge.get("model") or global_config.llm_judge.get("model")
+
+        try:
+            return score_single_answer(
+                question=question["question"],
+                canonical_answer=canonical,
+                generated_answer=answer_text,
+                required_topics=question.get("required_topics", []),
+                score_weights=weights,
+                llm_provider=provider,
+                model=model,
+            )
+        except Exception as exc:
+            self._log(f"   ⚠️  LLM judge error: {exc}")
+            return None
 
     async def _execute_with_sdk(
         self,
@@ -433,7 +1075,20 @@ class ScenarioRunner:
             tool_response = hook_input.get("tool_response", "")
 
             # Format the result based on tool type
-            if isinstance(tool_response, dict):
+            # Special handling for Read tool - just show file path, not content
+            if tool_name == "read" and isinstance(tool_response, dict):
+                if "file" in tool_response and isinstance(tool_response["file"], dict):
+                    file_path = tool_response["file"].get("filePath", "unknown")
+                    content_preview = tool_response["file"].get("content", "")[:100]
+                    if content_preview:
+                        result_text = (
+                            f"Read file: {file_path} (content preview: {content_preview}...)"
+                        )
+                    else:
+                        result_text = f"Read file: {file_path}"
+                else:
+                    result_text = "Read operation completed"
+            elif isinstance(tool_response, dict):
                 # For Bash tool: extract stdout/stderr
                 if "stdout" in tool_response or "stderr" in tool_response:
                     stdout = tool_response.get("stdout", "")
@@ -442,16 +1097,27 @@ class ScenarioRunner:
                     if stderr:
                         result_text += f"\n{Colors.RED}stderr: {stderr}{Colors.RESET}"
                 else:
-                    # For other dict responses, format as JSON
+                    # For other dict responses, format as JSON but limit size
                     import json
 
-                    result_text = json.dumps(tool_response, indent=2)
+                    # Create a summary for large responses
+                    if (
+                        "content" in tool_response
+                        and len(str(tool_response.get("content", ""))) > 200
+                    ):
+                        summary = {
+                            k: v if k != "content" else f"<{len(str(v))} chars>"
+                            for k, v in tool_response.items()
+                        }
+                        result_text = json.dumps(summary, indent=2)
+                    else:
+                        result_text = json.dumps(tool_response, indent=2)
             else:
                 result_text = str(tool_response)
 
             # Truncate if too long (unless verbose mode)
-            if not self.verbose and len(result_text) > 500:
-                result_text = result_text[:500] + f"\n{Colors.DIM}... (truncated){Colors.RESET}"
+            if not self.verbose and len(result_text) > 300:
+                result_text = result_text[:300] + f"\n{Colors.DIM}... (truncated){Colors.RESET}"
 
             self._log(f"  {Colors.GREEN}  ✓ RESULT:{Colors.RESET}")
             # Print result line by line for better formatting
@@ -550,6 +1216,11 @@ Execute commands as requested and report results concisely.""",
                                 output_tokens = msg.usage.get("output_tokens", 0)
                                 turn_tokens = input_tokens + output_tokens
 
+                                # Add usage to metrics collector
+                                metrics_collector.add_usage(
+                                    {"input_tokens": input_tokens, "output_tokens": output_tokens}
+                                )
+
                             turn_cost = msg.total_cost_usd or 0.0
                             cumulative_tokens += turn_tokens
                             cumulative_cost += turn_cost
@@ -581,7 +1252,9 @@ Execute commands as requested and report results concisely.""",
                                     for line in block.text.split("\n"):
                                         self._log(f"  {Colors.BLUE}│{Colors.RESET} {line}")
                                     self._log(f"  {Colors.BLUE}└─{Colors.RESET}")
-                                    metrics_collector.record_turn("agent", block.text)
+                                    metrics_collector.add_conversation_turn(
+                                        {"role": "agent", "content": block.text}
+                                    )
 
                                 elif isinstance(block, ThinkingBlock):
                                     if self.verbose:
@@ -638,7 +1311,7 @@ Execute commands as requested and report results concisely.""",
                                             f"\n  {Colors.CYAN}🔧 TOOL:{Colors.RESET} {tool_name}"
                                         )
 
-                                    metrics_collector.record_tool_use(tool_name, tool_input)
+                                    metrics_collector.add_tool_call(tool_name, tool_input)
 
                     # Turn complete - check if conversation should continue
                     # Use two-tier detection: heuristics + LLM fallback
@@ -694,7 +1367,7 @@ Execute commands as requested and report results concisely.""",
                     if self.llm_provider == "openai":
                         model_name = "gpt-4o-mini"
                     elif self.llm_provider == "anthropic":
-                        model_name = "claude-3-5-haiku-20241022"
+                        model_name = "claude-3-5-haiku-latest"
                     else:
                         model_name = self.llm_provider
 
@@ -703,10 +1376,12 @@ Execute commands as requested and report results concisely.""",
                     )
                     self._log(f"  {Colors.MAGENTA}│{Colors.RESET} {current_message}")
                     self._log(f"  {Colors.MAGENTA}└─{Colors.RESET}")
-                    metrics_collector.record_turn("user", current_message)
+                    metrics_collector.add_conversation_turn(
+                        {"role": "user", "content": current_message}
+                    )
 
-                # Record final usage in metrics
-                metrics_collector.record_usage(cumulative_tokens, cumulative_cost)
+                # Note: usage metrics already recorded per turn above
+                # Cost tracking would need to be added separately if needed
 
                 # Log final summary with stop reason
                 elapsed = time.time() - start_time

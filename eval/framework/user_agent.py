@@ -78,7 +78,7 @@ def respond_with_dspy(
                 return None
 
             lm = dspy.LM(
-                "anthropic/claude-3-5-haiku-20241022",
+                "anthropic/claude-3-5-haiku-latest",
                 api_key=api_key,
                 max_tokens=100,
                 temperature=0.3,

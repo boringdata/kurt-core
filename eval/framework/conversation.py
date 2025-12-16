@@ -145,6 +145,35 @@ class UserAgent:
 
 
 @dataclass
+class QuestionSetConfig:
+    """Configuration for running a set of questions inside a single scenario.
+
+    Attributes:
+        questions: Loaded question entries (with question, expected_answer, etc.)
+        file: Source YAML file path (for reference/logging)
+        answer_file_template: Template for answer file paths per question
+        commands: Optional shell commands to run per question (non-conversational)
+        initial_prompt_template: Prompt template for conversational question runs
+        assertion_templates: Assertions to evaluate per question (templated)
+        post_command_templates: Post-question commands (templated)
+        results_dir: Directory where answers/evaluations should be copied
+        llm_judge: Configuration for LLM-as-judge scoring (dict payload)
+        extra_context: Additional template context variables
+    """
+
+    questions: List[Dict[str, Any]]
+    file: str
+    answer_file_template: str
+    commands: List[str] = field(default_factory=list)
+    initial_prompt_template: Optional[str] = None
+    assertion_templates: List[Dict[str, Any]] = field(default_factory=list)
+    post_command_templates: List[str] = field(default_factory=list)
+    results_dir: Optional[str] = None
+    llm_judge: Dict[str, Any] = field(default_factory=dict)
+    extra_context: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class Scenario:
     """Defines a complete test scenario.
 
@@ -190,14 +219,38 @@ class Scenario:
     setup_commands: Optional[List[str]] = (
         None  # Optional bash commands to run during workspace setup
     )
+    post_scenario_commands: Optional[List[str]] = (
+        None  # Optional bash commands to run after conversation/assertions
+    )
+
+    # Execution mode
+    conversational: bool = True  # If False, skip agent interaction and only run setup + assertions
+
+    # Test cases (for non-conversational scenarios)
+    test_cases: Optional[List[Dict[str, Any]]] = (
+        None  # List of test cases with question, cmd, assertions, post_cmd
+    )
+
+    # Optional question set configuration (for multi-question scenarios)
+    question_set: Optional[QuestionSetConfig] = None
+
+    # Optional override for results filename prefix (used for single-question runs)
+    result_file_prefix: Optional[str] = None
+
+    # LLM judge configuration for scoring answers
+    llm_judge: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         """Validate scenario definition."""
-        if not self.initial_prompt and not self.conversation:
-            raise ValueError("Scenario must have either initial_prompt or conversation")
+        # Non-conversational scenarios don't need a prompt
+        if self.conversational and not self.question_set:
+            if not self.initial_prompt and not self.conversation:
+                raise ValueError(
+                    "Conversational scenario must have either initial_prompt or conversation"
+                )
 
-        if self.initial_prompt and self.conversation:
-            raise ValueError("Scenario cannot have both initial_prompt and conversation")
+            if self.initial_prompt and self.conversation:
+                raise ValueError("Scenario cannot have both initial_prompt and conversation")
 
     def get_conversation(self) -> List[ConversationTurn]:
         """Get the conversation turns for this scenario.

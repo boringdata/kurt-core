@@ -1,5 +1,5 @@
 # Test results
-results/*
+#results/*
 !results/.gitkeep
 
 # Python

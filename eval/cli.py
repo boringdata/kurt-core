@@ -14,9 +14,11 @@ sys.path.insert(0, str(project_root))
 
 # Import from framework (works for both direct execution and module import)
 try:
+    from .framework.analysis.compare import generate_report_from_dirs
     from .framework.config import get_config  # Module import
     from .framework.runner import run_scenario_by_name  # Module import
 except ImportError:
+    from framework.analysis.compare import generate_report_from_dirs  # type: ignore
     from framework.config import get_config  # Direct execution
     from framework.runner import run_scenario_by_name  # Direct execution
 
@@ -114,6 +116,171 @@ def run(scenario, no_cleanup, max_tool_calls, max_duration, max_tokens, llm_prov
 
 
 @main.command()
+@click.argument("yaml_file", type=click.Path(exists=True))
+@click.option(
+    "--prefix",
+    type=str,
+    help="Filter scenarios by name prefix (e.g., 'answer_motherduck_without_kg_q')",
+)
+@click.option(
+    "--parallel", type=int, default=4, help="Number of scenarios to run in parallel (default: 4)"
+)
+@click.option("--no-cleanup", is_flag=True, help="Preserve workspace after completion")
+@click.option(
+    "--max-tool-calls",
+    type=int,
+    default=None,
+    help="Maximum tool calls allowed (default: from config)",
+)
+@click.option(
+    "--max-duration",
+    type=int,
+    default=None,
+    help="Maximum duration in seconds (default: from config)",
+)
+@click.option(
+    "--max-tokens", type=int, default=None, help="Maximum tokens to use (default: from config)"
+)
+@click.option(
+    "--llm-provider",
+    type=click.Choice(["openai", "anthropic"]),
+    default="openai",
+    help="LLM provider for user agent",
+)
+def run_file(
+    yaml_file, prefix, parallel, no_cleanup, max_tool_calls, max_duration, max_tokens, llm_provider
+):
+    """Run all scenarios from a YAML file in parallel.
+
+    This command loads all scenarios from a YAML file, optionally filters by prefix,
+    and runs them in parallel to reduce total execution time.
+
+    Examples:
+      kurt-eval run-file scenarios_answer_motherduck_conversational.yaml --prefix answer_motherduck_conversational_q --parallel 4 --max-duration 300
+      kurt-eval run-file scenarios_answer_motherduck_conversational.yaml --no-aggregation
+    """
+    import concurrent.futures
+    from datetime import datetime
+
+    import yaml
+
+    config = get_config()
+    scenarios_dir = eval_dir / config.scenarios_dir
+
+    # Load scenarios from YAML file
+    yaml_path = Path(yaml_file)
+    if not yaml_path.is_absolute():
+        yaml_path = scenarios_dir / yaml_file
+
+    click.echo(f"Loading scenarios from: {yaml_path}")
+
+    with open(yaml_path) as f:
+        data = yaml.safe_load(f)
+
+    all_scenarios = data.get("scenarios", [])
+
+    if not all_scenarios:
+        click.secho("❌ No scenarios found in file", fg="red")
+        sys.exit(1)
+
+    # Filter scenarios by prefix if specified
+    # NOTE: Aggregation scenarios are excluded - use the 'compare' command instead
+    scenarios_to_run = []
+
+    for scenario in all_scenarios:
+        scenario_name = scenario["name"]
+
+        # Skip aggregation scenarios
+        if "aggregate" in scenario_name.lower():
+            continue
+
+        # Apply prefix filter
+        if prefix:
+            if scenario_name.startswith(prefix):
+                scenarios_to_run.append(scenario_name)
+        else:
+            scenarios_to_run.append(scenario_name)
+
+    if not scenarios_to_run:
+        click.secho(f"❌ No scenarios found matching filter: {prefix}", fg="red")
+        sys.exit(1)
+
+    click.echo(f"\n{'='*80}")
+    click.echo(f"Running {len(scenarios_to_run)} scenarios in parallel (max {parallel} at a time)")
+    if prefix:
+        click.echo(f"Filter: {prefix}")
+    click.echo("Use 'compare' command after completion to run LLM-as-judge evaluation")
+    click.echo(f"{'='*80}\n")
+
+    # Track results
+    results = {}
+    start_time = datetime.now()
+
+    def run_single_scenario(scenario_name):
+        """Run a single scenario and return results."""
+        try:
+            click.echo(f"[{datetime.now().strftime('%H:%M:%S')}] Starting: {scenario_name}")
+
+            result = run_scenario_by_name(
+                scenario_name=scenario_name,
+                scenarios_dir=scenarios_dir,
+                max_tool_calls=max_tool_calls,
+                max_duration_seconds=max_duration,
+                max_tokens=max_tokens,
+                preserve_workspace=no_cleanup,
+                llm_provider=llm_provider,
+            )
+
+            status = "✅ PASSED" if result["passed"] else "❌ FAILED"
+            click.secho(
+                f"[{datetime.now().strftime('%H:%M:%S')}] {status}: {scenario_name}",
+                fg="green" if result["passed"] else "red",
+            )
+
+            return scenario_name, result
+
+        except Exception as e:
+            click.secho(
+                f"[{datetime.now().strftime('%H:%M:%S')}] ❌ ERROR: {scenario_name} - {e}", fg="red"
+            )
+            return scenario_name, {"passed": False, "error": str(e)}
+
+    # Run scenarios in parallel
+    with concurrent.futures.ThreadPoolExecutor(max_workers=parallel) as executor:
+        future_to_scenario = {
+            executor.submit(run_single_scenario, name): name for name in scenarios_to_run
+        }
+
+        for future in concurrent.futures.as_completed(future_to_scenario):
+            scenario_name, result = future.result()
+            results[scenario_name] = result
+
+    # Calculate summary
+    total = len(results)
+    passed = sum(1 for r in results.values() if r["passed"])
+    failed = total - passed
+
+    end_time = datetime.now()
+    duration = (end_time - start_time).total_seconds()
+
+    click.echo(f"\n{'='*80}")
+    click.echo("BATCH RESULTS")
+    click.echo(f"{'='*80}")
+    click.echo(f"Total scenarios: {total}")
+    click.secho(f"Passed: {passed}", fg="green", bold=True)
+    if failed > 0:
+        click.secho(f"Failed: {failed}", fg="red", bold=True)
+    click.echo(f"Duration: {duration:.1f}s")
+    click.echo(f"{'='*80}\n")
+
+    # Exit with appropriate code
+    if failed > 0:
+        sys.exit(1)
+    else:
+        sys.exit(0)
+
+
+@main.command()
 @click.option("--filter", type=str, help="Filter scenarios by name pattern")
 def list(filter):
     """List all available evaluation scenarios."""
@@ -121,7 +288,7 @@ def list(filter):
 
     scenarios_dir = eval_dir / "scenarios"
 
-    # Collect scenarios from all YAML files
+    # Collect scenarios from all YAML files (with source file tracking)
     all_scenarios = []
 
     # Try scenarios.yaml first
@@ -130,7 +297,9 @@ def list(filter):
         with open(scenarios_yaml) as f:
             data = yaml.safe_load(f)
             if data and "scenarios" in data:
-                all_scenarios.extend(data["scenarios"])
+                for scenario in data["scenarios"]:
+                    scenario["_source_file"] = scenarios_yaml.name
+                    all_scenarios.append(scenario)
 
     # Then collect from all scenarios_*.yaml files
     for yaml_file in sorted(scenarios_dir.glob("scenarios_*.yaml")):
@@ -138,7 +307,9 @@ def list(filter):
             with open(yaml_file) as f:
                 data = yaml.safe_load(f)
                 if data and "scenarios" in data:
-                    all_scenarios.extend(data["scenarios"])
+                    for scenario in data["scenarios"]:
+                        scenario["_source_file"] = yaml_file.name
+                        all_scenarios.append(scenario)
         except Exception as e:
             click.secho(f"Warning: Failed to load {yaml_file.name}: {e}", fg="yellow")
 
@@ -161,11 +332,14 @@ def list(filter):
     for i, scenario in enumerate(scenarios, 1):
         name = scenario["name"]
         desc = scenario.get("description", "No description")
+        source_file = scenario.get("_source_file", "unknown")
 
         # Extract scenario number from name (e.g., "03" from "03_interactive_project")
         scenario_num = name.split("_")[0] if "_" in name else str(i)
 
-        click.echo(f"  {scenario_num}. {click.style(name, fg='cyan', bold=True)}")
+        click.echo(
+            f"  {scenario_num}. {click.style(name, fg='cyan', bold=True)} {click.style(f'({source_file})', fg='yellow', dim=True)}"
+        )
         click.echo(f"     {desc}")
 
         if "notes" in scenario:
@@ -274,6 +448,135 @@ def run_all(filter, stop_on_failure, max_tool_calls, max_duration, llm_provider)
             click.secho(f"  - {name}", fg="red")
 
     sys.exit(0 if failed == 0 else 1)
+
+
+@main.command(name="report-question")
+@click.option(
+    "--scenarios",
+    required=True,
+    help="Comma-separated scenario names (baseline first, comparison second).",
+)
+@click.option(
+    "--questions",
+    "questions_file",
+    required=True,
+    type=click.Path(),
+    help="Path to the questions YAML file.",
+)
+@click.option(
+    "--output",
+    type=click.Path(),
+    default="eval/results/scenario_comparison.csv",
+    help="Output CSV file path for the comparison report.",
+)
+@click.option(
+    "--sync-gsheet",
+    is_flag=True,
+    help="Sync report to Google Sheets (requires credentials).",
+)
+@click.option(
+    "--gsheet-name",
+    default=None,
+    help="Name for the Google Sheet (uses config default if not specified).",
+)
+@click.option(
+    "--github-repo",
+    default=None,
+    help="GitHub repository URL for file links (uses config default if not specified).",
+)
+@click.option(
+    "--github-branch",
+    default=None,
+    help="GitHub branch for file links (uses config default if not specified).",
+)
+def report_question(
+    scenarios, questions_file, output, sync_gsheet, gsheet_name, github_repo, github_branch
+):
+    """Generate an LLM-judge comparison report for question-answering scenarios."""
+    # Load config for defaults
+    from eval.framework.config import EvalConfig
+
+    config = EvalConfig()
+
+    # Use config defaults if not provided via CLI
+    if gsheet_name is None:
+        gsheet_name = config.get("google_sheets", {}).get("default_sheet_name", "Kurt Eval Report")
+
+    if github_repo is None:
+        github_repo = config.get("github", {}).get(
+            "repo_url", "https://github.com/anthropics/kurt-core"
+        )
+
+    if github_branch is None:
+        github_branch = config.get("github", {}).get("branch", "main")
+
+    scenario_names = [s.strip() for s in scenarios.split(",") if s.strip()]
+    if len(scenario_names) != 2:
+        raise click.UsageError(
+            "Provide exactly two scenario names via --scenarios (baseline,comparison)."
+        )
+
+    results_root = eval_dir / "results"
+    scenario_dirs = []
+    for name in scenario_names:
+        scenario_dir = results_root / name
+        if not scenario_dir.exists():
+            raise click.UsageError(
+                f"Results directory not found for scenario '{name}': {scenario_dir}"
+            )
+        scenario_dirs.append(scenario_dir)
+
+    output_path = Path(output)
+    if not output_path.is_absolute():
+        candidate = (Path.cwd() / output_path).resolve()
+        if not candidate.exists() and not candidate.parent.exists():
+            candidate = (eval_dir.parent / output_path).resolve()
+        output_path = candidate
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    questions_path = Path(questions_file)
+    if not questions_path.is_absolute():
+        candidate = (Path.cwd() / questions_path).resolve()
+        if not candidate.exists():
+            candidate = (eval_dir / questions_path).resolve()
+        questions_path = candidate
+
+    try:
+        csv_path = generate_report_from_dirs(
+            with_dir=scenario_dirs[1],
+            without_dir=scenario_dirs[0],
+            questions_file=questions_path,
+            output_file=output_path,
+            github_repo=github_repo,
+            github_branch=github_branch,
+        )
+
+        # Sync to Google Sheets if requested
+        if sync_gsheet:
+            try:
+                from eval.framework.analysis.gsheet_sync import GSheetReportSync
+
+                sync = GSheetReportSync(
+                    repo_url=github_repo,
+                    branch=github_branch,
+                )
+
+                sheet_url = sync.sync_report(
+                    csv_path=str(csv_path),
+                    json_path=None,  # No JSON file anymore
+                    spreadsheet_name=gsheet_name,
+                )
+
+                click.echo(f"\n✅ Report synced to Google Sheets: {sheet_url}")
+            except ImportError:
+                click.echo(
+                    "\n❌ Google Sheets sync requires additional dependencies. "
+                    "Install with: pip install google-api-python-client google-auth pandas"
+                )
+            except Exception as e:
+                click.echo(f"\n❌ Failed to sync to Google Sheets: {e}")
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
 
 
 @main.group()
@@ -489,6 +792,36 @@ def training_view(scenario, index, filter_passed):
     if not example.passed and example.error:
         click.echo("\n❌ Error:")
         click.secho(f"  {example.error}", fg="red")
+
+
+@main.command()
+@click.option(
+    "--method",
+    type=click.Choice(["service-account", "oauth", "auto"]),
+    default="auto",
+    help="Authentication method",
+)
+@click.option("--credentials-file", help="Path to credentials JSON file")
+@click.option("--test", is_flag=True, help="Test the connection after setup")
+def gsheet_auth(method, credentials_file, test):
+    """Set up Google Sheets authentication for eval reports.
+
+    This command helps you configure Google API credentials to enable
+    automatic syncing of evaluation results to Google Sheets.
+
+    Examples:
+      # Interactive setup guide
+      uv run python -m eval gsheet-auth
+
+      # Set up with existing credentials
+      uv run python -m eval gsheet-auth --credentials-file ~/Downloads/key.json --test
+
+      # Force service account method
+      uv run python -m eval gsheet-auth --method service-account
+    """
+    from framework.commands.gsheet_auth import gsheet_auth as auth_cmd
+
+    auth_cmd.callback(method, credentials_file, test)
 
 
 if __name__ == "__main__":

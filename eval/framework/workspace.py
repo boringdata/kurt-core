@@ -58,6 +58,7 @@ class IsolatedWorkspace:
         self.use_http_mocks = use_http_mocks
         self.mock_server = None
         self._setup_complete = False
+        self.command_outputs: list[dict] = []  # Store outputs from setup commands
 
     def setup(self) -> Path:
         """Create and enter the isolated workspace.
@@ -254,6 +255,16 @@ class IsolatedWorkspace:
 
         for i, cmd in enumerate(self.setup_commands, 1):
             print(f"   [{i}/{len(self.setup_commands)}] {cmd}")
+
+            cmd_output = {
+                "command": cmd,
+                "index": i,
+                "stdout": "",
+                "stderr": "",
+                "returncode": None,
+                "error": None,
+            }
+
             try:
                 result = subprocess.run(
                     cmd,
@@ -263,6 +274,10 @@ class IsolatedWorkspace:
                     timeout=120,  # 2 minute timeout per command
                     cwd=self.temp_dir,
                 )
+
+                cmd_output["returncode"] = result.returncode
+                cmd_output["stdout"] = result.stdout
+                cmd_output["stderr"] = result.stderr
 
                 if result.returncode == 0:
                     print(f"   ✅ Command {i} succeeded")
@@ -278,10 +293,75 @@ class IsolatedWorkspace:
 
             except subprocess.TimeoutExpired:
                 print(f"   ⚠️  Command {i} timed out after 120s")
+                cmd_output["error"] = "timeout"
             except Exception as e:
                 print(f"   ⚠️  Command {i} failed: {e}")
+                cmd_output["error"] = str(e)
+
+            # Store the command output
+            self.command_outputs.append(cmd_output)
 
         print("✅ Setup commands completed")
+
+    def run_post_commands(self, commands: list):
+        """Execute post-scenario commands (after assertions).
+
+        Similar to setup commands, but run after scenario execution and assertions.
+        """
+        if not commands:
+            return
+
+        print(f"🔧 Running {len(commands)} post-scenario command(s)...")
+
+        for i, cmd in enumerate(commands, 1):
+            print(f"   [{i}/{len(commands)}] {cmd[:80]}...")
+
+            cmd_output = {
+                "command": cmd,
+                "index": i,
+                "stdout": "",
+                "stderr": "",
+                "returncode": None,
+                "error": None,
+            }
+
+            try:
+                result = subprocess.run(
+                    cmd,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=120,  # 2 minute timeout per command
+                    cwd=self.temp_dir,
+                )
+
+                cmd_output["returncode"] = result.returncode
+                cmd_output["stdout"] = result.stdout
+                cmd_output["stderr"] = result.stderr
+
+                if result.returncode == 0:
+                    print(f"   ✅ Post-command {i} succeeded")
+                    if result.stdout:
+                        # Print first few lines of output
+                        lines = result.stdout.strip().split("\n")[:3]
+                        for line in lines:
+                            print(f"      {line}")
+                else:
+                    print(f"   ⚠️  Post-command {i} exited with code {result.returncode}")
+                    if result.stderr:
+                        print(f"      stderr: {result.stderr[:200]}")
+
+            except subprocess.TimeoutExpired:
+                print(f"   ⚠️  Post-command {i} timed out after 120s")
+                cmd_output["error"] = "timeout"
+            except Exception as e:
+                print(f"   ⚠️  Post-command {i} failed: {e}")
+                cmd_output["error"] = str(e)
+
+            # Store the command output
+            self.command_outputs.append(cmd_output)
+
+        print("✅ Post-scenario commands completed")
 
     def teardown(self, had_error: bool = False):
         """Clean up the workspace.

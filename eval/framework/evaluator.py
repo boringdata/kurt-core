@@ -5,7 +5,7 @@ Provides reusable assertions for checking files, database state, and tool usage.
 
 import re
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 
 class Assertion(ABC):
@@ -472,6 +472,121 @@ class SQLQueryAssertion(Assertion):
             )
 
         return True
+
+
+class CommandOutputContains(Assertion):
+    """Assert that command output contains specific text.
+
+    Checks the most recent command output's stdout for a pattern.
+    Useful for validating command results in non-conversational scenarios.
+
+    Example:
+        >>> # Check answer mentions "Parquet"
+        >>> assertion = CommandOutputContains(pattern="(?i)parquet", is_regex=True)
+        >>> assertion.evaluate(workspace, metrics)
+
+        >>> # Check confidence score is reasonable
+        >>> assertion = CommandOutputContains(pattern="Confidence: 0\\.[5-9]", is_regex=True)
+        >>> assertion.evaluate(workspace, metrics)
+    """
+
+    def __init__(self, pattern: str, is_regex: bool = False, case_sensitive: bool = False):
+        """Initialize assertion.
+
+        Args:
+            pattern: Text or regex pattern to search for
+            is_regex: Whether to treat pattern as regex
+            case_sensitive: Whether search should be case-sensitive (ignored for regex with flags)
+        """
+        self.pattern = pattern
+        self.is_regex = is_regex
+        self.case_sensitive = case_sensitive
+
+    def evaluate(self, workspace: Any, metrics: Dict[str, Any]) -> bool:
+        # Get the most recent command output
+        if not hasattr(workspace, "command_outputs") or not workspace.command_outputs:
+            raise AssertionError("No command outputs available")
+
+        last_output = workspace.command_outputs[-1]
+        stdout = last_output.get("stdout", "")
+
+        # Perform search
+        if self.is_regex:
+            # For regex, use IGNORECASE flag if not case_sensitive
+            flags = 0 if self.case_sensitive else re.IGNORECASE
+            if not re.search(self.pattern, stdout, flags):
+                raise AssertionError(
+                    f"Command output does not match pattern: {self.pattern}\n"
+                    f"Output: {stdout[:200]}..."
+                )
+        else:
+            # For plain text search
+            search_text = stdout if self.case_sensitive else stdout.lower()
+            target = self.pattern if self.case_sensitive else self.pattern.lower()
+
+            if target not in search_text:
+                raise AssertionError(
+                    f"Command output does not contain text: {self.pattern}\n"
+                    f"Output: {stdout[:200]}..."
+                )
+
+        return True
+
+
+def parse_assertions(assertions_data: List[Dict[str, Any]]) -> List[Assertion]:
+    """Parse assertion dictionaries into Assertion instances."""
+    assertions: List[Assertion] = []
+
+    for item in assertions_data:
+        if not isinstance(item, dict):
+            raise ValueError(f"Invalid assertion definition: {item}")
+
+        assertion_type = item.get("type")
+        if not assertion_type:
+            raise ValueError(f"Assertion missing 'type' field: {item}")
+
+        params = {k: v for k, v in item.items() if k != "type"}
+        assertions.append(_build_assertion(assertion_type, params))
+
+    return assertions
+
+
+def _build_assertion(assertion_type: str, params: Dict[str, Any]) -> Assertion:
+    """Instantiate assertions based on type name."""
+    if assertion_type == "FileExists":
+        return FileExists(**params)
+
+    if assertion_type == "FileContains":
+        return FileContains(**params)
+
+    if assertion_type == "DatabaseHasDocuments":
+        return DatabaseHasDocuments(**params)
+
+    if assertion_type == "ToolWasUsed":
+        return ToolWasUsed(**params)
+
+    if assertion_type == "MetricEquals":
+        return MetricEquals(**params)
+
+    if assertion_type == "MetricGreaterThan":
+        return MetricGreaterThan(**params)
+
+    if assertion_type == "ConversationContains":
+        return ConversationContains(**params)
+
+    if assertion_type == "SQLQueryAssertion":
+        return SQLQueryAssertion(**params)
+
+    if assertion_type == "SlashCommandWasCalled":
+        return SlashCommandWasCalled(**params)
+
+    if assertion_type == "SkillWasCalled":
+        return SkillWasCalled(**params)
+
+    if assertion_type == "CommandOutputContains":
+        return CommandOutputContains(**params)
+
+    raise ValueError(f"Unknown assertion type: {assertion_type}")
 
 
 def assert_all(assertions: list, workspace: Any, metrics: Dict[str, Any]) -> bool:
