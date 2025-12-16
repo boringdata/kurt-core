@@ -14,7 +14,7 @@ from dbos import DBOS
 
 from kurt.content.filtering import DocumentFilters
 from kurt.content.indexing_new.framework import (
-    ModelContext,
+    PipelineContext,
     run_models,
 )
 from kurt.content.indexing_new.framework.dbos_events import emit_batch_status
@@ -74,7 +74,7 @@ async def indexing_workflow(
         }
     )
 
-    ctx = ModelContext(filters=filters, incremental_mode=incremental_mode, workflow_id=workflow_id)
+    ctx = PipelineContext(filters=filters, incremental_mode=incremental_mode, workflow_id=workflow_id)
     models = [
         ("indexing.document_sections", ctx, payloads),
         # Future models go here...
@@ -156,16 +156,19 @@ def run_section_splitting(
 
     logger.info(f"Loaded {len(payloads)} documents for processing")
 
-    # Create reader and writer for the model
-    reader = TableReader(db_path=db_path)  # Required by decorator but unused
+    # Create context, reader and writer for the model
+    ctx = PipelineContext(
+        filters=filters, incremental_mode=incremental_mode, workflow_id=workflow_id
+    )
+    reader = TableReader(db_path=db_path, filters=filters, workflow_id=workflow_id)
     writer = TableWriter(db_path=db_path, workflow_id=workflow_id)
 
     # Execute the document_sections model with the loaded payloads
     result = document_sections(
+        ctx=ctx,
         reader=reader,
         writer=writer,
         payloads=payloads,
-        incremental_mode=incremental_mode,
     )
 
     logger.info(

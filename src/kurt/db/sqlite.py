@@ -344,6 +344,7 @@ class SQLiteClient(DatabaseClient):
             return []
         finally:
             session.close()
+
     # ========== ASYNC METHODS ==========
 
     def get_async_database_url(self) -> str:

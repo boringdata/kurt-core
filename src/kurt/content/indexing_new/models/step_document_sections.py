@@ -12,15 +12,39 @@ from typing import List, Optional
 
 from sqlmodel import Field, SQLModel
 
+from kurt.config import ConfigParam, ModelConfig
 from kurt.content.indexing.splitting import split_markdown_document
-from kurt.content.indexing_new.framework import TableReader, TableWriter, model
+from kurt.content.indexing_new.framework import PipelineContext, TableReader, TableWriter, model
 
 logger = logging.getLogger(__name__)
 
-# Splitting configuration constants
-MAX_SECTION_CHARS = 5000  # Maximum characters per section (matches extraction limit)
-OVERLAP_CHARS = 200  # Context overlap between sections
-MIN_SECTION_SIZE = 500  # Minimum size to avoid tiny fragments
+
+# ============================================================================
+# Configuration
+# ============================================================================
+
+
+class DocumentSectionsConfig(ModelConfig):
+    """Configuration for document section splitting."""
+
+    max_section_chars: int = ConfigParam(
+        default=5000,
+        ge=500,
+        le=20000,
+        description="Maximum characters per section (matches extraction limit)",
+    )
+    overlap_chars: int = ConfigParam(
+        default=200,
+        ge=0,
+        le=1000,
+        description="Context overlap between sections",
+    )
+    min_section_size: int = ConfigParam(
+        default=500,
+        ge=100,
+        le=2000,
+        description="Minimum size to avoid tiny fragments",
+    )
 
 
 class DocumentSectionRow(SQLModel, table=True):
@@ -61,13 +85,14 @@ class DocumentSectionRow(SQLModel, table=True):
     primary_key=["document_id", "section_id"],
     write_strategy="replace",
     description="Split documents into sections for parallel processing",
+    config_schema=DocumentSectionsConfig,
 )
 def document_sections(
+    ctx: PipelineContext,
     reader: TableReader,  # Required by decorator but unused - documents come via payloads
     writer: TableWriter,
     payloads: List[dict],
-    incremental_mode: str = "full",
-    **kwargs,
+    config: DocumentSectionsConfig = None,
 ):
     """
     Split documents into sections for parallel processing.
@@ -77,17 +102,16 @@ def document_sections(
     maintaining context through overlapping regions.
 
     Args:
+        ctx: Pipeline context with filters, workflow_id, and incremental_mode
         reader: Table reader (required by framework but unused - documents come via payloads)
         writer: Table writer for persisting results
         payloads: List of document payloads from workflow (with document_id, content, skip, etc.)
-        incremental_mode: Processing mode ("full" or "delta") for future incremental behavior
-        **kwargs: Additional parameters (including workflow_id for logging)
 
     Returns:
         Write statistics from the table writer
     """
     logger.info(
-        f"Processing {len(payloads)} documents for section splitting (mode: {incremental_mode})"
+        f"Processing {len(payloads)} documents for section splitting (mode: {ctx.incremental_mode})"
     )
 
     rows = []
@@ -107,12 +131,16 @@ def document_sections(
             logger.warning(f"Document {document_id} has no content, skipping")
             continue
 
-        # Split the document into sections using configured parameters
+        # Split the document into sections using config parameters
+        max_chars = config.max_section_chars if config else 5000
+        overlap_chars = config.overlap_chars if config else 200
+        min_section_size = config.min_section_size if config else 500
+
         sections = split_markdown_document(
             content,
-            max_chars=MAX_SECTION_CHARS,
-            overlap_chars=OVERLAP_CHARS,
-            min_section_size=MIN_SECTION_SIZE,
+            max_chars=max_chars,
+            overlap_chars=overlap_chars,
+            min_section_size=min_section_size,
         )
 
         logger.debug(f"Document {document_id} split into {len(sections)} sections")
