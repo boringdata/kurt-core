@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 import click
+from dotenv import load_dotenv
 from rich.console import Console
 
 from kurt import __version__
@@ -231,135 +232,185 @@ OPENAI_API_KEY=your_openai_api_key_here
         console.print()
         init_database()
 
-        # Step 3.5: Copy IDE instruction files
+        # Step 3.5: Set up unified agent instructions
         console.print()
 
         # Determine which IDEs to set up
         ides_to_setup = []
         if ide == "both":
             ides_to_setup = ["claude", "cursor"]
-            console.print("[dim]Setting up Claude Code and Cursor instruction files...[/dim]")
+            console.print("[dim]Setting up unified agent instructions...[/dim]")
         else:
             ides_to_setup = [ide]
             ide_name = "Claude Code" if ide == "claude" else "Cursor"
-            console.print(f"[dim]Setting up {ide_name} instruction files...[/dim]")
+            console.print(f"[dim]Setting up {ide_name} agent instructions...[/dim]")
 
         try:
-            # Track which templates were copied (shared between IDEs)
-            templates_copied = False
+            # Get the source AGENTS.md from the package
+            agents_source = Path(__file__).parent / "agents" / "AGENTS.md"
 
-            for current_ide in ides_to_setup:
-                # Get the source plugin directory from the package
-                plugin_dir_name = "claude_plugin" if current_ide == "claude" else "cursor_plugin"
-                plugin_source = Path(__file__).parent / plugin_dir_name
+            if agents_source.exists():
+                # Create .agents directory and copy AGENTS.md
+                agents_dir = Path.cwd() / ".agents"
+                agents_dir.mkdir(exist_ok=True)
+                agents_dest = agents_dir / "AGENTS.md"
 
-                if plugin_source.exists():
-                    # Create IDE-specific directory in current working directory
+                # Check if AGENTS.md exists and warn user
+                if agents_dest.exists():
+                    console.print(
+                        "[yellow]⚠[/yellow] AGENTS.md already exists and will be overwritten"
+                    )
+                    overwrite_main = console.input("Overwrite AGENTS.md? (y/N): ")
+                    if overwrite_main.lower() != "y":
+                        console.print("[dim]Keeping existing AGENTS.md[/dim]")
+                        agents_copied = False
+                    else:
+                        shutil.copy2(agents_source, agents_dest)
+                        agents_copied = True
+                else:
+                    shutil.copy2(agents_source, agents_dest)
+                    agents_copied = True
+
+                if agents_copied:
+                    console.print("[green]✓[/green] Copied unified agent instructions")
+                    console.print("[dim]  .agents/AGENTS.md[/dim]")
+
+                # Create IDE-specific symlinks
+                for current_ide in ides_to_setup:
                     ide_dir_name = ".claude" if current_ide == "claude" else ".cursor"
                     ide_dir = Path.cwd() / ide_dir_name
                     ide_dir.mkdir(exist_ok=True)
 
-                    # IDE-specific file copying logic
                     if current_ide == "claude":
-                        # Claude Code: CLAUDE.md, settings.json, instructions/, commands/, kurt/
-                        # Check if CLAUDE.md exists and warn user
+                        # Create main CLAUDE.md symlink (primary entry point)
                         claude_md_dest = ide_dir / "CLAUDE.md"
-                        if claude_md_dest.exists():
-                            console.print(
-                                "[yellow]⚠[/yellow] CLAUDE.md already exists and will be overwritten"
-                            )
-                            overwrite_main = console.input("Overwrite CLAUDE.md? (y/N): ")
-                            skip_main = overwrite_main.lower() != "y"
-                        else:
-                            skip_main = False
+                        claude_md_target = Path("../.agents/AGENTS.md")
 
-                        for item in plugin_source.iterdir():
-                            if item.name == "CLAUDE.md" and not skip_main:
-                                shutil.copy2(item, ide_dir / item.name)
-                            elif item.name == "settings.json":
-                                # Merge settings.json
-                                dest_settings = ide_dir / "settings.json"
-                                with open(item) as f:
-                                    kurt_settings = json.load(f)
-                                if dest_settings.exists():
-                                    with open(dest_settings) as f:
-                                        existing_settings = json.load(f)
-                                    if "hooks" not in existing_settings:
-                                        existing_settings["hooks"] = {}
-                                    existing_settings["hooks"].update(
-                                        kurt_settings.get("hooks", {})
+                        # Check if CLAUDE.md already exists
+                        if claude_md_dest.exists() or claude_md_dest.is_symlink():
+                            if claude_md_dest.is_symlink():
+                                # Already a symlink, update target
+                                claude_md_dest.unlink()
+                                claude_md_dest.symlink_to(claude_md_target)
+                                console.print("[green]✓[/green] Updated Claude Code symlink")
+                            else:
+                                # Regular file with user content
+                                console.print(
+                                    "[yellow]⚠[/yellow] CLAUDE.md already exists with custom content"
+                                )
+                                console.print("How would you like to proceed?")
+                                console.print(
+                                    "  1. Keep CLAUDE.md and add Kurt instructions in .claude/instructions/"
+                                )
+                                console.print(
+                                    "  2. Replace with symlink (your content will be backed up)"
+                                )
+                                console.print("  3. Skip Claude Code setup")
+                                choice = (
+                                    console.input("Choice (1/2/3) [default: 1]: ").strip() or "1"
+                                )
+
+                                if choice == "1":
+                                    # Keep existing CLAUDE.md, only create instructions symlink
+                                    console.print("[dim]Keeping your existing CLAUDE.md[/dim]")
+                                elif choice == "2":
+                                    # Backup and replace
+                                    backup_path = claude_md_dest.parent / "CLAUDE.md.backup"
+                                    shutil.copy2(claude_md_dest, backup_path)
+                                    claude_md_dest.unlink()
+                                    claude_md_dest.symlink_to(claude_md_target)
+                                    console.print(
+                                        f"[green]✓[/green] Backed up to {backup_path.name}"
                                     )
-                                    with open(dest_settings, "w") as f:
-                                        json.dump(existing_settings, f, indent=2)
+                                    console.print("[green]✓[/green] Created Claude Code symlink")
                                 else:
-                                    with open(dest_settings, "w") as f:
-                                        json.dump(kurt_settings, f, indent=2)
-                            elif item.name in ["instructions", "commands"]:
-                                # Copy directories
-                                dest_dir = ide_dir / item.name
-                                dest_dir.mkdir(exist_ok=True)
-                                for src_file in item.rglob("*"):
-                                    if src_file.is_file():
-                                        rel_path = src_file.relative_to(item)
-                                        dest_file = dest_dir / rel_path
-                                        dest_file.parent.mkdir(parents=True, exist_ok=True)
-                                        shutil.copy2(src_file, dest_file)
-                            elif item.name == "kurt" and not templates_copied:
-                                # Copy kurt/ to working directory (only once for both IDEs)
-                                dest_dir = Path.cwd() / item.name
-                                dest_dir.mkdir(exist_ok=True)
-                                for src_file in item.rglob("*"):
-                                    if src_file.is_file():
-                                        rel_path = src_file.relative_to(item)
-                                        dest_file = dest_dir / rel_path
-                                        dest_file.parent.mkdir(parents=True, exist_ok=True)
-                                        shutil.copy2(src_file, dest_file)
-                                templates_copied = True
+                                    console.print("[dim]Skipping Claude Code setup[/dim]")
+                                    continue
+                        else:
+                            # Doesn't exist, create symlink
+                            claude_md_dest.symlink_to(claude_md_target)
+                            console.print("[green]✓[/green] Created Claude Code main file")
+
+                        console.print("[dim]  .claude/CLAUDE.md → .agents/AGENTS.md[/dim]")
+
+                        # Also create .claude/instructions/ directory with symlink for discoverability
+                        instructions_dir = ide_dir / "instructions"
+                        instructions_dir.mkdir(exist_ok=True)
+                        instructions_symlink = instructions_dir / "AGENTS.md"
+                        instructions_target = Path("../../.agents/AGENTS.md")
+
+                        # Remove existing symlink or file
+                        if instructions_symlink.exists() or instructions_symlink.is_symlink():
+                            instructions_symlink.unlink()
+
+                        # Create symlink
+                        instructions_symlink.symlink_to(instructions_target)
+                        console.print(
+                            "[dim]  .claude/instructions/AGENTS.md → .agents/AGENTS.md[/dim]"
+                        )
+
+                        # Copy settings.json for Claude hooks
+                        agents_dir_source = Path(__file__).parent / "agents"
+                        settings_source = agents_dir_source / "claude-settings.json"
+                        if settings_source.exists():
+                            dest_settings = ide_dir / "settings.json"
+                            with open(settings_source) as f:
+                                kurt_settings = json.load(f)
+                            if dest_settings.exists():
+                                with open(dest_settings) as f:
+                                    existing_settings = json.load(f)
+                                if "hooks" not in existing_settings:
+                                    existing_settings["hooks"] = {}
+                                existing_settings["hooks"].update(kurt_settings.get("hooks", {}))
+                                with open(dest_settings, "w") as f:
+                                    json.dump(existing_settings, f, indent=2)
+                            else:
+                                with open(dest_settings, "w") as f:
+                                    json.dump(kurt_settings, f, indent=2)
+                            console.print("[green]✓[/green] Configured Claude Code hooks")
 
                     else:  # cursor
-                        # Cursor: rules/*.mdc, kurt/
-                        for item in plugin_source.iterdir():
-                            if item.name == "rules":
-                                # Copy rules/ directory
-                                dest_dir = ide_dir / item.name
-                                dest_dir.mkdir(exist_ok=True)
-                                for src_file in item.rglob("*"):
-                                    if src_file.is_file():
-                                        rel_path = src_file.relative_to(item)
-                                        dest_file = dest_dir / rel_path
-                                        dest_file.parent.mkdir(parents=True, exist_ok=True)
-                                        shutil.copy2(src_file, dest_file)
-                            elif item.name == "kurt" and not templates_copied:
-                                # Copy kurt/ to working directory (only once for both IDEs)
-                                dest_dir = Path.cwd() / item.name
-                                dest_dir.mkdir(exist_ok=True)
-                                for src_file in item.rglob("*"):
-                                    if src_file.is_file():
-                                        rel_path = src_file.relative_to(item)
-                                        dest_file = dest_dir / rel_path
-                                        dest_file.parent.mkdir(parents=True, exist_ok=True)
-                                        shutil.copy2(src_file, dest_file)
-                                templates_copied = True
+                        # Create .cursor/rules/ directory and symlink
+                        rules_dir = ide_dir / "rules"
+                        rules_dir.mkdir(exist_ok=True)
+                        symlink_dest = rules_dir / "KURT.mdc"
+                        symlink_target = Path("../../.agents/AGENTS.md")
 
-                else:
-                    console.print("[yellow]⚠[/yellow] Plugin files not found in package")
+                        # Check if KURT.mdc already exists
+                        if symlink_dest.exists() or symlink_dest.is_symlink():
+                            if symlink_dest.is_symlink():
+                                # Already a symlink, update target
+                                symlink_dest.unlink()
+                                symlink_dest.symlink_to(symlink_target)
+                                console.print("[green]✓[/green] Updated Cursor symlink")
+                            else:
+                                # Regular file (unusual, but handle it)
+                                console.print("[yellow]⚠[/yellow] KURT.mdc already exists")
+                                overwrite = console.input("Replace with symlink? (y/N): ")
+                                if overwrite.lower() == "y":
+                                    backup_path = symlink_dest.parent / "KURT.mdc.backup"
+                                    shutil.copy2(symlink_dest, backup_path)
+                                    symlink_dest.unlink()
+                                    symlink_dest.symlink_to(symlink_target)
+                                    console.print(
+                                        f"[green]✓[/green] Backed up to {backup_path.name}"
+                                    )
+                                    console.print("[green]✓[/green] Created Cursor symlink")
+                                else:
+                                    console.print("[dim]Skipping Cursor setup[/dim]")
+                                    continue
+                        else:
+                            # Doesn't exist, create symlink
+                            symlink_dest.symlink_to(symlink_target)
+                            console.print("[green]✓[/green] Created Cursor rule")
 
-            # Print success messages
-            console.print("[green]✓[/green] Copied instruction files")
-            if ide == "both":
-                console.print(
-                    "[dim]  .claude/CLAUDE.md, .claude/settings.json, .claude/instructions/, .claude/commands/[/dim]"
-                )
-                console.print("[dim]  .cursor/rules/*.mdc[/dim]")
-            elif ide == "claude":
-                console.print(
-                    "[dim]  .claude/CLAUDE.md, .claude/settings.json, .claude/instructions/, .claude/commands/[/dim]"
-                )
-            else:  # cursor
-                console.print("[dim]  .cursor/rules/*.mdc[/dim]")
-            console.print("[dim]  kurt/templates/[/dim]")
+                        console.print("[dim]  .cursor/rules/KURT.mdc → .agents/AGENTS.md[/dim]")
+
+            else:
+                console.print("[yellow]⚠[/yellow] AGENTS.md not found in package")
+
         except Exception as e:
-            console.print(f"[yellow]⚠[/yellow] Could not copy instruction files: {e}")
+            console.print(f"[yellow]⚠[/yellow] Could not set up agent instructions: {e}")
 
         console.print("\n[bold]Next steps:[/bold]")
         console.print("  1. Copy .env.example to .env and add your API keys")
@@ -369,8 +420,8 @@ OPENAI_API_KEY=your_openai_api_key_here
             console.print("  2. Open Claude Code in this directory")
         else:  # cursor
             console.print("  2. Open Cursor in this directory")
-            console.print("  3. Mention [cyan]@add-profile[/cyan] to create your content profile")
-            console.print("  4. Mention [cyan]@add-project[/cyan] to start a new project")
+        console.print("  3. Start working with the AI assistant!")
+        console.print("     [dim](The assistant will guide you through any needed setup)[/dim]")
 
     except Exception as e:
         console.print(f"[bold red]Error:[/bold red] {e}")

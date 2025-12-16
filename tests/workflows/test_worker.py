@@ -96,11 +96,9 @@ class TestWorkerDBOSInitialization:
         mock_dbos = MagicMock()
         mock_get_dbos.return_value = mock_dbos
 
-        mock_queue = MagicMock()
         mock_handle = MagicMock()
         mock_handle.workflow_id = "test-workflow-id"
         mock_handle.get_status.return_value.status = "SUCCESS"
-        mock_queue.enqueue.return_value = mock_handle
 
         workflow_name = "map_url_workflow"
         workflow_args_json = json.dumps({"url": "https://example.com"})
@@ -109,7 +107,7 @@ class TestWorkerDBOSInitialization:
         with patch("time.time", return_value=0):  # Don't timeout
             with patch("time.sleep"):
                 with patch("kurt.content.map.workflow.map_url_workflow"):
-                    with patch("kurt.content.map.workflow.get_map_queue", return_value=mock_queue):
+                    with patch("dbos.DBOS.start_workflow", return_value=mock_handle):
                         with patch("sys.exit"):
                             try:
                                 run_workflow_worker(workflow_name, workflow_args_json, priority=10)
@@ -139,11 +137,9 @@ class TestWorkerLogFileHandling:
         mock_dbos = MagicMock()
         mock_get_dbos.return_value = mock_dbos
 
-        mock_queue = MagicMock()
         mock_handle = MagicMock()
         mock_handle.workflow_id = "test-workflow-123"
         mock_handle.get_status.return_value.status = "SUCCESS"
-        mock_queue.enqueue.return_value = mock_handle
 
         workflow_name = "map_url_workflow"
         workflow_args_json = json.dumps({"url": "https://example.com"})
@@ -151,7 +147,7 @@ class TestWorkerLogFileHandling:
         with patch("time.time", side_effect=[0, 100, 200]):
             with patch("time.sleep"):
                 with patch("kurt.content.map.workflow.map_url_workflow"):
-                    with patch("kurt.content.map.workflow.get_map_queue", return_value=mock_queue):
+                    with patch("dbos.DBOS.start_workflow", return_value=mock_handle):
                         with patch("sys.exit"):
                             try:
                                 run_workflow_worker(workflow_name, workflow_args_json, priority=10)
@@ -171,7 +167,7 @@ class TestWorkerLogFileHandling:
         assert len(log_file_calls) >= 1
 
         # Verify stdout and stderr were redirected
-        assert mock_dup2.call_count >= 4  # 2 for devnull, 2 for log file
+        assert mock_dup2.call_count >= 4  # 2 for temp log, 2 for final log
 
     def test_workflow_id_file_env_var_checked(self):
         """Worker should check KURT_WORKFLOW_ID_FILE environment variable."""
@@ -199,7 +195,6 @@ class TestWorkerStatusPolling:
         mock_dbos = MagicMock()
         mock_get_dbos.return_value = mock_dbos
 
-        mock_queue = MagicMock()
         mock_handle = MagicMock()
 
         # Simulate workflow progression: PENDING → PENDING → SUCCESS
@@ -214,7 +209,6 @@ class TestWorkerStatusPolling:
             mock_status_pending,
             mock_status_success,
         ]
-        mock_queue.enqueue.return_value = mock_handle
 
         workflow_name = "map_url_workflow"
         workflow_args_json = json.dumps({"url": "https://example.com"})
@@ -222,7 +216,7 @@ class TestWorkerStatusPolling:
         with patch("time.time", return_value=0):  # Don't timeout
             with patch("time.sleep") as mock_sleep:
                 with patch("kurt.content.map.workflow.map_url_workflow"):
-                    with patch("kurt.content.map.workflow.get_map_queue", return_value=mock_queue):
+                    with patch("dbos.DBOS.start_workflow", return_value=mock_handle):
                         with patch("sys.exit"):
                             try:
                                 run_workflow_worker(workflow_name, workflow_args_json, priority=10)
@@ -250,14 +244,12 @@ class TestWorkerStatusPolling:
         mock_dbos = MagicMock()
         mock_get_dbos.return_value = mock_dbos
 
-        mock_queue = MagicMock()
         mock_handle = MagicMock()
 
         mock_status_error = Mock()
         mock_status_error.status = "ERROR"
 
         mock_handle.get_status.return_value = mock_status_error
-        mock_queue.enqueue.return_value = mock_handle
 
         workflow_name = "map_url_workflow"
         workflow_args_json = json.dumps({"url": "https://example.com"})
@@ -265,7 +257,7 @@ class TestWorkerStatusPolling:
         with patch("time.time", return_value=0):
             with patch("time.sleep"):
                 with patch("kurt.content.map.workflow.map_url_workflow"):
-                    with patch("kurt.content.map.workflow.get_map_queue", return_value=mock_queue):
+                    with patch("dbos.DBOS.start_workflow", return_value=mock_handle):
                         with patch("sys.exit") as mock_exit:
                             run_workflow_worker(workflow_name, workflow_args_json, priority=10)
 
@@ -287,14 +279,12 @@ class TestWorkerStatusPolling:
         mock_dbos = MagicMock()
         mock_get_dbos.return_value = mock_dbos
 
-        mock_queue = MagicMock()
         mock_handle = MagicMock()
 
         mock_status_pending = Mock()
         mock_status_pending.status = "PENDING"  # Never completes
 
         mock_handle.get_status.return_value = mock_status_pending
-        mock_queue.enqueue.return_value = mock_handle
 
         workflow_name = "map_url_workflow"
         workflow_args_json = json.dumps({"url": "https://example.com"})
@@ -303,7 +293,7 @@ class TestWorkerStatusPolling:
         with patch("time.time", side_effect=[0, 300, 601]):  # Start, middle, timeout
             with patch("time.sleep"):
                 with patch("kurt.content.map.workflow.map_url_workflow"):
-                    with patch("kurt.content.map.workflow.get_map_queue", return_value=mock_queue):
+                    with patch("dbos.DBOS.start_workflow", return_value=mock_handle):
                         with patch("sys.exit") as mock_exit:
                             run_workflow_worker(workflow_name, workflow_args_json, priority=10)
 
@@ -328,22 +318,20 @@ class TestWorkerWorkflowSelection:
         mock_dbos = MagicMock()
         mock_get_dbos.return_value = mock_dbos
 
-        mock_queue = MagicMock()
         mock_handle = MagicMock()
         mock_handle.get_status.return_value.status = "SUCCESS"
-        mock_queue.enqueue.return_value = mock_handle
 
         with patch("time.time", side_effect=[0, 100, 200]):
             with patch("time.sleep"):
                 with patch("kurt.content.map.workflow.map_url_workflow"):
-                    with patch("kurt.content.map.workflow.get_map_queue", return_value=mock_queue):
+                    with patch("dbos.DBOS.start_workflow", return_value=mock_handle) as mock_start:
                         with patch("sys.exit"):
                             run_workflow_worker(
                                 "map_url_workflow", json.dumps({"url": "https://example.com"})
                             )
 
-        # Verify queue.enqueue was called
-        assert mock_queue.enqueue.called
+        # Verify DBOS.start_workflow was called
+        assert mock_start.called
 
     def test_exits_on_unknown_workflow(self):
         """Worker should exit with code 1 for unknown workflow name."""

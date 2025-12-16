@@ -10,6 +10,7 @@ from kurt.config.base import (
     create_config,
     get_config_file_path,
     get_config_or_default,
+    get_step_config,
     load_config,
     update_config,
     validate_config,
@@ -683,3 +684,246 @@ class TestValidateConfig:
         # Should complain about empty model
         assert len(issues) > 0
         assert any("empty" in issue.lower() for issue in issues)
+
+
+class TestDotNotationConfig:
+    """Test dot notation for module-specific configuration."""
+
+    def test_load_config_with_dot_notation(self, tmp_project):
+        """Test loading config with dot notation keys."""
+        config_file = get_config_file_path()
+
+        # Add dot notation keys
+        with open(config_file, "a") as f:
+            f.write('\nINDEXING.SECTION_EXTRACTIONS.LLM_MODEL="anthropic/claude-3-5-sonnet"\n')
+            f.write("INDEXING.ENTITY_CLUSTERING.EPS=0.25\n")
+            f.write("INDEXING.ENTITY_CLUSTERING.MIN_SAMPLES=2\n")
+
+        config = load_config()
+
+        # Dot notation keys should be in __pydantic_extra__
+        assert "INDEXING.SECTION_EXTRACTIONS.LLM_MODEL" in config.__pydantic_extra__
+        assert (
+            config.__pydantic_extra__["INDEXING.SECTION_EXTRACTIONS.LLM_MODEL"]
+            == "anthropic/claude-3-5-sonnet"
+        )
+        assert config.__pydantic_extra__["INDEXING.ENTITY_CLUSTERING.EPS"] == "0.25"
+        assert config.__pydantic_extra__["INDEXING.ENTITY_CLUSTERING.MIN_SAMPLES"] == "2"
+
+    def test_load_config_mixed_notation(self, tmp_project):
+        """Test loading config with both dot notation and underscore notation."""
+        config_file = get_config_file_path()
+
+        # Add both types
+        with open(config_file, "a") as f:
+            f.write('\nINDEXING.SECTION_EXTRACTIONS.LLM_MODEL="anthropic/claude-3-5-sonnet"\n')
+            f.write('ANALYTICS_POSTHOG_API_KEY="phx_test123"\n')
+
+        config = load_config()
+
+        # Both should be accessible
+        assert "INDEXING.SECTION_EXTRACTIONS.LLM_MODEL" in config.__pydantic_extra__
+        assert "ANALYTICS_POSTHOG_API_KEY" in config.__pydantic_extra__
+
+    def test_get_step_config_returns_step_specific(self, tmp_project):
+        """Test get_step_config returns step-specific value when set."""
+        config_file = get_config_file_path()
+
+        with open(config_file, "a") as f:
+            f.write('\nINDEXING.SECTION_EXTRACTIONS.LLM_MODEL="anthropic/claude-3-5-sonnet"\n')
+
+        config = load_config()
+
+        result = get_step_config(
+            config,
+            "INDEXING",
+            "SECTION_EXTRACTIONS",
+            "LLM_MODEL",
+            fallback_key="INDEXING_LLM_MODEL",
+            default="default/model",
+        )
+
+        assert result == "anthropic/claude-3-5-sonnet"
+
+    def test_get_step_config_falls_back_to_global(self, tmp_project):
+        """Test get_step_config falls back to global config when step-specific not set."""
+        config = load_config()
+
+        # No step-specific set, should use INDEXING_LLM_MODEL from config
+        result = get_step_config(
+            config,
+            "INDEXING",
+            "SECTION_EXTRACTIONS",
+            "LLM_MODEL",
+            fallback_key="INDEXING_LLM_MODEL",
+            default="default/model",
+        )
+
+        # Should return the global INDEXING_LLM_MODEL value
+        assert result == config.INDEXING_LLM_MODEL
+
+    def test_get_step_config_falls_back_to_default(self, tmp_project):
+        """Test get_step_config falls back to default when nothing set."""
+        config = load_config()
+
+        result = get_step_config(
+            config,
+            "INDEXING",
+            "SECTION_EXTRACTIONS",
+            "CUSTOM_PARAM",
+            fallback_key=None,  # No fallback
+            default="my_default",
+        )
+
+        assert result == "my_default"
+
+    def test_get_step_config_numeric_value(self, tmp_project):
+        """Test get_step_config with numeric values."""
+        config_file = get_config_file_path()
+
+        with open(config_file, "a") as f:
+            f.write("INDEXING.ENTITY_CLUSTERING.EPS=0.25\n")
+
+        config = load_config()
+
+        result = get_step_config(
+            config,
+            "INDEXING",
+            "ENTITY_CLUSTERING",
+            "EPS",
+            default=0.5,
+        )
+
+        # Note: value is loaded as string from config file
+        assert result == "0.25"
+
+    def test_update_config_preserves_dot_notation(self, tmp_project):
+        """Test that update_config preserves dot notation keys."""
+        config_file = get_config_file_path()
+
+        # Add dot notation keys
+        with open(config_file, "a") as f:
+            f.write('\nINDEXING.SECTION_EXTRACTIONS.LLM_MODEL="anthropic/claude-3-5-sonnet"\n')
+            f.write("INDEXING.ENTITY_CLUSTERING.EPS=0.25\n")
+
+        # Load, modify, and save
+        config = load_config()
+        config.PATH_DB = ".data/updated.db"
+        update_config(config)
+
+        # Reload and verify dot notation preserved
+        config = load_config()
+        assert config.PATH_DB == ".data/updated.db"
+        assert "INDEXING.SECTION_EXTRACTIONS.LLM_MODEL" in config.__pydantic_extra__
+        assert (
+            config.__pydantic_extra__["INDEXING.SECTION_EXTRACTIONS.LLM_MODEL"]
+            == "anthropic/claude-3-5-sonnet"
+        )
+
+    def test_update_config_groups_dot_notation(self, tmp_project):
+        """Test that update_config groups dot notation by module.step."""
+        config = load_config()
+
+        # Add multiple dot notation keys
+        config.__pydantic_extra__["INDEXING.SECTION_EXTRACTIONS.LLM_MODEL"] = (
+            "anthropic/claude-3-5-sonnet"
+        )
+        config.__pydantic_extra__["INDEXING.SECTION_EXTRACTIONS.BATCH_SIZE"] = 10
+        config.__pydantic_extra__["INDEXING.ENTITY_CLUSTERING.EPS"] = 0.25
+        config.__pydantic_extra__["FETCH.TRAFILATURA.TIMEOUT"] = 30
+
+        update_config(config)
+
+        # Verify file structure
+        content = get_config_file_path().read_text()
+
+        # Should have module-specific header
+        assert "# Module-Specific Configurations" in content
+
+        # Should group by MODULE.STEP
+        assert "# FETCH.TRAFILATURA" in content
+        assert "# INDEXING.ENTITY_CLUSTERING" in content
+        assert "# INDEXING.SECTION_EXTRACTIONS" in content
+
+    def test_update_config_separates_dot_and_underscore(self, tmp_project):
+        """Test that update_config separates dot notation from underscore notation."""
+        config = load_config()
+
+        # Add both types
+        config.__pydantic_extra__["INDEXING.SECTION_EXTRACTIONS.LLM_MODEL"] = (
+            "anthropic/claude-3-5-sonnet"
+        )
+        config.__pydantic_extra__["ANALYTICS_POSTHOG_API_KEY"] = "phx_test123"
+
+        update_config(config)
+
+        # Verify file structure
+        content = get_config_file_path().read_text()
+
+        # Should have both sections
+        assert "# Module-Specific Configurations" in content
+        assert "# Analytics Provider Configurations" in content
+
+        # Dot notation should be in module section
+        module_section_start = content.find("# Module-Specific")
+        analytics_section_start = content.find("# Analytics Provider")
+
+        dot_key_pos = content.find("INDEXING.SECTION_EXTRACTIONS.LLM_MODEL")
+        underscore_key_pos = content.find("ANALYTICS_POSTHOG_API_KEY")
+
+        # Dot key should be between module header and analytics header
+        assert module_section_start < dot_key_pos < analytics_section_start
+        # Underscore key should be after analytics header
+        assert analytics_section_start < underscore_key_pos
+
+    def test_backwards_compatibility_existing_config(self, tmp_project):
+        """Test that existing configs without dot notation still work."""
+        # tmp_project already creates a basic config
+        config = load_config()
+
+        # All standard fields should work
+        assert config.PATH_DB == ".kurt/kurt.sqlite"
+        assert config.INDEXING_LLM_MODEL == "openai/gpt-4o-mini"
+
+        # get_step_config should fall back correctly
+        result = get_step_config(
+            config,
+            "INDEXING",
+            "SECTION_EXTRACTIONS",
+            "LLM_MODEL",
+            fallback_key="INDEXING_LLM_MODEL",
+        )
+        assert result == "openai/gpt-4o-mini"
+
+    def test_dot_notation_with_fetch_module(self, tmp_project):
+        """Test dot notation for FETCH module configs."""
+        config_file = get_config_file_path()
+
+        with open(config_file, "a") as f:
+            f.write("FETCH.TRAFILATURA.INCLUDE_IMAGES=false\n")
+            f.write("FETCH.TRAFILATURA.FAVOR_PRECISION=true\n")
+            f.write('FETCH.FIRECRAWL.API_KEY="fc-xxx"\n')
+
+        config = load_config()
+
+        assert config.__pydantic_extra__["FETCH.TRAFILATURA.INCLUDE_IMAGES"] == "false"
+        assert config.__pydantic_extra__["FETCH.TRAFILATURA.FAVOR_PRECISION"] == "true"
+        assert config.__pydantic_extra__["FETCH.FIRECRAWL.API_KEY"] == "fc-xxx"
+
+    def test_get_step_config_fallback_in_extra(self, tmp_project):
+        """Test get_step_config can use fallback from __pydantic_extra__."""
+        config = load_config()
+
+        # Set a custom global fallback in extra
+        config.__pydantic_extra__["CUSTOM_GLOBAL_SETTING"] = "custom_value"
+
+        result = get_step_config(
+            config,
+            "MODULE",
+            "STEP",
+            "PARAM",
+            fallback_key="CUSTOM_GLOBAL_SETTING",
+            default="default",
+        )
+
+        assert result == "custom_value"

@@ -65,7 +65,9 @@ def test_all_commands_registered(runner):
         "admin",
         "content",
         "integrations",
+        "show",
         "status",
+        "update",
         "workflows",
     ]
     for cmd in expected_commands:
@@ -87,6 +89,19 @@ def test_all_commands_registered(runner):
         ],
         "integrations": ["analytics", "cms", "research"],
         "admin": ["feedback", "migrate", "telemetry", "project"],
+        "show": [
+            "format-templates",
+            "source-gathering",
+            "project-workflow",
+            "source-workflow",
+            "template-workflow",
+            "profile-workflow",
+            "plan-template-workflow",
+            "feedback-workflow",
+            "discovery-methods",
+            "cms-setup",
+            "analytics-setup",
+        ],
     }
 
     for group, subcommands in command_groups.items():
@@ -97,7 +112,7 @@ def test_all_commands_registered(runner):
             assert subcmd in result.output, f"Subcommand '{group} {subcmd}' not found in help"
 
     # Test standalone commands
-    standalone_commands = ["status"]
+    standalone_commands = ["status", "update"]
     for cmd in standalone_commands:
         result = runner.invoke(main, [cmd, "--help"])
         assert result.exit_code == 0, f"Command '{cmd}' help failed: {result.output}"
