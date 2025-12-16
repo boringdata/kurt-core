@@ -234,8 +234,9 @@ class TestResolveWithLLMStep:
         mock_output = GroupResolution(
             resolutions=[
                 EntityResolution(
-                    entity_name="Python",
-                    resolution_decision="CREATE_NEW",
+                    entity_index=0,
+                    decision_type="CREATE_NEW",
+                    target_index=None,
                     canonical_name="Python",
                     aliases=["Python"],
                     reasoning="New entity",
@@ -376,8 +377,9 @@ class TestCompleteEntityResolutionWorkflow:
             mock_resolution = GroupResolution(
                 resolutions=[
                     EntityResolution(
-                        entity_name="Python",
-                        resolution_decision="CREATE_NEW",
+                        entity_index=0,
+                        decision_type="CREATE_NEW",
+                        target_index=None,
                         canonical_name="Python",
                         aliases=["Python"],
                         reasoning="Create new entity",
@@ -437,15 +439,17 @@ class TestCompleteEntityResolutionWorkflow:
             mock_resolution = GroupResolution(
                 resolutions=[
                     EntityResolution(
-                        entity_name="Python",
-                        resolution_decision="CREATE_NEW",
+                        entity_index=0,
+                        decision_type="CREATE_NEW",
+                        target_index=None,
                         canonical_name="Python",
                         aliases=["Python"],
                         reasoning="Create new entity",
                     ),
                     EntityResolution(
-                        entity_name="React",
-                        resolution_decision="CREATE_NEW",
+                        entity_index=1,
+                        decision_type="CREATE_NEW",
+                        target_index=None,
                         canonical_name="React",
                         aliases=["React"],
                         reasoning="Create new entity",
@@ -518,15 +522,17 @@ class TestCompleteEntityResolutionWorkflow:
             mock_resolution = GroupResolution(
                 resolutions=[
                     EntityResolution(
-                        entity_name="Python",
-                        resolution_decision="CREATE_NEW",
+                        entity_index=0,
+                        decision_type="CREATE_NEW",
+                        target_index=None,
                         canonical_name="Python",
                         aliases=["Python"],
                         reasoning="Create new entity",
                     ),
                     EntityResolution(
-                        entity_name="Django",
-                        resolution_decision="CREATE_NEW",
+                        entity_index=1,
+                        decision_type="CREATE_NEW",
+                        target_index=None,
                         canonical_name="Django",
                         aliases=["Django"],
                         reasoning="Create new entity",
@@ -594,19 +600,21 @@ class TestCompleteEntityResolutionWorkflow:
         try:
             doc_id = uuid4()
 
-            # Mock LLM resolution - merge Python Lang into Python
+            # Mock LLM resolution - merge Python Lang into Python using index
             mock_resolution = GroupResolution(
                 resolutions=[
                     EntityResolution(
-                        entity_name="Python",
-                        resolution_decision="CREATE_NEW",
+                        entity_index=0,
+                        decision_type="CREATE_NEW",
+                        target_index=None,
                         canonical_name="Python",
                         aliases=["Python"],
                         reasoning="Create canonical entity",
                     ),
                     EntityResolution(
-                        entity_name="Python Lang",
-                        resolution_decision="MERGE_WITH:Python",
+                        entity_index=1,
+                        decision_type="MERGE_WITH_PEER",
+                        target_index=0,  # Merge with Python at index 0
                         canonical_name="Python",
                         aliases=["Python Lang"],
                         reasoning="Merge duplicate",

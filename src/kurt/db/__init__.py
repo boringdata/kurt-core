@@ -30,6 +30,7 @@ from kurt.db.database import (
     get_async_session_maker,
     get_session,
     init_database,
+    managed_session,
 )
 from kurt.db.models import (
     ContentType,
@@ -45,6 +46,7 @@ __all__ = [
     "get_database_client",
     "get_session",
     "init_database",
+    "managed_session",
     "async_session_scope",
     "dispose_async_resources",
     "get_async_session_maker",

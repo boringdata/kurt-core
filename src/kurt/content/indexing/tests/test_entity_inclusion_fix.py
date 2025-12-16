@@ -10,7 +10,6 @@ import pytest
 
 from kurt.content.indexing.extract import extract_document_metadata
 from kurt.content.indexing.models import (
-from kurt.db.models import ResolutionStatus
     ClaimExtraction,
     DocumentMetadataOutput,
     EntityExtraction,
@@ -18,6 +17,7 @@ from kurt.db.models import ResolutionStatus
     RelationshipExtraction,
     RelationshipType,
 )
+from kurt.db.models import ResolutionStatus
 
 
 class TestEntityInclusionFix:
@@ -72,7 +72,7 @@ analytics engine while MotherDuck adds cloud capabilities.
             extracted_title="MotherDuck - Cloud Data Warehouse",
             has_code_examples=False,
             has_step_by_step_procedures=False,
-            has_narrative_structure=True
+            has_narrative_structure=True,
         )
 
         # Mock entities - CRITICAL: Include both EXISTING (MotherDuck, DuckDB) and NEW entities
@@ -85,7 +85,7 @@ analytics engine while MotherDuck adds cloud capabilities.
                 confidence=0.95,
                 resolution_status=ResolutionStatus.EXISTING.value,
                 matched_entity_index=0,  # Matches first existing entity
-                quote="MotherDuck is a cloud data warehouse"
+                quote="MotherDuck is a cloud data warehouse",
             ),
             EntityExtraction(
                 name="DuckDB",
@@ -95,7 +95,7 @@ analytics engine while MotherDuck adds cloud capabilities.
                 confidence=0.95,
                 resolution_status=ResolutionStatus.EXISTING.value,
                 matched_entity_index=1,  # Matches second existing entity
-                quote="powered by DuckDB"
+                quote="powered by DuckDB",
             ),
             EntityExtraction(
                 name="cloud data warehouse",
@@ -105,7 +105,7 @@ analytics engine while MotherDuck adds cloud capabilities.
                 confidence=0.85,
                 resolution_status=ResolutionStatus.NEW.value,
                 matched_entity_index=None,
-                quote="MotherDuck is a cloud data warehouse"
+                quote="MotherDuck is a cloud data warehouse",
             ),
             EntityExtraction(
                 name="fast analytical queries",
@@ -115,7 +115,7 @@ analytics engine while MotherDuck adds cloud capabilities.
                 confidence=0.80,
                 resolution_status=ResolutionStatus.NEW.value,
                 matched_entity_index=None,
-                quote="enables fast analytical queries"
+                quote="enables fast analytical queries",
             ),
         ]
 
@@ -126,14 +126,14 @@ analytics engine while MotherDuck adds cloud capabilities.
                 target_entity="DuckDB",
                 relationship_type=RelationshipType.INTEGRATES_WITH,
                 context="MotherDuck is powered by DuckDB",
-                confidence=0.9
+                confidence=0.9,
             ),
             RelationshipExtraction(
                 source_entity="MotherDuck",
                 target_entity="cloud data warehouse",
                 relationship_type=RelationshipType.ENABLES,
                 context="MotherDuck is a cloud data warehouse",
-                confidence=0.85
+                confidence=0.85,
             ),
         ]
 
@@ -146,7 +146,7 @@ analytics engine while MotherDuck adds cloud capabilities.
                 source_quote="MotherDuck is a cloud data warehouse powered by DuckDB",
                 quote_start_offset=0,
                 quote_end_offset=55,
-                confidence=0.95
+                confidence=0.95,
             ),
             ClaimExtraction(
                 statement="DuckDB provides fast analytical queries",
@@ -155,16 +155,16 @@ analytics engine while MotherDuck adds cloud capabilities.
                 source_quote="DuckDB provides the core analytics engine",
                 quote_start_offset=100,
                 quote_end_offset=142,
-                confidence=0.90
+                confidence=0.90,
             ),
         ]
 
         return mock_result
 
-    @patch('dspy.ChainOfThought')
-    @patch('kurt.content.indexing.extract.get_top_entities')
-    @patch('kurt.content.indexing.extract.get_session')
-    @patch('kurt.content.indexing.extract.load_document_content')
+    @patch("dspy.ChainOfThought")
+    @patch("kurt.content.indexing.extract.get_top_entities")
+    @patch("kurt.content.indexing.extract.get_session")
+    @patch("kurt.content.indexing.extract.load_document_content")
     def test_all_entities_included_in_result(
         self,
         mock_load_content,
@@ -173,7 +173,7 @@ analytics engine while MotherDuck adds cloud capabilities.
         mock_chain,
         sample_document_content,
         existing_entities_in_db,
-        mock_dspy_extraction_result
+        mock_dspy_extraction_result,
     ):
         """Test that both EXISTING and NEW entities are included in the extraction result."""
         # Setup mocks
@@ -207,35 +207,43 @@ analytics engine while MotherDuck adds cloud capabilities.
 
         # CRITICAL ASSERTIONS
         # 1. Check that entities list contains ALL extracted entities
-        entity_names = [e['name'] for e in result['entities']]
+        entity_names = [e["name"] for e in result["entities"]]
 
         assert "MotherDuck" in entity_names, "MotherDuck (EXISTING) should be in entities list"
         assert "DuckDB" in entity_names, "DuckDB (EXISTING) should be in entities list"
-        assert "cloud data warehouse" in entity_names, "cloud data warehouse (NEW) should be in entities list"
-        assert "fast analytical queries" in entity_names, "fast analytical queries (NEW) should be in entities list"
+        assert (
+            "cloud data warehouse" in entity_names
+        ), "cloud data warehouse (NEW) should be in entities list"
+        assert (
+            "fast analytical queries" in entity_names
+        ), "fast analytical queries (NEW) should be in entities list"
 
         # 2. Verify the count
-        assert len(result['entities']) == 4, f"Should have 4 entities total, got {len(result['entities'])}"
+        assert (
+            len(result["entities"]) == 4
+        ), f"Should have 4 entities total, got {len(result['entities'])}"
 
         # 3. Check kg_data separation is still correct
-        assert len(result['kg_data']['existing_entities']) == 2, "Should have 2 existing entity UUIDs"
-        assert len(result['kg_data']['new_entities']) == 2, "Should have 2 new entities to create"
+        assert (
+            len(result["kg_data"]["existing_entities"]) == 2
+        ), "Should have 2 existing entity UUIDs"
+        assert len(result["kg_data"]["new_entities"]) == 2, "Should have 2 new entities to create"
 
         # 4. Verify existing entity UUIDs are captured
-        assert "uuid-motherduck-123" in result['kg_data']['existing_entities']
-        assert "uuid-duckdb-456" in result['kg_data']['existing_entities']
+        assert "uuid-motherduck-123" in result["kg_data"]["existing_entities"]
+        assert "uuid-duckdb-456" in result["kg_data"]["existing_entities"]
 
         # 5. Verify new entities are in kg_data
-        new_entity_names = [e['name'] for e in result['kg_data']['new_entities']]
+        new_entity_names = [e["name"] for e in result["kg_data"]["new_entities"]]
         assert "cloud data warehouse" in new_entity_names
         assert "fast analytical queries" in new_entity_names
 
         # 6. Verify claims can reference all entities
-        if 'claims_data' in result and 'extracted_claims' in result['claims_data']:
+        if "claims_data" in result and "extracted_claims" in result["claims_data"]:
             # Claims should be able to reference any of the 4 entities
-            for claim in result['claims_data']['extracted_claims']:
+            for claim in result["claims_data"]["extracted_claims"]:
                 # Check that entity indices are valid
-                for idx in claim.get('entity_indices', []):
+                for idx in claim.get("entity_indices", []):
                     assert 0 <= idx < 4, f"Entity index {idx} out of range for 4 entities"
 
     def test_bug_scenario_existing_entities_missing(self):

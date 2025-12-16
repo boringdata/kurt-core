@@ -125,6 +125,51 @@ def get_document_entities(
         return [(name, etype) for name, etype in results if name and etype]
 
 
+def get_documents_entities(
+    document_ids: list[Union[UUID, str]],
+    session: Optional[Session] = None,
+) -> list[Entity]:
+    """Get all entities associated with multiple documents.
+
+    Args:
+        document_ids: List of document IDs (as UUIDs or strings)
+        session: SQLModel session (optional)
+
+    Returns:
+        List of Entity objects linked to any of the specified documents
+    """
+    if not document_ids:
+        return []
+
+    if session is None:
+        session = get_session()
+
+    # Convert string IDs to UUIDs if needed
+    doc_uuids = []
+    for doc_id in document_ids:
+        if isinstance(doc_id, str):
+            try:
+                doc_uuids.append(UUID(doc_id))
+            except ValueError:
+                logger.warning(f"Invalid document ID format: {doc_id}")
+                continue
+        else:
+            doc_uuids.append(doc_id)
+
+    if not doc_uuids:
+        return []
+
+    # Query entities linked to these documents via DocumentEntity
+    query = (
+        select(Entity)
+        .join(DocumentEntity)
+        .where(DocumentEntity.document_id.in_(doc_uuids))
+        .distinct()
+    )
+
+    return list(session.exec(query).all())
+
+
 def get_top_entities(limit: int = 100, session: Optional[Session] = None) -> list[dict]:
     """Get top entities by source mentions."""
     if session is None:

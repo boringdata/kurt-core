@@ -3,21 +3,23 @@
 import json
 from datetime import datetime
 from unittest.mock import MagicMock, patch
-import pandas as pd
 
 import dspy
+import pandas as pd
 import pytest
 
+from kurt.content.filtering import DocumentFilters
+from kurt.content.indexing_new.framework import PipelineContext
+from kurt.content.indexing_new.framework.dspy_helpers import DSPyResult
 from kurt.content.indexing_new.models.step_extract_sections import (
-    SectionExtractionRow,
-    section_extractions,
     ClaimExtraction,
     DocumentMetadataOutput,
     EntityExtraction,
-    RelationshipExtraction,
     IndexDocument,
+    RelationshipExtraction,
+    SectionExtractionRow,
+    section_extractions,
 )
-from kurt.content.indexing_new.framework.dspy_helpers import DSPyResult
 from kurt.db.models import ContentType, EntityType, RelationshipType
 
 
@@ -33,7 +35,7 @@ class TestPydanticModels:
             source_quote="Python is a high-level programming language",
             quote_start_offset=100,
             quote_end_offset=145,
-            confidence=0.95
+            confidence=0.95,
         )
 
         assert claim.statement == "Python is a high-level programming language"
@@ -49,7 +51,7 @@ class TestPydanticModels:
             aliases=["Python3", "CPython"],
             confidence=0.9,
             resolution_status="NEW",
-            quote="Python is widely used"
+            quote="Python is widely used",
         )
 
         assert entity.name == "Python"
@@ -64,7 +66,7 @@ class TestPydanticModels:
             target_entity="Machine Learning",
             relationship_type=RelationshipType.USES,
             context="Python is commonly used for machine learning",
-            confidence=0.85
+            confidence=0.85,
         )
 
         assert rel.source_entity == "Python"
@@ -77,7 +79,7 @@ class TestPydanticModels:
             content_type=ContentType.TUTORIAL,
             has_code_examples=True,
             has_step_by_step_procedures=False,
-            has_narrative_structure=True
+            has_narrative_structure=True,
         )
 
         assert metadata.content_type == ContentType.TUTORIAL
@@ -102,22 +104,48 @@ class TestDSPySignature:
 class TestSectionExtractionsWithOverlap:
     """Test extraction with overlapping sections."""
 
+    @pytest.fixture
+    def mock_ctx(self):
+        """Create a mock PipelineContext."""
+        return PipelineContext(
+            filters=DocumentFilters(),
+            workflow_id="test-workflow",
+            incremental_mode="full",
+        )
+
+    def _create_mock_reference(self, sections_df: pd.DataFrame):
+        """Create a mock Reference that returns the sections DataFrame."""
+        mock_ref = MagicMock()
+        mock_ref.df = sections_df
+        return mock_ref
+
     @patch("kurt.config.load_config")
     @patch("kurt.content.indexing_new.models.step_extract_sections.run_batch_sync")
-    @patch("kurt.content.indexing_new.models.step_extract_sections._load_existing_entities")
-    def test_extraction_with_overlap_sections(self, mock_load_entities, mock_run_batch, mock_load_config):
+    @patch(
+        "kurt.content.indexing_new.models.step_extract_sections._load_existing_entities_by_document"
+    )
+    def test_extraction_with_overlap_sections(
+        self, mock_load_entities, mock_run_batch, mock_load_config, mock_ctx
+    ):
         """Test extraction from sections with overlap prefix/suffix."""
 
-        # Mock existing entities
-        mock_load_entities.return_value = [
-            {"id": "entity1", "name": "Django", "type": "Technology", "description": "Web framework"}
-        ]
+        # Mock existing entities - now returns dict mapping doc_id -> entities
+        mock_load_entities.return_value = {
+            "doc789": [
+                {
+                    "index": 0,
+                    "id": "entity1",
+                    "name": "Django",
+                    "type": "Technology",
+                    "description": "Web framework",
+                }
+            ]
+        }
 
         # Create mock extraction results
         mock_result = MagicMock()
         mock_result.metadata = DocumentMetadataOutput(
-            content_type=ContentType.REFERENCE,
-            has_code_examples=True
+            content_type=ContentType.REFERENCE, has_code_examples=True
         )
         mock_result.entities = [
             EntityExtraction(
@@ -125,7 +153,7 @@ class TestSectionExtractionsWithOverlap:
                 entity_type=EntityType.TECHNOLOGY,
                 description="Modern web API framework",
                 confidence=0.95,
-                resolution_status="NEW"
+                resolution_status="NEW",
             )
         ]
         mock_result.relationships = []
@@ -140,30 +168,33 @@ class TestSectionExtractionsWithOverlap:
                     "tokens_prompt": 500,
                     "tokens_completion": 300,
                     "model_name": "claude-3",
-                    "execution_time": 1.5
-                }
+                    "execution_time": 1.5,
+                },
             )
         ]
 
-        # Create sources dict with sections DataFrame
-        sections_df = pd.DataFrame([
-            {
-                "document_id": "doc789",
-                "section_id": "sec789",
-                "section_number": 2,
-                "section_heading": "API Development",
-                "content": "Main section content about FastAPI",
-                "overlap_prefix": "prefix from previous section",
-                "overlap_suffix": "suffix for next section",
-            }
-        ])
-        sources = {"sections": sections_df}
+        # Create sections DataFrame
+        sections_df = pd.DataFrame(
+            [
+                {
+                    "document_id": "doc789",
+                    "section_id": "sec789",
+                    "section_number": 2,
+                    "section_heading": "API Development",
+                    "content": "Main section content about FastAPI",
+                    "overlap_prefix": "prefix from previous section",
+                    "overlap_suffix": "suffix for next section",
+                }
+            ]
+        )
 
+        mock_sections = self._create_mock_reference(sections_df)
         mock_writer = MagicMock()
         mock_writer.write.return_value = {"rows_written": 1}
 
         result = section_extractions(
-            sources=sources,
+            ctx=mock_ctx,
+            sections=mock_sections,
             writer=mock_writer,
         )
 
@@ -183,14 +214,33 @@ class TestSectionExtractionsWithOverlap:
 class TestBatchProcessing:
     """Test batch processing of multiple sections."""
 
+    @pytest.fixture
+    def mock_ctx(self):
+        """Create a mock PipelineContext."""
+        return PipelineContext(
+            filters=DocumentFilters(),
+            workflow_id="test-workflow",
+            incremental_mode="full",
+        )
+
+    def _create_mock_reference(self, sections_df: pd.DataFrame):
+        """Create a mock Reference that returns the sections DataFrame."""
+        mock_ref = MagicMock()
+        mock_ref.df = sections_df
+        return mock_ref
+
     @patch("kurt.config.load_config")
     @patch("kurt.content.indexing_new.models.step_extract_sections.run_batch_sync")
-    @patch("kurt.content.indexing_new.models.step_extract_sections._load_existing_entities")
-    def test_multiple_sections_batch(self, mock_load_entities, mock_run_batch, mock_load_config):
+    @patch(
+        "kurt.content.indexing_new.models.step_extract_sections._load_existing_entities_by_document"
+    )
+    def test_multiple_sections_batch(
+        self, mock_load_entities, mock_run_batch, mock_load_config, mock_ctx
+    ):
         """Test processing multiple sections in batch."""
 
-        # Mock existing entities - empty list
-        mock_load_entities.return_value = []
+        # Mock existing entities - empty dict (no entities for any doc)
+        mock_load_entities.return_value = {}
 
         # Create multiple mock results
         results = []
@@ -201,37 +251,42 @@ class TestBatchProcessing:
             mock_result.relationships = []
             mock_result.claims = [{"statement": f"Claim {i}"}]
 
-            results.append(DSPyResult(
-                payload={},
-                result=mock_result,
-                error=None,
-                telemetry={
-                    "tokens_prompt": 100 + i*10,
-                    "tokens_completion": 200 + i*10,
-                    "model_name": "gpt-4",
-                    "execution_time": 1.0 + i*0.5
-                }
-            ))
+            results.append(
+                DSPyResult(
+                    payload={},
+                    result=mock_result,
+                    error=None,
+                    telemetry={
+                        "tokens_prompt": 100 + i * 10,
+                        "tokens_completion": 200 + i * 10,
+                        "model_name": "gpt-4",
+                        "execution_time": 1.0 + i * 0.5,
+                    },
+                )
+            )
 
         mock_run_batch.return_value = results
 
-        # Create sources dict with sections DataFrame
-        sections_df = pd.DataFrame([
-            {
-                "document_id": f"doc{i}",
-                "section_id": f"sec{i}",
-                "section_number": i+1,
-                "content": f"Content {i}"
-            }
-            for i in range(3)
-        ])
-        sources = {"sections": sections_df}
+        # Create sections DataFrame
+        sections_df = pd.DataFrame(
+            [
+                {
+                    "document_id": f"doc{i}",
+                    "section_id": f"sec{i}",
+                    "section_number": i + 1,
+                    "content": f"Content {i}",
+                }
+                for i in range(3)
+            ]
+        )
 
+        mock_sections = self._create_mock_reference(sections_df)
         mock_writer = MagicMock()
         mock_writer.write.return_value = {"rows_written": 3}
 
         result = section_extractions(
-            sources=sources,
+            ctx=mock_ctx,
+            sections=mock_sections,
             writer=mock_writer,
         )
 
@@ -244,48 +299,81 @@ class TestBatchProcessing:
         for i, row in enumerate(rows):
             assert row.document_id == f"doc{i}"
             assert row.section_id == f"sec{i}"
-            assert row.tokens_prompt == 100 + i*10
-            assert row.extraction_time_ms == int((1.0 + i*0.5) * 1000)
+            assert row.tokens_prompt == 100 + i * 10
+            assert row.extraction_time_ms == int((1.0 + i * 0.5) * 1000)
 
 
 class TestExistingEntitiesHandling:
     """Test handling of existing entities context."""
 
+    @pytest.fixture
+    def mock_ctx(self):
+        """Create a mock PipelineContext."""
+        return PipelineContext(
+            filters=DocumentFilters(),
+            workflow_id="test-workflow",
+            incremental_mode="full",
+        )
+
+    def _create_mock_reference(self, sections_df: pd.DataFrame):
+        """Create a mock Reference that returns the sections DataFrame."""
+        mock_ref = MagicMock()
+        mock_ref.df = sections_df
+        return mock_ref
+
     @patch("kurt.config.load_config")
     @patch("kurt.content.indexing_new.models.step_extract_sections.run_batch_sync")
-    @patch("kurt.content.indexing_new.models.step_extract_sections._load_existing_entities")
-    def test_existing_entities_passed_to_dspy(self, mock_load_entities, mock_run_batch, mock_load_config):
+    @patch(
+        "kurt.content.indexing_new.models.step_extract_sections._load_existing_entities_by_document"
+    )
+    def test_existing_entities_passed_to_dspy(
+        self, mock_load_entities, mock_run_batch, mock_load_config, mock_ctx
+    ):
         """Test that existing entities are properly formatted and passed."""
 
-        # Mock existing entities
-        mock_load_entities.return_value = [
-            {"id": "1", "name": "Django", "type": "Technology", "description": "Web framework"},
-            {"id": "2", "name": "Flask", "type": "Technology", "description": "Micro framework"},
-        ]
+        # Mock existing entities - dict mapping doc_id -> entities
+        mock_load_entities.return_value = {
+            "doc1": [
+                {
+                    "index": 0,
+                    "id": "1",
+                    "name": "Django",
+                    "type": "Technology",
+                    "description": "Web framework",
+                },
+                {
+                    "index": 1,
+                    "id": "2",
+                    "name": "Flask",
+                    "type": "Technology",
+                    "description": "Micro framework",
+                },
+            ]
+        }
 
         mock_run_batch.return_value = [
             DSPyResult(
                 payload={},
                 result=MagicMock(
-                    metadata={"content_type": "tutorial"},
-                    entities=[],
-                    relationships=[],
-                    claims=[]
+                    metadata={"content_type": "tutorial"}, entities=[], relationships=[], claims=[]
                 ),
                 error=None,
-                telemetry={}
+                telemetry={},
             )
         ]
 
-        # Create sources dict with sections DataFrame
-        sections_df = pd.DataFrame([
-            {"document_id": "doc1", "section_id": "sec1", "section_number": 1, "content": "Test"}
-        ])
-        sources = {"sections": sections_df}
+        # Create sections DataFrame
+        sections_df = pd.DataFrame(
+            [{"document_id": "doc1", "section_id": "sec1", "section_number": 1, "content": "Test"}]
+        )
+
+        mock_sections = self._create_mock_reference(sections_df)
+        mock_writer = MagicMock(write=MagicMock(return_value={"rows_written": 1}))
 
         section_extractions(
-            sources=sources,
-            writer=MagicMock(write=MagicMock(return_value={"rows_written": 1})),
+            ctx=mock_ctx,
+            sections=mock_sections,
+            writer=mock_writer,
         )
 
         # Verify existing entities were passed to DSPy
@@ -302,61 +390,82 @@ class TestExistingEntitiesHandling:
 class TestErrorHandlingScenarios:
     """Test various error handling scenarios."""
 
+    @pytest.fixture
+    def mock_ctx(self):
+        """Create a mock PipelineContext."""
+        return PipelineContext(
+            filters=DocumentFilters(),
+            workflow_id="test-workflow",
+            incremental_mode="full",
+        )
+
+    def _create_mock_reference(self, sections_df: pd.DataFrame):
+        """Create a mock Reference that returns the sections DataFrame."""
+        mock_ref = MagicMock()
+        mock_ref.df = sections_df
+        return mock_ref
+
     @patch("kurt.config.load_config")
     @patch("kurt.content.indexing_new.models.step_extract_sections.run_batch_sync")
-    @patch("kurt.content.indexing_new.models.step_extract_sections._load_existing_entities")
-    def test_mixed_success_and_error(self, mock_load_entities, mock_run_batch, mock_load_config):
+    @patch(
+        "kurt.content.indexing_new.models.step_extract_sections._load_existing_entities_by_document"
+    )
+    def test_mixed_success_and_error(
+        self, mock_load_entities, mock_run_batch, mock_load_config, mock_ctx
+    ):
         """Test handling mix of successful and failed extractions."""
 
-        # Mock existing entities - empty list
-        mock_load_entities.return_value = []
+        # Mock existing entities - empty dict
+        mock_load_entities.return_value = {}
 
         mock_run_batch.return_value = [
             # Success
             DSPyResult(
                 payload={},
                 result=MagicMock(
-                    metadata={"content_type": "guide"},
-                    entities=[],
-                    relationships=[],
-                    claims=[]
+                    metadata={"content_type": "guide"}, entities=[], relationships=[], claims=[]
                 ),
                 error=None,
-                telemetry={"execution_time": 1.0}
+                telemetry={"execution_time": 1.0},
             ),
             # Error
             DSPyResult(
                 payload={},
                 result=None,
                 error=Exception("API rate limit"),
-                telemetry={"error": "API rate limit"}
+                telemetry={"error": "API rate limit"},
             ),
             # Success
             DSPyResult(
                 payload={},
                 result=MagicMock(
-                    metadata={"content_type": "tutorial"},
-                    entities=[],
-                    relationships=[],
-                    claims=[]
+                    metadata={"content_type": "tutorial"}, entities=[], relationships=[], claims=[]
                 ),
                 error=None,
-                telemetry={"execution_time": 2.0}
-            )
+                telemetry={"execution_time": 2.0},
+            ),
         ]
 
-        # Create sources dict with sections DataFrame
-        sections_df = pd.DataFrame([
-            {"document_id": f"doc{i}", "section_id": f"sec{i}", "section_number": i+1, "content": f"Content {i}"}
-            for i in range(3)
-        ])
-        sources = {"sections": sections_df}
+        # Create sections DataFrame
+        sections_df = pd.DataFrame(
+            [
+                {
+                    "document_id": f"doc{i}",
+                    "section_id": f"sec{i}",
+                    "section_number": i + 1,
+                    "content": f"Content {i}",
+                }
+                for i in range(3)
+            ]
+        )
 
+        mock_sections = self._create_mock_reference(sections_df)
         mock_writer = MagicMock()
         mock_writer.write.return_value = {"rows_written": 3}
 
         result = section_extractions(
-            sources=sources,
+            ctx=mock_ctx,
+            sections=mock_sections,
             writer=mock_writer,
         )
 
@@ -377,12 +486,16 @@ class TestErrorHandlingScenarios:
 
     @patch("kurt.config.load_config")
     @patch("kurt.content.indexing_new.models.step_extract_sections.run_batch_sync")
-    @patch("kurt.content.indexing_new.models.step_extract_sections._load_existing_entities")
-    def test_exception_during_processing(self, mock_load_entities, mock_run_batch, mock_load_config):
+    @patch(
+        "kurt.content.indexing_new.models.step_extract_sections._load_existing_entities_by_document"
+    )
+    def test_exception_during_processing(
+        self, mock_load_entities, mock_run_batch, mock_load_config, mock_ctx
+    ):
         """Test handling of exceptions during result processing."""
 
-        # Mock existing entities - empty list
-        mock_load_entities.return_value = []
+        # Mock existing entities - empty dict
+        mock_load_entities.return_value = {}
 
         # Create a result that will cause an exception during parsing
         mock_result = MagicMock()
@@ -393,25 +506,21 @@ class TestErrorHandlingScenarios:
         mock_result.claims = MagicMock()
 
         mock_run_batch.return_value = [
-            DSPyResult(
-                payload={},
-                result=mock_result,
-                error=None,
-                telemetry={}
-            )
+            DSPyResult(payload={}, result=mock_result, error=None, telemetry={})
         ]
 
-        # Create sources dict with sections DataFrame
-        sections_df = pd.DataFrame([
-            {"document_id": "doc1", "section_id": "sec1", "section_number": 1, "content": "Test"}
-        ])
-        sources = {"sections": sections_df}
+        # Create sections DataFrame
+        sections_df = pd.DataFrame(
+            [{"document_id": "doc1", "section_id": "sec1", "section_number": 1, "content": "Test"}]
+        )
 
+        mock_sections = self._create_mock_reference(sections_df)
         mock_writer = MagicMock()
         mock_writer.write.return_value = {"rows_written": 1}
 
         result = section_extractions(
-            sources=sources,
+            ctx=mock_ctx,
+            sections=mock_sections,
             writer=mock_writer,
         )
 
@@ -425,45 +534,62 @@ class TestErrorHandlingScenarios:
 class TestTelemetryAndMetadata:
     """Test telemetry data and metadata handling."""
 
+    @pytest.fixture
+    def mock_ctx(self):
+        """Create a mock PipelineContext."""
+        return PipelineContext(
+            filters=DocumentFilters(),
+            workflow_id="test-workflow",
+            incremental_mode="full",
+        )
+
+    def _create_mock_reference(self, sections_df: pd.DataFrame):
+        """Create a mock Reference that returns the sections DataFrame."""
+        mock_ref = MagicMock()
+        mock_ref.df = sections_df
+        return mock_ref
+
     @patch("kurt.config.load_config")
     @patch("kurt.content.indexing_new.models.step_extract_sections.run_batch_sync")
-    @patch("kurt.content.indexing_new.models.step_extract_sections._load_existing_entities")
-    def test_telemetry_data_extraction(self, mock_load_entities, mock_run_batch, mock_load_config):
+    @patch(
+        "kurt.content.indexing_new.models.step_extract_sections._load_existing_entities_by_document"
+    )
+    def test_telemetry_data_extraction(
+        self, mock_load_entities, mock_run_batch, mock_load_config, mock_ctx
+    ):
         """Test that telemetry data is properly extracted and stored."""
 
-        # Mock existing entities - empty list
-        mock_load_entities.return_value = []
+        # Mock existing entities - empty dict
+        mock_load_entities.return_value = {}
 
         mock_run_batch.return_value = [
             DSPyResult(
                 payload={},
                 result=MagicMock(
-                    metadata={"content_type": "guide"},
-                    entities=[],
-                    relationships=[],
-                    claims=[]
+                    metadata={"content_type": "guide"}, entities=[], relationships=[], claims=[]
                 ),
                 error=None,
                 telemetry={
                     "tokens_prompt": 1234,
                     "tokens_completion": 567,
                     "model_name": "claude-3-sonnet",
-                    "execution_time": 3.456
-                }
+                    "execution_time": 3.456,
+                },
             )
         ]
 
-        # Create sources dict with sections DataFrame
-        sections_df = pd.DataFrame([
-            {"document_id": "doc1", "section_id": "sec1", "section_number": 1, "content": "Test"}
-        ])
-        sources = {"sections": sections_df}
+        # Create sections DataFrame
+        sections_df = pd.DataFrame(
+            [{"document_id": "doc1", "section_id": "sec1", "section_number": 1, "content": "Test"}]
+        )
 
+        mock_sections = self._create_mock_reference(sections_df)
         mock_writer = MagicMock()
         mock_writer.write.return_value = {"rows_written": 1}
 
         section_extractions(
-            sources=sources,
+            ctx=mock_ctx,
+            sections=mock_sections,
             writer=mock_writer,
         )
 
@@ -479,16 +605,13 @@ class TestTelemetryAndMetadata:
     def test_schema_has_metadata_fields(self):
         """Test that SectionExtractionRow has required metadata fields."""
         row = SectionExtractionRow(
-            document_id="doc1",
-            section_id="sec1",
-            section_number=1,
-            workflow_id="wf123"
+            document_id="doc1", section_id="sec1", section_number=1, workflow_id="wf123"
         )
 
         # Verify metadata fields exist
-        assert hasattr(row, 'workflow_id')
-        assert hasattr(row, 'created_at')
-        assert hasattr(row, 'updated_at')
+        assert hasattr(row, "workflow_id")
+        assert hasattr(row, "created_at")
+        assert hasattr(row, "updated_at")
 
         # Verify datetime fields have default values
         assert isinstance(row.created_at, datetime)
@@ -498,13 +621,31 @@ class TestTelemetryAndMetadata:
 class TestEmptyPayloads:
     """Test handling of empty or missing data."""
 
-    def test_empty_sections_in_sources(self):
+    @pytest.fixture
+    def mock_ctx(self):
+        """Create a mock PipelineContext."""
+        return PipelineContext(
+            filters=DocumentFilters(),
+            workflow_id="test-workflow",
+            incremental_mode="full",
+        )
+
+    def _create_mock_reference(self, sections_df: pd.DataFrame):
+        """Create a mock Reference that returns the sections DataFrame."""
+        mock_ref = MagicMock()
+        mock_ref.df = sections_df
+        return mock_ref
+
+    def test_empty_sections_in_sources(self, mock_ctx):
         """Test that empty sections DataFrame is handled gracefully."""
-        # Create sources dict with empty DataFrame
-        sources = {"sections": pd.DataFrame()}
+        # Create empty DataFrame
+        sections_df = pd.DataFrame()
+
+        mock_sections = self._create_mock_reference(sections_df)
 
         result = section_extractions(
-            sources=sources,
+            ctx=mock_ctx,
+            sections=mock_sections,
             writer=MagicMock(),
         )
 
@@ -512,47 +653,49 @@ class TestEmptyPayloads:
 
     @patch("kurt.config.load_config")
     @patch("kurt.content.indexing_new.models.step_extract_sections.run_batch_sync")
-    @patch("kurt.content.indexing_new.models.step_extract_sections._load_existing_entities")
-    def test_none_content_in_section(self, mock_load_entities, mock_run_batch, mock_load_config):
+    @patch(
+        "kurt.content.indexing_new.models.step_extract_sections._load_existing_entities_by_document"
+    )
+    def test_none_content_in_section(
+        self, mock_load_entities, mock_run_batch, mock_load_config, mock_ctx
+    ):
         """Test handling of missing content in section."""
 
-        # Mock existing entities - empty list
-        mock_load_entities.return_value = []
+        # Mock existing entities - empty dict
+        mock_load_entities.return_value = {}
 
         mock_run_batch.return_value = [
             DSPyResult(
                 payload={},
                 result=MagicMock(
-                    metadata={"content_type": "guide"},
-                    entities=[],
-                    relationships=[],
-                    claims=[]
+                    metadata={"content_type": "guide"}, entities=[], relationships=[], claims=[]
                 ),
                 error=None,
-                telemetry={}
+                telemetry={},
             )
         ]
 
-        # Create sources dict with section that has missing content
-        sections_df = pd.DataFrame([
-            {
-                "document_id": "doc1",
-                "section_id": "sec1",
-                "section_number": 1,
-                # No 'section_content' or 'content' key
-            }
-        ])
-        sources = {"sections": sections_df}
+        # Create section that has missing content
+        sections_df = pd.DataFrame(
+            [
+                {
+                    "document_id": "doc1",
+                    "section_id": "sec1",
+                    "section_number": 1,
+                    # No 'section_content' or 'content' key
+                }
+            ]
+        )
 
+        mock_sections = self._create_mock_reference(sections_df)
         mock_writer = MagicMock()
         mock_writer.write.return_value = {"rows_written": 1}
 
         result = section_extractions(
-            sources=sources,
+            ctx=mock_ctx,
+            sections=mock_sections,
             writer=mock_writer,
         )
 
         # Should handle missing content gracefully
         assert result["rows_written"] == 1
-
-

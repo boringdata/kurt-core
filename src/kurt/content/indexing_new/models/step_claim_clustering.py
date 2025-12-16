@@ -18,9 +18,10 @@ import logging
 from collections import defaultdict
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import Column, JSON
+from sqlalchemy import JSON, Column
 from sqlmodel import Field
 
+from kurt.config import ConfigParam, ModelConfig
 from kurt.content.indexing_new.framework import (
     LLMTelemetryMixin,
     PipelineContext,
@@ -35,6 +36,32 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================================
+# Configuration
+# ============================================================================
+
+
+class ClaimClusteringConfig(ModelConfig):
+    """Configuration for claim clustering step."""
+
+    similarity_threshold: float = ConfigParam(
+        default=0.85,
+        ge=0.0,
+        le=1.0,
+        description="Minimum similarity for claim clustering",
+    )
+    max_concurrent: int = ConfigParam(
+        default=10,
+        fallback="MAX_CONCURRENT_INDEXING",
+        description="Maximum concurrent operations",
+    )
+    llm_model: str = ConfigParam(
+        default="claude-3-5-haiku-latest",
+        fallback="INDEXING_LLM_MODEL",
+        description="LLM model for claim resolution (if enabled)",
+    )
+
+
+# ============================================================================
 # Output Model
 # ============================================================================
 
@@ -46,7 +73,9 @@ class ClaimGroupRow(PipelineModelBase, LLMTelemetryMixin, table=True):
     same cluster share the same cluster_id.
     """
 
-    __tablename__ = "indexing_claim_groups"
+    # Table name must match model name convention: indexing.claim_clustering -> indexing_claim_clustering
+    # This MUST be set in class definition because SQLModel sets __tablename__ at class definition time
+    __tablename__ = "indexing_claim_clustering"
 
     # Primary key (workflow_id from base class, redeclared as primary key)
     claim_hash: str = Field(primary_key=True)
@@ -82,6 +111,148 @@ class ClaimGroupRow(PipelineModelBase, LLMTelemetryMixin, table=True):
 
 
 # ============================================================================
+# Model Function
+# ============================================================================
+
+
+@model(
+    name="indexing.claim_clustering",
+    db_model=ClaimGroupRow,
+    primary_key=["claim_hash", "workflow_id"],
+    write_strategy="replace",
+    description="Cluster claims across all sections and make resolution decisions",
+    config_schema=ClaimClusteringConfig,
+)
+def claim_clustering(
+    ctx: PipelineContext,
+    # Dict filter with callable - SQL pushdown with runtime value from ctx
+    extractions=Reference(
+        "indexing.section_extractions",
+        filter={"workflow_id": lambda ctx: ctx.workflow_id},
+    ),
+    writer: TableWriter = None,
+    config: ClaimClusteringConfig = None,
+):
+    """Cluster claims across all sections in the batch.
+
+    This model:
+    1. Collects ALL claims from ALL sections in the batch
+    2. Clusters similar claims together
+    3. Fetches similar existing claims for each cluster
+    4. Resolves clusters (CREATE_NEW / MERGE_WITH / CONFLICT)
+    5. Writes clustering + resolution decisions to indexing_claim_groups
+
+    The actual claim creation in the claims table happens in step_claim_resolution.
+
+    Args:
+        ctx: Pipeline context with filters, workflow_id, and incremental_mode
+        extractions: Lazy reference to section extractions from previous model
+        writer: TableWriter for outputting claim group rows
+        config: Step configuration (auto-injected by decorator)
+    """
+    workflow_id = ctx.workflow_id
+    # Lazy load - data fetched when accessed
+    extractions_df = extractions.df
+
+    if extractions_df.empty:
+        logger.warning("No section extractions found to process")
+        return {"rows_written": 0, "claims_processed": 0}
+
+    extraction_records = extractions_df.to_dict("records")
+
+    # Parse JSON fields (SQLite stores JSON as text)
+    for extraction in extraction_records:
+        for field in ["entities_json", "relationships_json", "claims_json", "metadata_json"]:
+            if field in extraction and isinstance(extraction[field], str):
+                try:
+                    extraction[field] = json.loads(extraction[field])
+                except json.JSONDecodeError:
+                    extraction[field] = [] if field != "metadata_json" else {}
+
+    logger.info(f"Processing {len(extraction_records)} section extractions for claim clustering")
+
+    # Step 1: Collect all claims from all sections
+    all_claims, claim_to_docs = _collect_claims_from_extractions(extraction_records)
+
+    if not all_claims:
+        logger.info("No claims found in extractions")
+        return {"rows_written": 0, "claims_processed": 0}
+
+    logger.info(f"Collected {len(all_claims)} claims from extractions")
+
+    # Step 2: Cluster claims by similarity
+    clusters = _cluster_claims_by_similarity(
+        all_claims, similarity_threshold=config.similarity_threshold
+    )
+    logger.info(f"Clustered {len(all_claims)} claims into {len(clusters)} clusters")
+
+    # Step 3: Fetch similar existing claims for each cluster
+    # Use nest_asyncio to allow running async code in sync context
+    import nest_asyncio
+
+    nest_asyncio.apply()
+    cluster_tasks = asyncio.run(_fetch_similar_claims_for_clusters(clusters))
+
+    # Step 4: Resolve clusters
+    resolutions = _resolve_claim_clusters(cluster_tasks)
+
+    # Step 5: Build output rows
+    rows = []
+    seen_hashes = set()
+
+    for resolution in resolutions:
+        claim_hash = resolution["claim_hash"]
+
+        # Skip duplicates within batch
+        if claim_hash in seen_hashes:
+            continue
+        seen_hashes.add(claim_hash)
+
+        rows.append(
+            ClaimGroupRow(
+                claim_hash=claim_hash,
+                workflow_id=workflow_id,
+                document_id=resolution["document_id"],
+                section_id=resolution["section_id"],
+                statement=resolution["statement"][:1000],  # Truncate long statements
+                claim_type=resolution["claim_type"],
+                confidence=resolution["confidence"],
+                source_quote=resolution.get("source_quote", "")[:500]
+                if resolution.get("source_quote")
+                else None,
+                entity_indices_json=resolution.get("entity_indices", []),
+                cluster_id=resolution["cluster_id"],
+                cluster_size=resolution["cluster_size"],
+                decision=resolution["decision"],
+                canonical_statement=resolution.get("canonical_statement"),
+                reasoning=resolution.get("reasoning"),
+                similar_existing_json=resolution.get("similar_existing", []),
+            )
+        )
+
+    # Log summary
+    create_new_count = sum(1 for r in resolutions if r.get("decision") == "CREATE_NEW")
+    merge_count = sum(1 for r in resolutions if r.get("decision", "").startswith("MERGE_WITH:"))
+    duplicate_count = sum(
+        1 for r in resolutions if r.get("decision", "").startswith("DUPLICATE_OF:")
+    )
+
+    logger.info(
+        f"Claim clustering complete: {len(rows)} claims resolved "
+        f"({create_new_count} CREATE_NEW, {merge_count} MERGE, {duplicate_count} DUPLICATE)"
+    )
+
+    if not rows:
+        return {"rows_written": 0, "claims": 0, "clusters": 0}
+
+    result = writer.write(rows)
+    result["claims"] = len(all_claims)
+    result["clusters"] = len(clusters)
+
+    return result
+
+
+# ============================================================================
 # Helper Functions
 # ============================================================================
 
@@ -93,7 +264,7 @@ def _compute_claim_hash(statement: str, claim_type: str, document_id: str) -> st
 
 
 def _collect_claims_from_extractions(
-    extractions: List[Dict[str, Any]]
+    extractions: List[Dict[str, Any]],
 ) -> tuple[List[Dict[str, Any]], Dict[str, List[str]]]:
     """Collect all claims from section extractions.
 
@@ -150,29 +321,72 @@ def _cluster_claims_by_similarity(
     claims: List[Dict[str, Any]],
     similarity_threshold: float = 0.85,
 ) -> Dict[int, List[Dict[str, Any]]]:
-    """Cluster claims by statement similarity.
+    """Cluster claims by statement similarity using embedding-based DBSCAN.
 
-    Uses a simple hash-based clustering for now. For production,
-    this should use embedding similarity like entity_clustering.
+    Uses the same approach as entity_clustering: generate embeddings for all
+    claim statements and cluster using DBSCAN with cosine distance.
 
     Args:
-        claims: List of claim dicts
-        similarity_threshold: Minimum similarity for clustering (unused for now)
+        claims: List of claim dicts with 'statement' field
+        similarity_threshold: Controls clustering tightness (eps = 1 - threshold)
 
     Returns:
         Dict mapping cluster_id to list of claims in that cluster
     """
-    # Simple clustering: group by normalized statement prefix
-    # In production, use embedding-based DBSCAN like entity_clustering
-    clusters = defaultdict(list)
+    import numpy as np
+    from sklearn.cluster import DBSCAN
 
-    # For now, use exact match on normalized statement as simple clustering
+    from kurt.content.embeddings import generate_embeddings
+
+    if not claims:
+        return {}
+
+    # Generate embeddings for all claim statements
+    statements = [c["statement"] for c in claims]
+
+    try:
+        embeddings = generate_embeddings(statements)
+    except Exception as e:
+        logger.warning(f"Failed to generate embeddings for claims: {e}")
+        # Fall back to simple text-based clustering
+        return _cluster_claims_by_text_prefix(claims)
+
+    # Convert similarity threshold to DBSCAN eps (distance threshold)
+    # similarity_threshold=0.85 means eps=0.15 (cosine distance)
+    eps = 1.0 - similarity_threshold
+
+    # Cluster using DBSCAN with cosine metric
+    embeddings_array = np.array(embeddings)
+    clustering = DBSCAN(eps=eps, min_samples=1, metric="cosine")
+    labels = clustering.fit_predict(embeddings_array)
+
+    # Organize into groups
+    clusters = defaultdict(list)
+    for idx, label in enumerate(labels):
+        clusters[label].append(claims[idx])
+
+    logger.debug(
+        f"Clustered {len(claims)} claims into {len(clusters)} groups "
+        f"(threshold={similarity_threshold}, eps={eps:.3f})"
+    )
+
+    return dict(clusters)
+
+
+def _cluster_claims_by_text_prefix(
+    claims: List[Dict[str, Any]],
+) -> Dict[int, List[Dict[str, Any]]]:
+    """Fallback clustering using text prefix matching.
+
+    Used when embeddings generation fails.
+    """
+    clusters = defaultdict(list)
     statement_to_cluster = {}
     next_cluster_id = 0
 
     for claim in claims:
         # Normalize statement for clustering
-        normalized = claim["statement"].lower().strip()[:100]  # First 100 chars
+        normalized = claim["statement"].lower().strip()[:100]
 
         if normalized in statement_to_cluster:
             cluster_id = statement_to_cluster[normalized]
@@ -188,23 +402,82 @@ def _cluster_claims_by_similarity(
 
 async def _fetch_similar_claims_for_clusters(
     clusters: Dict[int, List[Dict[str, Any]]],
+    similarity_threshold: float = 0.75,
+    max_similar_per_cluster: int = 5,
 ) -> List[Dict[str, Any]]:
     """Fetch similar existing claims for each cluster.
 
-    For now, returns empty similar lists. In production, this would:
-    1. Get embeddings for cluster representative claims
-    2. Search claims table for similar existing claims
+    Uses embedding-based similarity search against the claims table.
+
+    Args:
+        clusters: Dict mapping cluster_id to list of claims
+        similarity_threshold: Minimum similarity for matching (default: 0.75)
+        max_similar_per_cluster: Max similar claims to return per cluster
+
+    Returns:
+        List of dicts with cluster_id, cluster_claims, and similar_existing
     """
-    # TODO: Implement embedding-based similarity search against claims table
-    # For now, return clusters with empty similar lists
-    return [
-        {
-            "cluster_id": cluster_id,
-            "cluster_claims": cluster_claims,
-            "similar_existing": [],  # Would be populated from DB search
-        }
-        for cluster_id, cluster_claims in clusters.items()
-    ]
+    from kurt.db.claim_queries import search_claims_by_text
+    from kurt.db.database import get_session
+
+    results = []
+
+    # Get representative statement for each cluster (highest confidence claim)
+    cluster_representatives = []
+    for cluster_id, cluster_claims in clusters.items():
+        sorted_claims = sorted(cluster_claims, key=lambda c: c.get("confidence", 0), reverse=True)
+        representative = sorted_claims[0]["statement"]
+        cluster_representatives.append((cluster_id, representative, cluster_claims))
+
+    if not cluster_representatives:
+        return results
+
+    # Search for similar existing claims for each cluster
+    session = get_session()
+    try:
+        for cluster_id, representative_statement, cluster_claims in cluster_representatives:
+            similar_existing = []
+
+            try:
+                # Use existing search_claims_by_text from db/claim_queries.py
+                similar_results = search_claims_by_text(
+                    query_text=representative_statement,
+                    session=session,
+                    limit=max_similar_per_cluster,
+                    min_confidence=0.0,
+                )
+
+                # Filter by similarity threshold and format results
+                for claim, similarity in similar_results:
+                    if similarity >= similarity_threshold:
+                        similar_existing.append(
+                            {
+                                "claim_id": str(claim.id),
+                                "claim_hash": str(claim.id)[:16],  # Use ID prefix as hash
+                                "statement": claim.statement,
+                                "claim_type": claim.claim_type.value
+                                if hasattr(claim.claim_type, "value")
+                                else str(claim.claim_type),
+                                "confidence": claim.overall_confidence,
+                                "similarity": similarity,
+                            }
+                        )
+            except Exception as e:
+                # Log but don't fail - just return empty similar list for this cluster
+                logger.debug(f"Error searching similar claims for cluster {cluster_id}: {e}")
+
+            results.append(
+                {
+                    "cluster_id": cluster_id,
+                    "cluster_claims": cluster_claims,
+                    "similar_existing": similar_existing,
+                }
+            )
+
+    finally:
+        session.close()
+
+    return results
 
 
 def _resolve_claim_clusters(
@@ -251,151 +524,25 @@ def _resolve_claim_clusters(
 
         # Create resolution for each claim in cluster
         for i, claim in enumerate(sorted_claims):
-            resolutions.append({
-                "claim_hash": claim["claim_hash"],
-                "document_id": claim["document_id"],
-                "section_id": claim["section_id"],
-                "statement": claim["statement"],
-                "claim_type": claim["claim_type"],
-                "confidence": claim["confidence"],
-                "source_quote": claim.get("source_quote"),
-                "entity_indices": claim.get("entity_indices", []),
-                "cluster_id": cluster_id,
-                "cluster_size": len(cluster_claims),
-                "decision": decision if i == 0 else f"DUPLICATE_OF:{best_claim['claim_hash']}",
-                "canonical_statement": canonical,
-                "reasoning": reasoning if i == 0 else f"Duplicate of {best_claim['claim_hash']}",
-                "similar_existing": similar_existing,
-            })
+            resolutions.append(
+                {
+                    "claim_hash": claim["claim_hash"],
+                    "document_id": claim["document_id"],
+                    "section_id": claim["section_id"],
+                    "statement": claim["statement"],
+                    "claim_type": claim["claim_type"],
+                    "confidence": claim["confidence"],
+                    "source_quote": claim.get("source_quote"),
+                    "entity_indices": claim.get("entity_indices", []),
+                    "cluster_id": cluster_id,
+                    "cluster_size": len(cluster_claims),
+                    "decision": decision if i == 0 else f"DUPLICATE_OF:{best_claim['claim_hash']}",
+                    "canonical_statement": canonical,
+                    "reasoning": reasoning
+                    if i == 0
+                    else f"Duplicate of {best_claim['claim_hash']}",
+                    "similar_existing": similar_existing,
+                }
+            )
 
     return resolutions
-
-
-# ============================================================================
-# Model Function
-# ============================================================================
-
-
-@model(
-    name="indexing.claim_clustering",
-    db_model=ClaimGroupRow,
-    primary_key=["claim_hash", "workflow_id"],
-    write_strategy="replace",
-    description="Cluster claims across all sections and make resolution decisions",
-)
-def claim_clustering(
-    extractions=Reference("indexing.section_extractions"),
-    writer: TableWriter = None,
-    workflow_id: str = None,
-):
-    """Cluster claims across all sections in the batch.
-
-    This model:
-    1. Collects ALL claims from ALL sections in the batch
-    2. Clusters similar claims together
-    3. Fetches similar existing claims for each cluster
-    4. Resolves clusters (CREATE_NEW / MERGE_WITH / CONFLICT)
-    5. Writes clustering + resolution decisions to indexing_claim_groups
-
-    The actual claim creation in the claims table happens in step_claim_resolution.
-
-    Args:
-        extractions: Lazy reference to section extractions from previous model
-        writer: TableWriter for outputting claim group rows
-        workflow_id: Workflow ID for batch tracking
-    """
-    # Lazy load - data fetched when accessed
-    extractions_df = extractions.df
-
-    if extractions_df.empty:
-        logger.warning("No section extractions found to process")
-        return {"rows_written": 0, "claims_processed": 0}
-
-    extraction_records = extractions_df.to_dict("records")
-
-    # Parse JSON fields (SQLite stores JSON as text)
-    for extraction in extraction_records:
-        for field in ["entities_json", "relationships_json", "claims_json", "metadata_json"]:
-            if field in extraction and isinstance(extraction[field], str):
-                try:
-                    extraction[field] = json.loads(extraction[field])
-                except json.JSONDecodeError:
-                    extraction[field] = [] if field != "metadata_json" else {}
-
-    logger.info(f"Processing {len(extraction_records)} section extractions for claim clustering")
-
-    # Step 1: Collect all claims from all sections
-    all_claims, claim_to_docs = _collect_claims_from_extractions(extraction_records)
-
-    if not all_claims:
-        logger.info("No claims found in extractions")
-        return {"rows_written": 0, "claims_processed": 0}
-
-    logger.info(f"Collected {len(all_claims)} claims from extractions")
-
-    # Step 2: Cluster claims by similarity
-    clusters = _cluster_claims_by_similarity(all_claims)
-    logger.info(f"Clustered {len(all_claims)} claims into {len(clusters)} clusters")
-
-    # Step 3: Fetch similar existing claims for each cluster
-    # Use nest_asyncio to allow running async code in sync context
-    import nest_asyncio
-    nest_asyncio.apply()
-    cluster_tasks = asyncio.run(_fetch_similar_claims_for_clusters(clusters))
-
-    # Step 4: Resolve clusters
-    resolutions = _resolve_claim_clusters(cluster_tasks)
-
-    # Step 5: Build output rows
-    rows = []
-    seen_hashes = set()
-
-    for resolution in resolutions:
-        claim_hash = resolution["claim_hash"]
-
-        # Skip duplicates within batch
-        if claim_hash in seen_hashes:
-            continue
-        seen_hashes.add(claim_hash)
-
-        rows.append(
-            ClaimGroupRow(
-                claim_hash=claim_hash,
-                workflow_id=workflow_id,
-                document_id=resolution["document_id"],
-                section_id=resolution["section_id"],
-                statement=resolution["statement"][:1000],  # Truncate long statements
-                claim_type=resolution["claim_type"],
-                confidence=resolution["confidence"],
-                source_quote=resolution.get("source_quote", "")[:500] if resolution.get("source_quote") else None,
-                entity_indices_json=resolution.get("entity_indices", []),
-                cluster_id=resolution["cluster_id"],
-                cluster_size=resolution["cluster_size"],
-                decision=resolution["decision"],
-                canonical_statement=resolution.get("canonical_statement"),
-                reasoning=resolution.get("reasoning"),
-                similar_existing_json=resolution.get("similar_existing", []),
-            )
-        )
-
-    # Log summary
-    create_new_count = sum(1 for r in resolutions if r.get("decision") == "CREATE_NEW")
-    merge_count = sum(1 for r in resolutions if r.get("decision", "").startswith("MERGE_WITH:"))
-    duplicate_count = sum(1 for r in resolutions if r.get("decision", "").startswith("DUPLICATE_OF:"))
-
-    logger.info(
-        f"Claim clustering complete: {len(rows)} claims resolved "
-        f"({create_new_count} CREATE_NEW, {merge_count} MERGE, {duplicate_count} DUPLICATE)"
-    )
-
-    if not rows:
-        return {"rows_written": 0, "claims_processed": 0}
-
-    result = writer.write(rows)
-    result["claims_processed"] = len(all_claims)
-    result["clusters_created"] = len(clusters)
-    result["claims_create_new"] = create_new_count
-    result["claims_merged"] = merge_count
-    result["claims_duplicate"] = duplicate_count
-
-    return result

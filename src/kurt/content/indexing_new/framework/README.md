@@ -263,7 +263,95 @@ def __init__(self, **data):
     super().__init__(**data)
 ```
 
-## File Structure
+## Model File Structure
+
+Each step model file should follow this **standard structure**:
+
+```python
+"""Step docstring with input/output tables."""
+
+# Imports
+import ...
+
+logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Configuration
+# ============================================================================
+
+class MyStepConfig(ModelConfig):
+    """Configuration for this step."""
+    param: str = ConfigParam(...)
+
+
+# ============================================================================
+# DSPy Models (if applicable)
+# ============================================================================
+
+class MyDSPyOutput(BaseModel):
+    """Pydantic model for DSPy output."""
+    ...
+
+
+# ============================================================================
+# DSPy Signature (if applicable)
+# ============================================================================
+
+class MySignature(dspy.Signature):
+    """DSPy signature docstring."""
+    ...
+
+
+# ============================================================================
+# Output Model
+# ============================================================================
+
+class MyStepRow(PipelineModelBase, table=True):
+    """SQLModel for output table."""
+    __tablename__ = "my_step_output"
+    ...
+
+
+# ============================================================================
+# Model Function
+# ============================================================================
+
+@model(
+    name="module.step_name",
+    db_model=MyStepRow,
+    primary_key=["..."],
+    config_schema=MyStepConfig,  # Links config class to decorator
+)
+def my_step(
+    ctx: PipelineContext,
+    upstream=Reference("module.upstream"),
+    writer: TableWriter = None,
+    config: MyStepConfig = None,  # Auto-injected by decorator, None default
+):
+    """Step function docstring."""
+    # Access config values with fallback defaults
+    param_value = config.param if config else "default_value"
+    ...
+
+
+# ============================================================================
+# Helper Functions
+# ============================================================================
+
+def _helper_function(...):
+    """Helper functions go at the bottom."""
+    ...
+```
+
+**Key points:**
+- Configuration class at the top (after imports)
+- DSPy models/signatures before the output model (if using DSPy)
+- Output SQLModel class before the main function
+- Main `@model` function in the middle
+- Helper functions at the bottom
+
+## Framework File Structure
 
 ```
 framework/
@@ -280,6 +368,46 @@ framework/
 └── testing.py           # Test utilities
 ```
 
+## Parallel Execution
+
+The pipeline executes models in parallel within each DAG level using `asyncio.gather()` with `asyncio.to_thread()`.
+
+### How it works
+
+```
+DAG Level 1: [model_a, model_b, model_c]  ← Run in parallel
+DAG Level 2: [model_d]                     ← Waits for level 1
+DAG Level 3: [model_e, model_f]            ← Run in parallel
+```
+
+Models declare dependencies via `Reference()`. The framework:
+1. Builds a dependency graph from references
+2. Topologically sorts into execution levels
+3. Runs all models in each level in parallel
+4. Waits for level completion before starting the next
+
+### Trade-offs
+
+| Aspect | Status |
+|--------|--------|
+| Parallel execution | ✅ Works - independent models run concurrently |
+| DAG ordering | ✅ Works - dependencies respected |
+| Start/end events | ✅ Works - emitted from async context |
+| Progress inside models | ⚠️ Logs only - no DBOS stream |
+
+**Why progress from inside models doesn't emit to DBOS:**
+
+Models run in thread pool via `asyncio.to_thread()`. The worker threads don't have DBOS context, so `DBOS.write_stream()` and `DBOS.set_event()` fail inside models.
+
+Start/end events work because they're emitted from the async context (before/after the thread).
+
+**Alternatives considered:**
+
+- **DBOS Queue**: Also uses worker threads with the same context limitation. See `kurt/workflows/_worker.py` for similar reasoning.
+- **Sync execution**: Would work but loses parallelism benefit.
+
+For detailed progress from inside models, use logging (captured to workflow log file).
+
 ## Key Design Principles
 
 1. **Tables are the interface** - Models communicate via database tables (like dbt refs)
@@ -287,6 +415,7 @@ framework/
 3. **DBOS wrapping at runtime** - Framework adds durability/tracking when needed
 4. **Declarative sources** - Models declare dependencies, framework handles loading
 5. **Filter resolution once** - `DocumentFilters` resolved at entry point, passed through
+6. **Parallel by default** - Independent models run concurrently within DAG levels
 
 ## See Also
 

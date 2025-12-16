@@ -1,7 +1,6 @@
 """Test script for the live progress display."""
 
 import time
-import uuid
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -9,6 +8,7 @@ from typing import Any, Optional
 @dataclass
 class MockDSPyResult:
     """Mock DSPy result for testing."""
+
     payload: dict
     result: Any
     error: Optional[Exception]

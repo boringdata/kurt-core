@@ -1,6 +1,7 @@
 """Entity resolution operations for knowledge graph construction.
 
 These functions handle the complex logic of entity deduplication and resolution:
+- Collecting entities from section extractions
 - Building entity-document mappings
 - Resolving merge chains and detecting cycles
 - Grouping entities by canonical names
@@ -13,7 +14,9 @@ Organized into:
 """
 
 import logging
+from collections import defaultdict
 from datetime import datetime
+from typing import Dict, List, Tuple
 from uuid import UUID, uuid4
 
 from sqlmodel import select
@@ -26,6 +29,125 @@ from kurt.db.graph_entities import (
 from kurt.db.models import DocumentEntity, Entity, EntityRelationship
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Stage 1: Collect Entities from Extractions
+# ============================================================================
+
+
+def collect_entities_from_extractions(
+    extractions: List[dict],
+) -> Tuple[List[dict], List[dict], Dict[UUID, dict]]:
+    """Collect all entities and relationships from section extractions.
+
+    This function processes raw extraction results and organizes them into
+    the format needed for entity resolution.
+
+    Args:
+        extractions: List of section extraction dicts with entities_json, relationships_json
+
+    Returns:
+        Tuple of:
+        - all_entities: List of all new entity dicts (with document_id added)
+        - all_relationships: List of all relationship dicts (with document_id added)
+        - doc_to_kg_data: Dict mapping doc_id -> {existing_entities, new_entities, relationships}
+    """
+    all_entities = []
+    all_relationships = []
+    doc_to_kg_data = {}
+
+    # Group extractions by document
+    doc_extractions = defaultdict(list)
+    for ext in extractions:
+        doc_id = ext.get("document_id")
+        if doc_id:
+            doc_extractions[doc_id].append(ext)
+
+    for doc_id_str, doc_sections in doc_extractions.items():
+        try:
+            doc_id = UUID(doc_id_str)
+        except (ValueError, TypeError):
+            logger.warning(f"Invalid document_id: {doc_id_str}")
+            continue
+
+        existing_entity_ids = []
+        new_entities_for_doc = []
+        relationships_for_doc = []
+
+        # Collect from all sections of this document
+        for section in doc_sections:
+            entities_json = section.get("entities_json") or []
+            relationships_json = section.get("relationships_json") or []
+
+            # Parse JSON strings if needed (when reading from DB)
+            if isinstance(entities_json, str):
+                import json
+
+                try:
+                    entities_json = json.loads(entities_json)
+                except json.JSONDecodeError:
+                    entities_json = []
+            if isinstance(relationships_json, str):
+                import json
+
+                try:
+                    relationships_json = json.loads(relationships_json)
+                except json.JSONDecodeError:
+                    relationships_json = []
+
+            for entity in entities_json:
+                entity_with_doc = {**entity, "document_id": doc_id}
+
+                # Check if this is an existing entity (matched during extraction)
+                resolution_status = entity.get("resolution_status", "NEW")
+                matched_idx = entity.get("matched_entity_index")
+
+                if resolution_status == "EXISTING" and matched_idx is not None:
+                    # This is a reference to an existing entity
+                    existing_entity_ids.append(str(matched_idx))
+                else:
+                    # This is a new entity to be resolved
+                    new_entities_for_doc.append(entity_with_doc)
+                    all_entities.append(entity_with_doc)
+
+            for rel in relationships_json:
+                rel_with_doc = {**rel, "document_id": doc_id}
+                relationships_for_doc.append(rel_with_doc)
+                all_relationships.append(rel_with_doc)
+
+        # Build kg_data for this document
+        doc_to_kg_data[doc_id] = {
+            "existing_entities": existing_entity_ids,
+            "new_entities": new_entities_for_doc,
+            "relationships": relationships_for_doc,
+        }
+
+    return all_entities, all_relationships, doc_to_kg_data
+
+
+def normalize_entities_for_clustering(entities: List[dict]) -> List[dict]:
+    """Normalize entity format for clustering.
+
+    Args:
+        entities: List of entity dicts from extractions
+
+    Returns:
+        List of normalized entity dicts ready for clustering
+    """
+    return [
+        {
+            "name": e.get("name"),
+            "type": e.get("entity_type") or e.get("type"),
+            "description": e.get("description", ""),
+            "aliases": e.get("aliases", []),
+            "confidence": e.get("confidence", 0.8),
+            "quote": e.get("quote"),
+            "document_id": e.get("document_id"),
+        }
+        for e in entities
+        if e.get("name")
+    ]
 
 
 # ============================================================================

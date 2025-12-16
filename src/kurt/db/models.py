@@ -137,6 +137,10 @@ class RelationshipType(str, Enum):
     SUPPORTS = "supports"  # X supports Y (e.g., DuckDB supports JSON)
     IS_A = "is_a"  # X is a type of Y (e.g., MotherDuck is a cloud data warehouse)
     IMPACTS = "impacts"  # X impacts Y (e.g., configuration impacts performance)
+    EVALUATED_BY = "evaluated_by"  # X evaluated by Y (e.g., model evaluated by benchmark)
+    COMPARES_TO = "compares_to"  # X compares to Y (e.g., DuckDB vs PostgreSQL)
+    CREATED_BY = "created_by"  # X created by Y (e.g., DuckDB created by DuckDB Labs)
+    EXTENDS = "extends"  # X extends Y (e.g., MotherDuck extends DuckDB)
 
     @classmethod
     def get_all_types_string(cls) -> str:

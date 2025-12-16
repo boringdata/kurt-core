@@ -1,20 +1,31 @@
-"""
-Document section splitting model for the indexing pipeline.
+"""Document section splitting model for the indexing pipeline.
 
 This model splits documents into logical sections for parallel processing,
 ensuring full document coverage beyond the 5000 char limit.
+
+This is the FIRST model in the pipeline:
+- It reads from the `documents` table with `load_content=True`
+- The Reference automatically loads file content into the DataFrame
+
+Input: documents table (with content loaded from files)
+Output table: indexing_document_sections
 """
 
 import hashlib
 import logging
-from datetime import datetime
-from typing import List, Optional
+from typing import Any, Optional
 
-from sqlmodel import Field, SQLModel
+from sqlmodel import Field
 
 from kurt.config import ConfigParam, ModelConfig
 from kurt.content.indexing.splitting import split_markdown_document
-from kurt.content.indexing_new.framework import PipelineContext, TableReader, TableWriter, model
+from kurt.content.indexing_new.framework import (
+    PipelineContext,
+    PipelineModelBase,
+    Reference,
+    TableWriter,
+    model,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -47,36 +58,58 @@ class DocumentSectionsConfig(ModelConfig):
     )
 
 
-class DocumentSectionRow(SQLModel, table=True):
-    """Schema for document sections table."""
+# ============================================================================
+# Output Model
+# ============================================================================
+
+
+class DocumentSectionRow(PipelineModelBase, table=True):
+    """Schema for document sections table.
+
+    Inherits from PipelineModelBase:
+    - workflow_id, created_at, updated_at, model_name, error
+    """
 
     __tablename__ = "indexing_document_sections"
 
     # Primary key fields
-    document_id: str = Field(primary_key=True, description="Document UUID")
-    section_id: str = Field(primary_key=True, description="Unique section identifier")
+    document_id: str = Field(primary_key=True)
+    section_id: str = Field(primary_key=True)
 
     # Core fields
-    section_number: int = Field(description="Section order number")
-    heading: Optional[str] = Field(default=None, description="Section heading or title")
-    content: str = Field(description="Section content")
-    start_offset: int = Field(description="Starting character offset in original document")
-    end_offset: int = Field(description="Ending character offset in original document")
-    overlap_prefix: Optional[str] = Field(default=None, description="Overlap from previous section")
-    overlap_suffix: Optional[str] = Field(default=None, description="Overlap to next section")
-    section_hash: str = Field(description="Hash of section content for change detection")
+    section_number: int
+    heading: Optional[str] = Field(default=None)
+    content: str
+    start_offset: int
+    end_offset: int
+    overlap_prefix: Optional[str] = Field(default=None)
+    overlap_suffix: Optional[str] = Field(default=None)
+    section_hash: str = Field(default="")
+
+    # Document metadata (from source)
+    document_title: Optional[str] = Field(default=None)
 
     # Model-specific fields
-    is_active: bool = Field(default=True, description="Whether this section is active")
+    is_active: bool = Field(default=True)
+    token_count: Optional[int] = Field(default=None)
 
-    # Workflow tracking (managed by TableWriter)
-    workflow_id: Optional[str] = Field(default=None, description="Workflow that created this row")
-    created_at: Optional[datetime] = Field(default=None, description="Creation timestamp")
-    updated_at: Optional[datetime] = Field(default=None, description="Update timestamp")
-    model_name: Optional[str] = Field(default=None, description="Model that created this row")
+    def __init__(self, **data: Any):
+        """Compute section_hash from content and offsets if not provided.
 
-    # Token telemetry (populated later by extraction models)
-    token_count: Optional[int] = Field(default=None, description="Token count for this section")
+        Note: Using __init__ instead of model_validator because SQLModel
+        with table=True doesn't properly support Pydantic v2 model_validator.
+        """
+        if "section_hash" not in data or not data.get("section_hash"):
+            content = data.get("content", "")
+            start = data.get("start_offset", 0)
+            end = data.get("end_offset", 0)
+            data["section_hash"] = hashlib.sha256(f"{content}{start}{end}".encode()).hexdigest()
+        super().__init__(**data)
+
+
+# ============================================================================
+# Model Function
+# ============================================================================
 
 
 @model(
@@ -89,39 +122,50 @@ class DocumentSectionRow(SQLModel, table=True):
 )
 def document_sections(
     ctx: PipelineContext,
-    reader: TableReader,  # Required by decorator but unused - documents come via payloads
-    writer: TableWriter,
-    payloads: List[dict],
+    documents=Reference(
+        "documents",
+        load_content={"document_id_column": "document_id"},
+        # Use string filter "id" for SQL-level filtering via ctx.document_ids
+        # TableReader._load_documents_with_content() now applies all DocumentFilters
+        # including with_status, include_pattern, limit, etc. from ctx.filters
+        filter="id",
+    ),
+    writer: TableWriter = None,
     config: DocumentSectionsConfig = None,
 ):
-    """
-    Split documents into sections for parallel processing.
+    """Split documents into sections for parallel processing.
 
-    This model takes document payloads and splits them into logical sections based on
-    markdown headings and size constraints, enabling parallel extraction while
-    maintaining context through overlapping regions.
+    This model reads from the documents table with content loaded from files,
+    then splits each document into smaller sections for parallel extraction.
 
     Args:
         ctx: Pipeline context with filters, workflow_id, and incremental_mode
-        reader: Table reader (required by framework but unused - documents come via payloads)
-        writer: Table writer for persisting results
-        payloads: List of document payloads from workflow (with document_id, content, skip, etc.)
-
-    Returns:
-        Write statistics from the table writer
+        documents: Lazy reference to documents table (loads content from files)
+        writer: TableWriter for outputting section rows
+        config: Configuration for section splitting parameters
     """
+    # Lazy load - data fetched here when we access .df
+    documents_df = documents.df
+
+    if documents_df.empty:
+        logger.warning("No documents to process")
+        return {"rows_written": 0, "documents_processed": 0, "documents_skipped": 0}
+
+    document_records = documents_df.to_dict("records")
     logger.info(
-        f"Processing {len(payloads)} documents for section splitting (mode: {ctx.incremental_mode})"
+        f"Processing {len(document_records)} documents for section splitting "
+        f"(mode: {ctx.incremental_mode})"
     )
 
     rows = []
     skipped_count = 0
+    # Track successfully processed documents for indexed_hash update
+    processed_docs = []  # List of (document_id, content_hash) tuples
 
-    for doc in payloads:
-        # Skip if document hasn't changed (in delta mode)
-        if doc.get("skip", False):
+    for doc in document_records:
+        # Skip if document has error or no content
+        if doc.get("skip", False) or doc.get("error"):
             skipped_count += 1
-            logger.debug(f"Skipping unchanged document: {doc['document_id']}")
             continue
 
         document_id = doc["document_id"]
@@ -129,65 +173,65 @@ def document_sections(
 
         if not content:
             logger.warning(f"Document {document_id} has no content, skipping")
+            skipped_count += 1
             continue
 
-        # Split the document into sections using config parameters
-        max_chars = config.max_section_chars if config else 5000
-        overlap_chars = config.overlap_chars if config else 200
-        min_section_size = config.min_section_size if config else 500
-
+        # Split the document into sections
         sections = split_markdown_document(
             content,
-            max_chars=max_chars,
-            overlap_chars=overlap_chars,
-            min_section_size=min_section_size,
+            max_chars=config.max_section_chars,
+            overlap_chars=config.overlap_chars,
+            min_section_size=config.min_section_size,
         )
 
-        logger.debug(f"Document {document_id} split into {len(sections)} sections")
+        # Create rows - __init__ handles hash computation
+        rows.extend(
+            DocumentSectionRow(
+                document_id=document_id,
+                section_id=section.section_id,
+                section_number=section.section_number,
+                heading=section.heading,
+                content=section.content,
+                start_offset=section.start_offset,
+                end_offset=section.end_offset,
+                overlap_prefix=section.overlap_prefix,
+                overlap_suffix=section.overlap_suffix,
+                document_title=doc.get("title"),
+            )
+            for section in sections
+        )
 
-        # Create rows for each section
-        for section in sections:
-            # Generate a stable section hash for change detection
-            section_hash = hashlib.sha256(
-                f"{section.content}{section.start_offset}{section.end_offset}".encode()
-            ).hexdigest()
-
-            # Only include core fields - let TableWriter handle metadata
-            row = {
-                # Core fields
-                "document_id": document_id,
-                "section_id": section.section_id,
-                "section_number": section.section_number,
-                "heading": section.heading,
-                "content": section.content,
-                "start_offset": section.start_offset,
-                "end_offset": section.end_offset,
-                "overlap_prefix": section.overlap_prefix,
-                "overlap_suffix": section.overlap_suffix,
-                "section_hash": section_hash,
-                # Model-specific fields (not handled by TableWriter)
-                "is_active": True,
-                "token_count": None,  # Will be populated by extraction models
-            }
-
-            rows.append(row)
+        # Track this document for indexed_hash update
+        content_hash = doc.get("content_hash")
+        if content_hash:
+            processed_docs.append((document_id, content_hash))
 
     logger.info(
-        f"Generated {len(rows)} sections from {len(payloads) - skipped_count} documents "
-        f"(skipped {skipped_count} unchanged)"
+        f"Generated {len(rows)} sections from {len(document_records) - skipped_count} documents "
+        f"(skipped {skipped_count})"
     )
 
-    # Write all rows to the table with the SQLModel schema
-    if rows:
-        # Add model_name to all rows for tracking
-        for row in rows:
-            row["model_name"] = "indexing.document_sections"
+    if not rows:
+        # All documents were skipped - only show skipped count
+        return {
+            "rows_written": 0,
+            "skipped": skipped_count,
+        }
 
-        return writer.write(
-            rows,
-            table_schema=DocumentSectionRow,
-            primary_keys=["document_id", "section_id"],
-            write_strategy="replace",
-        )
-    else:
-        return {"rows_written": 0, "rows_deduplicated": 0}
+    result = writer.write(rows)
+
+    # Update indexed_with_hash for successfully processed documents
+    # This enables incremental mode to skip unchanged documents in future runs
+    if processed_docs:
+        for document_id, content_hash in processed_docs:
+            writer.update_indexed_hash(document_id, content_hash)
+        logger.info(f"Updated indexed_with_hash for {len(processed_docs)} documents")
+
+    # Stats: documents processed and sections created
+    processed_count = len(document_records) - skipped_count
+    result["documents"] = processed_count
+    result["sections"] = len(rows)
+    # Only show skipped if there were any
+    if skipped_count > 0:
+        result["skipped"] = skipped_count
+    return result

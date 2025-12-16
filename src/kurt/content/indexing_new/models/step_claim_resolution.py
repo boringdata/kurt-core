@@ -8,25 +8,32 @@ decisions were made in step_claim_clustering.
 
 Input table: indexing_claim_groups
 Output table: indexing_claim_resolution (tracking what was created)
+
+Dependencies:
+- indexing.claim_clustering: Provides clustered claims with resolution decisions
+- indexing.entity_resolution: Provides entity name -> UUID mapping for entity linkage
+- indexing.section_extractions: Provides entity indices -> entity names mapping
 """
 
 import json
 import logging
-from typing import Any, Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, JSON
+from sqlalchemy import JSON, Column
 from sqlmodel import Field
 
+from kurt.content.embeddings import embedding_to_bytes, generate_embeddings
 from kurt.content.indexing_new.framework import (
     PipelineContext,
     PipelineModelBase,
     Reference,
     TableWriter,
     model,
+    print_inline_table,
 )
 from kurt.db.claim_models import Claim, ClaimType
-from kurt.db.database import get_session
+from kurt.db.database import managed_session
 
 logger = logging.getLogger(__name__)
 
@@ -74,13 +81,6 @@ class ClaimResolutionRow(PipelineModelBase, table=True):
 # ============================================================================
 
 
-def _filter_by_workflow(df, ctx: PipelineContext):
-    """Filter claim groups by workflow_id from context."""
-    if ctx and ctx.workflow_id and "workflow_id" in df.columns:
-        return df[df["workflow_id"] == ctx.workflow_id]
-    return df
-
-
 @model(
     name="indexing.claim_resolution",
     db_model=ClaimResolutionRow,
@@ -90,23 +90,38 @@ def _filter_by_workflow(df, ctx: PipelineContext):
 )
 def claim_resolution(
     ctx: PipelineContext,
-    claim_groups=Reference("indexing.claim_clustering", filter=_filter_by_workflow),
+    # Dict filter with callable - SQL pushdown with runtime value from ctx
+    claim_groups=Reference(
+        "indexing.claim_clustering",
+        filter={"workflow_id": lambda ctx: ctx.workflow_id},
+    ),
+    entity_resolution=Reference(
+        "indexing.entity_resolution",
+        filter={"workflow_id": lambda ctx: ctx.workflow_id},
+    ),
+    section_extractions=Reference(
+        "indexing.section_extractions",
+        filter={"workflow_id": lambda ctx: ctx.workflow_id},
+    ),
     writer: TableWriter = None,
 ):
     """Create claims in the database from clustering decisions.
 
     This model:
     1. Reads clustering/resolution decisions from indexing_claim_groups
-    2. Creates new claims in the claims table
-    3. Links claims to entities (when entity resolution is complete)
-    4. Tracks conflicts and merges
-    5. Writes tracking rows to indexing_claim_resolution
+    2. Builds entity name → UUID mapping from entity resolution
+    3. Maps entity_indices → entity UUIDs using section extractions
+    4. Creates new claims in the claims table with proper entity linkage
+    5. Tracks conflicts and merges
+    6. Writes tracking rows to indexing_claim_resolution
 
     The expensive clustering work was done in step_claim_clustering.
 
     Args:
         ctx: Pipeline context with filters, workflow_id, and incremental_mode
         claim_groups: Lazy reference to claim clustering results
+        entity_resolution: Lazy reference to entity resolution results (name → UUID)
+        section_extractions: Lazy reference to section extractions (entity lists)
         writer: TableWriter for outputting resolution rows
     """
     workflow_id = ctx.workflow_id
@@ -130,9 +145,16 @@ def claim_resolution(
 
     logger.info(f"Processing {len(groups)} claim group decisions for upsert")
 
-    # Process with database session
-    session = get_session()
-    try:
+    # Build entity name → UUID mapping from entity resolution
+    entity_name_to_id = _build_entity_name_to_id_mapping(entity_resolution.df)
+    logger.info(f"Built entity mapping with {len(entity_name_to_id)} entities")
+
+    # Build section → entity list mapping for entity_indices resolution
+    section_entity_lists = _build_section_entity_lists(section_extractions.df)
+    logger.info(f"Built section entity lists for {len(section_entity_lists)} sections")
+
+    # Process with database session (auto commit/rollback)
+    with managed_session() as session:
         # Build tracking rows and create claims
         rows = []
         claims_created = 0
@@ -147,10 +169,27 @@ def claim_resolution(
         # Create new claims
         claim_hash_to_id = {}
         for group in create_new_claims:
-            claim_id = _create_claim(session, group)
+            # Resolve entity_indices to entity UUIDs
+            linked_entity_ids = _resolve_entity_indices(
+                group.get("section_id", ""),
+                group.get("entity_indices_json", []),
+                section_entity_lists,
+                entity_name_to_id,
+            )
+
+            claim_id = _create_claim(
+                session,
+                group,
+                subject_entity_id=linked_entity_ids[0] if linked_entity_ids else None,
+                linked_entity_ids=linked_entity_ids,
+            )
             if claim_id:
                 claim_hash_to_id[group["claim_hash"]] = claim_id
                 claims_created += 1
+                resolution_action = "created"
+            else:
+                # Claim was not created (no entity linkage or error)
+                resolution_action = "skipped"
 
             rows.append(
                 ClaimResolutionRow(
@@ -164,7 +203,8 @@ def claim_resolution(
                     decision=group["decision"],
                     canonical_statement=group.get("canonical_statement"),
                     resolved_claim_id=str(claim_id) if claim_id else None,
-                    resolution_action="created",
+                    resolution_action=resolution_action,
+                    linked_entity_ids_json=[str(eid) for eid in linked_entity_ids],
                 )
             )
 
@@ -192,7 +232,9 @@ def claim_resolution(
 
         # Handle duplicate claims
         for group in duplicate_claims:
-            canonical_hash = group["decision"].split(":", 1)[1] if ":" in group["decision"] else None
+            canonical_hash = (
+                group["decision"].split(":", 1)[1] if ":" in group["decision"] else None
+            )
             resolved_id = claim_hash_to_id.get(canonical_hash)
             claims_deduplicated += 1
 
@@ -212,27 +254,32 @@ def claim_resolution(
                 )
             )
 
-        # Commit all changes
-        session.commit()
+    # Log and return (after commit)
+    logger.info(
+        f"Claim resolution complete: {len(rows)} claims processed "
+        f"({claims_created} created, {claims_merged} merged, {claims_deduplicated} deduplicated)"
+    )
 
-        logger.info(
-            f"Claim resolution complete: {len(rows)} claims processed "
-            f"({claims_created} created, {claims_merged} merged, {claims_deduplicated} deduplicated)"
+    result = writer.write(rows)
+    result["claims"] = len(rows)
+    result["created"] = claims_created
+    result["deduplicated"] = claims_deduplicated
+
+    # Print inline table of created claims
+    created_claims = [
+        {"statement": r.statement, "type": r.claim_type, "action": r.resolution_action}
+        for r in rows
+        if r.resolution_action == "created"
+    ]
+    if created_claims:
+        print_inline_table(
+            created_claims,
+            columns=["statement", "type", "action"],
+            max_items=10,
+            cli_command="kurt kg claims" if len(created_claims) > 10 else None,
         )
 
-        result = writer.write(rows)
-        result["claims_created"] = claims_created
-        result["claims_merged"] = claims_merged
-        result["claims_deduplicated"] = claims_deduplicated
-
-        return result
-
-    except Exception as e:
-        session.rollback()
-        logger.error(f"Error during claim resolution: {e}")
-        raise
-    finally:
-        session.close()
+    return result
 
 
 # ============================================================================
@@ -240,16 +287,140 @@ def claim_resolution(
 # ============================================================================
 
 
-def _create_claim(session, group: dict[str, Any]) -> Optional[UUID]:  # noqa: ARG001
+def _filter_by_workflow(df, ctx: PipelineContext):
+    """Filter claim groups by workflow_id from context."""
+    if ctx and ctx.workflow_id and "workflow_id" in df.columns:
+        return df[df["workflow_id"] == ctx.workflow_id]
+    return df
+
+
+def _build_entity_name_to_id_mapping(entity_resolution_df) -> Dict[str, UUID]:
+    """Build mapping from entity name to resolved UUID.
+
+    Args:
+        entity_resolution_df: DataFrame from entity resolution step
+
+    Returns:
+        Dict mapping entity_name -> UUID
+    """
+    if entity_resolution_df is None or entity_resolution_df.empty:
+        return {}
+
+    mapping = {}
+    for _, row in entity_resolution_df.iterrows():
+        entity_name = row.get("entity_name", "")
+        resolved_id = row.get("resolved_entity_id")
+
+        if entity_name and resolved_id:
+            try:
+                mapping[entity_name] = UUID(resolved_id)
+            except (ValueError, TypeError):
+                continue
+
+        # Also map canonical_name if different
+        canonical_name = row.get("canonical_name")
+        if canonical_name and canonical_name != entity_name and resolved_id:
+            try:
+                mapping[canonical_name] = UUID(resolved_id)
+            except (ValueError, TypeError):
+                continue
+
+    return mapping
+
+
+def _build_section_entity_lists(extractions_df) -> Dict[str, List[str]]:
+    """Build mapping from section_id to list of entity names.
+
+    Args:
+        extractions_df: DataFrame from section extractions step
+
+    Returns:
+        Dict mapping section_id -> list of entity names (in order)
+    """
+    if extractions_df is None or extractions_df.empty:
+        return {}
+
+    section_entities = {}
+    for _, row in extractions_df.iterrows():
+        section_id = str(row.get("section_id", ""))
+        entities_json = row.get("entities_json", [])
+
+        # Parse JSON if needed
+        if isinstance(entities_json, str):
+            try:
+                entities_json = json.loads(entities_json)
+            except json.JSONDecodeError:
+                entities_json = []
+
+        # Extract entity names in order
+        entity_names = []
+        for entity in entities_json:
+            if isinstance(entity, dict):
+                entity_names.append(entity.get("name", ""))
+            elif isinstance(entity, str):
+                entity_names.append(entity)
+
+        section_entities[section_id] = entity_names
+
+    return section_entities
+
+
+def _resolve_entity_indices(
+    section_id: str,
+    entity_indices: List[int],
+    section_entity_lists: Dict[str, List[str]],
+    entity_name_to_id: Dict[str, UUID],
+) -> List[UUID]:
+    """Resolve entity indices to UUIDs.
+
+    Args:
+        section_id: Section ID to look up entity list
+        entity_indices: List of indices into the section's entity list
+        section_entity_lists: Mapping of section_id -> entity names list
+        entity_name_to_id: Mapping of entity name -> UUID
+
+    Returns:
+        List of resolved entity UUIDs (preserving order, skipping unresolved)
+    """
+    if not entity_indices:
+        return []
+
+    entity_names = section_entity_lists.get(section_id, [])
+    resolved_ids = []
+
+    for idx in entity_indices:
+        if 0 <= idx < len(entity_names):
+            entity_name = entity_names[idx]
+            entity_id = entity_name_to_id.get(entity_name)
+            if entity_id:
+                resolved_ids.append(entity_id)
+            else:
+                logger.debug(f"Entity '{entity_name}' not found in resolution mapping")
+        else:
+            logger.debug(f"Entity index {idx} out of range for section {section_id}")
+
+    return resolved_ids
+
+
+def _create_claim(
+    session,
+    group: Dict[str, Any],
+    subject_entity_id: Optional[UUID] = None,
+    linked_entity_ids: Optional[List[UUID]] = None,
+) -> Optional[UUID]:
     """Create a claim in the database.
 
     Args:
         session: Database session
         group: Claim group data from clustering step
+        subject_entity_id: Primary entity UUID for this claim
+        linked_entity_ids: All linked entity UUIDs
 
     Returns:
         UUID of created claim, or None if creation failed
     """
+    from kurt.db.claim_models import ClaimEntity
+
     try:
         # Validate claim type
         try:
@@ -257,28 +428,59 @@ def _create_claim(session, group: dict[str, Any]) -> Optional[UUID]:  # noqa: AR
         except ValueError:
             claim_type = ClaimType.DEFINITION
 
+        # Get source location from extraction data
+        source_quote = group.get("source_quote", group["statement"][:200])
+        quote_start = group.get("quote_start_offset", 0)
+        quote_end = group.get("quote_end_offset", len(source_quote))
+
+        claim_id = uuid4()
+
+        # Generate embedding for the claim statement
+        try:
+            embeddings = generate_embeddings([group["statement"]])
+            embedding_bytes = embedding_to_bytes(embeddings[0]) if embeddings else None
+        except Exception as e:
+            logger.debug(f"Failed to generate embedding for claim: {e}")
+            embedding_bytes = None
+
         claim = Claim(
-            id=uuid4(),
+            id=claim_id,
             statement=group["statement"],
             claim_type=claim_type,
             source_document_id=UUID(group["document_id"]),
-            source_quote=group.get("source_quote", group["statement"][:200]),
-            source_location_start=0,  # TODO: Get from extraction
-            source_location_end=len(group.get("source_quote", "")),
+            source_quote=source_quote,
+            source_location_start=quote_start,
+            source_location_end=quote_end,
             extraction_confidence=group.get("confidence", 0.5),
-            # Note: subject_entity_id needs to be set after entity resolution
-            # For now, we skip setting it - will need entity linkage step
+            subject_entity_id=subject_entity_id,
+            embedding=embedding_bytes,
         )
 
-        # Skip adding to session if subject_entity_id is required
-        # This is a placeholder - full implementation needs entity linkage
-        logger.debug(f"Would create claim: {claim.statement[:50]}...")
+        # Only create if we have a subject entity
+        if subject_entity_id:
+            session.add(claim)
+            logger.debug(
+                f"Created claim: {claim.statement[:50]}... linked to entity {subject_entity_id}"
+            )
 
-        # TODO: Implement actual claim creation once entity linkage is ready
-        # session.add(claim)
-        # return claim.id
+            # Create ClaimEntity links for additional entities
+            if linked_entity_ids and len(linked_entity_ids) > 1:
+                for i, entity_id in enumerate(linked_entity_ids[1:], start=1):
+                    # Determine role based on position
+                    role = "object" if i == 1 else "referenced"
+                    claim_entity = ClaimEntity(
+                        claim_id=claim_id,
+                        entity_id=entity_id,
+                        entity_role=role,
+                    )
+                    session.add(claim_entity)
 
-        return uuid4()  # Return placeholder ID for now
+            return claim_id
+        else:
+            # No entity linkage - return None to indicate no claim was created
+            # This ensures stats and claim_hash_to_id mappings are accurate
+            logger.debug(f"Skipping claim creation (no entity linkage): {claim.statement[:50]}...")
+            return None
 
     except Exception as e:
         logger.warning(f"Failed to create claim: {e}")

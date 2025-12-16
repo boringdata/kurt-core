@@ -6,7 +6,9 @@ import click
 @click.command("index")
 @click.argument("identifier", required=False)
 @click.option("--ids", help="Comma-separated list of document IDs")
-@click.option("--include", "include_pattern", help="Include pattern")
+@click.option(
+    "--include", "include_pattern", help="Glob pattern to match source_url or content_path"
+)
 @click.option("--in-cluster", help="Cluster name filter")
 @click.option("--with-status", help="Status filter")
 @click.option("--with-content-type", help="Content type filter")

@@ -10,12 +10,12 @@ import uuid
 from unittest.mock import MagicMock, patch
 
 from kurt.content.indexing.models import (
-from kurt.db.models import ResolutionStatus
     ClaimExtraction,
     DocumentMetadataOutput,
     EntityExtraction,
     RelationshipExtraction,
 )
+from kurt.db.models import ResolutionStatus
 
 
 class TestClaimsEndToEnd:

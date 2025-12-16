@@ -763,10 +763,10 @@ def display_knowledge_graph(kg: dict, console: Console, title: str = "Knowledge 
 
 def index_and_finalize_with_two_stage_progress(documents, console, force: bool = False):
     """
-    Index documents and finalize KG with two-stage live progress display.
+    Index documents using the declarative indexing pipeline.
 
-    Stage 1: Document indexing (metadata extraction)
-    Stage 2: Entity resolution
+    The new pipeline handles its own progress display via the framework's
+    display module. This function just runs the workflow and shows the summary.
 
     Args:
         documents: List of Document objects to index
@@ -778,166 +778,57 @@ def index_and_finalize_with_two_stage_progress(documents, console, force: bool =
     """
     import time
 
-    from kurt.config import load_config
+    from dbos import DBOS
+
+    from kurt.content.filtering import DocumentFilters
+    from kurt.content.indexing_new.framework import run_pipeline_workflow
+    from kurt.workflows import get_dbos
 
     # Extract document IDs
     document_ids = [str(doc.id) for doc in documents]
-    config = load_config()
-    max_concurrent = config.MAX_CONCURRENT_INDEXING
-
     start_time = time.time()
-
-    # ====================================================================
-    # Run workflow with live display
-    # ====================================================================
-    from dbos import DBOS
-
-    from kurt.content.indexing.workflow_indexing import complete_indexing_workflow
-    from kurt.workflows import get_dbos
 
     # Initialize DBOS
     get_dbos()
 
-    print_stage_header(console, 1, "METADATA EXTRACTION")
+    # Create filters from document IDs
+    filters = DocumentFilters(ids=",".join(document_ids))
+    incremental_mode = "full" if force else "delta"
 
-    # Start indexing workflow (runs both metadata extraction + entity resolution)
-    index_handle = DBOS.start_workflow(
-        complete_indexing_workflow,
-        document_ids=document_ids,
-        force=force,
-        enable_kg=True,
-        max_concurrent=max_concurrent,
+    # Run the workflow using automatic pipeline discovery
+    # "indexing" namespace auto-discovers all indexing.* models
+    handle = DBOS.start_workflow(
+        run_pipeline_workflow,
+        target="indexing",
+        filters=filters,
+        incremental_mode=incremental_mode,
+        reprocess_unchanged=force,
     )
+    workflow_result = handle.get_result()
 
-    with LiveProgressDisplay(console, max_log_lines=10) as display:
-        # Stage 1: Metadata extraction
-        display.start_stage("Metadata extraction", total=len(document_ids))
+    # Extract stats from workflow result
+    total = workflow_result.get("total_documents", len(document_ids))
+    processed = workflow_result.get("documents_processed", 0)
+    skipped = workflow_result.get("skipped_docs", 0)
+    failed = len(workflow_result.get("errors", {}))
 
-        # Read document progress streams in parallel
-        read_multiple_streams_parallel(
-            workflow_id=index_handle.workflow_id,
-            stream_names=[f"doc_{i}_progress" for i in range(len(document_ids))],
-            display=display,
-            on_event=lambda _stream, event: display.update_progress(advance=1)
-            if event.get("advance_progress")
-            else None,
-        )
-
-        display.complete_stage()
-
-        # Stage 2: Entity resolution
-        print_stage_header(console, 2, "ENTITY RESOLUTION")
-        display.start_stage("Entity resolution", total=1)
-
-        # Read entity resolution stream
-        read_stream_with_display(
-            workflow_id=index_handle.workflow_id,
-            stream_name="entity_resolution_progress",
-            display=display,
-            on_event=None,
-        )
-
-        display.complete_stage()
-
-    # Get final result (workflow should be complete now)
-    index_result = index_handle.get_result()
-
-    # Extract batch_result from workflow result
-    batch_result = index_result.get("extract_results", {})
-
-    # Stage 1 summary
-    # Note: In workflow_indexing.py, "succeeded" already excludes skipped documents
-    # (unlike the legacy extract.py which included them)
-    indexed_count = batch_result["succeeded"]
-    skipped_count = batch_result["skipped"]
-    error_count = batch_result["failed"]
-
-    print_stage_summary(
-        console,
-        [
-            ("✓", "Indexed", f"{indexed_count} document(s)"),
-            ("○", "Skipped", f"{skipped_count} document(s)"),
-            ("✗", "Failed", f"{error_count} document(s)"),
-        ],
-    )
-
-    # Stage 2 summary
-    kg_result = index_result.get("kg_stats")
-
-    if kg_result:
-        print_stage_summary(
-            console,
-            [
-                ("✓", "Entities created", str(kg_result.get("entities_created", 0))),
-                ("✓", "Entities linked", str(kg_result.get("entities_linked_existing", 0))),
-                (
-                    "✓",
-                    "Relationships created",
-                    str(kg_result.get("relationships_created", 0)),
-                ),
-            ],
-        )
-
-    # Stage 3 summary - Claims
-    claim_stats = index_result.get("claim_stats")
-
-    if claim_stats and claim_stats.get("claims_processed", 0) > 0:
-        print_stage_header(console, 3, "CLAIMS EXTRACTION")
-        print_stage_summary(
-            console,
-            [
-                ("✓", "Claims processed", str(claim_stats.get("claims_processed", 0))),
-                (
-                    "✓",
-                    "Claims created",
-                    str(claim_stats.get("claims_created", 0))
-                    if "claims_created" in claim_stats
-                    else str(claim_stats.get("claims_processed", 0)),
-                ),
-                ("⚠", "Unresolved entities", str(claim_stats.get("unresolved_entities", 0))),
-                ("⚠", "Conflicts detected", str(claim_stats.get("conflicts_detected", 0))),
-                ("○", "Duplicates skipped", str(claim_stats.get("duplicates_skipped", 0))),
-                ("✓", "Documents with claims", str(claim_stats.get("documents_with_claims", 0))),
-            ],
-        )
-
-    # ====================================================================
-    # Global Command Summary
-    # ====================================================================
+    # Build result in expected format
     elapsed = time.time() - start_time
+
+    indexed_count = processed
+    skipped_count = skipped
+    error_count = failed
+
+    # Print summary
+    print()
     summary_items = [
         ("✓", "Total indexed", f"{indexed_count} document(s)"),
     ]
 
-    if kg_result:
-        summary_items.extend(
-            [
-                ("✓", "Entities created", str(kg_result["entities_created"])),
-                ("✓", "Entities linked", str(kg_result.get("entities_linked_existing", 0))),
-                (
-                    "✓",
-                    "Relationships created",
-                    str(kg_result.get("relationships_created", 0)),
-                ),
-            ]
-        )
-
-    # Add claims to summary if present
-    claim_stats = index_result.get("claim_stats")
-    if claim_stats and claim_stats.get("claims_processed", 0) > 0:
-        summary_items.extend(
-            [
-                ("✓", "Claims processed", str(claim_stats.get("claims_processed", 0))),
-            ]
-        )
-        if claim_stats.get("unresolved_entities", 0) > 0:
-            summary_items.append(
-                ("⚠", "Unresolved claim entities", str(claim_stats.get("unresolved_entities", 0)))
-            )
-        if claim_stats.get("conflicts_detected", 0) > 0:
-            summary_items.append(
-                ("⚠", "Conflicts detected", str(claim_stats.get("conflicts_detected", 0)))
-            )
+    if skipped_count > 0:
+        summary_items.append(("○", "Skipped", f"{skipped_count} document(s)"))
+    if error_count > 0:
+        summary_items.append(("✗", "Failed", f"{error_count} document(s)"))
 
     summary_items.append(("ℹ", "Time elapsed", f"{elapsed:.1f}s"))
 
@@ -959,8 +850,24 @@ def index_and_finalize_with_two_stage_progress(documents, console, force: bool =
 
     print_command_summary(console, "Summary", summary_items)
 
-    # Add elapsed time
-    batch_result["elapsed_time"] = time.time() - start_time
+    # Return in expected format
+    batch_result = {
+        "succeeded": indexed_count,
+        "failed": error_count,
+        "skipped": skipped_count,
+        "total": total,
+        "elapsed_time": elapsed,
+    }
+
+    # Extract KG stats from entity_resolution results
+    entity_resolution_result = workflow_result.get("indexing.entity_resolution", {})
+    kg_result = None
+    if entity_resolution_result:
+        kg_result = {
+            "entities_created": entity_resolution_result.get("entities_created", 0),
+            "entities_linked_existing": entity_resolution_result.get("entities_linked", 0),
+            "relationships_created": entity_resolution_result.get("relationships_created", 0),
+        }
 
     return {
         "indexing": batch_result,

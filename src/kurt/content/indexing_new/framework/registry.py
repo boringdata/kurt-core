@@ -34,6 +34,11 @@ class ModelRegistry:
         return list(cls._models.keys())
 
     @classmethod
+    def list_all(cls) -> list[str]:
+        """List all registered model names (alias for list_models)."""
+        return cls.list_models()
+
+    @classmethod
     def clear(cls) -> None:
         """Clear all registered models (mainly for testing)."""
         cls._models.clear()

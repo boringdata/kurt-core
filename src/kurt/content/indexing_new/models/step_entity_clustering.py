@@ -18,9 +18,9 @@ from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 import dspy
-import pandas as pd
-from pydantic import BaseModel, Field as PydanticField
-from sqlalchemy import Column, JSON
+from pydantic import BaseModel
+from pydantic import Field as PydanticField
+from sqlalchemy import JSON, Column
 from sqlmodel import Field
 
 from kurt.config import ConfigParam, ModelConfig
@@ -31,7 +31,6 @@ from kurt.content.indexing_new.framework import (
     Reference,
     TableWriter,
     model,
-    print_progress,
 )
 from kurt.db.graph_entities import cluster_entities_by_similarity
 from kurt.db.graph_resolution import (
@@ -62,10 +61,12 @@ class EntityClusteringConfig(ModelConfig):
         description="DBSCAN min_samples parameter",
     )
     max_concurrent: int = ConfigParam(
+        default=10,
         fallback="MAX_CONCURRENT_INDEXING",
         description="Maximum concurrent LLM/similarity calls",
     )
     llm_model: str = ConfigParam(
+        default="claude-3-5-haiku-latest",
         fallback="INDEXING_LLM_MODEL",
         description="LLM model for entity resolution",
     )
@@ -95,7 +96,9 @@ class EntityResolution(BaseModel):
         description="For MERGE_WITH_PEER: index of peer in group_entities. For LINK_TO_EXISTING: index of entity in existing_candidates.",
     )
     canonical_name: str = PydanticField(description="Canonical name for the resolved entity")
-    aliases: list[str] = PydanticField(default=[], description="All aliases for the resolved entity")
+    aliases: list[str] = PydanticField(
+        default=[], description="All aliases for the resolved entity"
+    )
     reasoning: str = PydanticField(description="Brief explanation of the resolution decision")
 
 
@@ -166,7 +169,9 @@ class EntityGroupRow(PipelineModelBase, LLMTelemetryMixin, table=True):
     same cluster share the same cluster_id.
     """
 
-    __tablename__ = "indexing_entity_groups"
+    # Table name must match model name convention: indexing.entity_clustering -> indexing_entity_clustering
+    # This MUST be set in class definition because SQLModel sets __tablename__ at class definition time
+    __tablename__ = "indexing_entity_clustering"
 
     # Primary key
     entity_name: str = Field(primary_key=True)
@@ -223,7 +228,11 @@ class EntityGroupRow(PipelineModelBase, LLMTelemetryMixin, table=True):
 )
 def entity_clustering(
     ctx: PipelineContext,
-    extractions=Reference("indexing.section_extractions"),
+    # Dict filter with callable - SQL pushdown with runtime value from ctx
+    extractions=Reference(
+        "indexing.section_extractions",
+        filter={"workflow_id": lambda ctx: ctx.workflow_id},
+    ),
     writer: TableWriter = None,
     config: EntityClusteringConfig = None,
 ):
@@ -275,9 +284,7 @@ def entity_clustering(
         logger.info("No new entities found in extractions")
         return {"rows_written": 0}
 
-    logger.info(
-        f"Collected {len(all_entities)} entities from {len(doc_to_kg_data)} documents"
-    )
+    logger.info(f"Collected {len(all_entities)} entities from {len(doc_to_kg_data)} documents")
 
     # Step 2: Normalize and cluster entities
     entities_for_clustering = normalize_entities_for_clustering(all_entities)
@@ -286,34 +293,28 @@ def entity_clustering(
         logger.info("No valid entities for clustering")
         return {"rows_written": 0}
 
-    # Use config values for clustering parameters
-    eps = config.eps if config else 0.25
-    min_samples = config.min_samples if config else 1
-    groups = cluster_entities_by_similarity(entities_for_clustering, eps=eps, min_samples=min_samples)
+    groups = cluster_entities_by_similarity(
+        entities_for_clustering, eps=config.eps, min_samples=config.min_samples
+    )
 
     logger.info(f"Clustered {len(entities_for_clustering)} entities into {len(groups)} groups")
+
+    # Configure DSPy with the step's LLM model
+    from kurt.content.indexing_new.framework.dspy_helpers import configure_dspy_model
+
+    configure_dspy_model(config.llm_model)
 
     # Step 3: Fetch similar existing entities for each cluster
     # Use nest_asyncio to allow running async code in sync context within DBOS
     import nest_asyncio
+
     nest_asyncio.apply()
 
-    # Progress callback for similarity search
-    show_progress = len(groups) > 1
+    # Step 3: Fetch similar entities for each cluster (async)
+    group_tasks = asyncio.run(_fetch_similar_entities_for_groups(groups, config.max_concurrent))
 
-    def similarity_progress(completed: int, total: int) -> None:
-        if show_progress:
-            print_progress(completed, total, "Similarity search: ")
-
-    max_concurrent = config.max_concurrent if config else 50
-    group_tasks = asyncio.run(_fetch_similar_entities_for_groups(groups, max_concurrent, similarity_progress))
-
-    # Step 4: Resolve with LLM
-    def resolution_progress(completed: int, total: int) -> None:
-        if show_progress:
-            print_progress(completed, total, "LLM resolution: ")
-
-    resolutions = asyncio.run(_resolve_groups_with_llm(group_tasks, max_concurrent, resolution_progress))
+    # Step 4: Resolve with LLM (async)
+    resolutions = asyncio.run(_resolve_groups_with_llm(group_tasks, config.max_concurrent))
 
     # Step 5: Validate merge decisions
     validated_resolutions = _validate_merge_decisions(resolutions)
@@ -335,7 +336,10 @@ def entity_clustering(
         f"({create_new_count} CREATE_NEW, {merge_count} MERGE, {link_count} LINK)"
     )
 
-    return writer.write(rows)
+    result = writer.write(rows)
+    result["entities"] = len(validated_resolutions)
+    result["clusters"] = len(groups)
+    return result
 
 
 # ============================================================================
@@ -375,6 +379,21 @@ def _convert_decision_to_string(
             )
             return "CREATE_NEW"
         target_name = group_entities[target_index]["name"]
+        source_name = group_entities[resolution.entity_index]["name"]
+        # Handle self-reference: entity pointing to itself is the canonical one
+        if target_index == resolution.entity_index or target_name == source_name:
+            # Priority: link to existing entity in DB if available
+            if existing_candidates:
+                # Link to first existing entity (already in DB)
+                return existing_candidates[0]["id"]
+            # No existing entity - use index 0 as the canonical entity for the cluster
+            canonical_name = group_entities[0]["name"]
+            if source_name == canonical_name:
+                # This IS the canonical entity - create it
+                return "CREATE_NEW"
+            else:
+                # Not canonical - merge with the canonical entity (index 0)
+                return f"MERGE_WITH:{canonical_name}"
         return f"MERGE_WITH:{target_name}"
 
     elif decision_type == "LINK_TO_EXISTING":

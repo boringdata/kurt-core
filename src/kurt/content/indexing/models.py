@@ -86,11 +86,22 @@ class RelationshipExtraction(BaseModel):
 
 
 class EntityResolution(BaseModel):
-    """Resolution decision for a single entity."""
+    """Resolution decision for a single entity.
 
-    entity_name: str = Field(description="Name of the entity being resolved")
-    resolution_decision: str = Field(
-        description="Decision: 'CREATE_NEW' to create new entity, 'MERGE_WITH:<entity_name>' to merge with peer in cluster, or UUID of existing entity to link to"
+    Resolution decisions use indexes instead of text to avoid matching errors:
+    - entity_index: Index of the entity in the input group (0-based)
+    - decision_type: One of 'CREATE_NEW', 'MERGE_WITH_PEER', 'LINK_TO_EXISTING'
+    - target_index: For MERGE_WITH_PEER, the index of the peer entity to merge with.
+                    For LINK_TO_EXISTING, the index of the existing entity in existing_candidates.
+    """
+
+    entity_index: int = Field(description="Index of the entity in group_entities (0-based)")
+    decision_type: str = Field(
+        description="One of: 'CREATE_NEW', 'MERGE_WITH_PEER', 'LINK_TO_EXISTING'"
+    )
+    target_index: Optional[int] = Field(
+        default=None,
+        description="For MERGE_WITH_PEER: index of peer in group_entities. For LINK_TO_EXISTING: index of entity in existing_candidates.",
     )
     canonical_name: str = Field(description="Canonical name for the resolved entity")
     aliases: list[str] = Field(default=[], description="All aliases for the resolved entity")

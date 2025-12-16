@@ -1,0 +1,232 @@
+{
+    "description": "Precomputed extraction results for deterministic pipeline testing",
+    "extraction_samples": {
+        "python_tutorial_doc": {
+            "document_id": "doc-python-tutorial-001",
+            "section_id": "sec-intro-001",
+            "section_heading": "Introduction to Python",
+            "metadata": {
+                "content_type": "tutorial",
+                "has_code_examples": true,
+                "has_step_by_step_procedures": true,
+                "has_narrative_structure": false
+            },
+            "entities": [
+                {
+                    "name": "Python",
+                    "entity_type": "Technology",
+                    "description": "A versatile programming language",
+                    "aliases": ["Python3", "Python Language"],
+                    "confidence": 0.95,
+                    "resolution_status": "NEW",
+                    "quote": "Python is a versatile programming language used for web development, data science, and automation."
+                },
+                {
+                    "name": "Guido van Rossum",
+                    "entity_type": "Company",
+                    "description": "Creator of Python",
+                    "aliases": ["Guido"],
+                    "confidence": 0.9,
+                    "resolution_status": "NEW",
+                    "quote": "Python was created by Guido van Rossum in 1991."
+                }
+            ],
+            "relationships": [
+                {
+                    "source_entity": "Python",
+                    "target_entity": "Guido van Rossum",
+                    "relationship_type": "created_by",
+                    "context": "Python was created by Guido van Rossum",
+                    "confidence": 0.9
+                }
+            ],
+            "claims": [
+                {
+                    "statement": "Python was created by Guido van Rossum in 1991",
+                    "claim_type": "definition",
+                    "entity_indices": [0, 1],
+                    "source_quote": "Python was created by Guido van Rossum in 1991.",
+                    "quote_start_offset": 0,
+                    "quote_end_offset": 48,
+                    "confidence": 0.95
+                },
+                {
+                    "statement": "Python is used for web development, data science, and automation",
+                    "claim_type": "capability",
+                    "entity_indices": [0],
+                    "source_quote": "Python is a versatile programming language used for web development, data science, and automation.",
+                    "quote_start_offset": 50,
+                    "quote_end_offset": 148,
+                    "confidence": 0.9
+                }
+            ]
+        },
+        "django_framework_doc": {
+            "document_id": "doc-django-ref-001",
+            "section_id": "sec-overview-001",
+            "section_heading": "Django Overview",
+            "metadata": {
+                "content_type": "reference",
+                "has_code_examples": true,
+                "has_step_by_step_procedures": false,
+                "has_narrative_structure": false
+            },
+            "entities": [
+                {
+                    "name": "Django",
+                    "entity_type": "Technology",
+                    "description": "A Python web framework",
+                    "aliases": ["Django Framework"],
+                    "confidence": 0.95,
+                    "resolution_status": "NEW",
+                    "quote": "Django is a high-level Python web framework."
+                },
+                {
+                    "name": "Python",
+                    "entity_type": "Technology",
+                    "description": "Programming language",
+                    "aliases": [],
+                    "confidence": 0.9,
+                    "resolution_status": "EXISTING",
+                    "matched_entity_index": 0,
+                    "quote": "Django is a high-level Python web framework."
+                }
+            ],
+            "relationships": [
+                {
+                    "source_entity": "Django",
+                    "target_entity": "Python",
+                    "relationship_type": "uses",
+                    "context": "Django is built on Python",
+                    "confidence": 0.95
+                }
+            ],
+            "claims": [
+                {
+                    "statement": "Django is a high-level Python web framework",
+                    "claim_type": "definition",
+                    "entity_indices": [0, 1],
+                    "source_quote": "Django is a high-level Python web framework.",
+                    "quote_start_offset": 0,
+                    "quote_end_offset": 45,
+                    "confidence": 0.95
+                },
+                {
+                    "statement": "Django follows the model-template-view pattern",
+                    "claim_type": "definition",
+                    "entity_indices": [0],
+                    "source_quote": "Django follows the model-template-view (MTV) architectural pattern.",
+                    "quote_start_offset": 100,
+                    "quote_end_offset": 168,
+                    "confidence": 0.9
+                }
+            ]
+        },
+        "javascript_basics_doc": {
+            "document_id": "doc-js-basics-001",
+            "section_id": "sec-intro-001",
+            "section_heading": "JavaScript Fundamentals",
+            "metadata": {
+                "content_type": "tutorial",
+                "has_code_examples": true,
+                "has_step_by_step_procedures": true,
+                "has_narrative_structure": false
+            },
+            "entities": [
+                {
+                    "name": "JavaScript",
+                    "entity_type": "Technology",
+                    "description": "A scripting language for the web",
+                    "aliases": ["JS", "ECMAScript"],
+                    "confidence": 0.95,
+                    "resolution_status": "NEW",
+                    "quote": "JavaScript is the programming language of the web."
+                },
+                {
+                    "name": "React",
+                    "entity_type": "Technology",
+                    "description": "A JavaScript library for building user interfaces",
+                    "aliases": ["ReactJS"],
+                    "confidence": 0.9,
+                    "resolution_status": "NEW",
+                    "quote": "React is a popular JavaScript library."
+                }
+            ],
+            "relationships": [
+                {
+                    "source_entity": "React",
+                    "target_entity": "JavaScript",
+                    "relationship_type": "uses",
+                    "context": "React is built with JavaScript",
+                    "confidence": 0.9
+                }
+            ],
+            "claims": [
+                {
+                    "statement": "JavaScript is the programming language of the web",
+                    "claim_type": "definition",
+                    "entity_indices": [0],
+                    "source_quote": "JavaScript is the programming language of the web.",
+                    "quote_start_offset": 0,
+                    "quote_end_offset": 50,
+                    "confidence": 0.95
+                },
+                {
+                    "statement": "React is a popular JavaScript library for building user interfaces",
+                    "claim_type": "definition",
+                    "entity_indices": [0, 1],
+                    "source_quote": "React is a popular JavaScript library for building user interfaces.",
+                    "quote_start_offset": 200,
+                    "quote_end_offset": 268,
+                    "confidence": 0.9
+                }
+            ]
+        },
+        "empty_extraction": {
+            "document_id": "doc-empty-001",
+            "section_id": "sec-empty-001",
+            "section_heading": "Blank Page",
+            "metadata": {
+                "content_type": "reference",
+                "has_code_examples": false,
+                "has_step_by_step_procedures": false,
+                "has_narrative_structure": false
+            },
+            "entities": [],
+            "relationships": [],
+            "claims": []
+        }
+    },
+    "existing_entities_context": {
+        "python_entity": {
+            "index": 0,
+            "id": "existing-python-uuid-001",
+            "name": "Python",
+            "type": "Technology",
+            "description": "A versatile programming language",
+            "aliases": ["Python3", "Python Language"]
+        },
+        "django_entity": {
+            "index": 1,
+            "id": "existing-django-uuid-001",
+            "name": "Django",
+            "type": "Technology",
+            "description": "A Python web framework",
+            "aliases": ["Django Framework"]
+        },
+        "javascript_entity": {
+            "index": 2,
+            "id": "existing-js-uuid-001",
+            "name": "JavaScript",
+            "type": "Technology",
+            "description": "Web programming language",
+            "aliases": ["JS", "ECMAScript"]
+        }
+    },
+    "notes": [
+        "Use extraction_samples for mocking DSPy extraction results",
+        "Use existing_entities_context for mocking _load_existing_entities_by_document",
+        "document_id and section_id should be unique per sample",
+        "entity_indices in claims reference the entities list (0-based)"
+    ]
+}

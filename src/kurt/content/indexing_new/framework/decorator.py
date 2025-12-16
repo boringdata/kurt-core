@@ -1,5 +1,20 @@
 """
-Model decorator and registry for the indexing pipeline.
+Model decorator for the indexing pipeline.
+
+Models declare dependencies using Reference() in function signatures.
+References are lazy-loaded when accessed.
+
+Example:
+    @model(name="indexing.extractions", db_model=..., primary_key=[...])
+    def extractions(
+        ctx: PipelineContext,
+        sections=Reference("indexing.document_sections"),
+        writer: TableWriter,
+    ):
+        # sections.df triggers lazy load
+        df = sections.df
+        # Access context
+        doc_ids = ctx.document_ids
 
 With configuration:
     @model(
@@ -10,10 +25,9 @@ With configuration:
     )
     def section_extractions(
         ctx: PipelineContext,
-        reader: TableReader,
+        sections=Reference("indexing.document_sections"),
         writer: TableWriter,
         config: SectionExtractionsConfig,  # auto-injected
-        ...
     ):
         batch_size = config.batch_size
         ...
@@ -66,12 +80,18 @@ def model(
             name="indexing.section_extractions",
             db_model=SectionExtractionRow,
             primary_key=["document_id", "section_id"],
-            description="Runs DSPy extraction per section",
         )
-        def execute(reader: TableReader, writer: TableWriter, filters: DocumentFilters):
-            sections = reader.load("indexing.section_llm_inputs")
-            # ... process sections
-            return writer.write(results)
+        def section_extractions(
+            ctx: PipelineContext,
+            sections=Reference("indexing.document_sections"),
+            writer: TableWriter,
+        ):
+            # sections is a lazy Reference - data loaded when accessed
+            df = sections.df  # triggers load
+
+            # Or iterate directly
+            for row in sections:
+                process(row)
 
     Example with config:
         class SectionExtractionsConfig(ModelConfig):
@@ -84,18 +104,19 @@ def model(
             primary_key=["document_id", "section_id"],
             config_schema=SectionExtractionsConfig,
         )
-        def execute(reader, writer, config: SectionExtractionsConfig, ...):
+        def section_extractions(
+            ctx: PipelineContext,
+            sections=Reference("indexing.document_sections"),
+            writer: TableWriter,
+            config: SectionExtractionsConfig,  # auto-injected
+        ):
             batch_size = config.batch_size
             ...
-
-    The decorated function signature should be:
-        (reader: TableReader, writer: TableWriter, payloads: List[dict], incremental_mode: str, **kwargs) -> dict
     """
     if write_strategy not in ("append", "merge", "replace"):
         raise ValueError(f"Invalid write_strategy: {write_strategy}")
 
     def decorator(func: Callable) -> Callable:
-        # Validate function signature
         sig = inspect.signature(func)
         params = list(sig.parameters.keys())
 
@@ -108,23 +129,21 @@ def model(
             if exp not in params:
                 logger.warning(f"Model {name} missing parameter: {exp}")
 
-        # Derive table name from model name (replace dots with underscores)
+        # Derive table name from model name (convention: indexing.foo -> indexing_foo)
         table_name = name.replace(".", "_")
 
-        # Set the table name on the SQLModel if not already set
-        if not hasattr(db_model, "__tablename__"):
-            db_model.__tablename__ = table_name
+        # Override the table name on the SQLModel to match the model name convention
+        # This ensures consistency between model names and table names for DAG building
+        db_model.__tablename__ = table_name
 
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             start_time = datetime.utcnow()
             event_emitter = get_event_emitter()
 
-            # Emit model started event
             if event_emitter:
                 event_emitter.emit_model_started(name, description)
 
-            # Display execution status
             display.start_step(name, description)
 
             try:
@@ -144,20 +163,32 @@ def model(
                         )
                         bound_ref._bind(reader, ctx)
                         kwargs[param_name] = bound_ref
+                    logger.debug(
+                        f"Bound {len(references)} lazy references: {list(references.keys())}"
+                    )
 
-                # Load and inject config if schema is provided
-                if config_schema is not None and "config" in params:
+                # Load and inject config if schema is provided and not already passed
+                if config_schema is not None and "config" in params and "config" not in kwargs:
                     try:
                         config_instance = config_schema.load(name)
                         kwargs["config"] = config_instance
                         logger.debug(f"Loaded config for {name}: {config_instance}")
                     except Exception as e:
                         logger.warning(f"Failed to load config for {name}: {e}")
-                        # Continue without config - use defaults from schema
-                        kwargs["config"] = config_schema()
+                        # Continue without config - use defaults from _param_metadata
+                        # Only include params that have non-None defaults (skip fallback-only params)
+                        defaults = {
+                            param_name: param.default
+                            for param_name, param in config_schema._param_metadata.items()
+                            if param.default is not None
+                        }
+                        kwargs["config"] = config_schema(**defaults)
+
+                # Filter kwargs to only include parameters the function accepts
+                filtered_kwargs = {k: v for k, v in kwargs.items() if k in params}
 
                 # Execute the model function
-                result = func(*args, **kwargs)
+                result = func(*args, **filtered_kwargs)
 
                 # Ensure result is a dict
                 if not isinstance(result, dict):
@@ -172,45 +203,54 @@ def model(
                     }
                 )
 
-                # Emit model completed event
                 if event_emitter:
                     rows_written = result.get("rows_written", 0)
                     event_emitter.emit_model_completed(
                         name, rows_written, result.get("table_name", table_name)
                     )
 
-                # Display success
-                display.end_step(
-                    name,
-                    {
-                        "status": "completed",
-                        "rows_written": result.get("rows_written", 0),
-                        "execution_time": f"{result.get('execution_time', 0):.2f}s",
-                    },
-                )
+                # Build stats summary for display - pass through all result keys
+                # Framework stays generic, steps define what stats they return
+                display_summary = {
+                    "status": "completed",
+                    "rows_written": result.get("rows_written", 0),
+                    "execution_time": f"{result.get('execution_time', 0):.2f}s",
+                }
+                # Pass through all stats from result (except internal keys)
+                internal_keys = {
+                    "rows_written",
+                    "rows_deduplicated",
+                    "table_name",
+                    "model_name",
+                    "execution_time",
+                    "result",
+                }
+                for key, value in result.items():
+                    if key not in internal_keys and isinstance(value, (int, float, str)):
+                        display_summary[key] = value
+
+                display.end_step(name, display_summary)
 
                 return result
 
             except Exception as e:
-                # Emit model failed event
                 if event_emitter:
                     event_emitter.emit_model_failed(name, str(e))
 
-                # Display error
                 display.end_step(name, {"status": "failed", "error": str(e)})
                 logger.error(f"Model failed: {name}")
                 raise
 
-        # Store the wrapper function for execution
+        # Store metadata for registry
         wrapper._model_metadata = {
             "name": name,
             "db_model": db_model,
             "primary_key": primary_key,
             "description": description,
+            "references": references,
             "writes_to": writes_to or [],
             "write_strategy": write_strategy,
             "config_schema": config_schema,
-            "references": references,
             "function": wrapper,
             "table_name": table_name,
         }

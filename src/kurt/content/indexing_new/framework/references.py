@@ -51,7 +51,10 @@ class Reference:
     Filtering modes (explicit only, no auto-detection):
     - filter=None (default): No filtering - load full table
     - filter="column_name": Filter by column using ctx.document_ids (SQL WHERE)
+    - filter={"col": lambda ctx: value}: Dict with callable - SQL WHERE with runtime value
+                                          e.g., {"workflow_id": lambda ctx: ctx.workflow_id}
     - filter=lambda df, ctx: df[...]: Custom filter function (post-load)
+                                       WARNING: Callable filters load entire table first!
 
     Content loading (for documents table):
     - load_content=False: Don't load file content (default)
@@ -83,10 +86,10 @@ class Reference:
                 load_content={"document_id_column": "document_id"},
                 filter="id",
             ),
-            # Custom filter function using ctx
+            # Dict filter with callable - SQL pushdown with runtime value (RECOMMENDED)
             groups=Reference(
                 "indexing.entity_groups",
-                filter=lambda df, ctx: df[df["workflow_id"] == ctx.workflow_id]
+                filter={"workflow_id": lambda ctx: ctx.workflow_id}
             ),
             writer: TableWriter,
         ):
@@ -155,18 +158,28 @@ class Reference:
         table_name = self.table_name
         doc_ids = self._ctx.document_ids if self._ctx else []
 
-        # Determine filter type: string (column name) or callable (function)
-        filter_column = None
-        filter_func = None
-        if isinstance(self.filter, str):
-            filter_column = self.filter
-        elif callable(self.filter):
-            filter_func = self.filter
-
-        # Build where clause for SQL filtering (string filter)
+        # Determine filter type and build where clause
         where = None
-        if filter_column:
-            where = {filter_column: doc_ids} if doc_ids else None
+        filter_func = None
+
+        if isinstance(self.filter, dict):
+            # Dict filter: {"column": value} or {"column": lambda ctx: value}
+            # Supports SQL pushdown with runtime values
+            where = {}
+            for col, val in self.filter.items():
+                if callable(val):
+                    # Callable value - evaluate with ctx at runtime
+                    where[col] = val(self._ctx)
+                else:
+                    # Static value
+                    where[col] = val
+        elif isinstance(self.filter, str):
+            # String filter: column name to filter by ctx.document_ids
+            where = {self.filter: doc_ids} if doc_ids else None
+        elif callable(self.filter):
+            # Callable filter: function (df, ctx) -> filtered_df
+            # WARNING: This loads entire table first, then filters in pandas
+            filter_func = self.filter
 
         logger.debug(f"Loading reference '{self.model_name}' from table '{table_name}'")
 
@@ -176,11 +189,15 @@ class Reference:
         if isinstance(self.load_content, dict):
             document_id_column = self.load_content.get("document_id_column", "document_id")
 
+        # Get reprocess_unchanged from context (for document loading skip logic)
+        reprocess_unchanged = self._ctx.reprocess_unchanged if self._ctx else False
+
         df = self._reader.load(
             table_name,
             where=where,
             load_content=should_load_content,
             document_id_column=document_id_column,
+            reprocess_unchanged=reprocess_unchanged,
         )
 
         # Apply custom filter function if provided (receives df and ctx)
@@ -258,6 +275,7 @@ def build_dependency_graph(model_names: list[str]) -> dict[str, list[str]]:
     from .registry import ModelRegistry
 
     # Build a mapping of table_name -> model_name for reverse lookup
+    # Convention: "indexing.foo" -> table "indexing_foo"
     table_to_model = {}
     for name in model_names:
         table_name = name.replace(".", "_")

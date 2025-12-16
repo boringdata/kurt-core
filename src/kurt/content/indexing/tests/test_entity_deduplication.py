@@ -15,7 +15,6 @@ from sqlmodel import select
 
 from kurt.content.indexing.extract import extract_document_metadata
 from kurt.content.indexing.models import (
-from kurt.db.models import ResolutionStatus
     DocumentMetadataOutput,
     EntityExtraction,
     EntityResolution,
@@ -31,6 +30,7 @@ from kurt.db.models import (
     Entity,
     EntityRelationship,
     IngestionStatus,
+    ResolutionStatus,
     SourceType,
 )
 
@@ -260,32 +260,34 @@ def mock_llm_calls(mock_dspy_signature):
             # IndexDocument signature
             return create_mock_metadata_extraction(**kwargs)
         elif "group_entities" in kwargs:
-            # ResolveEntityGroup signature
+            # ResolveEntityGroup signature - uses index-based resolution
             group_entities = kwargs.get("group_entities", [])
             resolutions = []
             # Group by entity name - only merge if names are the same
-            seen_names = {}
-            for entity in group_entities:
+            seen_names = {}  # name -> first index
+            for idx, entity in enumerate(group_entities):
                 entity_name = entity["name"]
                 if entity_name in seen_names:
-                    # Same name - merge with first occurrence
-                    first_name = seen_names[entity_name]
+                    # Same name - merge with first occurrence using index
+                    first_idx = seen_names[entity_name]
                     resolutions.append(
                         EntityResolution(
-                            entity_name=entity_name,
-                            resolution_decision=f"MERGE_WITH:{first_name}",
-                            canonical_name=first_name,
+                            entity_index=idx,
+                            decision_type="MERGE_WITH_PEER",
+                            target_index=first_idx,
+                            canonical_name=entity_name,
                             aliases=entity.get("aliases", []),
                             reasoning="Merge with same named entity",
                         )
                     )
                 else:
                     # First occurrence of this name - create new
-                    seen_names[entity_name] = entity_name
+                    seen_names[entity_name] = idx
                     resolutions.append(
                         EntityResolution(
-                            entity_name=entity_name,
-                            resolution_decision="CREATE_NEW",
+                            entity_index=idx,
+                            decision_type="CREATE_NEW",
+                            target_index=None,
                             canonical_name=entity_name,
                             aliases=entity.get("aliases", []),
                             reasoning="First occurrence",

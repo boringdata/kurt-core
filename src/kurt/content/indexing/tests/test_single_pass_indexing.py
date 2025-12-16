@@ -11,12 +11,12 @@ import pytest
 
 from kurt.content.indexing.extract import _get_index_document_signature
 from kurt.content.indexing.models import (
-from kurt.db.models import ResolutionStatus
     ClaimExtraction,
     DocumentMetadataOutput,
     EntityExtraction,
     RelationshipExtraction,
 )
+from kurt.db.models import ResolutionStatus
 
 
 class TestSinglePassIndexing:

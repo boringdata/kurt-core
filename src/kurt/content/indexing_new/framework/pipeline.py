@@ -7,7 +7,7 @@ Models declare their namespace via their name prefix (e.g., "indexing.document_s
 
 import logging
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List
 
 from .references import build_dependency_graph, topological_sort
 from .registry import ModelRegistry

@@ -289,20 +289,24 @@ async def emit_batch_status(status_data: Dict[str, Any]):
             - skipped_docs: Number of documents skipped
             - workflow_done: Whether the workflow is complete
     """
+    # Log for debugging (always works)
+    logger.info(
+        f"Batch status: {status_data.get('batch_status', 'unknown')} "
+        f"(total: {status_data.get('batch_total', 0)}, "
+        f"active: {status_data.get('active_docs', 0)}, "
+        f"skipped: {status_data.get('skipped_docs', 0)})"
+    )
+
     try:
         from dbos import DBOS
 
-        # Write to DBOS stream for display
-        await DBOS.write_stream("display", status_data)
-
-        # Also log for debugging
-        logger.info(
-            f"Batch status: {status_data.get('batch_status', 'unknown')} "
-            f"(total: {status_data.get('batch_total', 0)}, "
-            f"active: {status_data.get('active_docs', 0)}, "
-            f"skipped: {status_data.get('skipped_docs', 0)})"
-        )
+        # Check if write_stream exists and is callable
+        if hasattr(DBOS, "write_stream"):
+            result = DBOS.write_stream("display", status_data)
+            # Handle both sync and async versions
+            if hasattr(result, "__await__"):
+                await result
 
     except Exception as e:
         # Don't fail the workflow if status emission fails
-        logger.warning(f"Failed to emit batch status: {e}")
+        logger.debug(f"DBOS stream write skipped: {e}")

@@ -9,7 +9,7 @@ This module provides reusable SQLModel mixins for dbt-style pipeline steps:
 import json
 import logging
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, ClassVar, Optional
 
 from sqlmodel import Field, SQLModel
 
@@ -75,11 +75,31 @@ class PipelineModelBase(SQLModel):
     - model_name: Name of the model that created this row
     - error: Error message if processing failed for this row
 
+    Declarative transformations (set as class attributes):
+    - _field_renames: dict[str, str] - rename input fields (e.g., {"heading": "section_heading"})
+    - _dspy_mappings: dict[str, str] - map dspy_result fields to *_json columns
+                                       (e.g., {"entities_json": "entities"})
+
     Usage:
         class MyOutputRow(PipelineModelBase, table=True):
             __tablename__ = "my_output_table"
             id: str = Field(primary_key=True)
             # ... model-specific fields
+
+        # With declarative DSPy mappings:
+        class MyLLMRow(PipelineModelBase, LLMTelemetryMixin, table=True):
+            __tablename__ = "my_llm_output"
+
+            _field_renames = {"heading": "section_heading"}
+            _dspy_mappings = {
+                "entities_json": "entities",
+                "claims_json": "claims",
+            }
+
+            document_id: str = Field(primary_key=True)
+            entities_json: Optional[list] = Field(sa_column=Column(JSON), default=None)
+            claims_json: Optional[list] = Field(sa_column=Column(JSON), default=None)
+            # No __init__ needed - base class handles transformations!
     """
 
     workflow_id: Optional[str] = Field(default=None, index=True)
@@ -88,9 +108,43 @@ class PipelineModelBase(SQLModel):
     model_name: Optional[str] = Field(default=None)
     error: Optional[str] = Field(default=None)
 
+    # Declarative transformation configs (override in subclasses)
+    # Using ClassVar to prevent Pydantic from treating these as model fields
+    _field_renames: ClassVar[dict[str, str]] = {}
+    _dspy_mappings: ClassVar[dict[str, str]] = {}  # {target_column: dspy_result_field}
+
     class Config:
         # Allow extra fields during construction (they'll be ignored)
         extra = "ignore"
+
+    def __init__(self, **data: Any):
+        """Initialize with declarative transformations.
+
+        Automatically applies:
+        1. Field renames from _field_renames
+        2. DSPy result serialization from _dspy_mappings
+        3. DSPy telemetry extraction (if dspy_telemetry in data)
+        """
+        # Get class-level configs (check class and parent classes)
+        field_renames = getattr(self.__class__, "_field_renames", {})
+        dspy_mappings = getattr(self.__class__, "_dspy_mappings", {})
+
+        # 1. Apply field renames
+        if field_renames:
+            apply_field_renames(data, field_renames)
+
+        # 2. Apply DSPy result mappings
+        if dspy_mappings and "dspy_result" in data:
+            result = data.pop("dspy_result")
+            if result is not None:
+                for target_col, source_field in dspy_mappings.items():
+                    value = getattr(result, source_field, None)
+                    data[target_col] = _serialize(value, [] if "json" in target_col else None)
+
+        # 3. Apply telemetry extraction
+        apply_dspy_telemetry(data)
+
+        super().__init__(**data)
 
 
 class LLMTelemetryMixin(SQLModel):

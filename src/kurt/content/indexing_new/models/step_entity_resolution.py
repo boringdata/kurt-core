@@ -12,10 +12,10 @@ Output table: indexing_entity_resolution (tracking what was created)
 
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 from uuid import UUID
 
-from sqlalchemy import Column, JSON
+from sqlalchemy import JSON, Column
 from sqlmodel import Field
 
 from kurt.content.indexing_new.framework import (
@@ -24,8 +24,9 @@ from kurt.content.indexing_new.framework import (
     Reference,
     TableWriter,
     model,
+    print_inline_table,
 )
-from kurt.db.database import get_session
+from kurt.db.database import managed_session
 from kurt.db.graph_resolution import (
     build_entity_docs_mapping,
     cleanup_old_entities,
@@ -68,21 +69,12 @@ class EntityResolutionRow(PipelineModelBase, table=True):
     # Stats
     relationships_created: int = Field(default=0)
 
-    def __init__(self, **data: Any):
-        """Initialize resolution row."""
-        super().__init__(**data)
+    # No custom __init__ needed - PipelineModelBase handles standard transformations
 
 
 # ============================================================================
 # Model Function
 # ============================================================================
-
-
-def _filter_by_workflow(df, ctx: PipelineContext):
-    """Filter entity groups by workflow_id from context."""
-    if ctx and ctx.workflow_id and "workflow_id" in df.columns:
-        return df[df["workflow_id"] == ctx.workflow_id]
-    return df
 
 
 @model(
@@ -94,24 +86,34 @@ def _filter_by_workflow(df, ctx: PipelineContext):
 )
 def entity_resolution(
     ctx: PipelineContext,
-    entity_groups=Reference("indexing.entity_clustering", filter=_filter_by_workflow),
+    # Dict filter with callable - SQL pushdown with runtime value from ctx
+    entity_groups=Reference(
+        "indexing.entity_clustering",
+        filter={"workflow_id": lambda ctx: ctx.workflow_id},
+    ),
+    section_extractions=Reference(
+        "indexing.section_extractions",
+        filter={"workflow_id": lambda ctx: ctx.workflow_id},
+    ),
     writer: TableWriter = None,
 ):
     """Create entities and relationships from clustering decisions.
 
     This model:
     1. Reads clustering/resolution decisions from indexing_entity_groups
-    2. Resolves merge chains and groups by canonical name
-    3. Cleans up old entities (for re-indexing)
-    4. Creates new entities or links to existing ones
-    5. Creates entity relationships
-    6. Writes tracking rows to indexing_entity_upserts
+    2. Reads extraction data from indexing_section_extractions for existing_entities and relationships
+    3. Resolves merge chains and groups by canonical name
+    4. Cleans up old entities (for re-indexing)
+    5. Creates new entities or links to existing ones
+    6. Creates entity relationships
+    7. Writes tracking rows to indexing_entity_resolution
 
     The expensive LLM work was done in step_entity_clustering.
 
     Args:
         ctx: Pipeline context with filters, workflow_id, and incremental_mode
         entity_groups: Lazy reference to entity clustering results
+        section_extractions: Lazy reference to section extractions (for existing_entities and relationships)
         writer: TableWriter for outputting resolution rows
     """
     workflow_id = ctx.workflow_id
@@ -142,12 +144,12 @@ def entity_resolution(
         logger.info("No resolutions to process")
         return {"rows_written": 0}
 
-    # Build doc_to_kg_data from groups
-    doc_to_kg_data = _build_doc_to_kg_data(groups)
+    # Build doc_to_kg_data from extractions (includes existing_entities and relationships)
+    extractions_df = section_extractions.df
+    doc_to_kg_data = _build_doc_to_kg_data_from_extractions(extractions_df, groups)
 
-    # Process with database session
-    session = get_session()
-    try:
+    # Process with database session (auto commit/rollback)
+    with managed_session() as session:
         # Step 1: Link existing entities (those matched during extraction)
         existing_linked = 0
         for doc_id, kg_data in doc_to_kg_data.items():
@@ -172,10 +174,7 @@ def entity_resolution(
         # Step 6: Create relationships
         relationships_created = create_relationships(session, doc_to_kg_data, entity_name_to_id)
 
-        # Commit all changes
-        session.commit()
-
-        # Build tracking rows
+        # Build tracking rows (before context manager commits)
         rows = _build_upsert_rows(
             resolutions,
             entity_name_to_id,
@@ -185,30 +184,47 @@ def entity_resolution(
             ctx.workflow_id,
         )
 
-        # Log summary
-        created_count = sum(1 for r in rows if r.operation == "CREATED")
-        linked_count = sum(1 for r in rows if r.operation == "LINKED")
-        merged_count = sum(1 for r in rows if r.operation == "MERGED")
+    # Log summary (after commit)
+    created_count = sum(1 for r in rows if r.operation == "CREATED")
+    linked_count = sum(1 for r in rows if r.operation == "LINKED")
+    merged_count = sum(1 for r in rows if r.operation == "MERGED")
 
-        logger.info(
-            f"Entity upserts complete: {len(rows)} entities processed "
-            f"({created_count} CREATED, {linked_count} LINKED, {merged_count} MERGED, "
-            f"{relationships_created} relationships)"
+    logger.info(
+        f"Entity upserts complete: {len(rows)} entities processed "
+        f"({created_count} CREATED, {linked_count} LINKED, {merged_count} MERGED, "
+        f"{relationships_created} relationships)"
+    )
+
+    result = writer.write(rows)
+    result["entities"] = len(rows)
+
+    # Print inline table of created entities
+    created_entities = [
+        {"name": r.entity_name, "type": r.canonical_name, "operation": r.operation}
+        for r in rows
+        if r.operation == "CREATED"
+    ]
+    if created_entities:
+        print_inline_table(
+            created_entities,
+            columns=["name", "operation"],
+            max_items=10,
+            cli_command="kurt kg entities" if len(created_entities) > 10 else None,
         )
 
-        return writer.write(rows)
-
-    except Exception as e:
-        session.rollback()
-        logger.error(f"Error during entity upserts: {e}")
-        raise
-    finally:
-        session.close()
+    return result
 
 
 # ============================================================================
 # Helper Functions
 # ============================================================================
+
+
+def _filter_by_workflow(df, ctx: PipelineContext):
+    """Filter entity groups by workflow_id from context."""
+    if ctx and ctx.workflow_id and "workflow_id" in df.columns:
+        return df[df["workflow_id"] == ctx.workflow_id]
+    return df
 
 
 def _convert_groups_to_resolutions(groups: List[dict]) -> List[dict]:
@@ -222,38 +238,122 @@ def _convert_groups_to_resolutions(groups: List[dict]) -> List[dict]:
     """
     resolutions = []
     for group in groups:
-        resolutions.append({
-            "entity_name": group.get("entity_name", ""),
-            "entity_details": {
-                "type": group.get("entity_type"),
-                "description": group.get("description"),
-                "confidence": group.get("confidence", 0.8),
-            },
-            "decision": group.get("decision", "CREATE_NEW"),
-            "canonical_name": group.get("canonical_name") or group.get("entity_name", ""),
-            "aliases": group.get("aliases_json") or [],
-            "reasoning": group.get("reasoning"),
-        })
+        resolutions.append(
+            {
+                "entity_name": group.get("entity_name", ""),
+                "entity_details": {
+                    "type": group.get("entity_type"),
+                    "description": group.get("description"),
+                    "confidence": group.get("confidence", 0.8),
+                },
+                "decision": group.get("decision", "CREATE_NEW"),
+                "canonical_name": group.get("canonical_name") or group.get("entity_name", ""),
+                "aliases": group.get("aliases_json") or [],
+                "reasoning": group.get("reasoning"),
+            }
+        )
     return resolutions
 
 
-def _build_doc_to_kg_data(groups: List[dict]) -> Dict[UUID, dict]:
-    """Build doc_to_kg_data mapping from groups.
+def _build_doc_to_kg_data_from_extractions(extractions_df, groups: List[dict]) -> Dict[UUID, dict]:
+    """Build doc_to_kg_data mapping from section extractions.
+
+    This function properly extracts:
+    - existing_entities: Entity IDs matched during extraction (resolution_status=EXISTING)
+    - new_entities: From the clustering groups
+    - relationships: From section extractions
 
     Args:
-        groups: List of EntityGroupRow dicts
+        extractions_df: DataFrame from section_extractions step
+        groups: List of EntityGroupRow dicts from clustering step
 
     Returns:
-        Dict mapping doc_id -> kg_data
+        Dict mapping doc_id -> kg_data with existing_entities, new_entities, relationships
     """
     from collections import defaultdict
 
-    doc_to_kg_data = defaultdict(lambda: {
-        "existing_entities": [],
-        "new_entities": [],
-        "relationships": [],
-    })
+    doc_to_kg_data = defaultdict(
+        lambda: {
+            "existing_entities": [],
+            "new_entities": [],
+            "relationships": [],
+        }
+    )
 
+    # First, process extractions to get existing_entities and relationships
+    if extractions_df is not None and not extractions_df.empty:
+        extractions = extractions_df.to_dict("records")
+
+        for extraction in extractions:
+            doc_id_str = extraction.get("document_id", "")
+            try:
+                doc_id = UUID(doc_id_str)
+            except (ValueError, TypeError):
+                continue
+
+            # Parse JSON fields
+            entities_json = extraction.get("entities_json") or []
+            relationships_json = extraction.get("relationships_json") or []
+
+            if isinstance(entities_json, str):
+                try:
+                    entities_json = json.loads(entities_json)
+                except json.JSONDecodeError:
+                    entities_json = []
+
+            if isinstance(relationships_json, str):
+                try:
+                    relationships_json = json.loads(relationships_json)
+                except json.JSONDecodeError:
+                    relationships_json = []
+
+            # Load existing entities context for resolving matched_entity_index
+            existing_context = extraction.get("existing_entities_context_json") or []
+            if isinstance(existing_context, str):
+                try:
+                    existing_context = json.loads(existing_context)
+                except json.JSONDecodeError:
+                    existing_context = []
+
+            # Build index -> id mapping from context
+            index_to_id = {
+                e.get("index"): e.get("id")
+                for e in existing_context
+                if e.get("index") is not None and e.get("id")
+            }
+
+            # Extract existing entity IDs (those matched during extraction)
+            for entity in entities_json:
+                resolution_status = entity.get("resolution_status", "NEW")
+                matched_idx = entity.get("matched_entity_index")
+
+                if resolution_status == "EXISTING" and matched_idx is not None:
+                    # Resolve matched_entity_index to actual entity ID using context
+                    existing_id = index_to_id.get(matched_idx)
+                    if (
+                        existing_id
+                        and existing_id not in doc_to_kg_data[doc_id]["existing_entities"]
+                    ):
+                        doc_to_kg_data[doc_id]["existing_entities"].append(existing_id)
+                    elif not existing_id:
+                        logger.debug(
+                            f"Could not resolve matched_entity_index {matched_idx} for entity "
+                            f"'{entity.get('name')}' - index not in context"
+                        )
+
+            # Add relationships with document context
+            for rel in relationships_json:
+                doc_to_kg_data[doc_id]["relationships"].append(
+                    {
+                        "source_entity": rel.get("source_entity"),
+                        "target_entity": rel.get("target_entity"),
+                        "relationship_type": rel.get("relationship_type"),
+                        "confidence": rel.get("confidence", 0.8),
+                        "context": rel.get("context"),
+                    }
+                )
+
+    # Then add new_entities from groups (clustering determined these are new)
     for group in groups:
         entity_name = group.get("entity_name", "")
         document_ids = group.get("document_ids_json") or []
@@ -264,12 +364,22 @@ def _build_doc_to_kg_data(groups: List[dict]) -> Dict[UUID, dict]:
             except (ValueError, TypeError):
                 continue
 
-            # Add as new entity (clustering already determined it's new)
-            doc_to_kg_data[doc_id]["new_entities"].append({
-                "name": entity_name,
-                "type": group.get("entity_type"),
-                "confidence": group.get("confidence", 0.8),
-            })
+            doc_to_kg_data[doc_id]["new_entities"].append(
+                {
+                    "name": entity_name,
+                    "type": group.get("entity_type"),
+                    "confidence": group.get("confidence", 0.8),
+                }
+            )
+
+    # Log stats
+    total_existing = sum(len(d["existing_entities"]) for d in doc_to_kg_data.values())
+    total_new = sum(len(d["new_entities"]) for d in doc_to_kg_data.values())
+    total_rels = sum(len(d["relationships"]) for d in doc_to_kg_data.values())
+    logger.debug(
+        f"Built doc_to_kg_data: {len(doc_to_kg_data)} docs, "
+        f"{total_existing} existing entities, {total_new} new entities, {total_rels} relationships"
+    )
 
     return dict(doc_to_kg_data)
 

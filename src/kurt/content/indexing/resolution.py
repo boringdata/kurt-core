@@ -26,38 +26,41 @@ class ResolveEntityGroup(dspy.Signature):
     """Resolve a GROUP of similar NEW entities against existing entities.
 
     You are given:
-    1. A group of similar NEW entities (clustered together by similarity)
-    2. Existing entities from the knowledge base that might match
+    1. A group of similar NEW entities (indexed 0, 1, 2, ...) clustered together by similarity
+    2. Existing entities from the knowledge base (indexed 0, 1, 2, ...) that might match
 
-    Your task is to decide for EACH ENTITY in the group:
-    - CREATE_NEW: Create a new entity (novel concept not in database)
-    - MERGE_WITH:<exact_peer_name>: Merge with another entity in THIS group by using the EXACT name from group_entities
-      Example: If group has ["Python", "Python Lang"], use "MERGE_WITH:Python" (exact match from group)
-    - <existing_entity_id>: Link to an existing entity by using the EXACT UUID from existing_candidates
-      Example: If existing has {id: "abc-123", name: "React"}, use "abc-123" (the UUID)
+    Your task is to decide for EACH ENTITY in the group using INDEXES (not text):
+    - decision_type='CREATE_NEW': Create a new entity (novel concept not in database)
+    - decision_type='MERGE_WITH_PEER', target_index=N: Merge with entity at index N in group_entities
+    - decision_type='LINK_TO_EXISTING', target_index=N: Link to entity at index N in existing_candidates
 
     Resolution rules:
-    - If an existing entity is a clear match, return its EXACT UUID from existing_candidates (not the name!)
-    - If multiple entities in the group refer to the same thing, merge them using MERGE_WITH:<exact_peer_name>
-      The peer_name MUST be an exact match to one of the entity names in group_entities
-    - If this is a novel concept, return CREATE_NEW
+    - If an existing entity is a clear match, use LINK_TO_EXISTING with the index from existing_candidates
+    - If multiple entities in the group refer to the same thing, merge them using MERGE_WITH_PEER
+      The target_index MUST be the index of another entity in group_entities (not self!)
+    - If this is a novel concept, use CREATE_NEW (target_index should be null)
     - Provide canonical name and aliases for each resolution
 
-    CRITICAL: When using MERGE_WITH, the target name MUST exactly match an entity name in group_entities.
-    CRITICAL: When linking to existing entity, use the UUID (id field), NOT the name.
+    CRITICAL: Use INDEXES, not text! entity_index and target_index are 0-based integers.
+    CRITICAL: For MERGE_WITH_PEER, target_index must be a different entity in the group (not the same entity).
 
-    IMPORTANT: Return one resolution decision for EACH entity in the group.
+    IMPORTANT: Return one resolution for EACH entity in the group.
+
+    Example:
+    - group_entities: [{name: "Python"}, {name: "python lang"}]  (indexes 0 and 1)
+    - existing_candidates: [{id: "abc", name: "JavaScript"}]  (index 0)
+    - If merging Python and python lang: entity_index=1, decision_type='MERGE_WITH_PEER', target_index=0
     """
 
     group_entities: list[dict] = dspy.InputField(
-        desc="Group of similar entities to resolve: [{name, type, description, aliases, confidence}, ...]"
+        desc="Group of similar entities to resolve: [{name, type, description, aliases, confidence}, ...]. Use 0-based indexes to reference."
     )
     existing_candidates: list[dict] = dspy.InputField(
         default=[],
-        desc="Similar existing entities from KB: [{id, name, type, description, aliases}, ...]. Use the 'id' field for linking.",
+        desc="Similar existing entities from KB: [{id, name, type, description, aliases}, ...]. Use 0-based indexes to reference.",
     )
     resolutions: GroupResolution = dspy.OutputField(
-        desc="Resolution decision for EACH entity in the group"
+        desc="Resolution decision for EACH entity in the group, using indexes"
     )
 
 
@@ -89,20 +92,28 @@ async def resolve_single_group(
 
     # Convert GroupResolution output to individual resolution dicts
     group_resolutions = []
-    for idx, entity_resolution in enumerate(result.resolutions.resolutions):
-        if idx < len(group_entities):
-            entity_details = group_entities[idx]
+    for entity_resolution in result.resolutions.resolutions:
+        # Get entity details using the index
+        entity_idx = entity_resolution.entity_index
+        if 0 <= entity_idx < len(group_entities):
+            entity_details = group_entities[entity_idx]
         else:
-            entity_details = next(
-                (e for e in group_entities if e["name"] == entity_resolution.entity_name),
-                group_entities[0],
+            logger.warning(
+                f"Invalid entity_index {entity_idx}, using first entity. "
+                f"Group has {len(group_entities)} entities."
             )
+            entity_details = group_entities[0]
+
+        # Convert index-based decision to string-based format for downstream compatibility
+        decision = _convert_decision_to_string(
+            entity_resolution, group_entities, existing_candidates
+        )
 
         group_resolutions.append(
             {
-                "entity_name": entity_resolution.entity_name,
+                "entity_name": entity_details["name"],
                 "entity_details": entity_details,
-                "decision": entity_resolution.resolution_decision,
+                "decision": decision,
                 "canonical_name": entity_resolution.canonical_name,
                 "aliases": entity_resolution.aliases,
                 "reasoning": entity_resolution.reasoning,
@@ -110,6 +121,56 @@ async def resolve_single_group(
         )
 
     return group_resolutions
+
+
+def _convert_decision_to_string(
+    resolution, group_entities: list[dict], existing_candidates: list[dict]
+) -> str:
+    """Convert index-based decision to string format for downstream compatibility.
+
+    Args:
+        resolution: EntityResolution with decision_type and target_index
+        group_entities: List of entities in the group
+        existing_candidates: List of existing entities
+
+    Returns:
+        String decision: 'CREATE_NEW', 'MERGE_WITH:<name>', or '<uuid>'
+    """
+    decision_type = resolution.decision_type
+    target_index = resolution.target_index
+
+    if decision_type == "CREATE_NEW":
+        return "CREATE_NEW"
+
+    elif decision_type == "MERGE_WITH_PEER":
+        if target_index is None:
+            logger.warning("MERGE_WITH_PEER missing target_index, defaulting to CREATE_NEW")
+            return "CREATE_NEW"
+        if not (0 <= target_index < len(group_entities)):
+            logger.warning(
+                f"Invalid MERGE_WITH_PEER target_index {target_index}, "
+                f"group has {len(group_entities)} entities. Defaulting to CREATE_NEW."
+            )
+            return "CREATE_NEW"
+        target_name = group_entities[target_index]["name"]
+        return f"MERGE_WITH:{target_name}"
+
+    elif decision_type == "LINK_TO_EXISTING":
+        if target_index is None:
+            logger.warning("LINK_TO_EXISTING missing target_index, defaulting to CREATE_NEW")
+            return "CREATE_NEW"
+        if not (0 <= target_index < len(existing_candidates)):
+            logger.warning(
+                f"Invalid LINK_TO_EXISTING target_index {target_index}, "
+                f"existing_candidates has {len(existing_candidates)} entities. Defaulting to CREATE_NEW."
+            )
+            return "CREATE_NEW"
+        # Return the UUID of the existing entity
+        return existing_candidates[target_index]["id"]
+
+    else:
+        logger.warning(f"Unknown decision_type '{decision_type}', defaulting to CREATE_NEW")
+        return "CREATE_NEW"
 
 
 # ============================================================================
@@ -120,7 +181,9 @@ async def resolve_single_group(
 def validate_merge_decisions(resolutions: list[dict]) -> list[dict]:
     """Validate MERGE_WITH decisions and fix invalid ones.
 
-    This is business logic - validates that merge targets actually exist.
+    With index-based resolution, most validation happens in _convert_decision_to_string.
+    This function now just ensures MERGE_WITH targets exist in the resolution set
+    (final safety check).
 
     Args:
         resolutions: List of resolution dicts
@@ -128,7 +191,9 @@ def validate_merge_decisions(resolutions: list[dict]) -> list[dict]:
     Returns:
         List of validated resolution dicts
     """
+    # Build lookup of entity names in this resolution set
     all_entity_names = {r["entity_name"] for r in resolutions}
+
     validated_resolutions = []
 
     for resolution in resolutions:
@@ -138,10 +203,11 @@ def validate_merge_decisions(resolutions: list[dict]) -> list[dict]:
         if decision.startswith("MERGE_WITH:"):
             merge_target = decision.replace("MERGE_WITH:", "").strip()
 
+            # Check target exists (should always pass with index-based resolution)
             if merge_target not in all_entity_names:
                 logger.warning(
-                    f"Invalid MERGE_WITH target '{merge_target}' for entity '{entity_name}'. "
-                    f"Target not found in group. Converting to CREATE_NEW."
+                    f"MERGE_WITH target '{merge_target}' not found for entity '{entity_name}'. "
+                    f"Converting to CREATE_NEW."
                 )
                 resolution["decision"] = "CREATE_NEW"
 

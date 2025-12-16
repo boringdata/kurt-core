@@ -1,162 +1,175 @@
 """
 Integration tests for workflows with the new models.
+
+Tests the execute_model_sync and run_pipeline functions with mocked dependencies.
 """
 
+from unittest.mock import MagicMock
 from uuid import uuid4
 
+import pandas as pd
+import pytest
+
 from kurt.content.filtering import DocumentFilters
-from kurt.content.indexing_new.workflows import run_section_splitting
+from kurt.content.indexing_new.framework import (
+    ModelContext,
+    PipelineConfig,
+    PipelineContext,
+    TableWriter,
+)
 
 
-class TestWorkflowIntegration:
-    """Test the workflow integration with models."""
+class TestExecuteModelSync:
+    """Test execute_model_sync for running models without DBOS."""
 
-    def test_section_splitting_workflow(self, tmp_path):
-        """Test the section splitting workflow end-to-end."""
-        # Create temporary database
-        db_path = tmp_path / "test.db"
+    @pytest.fixture
+    def mock_ctx(self):
+        """Create a mock PipelineContext."""
+        return PipelineContext(
+            filters=DocumentFilters(),
+            workflow_id="test-workflow",
+            incremental_mode="full",
+        )
 
-        # Mock documents
+    def _create_mock_reference(self, documents: list[dict]):
+        """Create a mock Reference that returns the documents DataFrame."""
+        mock_ref = MagicMock()
+        mock_ref.df = pd.DataFrame(documents)
+        return mock_ref
+
+    def test_execute_document_sections_model(self, mock_ctx):
+        """Test executing document_sections model via the model function directly."""
+        from kurt.content.indexing_new.models.step_document_sections import document_sections
+
         doc_id = str(uuid4())
-        content = "This is test content for the workflow integration test."
+        content = "This is test content for the model execution test."
 
-        # Mock the framework's load_documents function
-        import kurt.content.indexing_new.loaders as doc_loader
-
-        original_load = doc_loader.load_documents
-
-        def mock_load(filters, **kwargs):
-            return [
+        # Create mock reference
+        mock_documents = self._create_mock_reference(
+            [
                 {
                     "document_id": doc_id,
+                    "title": "Test Doc",
                     "content": content,
                     "skip": False,
+                    "error": None,
                 }
             ]
+        )
 
-        doc_loader.load_documents = mock_load
+        # Mock writer
+        mock_writer = MagicMock(spec=TableWriter)
+        mock_writer.write.return_value = {
+            "rows_written": 1,
+            "table_name": "indexing_document_sections",
+        }
 
-        # Also mock at the workflow import level since it imports from framework
-        import kurt.content.indexing_new.workflows.workflow_indexing as workflow_module
+        result = document_sections(ctx=mock_ctx, documents=mock_documents, writer=mock_writer)
 
-        workflow_module.load_documents = mock_load
+        assert "rows_written" in result
+        assert result["rows_written"] == 1
+        mock_writer.write.assert_called_once()
 
-        # Configure the framework to use our test database
-        import kurt.config
+        # Verify the row was created correctly
+        rows = mock_writer.write.call_args[0][0]
+        assert len(rows) >= 1
+        assert rows[0].document_id == doc_id
 
-        original_config = kurt.config.get_config_or_default
+    def test_execute_model_with_skip(self, mock_ctx):
+        """Test that skipped documents don't produce output."""
+        from kurt.content.indexing_new.models.step_document_sections import document_sections
 
-        def mock_config():
-            class MockConfig:
-                PATH_DB = str(db_path)
-
-                def get_absolute_sources_path(self):
-                    return tmp_path / "sources"
-
-            return MockConfig()
-
-        kurt.config.get_config_or_default = mock_config
-
-        try:
-            # Run the workflow with explicit db_path
-            filters = DocumentFilters()
-            result = run_section_splitting(
-                filters=filters,
-                incremental_mode="full",
-                workflow_id="test_workflow_integration",
-                db_path=str(db_path),
-            )
-
-            # Check result
-            assert "rows_written" in result
-            assert result["rows_written"] >= 1
-
-            # Verify data was written to database using TableReader
-            from kurt.content.indexing_new.framework import TableReader
-
-            reader = TableReader()
-            df = reader.load("indexing_document_sections", where={"document_id": doc_id})
-
-            assert len(df) >= 1
-            assert df.iloc[0]["document_id"] == doc_id
-            assert df.iloc[0]["workflow_id"] == "test_workflow_integration"
-
-        finally:
-            # Restore original functions
-            doc_loader.load_documents = original_load
-            workflow_module.load_documents = original_load
-            kurt.config.get_config_or_default = original_config
-
-    def test_section_splitting_workflow_incremental(self, tmp_path):
-        """Test incremental mode skips unchanged documents."""
-        # Create temporary database
-        db_path = tmp_path / "test.db"
-
-        # Mock documents - one that should be skipped
         doc_id = str(uuid4())
 
-        # Mock the framework's load_documents function
-        import kurt.content.indexing_new.loaders as doc_loader
+        mock_documents = self._create_mock_reference(
+            [
+                {
+                    "document_id": doc_id,
+                    "title": "Test Doc",
+                    "content": "Content",
+                    "skip": True,
+                    "error": None,
+                }
+            ]
+        )
 
-        original_load = doc_loader.load_documents
+        mock_writer = MagicMock(spec=TableWriter)
 
-        def mock_load(filters, incremental_mode="full", **kwargs):
-            if incremental_mode == "delta":
-                return [
-                    {
-                        "document_id": doc_id,
-                        "content": "content",
-                        "skip": True,
-                        "skip_reason": "content_unchanged",
-                    }
-                ]
-            else:
-                return [
-                    {
-                        "document_id": doc_id,
-                        "content": "content",
-                        "skip": False,
-                    }
-                ]
+        result = document_sections(ctx=mock_ctx, documents=mock_documents, writer=mock_writer)
 
-        doc_loader.load_documents = mock_load
+        # Should have no rows written (document skipped)
+        assert result.get("rows_written", 0) == 0
+        mock_writer.write.assert_not_called()
 
-        # Also mock at the workflow import level
-        import kurt.content.indexing_new.workflows.workflow_indexing as workflow_module
+    def test_execute_model_not_found(self):
+        """Test error handling when model is not in registry."""
+        from kurt.content.indexing_new.framework import execute_model_sync
 
-        workflow_module.load_documents = mock_load
+        filters = DocumentFilters()
+        ctx = ModelContext(filters=filters, workflow_id="test")
 
-        # Mock config
-        import kurt.config
+        with pytest.raises(ValueError) as exc_info:
+            execute_model_sync("nonexistent.model", ctx)
 
-        original_config = kurt.config.get_config_or_default
+        assert "not found in registry" in str(exc_info.value)
 
-        def mock_config():
-            class MockConfig:
-                PATH_DB = str(db_path)
 
-                def get_absolute_sources_path(self):
-                    return tmp_path / "sources"
+class TestPipelineConfig:
+    """Test PipelineConfig dataclass."""
 
-            return MockConfig()
+    def test_pipeline_config_defaults(self):
+        """Test default values for PipelineConfig."""
+        pipeline = PipelineConfig(name="test_pipeline", models=["model.one", "model.two"])
 
-        kurt.config.get_config_or_default = mock_config
+        assert pipeline.name == "test_pipeline"
+        assert pipeline.stop_on_error is True
+        assert len(pipeline.models) == 2
 
-        try:
-            # Run in delta mode with explicit db_path
-            filters = DocumentFilters()
-            result = run_section_splitting(
-                filters=filters,
-                incremental_mode="delta",
-                workflow_id="test_incremental",
-                db_path=str(db_path),
-            )
+    def test_pipeline_config_custom(self):
+        """Test custom values for PipelineConfig."""
+        pipeline = PipelineConfig(
+            name="my_pipeline",
+            models=["a", "b", "c"],
+            stop_on_error=False,
+        )
 
-            # Should have no rows written (document skipped)
-            assert result.get("rows_written", 0) == 0
+        assert pipeline.name == "my_pipeline"
+        assert pipeline.stop_on_error is False
+        assert pipeline.models == ["a", "b", "c"]
 
-        finally:
-            # Restore original functions
-            doc_loader.load_documents = original_load
-            workflow_module.load_documents = original_load
-            kurt.config.get_config_or_default = original_config
+
+class TestModelContext:
+    """Test ModelContext dataclass."""
+
+    def test_model_context_defaults(self):
+        """Test default values for ModelContext."""
+        filters = DocumentFilters()
+        ctx = ModelContext(filters=filters)
+
+        assert ctx.incremental_mode == "full"
+        assert ctx.workflow_id is None
+        assert ctx.metadata == {}
+
+    def test_model_context_metadata(self):
+        """Test that metadata is passed through."""
+        filters = DocumentFilters()
+        ctx = ModelContext(
+            filters=filters,
+            workflow_id="test_wf",
+            metadata={"key": "value"},
+        )
+
+        assert ctx.metadata == {"key": "value"}
+
+
+class TestIndexingPipeline:
+    """Test the INDEXING_PIPELINE configuration."""
+
+    def test_indexing_pipeline_definition(self):
+        """Test that INDEXING_PIPELINE is properly defined."""
+        from kurt.content.indexing_new.workflows import INDEXING_PIPELINE
+
+        assert INDEXING_PIPELINE.name == "indexing"
+        assert len(INDEXING_PIPELINE.models) >= 2
+        assert "indexing.document_sections" in INDEXING_PIPELINE.models
+        assert "indexing.section_extractions" in INDEXING_PIPELINE.models
