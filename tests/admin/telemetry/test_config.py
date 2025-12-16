@@ -33,6 +33,9 @@ class TestTelemetryConfig:
     def test_telemetry_enabled_by_default(self, mock_get_config, tmp_path, monkeypatch):
         """Test that telemetry is enabled by default."""
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        # Clear env vars that would disable telemetry
+        monkeypatch.delenv("DO_NOT_TRACK", raising=False)
+        monkeypatch.delenv("KURT_TELEMETRY_DISABLED", raising=False)
 
         # Mock config with TELEMETRY_ENABLED=True
         mock_config = MagicMock()
@@ -134,6 +137,9 @@ class TestTelemetryConfig:
     def test_config_error_fallback(self, mock_get_config, tmp_path, monkeypatch):
         """Test handling of config loading errors."""
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        # Clear env vars that would disable telemetry
+        monkeypatch.delenv("DO_NOT_TRACK", raising=False)
+        monkeypatch.delenv("KURT_TELEMETRY_DISABLED", raising=False)
 
         # Simulate config loading error
         mock_get_config.side_effect = Exception("Config error")

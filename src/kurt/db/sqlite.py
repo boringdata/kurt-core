@@ -72,6 +72,27 @@ class SQLiteClient(DatabaseClient):
         db_path = self.get_database_path()
         return f"sqlite:///{db_path}"
 
+    def _get_sqlite_connect_args(self) -> dict:
+        """Get standard SQLite connection arguments for better concurrency."""
+        return {
+            "check_same_thread": False,
+            "timeout": 30.0,  # 30 second busy timeout
+        }
+
+    def _get_pool_config(self) -> dict:
+        """Get standard connection pool configuration for SQLite."""
+        return {
+            "pool_pre_ping": True,  # Check connections before using
+            "pool_size": 1,  # Limit pool size for SQLite
+            "max_overflow": 0,  # No overflow connections
+        }
+
+    def _configure_sqlite_pragmas(self, conn) -> None:
+        """Configure SQLite PRAGMAs for better performance and concurrency."""
+        conn.exec_driver_sql("PRAGMA journal_mode=WAL")
+        conn.exec_driver_sql("PRAGMA busy_timeout=30000")  # 30 seconds in milliseconds
+        conn.exec_driver_sql("PRAGMA synchronous=NORMAL")  # Better performance
+
     def ensure_kurt_directory(self) -> Path:
         """Ensure .kurt database directory exists."""
         config = self.get_config()
@@ -111,8 +132,17 @@ class SQLiteClient(DatabaseClient):
         # Create database engine
         db_url = self.get_database_url()
         console.print(f"[dim]Creating database at: {db_path}[/dim]")
-        engine = create_engine(db_url, echo=False)
+        engine = create_engine(
+            db_url,
+            echo=False,
+            connect_args=self._get_sqlite_connect_args(),
+            **self._get_pool_config(),
+        )
         self._engine = engine
+
+        # Enable WAL mode for better concurrency
+        with self._engine.begin() as conn:
+            self._configure_sqlite_pragmas(conn)
 
         # Create all tables
         console.print("[dim]Running migrations...[/dim]")
@@ -135,7 +165,15 @@ class SQLiteClient(DatabaseClient):
         """Get a database session."""
         if not self._engine:
             db_url = self.get_database_url()
-            self._engine = create_engine(db_url, echo=False)
+            self._engine = create_engine(
+                db_url,
+                echo=False,
+                connect_args=self._get_sqlite_connect_args(),
+                **self._get_pool_config(),
+            )
+            # Enable WAL mode for better concurrency
+            with self._engine.begin() as conn:
+                self._configure_sqlite_pragmas(conn)
 
         return Session(self._engine)
 
@@ -306,6 +344,7 @@ class SQLiteClient(DatabaseClient):
             return []
         finally:
             session.close()
+
     # ========== ASYNC METHODS ==========
 
     def get_async_database_url(self) -> str:
@@ -328,8 +367,8 @@ class SQLiteClient(DatabaseClient):
             self._async_engine = create_async_engine(
                 db_url,
                 echo=False,
-                # Important for SQLite: disable thread checking
-                connect_args={"check_same_thread": False},
+                connect_args=self._get_sqlite_connect_args(),
+                **self._get_pool_config(),
             )
         return self._async_engine
 

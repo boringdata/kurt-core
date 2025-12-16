@@ -56,6 +56,68 @@ class EntityType(str, Enum):
     COMPANY = "Company"
     INTEGRATION = "Integration"
 
+    @classmethod
+    def get_description(cls, entity_type: "EntityType") -> str:
+        """Get the description and examples for an entity type."""
+        descriptions = {
+            cls.PRODUCT: "Named products or services (e.g., 'MotherDuck', 'DuckDB', 'PostgreSQL')",
+            cls.FEATURE: "Capabilities, methods, or approaches (e.g., 'semantic search', 'embeddings', 'RAG')",
+            cls.TECHNOLOGY: "Programming languages, frameworks, tools (e.g., 'Python', 'SQL', 'React')",
+            cls.TOPIC: "Domain concepts, fields of study (e.g., 'Machine Learning', 'Data Engineering')",
+            cls.COMPANY: "Companies, organizations, teams (e.g., 'OpenAI', 'Google', 'Microsoft')",
+            cls.INTEGRATION: "Integration points between systems (e.g., 'API endpoints', 'webhooks')",
+        }
+        return descriptions.get(entity_type, "")
+
+    @classmethod
+    def get_extraction_rules(cls) -> str:
+        """Get formatted extraction rules for all entity types."""
+        rules = []
+        rules.append("           REQUIRED entity types to extract:")
+        for entity_type in cls:
+            desc = cls.get_description(entity_type)
+            rules.append(f"             * {entity_type.value}s: {desc}")
+
+        # Add specific extraction patterns
+        rules.extend(
+            [
+                "",
+                "           Extraction rules:",
+                "             * Extract proper nouns as Products/Companies/Technologies",
+                "             * CRITICAL: Extract ALL capabilities and methods as Feature entities:",
+                "               - Any 'X-augmented Y' pattern (e.g., 'retrieval-augmented generation') → Feature",
+                "               - Any processing method (e.g., 'semantic search', 'vector similarity') → Feature",
+                "               - Any data structure or format (e.g., 'embeddings', 'vectors') → Feature",
+                "               - Any workflow or process (e.g., 'ETL pipeline', 'data ingestion') → Feature",
+                "             * Sentence patterns requiring entity extraction:",
+                "               - 'X is a Y' → Extract BOTH: X AND Y",
+                "               - 'X provides/enables/supports Y' → Extract BOTH: X AND Y (Feature)",
+                "               - 'Using X for Y' → Extract BOTH: X (Technology) AND Y (Feature)",
+                "             * Be comprehensive: if something has a distinct identity and purpose, it's an entity",
+            ]
+        )
+
+        return "\n".join(rules)
+
+
+class ResolutionStatus(str, Enum):
+    """Resolution status for entities during extraction."""
+
+    EXISTING = "EXISTING"  # Entity matches an existing entity in the knowledge graph
+    NEW = "NEW"  # Entity is new and needs to be created
+
+    @classmethod
+    def get_all_values(cls) -> list[str]:
+        """Get all resolution status values as a list."""
+        return [status.value for status in cls]
+
+    @classmethod
+    def get_descriptions(cls) -> str:
+        """Get formatted descriptions for the prompt."""
+        return (
+            "             * resolution_status: EXISTING if matches existing_entities list, else NEW"
+        )
+
 
 class RelationshipType(str, Enum):
     """Canonical relationship types for knowledge graph."""
@@ -66,7 +128,24 @@ class RelationshipType(str, Enum):
     ENABLES = "enables"
     RELATED_TO = "related_to"
     DEPENDS_ON = "depends_on"
+    REQUIRES = "requires"  # For dependency requirements
     REPLACES = "replaces"
+    IN_CONFLICT = "in_conflict"  # For conflicting claims
+    USES = "uses"  # X uses Y (e.g., MotherDuck uses vectorized execution)
+    PROVIDES = "provides"  # X provides Y (e.g., MotherDuck provides analytics)
+    READS = "reads"  # X reads Y format (e.g., MotherDuck reads Parquet)
+    SUPPORTS = "supports"  # X supports Y (e.g., DuckDB supports JSON)
+    IS_A = "is_a"  # X is a type of Y (e.g., MotherDuck is a cloud data warehouse)
+    IMPACTS = "impacts"  # X impacts Y (e.g., configuration impacts performance)
+    EVALUATED_BY = "evaluated_by"  # X evaluated by Y (e.g., model evaluated by benchmark)
+    COMPARES_TO = "compares_to"  # X compares to Y (e.g., DuckDB vs PostgreSQL)
+    CREATED_BY = "created_by"  # X created by Y (e.g., DuckDB created by DuckDB Labs)
+    EXTENDS = "extends"  # X extends Y (e.g., MotherDuck extends DuckDB)
+
+    @classmethod
+    def get_all_types_string(cls) -> str:
+        """Get all relationship types as a comma-separated string."""
+        return ", ".join([rt.value for rt in cls])
 
 
 class Document(SQLModel, table=True):

@@ -28,7 +28,7 @@ from uuid import uuid4
 import pytest
 
 from kurt.cli import main
-from kurt.content.indexing.models import (
+from kurt.content.indexing.step_extract_sections import (
     DocumentMetadataOutput,
     EntityExtraction,
 )
@@ -104,7 +104,7 @@ Python is a high-level programming language.
         mock_extraction_output = MockIndexDocumentOutput()
 
         # Mock entity resolution
-        from kurt.content.indexing.models import EntityResolution, GroupResolution
+        from kurt.content.indexing.step_entity_clustering import EntityResolution, GroupResolution
 
         mock_resolution = GroupResolution(
             resolutions=[
@@ -252,7 +252,7 @@ Python is a high-level programming language.
         mock_extraction_docker.relationships = []
 
         # Mock resolution
-        from kurt.content.indexing.models import EntityResolution, GroupResolution
+        from kurt.content.indexing.step_entity_clustering import EntityResolution, GroupResolution
 
         mock_resolution = GroupResolution(
             resolutions=[

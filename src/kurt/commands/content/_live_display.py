@@ -647,60 +647,126 @@ def display_knowledge_graph(kg: dict, console: Console, title: str = "Knowledge 
     if not kg:
         return
 
-    console.print(f"\n[bold cyan]{title}[/bold cyan]")
+    # Build entity name to ID mapping for highlighting
+    entity_map = {}
+    if kg.get("entities"):
+        for entity in kg["entities"]:
+            entity_map[entity["name"].lower()] = entity
+
+    # Claims section (first)
+    if kg.get("claims"):
+        claim_count = len(kg["claims"])
+        console.print(f"\n[bold cyan]Claims ({claim_count})[/bold cyan]")
+        console.print(f"[dim]{'─' * 60}[/dim]")
+
+        for claim in kg["claims"][:10]:
+            # Highlight entities in the claim statement
+            statement = claim["statement"]
+
+            # Find and highlight entities mentioned in the statement
+            highlighted_statement = statement
+
+            # First highlight entities from the referenced_entities list (these are properly linked)
+            entities_in_claim = claim.get("referenced_entities", [])
+            for entity_name in entities_in_claim:
+                import re
+
+                pattern = re.compile(r"\b" + re.escape(entity_name) + r"\b", re.IGNORECASE)
+                highlighted_statement = pattern.sub(
+                    f"[bold magenta]{entity_name}[/bold magenta]", highlighted_statement
+                )
+
+            # Also highlight any entities from the entity_map that appear in the text
+            for entity_name, entity_info in entity_map.items():
+                # Skip if already highlighted
+                if entity_info["name"] not in entities_in_claim:
+                    import re
+
+                    pattern = re.compile(
+                        r"\b" + re.escape(entity_info["name"]) + r"\b", re.IGNORECASE
+                    )
+                    # Use dim magenta for entities not properly linked
+                    highlighted_statement = pattern.sub(
+                        f"[dim magenta]{entity_info['name']}[/dim magenta]", highlighted_statement
+                    )
+
+            # Format claim type more compactly
+            claim_type_short = (
+                claim["claim_type"].replace("ClaimType.", "").replace("DEFINITION", "DEF")
+            )
+            console.print(f"• [[dim]{claim_type_short}[/dim]] {highlighted_statement}")
+
+            # Show all entities referenced in this claim
+            entities_in_claim = claim.get("referenced_entities", [])
+
+            if entities_in_claim:
+                console.print(f"  [dim]Entities: {', '.join(entities_in_claim)}[/dim]")
+            console.print(f"  [dim]Confidence: {claim['confidence']:.2f}[/dim]")
+            console.print()
+
+    # Entities & Relationships section
+    entity_count = kg["stats"]["entity_count"]
+    rel_count = kg["stats"]["relationship_count"]
+    console.print(
+        f"[bold cyan]Entities & Relationships ({entity_count} entities, {rel_count} relationships)[/bold cyan]"
+    )
     console.print(f"[dim]{'─' * 60}[/dim]")
 
-    # Stats
-    console.print(f"[bold]Entities:[/bold] {kg['stats']['entity_count']}")
-    console.print(f"[bold]Relationships:[/bold] {kg['stats']['relationship_count']}")
+    # Group relationships by source entity
+    relationships_by_entity = {}
+    if kg.get("relationships"):
+        for rel in kg["relationships"]:
+            source = rel["source_entity"]
+            if source not in relationships_by_entity:
+                relationships_by_entity[source] = []
+            relationships_by_entity[source].append(rel)
 
-    if kg["stats"]["entity_count"] > 0:
-        console.print(
-            f"[bold]Avg Entity Confidence:[/bold] {kg['stats']['avg_entity_confidence']:.2f}"
-        )
-
-    # Top entities
-    if kg["entities"]:
-        console.print("\n[bold]Top Entities:[/bold]")
+    # Display entities with their relationships
+    if kg.get("entities"):
         for entity in kg["entities"][:10]:
-            aliases_str = (
-                f" (aliases: {', '.join(entity['aliases'][:2])})" if entity["aliases"] else ""
-            )
-            console.print(f"  • {entity['name']} [{entity['type']}]{aliases_str}")
+            # Compact entity line
             console.print(
-                f"    [dim]Confidence: {entity['confidence']:.2f}, "
-                f"Mentions: {entity['mentions_in_doc']}[/dim]"
+                f"• [bold]{entity['name']}[/bold] [{entity['type']}] • "
+                f"Conf: {entity['confidence']:.2f} • Mentions: {entity['mentions_in_doc']}"
             )
-            if entity.get("mention_context"):
-                quote = (
-                    entity["mention_context"][:100] + "..."
-                    if len(entity["mention_context"]) > 100
-                    else entity["mention_context"]
-                )
-                console.print(f'    [dim italic]"{quote}"[/dim italic]')
 
-    # Relationships
-    if kg["relationships"]:
-        console.print("\n[bold]Relationships:[/bold]")
-        for rel in kg["relationships"][:10]:
-            console.print(
-                f"  • {rel['source_entity']} --[{rel['relationship_type']}]--> "
-                f"{rel['target_entity']}"
-            )
-            console.print(f"    [dim]Confidence: {rel['confidence']:.2f}[/dim]")
-            if rel.get("context"):
-                context = (
-                    rel["context"][:100] + "..." if len(rel["context"]) > 100 else rel["context"]
-                )
-                console.print(f'    [dim italic]"{context}"[/dim italic]')
+            # Show relationships for this entity
+            entity_rels = relationships_by_entity.get(entity["name"], [])
+            for rel in entity_rels[:3]:  # Show up to 3 relationships per entity
+                rel_type = rel.get("relationship_type", "related_to")
+                arrow = "→"
+                if len(rel.get("context", "")) > 60:
+                    console.print(
+                        f"  {arrow} [italic]{rel_type}[/italic] → {rel['target_entity']} "
+                        f"[dim]({rel['confidence']:.2f}): "
+                        f"{rel['context'][:60]}...[/dim]"
+                    )
+                else:
+                    console.print(
+                        f"  {arrow} [italic]{rel_type}[/italic] → {rel['target_entity']} "
+                        f"[dim]({rel['confidence']:.2f})[/dim]"
+                    )
+
+            # If entity has no relationships, note it
+            if not entity_rels:
+                console.print("  [dim](no relationships)[/dim]")
+
+    # Summary line
+    console.print()
+    avg_conf = kg["stats"].get("avg_entity_confidence", 0)
+    claim_count = kg["stats"].get("claim_count", 0)
+    console.print(
+        f"[dim]Summary: {entity_count} entities • {rel_count} relationships • "
+        f"{claim_count} claims • Avg confidence: {avg_conf:.2f}[/dim]"
+    )
 
 
 def index_and_finalize_with_two_stage_progress(documents, console, force: bool = False):
     """
-    Index documents and finalize KG with two-stage live progress display.
+    Index documents using the declarative indexing pipeline.
 
-    Stage 1: Document indexing (metadata extraction)
-    Stage 2: Entity resolution
+    The new pipeline handles its own progress display via the framework's
+    display module. This function just runs the workflow and shows the summary.
 
     Args:
         documents: List of Document objects to index
@@ -712,133 +778,96 @@ def index_and_finalize_with_two_stage_progress(documents, console, force: bool =
     """
     import time
 
-    from kurt.config import load_config
+    from dbos import DBOS
+
+    from kurt.content.filtering import DocumentFilters
+    from kurt.core import run_pipeline_workflow
+    from kurt.workflows import get_dbos
 
     # Extract document IDs
     document_ids = [str(doc.id) for doc in documents]
-    config = load_config()
-    max_concurrent = config.MAX_CONCURRENT_INDEXING
-
     start_time = time.time()
-
-    # ====================================================================
-    # Run workflow with live display
-    # ====================================================================
-    from dbos import DBOS
-
-    from kurt.content.indexing.workflow_indexing import complete_indexing_workflow
-    from kurt.workflows import get_dbos
 
     # Initialize DBOS
     get_dbos()
 
-    print_stage_header(console, 1, "METADATA EXTRACTION")
+    # Create filters from document IDs
+    filters = DocumentFilters(ids=",".join(document_ids))
+    incremental_mode = "full" if force else "delta"
 
-    # Start indexing workflow (runs both metadata extraction + entity resolution)
-    index_handle = DBOS.start_workflow(
-        complete_indexing_workflow,
-        document_ids=document_ids,
-        force=force,
-        enable_kg=True,
-        max_concurrent=max_concurrent,
+    # Run the workflow using automatic pipeline discovery
+    # "indexing" namespace auto-discovers all indexing.* models
+    handle = DBOS.start_workflow(
+        run_pipeline_workflow,
+        target="indexing",
+        filters=filters,
+        incremental_mode=incremental_mode,
+        reprocess_unchanged=force,
     )
+    workflow_result = handle.get_result()
 
-    with LiveProgressDisplay(console, max_log_lines=10) as display:
-        # Stage 1: Metadata extraction
-        display.start_stage("Metadata extraction", total=len(document_ids))
+    # Extract stats from workflow result
+    total = workflow_result.get("total_documents", len(document_ids))
+    processed = workflow_result.get("documents_processed", 0)
+    skipped = workflow_result.get("skipped_docs", 0)
+    failed = len(workflow_result.get("errors", {}))
 
-        # Read document progress streams in parallel
-        read_multiple_streams_parallel(
-            workflow_id=index_handle.workflow_id,
-            stream_names=[f"doc_{i}_progress" for i in range(len(document_ids))],
-            display=display,
-            on_event=lambda _stream, event: display.update_progress(advance=1)
-            if event.get("advance_progress")
-            else None,
-        )
-
-        display.complete_stage()
-
-        # Stage 2: Entity resolution
-        print_stage_header(console, 2, "ENTITY RESOLUTION")
-        display.start_stage("Entity resolution", total=1)
-
-        # Read entity resolution stream
-        read_stream_with_display(
-            workflow_id=index_handle.workflow_id,
-            stream_name="entity_resolution_progress",
-            display=display,
-            on_event=None,
-        )
-
-        display.complete_stage()
-
-    # Get final result (workflow should be complete now)
-    index_result = index_handle.get_result()
-
-    # Extract batch_result from workflow result
-    batch_result = index_result.get("extract_results", {})
-
-    # Stage 1 summary
-    # Note: In workflow_indexing.py, "succeeded" already excludes skipped documents
-    # (unlike the legacy extract.py which included them)
-    indexed_count = batch_result["succeeded"]
-    skipped_count = batch_result["skipped"]
-    error_count = batch_result["failed"]
-
-    print_stage_summary(
-        console,
-        [
-            ("✓", "Indexed", f"{indexed_count} document(s)"),
-            ("○", "Skipped", f"{skipped_count} document(s)"),
-            ("✗", "Failed", f"{error_count} document(s)"),
-        ],
-    )
-
-    # Stage 2 summary
-    kg_result = index_result.get("kg_stats")
-
-    if kg_result:
-        print_stage_summary(
-            console,
-            [
-                ("✓", "Entities created", str(kg_result.get("entities_created", 0))),
-                ("✓", "Entities linked", str(kg_result.get("entities_linked_existing", 0))),
-                (
-                    "✓",
-                    "Relationships created",
-                    str(kg_result.get("relationships_created", 0)),
-                ),
-            ],
-        )
-
-    # ====================================================================
-    # Global Command Summary
-    # ====================================================================
+    # Build result in expected format
     elapsed = time.time() - start_time
+
+    indexed_count = processed
+    skipped_count = skipped
+    error_count = failed
+
+    # Print summary
+    print()
     summary_items = [
         ("✓", "Total indexed", f"{indexed_count} document(s)"),
     ]
 
-    if kg_result:
-        summary_items.extend(
-            [
-                ("✓", "Entities created", str(kg_result["entities_created"])),
-                ("✓", "Entities linked", str(kg_result.get("entities_linked_existing", 0))),
-                (
-                    "✓",
-                    "Relationships created",
-                    str(kg_result.get("relationships_created", 0)),
-                ),
-            ]
-        )
+    if skipped_count > 0:
+        summary_items.append(("○", "Skipped", f"{skipped_count} document(s)"))
+    if error_count > 0:
+        summary_items.append(("✗", "Failed", f"{error_count} document(s)"))
 
     summary_items.append(("ℹ", "Time elapsed", f"{elapsed:.1f}s"))
 
+    # Add token usage if available
+    import dspy
+
+    total_tokens = 0
+    try:
+        if hasattr(dspy.settings, "lm") and hasattr(dspy.settings.lm, "history"):
+            for call in dspy.settings.lm.history:
+                if isinstance(call, dict) and "usage" in call:
+                    usage = call["usage"]
+                    if "total_tokens" in usage:
+                        total_tokens += usage["total_tokens"]
+            if total_tokens > 0:
+                summary_items.append(("ℹ", "Tokens used", f"{total_tokens:,}"))
+    except Exception:
+        pass  # Token tracking is optional
+
     print_command_summary(console, "Summary", summary_items)
 
-    # Add elapsed time
-    batch_result["elapsed_time"] = time.time() - start_time
+    # Return in expected format
+    batch_result = {
+        "succeeded": indexed_count,
+        "failed": error_count,
+        "skipped": skipped_count,
+        "total": total,
+        "elapsed_time": elapsed,
+    }
+
+    # Extract KG stats from entity_resolution results
+    entity_resolution_result = workflow_result.get("indexing.entity_resolution", {})
+    kg_result = None
+    if entity_resolution_result:
+        kg_result = {
+            "entities_created": entity_resolution_result.get("entities_created", 0),
+            "entities_linked_existing": entity_resolution_result.get("entities_linked", 0),
+            "relationships_created": entity_resolution_result.get("relationships_created", 0),
+        }
 
     return {
         "indexing": batch_result,

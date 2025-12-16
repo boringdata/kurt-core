@@ -35,7 +35,7 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
     # Import workflow modules to register them
     from kurt.content.map import workflow as _map  # noqa
     from kurt.content.fetch import workflow as _fetch  # noqa
-    from kurt.content.indexing import workflow_indexing as _indexing_workflow  # noqa
+    import kurt.content.indexing  # noqa - registers indexing models
 
     # Get the workflow function
     workflow_func = None
@@ -47,10 +47,10 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
         from kurt.content.fetch.workflow import fetch_workflow
 
         workflow_func = fetch_workflow
-    elif workflow_name == "complete_indexing_workflow":
-        from kurt.content.indexing.workflow_indexing import complete_indexing_workflow
+    elif workflow_name == "run_pipeline_workflow":
+        from kurt.core import run_pipeline_workflow
 
-        workflow_func = complete_indexing_workflow
+        workflow_func = run_pipeline_workflow
     else:
         sys.exit(1)  # Unknown workflow
 

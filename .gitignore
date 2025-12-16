@@ -25,6 +25,7 @@ wheels/
 venv/
 ENV/
 env/
+.env
 
 # IDEs
 .vscode/
@@ -39,6 +40,19 @@ env/
 htmlcov/
 .tox/
 
+# Eval test result directories (created by test runs)
+# Keep actual evaluation results (answer_motherduck_*) but ignore test directories
+eval/results/minimal/
+eval/results/setup_only/
+eval/results/full_featured/
+eval/results/conversational_*/
+eval/results/prompt_only/
+eval/results/with_assertions/
+eval/results/with_project/
+eval/results/test*/
+eval/results/full_test/
+eval/results/questions_no_judge/
+
 # Kurt specific
 .kurt/
 *.sqlite
@@ -48,3 +62,5 @@ kurt.config
 # OS
 .DS_Store
 Thumbs.db
+**key.json
+key.json

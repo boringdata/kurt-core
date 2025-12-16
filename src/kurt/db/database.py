@@ -42,6 +42,7 @@ __all__ = [
     "init_database",
     "get_session",
     "session_scope",
+    "managed_session",
     "get_async_session_maker",
     "async_session_scope",
     "dispose_async_resources",
@@ -104,6 +105,41 @@ def session_scope(session: Optional[Session] = None):
         _session = get_session()
         try:
             yield _session
+        finally:
+            _session.close()
+
+
+@contextmanager
+def managed_session(session: Optional[Session] = None):
+    """Transactional context manager with automatic commit/rollback.
+
+    Unlike session_scope(), this manager:
+    - Commits on successful exit
+    - Rolls back on exception
+    - Always closes the session (if created)
+
+    Args:
+        session: Optional existing session to use (will NOT be closed/committed)
+
+    Yields:
+        Session: Database session
+
+    Example:
+        with managed_session() as session:
+            session.add(Entity(name="test"))
+            # Auto-commits on exit, rolls back on exception
+    """
+    if session is not None:
+        # Existing session - don't manage lifecycle
+        yield session
+    else:
+        _session = get_session()
+        try:
+            yield _session
+            _session.commit()
+        except Exception:
+            _session.rollback()
+            raise
         finally:
             _session.close()
 
