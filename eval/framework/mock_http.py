@@ -44,9 +44,12 @@ class MockHTTPClient:
     def load_mocks(self):
         """Load all mock files and create URL mappings."""
         # Load website mocks
-        self._load_website_mocks("acme-corp.com", "websites/acme-corp")
-        self._load_website_mocks("docs.acme-corp.com", "websites/acme-docs")
-        self._load_website_mocks("competitor-co.com", "websites/competitor-co")
+        self._load_website_mocks("acme-corp.com", "data/websites/acme-corp")
+        self._load_website_mocks("docs.acme-corp.com", "data/websites/acme-docs")
+        self._load_website_mocks("competitor-co.com", "data/websites/competitor-co")
+
+        # Also check for docs.acme-corp.com files in web directory
+        self._load_web_mocks()
 
         # Load CMS mocks
         self._load_cms_mocks()
@@ -92,6 +95,22 @@ class MockHTTPClient:
         sitemap = mock_site_dir / "sitemap.xml"
         if sitemap.exists():
             self.url_to_file[f"https://{domain}/sitemap.xml"] = sitemap
+
+    def _load_web_mocks(self):
+        """Load web mock files from data/web directory."""
+        web_dir = self.mock_dir / "data" / "web"
+        if not web_dir.exists():
+            return
+
+        # Map web files to URLs based on filename convention
+        for web_file in web_dir.glob("*.md"):
+            # Example: docs.acme-corp.com_getting-started.md -> https://docs.acme-corp.com/getting-started
+            filename = web_file.stem
+            if "_" in filename:
+                domain_part, path_part = filename.split("_", 1)
+                domain = domain_part.replace("_", ".")
+                url = f"https://{domain}/{path_part}"
+                self.url_to_file[url] = web_file
 
     def _load_cms_mocks(self):
         """Load CMS API mock responses."""

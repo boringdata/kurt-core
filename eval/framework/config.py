@@ -96,6 +96,10 @@ class EvalConfig:
                 "version": "0.1.0",
                 "updated": "2025-11-05",
             },
+            "llm_judge": {
+                "provider": "anthropic",
+                "model": "claude-sonnet-4-5-20250929",
+            },
         }
 
     def get(self, key_path: str, default: Any = None) -> Any:
@@ -220,6 +224,11 @@ class EvalConfig:
     def yaml_extensions(self) -> list:
         """Get supported YAML file extensions."""
         return self.get("scenarios.yaml_extensions", [".yaml", ".yml"])
+
+    @property
+    def llm_judge(self) -> Dict[str, Any]:
+        """Get LLM judge configuration."""
+        return self.get("llm_judge", {})
 
     def merge_cli_args(self, **kwargs) -> "EvalConfig":
         """Create new config with CLI arguments merged in.

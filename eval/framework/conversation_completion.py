@@ -32,7 +32,7 @@ class ConversationCompletionCheck(dspy.Signature):
 def check_conversation_completion_with_llm(
     agent_message: str,
     conversation_history: list,
-    provider: str = "openai",
+    provider: str = "anthropic",
 ) -> tuple[bool, str]:
     """Use DSPy LLM to determine if agent is asking a question.
 
@@ -88,7 +88,7 @@ def check_conversation_completion_with_llm(
                 return None, "Anthropic API key not set", "low"
 
             lm = dspy.LM(
-                "anthropic/claude-3-5-haiku-20241022",
+                "anthropic/claude-3-5-haiku-latest",
                 api_key=api_key,
                 max_tokens=150,
                 temperature=0.2,
@@ -132,7 +132,7 @@ def check_conversation_completion_with_llm(
 def should_continue_conversation(
     agent_message: str,
     conversation_history: list,
-    llm_provider: str = "openai",
+    llm_provider: str = "anthropic",
     use_llm_fallback: bool = True,
 ) -> tuple[bool, str]:
     """Two-tier system to determine if conversation should continue.
