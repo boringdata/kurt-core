@@ -170,6 +170,57 @@ def get_documents_entities(
     return list(session.exec(query).all())
 
 
+def get_entities_by_document(
+    document_ids: list[Union[UUID, str]],
+    session: Optional[Session] = None,
+) -> dict[str, list[Entity]]:
+    """Get entities grouped by document ID in a single query.
+
+    This avoids N+1 queries when loading entities for multiple documents.
+
+    Args:
+        document_ids: List of document IDs (as UUIDs or strings)
+        session: SQLModel session (optional)
+
+    Returns:
+        Dict mapping document_id (str) -> list of Entity objects
+    """
+    if not document_ids:
+        return {}
+
+    if session is None:
+        session = get_session()
+
+    # Convert string IDs to UUIDs if needed
+    doc_uuids = []
+    for doc_id in document_ids:
+        if isinstance(doc_id, str):
+            try:
+                doc_uuids.append(UUID(doc_id))
+            except ValueError:
+                logger.warning(f"Invalid document ID format: {doc_id}")
+                continue
+        else:
+            doc_uuids.append(doc_id)
+
+    if not doc_uuids:
+        return {}
+
+    # Single query to get all document-entity pairs
+    query = (
+        select(DocumentEntity.document_id, Entity)
+        .join(Entity, DocumentEntity.entity_id == Entity.id)
+        .where(DocumentEntity.document_id.in_(doc_uuids))
+    )
+
+    # Group results by document
+    result: dict[str, list[Entity]] = {str(doc_id): [] for doc_id in doc_uuids}
+    for doc_id, entity in session.exec(query).all():
+        result[str(doc_id)].append(entity)
+
+    return result
+
+
 def get_top_entities(limit: int = 100, session: Optional[Session] = None) -> list[dict]:
     """Get top entities by source mentions."""
     if session is None:

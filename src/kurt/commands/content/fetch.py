@@ -342,10 +342,7 @@ def fetch_cmd(
             print_command_summary,
             print_stage_header,
             print_stage_summary,
-            read_multiple_streams_parallel,
-            read_stream_with_display,
         )
-        from kurt.content.indexing.workflow_indexing import complete_indexing_workflow
         from kurt.workflows import get_dbos
 
         get_dbos()  # Initialize DBOS
@@ -538,70 +535,42 @@ def fetch_cmd(
         kg_result = None
 
         if not skip_index and successful:
-            from kurt.commands.content._live_display import (
-                read_multiple_streams_parallel,
-                read_stream_with_display,
-            )
-            from kurt.content.indexing.workflow_indexing import complete_indexing_workflow
+            from kurt.content.filtering import DocumentFilters
+            from kurt.core import run_pipeline_workflow
 
             # Extract document IDs from successful fetch results
             doc_ids_to_index = [r["document_id"] for r in successful]
 
-            # Start indexing workflow (runs both metadata extraction + entity resolution)
+            # ====================================================================
+            # STAGE 2: Indexing (new declarative pipeline)
+            # ====================================================================
+            print_stage_header(console, 2, "INDEXING")
+
+            # Create filters from document IDs
+            filters = DocumentFilters(ids=",".join(doc_ids_to_index))
+
+            # Run the indexing workflow using the new pipeline
             index_handle = DBOS.start_workflow(
-                complete_indexing_workflow,
-                document_ids=doc_ids_to_index,
-                force=False,
-                enable_kg=True,
-                max_concurrent=concurrency,
+                run_pipeline_workflow,
+                target="indexing",
+                filters=filters,
+                incremental_mode="full",
+                reprocess_unchanged=False,
             )
 
-            # ====================================================================
-            # STAGE 2: Metadata Extraction
-            # ====================================================================
-            print_stage_header(console, 2, "METADATA EXTRACTION")
-
             with LiveProgressDisplay(console, max_log_lines=10) as display:
-                display.start_stage("Metadata extraction", total=len(doc_ids_to_index))
+                display.start_stage("Indexing documents", total=len(doc_ids_to_index))
 
-                # Read document progress streams in parallel
-                read_multiple_streams_parallel(
-                    workflow_id=index_handle.workflow_id,
-                    stream_names=[f"doc_{i}_progress" for i in range(len(doc_ids_to_index))],
-                    display=display,
-                    on_event=lambda _stream, event: display.update_progress(advance=1)
-                    if event.get("advance_progress")
-                    else None,
-                )
+                # The new pipeline doesn't emit per-document streams,
+                # so we just wait for completion
+                index_result = index_handle.get_result()
 
                 display.complete_stage()
 
-            # ====================================================================
-            # STAGE 3: Entity Resolution
-            # ====================================================================
-            print_stage_header(console, 3, "ENTITY RESOLUTION")
-
-            with LiveProgressDisplay(console, max_log_lines=10) as display:
-                display.start_stage("Entity resolution", total=1)
-
-                # Read entity resolution stream
-                read_stream_with_display(
-                    workflow_id=index_handle.workflow_id,
-                    stream_name="entity_resolution_progress",
-                    display=display,
-                    on_event=None,
-                )
-
-                display.complete_stage()
-
-            # Get final result
-            index_result = index_handle.get_result()
-
-            # Extract stats from result
-            extract_results = index_result.get("extract_results", {})
-            indexed = extract_results.get("succeeded", 0)
-            skipped_count = extract_results.get("skipped", 0)
-            index_failed = extract_results.get("failed", 0)
+            # Extract stats from new pipeline result format
+            indexed = index_result.get("documents_processed", 0)
+            skipped_count = index_result.get("skipped_docs", 0)
+            index_failed = len(index_result.get("errors", {}))
 
             # Stage 2 summary
             print_stage_summary(
@@ -615,18 +584,24 @@ def fetch_cmd(
 
             # Display indexing error details if any documents failed
             if index_failed > 0:
-                index_errors = extract_results.get("errors", [])
+                index_errors = index_result.get("errors", {})
                 if index_errors:
                     console.print("\n[bold red]Indexing errors:[/bold red]")
-                    for error_result in index_errors:
-                        doc_id = error_result.get("document_id", "unknown")[:8]
-                        error = error_result.get("error", "Unknown error")
-                        console.print(f"  [red]✗[/red] [{doc_id}]")
+                    for model_name, error in index_errors.items():
+                        console.print(f"  [red]✗[/red] {model_name}")
                         console.print(f"    [dim red]Error: {error}[/dim red]")
 
-            # Stage 3 summary
-            kg_result = index_result.get("kg_stats")
-            if kg_result:
+            # Extract KG stats from entity_resolution results
+            entity_resolution_result = index_result.get("indexing.entity_resolution", {})
+            kg_result = None
+            if entity_resolution_result:
+                kg_result = {
+                    "entities_created": entity_resolution_result.get("entities_created", 0),
+                    "entities_linked_existing": entity_resolution_result.get("entities_linked", 0),
+                    "relationships_created": entity_resolution_result.get(
+                        "relationships_created", 0
+                    ),
+                }
                 print_stage_summary(
                     console,
                     [
@@ -641,7 +616,7 @@ def fetch_cmd(
                 )
 
             # Store results for final summary
-            indexed_results = extract_results.get("results", [])
+            indexed_results = []
 
         # ====================================================================
         # Global Command Summary

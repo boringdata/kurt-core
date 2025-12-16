@@ -781,7 +781,7 @@ def index_and_finalize_with_two_stage_progress(documents, console, force: bool =
     from dbos import DBOS
 
     from kurt.content.filtering import DocumentFilters
-    from kurt.content.indexing_new.framework import run_pipeline_workflow
+    from kurt.core import run_pipeline_workflow
     from kurt.workflows import get_dbos
 
     # Extract document IDs

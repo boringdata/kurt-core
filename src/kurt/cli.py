@@ -51,6 +51,7 @@ class LazyGroup(click.Group):
         "integrations": ("kurt.commands.integrations", "integrations"),
         "admin": ("kurt.commands.admin", "admin"),
         "status": ("kurt.commands.status", "status"),
+        "update": ("kurt.commands.update", "update"),
         "workflows": ("kurt.commands.workflows", "workflows_group"),
         "answer": ("kurt.commands.answer", "answer"),
         "context": ("kurt.commands.context", "context"),
