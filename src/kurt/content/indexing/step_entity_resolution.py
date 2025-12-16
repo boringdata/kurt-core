@@ -198,6 +198,12 @@ def entity_resolution(
     result = writer.write(rows)
     result["entities"] = len(rows)
 
+    # Add KG stats for CLI display (expected by fetch.py and _live_display.py)
+    result["entities_created"] = created_count
+    result["entities_linked"] = linked_count + existing_linked
+    result["entities_merged"] = merged_count
+    result["relationships_created"] = relationships_created
+
     # Print inline table of created entities
     created_entities = [
         {"name": r.entity_name, "type": r.canonical_name, "operation": r.operation}

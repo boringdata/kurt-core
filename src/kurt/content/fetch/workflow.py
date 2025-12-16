@@ -161,15 +161,21 @@ def extract_links_step(content: str, source_url: str, base_url: str | None = Non
 
 @DBOS.step()
 def extract_metadata_step(document_id: str, force: bool = False) -> dict[str, Any]:
-    """Extract metadata from document (LLM call)."""
-    from kurt.content.indexing.extract import extract_document_metadata
+    """Extract metadata from document (LLM call).
 
-    # Create callback to publish events
-    def publish_activity(activity: str):
-        """Publish indexing activity as DBOS event"""
-        DBOS.set_event(f"doc_{document_id[:8]}_index_activity", activity)
+    DEPRECATED: This step is no longer used. Document indexing now happens via
+    the full indexing pipeline (kurt content index) which provides:
+    - Entity extraction and resolution
+    - Claim extraction and resolution
+    - Relationship extraction
 
-    return extract_document_metadata(document_id, force=force, activity_callback=publish_activity)
+    Use `run_pipeline_workflow("indexing", filters)` instead.
+    """
+    raise NotImplementedError(
+        "extract_metadata_step is deprecated. "
+        "Use the indexing pipeline via `kurt content index` or "
+        "`run_pipeline_workflow('indexing', filters)` instead."
+    )
 
 
 @DBOS.step()

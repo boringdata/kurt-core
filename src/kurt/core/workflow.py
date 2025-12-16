@@ -226,16 +226,33 @@ def resolve_pipeline(target: str) -> PipelineConfig:
     namespace = target
     try:
         # Try to import models for this namespace
-        # Convention: kurt.content.{namespace}_new.models or kurt.content.{namespace}.models
+        # Convention: Check multiple locations for model definitions
         for module_path in [
             f"kurt.content.{namespace}_new.models",
             f"kurt.content.{namespace}.models",
+            f"kurt.content.{namespace}",  # Models may be defined in step_*.py files
         ]:
             try:
                 importlib.import_module(module_path)
                 logger.debug(f"Imported {module_path}")
             except ImportError:
                 pass
+
+        # For indexing namespace, also import step modules which register models
+        if namespace == "indexing":
+            for step_module in [
+                "kurt.content.indexing.step_document_sections",
+                "kurt.content.indexing.step_extract_sections",
+                "kurt.content.indexing.step_entity_clustering",
+                "kurt.content.indexing.step_entity_resolution",
+                "kurt.content.indexing.step_claim_clustering",
+                "kurt.content.indexing.step_claim_resolution",
+            ]:
+                try:
+                    importlib.import_module(step_module)
+                    logger.debug(f"Imported {step_module}")
+                except ImportError as e:
+                    logger.debug(f"Could not import {step_module}: {e}")
     except Exception as e:
         logger.debug(f"Could not auto-import models for namespace {namespace}: {e}")
 
