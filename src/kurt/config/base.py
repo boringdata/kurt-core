@@ -199,9 +199,16 @@ def load_config() -> KurtConfig:
 
     The kurt.config file should contain key=value pairs:
 
-    KURT_PROJECT_PATH=.
-    KURT_DB=.kurt/kurt.sqlite
-    source_path=sources
+    # Core settings (underscore-separated)
+    PATH_DB=.kurt/kurt.sqlite
+    INDEXING_LLM_MODEL="openai/gpt-4o-mini"
+
+    # Module-specific settings (dot-separated hierarchy)
+    INDEXING.SECTION_EXTRACTIONS.LLM_MODEL="anthropic/claude-3-5-sonnet"
+    INDEXING.ENTITY_CLUSTERING.EPS=0.25
+
+    Dot notation keys (e.g., INDEXING.SECTION_EXTRACTIONS.LLM_MODEL) are stored
+    in __pydantic_extra__ and can be accessed via get_step_config().
 
     Returns:
         KurtConfig with loaded settings
@@ -232,6 +239,8 @@ def load_config() -> KurtConfig:
                 key, value = line.split("=", 1)
                 key = key.strip()
                 value = value.strip().strip('"').strip("'")  # Remove quotes
+                # Keys with dots (e.g., INDEXING.SECTION_EXTRACTIONS.LLM_MODEL)
+                # are stored as-is in __pydantic_extra__
                 config_data[key] = value
 
     # Pydantic will handle type validation via field_validator
@@ -341,32 +350,108 @@ def update_config(config: KurtConfig) -> None:
         # Write boolean as True/False (not "True"/"False" string)
         f.write(f"TELEMETRY_ENABLED={config.TELEMETRY_ENABLED}\n")
 
-        # Write extra fields (analytics, CMS, etc.) - Pydantic v2 stores extra fields in __pydantic_extra__
+        # Write extra fields (analytics, CMS, module configs, etc.)
+        # Pydantic v2 stores extra fields in __pydantic_extra__
         extra_fields = getattr(config, "__pydantic_extra__", {})
 
-        # Group extra fields by prefix (ANALYTICS_, CMS_, RESEARCH_, etc.)
-        # This allows any integration to store config in the main file
-        prefixes = {}
-        for key, value in extra_fields.items():
-            # Extract prefix (e.g., "ANALYTICS" from "ANALYTICS_POSTHOG_API_KEY")
-            if "_" in key:
-                prefix = key.split("_")[0]
-                if prefix not in prefixes:
-                    prefixes[prefix] = {}
-                prefixes[prefix][key] = value
+        # Separate dot-notation keys (module configs) from underscore keys (integrations)
+        dot_keys = {}  # INDEXING.SECTION_EXTRACTIONS.LLM_MODEL
+        underscore_keys = {}  # ANALYTICS_POSTHOG_API_KEY
 
-        # Write each prefix group with a header
+        for key, value in extra_fields.items():
+            if "." in key:
+                # Dot notation: group by MODULE.STEP
+                parts = key.split(".")
+                if len(parts) >= 2:
+                    group = f"{parts[0]}.{parts[1]}"
+                    if group not in dot_keys:
+                        dot_keys[group] = {}
+                    dot_keys[group][key] = value
+            elif "_" in key:
+                # Underscore notation: group by first part (ANALYTICS, CMS, etc.)
+                prefix = key.split("_")[0]
+                if prefix not in underscore_keys:
+                    underscore_keys[prefix] = {}
+                underscore_keys[prefix][key] = value
+
+        # Write module-specific configs (dot notation)
+        if dot_keys:
+            f.write("\n# Module-Specific Configurations\n")
+            for group in sorted(dot_keys.keys()):
+                f.write(f"# {group}\n")
+                for key, value in sorted(dot_keys[group].items()):
+                    # Don't quote numeric values
+                    if isinstance(value, (int, float)) or (
+                        isinstance(value, str) and value.replace(".", "").isdigit()
+                    ):
+                        f.write(f"{key}={value}\n")
+                    else:
+                        f.write(f'{key}="{value}"\n')
+
+        # Write integration configs (underscore notation)
         prefix_names = {
             "ANALYTICS": "Analytics Provider Configurations",
             "CMS": "CMS Provider Configurations",
             "RESEARCH": "Research Provider Configurations",
         }
 
-        for prefix in sorted(prefixes.keys()):
+        for prefix in sorted(underscore_keys.keys()):
             header = prefix_names.get(prefix, f"{prefix} Configurations")
             f.write(f"\n# {header}\n")
-            for key, value in sorted(prefixes[prefix].items()):
+            for key, value in sorted(underscore_keys[prefix].items()):
                 f.write(f'{key}="{value}"\n')
+
+
+def get_step_config(
+    config: KurtConfig,
+    module: str,
+    step: str,
+    param: str,
+    fallback_key: str | None = None,
+    default: Any = None,
+) -> Any:
+    """
+    Get a step-specific configuration value with fallback resolution.
+
+    Resolution order:
+    1. Step-specific: MODULE.STEP.PARAM (e.g., INDEXING.SECTION_EXTRACTIONS.LLM_MODEL)
+    2. Global fallback: fallback_key (e.g., INDEXING_LLM_MODEL)
+    3. Default value
+
+    Args:
+        config: KurtConfig instance
+        module: Module name (e.g., "INDEXING", "FETCH")
+        step: Step name (e.g., "SECTION_EXTRACTIONS", "ENTITY_CLUSTERING")
+        param: Parameter name (e.g., "LLM_MODEL", "EPS")
+        fallback_key: Global config key to use as fallback (e.g., "INDEXING_LLM_MODEL")
+        default: Default value if not found anywhere
+
+    Returns:
+        The configuration value
+
+    Example:
+        >>> config = load_config()
+        >>> llm_model = get_step_config(
+        ...     config, "INDEXING", "SECTION_EXTRACTIONS", "LLM_MODEL",
+        ...     fallback_key="INDEXING_LLM_MODEL",
+        ...     default="openai/gpt-4o-mini"
+        ... )
+    """
+    extra = getattr(config, "__pydantic_extra__", {})
+
+    # Try step-specific key: MODULE.STEP.PARAM
+    step_key = f"{module}.{step}.{param}"
+    if step_key in extra:
+        return extra[step_key]
+
+    # Try global fallback
+    if fallback_key:
+        if hasattr(config, fallback_key):
+            return getattr(config, fallback_key)
+        if fallback_key in extra:
+            return extra[fallback_key]
+
+    return default
 
 
 def validate_config(config: KurtConfig) -> list[str]:
