@@ -341,8 +341,8 @@ def test_no_circular_import():
     that occurred when EntityType was in content/indexing/models.py.
     """
     # This test will fail if circular imports exist
-    from kurt.content.indexing import extract
+    from kurt.content.indexing import step_extract_sections
     from kurt.db import graph_queries
 
     assert graph_queries is not None
-    assert extract is not None
+    assert step_extract_sections is not None

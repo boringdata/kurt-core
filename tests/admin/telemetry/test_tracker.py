@@ -36,8 +36,11 @@ class TestTracker:
         track_event("test_event")
         mock_get_client.assert_not_called()
 
+    @patch("kurt.admin.telemetry.tracker.is_telemetry_enabled", return_value=True)
     @patch("kurt.admin.telemetry.tracker._get_posthog_client")
-    def test_track_event_with_properties(self, mock_get_client, tmp_path, monkeypatch):
+    def test_track_event_with_properties(
+        self, mock_get_client, mock_telemetry_enabled, tmp_path, monkeypatch
+    ):
         """Test tracking event with custom properties."""
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
 

@@ -1,0 +1,120 @@
+{
+    "description": "Common LLM resolution patterns for deterministic testing of entity clustering",
+    "resolution_patterns": {
+        "single_new_entity": {
+            "description": "Single entity with no similar existing - should CREATE_NEW",
+            "input": {
+                "group_entities": [{"name": "NewFramework", "type": "Technology"}],
+                "existing_candidates": []
+            },
+            "expected_output": {
+                "resolutions": [
+                    {
+                        "entity_index": 0,
+                        "decision_type": "CREATE_NEW",
+                        "target_index": null,
+                        "canonical_name": "NewFramework",
+                        "aliases": [],
+                        "reasoning": "Novel entity not in database"
+                    }
+                ]
+            }
+        },
+        "similar_entities_merge": {
+            "description": "Two similar entities should merge",
+            "input": {
+                "group_entities": [
+                    {"name": "Python", "type": "Technology"},
+                    {"name": "Python Language", "type": "Technology"}
+                ],
+                "existing_candidates": []
+            },
+            "expected_output": {
+                "resolutions": [
+                    {
+                        "entity_index": 0,
+                        "decision_type": "CREATE_NEW",
+                        "target_index": null,
+                        "canonical_name": "Python",
+                        "aliases": ["Python Language"],
+                        "reasoning": "Canonical form of the programming language"
+                    },
+                    {
+                        "entity_index": 1,
+                        "decision_type": "MERGE_WITH_PEER",
+                        "target_index": 0,
+                        "canonical_name": "Python",
+                        "aliases": [],
+                        "reasoning": "Alternative name for the same language"
+                    }
+                ]
+            }
+        },
+        "link_to_existing": {
+            "description": "New entity matches existing - should LINK_TO_EXISTING",
+            "input": {
+                "group_entities": [{"name": "Django", "type": "Technology"}],
+                "existing_candidates": [
+                    {"id": "existing-123", "name": "Django Framework", "type": "Technology"}
+                ]
+            },
+            "expected_output": {
+                "resolutions": [
+                    {
+                        "entity_index": 0,
+                        "decision_type": "LINK_TO_EXISTING",
+                        "target_index": 0,
+                        "canonical_name": "Django Framework",
+                        "aliases": ["Django"],
+                        "reasoning": "Matches existing Django Framework entity"
+                    }
+                ]
+            }
+        },
+        "mixed_decisions": {
+            "description": "Multiple entities with mixed decisions",
+            "input": {
+                "group_entities": [
+                    {"name": "Flask", "type": "Technology"},
+                    {"name": "Flask Framework", "type": "Technology"},
+                    {"name": "Bottle", "type": "Technology"}
+                ],
+                "existing_candidates": []
+            },
+            "expected_output": {
+                "resolutions": [
+                    {
+                        "entity_index": 0,
+                        "decision_type": "CREATE_NEW",
+                        "target_index": null,
+                        "canonical_name": "Flask",
+                        "aliases": ["Flask Framework"],
+                        "reasoning": "Create new Flask entity"
+                    },
+                    {
+                        "entity_index": 1,
+                        "decision_type": "MERGE_WITH_PEER",
+                        "target_index": 0,
+                        "canonical_name": "Flask",
+                        "aliases": [],
+                        "reasoning": "Same as Flask"
+                    },
+                    {
+                        "entity_index": 2,
+                        "decision_type": "CREATE_NEW",
+                        "target_index": null,
+                        "canonical_name": "Bottle",
+                        "aliases": [],
+                        "reasoning": "Different framework, create separate entity"
+                    }
+                ]
+            }
+        }
+    },
+    "notes": [
+        "These patterns are used to mock LLM responses in tests",
+        "entity_index and target_index are 0-based",
+        "MERGE_WITH_PEER target_index refers to group_entities index",
+        "LINK_TO_EXISTING target_index refers to existing_candidates index"
+    ]
+}

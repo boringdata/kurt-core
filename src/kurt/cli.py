@@ -6,34 +6,56 @@ import sys
 from pathlib import Path
 
 import click
-from dotenv import load_dotenv
 from rich.console import Console
 
 from kurt import __version__
-
-# Load environment variables from .env file in current directory
-# This must happen before any other imports that might use env vars
-load_dotenv()
-from kurt.admin.telemetry.decorators import track_command  # noqa: E402
-from kurt.commands.admin import admin  # noqa: E402
-from kurt.commands.content import content  # noqa: E402
-from kurt.commands.integrations import integrations  # noqa: E402
-from kurt.commands.show import show  # noqa: E402
-from kurt.commands.status import status  # noqa: E402
-from kurt.commands.update import update  # noqa: E402
-from kurt.commands.workflows import workflows_group  # noqa: E402
-from kurt.config.base import (  # noqa: E402
-    KurtConfig,
-    config_file_exists,
-    create_config,
-    get_config_file_path,
-)
-from kurt.db.database import init_database  # noqa: E402
+from kurt.config.base import config_file_exists
 
 console = Console()
 
 
-@click.group()
+class LazyGroup(click.Group):
+    """A Click group that lazily loads subcommands."""
+
+    def __init__(self, *args, lazy_subcommands=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.lazy_subcommands = lazy_subcommands or {}
+        self._loaded_commands = {}
+
+    def list_commands(self, ctx):
+        # Include both lazy and regular commands
+        lazy = list(self.lazy_subcommands.keys())
+        regular = list(self.commands.keys())
+        return sorted(set(lazy + regular))
+
+    def get_command(self, ctx, name):
+        # Check regular commands first
+        if name in self.commands:
+            return self.commands[name]
+
+        # Then check lazy commands
+        if name in self.lazy_subcommands:
+            if name not in self._loaded_commands:
+                # Import the module and get the command
+                module_path, cmd_name = self.lazy_subcommands[name]
+                module = __import__(module_path, fromlist=[cmd_name])
+                self._loaded_commands[name] = getattr(module, cmd_name)
+            return self._loaded_commands[name]
+        return None
+
+
+@click.group(
+    cls=LazyGroup,
+    lazy_subcommands={
+        "content": ("kurt.commands.content", "content"),
+        "integrations": ("kurt.commands.integrations", "integrations"),
+        "admin": ("kurt.commands.admin", "admin"),
+        "status": ("kurt.commands.status", "status"),
+        "update": ("kurt.commands.update", "update"),
+        "workflows": ("kurt.commands.workflows", "workflows_group"),
+        "show": ("kurt.commands.show", "show"),
+    },
+)
 @click.version_option(version=__version__, prog_name="kurt")
 @click.pass_context
 def main(ctx):
@@ -117,23 +139,23 @@ def main(ctx):
 @main.command()
 @click.option(
     "--db-path",
-    default=KurtConfig.DEFAULT_DB_PATH,
-    help=f"Path to database file relative to current directory (default: {KurtConfig.DEFAULT_DB_PATH})",
+    default=".kurt/data/db.sqlite",
+    help="Path to database file relative to current directory (default: .kurt/data/db.sqlite)",
 )
 @click.option(
     "--sources-path",
-    default=KurtConfig.DEFAULT_SOURCES_PATH,
-    help=f"Path to store fetched content relative to current directory (default: {KurtConfig.DEFAULT_SOURCES_PATH})",
+    default="sources",
+    help="Path to store fetched content relative to current directory (default: sources)",
 )
 @click.option(
     "--projects-path",
-    default=KurtConfig.DEFAULT_PROJECTS_PATH,
-    help=f"Path to store project-specific content relative to current directory (default: {KurtConfig.DEFAULT_PROJECTS_PATH})",
+    default="projects",
+    help="Path to store project-specific content relative to current directory (default: projects)",
 )
 @click.option(
     "--rules-path",
-    default=KurtConfig.DEFAULT_RULES_PATH,
-    help=f"Path to store rules and configurations relative to current directory (default: {KurtConfig.DEFAULT_RULES_PATH})",
+    default="rules",
+    help="Path to store rules and configurations relative to current directory (default: rules)",
 )
 @click.option(
     "--ide",
@@ -141,7 +163,6 @@ def main(ctx):
     default="both",
     help="IDE to configure for (claude, cursor, or both; default: both)",
 )
-@track_command
 def init(db_path: str, sources_path: str, projects_path: str, rules_path: str, ide: str):
     """
     Initialize a new Kurt project in the current directory.
@@ -156,6 +177,10 @@ def init(db_path: str, sources_path: str, projects_path: str, rules_path: str, i
         kurt init --db-path custom/path/db.sqlite
         kurt init --sources-path my_sources --projects-path my_projects
     """
+    # Lazy import heavy dependencies only when command is used
+    from kurt.config.base import create_config, get_config_file_path
+    from kurt.db.database import init_database
+
     console.print("[bold green]Initializing Kurt project...[/bold green]\n")
 
     try:
@@ -402,14 +427,7 @@ OPENAI_API_KEY=your_openai_api_key_here
         raise click.Abort()
 
 
-# Register command groups
-main.add_command(content)
-main.add_command(integrations)
-main.add_command(admin)
-main.add_command(status)
-main.add_command(show)
-main.add_command(update)
-main.add_command(workflows_group, name="workflows")
+# Commands are registered via lazy loading in the main group decorator above
 
 
 if __name__ == "__main__":

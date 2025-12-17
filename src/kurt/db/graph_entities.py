@@ -177,22 +177,26 @@ def create_entity_with_document_edges(
     return entity
 
 
-def find_existing_entity(session, canonical_name: str, entity_type: str) -> Entity | None:
-    """Find an existing entity by canonical name and type.
+def find_existing_entity(session, canonical_name: str, entity_type: str = None) -> Entity | None:
+    """Find an existing entity by canonical name (case-insensitive).
 
     Used during re-indexing to check if entity already exists before creating duplicate.
+    Matches by name only - entity_type is ignored to prevent duplicates with different types.
 
     Args:
         session: Database session
         canonical_name: Canonical name to search for
-        entity_type: Entity type (e.g., "Technology", "Person")
+        entity_type: Ignored (kept for backward compatibility)
 
     Returns:
         Entity if found, None otherwise
     """
+    from sqlalchemy import func
+
+    # Use case-insensitive comparison for canonical name only
+    # Don't filter by type - same entity shouldn't exist with multiple types
     stmt = select(Entity).where(
-        Entity.canonical_name == canonical_name,
-        Entity.entity_type == entity_type,
+        func.lower(Entity.canonical_name) == func.lower(canonical_name),
     )
     return session.exec(stmt).first()
 

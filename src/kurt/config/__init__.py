@@ -14,10 +14,14 @@ from kurt.config.base import (
     create_config,
     get_config_file_path,
     get_config_or_default,
+    get_step_config,
     load_config,
     update_config,
     validate_config,
 )
+
+# Model configuration support for pipeline steps
+from kurt.config.model_config import ConfigParam, ModelConfig
 
 # Re-export config utilities for integrations
 from kurt.config.utils import (
@@ -39,9 +43,13 @@ __all__ = [
     "create_config",
     "get_config_file_path",
     "get_config_or_default",
+    "get_step_config",
     "load_config",
     "update_config",
     "validate_config",
+    # Model configuration
+    "ConfigParam",
+    "ModelConfig",
     # Config utilities
     "config_exists_for_prefix",
     "get_available_keys",
