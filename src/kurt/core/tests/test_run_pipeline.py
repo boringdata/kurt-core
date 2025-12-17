@@ -18,6 +18,8 @@ from kurt.content.filtering import DocumentFilters
 from kurt.core import (
     PipelineConfig,
     PipelineContext,
+    WorkflowDocumentRef,
+    WorkflowStepError,
 )
 from kurt.core.model_runner import run_pipeline
 from kurt.core.registry import ModelRegistry
@@ -428,3 +430,95 @@ class TestRunPipelineParallel:
 
         # model_after should have executed (stop_on_error=False)
         assert "test.model_after" in result["models_executed"]
+
+    @pytest.mark.asyncio
+    async def test_workflow_step_error_fail_model(self, mock_ctx):
+        """Test that WorkflowStepError with fail_model action stops the model."""
+
+        def error_model(ctx, reader=None, writer=None, **kwargs):
+            log_execution("test.workflow_error_model", "start")
+            raise WorkflowStepError(
+                step="test.workflow_error_model",
+                message="Database constraint violation",
+                action="fail_model",
+                severity="fatal",
+                documents=(WorkflowDocumentRef(entity_name="Python"),),
+            )
+
+        self.register_test_models(
+            {
+                "test.model_a": {"dependencies": [], "sleep_time": 0.1},
+            }
+        )
+
+        ModelRegistry._models["test.workflow_error_model"] = {
+            "function": error_model,
+            "references": {},
+            "table_name": "test_workflow_error_model",
+            "description": "Workflow error model",
+        }
+
+        pipeline = PipelineConfig(
+            name="test_workflow_error",
+            models=["test.model_a", "test.workflow_error_model"],
+            stop_on_error=True,
+        )
+
+        with patch("kurt.core.model_runner.DBOS") as mock_dbos:
+            mock_dbos.step.return_value = lambda fn: fn
+
+            result = await run_pipeline(pipeline, mock_ctx)
+
+        # Should have error for workflow_error_model
+        assert "test.workflow_error_model" in result["errors"]
+
+        # The error should be a dict (serialized WorkflowStepError)
+        error_data = result["errors"]["test.workflow_error_model"]
+        assert isinstance(error_data, dict)
+        assert error_data["step"] == "test.workflow_error_model"
+        assert error_data["action"] == "fail_model"
+        assert error_data["severity"] == "fatal"
+
+    @pytest.mark.asyncio
+    async def test_workflow_step_error_structured_in_results(self, mock_ctx):
+        """Test that WorkflowStepError payload is stored in results."""
+
+        def error_model(ctx, reader=None, writer=None, **kwargs):
+            raise WorkflowStepError(
+                step="test.step",
+                message="Test error message",
+                action="fail_model",
+                severity="fatal",
+                documents=(
+                    WorkflowDocumentRef(document_id="doc1", section_id="sec1"),
+                    WorkflowDocumentRef(document_id="doc2"),
+                ),
+                metadata={"llm_model": "test-model"},
+            )
+
+        ModelRegistry._models["test.structured_error"] = {
+            "function": error_model,
+            "references": {},
+            "table_name": "test_structured_error",
+            "description": "Structured error model",
+        }
+
+        pipeline = PipelineConfig(
+            name="test_structured",
+            models=["test.structured_error"],
+        )
+
+        with patch("kurt.core.model_runner.DBOS") as mock_dbos:
+            mock_dbos.step.return_value = lambda fn: fn
+
+            result = await run_pipeline(pipeline, mock_ctx)
+
+        # Verify structured error in errors dict
+        assert "test.structured_error" in result["errors"]
+        error_payload = result["errors"]["test.structured_error"]
+
+        assert error_payload["step"] == "test.step"
+        assert error_payload["message"] == "Test error message"
+        assert len(error_payload["documents"]) == 2
+        assert error_payload["documents"][0]["document_id"] == "doc1"
+        assert error_payload["metadata"]["llm_model"] == "test-model"

@@ -25,7 +25,10 @@ from kurt.core import (
     PipelineModelBase,
     Reference,
     TableWriter,
+    WorkflowDocumentRef,
+    WorkflowStepError,
     model,
+    record_step_error,
 )
 from kurt.core.dspy_helpers import run_batch_sync
 from kurt.db.models import ContentType, EntityType, RelationshipType, ResolutionStatus
@@ -317,8 +320,12 @@ def section_extractions(
         "updated_at",
         "existing_entities_context",
     }
-    rows = [
-        SectionExtractionRow(
+
+    rows = []
+    error_docs = []  # Track documents with errors for WorkflowStepError
+
+    for section, result in zip(sections, batch_results):
+        row = SectionExtractionRow(
             **{k: v for k, v in section.items() if k not in exclude_fields},
             dspy_result=result.result if not result.error else None,
             dspy_telemetry=result.telemetry,
@@ -326,8 +333,28 @@ def section_extractions(
             # Pass existing entities context for resolving matched_entity_index later
             existing_entities_context=doc_entities.get(section.get("document_id", ""), []),
         )
-        for section, result in zip(sections, batch_results)
-    ]
+        rows.append(row)
+
+        # Track errors for structured reporting
+        if result.error:
+            error_docs.append(
+                WorkflowDocumentRef(
+                    document_id=section.get("document_id"),
+                    section_id=section.get("section_id"),
+                )
+            )
+
+    # Record step errors if any LLM extractions failed
+    if error_docs:
+        step_error = WorkflowStepError(
+            step="indexing.section_extractions",
+            message=f"LLM extraction failed for {len(error_docs)} sections",
+            action="skip_record",
+            severity="recoverable",
+            documents=tuple(error_docs),
+            metadata={"llm_model": config.llm_model, "max_concurrent": config.max_concurrent},
+        )
+        record_step_error(step_error, model_name="indexing.section_extractions", ctx=ctx)
 
     # Log extraction stats
     successful = sum(1 for r in rows if r.error is None)
@@ -342,6 +369,9 @@ def section_extractions(
     result["sections"] = len(rows)
     result["entities"] = total_entities
     result["claims"] = total_claims
+    # Include skipped count for error tracking
+    if error_docs:
+        result["skipped"] = len(error_docs)
     return result
 
 

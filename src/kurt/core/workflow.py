@@ -115,6 +115,8 @@ async def run_workflow(
         }
     )
 
+    # errors may be strings (legacy) or dicts (serialized WorkflowStepError)
+    # CLI parsing should tolerate both formats
     return {
         "workflow_id": workflow_id,
         "pipeline": pipeline.name,

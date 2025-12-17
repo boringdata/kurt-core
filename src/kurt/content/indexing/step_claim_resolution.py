@@ -28,6 +28,8 @@ from kurt.core import (
     PipelineModelBase,
     Reference,
     TableWriter,
+    WorkflowDocumentRef,
+    WorkflowStepError,
     model,
     print_inline_table,
 )
@@ -153,105 +155,129 @@ def claim_resolution(
     logger.info(f"Built section entity lists for {len(section_entity_lists)} sections")
 
     # Process with database session (auto commit/rollback)
-    with managed_session() as session:
-        # Build tracking rows and create claims
-        rows = []
-        claims_created = 0
-        claims_merged = 0
-        claims_deduplicated = 0
+    try:
+        with managed_session() as session:
+            # Build tracking rows and create claims
+            rows = []
+            claims_created = 0
+            claims_merged = 0
+            claims_deduplicated = 0
 
-        # Group claims by decision type
-        create_new_claims = [g for g in groups if g.get("decision") == "CREATE_NEW"]
-        merge_claims = [g for g in groups if g.get("decision", "").startswith("MERGE_WITH:")]
-        duplicate_claims = [g for g in groups if g.get("decision", "").startswith("DUPLICATE_OF:")]
+            # Group claims by decision type
+            create_new_claims = [g for g in groups if g.get("decision") == "CREATE_NEW"]
+            merge_claims = [g for g in groups if g.get("decision", "").startswith("MERGE_WITH:")]
+            duplicate_claims = [
+                g for g in groups if g.get("decision", "").startswith("DUPLICATE_OF:")
+            ]
 
-        # Create new claims
-        claim_hash_to_id = {}
-        for group in create_new_claims:
-            # Resolve entity_indices to entity UUIDs
-            linked_entity_ids = _resolve_entity_indices(
-                group.get("section_id", ""),
-                group.get("entity_indices_json", []),
-                section_entity_lists,
-                entity_name_to_id,
-            )
-
-            claim_id = _create_claim(
-                session,
-                group,
-                subject_entity_id=linked_entity_ids[0] if linked_entity_ids else None,
-                linked_entity_ids=linked_entity_ids,
-            )
-            if claim_id:
-                claim_hash_to_id[group["claim_hash"]] = claim_id
-                claims_created += 1
-                resolution_action = "created"
-            else:
-                # Claim was not created (no entity linkage or error)
-                resolution_action = "skipped"
-
-            rows.append(
-                ClaimResolutionRow(
-                    claim_hash=group["claim_hash"],
-                    workflow_id=workflow_id,
-                    document_id=group["document_id"],
-                    section_id=group["section_id"],
-                    statement=group["statement"][:500],
-                    claim_type=group["claim_type"],
-                    confidence=group.get("confidence", 0.0),
-                    decision=group["decision"],
-                    canonical_statement=group.get("canonical_statement"),
-                    resolved_claim_id=str(claim_id) if claim_id else None,
-                    resolution_action=resolution_action,
-                    linked_entity_ids_json=[str(eid) for eid in linked_entity_ids],
+            # Create new claims
+            claim_hash_to_id = {}
+            for group in create_new_claims:
+                # Resolve entity_indices to entity UUIDs
+                linked_entity_ids = _resolve_entity_indices(
+                    group.get("section_id", ""),
+                    group.get("entity_indices_json", []),
+                    section_entity_lists,
+                    entity_name_to_id,
                 )
-            )
 
-        # Handle merged claims (link to existing)
-        for group in merge_claims:
-            existing_hash = group["decision"].split(":", 1)[1] if ":" in group["decision"] else None
-            resolved_id = claim_hash_to_id.get(existing_hash)
-            claims_merged += 1
-
-            rows.append(
-                ClaimResolutionRow(
-                    claim_hash=group["claim_hash"],
-                    workflow_id=workflow_id,
-                    document_id=group["document_id"],
-                    section_id=group["section_id"],
-                    statement=group["statement"][:500],
-                    claim_type=group["claim_type"],
-                    confidence=group.get("confidence", 0.0),
-                    decision=group["decision"],
-                    canonical_statement=group.get("canonical_statement"),
-                    resolved_claim_id=str(resolved_id) if resolved_id else None,
-                    resolution_action="merged",
+                claim_id = _create_claim(
+                    session,
+                    group,
+                    subject_entity_id=linked_entity_ids[0] if linked_entity_ids else None,
+                    linked_entity_ids=linked_entity_ids,
                 )
-            )
+                if claim_id:
+                    claim_hash_to_id[group["claim_hash"]] = claim_id
+                    claims_created += 1
+                    resolution_action = "created"
+                else:
+                    # Claim was not created (no entity linkage or error)
+                    resolution_action = "skipped"
 
-        # Handle duplicate claims
-        for group in duplicate_claims:
-            canonical_hash = (
-                group["decision"].split(":", 1)[1] if ":" in group["decision"] else None
-            )
-            resolved_id = claim_hash_to_id.get(canonical_hash)
-            claims_deduplicated += 1
-
-            rows.append(
-                ClaimResolutionRow(
-                    claim_hash=group["claim_hash"],
-                    workflow_id=workflow_id,
-                    document_id=group["document_id"],
-                    section_id=group["section_id"],
-                    statement=group["statement"][:500],
-                    claim_type=group["claim_type"],
-                    confidence=group.get("confidence", 0.0),
-                    decision=group["decision"],
-                    canonical_statement=group.get("canonical_statement"),
-                    resolved_claim_id=str(resolved_id) if resolved_id else None,
-                    resolution_action="deduplicated",
+                rows.append(
+                    ClaimResolutionRow(
+                        claim_hash=group["claim_hash"],
+                        workflow_id=workflow_id,
+                        document_id=group["document_id"],
+                        section_id=group["section_id"],
+                        statement=group["statement"][:500],
+                        claim_type=group["claim_type"],
+                        confidence=group.get("confidence", 0.0),
+                        decision=group["decision"],
+                        canonical_statement=group.get("canonical_statement"),
+                        resolved_claim_id=str(claim_id) if claim_id else None,
+                        resolution_action=resolution_action,
+                        linked_entity_ids_json=[str(eid) for eid in linked_entity_ids],
+                    )
                 )
+
+            # Handle merged claims (link to existing)
+            for group in merge_claims:
+                existing_hash = (
+                    group["decision"].split(":", 1)[1] if ":" in group["decision"] else None
+                )
+                resolved_id = claim_hash_to_id.get(existing_hash)
+                claims_merged += 1
+
+                rows.append(
+                    ClaimResolutionRow(
+                        claim_hash=group["claim_hash"],
+                        workflow_id=workflow_id,
+                        document_id=group["document_id"],
+                        section_id=group["section_id"],
+                        statement=group["statement"][:500],
+                        claim_type=group["claim_type"],
+                        confidence=group.get("confidence", 0.0),
+                        decision=group["decision"],
+                        canonical_statement=group.get("canonical_statement"),
+                        resolved_claim_id=str(resolved_id) if resolved_id else None,
+                        resolution_action="merged",
+                    )
+                )
+
+            # Handle duplicate claims
+            for group in duplicate_claims:
+                canonical_hash = (
+                    group["decision"].split(":", 1)[1] if ":" in group["decision"] else None
+                )
+                resolved_id = claim_hash_to_id.get(canonical_hash)
+                claims_deduplicated += 1
+
+                rows.append(
+                    ClaimResolutionRow(
+                        claim_hash=group["claim_hash"],
+                        workflow_id=workflow_id,
+                        document_id=group["document_id"],
+                        section_id=group["section_id"],
+                        statement=group["statement"][:500],
+                        claim_type=group["claim_type"],
+                        confidence=group.get("confidence", 0.0),
+                        decision=group["decision"],
+                        canonical_statement=group.get("canonical_statement"),
+                        resolved_claim_id=str(resolved_id) if resolved_id else None,
+                        resolution_action="deduplicated",
+                    )
+                )
+    except Exception as e:
+        # Database constraint violation or other systemic failure
+        error_docs = [
+            WorkflowDocumentRef(
+                claim_hash=g.get("claim_hash"),
+                document_id=g.get("document_id"),
+                section_id=g.get("section_id"),
             )
+            for g in groups[:10]  # Limit to first 10 for error message
+        ]
+        raise WorkflowStepError(
+            step="indexing.claim_resolution",
+            message=f"Database operation failed: {str(e)}",
+            action="fail_model",
+            severity="fatal",
+            documents=tuple(error_docs),
+            metadata={"total_claims": len(groups)},
+            cause=e,
+        ) from e
 
     # Log and return (after commit)
     logger.info(

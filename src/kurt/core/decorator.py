@@ -43,6 +43,7 @@ from sqlmodel import SQLModel
 
 from .dbos_events import get_event_emitter
 from .display import display
+from .errors import WorkflowStepError, record_step_error
 from .references import Reference, resolve_references
 from .registry import ModelRegistry
 
@@ -233,9 +234,65 @@ def model(
 
                 return result
 
+            except WorkflowStepError as e:
+                # Handle structured workflow errors
+                ctx = kwargs.get("ctx")
+
+                if e.action == "skip_record":
+                    # Record the error and return a success result with skip info
+                    error_info = record_step_error(e, model_name=name, ctx=ctx)
+
+                    # Build a result indicating skipped records
+                    result = {
+                        "model_name": name,
+                        "execution_time": (datetime.utcnow() - start_time).total_seconds(),
+                        "table_name": table_name,
+                        "rows_written": 0,
+                        "skipped": len(e.documents) if e.documents else 1,
+                        "error_action": e.action,
+                        "error_step": e.step,
+                        **error_info,
+                    }
+
+                    if event_emitter:
+                        event_emitter.emit_step_error(
+                            name, e.to_event_payload(), ctx.workflow_id if ctx else None
+                        )
+
+                    display.end_step(
+                        name,
+                        {
+                            "status": "completed_with_errors",
+                            "skipped": len(e.documents) if e.documents else 1,
+                            "error_step": e.step,
+                        },
+                    )
+
+                    return result
+
+                else:
+                    # For fail_model action, emit failure event and re-raise
+                    if event_emitter:
+                        event_emitter.emit_model_failed(name, e)
+                        event_emitter.emit_step_error(
+                            name, e.to_event_payload(), ctx.workflow_id if ctx else None
+                        )
+
+                    display.end_step(
+                        name,
+                        {
+                            "status": "failed",
+                            "error": str(e),
+                            "error_step": e.step,
+                            "error_action": e.action,
+                        },
+                    )
+                    logger.error(f"Model failed: {name}")
+                    raise
+
             except Exception as e:
                 if event_emitter:
-                    event_emitter.emit_model_failed(name, str(e))
+                    event_emitter.emit_model_failed(name, e)
 
                 display.end_step(name, {"status": "failed", "error": str(e)})
                 logger.error(f"Model failed: {name}")
