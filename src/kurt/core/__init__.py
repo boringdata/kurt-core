@@ -18,6 +18,12 @@ from .dspy_helpers import (
     LLMRateLimitError,
     get_dspy_lm,
 )
+from .errors import (
+    WorkflowDocumentRef,
+    WorkflowStepError,
+    make_doc_ref,
+    record_step_error,
+)
 from .mixins import (
     LLMTelemetryMixin,
     PipelineModelBase,
@@ -77,4 +83,9 @@ __all__ = [
     "LLMAuthenticationError",
     "LLMRateLimitError",
     "LLMAPIError",
+    # Workflow Step Errors
+    "WorkflowStepError",
+    "WorkflowDocumentRef",
+    "record_step_error",
+    "make_doc_ref",
 ]

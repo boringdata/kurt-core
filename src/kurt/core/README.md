@@ -305,7 +305,150 @@ Whenever you need to read/write graph or claim data, reach for these utilities b
 
 ---
 
-## 9. Best Practices Checklist
+## 9. Structured Error Handling with WorkflowStepError
+
+The `WorkflowStepError` system provides structured error handling for workflow steps, enabling dashboards and CLI surfaces to display meaningful error information while allowing the pipeline to make informed decisions about continuation.
+
+### 9.1 Error Classes
+
+```python
+from kurt.core import WorkflowStepError, WorkflowDocumentRef, record_step_error
+```
+
+**WorkflowDocumentRef** - Reference to a document involved in an error:
+```python
+ref = WorkflowDocumentRef(
+    document_id="doc1",
+    section_id="sec1",
+    source_url="https://example.com/doc1",
+    entity_name="Python",  # For entity resolution errors
+    claim_hash="abc123",   # For claim resolution errors
+)
+```
+
+**WorkflowStepError** - Structured exception for workflow failures:
+```python
+error = WorkflowStepError(
+    step="indexing.section_extractions",  # Step that failed
+    message="LLM rate limit exceeded",     # Human-readable description
+    action="skip_record",                  # How pipeline should respond
+    severity="recoverable",                # Error severity level
+    documents=(ref1, ref2),                # Affected documents
+    metadata={"llm_model": "gpt-4"},       # Additional context
+    cause=original_exception,              # Underlying exception
+    retryable=True,                        # Whether operation can be retried
+)
+```
+
+### 9.2 Action Types
+
+| Action | Behavior | Use Case |
+|--------|----------|----------|
+| `skip_record` | Skip affected documents, continue pipeline | Per-document LLM failures, parsing errors |
+| `fail_model` | Stop the model and propagate error | Database constraints, systemic failures |
+| `retry` | Indicate operation can be retried | Transient errors (rate limits) |
+
+### 9.3 Severity Levels
+
+| Severity | Description | Logging Level |
+|----------|-------------|---------------|
+| `fatal` | Systemic failure, model cannot continue | ERROR |
+| `recoverable` | Per-document failure, pipeline continues | WARNING |
+| `info` | Informational, logged but not problematic | INFO |
+
+### 9.4 Usage Patterns
+
+**Per-document errors (skip and continue):**
+```python
+@model(name="indexing.section_extractions", ...)
+def section_extractions(ctx, sections, writer):
+    error_docs = []
+    rows = []
+
+    for section, result in process_sections(sections):
+        if result.error:
+            error_docs.append(WorkflowDocumentRef(
+                document_id=section["document_id"],
+                section_id=section["section_id"],
+            ))
+        rows.append(create_row(section, result))
+
+    # Record errors but continue processing
+    if error_docs:
+        step_error = WorkflowStepError(
+            step="indexing.section_extractions",
+            message=f"LLM extraction failed for {len(error_docs)} sections",
+            action="skip_record",
+            severity="recoverable",
+            documents=tuple(error_docs),
+            metadata={"llm_model": config.llm_model},
+        )
+        record_step_error(step_error, model_name="indexing.section_extractions", ctx=ctx)
+
+    result = writer.write(rows)
+    if error_docs:
+        result["skipped"] = len(error_docs)
+    return result
+```
+
+**Systemic errors (fail the model):**
+```python
+@model(name="indexing.entity_resolution", ...)
+def entity_resolution(ctx, entity_groups, writer):
+    try:
+        with managed_session() as session:
+            # Database operations...
+            pass
+    except Exception as e:
+        error_docs = [
+            WorkflowDocumentRef(entity_name=r.get("entity_name"))
+            for r in resolutions[:10]
+        ]
+        raise WorkflowStepError(
+            step="indexing.entity_resolution",
+            message=f"Database operation failed: {str(e)}",
+            action="fail_model",
+            severity="fatal",
+            documents=tuple(error_docs),
+            metadata={"total_resolutions": len(resolutions)},
+            cause=e,
+        ) from e
+```
+
+### 9.5 Helper Methods
+
+```python
+# Create error for a specific document
+error = base_error.for_document(document_id="doc1", section_id="sec1")
+
+# Replace documents list
+error = base_error.with_documents((ref1, ref2))
+
+# Get root cause exception
+root = error.root_cause()
+
+# Convert to serializable dict (for events/logging)
+payload = error.to_event_payload()
+```
+
+### 9.6 Context Helper
+
+`PipelineContext` provides a helper for creating document references:
+```python
+def my_model(ctx: PipelineContext, ...):
+    ref = ctx.make_doc_ref(document_id="doc1", section_id="sec1")
+```
+
+### 9.7 Event Integration
+
+Errors are automatically emitted to the DBOS event system:
+- `emit_step_error()` records structured error payloads
+- CLI can display: "indexing.section_extractions skipped 2 docs due to OpenAI 429"
+- Errors in `pipeline_result["errors"]` may be dicts (WorkflowStepError) or strings (legacy)
+
+---
+
+## 10. Best Practices Checklist
 
 - [ ] Import from `kurt.core` (not internal modules) for decorators, contexts, references, etc.
 - [ ] Define a `ModelConfig` even if it only holds defaults—tuning knobs matter later.

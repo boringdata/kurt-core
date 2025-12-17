@@ -25,6 +25,7 @@ from dbos import DBOS
 from kurt.content.filtering import DocumentFilters
 
 from .display import display
+from .errors import WorkflowDocumentRef, WorkflowStepError
 from .references import build_dependency_graph, topological_sort
 from .table_io import TableReader, TableWriter
 
@@ -77,6 +78,49 @@ class PipelineContext:
         if self.filters and self.filters.ids:
             return [id.strip() for id in self.filters.ids.split(",")]
         return []
+
+    def make_doc_ref(
+        self,
+        document_id: Optional[str] = None,
+        section_id: Optional[str] = None,
+        source_url: Optional[str] = None,
+        **kwargs: Any,
+    ) -> "WorkflowDocumentRef":
+        """Create a WorkflowDocumentRef with context from this pipeline run.
+
+        This is a convenience method for models to create document references
+        for error handling with the current workflow context.
+
+        Args:
+            document_id: Primary document identifier
+            section_id: Section within document
+            source_url: Original source URL
+            **kwargs: Additional fields (cms_document_id, hash, entity_name, claim_hash)
+
+        Returns:
+            WorkflowDocumentRef instance
+
+        Example:
+            def my_model(ctx: PipelineContext, ...):
+                try:
+                    process_document(doc_id)
+                except ProcessingError as e:
+                    raise WorkflowStepError(
+                        step="my.model",
+                        message="Processing failed",
+                        action="skip_record",
+                        documents=[ctx.make_doc_ref(document_id=doc_id)],
+                        cause=e,
+                    )
+        """
+        from .errors import WorkflowDocumentRef
+
+        return WorkflowDocumentRef(
+            document_id=document_id,
+            section_id=section_id,
+            source_url=source_url,
+            **kwargs,
+        )
 
 
 # Backward compatibility alias
@@ -326,6 +370,33 @@ async def run_pipeline(
             # Note: display.end_step is called inside the model wrapper (decorator.py)
 
             return model_name, result, None
+
+        except WorkflowStepError as e:
+            # Handle structured workflow errors
+            if e.action == "skip_record":
+                # For skip_record, the decorator already returned a result
+                # This shouldn't normally reach here, but handle it gracefully
+                logger.warning(f"Model '{model_name}' completed with skipped records: {e.message}")
+                return (
+                    model_name,
+                    {
+                        "error": e.to_event_payload(),
+                        "rows_written": 0,
+                        "skipped": len(e.documents) if e.documents else 1,
+                    },
+                    None,
+                )  # No error string since model didn't fail
+            else:
+                # For fail_model, capture the structured error
+                logger.error(f"Model '{model_name}' failed: {e.message}", exc_info=True)
+                return (
+                    model_name,
+                    {
+                        "error": e.to_event_payload(),
+                        "rows_written": 0,
+                    },
+                    e.to_event_payload(),
+                )
 
         except Exception as e:
             error_msg = str(e)

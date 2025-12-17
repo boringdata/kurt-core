@@ -23,6 +23,8 @@ from kurt.core import (
     PipelineModelBase,
     Reference,
     TableWriter,
+    WorkflowDocumentRef,
+    WorkflowStepError,
     model,
     print_inline_table,
 )
@@ -148,40 +150,57 @@ def entity_resolution(
     doc_to_kg_data = _build_doc_to_kg_data_from_extractions(extractions_df, groups)
 
     # Process with database session (auto commit/rollback)
-    with managed_session() as session:
-        # Step 1: Link existing entities (those matched during extraction)
-        existing_linked = 0
-        for doc_id, kg_data in doc_to_kg_data.items():
-            if kg_data.get("existing_entities"):
-                existing_linked += link_existing_entities(
-                    session, doc_id, kg_data["existing_entities"]
-                )
+    try:
+        with managed_session() as session:
+            # Step 1: Link existing entities (those matched during extraction)
+            existing_linked = 0
+            for doc_id, kg_data in doc_to_kg_data.items():
+                if kg_data.get("existing_entities"):
+                    existing_linked += link_existing_entities(
+                        session, doc_id, kg_data["existing_entities"]
+                    )
 
-        # Step 2: Resolve merge chains
-        merge_map = resolve_merge_chains(resolutions)
+            # Step 2: Resolve merge chains
+            merge_map = resolve_merge_chains(resolutions)
 
-        # Step 3: Group by canonical entity
-        entity_name_to_docs = build_entity_docs_mapping(doc_to_kg_data)
-        canonical_groups = group_by_canonical_entity(resolutions, merge_map)
+            # Step 3: Group by canonical entity
+            entity_name_to_docs = build_entity_docs_mapping(doc_to_kg_data)
+            canonical_groups = group_by_canonical_entity(resolutions, merge_map)
 
-        # Step 4: Clean up old entities (for re-indexing)
-        cleanup_old_entities(session, doc_to_kg_data)
+            # Step 4: Clean up old entities (for re-indexing)
+            cleanup_old_entities(session, doc_to_kg_data)
 
-        # Step 5: Create entities
-        entity_name_to_id = create_entities(session, canonical_groups, entity_name_to_docs)
+            # Step 5: Create entities
+            entity_name_to_id = create_entities(session, canonical_groups, entity_name_to_docs)
 
-        # Step 6: Create relationships
-        relationships_created = create_relationships(session, doc_to_kg_data, entity_name_to_id)
+            # Step 6: Create relationships
+            relationships_created = create_relationships(session, doc_to_kg_data, entity_name_to_id)
 
-        # Build tracking rows (before context manager commits)
-        rows = _build_upsert_rows(
-            resolutions,
-            entity_name_to_id,
-            entity_name_to_docs,
-            merge_map,
-            relationships_created,
-            ctx.workflow_id,
-        )
+            # Build tracking rows (before context manager commits)
+            rows = _build_upsert_rows(
+                resolutions,
+                entity_name_to_id,
+                entity_name_to_docs,
+                merge_map,
+                relationships_created,
+                ctx.workflow_id,
+            )
+    except Exception as e:
+        # Database constraint violation or other systemic failure
+        # Collect affected entity names for error context
+        error_docs = [
+            WorkflowDocumentRef(entity_name=r.get("entity_name"))
+            for r in resolutions[:10]  # Limit to first 10 for error message
+        ]
+        raise WorkflowStepError(
+            step="indexing.entity_resolution",
+            message=f"Database operation failed: {str(e)}",
+            action="fail_model",
+            severity="fatal",
+            documents=tuple(error_docs),
+            metadata={"total_resolutions": len(resolutions)},
+            cause=e,
+        ) from e
 
     # Log summary (after commit)
     created_count = sum(1 for r in rows if r.operation == "CREATED")

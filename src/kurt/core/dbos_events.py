@@ -176,6 +176,52 @@ class DBOSEventEmitter:
         )
         self._emit_event(event)
 
+    def emit_step_error(
+        self,
+        model_name: str,
+        error_payload: Dict[str, Any],
+        workflow_id: Optional[str] = None,
+    ):
+        """
+        Emit an event when a step error occurs.
+
+        This records structured error information for dashboards and CLI surfaces.
+        The error_payload should come from WorkflowStepError.to_event_payload().
+
+        Args:
+            model_name: Name of the model where the error occurred
+            error_payload: Structured error data from WorkflowStepError.to_event_payload()
+                Contains: step, message, action, severity, documents, metadata, retryable
+            workflow_id: Optional workflow ID override
+        """
+        event = ModelEvent(
+            model_name=model_name,
+            event_type="step_error",
+            timestamp=datetime.utcnow(),
+            workflow_id=workflow_id or self.workflow_id,
+            run_id=self.run_id,
+            payload=error_payload,
+            error=error_payload.get("message"),
+        )
+        self._emit_event(event)
+
+        # Log with structured context
+        doc_count = len(error_payload.get("documents", []))
+        action = error_payload.get("action", "unknown")
+        severity = error_payload.get("severity", "unknown")
+
+        log_message = (
+            f"Step error [{error_payload.get('step')}]: {error_payload.get('message')} "
+            f"(action={action}, severity={severity}, documents={doc_count})"
+        )
+
+        if severity == "fatal":
+            logger.error(log_message)
+        elif severity == "recoverable":
+            logger.warning(log_message)
+        else:
+            logger.info(log_message)
+
     def _emit_event(self, event: ModelEvent):
         """
         Internal method to emit an event.

@@ -380,3 +380,195 @@ class TestSerialize:
         result = _serialize(mock_model, {})
         assert result == {"key": "value"}
         mock_model.model_dump.assert_called_once()
+
+
+class TestWorkflowStepErrorIntegration:
+    """Test WorkflowStepError integration in section extraction."""
+
+    @pytest.fixture
+    def mock_writer(self):
+        """Create a mock TableWriter."""
+        writer = MagicMock(spec=TableWriter)
+        writer.write.return_value = {
+            "rows_written": 0,
+            "table_name": "indexing_section_extractions",
+        }
+        return writer
+
+    @pytest.fixture
+    def mock_ctx(self):
+        """Create a mock PipelineContext."""
+        return PipelineContext(
+            filters=DocumentFilters(),
+            workflow_id="test-workflow",
+            incremental_mode="full",
+        )
+
+    def _create_mock_reference(self, sections: list[dict]):
+        """Create a mock Reference that returns the sections DataFrame."""
+        mock_ref = MagicMock()
+        mock_ref.df = pd.DataFrame(sections)
+        return mock_ref
+
+    @patch("kurt.config.load_config")
+    @patch("kurt.db.graph_queries.get_documents_entities")
+    @patch("kurt.db.get_session")
+    @patch("kurt.content.indexing.step_extract_sections.run_batch_sync")
+    @patch("kurt.core.errors.record_step_error")
+    def test_llm_error_triggers_workflow_step_error(
+        self,
+        mock_record_error,
+        mock_run_batch,
+        mock_get_session,
+        mock_get_entities,
+        mock_load_config,
+        mock_writer,
+        mock_ctx,
+    ):
+        """Test that LLM errors trigger WorkflowStepError recording."""
+        # Mock the session context manager
+        mock_session = MagicMock()
+        mock_get_session.return_value.__enter__ = MagicMock(return_value=mock_session)
+        mock_get_session.return_value.__exit__ = MagicMock(return_value=False)
+
+        # Mock existing entities lookup
+        mock_get_entities.return_value = []
+
+        # Mock extraction error for all sections
+        mock_run_batch.return_value = [
+            DSPyResult(
+                payload={},
+                result=None,
+                error=Exception("OpenAI 429 rate limit"),
+                telemetry={"error": "rate limit", "execution_time": 0},
+            ),
+            DSPyResult(
+                payload={},
+                result=None,
+                error=Exception("OpenAI 429 rate limit"),
+                telemetry={"error": "rate limit", "execution_time": 0},
+            ),
+        ]
+
+        # Create mock reference with section data
+        mock_sections = self._create_mock_reference(
+            [
+                {
+                    "document_id": "doc1",
+                    "section_id": "sec1",
+                    "section_number": 1,
+                    "content": "Test content 1",
+                },
+                {
+                    "document_id": "doc2",
+                    "section_id": "sec2",
+                    "section_number": 1,
+                    "content": "Test content 2",
+                },
+            ]
+        )
+
+        mock_writer.write.return_value = {
+            "rows_written": 2,
+            "table_name": "indexing_section_extractions",
+        }
+
+        # Run extraction
+        result = section_extractions(ctx=mock_ctx, sections=mock_sections, writer=mock_writer)
+
+        # Verify record_step_error was called
+        mock_record_error.assert_called_once()
+        call_args = mock_record_error.call_args
+
+        # Get the WorkflowStepError that was passed
+        step_error = call_args[0][0]
+        assert step_error.step == "indexing.section_extractions"
+        assert step_error.action == "skip_record"
+        assert step_error.severity == "recoverable"
+        assert len(step_error.documents) == 2
+
+        # Verify skipped count is in result
+        assert result.get("skipped") == 2
+
+    @patch("kurt.config.load_config")
+    @patch("kurt.db.graph_queries.get_documents_entities")
+    @patch("kurt.db.get_session")
+    @patch("kurt.content.indexing.step_extract_sections.run_batch_sync")
+    @patch("kurt.core.errors.record_step_error")
+    def test_mixed_success_and_error(
+        self,
+        mock_record_error,
+        mock_run_batch,
+        mock_get_session,
+        mock_get_entities,
+        mock_load_config,
+        mock_writer,
+        mock_ctx,
+    ):
+        """Test extraction with mix of successes and errors."""
+        # Mock the session context manager
+        mock_session = MagicMock()
+        mock_get_session.return_value.__enter__ = MagicMock(return_value=mock_session)
+        mock_get_session.return_value.__exit__ = MagicMock(return_value=False)
+
+        # Mock existing entities lookup
+        mock_get_entities.return_value = []
+
+        # Mock one success and one error
+        mock_result = MagicMock()
+        mock_result.metadata = {"content_type": "tutorial"}
+        mock_result.entities = []
+        mock_result.relationships = []
+        mock_result.claims = []
+
+        mock_run_batch.return_value = [
+            DSPyResult(payload={}, result=mock_result, error=None, telemetry={}),
+            DSPyResult(
+                payload={},
+                result=None,
+                error=Exception("LLM timeout"),
+                telemetry={"error": "timeout"},
+            ),
+        ]
+
+        # Create mock reference
+        mock_sections = self._create_mock_reference(
+            [
+                {
+                    "document_id": "doc1",
+                    "section_id": "sec1",
+                    "section_number": 1,
+                    "content": "Good content",
+                },
+                {
+                    "document_id": "doc2",
+                    "section_id": "sec2",
+                    "section_number": 1,
+                    "content": "Bad content",
+                },
+            ]
+        )
+
+        mock_writer.write.return_value = {
+            "rows_written": 2,
+            "table_name": "indexing_section_extractions",
+        }
+
+        # Run extraction
+        section_extractions(ctx=mock_ctx, sections=mock_sections, writer=mock_writer)
+
+        # Verify record_step_error was called for the 1 error
+        mock_record_error.assert_called_once()
+        step_error = mock_record_error.call_args[0][0]
+        assert len(step_error.documents) == 1
+        assert step_error.documents[0].document_id == "doc2"
+
+        # Verify both rows were written (including error rows)
+        rows = mock_writer.write.call_args[0][0]
+        assert len(rows) == 2
+
+        # Verify one has error, one doesn't
+        error_rows = [r for r in rows if r.error]
+        success_rows = [r for r in rows if not r.error]
+        assert len(error_rows) == 1
+        assert len(success_rows) == 1

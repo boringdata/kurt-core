@@ -25,7 +25,10 @@ from kurt.core import (
     PipelineModelBase,
     Reference,
     TableWriter,
+    WorkflowDocumentRef,
+    WorkflowStepError,
     model,
+    record_step_error,
 )
 
 logger = logging.getLogger(__name__)
@@ -160,6 +163,7 @@ def document_sections(
 
     rows = []
     skipped_count = 0
+    error_docs = []  # Track documents with errors for WorkflowStepError
     # Track successfully processed documents for indexed_hash update
     processed_docs = []  # List of (document_id, content_hash) tuples
 
@@ -175,37 +179,71 @@ def document_sections(
         if not content:
             logger.warning(f"Document {document_id} has no content, skipping")
             skipped_count += 1
+            error_docs.append(
+                WorkflowDocumentRef(
+                    document_id=document_id,
+                    source_url=doc.get("source_url"),
+                )
+            )
             continue
 
-        # Split the document into sections
-        sections = split_markdown_document(
-            content,
-            max_chars=config.max_section_chars,
-            overlap_chars=config.overlap_chars,
-            min_section_size=config.min_section_size,
-        )
-
-        # Create rows - __init__ handles hash computation
-        rows.extend(
-            DocumentSectionRow(
-                document_id=document_id,
-                section_id=section.section_id,
-                section_number=section.section_number,
-                heading=section.heading,
-                content=section.content,
-                start_offset=section.start_offset,
-                end_offset=section.end_offset,
-                overlap_prefix=section.overlap_prefix,
-                overlap_suffix=section.overlap_suffix,
-                document_title=doc.get("title"),
+        try:
+            # Split the document into sections
+            sections = split_markdown_document(
+                content,
+                max_chars=config.max_section_chars,
+                overlap_chars=config.overlap_chars,
+                min_section_size=config.min_section_size,
             )
-            for section in sections
-        )
 
-        # Track this document for indexed_hash update
-        content_hash = doc.get("content_hash")
-        if content_hash:
-            processed_docs.append((document_id, content_hash))
+            # Create rows - __init__ handles hash computation
+            rows.extend(
+                DocumentSectionRow(
+                    document_id=document_id,
+                    section_id=section.section_id,
+                    section_number=section.section_number,
+                    heading=section.heading,
+                    content=section.content,
+                    start_offset=section.start_offset,
+                    end_offset=section.end_offset,
+                    overlap_prefix=section.overlap_prefix,
+                    overlap_suffix=section.overlap_suffix,
+                    document_title=doc.get("title"),
+                )
+                for section in sections
+            )
+
+            # Track this document for indexed_hash update
+            content_hash = doc.get("content_hash")
+            if content_hash:
+                processed_docs.append((document_id, content_hash))
+
+        except Exception as e:
+            # Handle parsing/splitting errors gracefully
+            logger.warning(f"Failed to split document {document_id}: {e}")
+            skipped_count += 1
+            error_docs.append(
+                WorkflowDocumentRef(
+                    document_id=document_id,
+                    source_url=doc.get("source_url"),
+                )
+            )
+            continue
+
+    # Record step errors if any documents failed
+    if error_docs:
+        step_error = WorkflowStepError(
+            step="indexing.document_sections",
+            message=f"Failed to process {len(error_docs)} documents",
+            action="skip_record",
+            severity="recoverable",
+            documents=tuple(error_docs),
+            metadata={
+                "max_section_chars": config.max_section_chars,
+                "overlap_chars": config.overlap_chars,
+            },
+        )
+        record_step_error(step_error, model_name="indexing.document_sections", ctx=ctx)
 
     logger.info(
         f"Generated {len(rows)} sections from {len(document_records) - skipped_count} documents "
