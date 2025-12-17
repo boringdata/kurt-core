@@ -12,7 +12,12 @@ from .display import (
     print_progress,
     print_warning,
 )
-from .dspy_helpers import get_dspy_lm
+from .dspy_helpers import (
+    LLMAPIError,
+    LLMAuthenticationError,
+    LLMRateLimitError,
+    get_dspy_lm,
+)
 from .mixins import (
     LLMTelemetryMixin,
     PipelineModelBase,
@@ -68,4 +73,8 @@ __all__ = [
     "apply_field_renames",
     # DSPy helpers
     "get_dspy_lm",
+    # LLM Errors
+    "LLMAuthenticationError",
+    "LLMRateLimitError",
+    "LLMAPIError",
 ]

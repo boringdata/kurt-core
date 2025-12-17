@@ -16,6 +16,83 @@ import dspy
 logger = logging.getLogger(__name__)
 
 
+class LLMAuthenticationError(Exception):
+    """Raised when LLM API authentication fails."""
+
+    def __init__(self, provider: str, original_error: Exception):
+        self.provider = provider
+        self.original_error = original_error
+        super().__init__(
+            f"{provider} API authentication failed. "
+            f"Please check your API key is valid and not expired.\n"
+            f"Set the appropriate environment variable (e.g., OPENAI_API_KEY, ANTHROPIC_API_KEY)."
+        )
+
+
+class LLMRateLimitError(Exception):
+    """Raised when LLM API rate limit is exceeded."""
+
+    def __init__(self, provider: str, original_error: Exception):
+        self.provider = provider
+        self.original_error = original_error
+        super().__init__(
+            f"{provider} API rate limit exceeded. "
+            f"Please wait a moment and try again, or reduce concurrency."
+        )
+
+
+class LLMAPIError(Exception):
+    """Raised for general LLM API errors."""
+
+    def __init__(self, provider: str, message: str, original_error: Exception):
+        self.provider = provider
+        self.original_error = original_error
+        super().__init__(f"{provider} API error: {message}")
+
+
+def _handle_llm_error(exc: Exception) -> Exception:
+    """Convert LiteLLM/provider exceptions to user-friendly errors.
+
+    Args:
+        exc: The original exception
+
+    Returns:
+        A user-friendly exception with clear guidance
+    """
+    error_str = str(exc).lower()
+    error_type = type(exc).__name__
+
+    # Detect provider from error message
+    provider = "LLM"
+    if "openai" in error_str:
+        provider = "OpenAI"
+    elif "anthropic" in error_str:
+        provider = "Anthropic"
+    elif "azure" in error_str:
+        provider = "Azure OpenAI"
+    elif "google" in error_str or "gemini" in error_str:
+        provider = "Google"
+
+    # Authentication errors
+    if "authentication" in error_type.lower() or "authenticationerror" in error_type.lower():
+        return LLMAuthenticationError(provider, exc)
+    if "invalid" in error_str and "api key" in error_str:
+        return LLMAuthenticationError(provider, exc)
+    if "incorrect api key" in error_str:
+        return LLMAuthenticationError(provider, exc)
+    if "unauthorized" in error_str or "401" in error_str:
+        return LLMAuthenticationError(provider, exc)
+
+    # Rate limit errors
+    if "ratelimit" in error_type.lower() or "rate_limit" in error_str:
+        return LLMRateLimitError(provider, exc)
+    if "429" in error_str or "too many requests" in error_str:
+        return LLMRateLimitError(provider, exc)
+
+    # Return original exception if no specific handling
+    return exc
+
+
 def get_dspy_lm(model_name: Optional[str] = None) -> dspy.LM:
     """Get a DSPy LM instance for the specified model.
 
@@ -290,12 +367,20 @@ def run_batch_sync(
             )
 
         except Exception as exc:
+            # Convert to user-friendly error
+            friendly_error = _handle_llm_error(exc)
+
+            # For authentication errors, re-raise immediately to fail fast
+            # (no point retrying other items with bad credentials)
+            if isinstance(friendly_error, LLMAuthenticationError):
+                raise friendly_error from exc
+
             logger.exception("DSPy execution failed")
             dspy_result = DSPyResult(
                 payload=payload,
                 result=None,
-                error=exc,
-                telemetry={"error": str(exc)},
+                error=friendly_error,
+                telemetry={"error": str(friendly_error)},
             )
 
         # Update progress counter and call callback

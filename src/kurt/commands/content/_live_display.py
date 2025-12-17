@@ -804,6 +804,10 @@ def index_and_finalize_with_two_stage_progress(documents, console, force: bool =
         incremental_mode=incremental_mode,
         reprocess_unchanged=force,
     )
+
+    # Print workflow ID for debugging/tracking
+    console.print(f"[dim]Workflow ID: {handle.workflow_id}[/dim]\n")
+
     workflow_result = handle.get_result()
 
     # Extract stats from workflow result

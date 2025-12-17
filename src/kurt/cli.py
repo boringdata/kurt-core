@@ -6,10 +6,14 @@ import sys
 from pathlib import Path
 
 import click
+from dotenv import load_dotenv
 from rich.console import Console
 
 from kurt import __version__
 from kurt.config.base import config_file_exists
+
+# Load environment variables from .env file at startup
+load_dotenv()
 
 console = Console()
 
