@@ -31,6 +31,7 @@ from kurt.core import (
     Reference,
     TableWriter,
     model,
+    table,
 )
 from kurt.db.graph_entities import cluster_entities_by_similarity
 from kurt.db.graph_resolution import (
@@ -220,19 +221,15 @@ class EntityGroupRow(PipelineModelBase, LLMTelemetryMixin, table=True):
 
 @model(
     name="indexing.entity_clustering",
-    db_model=EntityGroupRow,
     primary_key=["entity_name", "workflow_id"],
     write_strategy="replace",
     description="Cluster and resolve entities across all sections",
     config_schema=EntityClusteringConfig,
 )
+@table(EntityGroupRow)
 def entity_clustering(
     ctx: PipelineContext,
-    # Dict filter with callable - SQL pushdown with runtime value from ctx
-    extractions=Reference(
-        "indexing.section_extractions",
-        filter={"workflow_id": lambda ctx: ctx.workflow_id},
-    ),
+    extractions=Reference("indexing.section_extractions"),
     writer: TableWriter = None,
     config: EntityClusteringConfig = None,
 ):

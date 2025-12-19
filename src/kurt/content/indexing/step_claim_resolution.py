@@ -30,6 +30,7 @@ from kurt.core import (
     TableWriter,
     model,
     print_inline_table,
+    table,
 )
 from kurt.db.claim_models import ClaimType
 from kurt.db.database import managed_session
@@ -82,26 +83,16 @@ class ClaimResolutionRow(PipelineModelBase, table=True):
 
 @model(
     name="indexing.claim_resolution",
-    db_model=ClaimResolutionRow,
     primary_key=["claim_hash", "workflow_id"],
     write_strategy="replace",
     description="Resolve claims and create them in the database from clustering decisions",
 )
+@table(ClaimResolutionRow)
 def claim_resolution(
     ctx: PipelineContext,
-    # Dict filter with callable - SQL pushdown with runtime value from ctx
-    claim_groups=Reference(
-        "indexing.claim_clustering",
-        filter={"workflow_id": lambda ctx: ctx.workflow_id},
-    ),
-    entity_resolution=Reference(
-        "indexing.entity_resolution",
-        filter={"workflow_id": lambda ctx: ctx.workflow_id},
-    ),
-    section_extractions=Reference(
-        "indexing.section_extractions",
-        filter={"workflow_id": lambda ctx: ctx.workflow_id},
-    ),
+    claim_groups=Reference("indexing.claim_clustering"),
+    entity_resolution=Reference("indexing.entity_resolution"),
+    section_extractions=Reference("indexing.section_extractions"),
     writer: TableWriter = None,
 ):
     """Create claims in the database from clustering decisions.

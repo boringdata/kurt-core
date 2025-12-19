@@ -25,6 +25,7 @@ from kurt.core import (
     TableWriter,
     model,
     print_inline_table,
+    table,
 )
 from kurt.db.database import managed_session
 from kurt.db.graph_resolution import (
@@ -79,22 +80,15 @@ class EntityResolutionRow(PipelineModelBase, table=True):
 
 @model(
     name="indexing.entity_resolution",
-    db_model=EntityResolutionRow,
     primary_key=["entity_name", "workflow_id"],
     write_strategy="replace",
     description="Resolve entities and create relationships from clustering decisions",
 )
+@table(EntityResolutionRow)
 def entity_resolution(
     ctx: PipelineContext,
-    # Dict filter with callable - SQL pushdown with runtime value from ctx
-    entity_groups=Reference(
-        "indexing.entity_clustering",
-        filter={"workflow_id": lambda ctx: ctx.workflow_id},
-    ),
-    section_extractions=Reference(
-        "indexing.section_extractions",
-        filter={"workflow_id": lambda ctx: ctx.workflow_id},
-    ),
+    entity_groups=Reference("indexing.entity_clustering"),
+    section_extractions=Reference("indexing.section_extractions"),
     writer: TableWriter = None,
 ):
     """Create entities and relationships from clustering decisions.

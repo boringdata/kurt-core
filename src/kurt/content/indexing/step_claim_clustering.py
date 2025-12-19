@@ -29,6 +29,7 @@ from kurt.core import (
     Reference,
     TableWriter,
     model,
+    table,
 )
 from kurt.db.claim_models import ClaimType
 
@@ -117,19 +118,15 @@ class ClaimGroupRow(PipelineModelBase, LLMTelemetryMixin, table=True):
 
 @model(
     name="indexing.claim_clustering",
-    db_model=ClaimGroupRow,
     primary_key=["claim_hash", "workflow_id"],
     write_strategy="replace",
     description="Cluster claims across all sections and make resolution decisions",
     config_schema=ClaimClusteringConfig,
 )
+@table(ClaimGroupRow)
 def claim_clustering(
     ctx: PipelineContext,
-    # Dict filter with callable - SQL pushdown with runtime value from ctx
-    extractions=Reference(
-        "indexing.section_extractions",
-        filter={"workflow_id": lambda ctx: ctx.workflow_id},
-    ),
+    extractions=Reference("indexing.section_extractions"),
     writer: TableWriter = None,
     config: ClaimClusteringConfig = None,
 ):

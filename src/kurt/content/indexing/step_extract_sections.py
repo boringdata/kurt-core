@@ -26,6 +26,7 @@ from kurt.core import (
     Reference,
     TableWriter,
     model,
+    table,
 )
 from kurt.core.dspy_helpers import run_batch_sync
 from kurt.db.models import ContentType, EntityType, RelationshipType, ResolutionStatus
@@ -248,19 +249,15 @@ class SectionExtractionRow(PipelineModelBase, LLMTelemetryMixin, table=True):
 
 @model(
     name="indexing.section_extractions",
-    db_model=SectionExtractionRow,
     primary_key=["document_id", "section_id"],
     write_strategy="replace",
     description="Extract metadata from document sections using DSPy",
     config_schema=SectionExtractionsConfig,
 )
+@table(SectionExtractionRow)
 def section_extractions(
     ctx: PipelineContext,
-    # Dict filter with callable - SQL pushdown with runtime value from ctx
-    sections=Reference(
-        "indexing.document_sections",
-        filter={"workflow_id": lambda ctx: ctx.workflow_id},
-    ),
+    sections=Reference("indexing.document_sections"),
     writer: TableWriter = None,
     config: SectionExtractionsConfig = None,
 ):

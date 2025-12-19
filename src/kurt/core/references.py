@@ -6,6 +6,7 @@ NO data is prefetched - the user filters and executes the query in their code.
 
 Example:
     @model(name="indexing.section_extractions", ...)
+    @table(SectionExtractionRow)
     def section_extractions(
         ctx: PipelineContext,
         sections=Reference("indexing.document_sections"),
@@ -36,28 +37,21 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-# Type alias for filter function: (df, ctx) -> df
-FilterFunc = Any  # Callable[[pd.DataFrame, PipelineContext], pd.DataFrame]
-
-
 @dataclass
 class Reference:
     """
     Lazy reference to an upstream model's output.
 
-    Supports both:
-    - New API: Returns SQLAlchemy Query object for explicit filtering
-    - Legacy API: Automatic filtering via filter/load_content parameters
+    Returns a SQLAlchemy Query object for explicit filtering in user code.
+    NO automatic filtering - all filtering is explicit.
 
     Args:
         model_name: Name of upstream model (e.g., "indexing.document_sections")
                    or table name (e.g., "documents")
-        load_content: (Legacy) For documents table, load file content
-        columns: (Legacy) Optional list of columns to select
-        filter: (Legacy) How to filter data - str, dict, or callable
 
-    New API Example:
+    Example:
         @model(name="indexing.extractions", ...)
+        @table(ExtractionRow)
         def extractions(
             ctx: PipelineContext,
             sections=Reference("indexing.document_sections"),
@@ -68,39 +62,19 @@ class Reference:
 
             # Filter in your code
             filtered = query.filter(
-                SectionModel.document_id.in_(ctx.document_ids)
+                sections.model_class.document_id.in_(ctx.document_ids)
             )
 
             # Execute: get DataFrame
             df = sections.df(filtered)
-
-    Legacy API Example:
-        @model(name="indexing.extractions", ...)
-        def extractions(
-            ctx: PipelineContext,
-            sections=Reference("indexing.document_sections", filter="document_id"),
-            docs=Reference("documents", load_content=True, filter="id"),
-            writer: TableWriter,
-        ):
-            sections_df = sections.df  # Auto-filtered by document_ids
     """
 
     model_name: str
-
-    # Legacy parameters (for backwards compatibility)
-    load_content: bool | dict = False  # False, True, or {"document_id_column": "col"}
-    columns: Optional[list[str]] = None
-    filter: Optional[str | dict | FilterFunc] = None  # None, column name, dict, or filter function
 
     # Runtime state (set by framework before model execution)
     _session: Optional["Session"] = field(default=None, repr=False)
     _ctx: Optional["PipelineContext"] = field(default=None, repr=False)
     _model_class: Optional[Any] = field(default=None, repr=False)
-
-    # Legacy runtime state
-    _reader: Optional[Any] = field(default=None, repr=False)  # TableReader
-    _cached_df: Optional[pd.DataFrame] = field(default=None, repr=False)
-    _loaded: bool = field(default=False, repr=False)
 
     @property
     def table_name(self) -> str:
@@ -222,14 +196,8 @@ def resolve_references(func) -> dict[str, Reference]:
     for param_name, param in sig.parameters.items():
         if isinstance(param.default, Reference):
             # Create a copy so each model instance has its own Reference
-            # Copy all parameters including legacy ones
             ref = param.default
-            references[param_name] = Reference(
-                model_name=ref.model_name,
-                load_content=ref.load_content,
-                columns=ref.columns,
-                filter=ref.filter,
-            )
+            references[param_name] = Reference(model_name=ref.model_name)
 
     return references
 

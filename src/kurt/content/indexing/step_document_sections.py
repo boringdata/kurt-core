@@ -26,6 +26,7 @@ from kurt.core import (
     Reference,
     TableWriter,
     model,
+    table,
 )
 
 logger = logging.getLogger(__name__)
@@ -115,22 +116,15 @@ class DocumentSectionRow(PipelineModelBase, table=True):
 
 @model(
     name="indexing.document_sections",
-    db_model=DocumentSectionRow,
     primary_key=["document_id", "section_id"],
     write_strategy="replace",
     description="Split documents into sections for parallel processing",
     config_schema=DocumentSectionsConfig,
 )
+@table(DocumentSectionRow)
 def document_sections(
     ctx: PipelineContext,
-    documents=Reference(
-        "documents",
-        load_content={"document_id_column": "document_id"},
-        # Use string filter "id" for SQL-level filtering via ctx.document_ids
-        # TableReader._load_documents_with_content() now applies all DocumentFilters
-        # including with_status, include_pattern, limit, etc. from ctx.filters
-        filter="id",
-    ),
+    documents=Reference("documents"),
     writer: TableWriter = None,
     config: DocumentSectionsConfig = None,
 ):

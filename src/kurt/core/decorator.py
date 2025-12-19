@@ -161,44 +161,85 @@ def _generate_timestamp_triggers(tablename: str) -> list[str]:
 
 
 # =============================================================================
-# @table decorator
+# @table decorator (two forms)
 # =============================================================================
 
 
 def table(
-    schema: Type[BaseModel],
+    schema_or_class: Type[BaseModel] | Type[SQLModel],
     *,
     tablename: str = None,
     timestamps: bool = True,
     uuid_pk: bool = True,
 ) -> Callable:
-    """Decorator that maps a Pydantic schema to a SQLModel table.
+    """Decorator that creates or registers a SQLModel table.
 
-    Column ordering:
+    Two usage patterns:
+
+    1. Generate SQLModel from Pydantic schema (new code):
+        class DocumentSchema(BaseModel):
+            title: str
+
+        @model(name="indexing.documents", primary_key=["id"])
+        @table(DocumentSchema)
+        def documents(ctx, writer):
+            ...
+
+    2. Register existing SQLModel class (existing code):
+        class DocumentRow(SQLModel, table=True):
+            __tablename__ = "documents"
+            id: str = Field(primary_key=True)
+            title: str
+
+        @model(name="indexing.documents", primary_key=["id"])
+        @table(DocumentRow)
+        def documents(ctx, writer):
+            ...
+
+    Column ordering (for generated tables):
     1. id (UUID primary key) - if uuid_pk=True
     2. User-defined fields - from schema
     3. created_at, updated_at - if timestamps=True, ALWAYS at end
 
     Args:
-        schema: Pydantic BaseModel class
-        tablename: Override table name (default: pluralized function name)
-        timestamps: Add created_at/updated_at at END (default: True)
-        uuid_pk: Add UUID primary key at START (default: True)
-
-    Usage:
-        class DocumentSchema(BaseModel):
-            title: str
-            source_url: Optional[str] = None
-
-        @table(DocumentSchema)
-        @model(name="indexing.documents", primary_key=["id"])
-        def documents(ctx, writer):
-            ...
+        schema_or_class: Pydantic BaseModel (to generate) or SQLModel class (to register)
+        tablename: Override table name (default: pluralized function name or class __tablename__)
+        timestamps: Add created_at/updated_at at END (default: True, only for generated)
+        uuid_pk: Add UUID primary key at START (default: True, only for generated)
     """
 
     def decorator(func: Callable) -> Callable:
-        name = tablename or _pluralize(func.__name__)
-        sqlmodel_class = _create_sqlmodel_from_schema(schema, name, uuid_pk, timestamps)
+        # Check if it's an existing SQLModel table class
+        if isinstance(schema_or_class, type) and issubclass(schema_or_class, SQLModel):
+            # Check if it has table=True (has __tablename__)
+            if hasattr(schema_or_class, "__tablename__"):
+                # It's an existing SQLModel table - register it directly
+                name = tablename or schema_or_class.__tablename__
+                sqlmodel_class = schema_or_class
+                schema = None
+                logger.debug(f"Registered existing table '{name}' from {schema_or_class.__name__}")
+            else:
+                # SQLModel without table=True - treat as schema to generate from
+                name = tablename or _pluralize(func.__name__)
+                sqlmodel_class = _create_sqlmodel_from_schema(
+                    schema_or_class, name, uuid_pk, timestamps
+                )
+                schema = schema_or_class
+                logger.debug(
+                    f"Generated table '{name}' from SQLModel schema {schema_or_class.__name__}"
+                )
+        elif isinstance(schema_or_class, type) and issubclass(schema_or_class, BaseModel):
+            # Pydantic BaseModel - generate SQLModel from it
+            name = tablename or _pluralize(func.__name__)
+            sqlmodel_class = _create_sqlmodel_from_schema(
+                schema_or_class, name, uuid_pk, timestamps
+            )
+            schema = schema_or_class
+            logger.debug(f"Registered table '{name}' from schema {schema_or_class.__name__}")
+        else:
+            raise ValueError(
+                f"@table requires a Pydantic BaseModel or SQLModel class, got {type(schema_or_class)}"
+            )
 
         _table_registry[name] = sqlmodel_class
 
@@ -208,7 +249,6 @@ def table(
         func._table_name = name
         func._table_timestamps = timestamps
 
-        logger.debug(f"Registered table '{name}' from schema {schema.__name__}")
         return func
 
     return decorator
@@ -395,7 +435,6 @@ def model(
     *,
     name: str,
     primary_key: list[str],
-    db_model: Optional[Type] = None,  # Legacy: explicit SQLModel class
     description: str = "",
     writes_to: Optional[list[str]] = None,
     write_strategy: str = "replace",
@@ -404,30 +443,24 @@ def model(
     """
     Decorator for defining indexing pipeline models.
 
-    Can be used with @table decorator (new) or db_model parameter (legacy).
+    IMPORTANT: Must be used with @table decorator to define the schema.
 
     Args:
         name: Unique model identifier (e.g., "indexing.section_extractions")
         primary_key: List of column names forming the primary key
-        db_model: (Legacy) SQLModel class for the output table. Use @table decorator instead.
         description: Human-readable description of the model's purpose
         writes_to: Optional list of persistent tables this model will mutate
         write_strategy: Default write strategy ("append", "merge", "replace")
         config_schema: Optional ModelConfig subclass for step configuration.
             If provided, config is auto-loaded and passed to the function.
 
-    Example with @table (preferred):
+    Example with @table:
         class DocumentSchema(BaseModel):
             title: str
             source_url: Optional[str] = None
 
         @model(name="indexing.documents", primary_key=["id"])
         @table(DocumentSchema)
-        def documents(ctx, writer):
-            ...
-
-    Example with db_model (legacy):
-        @model(name="indexing.documents", primary_key=["id"], db_model=DocumentRow)
         def documents(ctx, writer):
             ...
 
@@ -455,17 +488,13 @@ def model(
         raise ValueError(f"Invalid write_strategy: {write_strategy}")
 
     def decorator(func: Callable) -> Callable:
-        # Get db_model: prefer @table decorator, fall back to explicit db_model parameter
-        if hasattr(func, "_table_sqlmodel"):
-            actual_db_model = func._table_sqlmodel
-        elif db_model is not None:
-            actual_db_model = db_model
-        else:
+        # Get db_model from @table decorator (required)
+        if not hasattr(func, "_table_sqlmodel"):
             raise ValueError(
-                f"Model '{name}' requires either @table decorator or db_model parameter. "
-                "Use: @model(...) @table(Schema) def func(): ... "
-                "Or: @model(..., db_model=MyModel) def func(): ..."
+                f"Model '{name}' requires @table decorator. "
+                "Use: @model(...) @table(Schema) def func(): ..."
             )
+        actual_db_model = func._table_sqlmodel
 
         sig = inspect.signature(func)
         params = list(sig.parameters.keys())

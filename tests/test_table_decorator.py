@@ -533,30 +533,55 @@ class TestModelDecorator:
         """Clear registry before each test."""
         _table_registry.clear()
 
-    def test_model_requires_table_or_db_model(self):
-        """@model without @table or db_model should raise error."""
-        with pytest.raises(ValueError, match="requires either @table decorator or db_model"):
+    def test_model_requires_table(self):
+        """@model without @table should raise error."""
+        with pytest.raises(ValueError, match="requires @table decorator"):
 
             @model(name="test.no_table", primary_key=["id"])
             def no_table_func():
                 pass
 
-    def test_model_with_table(self):
+    def test_model_with_table_from_pydantic_schema(self):
+        """@table(PydanticSchema) should generate SQLModel."""
+
         class TestModelSchema(BaseModel):
             title: str
             content: Optional[str] = None
 
-        @model(name="test.with_table", primary_key=["id"])
+        @model(name="test.with_pydantic", primary_key=["id"])
         @table(TestModelSchema)
-        def with_table_func(ctx=None, writer=None):
+        def with_pydantic_func(ctx=None, writer=None):
             pass
 
-        assert hasattr(with_table_func, "_model_metadata")
-        metadata = with_table_func._model_metadata
-        assert metadata["name"] == "test.with_table"
+        assert hasattr(with_pydantic_func, "_model_metadata")
+        metadata = with_pydantic_func._model_metadata
+        assert metadata["name"] == "test.with_pydantic"
         assert metadata["primary_key"] == ["id"]
         assert metadata["db_model"] is not None
         assert metadata["table_schema"] == TestModelSchema
+
+    def test_model_with_table_from_sqlmodel_class(self):
+        """@table(SQLModelClass) should register existing SQLModel."""
+        from sqlmodel import Field, SQLModel
+
+        class ExistingSQLModel(SQLModel, table=True):
+            __tablename__ = "test_existing_table"
+            id: str = Field(primary_key=True)
+            title: str
+            content: Optional[str] = None
+
+        @model(name="test.with_sqlmodel", primary_key=["id"])
+        @table(ExistingSQLModel)
+        def with_sqlmodel_func(ctx=None, writer=None):
+            pass
+
+        assert hasattr(with_sqlmodel_func, "_model_metadata")
+        metadata = with_sqlmodel_func._model_metadata
+        assert metadata["name"] == "test.with_sqlmodel"
+        assert metadata["primary_key"] == ["id"]
+        assert metadata["db_model"] is ExistingSQLModel
+        # When using existing SQLModel, table_schema is None
+        assert metadata["table_schema"] is None
 
 
 class TestFieldOrdering:
