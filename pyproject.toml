@@ -83,4 +83,5 @@ markers = [
 [dependency-groups]
 dev = [
     "pre-commit>=4.3.0",
+    "pytest>=8.4.2",
 ]

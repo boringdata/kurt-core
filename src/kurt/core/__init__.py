@@ -4,11 +4,10 @@ Framework utilities for model-based indexing pipeline.
 
 from .dbos_integration import configure_dbos_writer
 from .decorator import (
-    apply_llm_processing,
+    apply_dspy,
     create_timestamp_triggers,
     get_all_tables,
     get_table,
-    llm,
     model,
     table,
 )
@@ -87,9 +86,9 @@ __all__ = [
     "LLMAPIError",
     # Table/Data Model decorators (NEW)
     "table",
-    "llm",
     "get_table",
     "get_all_tables",
     "create_timestamp_triggers",
-    "apply_llm_processing",
+    # DSPy DataFrame utility
+    "apply_dspy",
 ]

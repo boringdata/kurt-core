@@ -2,50 +2,49 @@
 Model decorator for the indexing pipeline.
 
 Models declare dependencies using Reference() in function signatures.
-References are lazy-loaded when accessed.
+References provide SQLAlchemy Query objects - no prefetching, user filters in code.
 
 Decorators:
     @table(schema) - Generate SQLModel from Pydantic schema (timestamps at END)
-    @llm(signature) - Apply DSPy signature to process rows
     @model(...) - Define pipeline model with dependencies
 
-Example with @table (NEW):
+Utilities:
+    apply_dspy(df, signature, ...) - Apply DSPy to DataFrame rows (explicit, not decorator)
+
+Example with @table:
     class DocumentSchema(BaseModel):
         title: str
         source_url: Optional[str] = None
 
-    @table(DocumentSchema)  # Generates SQLModel with id, title, source_url, created_at, updated_at
     @model(name="indexing.documents", primary_key=["id"])
-    def documents(ctx: PipelineContext, writer: TableWriter):
-        ...
-
-Example with @llm (NEW):
-    class ExtractEntities(dspy.Signature):
-        content: str = dspy.InputField()
-        entities: list[str] = dspy.OutputField()
-
     @table(DocumentSchema)
-    @llm(ExtractEntities, input_fields={"content": "content"}, output_field="entities")
-    @model(name="indexing.documents", primary_key=["id"])
     def documents(ctx: PipelineContext, writer: TableWriter):
         ...
 
-Legacy example (still works):
-    @model(name="indexing.extractions", db_model=SectionExtractionRow, primary_key=[...])
-    def extractions(
-        ctx: PipelineContext,
-        sections=Reference("indexing.document_sections"),
-        writer: TableWriter,
-    ):
-        df = sections.df
-        ...
+Example with apply_dspy:
+    @model(name="indexing.summaries", primary_key=["id"])
+    @table(SummarySchema)
+    def summaries(ctx, sections=Reference("indexing.sections"), writer):
+        # Get data with user-controlled filtering
+        query = sections.query.filter(sections.model_class.document_id.in_(ctx.document_ids))
+        df = sections.df(query)
+
+        # Apply DSPy explicitly (not automatic via decorator)
+        df = apply_dspy(
+            df,
+            SummarizeDoc,
+            input_fields={"text": "content"},
+            output_fields={"summary": "summary"},
+        )
+
+        writer.write(df)
 """
 
 import functools
 import inspect
 import logging
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Callable, Optional, Type
+from typing import TYPE_CHECKING, Callable, Optional, Type
 
 from pydantic import BaseModel
 from sqlmodel import Field, SQLModel
@@ -56,6 +55,8 @@ from .references import Reference, resolve_references
 from .registry import ModelRegistry
 
 if TYPE_CHECKING:
+    import pandas as pd
+
     from kurt.config import ModelConfig
 
 logger = logging.getLogger(__name__)
@@ -214,95 +215,125 @@ def table(
 
 
 # =============================================================================
-# @llm decorator
+# DSPy utilities (explicit function, not decorator)
 # =============================================================================
 
 
-def llm(
+def apply_dspy(
+    df: "pd.DataFrame",
     signature: Type,
     *,
-    input_fields: dict[str, str] = None,
-    output_field: str = None,
+    input_fields: dict[str, str],
+    output_fields: dict[str, str] = None,
     pre_hook: Callable = None,
     post_hook: Callable = None,
-    batch: bool = False,
-    on_create: bool = True,
-    on_update: bool = False,
-) -> Callable:
-    """Decorator that applies a DSPy signature to process rows.
+    batch_size: int = 1,
+    progress: bool = True,
+) -> "pd.DataFrame":
+    """Apply a DSPy signature to DataFrame rows.
+
+    This is an explicit utility function - call it in your model code
+    after filtering data, so you only process the rows you need.
 
     Args:
+        df: Input DataFrame with rows to process
         signature: DSPy Signature class
-        input_fields: Map signature inputs to model fields {"sig_field": "model_field"}
-        output_field: Model field to store result
-        pre_hook: lambda row: preprocess(row) before LLM
-        post_hook: lambda row, result: postprocess(row, result) after LLM
-        batch: Process in batches (default: False)
-        on_create: Run on create (default: True)
-        on_update: Run on update (default: False)
+        input_fields: Map signature inputs to df columns {"sig_field": "df_column"}
+        output_fields: Map signature outputs to df columns {"sig_field": "df_column"}
+                      If None, uses signature output field names as column names
+        pre_hook: Optional function (row_dict) -> row_dict to preprocess each row
+        post_hook: Optional function (row_dict, result) -> row_dict to postprocess
+        batch_size: Number of rows to process at once (default: 1)
+        progress: Show progress bar (default: True)
 
-    Usage:
-        class SummarizeDoc(dspy.Signature):
-            text: str = dspy.InputField()
-            summary: str = dspy.OutputField()
+    Returns:
+        DataFrame with new columns from DSPy output
 
-        @table(DocumentSchema)
-        @llm(SummarizeDoc, input_fields={"text": "content"}, output_field="summary")
-        @model(name="indexing.documents", primary_key=["id"])
-        def documents(ctx, writer):
-            ...
+    Example:
+        df = sections.df(filtered_query)
+
+        # Apply DSPy to summarize content
+        df = apply_dspy(
+            df,
+            SummarizeDoc,
+            input_fields={"text": "content"},
+            output_fields={"summary": "summary"},
+            batch_size=10,
+        )
+
+        writer.write(df)
     """
-
-    def decorator(func: Callable) -> Callable:
-        func._llm_config = {
-            "signature": signature,
-            "input_fields": input_fields or {},
-            "output_field": output_field,
-            "pre_hook": pre_hook,
-            "post_hook": post_hook,
-            "batch": batch,
-            "on_create": on_create,
-            "on_update": on_update,
-        }
-        logger.debug(f"Attached LLM config to {func.__name__}: {signature.__name__}")
-        return func
-
-    return decorator
-
-
-def apply_llm_processing(row: Any, llm_config: dict) -> Any:
-    """Apply LLM processing to a row. Called by pipeline framework."""
     import dspy
+    import pandas as pd
 
-    sig = llm_config["signature"]
-    input_fields = llm_config["input_fields"]
-    output_field = llm_config["output_field"]
-    pre_hook = llm_config["pre_hook"]
-    post_hook = llm_config["post_hook"]
+    if df.empty:
+        return df
 
-    # 1. Pre-hook
-    if pre_hook:
-        row = pre_hook(row)
+    # Get output field names from signature if not provided
+    if output_fields is None:
+        output_fields = {}
+        for field_name, field_info in signature.model_fields.items():
+            # Check if it's an output field (has json_schema_extra with __dspy_field_type__)
+            if hasattr(field_info, "json_schema_extra") and field_info.json_schema_extra:
+                extra = field_info.json_schema_extra
+                if isinstance(extra, dict) and extra.get("__dspy_field_type__") == "output":
+                    output_fields[field_name] = field_name
 
-    # 2. Build inputs
-    inputs = {sig_f: getattr(row, model_f, None) for sig_f, model_f in input_fields.items()}
+    # Initialize output columns
+    result_df = df.copy()
+    for sig_field, col_name in output_fields.items():
+        if col_name not in result_df.columns:
+            result_df[col_name] = None
 
-    # 3. Call DSPy
-    predictor = dspy.Predict(sig)
-    result = predictor(**inputs)
+    # Create predictor
+    predictor = dspy.Predict(signature)
 
-    # 4. Post-hook or default storage
-    if post_hook:
-        row = post_hook(row, result)
-    elif output_field:
-        # Get first output field from signature
-        for field_name in sig.model_fields:
-            field = sig.model_fields[field_name]
-            if hasattr(field, "json_schema_extra") and field.json_schema_extra:
-                setattr(row, output_field, getattr(result, field_name, None))
-                break
+    # Process rows
+    rows = result_df.to_dict("records")
+    total = len(rows)
 
-    return row
+    if progress:
+        try:
+            from tqdm import tqdm
+
+            iterator = tqdm(range(0, total, batch_size), desc="Processing with DSPy")
+        except ImportError:
+            iterator = range(0, total, batch_size)
+            logger.info(f"Processing {total} rows with DSPy (install tqdm for progress bar)")
+    else:
+        iterator = range(0, total, batch_size)
+
+    processed_rows = []
+    for i in iterator:
+        batch = rows[i : i + batch_size]
+
+        for row in batch:
+            try:
+                # 1. Pre-hook
+                if pre_hook:
+                    row = pre_hook(row)
+
+                # 2. Build inputs from row
+                inputs = {sig_field: row.get(df_col) for sig_field, df_col in input_fields.items()}
+
+                # 3. Call DSPy
+                result = predictor(**inputs)
+
+                # 4. Post-hook or default: extract outputs
+                if post_hook:
+                    row = post_hook(row, result)
+                else:
+                    # Store outputs in row
+                    for sig_field, col_name in output_fields.items():
+                        row[col_name] = getattr(result, sig_field, None)
+
+            except Exception as e:
+                logger.warning(f"DSPy processing failed for row: {e}")
+                # Keep row as-is with None outputs
+
+            processed_rows.append(row)
+
+    return pd.DataFrame(processed_rows)
 
 
 # =============================================================================
@@ -395,13 +426,6 @@ def model(
         def documents(ctx, writer):
             ...
 
-    Example with @llm:
-        @model(name="indexing.documents", primary_key=["id"])
-        @llm(ExtractEntities, input_fields={"content": "content"})
-        @table(DocumentSchema)
-        def documents(ctx, writer):
-            ...
-
     Example with config:
         class SectionExtractionsConfig(ModelConfig):
             llm_model: str = ConfigParam(fallback="INDEXING_LLM_MODEL")
@@ -433,9 +457,6 @@ def model(
                 "Use: @model(...) @table(Schema) def func(): ..."
             )
         actual_db_model = func._table_sqlmodel
-
-        # Get LLM config from @llm decorator if present
-        llm_config = getattr(func, "_llm_config", None)
 
         sig = inspect.signature(func)
         params = list(sig.parameters.keys())
@@ -571,8 +592,7 @@ def model(
             "config_schema": config_schema,
             "function": wrapper,
             "table_name": table_name,
-            "llm_config": llm_config,  # NEW: LLM processing config
-            "table_schema": getattr(func, "_table_schema", None),  # NEW: original Pydantic schema
+            "table_schema": getattr(func, "_table_schema", None),  # Original Pydantic schema
         }
 
         # Register the model

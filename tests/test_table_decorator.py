@@ -1,7 +1,8 @@
-"""Tests for @table, @llm, and @model decorators."""
+"""Tests for @table, @model decorators and apply_dspy utility."""
 
 from typing import Optional
 
+import pandas as pd
 import pytest
 from pydantic import BaseModel
 from sqlmodel import SQLModel
@@ -10,9 +11,9 @@ from kurt.core.decorator import (
     _create_sqlmodel_from_schema,
     _pluralize,
     _table_registry,
+    apply_dspy,
     get_all_tables,
     get_table,
-    llm,
     model,
     table,
 )
@@ -139,46 +140,50 @@ class TestTableDecorator:
         assert get_table("test_func3s") is not None
 
 
-class TestLLMDecorator:
-    """Test the @llm decorator."""
+class TestApplyDspy:
+    """Test the apply_dspy utility function."""
 
-    def test_llm_decorator_attaches_config(self):
+    def test_apply_dspy_empty_df(self):
+        """apply_dspy should return empty df unchanged."""
+
         class MockSignature:
-            pass
+            model_fields = {}
 
-        @llm(MockSignature, input_fields={"text": "content"}, output_field="summary")
-        def test_llm_func():
-            pass
+        df = pd.DataFrame()
+        result = apply_dspy(df, MockSignature, input_fields={"text": "content"}, progress=False)
+        assert result.empty
 
-        assert hasattr(test_llm_func, "_llm_config")
-        config = test_llm_func._llm_config
-        assert config["signature"] == MockSignature
-        assert config["input_fields"] == {"text": "content"}
-        assert config["output_field"] == "summary"
-        assert config["pre_hook"] is None
-        assert config["post_hook"] is None
-
-    def test_llm_decorator_with_hooks(self):
-        class MockSignature:
-            pass
+    def test_apply_dspy_with_pre_hook(self):
+        """Test pre_hook is called before processing."""
+        hook_calls = []
 
         def my_pre_hook(row):
+            hook_calls.append(row.copy())
+            row["content"] = row["content"].upper()
             return row
 
-        def my_post_hook(row, result):
-            return row
+        # Create a mock signature that doesn't actually call DSPy
+        class MockSignature:
+            model_fields = {}
 
-        @llm(
-            MockSignature,
-            pre_hook=my_pre_hook,
-            post_hook=my_post_hook,
-        )
-        def test_llm_func_with_hooks():
-            pass
+        df = pd.DataFrame({"content": ["hello", "world"]})
 
-        config = test_llm_func_with_hooks._llm_config
-        assert config["pre_hook"] == my_pre_hook
-        assert config["post_hook"] == my_post_hook
+        # This will fail on DSPy call, but pre_hook should be called
+        try:
+            apply_dspy(
+                df,
+                MockSignature,
+                input_fields={"text": "content"},
+                pre_hook=my_pre_hook,
+                progress=False,
+            )
+        except Exception:
+            pass  # Expected - DSPy not configured
+
+        # Pre-hook should have been called for each row
+        assert len(hook_calls) == 2
+        assert hook_calls[0]["content"] == "hello"
+        assert hook_calls[1]["content"] == "world"
 
 
 class TestModelDecorator:
@@ -212,24 +217,6 @@ class TestModelDecorator:
         assert metadata["primary_key"] == ["id"]
         assert metadata["db_model"] is not None
         assert metadata["table_schema"] == TestModelSchema
-
-    def test_model_with_llm(self):
-        class TestLLMSchema(BaseModel):
-            content: str
-            summary: Optional[str] = None
-
-        class MockExtractSignature:
-            pass
-
-        @model(name="test.with_llm", primary_key=["id"])
-        @llm(MockExtractSignature, input_fields={"text": "content"})
-        @table(TestLLMSchema)
-        def with_llm_func(ctx=None, writer=None):
-            pass
-
-        metadata = with_llm_func._model_metadata
-        assert metadata["llm_config"] is not None
-        assert metadata["llm_config"]["signature"] == MockExtractSignature
 
 
 class TestFieldOrdering:
