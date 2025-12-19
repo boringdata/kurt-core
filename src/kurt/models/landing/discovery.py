@@ -10,6 +10,7 @@ Output table: landing_discovery
 import logging
 from typing import Optional
 
+import pandas as pd
 from sqlalchemy import JSON, Column
 from sqlmodel import Field
 
@@ -19,6 +20,7 @@ from kurt.core import (
     PipelineModelBase,
     TableWriter,
     model,
+    table,
 )
 
 logger = logging.getLogger(__name__)
@@ -130,12 +132,12 @@ class DiscoveryRow(PipelineModelBase, table=True):
 
 @model(
     name="landing.discovery",
-    db_model=DiscoveryRow,
     primary_key=["document_id"],
     write_strategy="replace",
     description="Discover URLs/files and create document records",
     config_schema=DiscoveryConfig,
 )
+@table(DiscoveryRow)
 def discovery(
     ctx: PipelineContext,
     writer: TableWriter = None,
@@ -149,47 +151,118 @@ def discovery(
     3. CMS platforms (API discovery)
 
     Creates documents with NOT_FETCHED status (or FETCHED for local files).
-
-    Args:
-        ctx: Pipeline context with workflow_id
-        writer: TableWriter for outputting result rows
-        config: Configuration for discovery parameters
     """
     # Parse patterns from comma-separated strings
-    include_patterns = tuple(
-        p.strip() for p in (config.include_patterns or "").split(",") if p.strip()
-    )
-    exclude_patterns = tuple(
-        p.strip() for p in (config.exclude_patterns or "").split(",") if p.strip()
+    include_patterns = _parse_patterns(config.include_patterns)
+    exclude_patterns = _parse_patterns(config.exclude_patterns)
+
+    # Run discovery based on source type
+    discovery_result, discovery_method, discovery_url = _run_discovery(
+        config, include_patterns, exclude_patterns
     )
 
-    rows = []
-    discovered = 0
-    existing = 0
-    errors = 0
+    # Convert results to DataFrame for processing
+    discovered_docs = discovery_result.get("discovered", [])
+    if not discovered_docs:
+        logger.info("No documents discovered")
+        return {"rows_written": 0, "documents_discovered": 0}
 
-    # Determine discovery method
+    df = pd.DataFrame(discovered_docs)
+
+    # Compute status using vectorized operations
+    df["document_id"] = df.apply(
+        lambda r: str(r.get("doc_id") or r.get("document_id") or ""), axis=1
+    )
+    df["is_new"] = df.get("created", pd.Series(False)).fillna(False)
+    df["status"] = df.apply(_compute_status, axis=1)
+    df["source_url"] = df.apply(lambda r: r.get("url") or r.get("path") or "", axis=1)
+    df["source_type"] = _get_source_type(discovery_method)
+    df["discovery_method"] = discovery_method
+    df["discovery_url"] = discovery_url
+    df["title"] = df.get("title", pd.Series(None))
+
+    # Create rows using list comprehension
+    rows = [
+        DiscoveryRow(
+            document_id=row["document_id"],
+            source_url=row["source_url"],
+            source_type=row["source_type"],
+            discovery_method=row["discovery_method"],
+            discovery_url=row["discovery_url"],
+            status=row["status"],
+            is_new=row["is_new"],
+            title=row.get("title"),
+            error=row.get("error"),
+        )
+        for row in df.to_dict("records")
+    ]
+
+    # Compute stats
+    discovered = (df["status"] == "DISCOVERED").sum()
+    existing = (df["status"] == "EXISTING").sum()
+    errors = (df["status"] == "ERROR").sum()
+
+    logger.info(
+        f"Discovery complete: {discovered} new, {existing} existing, {errors} errors "
+        f"(method: {discovery_method})"
+    )
+
+    result = writer.write(rows)
+    result["documents_discovered"] = int(discovered)
+    result["documents_existing"] = int(existing)
+    result["documents_errors"] = int(errors)
+    result["discovery_method"] = discovery_method
+    return result
+
+
+# ============================================================================
+# Helper Functions
+# ============================================================================
+
+
+def _parse_patterns(patterns_str: Optional[str]) -> tuple:
+    """Parse comma-separated patterns into tuple."""
+    if not patterns_str:
+        return ()
+    return tuple(p.strip() for p in patterns_str.split(",") if p.strip())
+
+
+def _compute_status(row) -> str:
+    """Compute status from discovery result row."""
+    if row.get("error"):
+        return "ERROR"
+    elif row.get("created", False):
+        return "DISCOVERED"
+    return "EXISTING"
+
+
+def _get_source_type(discovery_method: str) -> str:
+    """Map discovery method to source type."""
+    return {"folder": "file", "cms": "cms"}.get(discovery_method, "url")
+
+
+def _run_discovery(
+    config: DiscoveryConfig,
+    include_patterns: tuple,
+    exclude_patterns: tuple,
+) -> tuple:
+    """Run discovery and return (result, method, url)."""
     if config.source_folder:
-        # Folder discovery
         result = _discover_from_folder(
             folder_path=config.source_folder,
             include_patterns=include_patterns,
             exclude_patterns=exclude_patterns,
         )
-        discovery_method = "folder"
-        discovery_url = config.source_folder
+        return result, "folder", config.source_folder
 
-    elif config.cms_platform and config.cms_instance:
-        # CMS discovery
+    if config.cms_platform and config.cms_instance:
         result = _discover_from_cms(
             platform=config.cms_platform,
             instance=config.cms_instance,
         )
-        discovery_method = "cms"
-        discovery_url = f"{config.cms_platform}/{config.cms_instance}"
+        return result, "cms", f"{config.cms_platform}/{config.cms_instance}"
 
-    elif config.source_url:
-        # URL discovery (sitemap or crawl)
+    if config.source_url:
         result = _discover_from_url(
             url=config.source_url,
             discovery_method=config.discovery_method,
@@ -200,52 +273,9 @@ def discovery(
             exclude_patterns=exclude_patterns,
             include_blogrolls=config.include_blogrolls,
         )
-        discovery_method = result.get("method", "sitemap")
-        discovery_url = config.source_url
+        return result, result.get("method", "sitemap"), config.source_url
 
-    else:
-        raise ValueError("Must specify source_url, source_folder, or cms_platform+cms_instance")
-
-    # Process results
-    for doc in result.get("discovered", []):
-        doc_id = doc.get("doc_id") or doc.get("document_id")
-        is_new = doc.get("created", False)
-
-        if doc.get("error"):
-            status = "ERROR"
-            errors += 1
-        elif is_new:
-            status = "DISCOVERED"
-            discovered += 1
-        else:
-            status = "EXISTING"
-            existing += 1
-
-        rows.append(
-            DiscoveryRow(
-                document_id=str(doc_id) if doc_id else "",
-                source_url=doc.get("url") or doc.get("path") or "",
-                source_type=_get_source_type(discovery_method),
-                discovery_method=discovery_method,
-                discovery_url=discovery_url,
-                status=status,
-                is_new=is_new,
-                title=doc.get("title"),
-                error=doc.get("error"),
-            )
-        )
-
-    logger.info(
-        f"Discovery complete: {discovered} new, {existing} existing, {errors} errors "
-        f"(method: {discovery_method})"
-    )
-
-    result = writer.write(rows)
-    result["documents_discovered"] = discovered
-    result["documents_existing"] = existing
-    result["documents_errors"] = errors
-    result["discovery_method"] = discovery_method
-    return result
+    raise ValueError("Must specify source_url, source_folder, or cms_platform+cms_instance")
 
 
 # ============================================================================
@@ -302,13 +332,3 @@ def _discover_from_cms(
         platform=platform,
         instance=instance,
     )
-
-
-def _get_source_type(discovery_method: str) -> str:
-    """Map discovery method to source type."""
-    if discovery_method == "folder":
-        return "file"
-    elif discovery_method == "cms":
-        return "cms"
-    else:
-        return "url"
