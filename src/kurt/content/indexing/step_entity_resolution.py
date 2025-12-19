@@ -365,6 +365,15 @@ def _build_doc_to_kg_data_from_extractions(extractions_df, groups: List[dict]) -
     return dict(doc_to_kg_data)
 
 
+def _get_operation(entity_name: str, decision: str, merge_map: Dict[str, str]) -> str:
+    """Determine the operation type for an entity resolution."""
+    if entity_name in merge_map:
+        return "MERGED"
+    elif decision == "CREATE_NEW":
+        return "CREATED"
+    return "LINKED"
+
+
 def _build_upsert_rows(
     resolutions: List[dict],
     entity_name_to_id: Dict[str, UUID],
@@ -386,14 +395,6 @@ def _build_upsert_rows(
     Returns:
         List of EntityResolutionRow tracking objects
     """
-
-    def get_operation(entity_name: str, decision: str) -> str:
-        if entity_name in merge_map:
-            return "MERGED"
-        elif decision == "CREATE_NEW":
-            return "CREATED"
-        return "LINKED"
-
     return [
         EntityResolutionRow(
             entity_name=resolution.get("entity_name", ""),
@@ -403,8 +404,8 @@ def _build_upsert_rows(
             resolved_entity_id=str(entity_name_to_id.get(resolution.get("entity_name", "")))
             if entity_name_to_id.get(resolution.get("entity_name", ""))
             else None,
-            operation=get_operation(
-                resolution.get("entity_name", ""), resolution.get("decision", "")
+            operation=_get_operation(
+                resolution.get("entity_name", ""), resolution.get("decision", ""), merge_map
             ),
             document_ids_json=[
                 str(d["document_id"])

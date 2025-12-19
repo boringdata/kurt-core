@@ -326,6 +326,13 @@ def _build_entity_name_to_id_mapping(entity_resolution_df) -> Dict[str, UUID]:
     return mapping
 
 
+def _extract_entity_names(entities_json) -> List[str]:
+    """Extract entity names from JSON list."""
+    if not entities_json:
+        return []
+    return [e.get("name", "") if isinstance(e, dict) else e for e in entities_json]
+
+
 def _build_section_entity_lists(extractions_df) -> Dict[str, List[str]]:
     """Build mapping from section_id to list of entity names.
 
@@ -341,17 +348,11 @@ def _build_section_entity_lists(extractions_df) -> Dict[str, List[str]]:
     # Parse JSON columns once for the entire DataFrame
     extractions_df = parse_json_columns(extractions_df, ["entities_json"])
 
-    def extract_entity_names(entities_json):
-        """Extract entity names from JSON list."""
-        if not entities_json:
-            return []
-        return [e.get("name", "") if isinstance(e, dict) else e for e in entities_json]
-
     # Build mapping using apply
     return dict(
         zip(
             extractions_df["section_id"].astype(str),
-            extractions_df["entities_json"].apply(extract_entity_names),
+            extractions_df["entities_json"].apply(_extract_entity_names),
         )
     )
 
