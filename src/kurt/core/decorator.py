@@ -227,13 +227,16 @@ def apply_dspy_on_df(
     output_fields: dict[str, str] = None,
     pre_hook: Callable = None,
     post_hook: Callable = None,
-    batch_size: int = 1,
+    max_concurrent: int = 5,
     progress: bool = True,
+    llm_model: str = None,
 ) -> "pd.DataFrame":
-    """Apply a DSPy signature to DataFrame rows.
+    """Apply a DSPy signature to DataFrame rows in parallel.
 
     This is an explicit utility function - call it in your model code
     after filtering data, so you only process the rows you need.
+
+    Uses run_batch_sync for parallel execution with proper thread safety.
 
     Args:
         df: Input DataFrame with rows to process
@@ -243,8 +246,9 @@ def apply_dspy_on_df(
                       If None, uses signature output field names as column names
         pre_hook: Optional function (row_dict) -> row_dict to preprocess each row
         post_hook: Optional function (row_dict, result) -> row_dict to postprocess
-        batch_size: Number of rows to process at once (default: 1)
+        max_concurrent: Number of parallel LLM calls (default: 5)
         progress: Show progress bar (default: True)
+        llm_model: Optional LLM model name (default: uses INDEXING_LLM_MODEL)
 
     Returns:
         DataFrame with new columns from DSPy output
@@ -252,19 +256,21 @@ def apply_dspy_on_df(
     Example:
         df = sections.df(filtered_query)
 
-        # Apply DSPy to summarize content
-        df = apply_dspy(
+        # Process rows in parallel (5 concurrent by default)
+        df = apply_dspy_on_df(
             df,
             SummarizeDoc,
             input_fields={"text": "content"},
             output_fields={"summary": "summary"},
-            batch_size=10,
+            max_concurrent=10,  # Increase parallelism
         )
 
         writer.write(df)
     """
-    import dspy
     import pandas as pd
+
+    from .display import make_progress_callback
+    from .dspy_helpers import run_batch_sync
 
     if df.empty:
         return df
@@ -279,59 +285,51 @@ def apply_dspy_on_df(
                 if isinstance(extra, dict) and extra.get("__dspy_field_type__") == "output":
                     output_fields[field_name] = field_name
 
-    # Initialize output columns
-    result_df = df.copy()
-    for sig_field, col_name in output_fields.items():
-        if col_name not in result_df.columns:
-            result_df[col_name] = None
+    # Convert DataFrame rows to items for run_batch_sync
+    rows = df.to_dict("records")
 
-    # Create predictor
-    predictor = dspy.Predict(signature)
+    # Apply pre_hook and build items with mapped input fields
+    items = []
+    for row in rows:
+        if pre_hook:
+            row = pre_hook(row)
+        # Map df columns to signature input fields
+        item = {sig_field: row.get(df_col) for sig_field, df_col in input_fields.items()}
+        # Store original row for later merging
+        item["__original_row__"] = row
+        items.append(item)
 
-    # Process rows
-    rows = result_df.to_dict("records")
-    total = len(rows)
-
+    # Create progress callback if needed
+    on_progress = None
     if progress:
-        try:
-            from tqdm import tqdm
+        on_progress = make_progress_callback(description="Processing with DSPy")
 
-            iterator = tqdm(range(0, total, batch_size), desc="Processing with DSPy")
-        except ImportError:
-            iterator = range(0, total, batch_size)
-            logger.info(f"Processing {total} rows with DSPy (install tqdm for progress bar)")
-    else:
-        iterator = range(0, total, batch_size)
+    # Run batch in parallel
+    results = run_batch_sync(
+        signature=signature,
+        items=[{k: v for k, v in item.items() if k != "__original_row__"} for item in items],
+        max_concurrent=max_concurrent,
+        on_progress=on_progress,
+        llm_model=llm_model,
+    )
 
+    # Merge results back into rows
     processed_rows = []
-    for i in iterator:
-        batch = rows[i : i + batch_size]
+    for item, dspy_result in zip(items, results):
+        row = item["__original_row__"].copy()
 
-        for row in batch:
-            try:
-                # 1. Pre-hook
-                if pre_hook:
-                    row = pre_hook(row)
+        if dspy_result.error:
+            logger.warning(f"DSPy processing failed for row: {dspy_result.error}")
+            # Keep row as-is with None outputs
+        elif dspy_result.result:
+            if post_hook:
+                row = post_hook(row, dspy_result.result)
+            else:
+                # Store outputs in row
+                for sig_field, col_name in output_fields.items():
+                    row[col_name] = getattr(dspy_result.result, sig_field, None)
 
-                # 2. Build inputs from row
-                inputs = {sig_field: row.get(df_col) for sig_field, df_col in input_fields.items()}
-
-                # 3. Call DSPy
-                result = predictor(**inputs)
-
-                # 4. Post-hook or default: extract outputs
-                if post_hook:
-                    row = post_hook(row, result)
-                else:
-                    # Store outputs in row
-                    for sig_field, col_name in output_fields.items():
-                        row[col_name] = getattr(result, sig_field, None)
-
-            except Exception as e:
-                logger.warning(f"DSPy processing failed for row: {e}")
-                # Keep row as-is with None outputs
-
-            processed_rows.append(row)
+        processed_rows.append(row)
 
     return pd.DataFrame(processed_rows)
 

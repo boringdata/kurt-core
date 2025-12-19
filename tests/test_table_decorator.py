@@ -1,6 +1,7 @@
-"""Tests for @table, @model decorators and apply_dspy utility."""
+"""Tests for @table, @model decorators and apply_dspy_on_df utility."""
 
 from typing import Optional
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
@@ -140,11 +141,15 @@ class TestTableDecorator:
         assert get_table("test_func3s") is not None
 
 
-class TestApplyDspy:
-    """Test the apply_dspy utility function."""
+class TestApplyDspyOnDf:
+    """Test the apply_dspy_on_df utility function.
 
-    def test_apply_dspy_empty_df(self):
-        """apply_dspy should return empty df unchanged."""
+    These tests mock run_batch_sync since apply_dspy_on_df now uses it
+    for parallel execution instead of calling dspy directly.
+    """
+
+    def test_empty_df_returns_unchanged(self):
+        """apply_dspy_on_df should return empty df unchanged."""
 
         class MockSignature:
             model_fields = {}
@@ -155,37 +160,370 @@ class TestApplyDspy:
         )
         assert result.empty
 
-    def test_apply_dspy_with_pre_hook(self):
-        """Test pre_hook is called before processing."""
-        hook_calls = []
+    def test_processes_each_row_in_parallel(self):
+        """Verify each row is processed through run_batch_sync."""
+        from kurt.core.dspy_helpers import DSPyResult
 
-        def my_pre_hook(row):
-            hook_calls.append(row.copy())
-            row["content"] = row["content"].upper()
-            return row
-
-        # Create a mock signature that doesn't actually call DSPy
         class MockSignature:
             model_fields = {}
 
-        df = pd.DataFrame({"content": ["hello", "world"]})
+        df = pd.DataFrame({"content": ["hello", "world", "test"]})
 
-        # This will fail on DSPy call, but pre_hook should be called
-        try:
+        # Mock run_batch_sync to return results for each row
+        def mock_run_batch_sync(*, signature, items, max_concurrent, on_progress, llm_model):
+            results = []
+            for item in items:
+                mock_result = MagicMock()
+                mock_result.summary = f"Summary of: {item.get('text', '')}"
+                results.append(
+                    DSPyResult(
+                        payload=item,
+                        result=mock_result,
+                        error=None,
+                        telemetry={},
+                    )
+                )
+            return results
+
+        with patch("kurt.core.dspy_helpers.run_batch_sync", side_effect=mock_run_batch_sync):
+            result = apply_dspy_on_df(
+                df,
+                MockSignature,
+                input_fields={"text": "content"},
+                output_fields={"summary": "summary"},
+                progress=False,
+            )
+
+        # Verify outputs were added to DataFrame
+        assert len(result) == 3
+        assert list(result["summary"]) == [
+            "Summary of: hello",
+            "Summary of: world",
+            "Summary of: test",
+        ]
+
+    def test_max_concurrent_passed_to_run_batch_sync(self):
+        """Verify max_concurrent is passed to run_batch_sync."""
+        from kurt.core.dspy_helpers import DSPyResult
+
+        class MockSignature:
+            model_fields = {}
+
+        df = pd.DataFrame({"content": ["hello"]})
+        captured_kwargs = {}
+
+        def mock_run_batch_sync(**kwargs):
+            captured_kwargs.update(kwargs)
+            mock_result = MagicMock()
+            mock_result.summary = "done"
+            return [DSPyResult(payload={}, result=mock_result, error=None, telemetry={})]
+
+        with patch("kurt.core.dspy_helpers.run_batch_sync", side_effect=mock_run_batch_sync):
             apply_dspy_on_df(
                 df,
                 MockSignature,
                 input_fields={"text": "content"},
-                pre_hook=my_pre_hook,
+                output_fields={"summary": "summary"},
+                max_concurrent=10,
                 progress=False,
             )
-        except Exception:
-            pass  # Expected - DSPy not configured
 
-        # Pre-hook should have been called for each row
-        assert len(hook_calls) == 2
-        assert hook_calls[0]["content"] == "hello"
-        assert hook_calls[1]["content"] == "world"
+        assert captured_kwargs["max_concurrent"] == 10
+
+    def test_pre_hook_transforms_input(self):
+        """Test pre_hook is called before DSPy processing."""
+        from kurt.core.dspy_helpers import DSPyResult
+
+        class MockSignature:
+            model_fields = {}
+
+        def uppercase_hook(row):
+            row["content"] = row["content"].upper()
+            return row
+
+        df = pd.DataFrame({"content": ["hello", "world"]})
+        captured_items = []
+
+        def mock_run_batch_sync(*, signature, items, max_concurrent, on_progress, llm_model):
+            captured_items.extend(items)
+            results = []
+            for item in items:
+                mock_result = MagicMock()
+                mock_result.summary = "done"
+                results.append(
+                    DSPyResult(
+                        payload=item,
+                        result=mock_result,
+                        error=None,
+                        telemetry={},
+                    )
+                )
+            return results
+
+        with patch("kurt.core.dspy_helpers.run_batch_sync", side_effect=mock_run_batch_sync):
+            apply_dspy_on_df(
+                df,
+                MockSignature,
+                input_fields={"text": "content"},
+                output_fields={"summary": "summary"},
+                pre_hook=uppercase_hook,
+                progress=False,
+            )
+
+        # Verify pre_hook transformed input before run_batch_sync
+        assert captured_items[0] == {"text": "HELLO"}
+        assert captured_items[1] == {"text": "WORLD"}
+
+    def test_post_hook_transforms_output(self):
+        """Test post_hook is called after DSPy processing."""
+        from kurt.core.dspy_helpers import DSPyResult
+
+        class MockSignature:
+            model_fields = {}
+
+        def add_word_count_hook(row, result):
+            row["summary"] = result.summary
+            row["word_count"] = len(result.summary.split())
+            return row
+
+        df = pd.DataFrame({"content": ["hello world"]})
+
+        def mock_run_batch_sync(*, signature, items, max_concurrent, on_progress, llm_model):
+            mock_result = MagicMock()
+            mock_result.summary = "This is a test summary"
+            return [DSPyResult(payload=items[0], result=mock_result, error=None, telemetry={})]
+
+        with patch("kurt.core.dspy_helpers.run_batch_sync", side_effect=mock_run_batch_sync):
+            result = apply_dspy_on_df(
+                df,
+                MockSignature,
+                input_fields={"text": "content"},
+                output_fields={"summary": "summary"},
+                post_hook=add_word_count_hook,
+                progress=False,
+            )
+
+        # Verify post_hook added extra field
+        assert result["summary"].iloc[0] == "This is a test summary"
+        assert result["word_count"].iloc[0] == 5
+
+    def test_handles_dspy_error_gracefully(self):
+        """DSPy errors should be logged but not crash processing."""
+        from kurt.core.dspy_helpers import DSPyResult
+
+        class MockSignature:
+            model_fields = {}
+
+        df = pd.DataFrame({"content": ["good", "bad", "good2"]})
+
+        def mock_run_batch_sync(*, signature, items, max_concurrent, on_progress, llm_model):
+            results = []
+            for item in items:
+                if item.get("text") == "bad":
+                    results.append(
+                        DSPyResult(
+                            payload=item,
+                            result=None,
+                            error=ValueError("DSPy API error"),
+                            telemetry={"error": "DSPy API error"},
+                        )
+                    )
+                else:
+                    mock_result = MagicMock()
+                    mock_result.summary = f"Summary: {item.get('text')}"
+                    results.append(
+                        DSPyResult(
+                            payload=item,
+                            result=mock_result,
+                            error=None,
+                            telemetry={},
+                        )
+                    )
+            return results
+
+        with patch("kurt.core.dspy_helpers.run_batch_sync", side_effect=mock_run_batch_sync):
+            result = apply_dspy_on_df(
+                df,
+                MockSignature,
+                input_fields={"text": "content"},
+                output_fields={"summary": "summary"},
+                progress=False,
+            )
+
+        # All rows should be in result (error row has None/missing summary)
+        assert len(result) == 3
+        assert result["summary"].iloc[0] == "Summary: good"
+        # Error row - summary not added, so check it's not there or None
+        assert (
+            "summary" not in result.iloc[1]
+            or result["summary"].iloc[1] is None
+            or pd.isna(result.get("summary", {}).get(1))
+        )
+        assert result["summary"].iloc[2] == "Summary: good2"
+
+    def test_multiple_input_and_output_fields(self):
+        """Test mapping multiple input and output fields."""
+        from kurt.core.dspy_helpers import DSPyResult
+
+        class MockSignature:
+            model_fields = {}
+
+        df = pd.DataFrame({"title": ["Doc 1", "Doc 2"], "body": ["Content 1", "Content 2"]})
+
+        def mock_run_batch_sync(*, signature, items, max_concurrent, on_progress, llm_model):
+            results = []
+            for item in items:
+                mock_result = MagicMock()
+                mock_result.summary = f"{item.get('doc_title')}: {item.get('doc_body')}"
+                mock_result.category = "test_category"
+                results.append(
+                    DSPyResult(
+                        payload=item,
+                        result=mock_result,
+                        error=None,
+                        telemetry={},
+                    )
+                )
+            return results
+
+        with patch("kurt.core.dspy_helpers.run_batch_sync", side_effect=mock_run_batch_sync):
+            result = apply_dspy_on_df(
+                df,
+                MockSignature,
+                input_fields={"doc_title": "title", "doc_body": "body"},
+                output_fields={"summary": "result_summary", "category": "result_cat"},
+                progress=False,
+            )
+
+        # Verify multiple outputs mapped correctly
+        assert result["result_summary"].iloc[0] == "Doc 1: Content 1"
+        assert result["result_cat"].iloc[0] == "test_category"
+
+    def test_parallel_execution_with_max_concurrent(self):
+        """Test that max_concurrent controls parallelism in run_batch_sync."""
+        from kurt.core.dspy_helpers import DSPyResult
+
+        class MockSignature:
+            model_fields = {}
+
+        # Create 10 rows
+        df = pd.DataFrame({"content": [f"row_{i}" for i in range(10)]})
+
+        call_count = [0]
+
+        def mock_run_batch_sync(*, signature, items, max_concurrent, on_progress, llm_model):
+            call_count[0] += 1
+            # Verify all items are passed in a single batch
+            assert len(items) == 10
+            results = []
+            for item in items:
+                mock_result = MagicMock()
+                mock_result.summary = f"processed_{item.get('text')}"
+                results.append(
+                    DSPyResult(
+                        payload=item,
+                        result=mock_result,
+                        error=None,
+                        telemetry={},
+                    )
+                )
+            return results
+
+        with patch("kurt.core.dspy_helpers.run_batch_sync", side_effect=mock_run_batch_sync):
+            result = apply_dspy_on_df(
+                df,
+                MockSignature,
+                input_fields={"text": "content"},
+                output_fields={"summary": "summary"},
+                max_concurrent=5,
+                progress=False,
+            )
+
+        # run_batch_sync should be called once with all items
+        assert call_count[0] == 1
+        assert len(result) == 10
+
+        # Verify all rows have output
+        for i in range(10):
+            assert result["summary"].iloc[i] == f"processed_row_{i}"
+
+    def test_preserves_original_columns(self):
+        """Output DataFrame should preserve all original columns."""
+        from kurt.core.dspy_helpers import DSPyResult
+
+        class MockSignature:
+            model_fields = {}
+
+        df = pd.DataFrame(
+            {
+                "id": [1, 2, 3],
+                "content": ["a", "b", "c"],
+                "extra_col": ["x", "y", "z"],
+            }
+        )
+
+        def mock_run_batch_sync(*, signature, items, max_concurrent, on_progress, llm_model):
+            results = []
+            for item in items:
+                mock_result = MagicMock()
+                mock_result.summary = "done"
+                results.append(
+                    DSPyResult(
+                        payload=item,
+                        result=mock_result,
+                        error=None,
+                        telemetry={},
+                    )
+                )
+            return results
+
+        with patch("kurt.core.dspy_helpers.run_batch_sync", side_effect=mock_run_batch_sync):
+            result = apply_dspy_on_df(
+                df,
+                MockSignature,
+                input_fields={"text": "content"},
+                output_fields={"summary": "summary"},
+                progress=False,
+            )
+
+        # Original columns preserved
+        assert "id" in result.columns
+        assert "content" in result.columns
+        assert "extra_col" in result.columns
+        # New column added
+        assert "summary" in result.columns
+
+        # Values preserved
+        assert list(result["id"]) == [1, 2, 3]
+        assert list(result["extra_col"]) == ["x", "y", "z"]
+
+    def test_llm_model_passed_to_run_batch_sync(self):
+        """Verify llm_model parameter is passed through to run_batch_sync."""
+        from kurt.core.dspy_helpers import DSPyResult
+
+        class MockSignature:
+            model_fields = {}
+
+        df = pd.DataFrame({"content": ["hello"]})
+        captured_kwargs = {}
+
+        def mock_run_batch_sync(**kwargs):
+            captured_kwargs.update(kwargs)
+            mock_result = MagicMock()
+            mock_result.summary = "done"
+            return [DSPyResult(payload={}, result=mock_result, error=None, telemetry={})]
+
+        with patch("kurt.core.dspy_helpers.run_batch_sync", side_effect=mock_run_batch_sync):
+            apply_dspy_on_df(
+                df,
+                MockSignature,
+                input_fields={"text": "content"},
+                output_fields={"summary": "summary"},
+                llm_model="gpt-4",
+                progress=False,
+            )
+
+        assert captured_kwargs["llm_model"] == "gpt-4"
 
 
 class TestModelDecorator:

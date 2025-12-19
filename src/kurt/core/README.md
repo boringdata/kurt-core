@@ -46,9 +46,139 @@ Every model is **pure Python**: no DBOS calls, no implicit globals. The framewor
 
 ---
 
-## 2. Authoring Models (Step-by-Step)
+## 2. New API: @table Decorator & Lazy References
 
-All examples reference the public API from `kurt.core`.
+The framework now provides a cleaner API that separates schema definition from table creation and makes data access explicit.
+
+### 2.1 Define Schema with @table Decorator
+
+Use pure Pydantic schemas and let `@table` generate the SQLModel table:
+
+```python
+from pydantic import BaseModel
+from typing import Optional
+from kurt.core import model, table, Reference, TableWriter
+
+# 1. Pure Pydantic schema
+class DocumentSchema(BaseModel):
+    title: str
+    source_url: Optional[str] = None
+    content: str
+
+# 2. Model with @table decorator
+@model(name="indexing.documents", primary_key=["id"])
+@table(DocumentSchema)  # Generates SQLModel with: id, title, source_url, content, created_at, updated_at
+def documents(ctx, writer: TableWriter):
+    ...
+```
+
+**Column ordering** is guaranteed:
+1. `id` (UUID primary key) - first
+2. User-defined fields - in schema order
+3. `created_at`, `updated_at` - always last
+
+**Timestamp triggers** are auto-generated for SQLite to update `updated_at` on every write.
+
+### 2.2 Lazy References (SQLAlchemy Query)
+
+References no longer prefetch data. Instead, they return a **lazy SQLAlchemy Query** that you filter and execute in your model code:
+
+```python
+@model(name="indexing.summaries", primary_key=["id"])
+@table(SummarySchema)
+def summaries(ctx, sections=Reference("indexing.sections"), writer: TableWriter):
+    # Get the query (no data fetched yet)
+    query = sections.query
+
+    # Filter in your code (SQL pushdown)
+    filtered = query.filter(sections.model_class.document_id.in_(ctx.document_ids))
+
+    # Execute and get DataFrame
+    df = sections.df(filtered)
+
+    # Or get list of model instances
+    rows = filtered.all()
+```
+
+**Reference API:**
+- `.query` - Returns SQLAlchemy Query (lazy)
+- `.model_class` - Returns SQLModel class for filter conditions
+- `.df(query)` - Execute query and return DataFrame
+- `.all(query)` - Execute query and return list
+
+### 2.3 apply_dspy_on_df - Explicit LLM Processing
+
+Instead of implicit `@llm` decorators, use `apply_dspy_on_df` to explicitly apply DSPy to DataFrame rows:
+
+```python
+import dspy
+from kurt.core import apply_dspy_on_df
+
+# Define your DSPy signature
+class SummarizeDoc(dspy.Signature):
+    """Summarize document content."""
+    text: str = dspy.InputField()
+    summary: str = dspy.OutputField()
+
+@model(name="indexing.summaries", primary_key=["id"])
+@table(SummarySchema)
+def summaries(ctx, sections=Reference("indexing.sections"), writer: TableWriter):
+    # 1. Get filtered data
+    query = sections.query.filter(sections.model_class.document_id.in_(ctx.document_ids))
+    df = sections.df(query)
+
+    # 2. Apply DSPy explicitly (only processes rows you need!)
+    df = apply_dspy_on_df(
+        df,
+        SummarizeDoc,
+        input_fields={"text": "content"},       # Map signature inputs to df columns
+        output_fields={"summary": "summary"},   # Map signature outputs to df columns
+    )
+
+    # 3. Write results
+    writer.write(df)
+```
+
+**apply_dspy_on_df parameters:**
+- `df` - Input DataFrame
+- `signature` - DSPy Signature class
+- `predictor_class` - DSPy predictor (default: `dspy.Predict`, can use `dspy.ChainOfThought`, etc.)
+- `input_fields` - Map signature inputs to df columns `{"sig_field": "df_column"}`
+- `output_fields` - Map signature outputs to df columns
+- `pre_hook` - `(row_dict) -> row_dict` to preprocess each row
+- `post_hook` - `(row_dict, result) -> row_dict` to postprocess
+- `batch_size` - Number of rows per batch (default: 1)
+- `progress` - Show tqdm progress bar (default: True)
+
+**Example with ChainOfThought and hooks:**
+
+```python
+def clean_content(row):
+    row["content"] = row["content"].strip()
+    return row
+
+def add_metadata(row, result):
+    row["summary"] = result.summary
+    row["word_count"] = len(result.summary.split())
+    return row
+
+df = apply_dspy_on_df(
+    df,
+    SummarizeDoc,
+    predictor_class=dspy.ChainOfThought,  # Use CoT for better reasoning
+    input_fields={"text": "content"},
+    output_fields={"summary": "summary"},
+    pre_hook=clean_content,
+    post_hook=add_metadata,
+    batch_size=10,
+)
+```
+
+---
+
+## 3. Legacy API (Still Supported)
+
+The legacy API with explicit `db_model` and eager `Reference` loading still works:
 
 ```python
 from kurt.core import (
@@ -62,7 +192,7 @@ from kurt.core import (
 )
 ```
 
-### 2.1 Define Configuration (optional)
+### 3.1 Define Configuration (optional)
 
 ```python
 class SectionConfig(ModelConfig):
@@ -72,7 +202,7 @@ class SectionConfig(ModelConfig):
 
 `ModelConfig` ensures all runtime tuning knobs live in one place and can inherit from `ConfigParam` definitions.
 
-### 2.2 Define Output Schema
+### 3.2 Define Output Schema
 
 ```python
 class SectionRow(PipelineModelBase, table=True):
@@ -86,7 +216,7 @@ class SectionRow(PipelineModelBase, table=True):
 
 `PipelineModelBase` adds `workflow_id`, timestamps, `model_name`, and `error`. Add `LLMTelemetryMixin` if the step calls DSPy or other LLMs.
 
-### 2.3 Declare References
+### 3.3 Declare References
 
 References describe upstream dependencies and how to load them.
 
@@ -96,7 +226,7 @@ References describe upstream dependencies and how to load them.
 - Use `filter={"column": lambda ctx: ...}` for runtime parameters (workflow_id, batches, etc.)
 - Use callable filters (`lambda df, ctx`) only for niche scenarios—they require loading the entire table
 
-### 2.4 Implement the Model
+### 3.4 Implement the Model
 
 ```python
 @model(
@@ -121,7 +251,7 @@ def document_sections(
     return {**result, "documents_processed": len(rows)}
 ```
 
-### 2.5 Reuse DB Utilities When Possible
+### 3.5 Reuse DB Utilities When Possible
 
 - `kurt.db.graph_queries.get_documents_entities()` and `get_document_entities()` for bulk entity lookups (avoids N+1 queries).
 - `kurt.db.graph_resolution` helpers (`collect_entities_from_extractions`, `link_existing_entities`, `create_entities`, `create_relationships`) when building KG steps.
@@ -131,7 +261,7 @@ These modules encapsulate validations, UUID conversions, and logging—prefer th
 
 ---
 
-## 3. Framework Modules (kurt/core)
+## 4. Framework Modules (kurt/core)
 
 | Module | Purpose |
 |--------|---------|
@@ -149,7 +279,7 @@ Import everything from `kurt.core` rather than private paths.
 
 ---
 
-## 4. Quick Start Example
+## 5. Quick Start Example (Legacy API)
 
 ```python
 from uuid import uuid4
@@ -208,7 +338,7 @@ result = await run_pipeline(PIPELINE, ctx)
 
 ---
 
-## 5. Document Loading & References
+## 6. Document Loading & References (Legacy)
 
 ### Document Filters
 
@@ -230,7 +360,7 @@ Prefer string/dict filters for performance.
 
 ---
 
-## 6. Pipeline Execution & Workflows
+## 7. Pipeline Execution & Workflows
 
 ### Creating a Pipeline Automatically
 
@@ -270,7 +400,7 @@ execute_model_sync("indexing.document_sections", ctx)  # sync
 
 ---
 
-## 7. Testing & Tooling
+## 8. Testing & Tooling
 
 - `kurt.core.testing.MockTableReader` / `MockTableWriter` for unit tests
 - `execute_model_sync()` to run a single model with in-memory data
@@ -291,7 +421,7 @@ tests/indexing_new/test_workflow_<...>.py
 
 ---
 
-## 8. DB Helpers Worth Knowing
+## 9. DB Helpers Worth Knowing
 
 | Module | Use Cases |
 |--------|-----------|
@@ -305,7 +435,7 @@ Whenever you need to read/write graph or claim data, reach for these utilities b
 
 ---
 
-## 9. Best Practices Checklist
+## 10. Best Practices Checklist
 
 - [ ] Import from `kurt.core` (not internal modules) for decorators, contexts, references, etc.
 - [ ] Define a `ModelConfig` even if it only holds defaults—tuning knobs matter later.
