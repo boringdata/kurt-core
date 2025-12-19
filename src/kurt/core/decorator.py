@@ -395,6 +395,7 @@ def model(
     *,
     name: str,
     primary_key: list[str],
+    db_model: Optional[Type] = None,  # Legacy: explicit SQLModel class
     description: str = "",
     writes_to: Optional[list[str]] = None,
     write_strategy: str = "replace",
@@ -403,24 +404,30 @@ def model(
     """
     Decorator for defining indexing pipeline models.
 
-    IMPORTANT: Must be used with @table decorator to define the schema.
+    Can be used with @table decorator (new) or db_model parameter (legacy).
 
     Args:
         name: Unique model identifier (e.g., "indexing.section_extractions")
         primary_key: List of column names forming the primary key
+        db_model: (Legacy) SQLModel class for the output table. Use @table decorator instead.
         description: Human-readable description of the model's purpose
         writes_to: Optional list of persistent tables this model will mutate
         write_strategy: Default write strategy ("append", "merge", "replace")
         config_schema: Optional ModelConfig subclass for step configuration.
             If provided, config is auto-loaded and passed to the function.
 
-    Example with @table:
+    Example with @table (preferred):
         class DocumentSchema(BaseModel):
             title: str
             source_url: Optional[str] = None
 
         @model(name="indexing.documents", primary_key=["id"])
         @table(DocumentSchema)
+        def documents(ctx, writer):
+            ...
+
+    Example with db_model (legacy):
+        @model(name="indexing.documents", primary_key=["id"], db_model=DocumentRow)
         def documents(ctx, writer):
             ...
 
@@ -448,13 +455,17 @@ def model(
         raise ValueError(f"Invalid write_strategy: {write_strategy}")
 
     def decorator(func: Callable) -> Callable:
-        # Get db_model from @table decorator (required)
-        if not hasattr(func, "_table_sqlmodel"):
+        # Get db_model: prefer @table decorator, fall back to explicit db_model parameter
+        if hasattr(func, "_table_sqlmodel"):
+            actual_db_model = func._table_sqlmodel
+        elif db_model is not None:
+            actual_db_model = db_model
+        else:
             raise ValueError(
-                f"Model '{name}' requires @table decorator. "
-                "Use: @model(...) @table(Schema) def func(): ..."
+                f"Model '{name}' requires either @table decorator or db_model parameter. "
+                "Use: @model(...) @table(Schema) def func(): ... "
+                "Or: @model(..., db_model=MyModel) def func(): ..."
             )
-        actual_db_model = func._table_sqlmodel
 
         sig = inspect.signature(func)
         params = list(sig.parameters.keys())

@@ -533,9 +533,9 @@ class TestModelDecorator:
         """Clear registry before each test."""
         _table_registry.clear()
 
-    def test_model_requires_table(self):
-        """@model without @table should raise error."""
-        with pytest.raises(ValueError, match="requires @table decorator"):
+    def test_model_requires_table_or_db_model(self):
+        """@model without @table or db_model should raise error."""
+        with pytest.raises(ValueError, match="requires either @table decorator or db_model"):
 
             @model(name="test.no_table", primary_key=["id"])
             def no_table_func():
