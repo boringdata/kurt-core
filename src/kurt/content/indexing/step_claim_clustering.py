@@ -257,6 +257,15 @@ def _compute_claim_hash(statement: str, claim_type: str, document_id: str) -> st
     return hashlib.sha256(content.encode()).hexdigest()[:16]
 
 
+def _validate_claim_type(claim_type: str) -> str:
+    """Validate claim type against ClaimType enum, defaulting to 'definition'."""
+    try:
+        ClaimType(claim_type)
+        return claim_type
+    except ValueError:
+        return "definition"
+
+
 def _collect_claims_from_extractions(
     extractions: List[Dict[str, Any]],
 ) -> tuple[List[Dict[str, Any]], Dict[str, List[str]]]:
@@ -266,26 +275,18 @@ def _collect_claims_from_extractions(
         - List of claim dicts with metadata
         - Dict mapping claim_hash -> list of document_ids (for dedup tracking)
     """
-
-    def validate_claim_type(claim_type: str) -> str:
-        try:
-            ClaimType(claim_type)
-            return claim_type
-        except ValueError:
-            return "definition"
-
     # Flatten: extractions with claims_json -> individual claims
     all_claims = [
         {
             "claim_hash": _compute_claim_hash(
                 claim_data.get("statement", ""),
-                validate_claim_type(claim_data.get("claim_type", "definition")),
+                _validate_claim_type(claim_data.get("claim_type", "definition")),
                 str(extraction.get("document_id", "")),
             ),
             "document_id": str(extraction.get("document_id", "")),
             "section_id": str(extraction.get("section_id", "")),
             "statement": claim_data.get("statement", ""),
-            "claim_type": validate_claim_type(claim_data.get("claim_type", "definition")),
+            "claim_type": _validate_claim_type(claim_data.get("claim_type", "definition")),
             "entity_indices": claim_data.get("entity_indices", []),
             "source_quote": claim_data.get("source_quote", ""),
             "quote_start_offset": claim_data.get("quote_start_offset", 0),
