@@ -3,7 +3,15 @@ Framework utilities for model-based indexing pipeline.
 """
 
 from .dbos_integration import configure_dbos_writer
-from .decorator import model
+from .decorator import (
+    apply_llm_processing,
+    create_timestamp_triggers,
+    get_all_tables,
+    get_table,
+    llm,
+    model,
+    table,
+)
 from .display import (
     display,
     make_progress_callback,
@@ -77,4 +85,11 @@ __all__ = [
     "LLMAuthenticationError",
     "LLMRateLimitError",
     "LLMAPIError",
+    # Table/Data Model decorators (NEW)
+    "table",
+    "llm",
+    "get_table",
+    "get_all_tables",
+    "create_timestamp_triggers",
+    "apply_llm_processing",
 ]
