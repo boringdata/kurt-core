@@ -139,8 +139,11 @@ def document_sections(
         writer: TableWriter for outputting section rows
         config: Configuration for section splitting parameters
     """
-    # Lazy load - data fetched here when we access .df
-    documents_df = documents.df
+    # Filter documents by ctx.document_ids (explicit filtering)
+    query = documents.query
+    if ctx.document_ids:
+        query = query.filter(documents.model_class.id.in_(ctx.document_ids))
+    documents_df = documents.df(query)
 
     if documents_df.empty:
         logger.warning("No documents to process")

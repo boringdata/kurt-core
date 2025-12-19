@@ -110,8 +110,10 @@ def entity_resolution(
         section_extractions: Lazy reference to section extractions (for existing_entities and relationships)
         writer: TableWriter for outputting resolution rows
     """
-    # Lazy load - data fetched when accessed
-    groups_df = entity_groups.df
+    workflow_id = ctx.workflow_id
+    # Filter entity_groups by workflow_id (explicit filtering)
+    query = entity_groups.query.filter(entity_groups.model_class.workflow_id == workflow_id)
+    groups_df = entity_groups.df(query)
 
     if groups_df.empty:
         logger.warning("No entity groups found for processed documents")
@@ -137,8 +139,11 @@ def entity_resolution(
         logger.info("No resolutions to process")
         return {"rows_written": 0}
 
-    # Build doc_to_kg_data from extractions (includes existing_entities and relationships)
-    extractions_df = section_extractions.df
+    # Filter section_extractions by workflow_id (explicit filtering)
+    extractions_query = section_extractions.query.filter(
+        section_extractions.model_class.workflow_id == workflow_id
+    )
+    extractions_df = section_extractions.df(extractions_query)
     doc_to_kg_data = _build_doc_to_kg_data_from_extractions(extractions_df, groups)
 
     # Process with database session (auto commit/rollback)

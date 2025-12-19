@@ -115,8 +115,10 @@ def claim_resolution(
         writer: TableWriter for outputting resolution rows
     """
     workflow_id = ctx.workflow_id
-    # Lazy load - data fetched when accessed
-    groups_df = claim_groups.df
+
+    # Filter claim_groups by workflow_id (explicit filtering)
+    groups_query = claim_groups.query.filter(claim_groups.model_class.workflow_id == workflow_id)
+    groups_df = claim_groups.df(groups_query)
 
     if groups_df.empty:
         logger.warning("No claim groups found for processed documents")
@@ -135,12 +137,18 @@ def claim_resolution(
 
     logger.info(f"Processing {len(groups)} claim group decisions for upsert")
 
-    # Build entity name → UUID mapping from entity resolution
-    entity_name_to_id = _build_entity_name_to_id_mapping(entity_resolution.df)
+    # Filter entity_resolution by workflow_id (explicit filtering)
+    entity_query = entity_resolution.query.filter(
+        entity_resolution.model_class.workflow_id == workflow_id
+    )
+    entity_name_to_id = _build_entity_name_to_id_mapping(entity_resolution.df(entity_query))
     logger.info(f"Built entity mapping with {len(entity_name_to_id)} entities")
 
-    # Build section → entity list mapping for entity_indices resolution
-    section_entity_lists = _build_section_entity_lists(section_extractions.df)
+    # Filter section_extractions by workflow_id (explicit filtering)
+    extractions_query = section_extractions.query.filter(
+        section_extractions.model_class.workflow_id == workflow_id
+    )
+    section_entity_lists = _build_section_entity_lists(section_extractions.df(extractions_query))
     logger.info(f"Built section entity lists for {len(section_entity_lists)} sections")
 
     # Process with database session (auto commit/rollback)

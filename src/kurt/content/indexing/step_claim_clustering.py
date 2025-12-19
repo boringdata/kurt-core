@@ -148,8 +148,9 @@ def claim_clustering(
         config: Step configuration (auto-injected by decorator)
     """
     workflow_id = ctx.workflow_id
-    # Lazy load - data fetched when accessed
-    extractions_df = extractions.df
+    # Filter extractions by workflow_id (explicit filtering)
+    query = extractions.query.filter(extractions.model_class.workflow_id == workflow_id)
+    extractions_df = extractions.df(query)
 
     if extractions_df.empty:
         logger.warning("No section extractions found to process")

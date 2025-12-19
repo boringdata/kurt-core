@@ -273,8 +273,9 @@ def section_extractions(
         writer: TableWriter for outputting extraction rows
         config: Step configuration (auto-injected by decorator)
     """
-    # Lazy load - data fetched when accessed
-    sections_df = sections.df
+    # Filter sections by workflow_id (explicit filtering)
+    query = sections.query.filter(sections.model_class.workflow_id == ctx.workflow_id)
+    sections_df = sections.df(query)
 
     if sections_df.empty:
         logger.warning("No sections found to process")
