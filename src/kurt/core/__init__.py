@@ -4,7 +4,7 @@ Framework utilities for model-based indexing pipeline.
 
 from .dbos_integration import configure_dbos_writer
 from .decorator import (
-    apply_dspy,
+    apply_dspy_on_df,
     create_timestamp_triggers,
     get_all_tables,
     get_table,
@@ -90,5 +90,5 @@ __all__ = [
     "get_all_tables",
     "create_timestamp_triggers",
     # DSPy DataFrame utility
-    "apply_dspy",
+    "apply_dspy_on_df",
 ]

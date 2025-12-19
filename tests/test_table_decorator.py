@@ -11,7 +11,7 @@ from kurt.core.decorator import (
     _create_sqlmodel_from_schema,
     _pluralize,
     _table_registry,
-    apply_dspy,
+    apply_dspy_on_df,
     get_all_tables,
     get_table,
     model,
@@ -150,7 +150,9 @@ class TestApplyDspy:
             model_fields = {}
 
         df = pd.DataFrame()
-        result = apply_dspy(df, MockSignature, input_fields={"text": "content"}, progress=False)
+        result = apply_dspy_on_df(
+            df, MockSignature, input_fields={"text": "content"}, progress=False
+        )
         assert result.empty
 
     def test_apply_dspy_with_pre_hook(self):
@@ -170,7 +172,7 @@ class TestApplyDspy:
 
         # This will fail on DSPy call, but pre_hook should be called
         try:
-            apply_dspy(
+            apply_dspy_on_df(
                 df,
                 MockSignature,
                 input_fields={"text": "content"},

@@ -9,7 +9,7 @@ Decorators:
     @model(...) - Define pipeline model with dependencies
 
 Utilities:
-    apply_dspy(df, signature, ...) - Apply DSPy to DataFrame rows (explicit, not decorator)
+    apply_dspy_on_df(df, signature, ...) - Apply DSPy to DataFrame rows (explicit, not decorator)
 
 Example with @table:
     class DocumentSchema(BaseModel):
@@ -21,7 +21,7 @@ Example with @table:
     def documents(ctx: PipelineContext, writer: TableWriter):
         ...
 
-Example with apply_dspy:
+Example with apply_dspy_on_df:
     @model(name="indexing.summaries", primary_key=["id"])
     @table(SummarySchema)
     def summaries(ctx, sections=Reference("indexing.sections"), writer):
@@ -30,7 +30,7 @@ Example with apply_dspy:
         df = sections.df(query)
 
         # Apply DSPy explicitly (not automatic via decorator)
-        df = apply_dspy(
+        df = apply_dspy_on_df(
             df,
             SummarizeDoc,
             input_fields={"text": "content"},
@@ -219,7 +219,7 @@ def table(
 # =============================================================================
 
 
-def apply_dspy(
+def apply_dspy_on_df(
     df: "pd.DataFrame",
     signature: Type,
     *,
