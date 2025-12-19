@@ -13,11 +13,11 @@ Output table: indexing_claim_groups (clustering + resolution decisions)
 
 import asyncio
 import hashlib
-import json
 import logging
 from collections import defaultdict
 from typing import Any, Dict, List, Optional
 
+import pandas as pd
 from sqlalchemy import JSON, Column
 from sqlmodel import Field
 
@@ -29,6 +29,7 @@ from kurt.core import (
     Reference,
     TableWriter,
     model,
+    parse_json_columns,
     table,
 )
 from kurt.db.claim_models import ClaimType
@@ -150,22 +151,17 @@ def claim_clustering(
     workflow_id = ctx.workflow_id
     # Filter extractions by workflow_id (explicit filtering)
     query = extractions.query.filter(extractions.model_class.workflow_id == workflow_id)
-    extractions_df = extractions.df(query)
+    extractions_df = pd.read_sql(query.statement, extractions.session.bind)
 
     if extractions_df.empty:
         logger.warning("No section extractions found to process")
         return {"rows_written": 0, "claims": 0, "clusters": 0}
 
-    extraction_records = extractions_df.to_dict("records")
-
     # Parse JSON fields (SQLite stores JSON as text)
-    for extraction in extraction_records:
-        for field in ["entities_json", "relationships_json", "claims_json", "metadata_json"]:
-            if field in extraction and isinstance(extraction[field], str):
-                try:
-                    extraction[field] = json.loads(extraction[field])
-                except json.JSONDecodeError:
-                    extraction[field] = [] if field != "metadata_json" else {}
+    extractions_df = parse_json_columns(
+        extractions_df, ["entities_json", "relationships_json", "claims_json", "metadata_json"]
+    )
+    extraction_records = extractions_df.to_dict("records")
 
     logger.info(f"Processing {len(extraction_records)} section extractions for claim clustering")
 
@@ -270,47 +266,41 @@ def _collect_claims_from_extractions(
         - List of claim dicts with metadata
         - Dict mapping claim_hash -> list of document_ids (for dedup tracking)
     """
-    all_claims = []
+
+    def validate_claim_type(claim_type: str) -> str:
+        try:
+            ClaimType(claim_type)
+            return claim_type
+        except ValueError:
+            return "definition"
+
+    # Flatten: extractions with claims_json -> individual claims
+    all_claims = [
+        {
+            "claim_hash": _compute_claim_hash(
+                claim_data.get("statement", ""),
+                validate_claim_type(claim_data.get("claim_type", "definition")),
+                str(extraction.get("document_id", "")),
+            ),
+            "document_id": str(extraction.get("document_id", "")),
+            "section_id": str(extraction.get("section_id", "")),
+            "statement": claim_data.get("statement", ""),
+            "claim_type": validate_claim_type(claim_data.get("claim_type", "definition")),
+            "entity_indices": claim_data.get("entity_indices", []),
+            "source_quote": claim_data.get("source_quote", ""),
+            "quote_start_offset": claim_data.get("quote_start_offset", 0),
+            "quote_end_offset": claim_data.get("quote_end_offset", 0),
+            "confidence": claim_data.get("confidence", 0.5),
+        }
+        for extraction in extractions
+        for claim_data in (extraction.get("claims_json") or [])
+        if claim_data.get("statement")
+    ]
+
+    # Build claim_hash -> document_ids mapping
     claim_to_docs = defaultdict(list)
-
-    for extraction in extractions:
-        document_id = str(extraction.get("document_id", ""))
-        section_id = str(extraction.get("section_id", ""))
-        claims_json = extraction.get("claims_json", [])
-
-        if not claims_json:
-            continue
-
-        for claim_data in claims_json:
-            statement = claim_data.get("statement", "")
-            if not statement:
-                continue
-
-            claim_type = claim_data.get("claim_type", "definition")
-
-            # Validate claim type
-            try:
-                ClaimType(claim_type)
-            except ValueError:
-                claim_type = "definition"
-
-            claim_hash = _compute_claim_hash(statement, claim_type, document_id)
-
-            claim = {
-                "claim_hash": claim_hash,
-                "document_id": document_id,
-                "section_id": section_id,
-                "statement": statement,
-                "claim_type": claim_type,
-                "entity_indices": claim_data.get("entity_indices", []),
-                "source_quote": claim_data.get("source_quote", ""),
-                "quote_start_offset": claim_data.get("quote_start_offset", 0),
-                "quote_end_offset": claim_data.get("quote_end_offset", 0),
-                "confidence": claim_data.get("confidence", 0.5),
-            }
-
-            all_claims.append(claim)
-            claim_to_docs[claim_hash].append(document_id)
+    for claim in all_claims:
+        claim_to_docs[claim["claim_hash"]].append(claim["document_id"])
 
     return all_claims, dict(claim_to_docs)
 

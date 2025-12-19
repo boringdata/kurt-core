@@ -28,7 +28,10 @@ from kurt.core import (
     apply_dspy_on_df,
     model,
     table,
+    to_dict,
+    to_list,
 )
+from kurt.db.graph_queries import get_entities_by_document
 from kurt.db.models import ContentType, EntityType, RelationshipType, ResolutionStatus
 
 logger = logging.getLogger(__name__)
@@ -275,7 +278,7 @@ def section_extractions(
     """
     # 1. Filter sections by workflow_id
     query = sections.query.filter(sections.model_class.workflow_id == ctx.workflow_id)
-    df = sections.df(query)
+    df = pd.read_sql(query.statement, sections.session.bind)
 
     if df.empty:
         logger.warning("No sections found to process")
@@ -284,7 +287,7 @@ def section_extractions(
     logger.info(f"Processing {len(df)} sections for extraction")
 
     # 2. Pre-process: Build content and existing entities context
-    doc_entities = _load_existing_entities_by_document(df)
+    doc_entities = get_entities_by_document(df["document_id"].unique().tolist(), as_dicts=True)
 
     df["document_content"] = df.apply(
         lambda r: (f"[...{r['overlap_prefix']}]\n\n" if r.get("overlap_prefix") else "")
@@ -318,10 +321,10 @@ def section_extractions(
             section_id=row["section_id"],
             section_number=row.get("section_number", 1),
             section_heading=row.get("heading") or row.get("section_heading"),
-            metadata_json=_to_dict(row.get("metadata")),
-            entities_json=_to_list(row.get("entities")),
-            relationships_json=_to_list(row.get("relationships")),
-            claims_json=_to_list(row.get("claims")),
+            metadata_json=to_dict(row.get("metadata")),
+            entities_json=to_list(row.get("entities")),
+            relationships_json=to_list(row.get("relationships")),
+            claims_json=to_list(row.get("claims")),
             existing_entities_context_json=[
                 {"index": e.get("index"), "id": e.get("id")}
                 for e in doc_entities.get(row.get("document_id", ""), [])
@@ -340,70 +343,3 @@ def section_extractions(
     result["entities"] = total_entities
     result["claims"] = total_claims
     return result
-
-
-def _to_dict(value):
-    """Convert Pydantic model or dict to dict."""
-    if value is None:
-        return None
-    if hasattr(value, "model_dump"):
-        return value.model_dump()
-    return value
-
-
-def _to_list(value):
-    """Convert list of Pydantic models to list of dicts."""
-    if value is None:
-        return None
-    return [v.model_dump() if hasattr(v, "model_dump") else v for v in value]
-
-
-# ============================================================================
-# Helper Functions
-# ============================================================================
-
-
-def _load_existing_entities_by_document(sections_df: pd.DataFrame) -> dict[str, list[dict]]:
-    """Load existing entities grouped by document ID using a single batch query.
-
-    Returns a dict mapping document_id -> list of entity dicts for that document.
-    This ensures each section receives only the entities relevant to its document,
-    enabling the LLM to properly match entities with resolution_status=EXISTING.
-
-    Args:
-        sections_df: DataFrame with document_id column
-
-    Returns:
-        Dict mapping document_id (str) -> list of entity dicts with id, index, name, type, description
-    """
-    from kurt.db.graph_queries import get_entities_by_document
-
-    document_ids = sections_df["document_id"].unique().tolist()
-
-    # Single batch query to get all entities grouped by document
-    entities_by_doc = get_entities_by_document(document_ids)
-
-    # Format entities with index for LLM matching
-    doc_entities: dict[str, list[dict]] = {}
-    for doc_id, entities in entities_by_doc.items():
-        doc_entities[doc_id] = [
-            {
-                "index": idx,
-                "id": str(entity.id),
-                "name": entity.name,
-                "type": entity.entity_type,
-                "description": entity.description or "",
-                "aliases": entity.aliases or [],
-            }
-            for idx, entity in enumerate(entities)
-        ]
-
-    # Ensure all document IDs are in the result (even if empty)
-    for doc_id in document_ids:
-        if str(doc_id) not in doc_entities:
-            doc_entities[str(doc_id)] = []
-
-    total_entities = sum(len(ents) for ents in doc_entities.values())
-    logger.debug(f"Loaded {total_entities} existing entities across {len(doc_entities)} documents")
-
-    return doc_entities

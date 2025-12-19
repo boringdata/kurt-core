@@ -24,6 +24,9 @@ from .dspy_helpers import (
     LLMAuthenticationError,
     LLMRateLimitError,
     get_dspy_lm,
+    parse_json_columns,
+    to_dict,
+    to_list,
 )
 from .mixins import (
     LLMTelemetryMixin,
@@ -80,6 +83,9 @@ __all__ = [
     "apply_field_renames",
     # DSPy helpers
     "get_dspy_lm",
+    "parse_json_columns",
+    "to_dict",
+    "to_list",
     # LLM Errors
     "LLMAuthenticationError",
     "LLMRateLimitError",

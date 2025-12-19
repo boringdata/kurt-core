@@ -13,20 +13,16 @@ Example:
         writer: TableWriter,
     ):
         # Get query object (no data fetched yet)
-        query = sections.query
+        query = sections.query.filter(sections.model_class.workflow_id == ctx.workflow_id)
 
-        # Filter in user code
-        filtered = query.filter(Section.document_id.in_(ctx.document_ids))
-
-        # Execute when ready
-        df = sections.df(filtered)  # or filtered.all() for list
+        # Execute with pandas
+        df = pd.read_sql(query.statement, sections.session.bind)
 """
 
 import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Optional
 
-import pandas as pd
 from sqlalchemy.orm import Query
 
 if TYPE_CHECKING:
@@ -145,37 +141,19 @@ class Reference:
             )
         return self._model_class
 
-    def df(self, query: Optional[Query] = None) -> pd.DataFrame:
-        """Execute query and return as DataFrame.
+    @property
+    def session(self) -> "Session":
+        """Get the bound session for this reference.
 
-        Args:
-            query: Optional filtered query. If None, uses base query (all rows).
-
-        Example:
-            # All rows
-            df = sections.df()
-
-            # Filtered
-            filtered = sections.query.filter(...)
-            df = sections.df(filtered)
+        Useful for executing queries:
+            df = pd.read_sql(query.statement, sections.session.bind)
         """
         if self._session is None:
             raise RuntimeError(
                 f"Reference '{self.model_name}' not bound to session. "
                 "This usually means you're accessing it outside model execution."
             )
-
-        q = query if query is not None else self.query
-        return pd.read_sql(q.statement, self._session.bind)
-
-    def all(self, query: Optional[Query] = None) -> list:
-        """Execute query and return list of model instances.
-
-        Args:
-            query: Optional filtered query. If None, uses base query (all rows).
-        """
-        q = query if query is not None else self.query
-        return q.all()
+        return self._session
 
 
 def resolve_references(func) -> dict[str, Reference]:

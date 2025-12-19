@@ -17,6 +17,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, List, Optional
 
+import pandas as pd
 from sqlmodel import Field
 
 from kurt.config import ConfigParam, ModelConfig
@@ -143,91 +144,79 @@ def document_sections(
     query = documents.query
     if ctx.document_ids:
         query = query.filter(documents.model_class.id.in_(ctx.document_ids))
-    documents_df = documents.df(query)
+    documents_df = pd.read_sql(query.statement, documents.session.bind)
 
     if documents_df.empty:
         logger.warning("No documents to process")
         return {"rows_written": 0, "documents_processed": 0, "documents_skipped": 0}
 
-    document_records = documents_df.to_dict("records")
     logger.info(
-        f"Processing {len(document_records)} documents for section splitting "
+        f"Processing {len(documents_df)} documents for section splitting "
         f"(mode: {ctx.incremental_mode})"
     )
 
-    rows = []
-    skipped_count = 0
-    # Track successfully processed documents for indexed_hash update
-    processed_docs = []  # List of (document_id, content_hash) tuples
+    # Filter out documents with errors or no content
+    valid_mask = (
+        ~documents_df.get("skip", pd.Series(False, index=documents_df.index)).fillna(False)
+        & documents_df.get("error", pd.Series(None, index=documents_df.index)).isna()
+        & documents_df["content"].notna()
+        & (documents_df["content"] != "")
+    )
+    skipped_count = (~valid_mask).sum()
+    valid_df = documents_df[valid_mask].copy()
 
-    for doc in document_records:
-        # Skip if document has error or no content
-        if doc.get("skip", False) or doc.get("error"):
-            skipped_count += 1
-            continue
+    if valid_df.empty:
+        return {"rows_written": 0, "skipped": skipped_count}
 
-        document_id = doc["document_id"]
-        content = doc.get("content", "")
-
-        if not content:
-            logger.warning(f"Document {document_id} has no content, skipping")
-            skipped_count += 1
-            continue
-
-        # Split the document into sections
-        sections = split_markdown_document(
+    # Split each document into sections using apply
+    valid_df["sections"] = valid_df["content"].apply(
+        lambda content: split_markdown_document(
             content,
             max_chars=config.max_section_chars,
             overlap_chars=config.overlap_chars,
             min_section_size=config.min_section_size,
         )
+    )
 
-        # Create rows - __init__ handles hash computation
-        rows.extend(
-            DocumentSectionRow(
-                document_id=document_id,
-                section_id=section.section_id,
-                section_number=section.section_number,
-                heading=section.heading,
-                content=section.content,
-                start_offset=section.start_offset,
-                end_offset=section.end_offset,
-                overlap_prefix=section.overlap_prefix,
-                overlap_suffix=section.overlap_suffix,
-                document_title=doc.get("title"),
-            )
-            for section in sections
+    # Explode sections into rows
+    sections_df = valid_df.explode("sections").reset_index(drop=True)
+
+    # Create DocumentSectionRow objects
+    rows = [
+        DocumentSectionRow(
+            document_id=row["document_id"],
+            section_id=row["sections"].section_id,
+            section_number=row["sections"].section_number,
+            heading=row["sections"].heading,
+            content=row["sections"].content,
+            start_offset=row["sections"].start_offset,
+            end_offset=row["sections"].end_offset,
+            overlap_prefix=row["sections"].overlap_prefix,
+            overlap_suffix=row["sections"].overlap_suffix,
+            document_title=row.get("title"),
         )
-
-        # Track this document for indexed_hash update
-        content_hash = doc.get("content_hash")
-        if content_hash:
-            processed_docs.append((document_id, content_hash))
+        for row in sections_df.to_dict("records")
+    ]
 
     logger.info(
-        f"Generated {len(rows)} sections from {len(document_records) - skipped_count} documents "
+        f"Generated {len(rows)} sections from {len(valid_df)} documents "
         f"(skipped {skipped_count})"
     )
 
     if not rows:
-        # All documents were skipped - only show skipped count
-        return {
-            "rows_written": 0,
-            "skipped": skipped_count,
-        }
+        return {"rows_written": 0, "skipped": skipped_count}
 
     result = writer.write(rows)
 
     # Update indexed_with_hash for successfully processed documents
-    # This enables incremental mode to skip unchanged documents in future runs
-    if processed_docs:
-        for document_id, content_hash in processed_docs:
-            writer.update_indexed_hash(document_id, content_hash)
+    processed_docs = valid_df[["document_id", "content_hash"]].dropna(subset=["content_hash"])
+    if not processed_docs.empty:
+        for _, row in processed_docs.iterrows():
+            writer.update_indexed_hash(row["document_id"], row["content_hash"])
         logger.info(f"Updated indexed_with_hash for {len(processed_docs)} documents")
 
     # Stats: documents processed and sections created
-    processed_count = len(document_records) - skipped_count
-    result["documents"] = processed_count
+    result["documents"] = len(valid_df)
     result["sections"] = len(rows)
     # Only show skipped if there were any
     if skipped_count > 0:

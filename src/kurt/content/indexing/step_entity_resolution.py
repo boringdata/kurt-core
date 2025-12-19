@@ -10,11 +10,11 @@ Input table: indexing_entity_groups
 Output table: indexing_entity_resolution (tracking what was created)
 """
 
-import json
 import logging
 from typing import Dict, List, Optional
 from uuid import UUID
 
+import pandas as pd
 from sqlalchemy import JSON, Column
 from sqlmodel import Field
 
@@ -24,6 +24,7 @@ from kurt.core import (
     Reference,
     TableWriter,
     model,
+    parse_json_columns,
     print_inline_table,
     table,
 )
@@ -113,22 +114,15 @@ def entity_resolution(
     workflow_id = ctx.workflow_id
     # Filter entity_groups by workflow_id (explicit filtering)
     query = entity_groups.query.filter(entity_groups.model_class.workflow_id == workflow_id)
-    groups_df = entity_groups.df(query)
+    groups_df = pd.read_sql(query.statement, entity_groups.session.bind)
 
     if groups_df.empty:
         logger.warning("No entity groups found for processed documents")
         return {"rows_written": 0}
 
-    groups = groups_df.to_dict("records")
-
     # Parse JSON fields (SQLite stores JSON as text)
-    for group in groups:
-        for field in ["document_ids_json", "aliases_json"]:
-            if field in group and isinstance(group[field], str):
-                try:
-                    group[field] = json.loads(group[field])
-                except json.JSONDecodeError:
-                    group[field] = []
+    groups_df = parse_json_columns(groups_df, ["document_ids_json", "aliases_json"])
+    groups = groups_df.to_dict("records")
 
     logger.info(f"Processing {len(groups)} entity group decisions for upsert")
 
@@ -143,7 +137,7 @@ def entity_resolution(
     extractions_query = section_extractions.query.filter(
         section_extractions.model_class.workflow_id == workflow_id
     )
-    extractions_df = section_extractions.df(extractions_query)
+    extractions_df = pd.read_sql(extractions_query.statement, section_extractions.session.bind)
     doc_to_kg_data = _build_doc_to_kg_data_from_extractions(extractions_df, groups)
 
     # Process with database session (auto commit/rollback)
@@ -240,23 +234,21 @@ def _convert_groups_to_resolutions(groups: List[dict]) -> List[dict]:
     Returns:
         List of resolution dicts in format expected by graph_resolution functions
     """
-    resolutions = []
-    for group in groups:
-        resolutions.append(
-            {
-                "entity_name": group.get("entity_name", ""),
-                "entity_details": {
-                    "type": group.get("entity_type"),
-                    "description": group.get("description"),
-                    "confidence": group.get("confidence", 0.8),
-                },
-                "decision": group.get("decision", "CREATE_NEW"),
-                "canonical_name": group.get("canonical_name") or group.get("entity_name", ""),
-                "aliases": group.get("aliases_json") or [],
-                "reasoning": group.get("reasoning"),
-            }
-        )
-    return resolutions
+    return [
+        {
+            "entity_name": group.get("entity_name", ""),
+            "entity_details": {
+                "type": group.get("entity_type"),
+                "description": group.get("description"),
+                "confidence": group.get("confidence", 0.8),
+            },
+            "decision": group.get("decision", "CREATE_NEW"),
+            "canonical_name": group.get("canonical_name") or group.get("entity_name", ""),
+            "aliases": group.get("aliases_json") or [],
+            "reasoning": group.get("reasoning"),
+        }
+        for group in groups
+    ]
 
 
 def _build_doc_to_kg_data_from_extractions(extractions_df, groups: List[dict]) -> Dict[UUID, dict]:
@@ -286,6 +278,11 @@ def _build_doc_to_kg_data_from_extractions(extractions_df, groups: List[dict]) -
 
     # First, process extractions to get existing_entities and relationships
     if extractions_df is not None and not extractions_df.empty:
+        # Parse JSON fields using utility function
+        extractions_df = parse_json_columns(
+            extractions_df,
+            ["entities_json", "relationships_json", "existing_entities_context_json"],
+        )
         extractions = extractions_df.to_dict("records")
 
         for extraction in extractions:
@@ -295,29 +292,9 @@ def _build_doc_to_kg_data_from_extractions(extractions_df, groups: List[dict]) -
             except (ValueError, TypeError):
                 continue
 
-            # Parse JSON fields
             entities_json = extraction.get("entities_json") or []
             relationships_json = extraction.get("relationships_json") or []
-
-            if isinstance(entities_json, str):
-                try:
-                    entities_json = json.loads(entities_json)
-                except json.JSONDecodeError:
-                    entities_json = []
-
-            if isinstance(relationships_json, str):
-                try:
-                    relationships_json = json.loads(relationships_json)
-                except json.JSONDecodeError:
-                    relationships_json = []
-
-            # Load existing entities context for resolving matched_entity_index
             existing_context = extraction.get("existing_entities_context_json") or []
-            if isinstance(existing_context, str):
-                try:
-                    existing_context = json.loads(existing_context)
-                except json.JSONDecodeError:
-                    existing_context = []
 
             # Build index -> id mapping from context
             index_to_id = {
@@ -409,36 +386,31 @@ def _build_upsert_rows(
     Returns:
         List of EntityResolutionRow tracking objects
     """
-    rows = []
 
-    for resolution in resolutions:
-        entity_name = resolution.get("entity_name", "")
-        decision = resolution.get("decision", "")
-        entity_id = entity_name_to_id.get(entity_name)
-
-        # Determine operation type
+    def get_operation(entity_name: str, decision: str) -> str:
         if entity_name in merge_map:
-            operation = "MERGED"
+            return "MERGED"
         elif decision == "CREATE_NEW":
-            operation = "CREATED"
-        else:
-            operation = "LINKED"
+            return "CREATED"
+        return "LINKED"
 
-        # Get document IDs for this entity
-        doc_infos = entity_name_to_docs.get(entity_name, [])
-        doc_ids = [str(d["document_id"]) for d in doc_infos]
-
-        rows.append(
-            EntityResolutionRow(
-                entity_name=entity_name,
-                workflow_id=workflow_id,
-                decision=decision,
-                canonical_name=resolution.get("canonical_name"),
-                resolved_entity_id=str(entity_id) if entity_id else None,
-                operation=operation,
-                document_ids_json=doc_ids,
-                relationships_created=0,  # Per-entity relationship count not tracked
-            )
+    return [
+        EntityResolutionRow(
+            entity_name=resolution.get("entity_name", ""),
+            workflow_id=workflow_id,
+            decision=resolution.get("decision", ""),
+            canonical_name=resolution.get("canonical_name"),
+            resolved_entity_id=str(entity_name_to_id.get(resolution.get("entity_name", "")))
+            if entity_name_to_id.get(resolution.get("entity_name", ""))
+            else None,
+            operation=get_operation(
+                resolution.get("entity_name", ""), resolution.get("decision", "")
+            ),
+            document_ids_json=[
+                str(d["document_id"])
+                for d in entity_name_to_docs.get(resolution.get("entity_name", ""), [])
+            ],
+            relationships_created=0,
         )
-
-    return rows
+        for resolution in resolutions
+    ]

@@ -15,11 +15,11 @@ Dependencies:
 - indexing.section_extractions: Provides entity indices -> entity names mapping
 """
 
-import json
 import logging
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
+import pandas as pd
 from sqlalchemy import JSON, Column
 from sqlmodel import Field
 
@@ -29,6 +29,7 @@ from kurt.core import (
     Reference,
     TableWriter,
     model,
+    parse_json_columns,
     print_inline_table,
     table,
 )
@@ -118,22 +119,17 @@ def claim_resolution(
 
     # Filter claim_groups by workflow_id (explicit filtering)
     groups_query = claim_groups.query.filter(claim_groups.model_class.workflow_id == workflow_id)
-    groups_df = claim_groups.df(groups_query)
+    groups_df = pd.read_sql(groups_query.statement, claim_groups.session.bind)
 
     if groups_df.empty:
         logger.warning("No claim groups found for processed documents")
         return {"rows_written": 0, "created": 0}
 
-    groups = groups_df.to_dict("records")
-
     # Parse JSON fields (SQLite stores JSON as text)
-    for group in groups:
-        for field in ["entity_indices_json", "similar_existing_json", "conflicts_with_json"]:
-            if field in group and isinstance(group[field], str):
-                try:
-                    group[field] = json.loads(group[field])
-                except json.JSONDecodeError:
-                    group[field] = []
+    groups_df = parse_json_columns(
+        groups_df, ["entity_indices_json", "similar_existing_json", "conflicts_with_json"]
+    )
+    groups = groups_df.to_dict("records")
 
     logger.info(f"Processing {len(groups)} claim group decisions for upsert")
 
@@ -141,14 +137,18 @@ def claim_resolution(
     entity_query = entity_resolution.query.filter(
         entity_resolution.model_class.workflow_id == workflow_id
     )
-    entity_name_to_id = _build_entity_name_to_id_mapping(entity_resolution.df(entity_query))
+    entity_name_to_id = _build_entity_name_to_id_mapping(
+        pd.read_sql(entity_query.statement, entity_resolution.session.bind)
+    )
     logger.info(f"Built entity mapping with {len(entity_name_to_id)} entities")
 
     # Filter section_extractions by workflow_id (explicit filtering)
     extractions_query = section_extractions.query.filter(
         section_extractions.model_class.workflow_id == workflow_id
     )
-    section_entity_lists = _build_section_entity_lists(section_extractions.df(extractions_query))
+    section_entity_lists = _build_section_entity_lists(
+        pd.read_sql(extractions_query.statement, section_extractions.session.bind)
+    )
     logger.info(f"Built section entity lists for {len(section_entity_lists)} sections")
 
     # Process with database session (auto commit/rollback)
@@ -338,29 +338,22 @@ def _build_section_entity_lists(extractions_df) -> Dict[str, List[str]]:
     if extractions_df is None or extractions_df.empty:
         return {}
 
-    section_entities = {}
-    for _, row in extractions_df.iterrows():
-        section_id = str(row.get("section_id", ""))
-        entities_json = row.get("entities_json", [])
+    # Parse JSON columns once for the entire DataFrame
+    extractions_df = parse_json_columns(extractions_df, ["entities_json"])
 
-        # Parse JSON if needed
-        if isinstance(entities_json, str):
-            try:
-                entities_json = json.loads(entities_json)
-            except json.JSONDecodeError:
-                entities_json = []
+    def extract_entity_names(entities_json):
+        """Extract entity names from JSON list."""
+        if not entities_json:
+            return []
+        return [e.get("name", "") if isinstance(e, dict) else e for e in entities_json]
 
-        # Extract entity names in order
-        entity_names = []
-        for entity in entities_json:
-            if isinstance(entity, dict):
-                entity_names.append(entity.get("name", ""))
-            elif isinstance(entity, str):
-                entity_names.append(entity)
-
-        section_entities[section_id] = entity_names
-
-    return section_entities
+    # Build mapping using apply
+    return dict(
+        zip(
+            extractions_df["section_id"].astype(str),
+            extractions_df["entities_json"].apply(extract_entity_names),
+        )
+    )
 
 
 def _resolve_entity_indices(
