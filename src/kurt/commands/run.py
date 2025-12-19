@@ -180,17 +180,11 @@ def _import_models(target: str) -> None:
         pass
 
     # Import staging models if targeting staging
-    if target.startswith("staging"):
+    if target.startswith("staging") or target.startswith("indexing"):
         try:
             import kurt.models.staging  # noqa: F401
         except ImportError:
             pass
-
-    # Also try the old ingestion location for backwards compatibility
-    try:
-        import kurt.content.ingestion  # noqa: F401
-    except ImportError:
-        pass
 
 
 async def _run_pipeline(
