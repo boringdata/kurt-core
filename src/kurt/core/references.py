@@ -1,43 +1,36 @@
 """
 Lazy Reference system for declaring model dependencies.
 
-References declare upstream dependencies AND provide lazy data loading.
-Data is only fetched when accessed (via .df, iteration, or .load()).
+References declare upstream dependencies and provide a SQLAlchemy Query object.
+NO data is prefetched - the user filters and executes the query in their code.
 
 Example:
     @model(name="indexing.section_extractions", ...)
+    @table(SectionExtractionRow)
     def section_extractions(
         ctx: PipelineContext,
         sections=Reference("indexing.document_sections"),
-        documents=Reference("documents", load_content=True),
         writer: TableWriter,
     ):
-        # Data loaded lazily when accessed
-        for section in sections:
-            ...
+        # Get query object (no data fetched yet)
+        query = sections.query.filter(sections.model_class.workflow_id == ctx.workflow_id)
 
-        # Or as DataFrame
-        df = documents.df
-
-        # Access context directly
-        doc_ids = ctx.document_ids
+        # Execute with pandas
+        df = pd.read_sql(query.statement, sections.session.bind)
 """
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Iterator, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
-import pandas as pd
+from sqlalchemy.orm import Query
 
 if TYPE_CHECKING:
+    from sqlmodel import Session
+
     from .model_runner import PipelineContext
-    from .table_io import TableReader
 
 logger = logging.getLogger(__name__)
-
-
-# Type alias for filter function: (df, ctx) -> df
-FilterFunc = Any  # Callable[[pd.DataFrame, PipelineContext], pd.DataFrame]
 
 
 @dataclass
@@ -45,67 +38,39 @@ class Reference:
     """
     Lazy reference to an upstream model's output.
 
-    Declares a dependency AND provides lazy data loading.
-    Data is only fetched when you access .df, iterate, or call .load().
-
-    Filtering modes (explicit only, no auto-detection):
-    - filter=None (default): No filtering - load full table
-    - filter="column_name": Filter by column using ctx.document_ids (SQL WHERE)
-    - filter={"col": lambda ctx: value}: Dict with callable - SQL WHERE with runtime value
-                                          e.g., {"workflow_id": lambda ctx: ctx.workflow_id}
-    - filter=lambda df, ctx: df[...]: Custom filter function (post-load)
-                                       WARNING: Callable filters load entire table first!
-
-    Content loading (for documents table):
-    - load_content=False: Don't load file content (default)
-    - load_content=True: Load content, use default "document_id" column in output
-    - load_content={"document_id_column": "col"}: Load content with custom column name
+    Returns a SQLAlchemy Query object for explicit filtering in user code.
+    NO automatic filtering - all filtering is explicit.
 
     Args:
         model_name: Name of upstream model (e.g., "indexing.document_sections")
                    or table name (e.g., "documents")
-        load_content: For documents table, load file content. Can be:
-                     - False: don't load content
-                     - True: load content, use "document_id" column in output
-                     - dict with "document_id_column": custom column name for document ID
-        columns: Optional list of columns to select
-        filter: How to filter data. Can be:
-                - None: no filtering (load full table)
-                - str: column name to filter by using ctx.document_ids
-                - callable: function (df, ctx) -> filtered_df
 
     Example:
         @model(name="indexing.extractions", ...)
+        @table(ExtractionRow)
         def extractions(
             ctx: PipelineContext,
-            # Filter sections by document_id column using ctx.document_ids
-            sections=Reference("indexing.document_sections", filter="document_id"),
-            # Load documents with content, filter by id column
-            docs=Reference(
-                "documents",
-                load_content={"document_id_column": "document_id"},
-                filter="id",
-            ),
-            # Dict filter with callable - SQL pushdown with runtime value (RECOMMENDED)
-            groups=Reference(
-                "indexing.entity_groups",
-                filter={"workflow_id": lambda ctx: ctx.workflow_id}
-            ),
+            sections=Reference("indexing.document_sections"),
             writer: TableWriter,
         ):
-            sections_df = sections.df
+            # Get the query (lazy - no data fetched)
+            query = sections.query
+
+            # Filter in your code
+            filtered = query.filter(
+                sections.model_class.document_id.in_(ctx.document_ids)
+            )
+
+            # Execute: get DataFrame
+            df = sections.df(filtered)
     """
 
     model_name: str
-    load_content: bool | dict = False  # False, True, or {"document_id_column": "col"}
-    columns: Optional[list[str]] = None
-    filter: Optional[str | FilterFunc] = None  # None, column name, or filter function
 
     # Runtime state (set by framework before model execution)
-    _reader: Optional["TableReader"] = field(default=None, repr=False)
+    _session: Optional["Session"] = field(default=None, repr=False)
     _ctx: Optional["PipelineContext"] = field(default=None, repr=False)
-    _cached_df: Optional[pd.DataFrame] = field(default=None, repr=False)
-    _loaded: bool = field(default=False, repr=False)
+    _model_class: Optional[Any] = field(default=None, repr=False)
 
     @property
     def table_name(self) -> str:
@@ -130,105 +95,65 @@ class Reference:
         """Get the bound pipeline context."""
         return self._ctx
 
-    def _bind(self, reader: "TableReader", ctx: "PipelineContext") -> "Reference":
+    def _bind(self, session: "Session", ctx: "PipelineContext", model_class: Any) -> "Reference":
         """Bind runtime context (called by framework before model execution)."""
-        self._reader = reader
+        self._session = session
         self._ctx = ctx
+        self._model_class = model_class
         return self
 
-    def load(self) -> pd.DataFrame:
+    @property
+    def query(self) -> Query:
+        """Get SQLAlchemy Query object (lazy - no data fetched).
+
+        Returns a query that you can filter and execute in your model code.
+
+        Example:
+            query = sections.query
+            filtered = query.filter(Section.document_id.in_(doc_ids))
+            rows = filtered.all()
         """
-        Load data from the referenced table.
-
-        Called automatically when you access .df or iterate.
-        Can also be called explicitly for eager loading.
-
-        Returns:
-            DataFrame with the loaded data
-        """
-        if self._loaded and self._cached_df is not None:
-            return self._cached_df
-
-        if self._reader is None:
+        if self._session is None:
             raise RuntimeError(
-                f"Reference '{self.model_name}' not bound to reader. "
+                f"Reference '{self.model_name}' not bound to session. "
                 "This usually means you're accessing it outside model execution."
             )
 
-        table_name = self.table_name
-        doc_ids = self._ctx.document_ids if self._ctx else []
+        if self._model_class is None:
+            raise RuntimeError(
+                f"Reference '{self.model_name}' has no model class. "
+                "Ensure the referenced model is registered with @table decorator."
+            )
 
-        # Determine filter type and build where clause
-        where = None
-        filter_func = None
-
-        if isinstance(self.filter, dict):
-            # Dict filter: {"column": value} or {"column": lambda ctx: value}
-            # Supports SQL pushdown with runtime values
-            where = {}
-            for col, val in self.filter.items():
-                if callable(val):
-                    # Callable value - evaluate with ctx at runtime
-                    where[col] = val(self._ctx)
-                else:
-                    # Static value
-                    where[col] = val
-        elif isinstance(self.filter, str):
-            # String filter: column name to filter by ctx.document_ids
-            where = {self.filter: doc_ids} if doc_ids else None
-        elif callable(self.filter):
-            # Callable filter: function (df, ctx) -> filtered_df
-            # WARNING: This loads entire table first, then filters in pandas
-            filter_func = self.filter
-
-        logger.debug(f"Loading reference '{self.model_name}' from table '{table_name}'")
-
-        # Parse load_content config
-        should_load_content = bool(self.load_content)
-        document_id_column = "document_id"  # Default output column name
-        if isinstance(self.load_content, dict):
-            document_id_column = self.load_content.get("document_id_column", "document_id")
-
-        # Get reprocess_unchanged from context (for document loading skip logic)
-        reprocess_unchanged = self._ctx.reprocess_unchanged if self._ctx else False
-
-        df = self._reader.load(
-            table_name,
-            where=where,
-            load_content=should_load_content,
-            document_id_column=document_id_column,
-            reprocess_unchanged=reprocess_unchanged,
-        )
-
-        # Apply custom filter function if provided (receives df and ctx)
-        if filter_func is not None:
-            df = filter_func(df, self._ctx)
-            logger.debug(f"  → After filter function: {len(df)} rows")
-
-        self._cached_df = df
-        self._loaded = True
-
-        logger.debug(f"  → Loaded {len(self._cached_df)} rows")
-        return self._cached_df
+        return self._session.query(self._model_class)
 
     @property
-    def df(self) -> pd.DataFrame:
-        """Get data as DataFrame (lazy load on first access)."""
-        return self.load()
+    def model_class(self) -> Any:
+        """Get the SQLModel class for this reference.
 
-    def __iter__(self) -> Iterator[dict]:
-        """Iterate over rows as dicts (lazy load on first access)."""
-        df = self.load()
-        for _, row in df.iterrows():
-            yield row.to_dict()
+        Useful for building filter conditions:
+            query.filter(sections.model_class.document_id.in_(doc_ids))
+        """
+        if self._model_class is None:
+            raise RuntimeError(
+                f"Reference '{self.model_name}' has no model class. "
+                "Ensure the referenced model is registered with @table decorator."
+            )
+        return self._model_class
 
-    def __len__(self) -> int:
-        """Get row count (triggers load if not loaded)."""
-        return len(self.load())
+    @property
+    def session(self) -> "Session":
+        """Get the bound session for this reference.
 
-    def to_records(self) -> list[dict]:
-        """Get all rows as list of dicts."""
-        return self.load().to_dict("records")
+        Useful for executing queries:
+            df = pd.read_sql(query.statement, sections.session.bind)
+        """
+        if self._session is None:
+            raise RuntimeError(
+                f"Reference '{self.model_name}' not bound to session. "
+                "This usually means you're accessing it outside model execution."
+            )
+        return self._session
 
 
 def resolve_references(func) -> dict[str, Reference]:
@@ -250,12 +175,7 @@ def resolve_references(func) -> dict[str, Reference]:
         if isinstance(param.default, Reference):
             # Create a copy so each model instance has its own Reference
             ref = param.default
-            references[param_name] = Reference(
-                model_name=ref.model_name,
-                load_content=ref.load_content,
-                columns=ref.columns,
-                filter=ref.filter,
-            )
+            references[param_name] = Reference(model_name=ref.model_name)
 
     return references
 

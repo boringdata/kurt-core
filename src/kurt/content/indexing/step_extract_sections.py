@@ -25,9 +25,13 @@ from kurt.core import (
     PipelineModelBase,
     Reference,
     TableWriter,
+    apply_dspy_on_df,
     model,
+    table,
+    to_dict,
+    to_list,
 )
-from kurt.core.dspy_helpers import run_batch_sync
+from kurt.db.graph_queries import get_entities_by_document
 from kurt.db.models import ContentType, EntityType, RelationshipType, ResolutionStatus
 
 logger = logging.getLogger(__name__)
@@ -248,19 +252,15 @@ class SectionExtractionRow(PipelineModelBase, LLMTelemetryMixin, table=True):
 
 @model(
     name="indexing.section_extractions",
-    db_model=SectionExtractionRow,
     primary_key=["document_id", "section_id"],
     write_strategy="replace",
     description="Extract metadata from document sections using DSPy",
     config_schema=SectionExtractionsConfig,
 )
+@table(SectionExtractionRow)
 def section_extractions(
     ctx: PipelineContext,
-    # Dict filter with callable - SQL pushdown with runtime value from ctx
-    sections=Reference(
-        "indexing.document_sections",
-        filter={"workflow_id": lambda ctx: ctx.workflow_id},
-    ),
+    sections=Reference("indexing.document_sections"),
     writer: TableWriter = None,
     config: SectionExtractionsConfig = None,
 ):
@@ -276,153 +276,70 @@ def section_extractions(
         writer: TableWriter for outputting extraction rows
         config: Step configuration (auto-injected by decorator)
     """
-    # Lazy load - data fetched when accessed
-    sections_df = sections.df
+    # 1. Filter sections by workflow_id
+    query = sections.query.filter(sections.model_class.workflow_id == ctx.workflow_id)
+    df = pd.read_sql(query.statement, sections.session.bind)
 
-    if sections_df.empty:
+    if df.empty:
         logger.warning("No sections found to process")
         return {"rows_written": 0}
 
-    sections = sections_df.to_dict("records")
-    logger.info(f"Processing {len(sections)} sections for extraction")
+    logger.info(f"Processing {len(df)} sections for extraction")
 
-    # Load existing entities per document (not a single flat list)
-    doc_entities = _load_existing_entities_by_document(sections_df)
+    # 2. Pre-process: Build content and existing entities context
+    doc_entities = get_entities_by_document(df["document_id"].unique().tolist(), as_dicts=True)
 
-    # Prepare extraction tasks with document-specific entity context
-    tasks = [
-        _prepare_task(
-            section,
-            doc_entities.get(section.get("document_id", ""), []),
-            config.max_entities_context,
-        )
-        for section in sections
-    ]
+    df["document_content"] = df.apply(
+        lambda r: (f"[...{r['overlap_prefix']}]\n\n" if r.get("overlap_prefix") else "")
+        + r.get("content", "")
+        + (f"\n\n[{r['overlap_suffix']}...]" if r.get("overlap_suffix") else ""),
+        axis=1,
+    )
+    df["existing_entities"] = df.apply(
+        lambda r: json.dumps(doc_entities.get(r["document_id"], [])[: config.max_entities_context])
+        if doc_entities.get(r["document_id"])
+        else "[]",
+        axis=1,
+    )
 
-    # Run DSPy extractions (no progress callback - stats shown at step completion)
-    batch_results = run_batch_sync(
-        signature=IndexDocument,
-        items=tasks,
+    # 3. Apply DSPy extraction
+    df = apply_dspy_on_df(
+        df,
+        IndexDocument,
+        input_fields={
+            "document_content": "document_content",
+            "existing_entities": "existing_entities",
+        },
         max_concurrent=config.max_concurrent,
         llm_model=config.llm_model,
     )
 
-    # Create rows using model_validator - handles all transformations
-    # Filter out fields that would conflict with explicit args
-    exclude_fields = {
-        "error",
-        "dspy_result",
-        "dspy_telemetry",
-        "created_at",
-        "updated_at",
-        "existing_entities_context",
-    }
+    # 4. Post-process: Create SectionExtractionRow objects
     rows = [
         SectionExtractionRow(
-            **{k: v for k, v in section.items() if k not in exclude_fields},
-            dspy_result=result.result if not result.error else None,
-            dspy_telemetry=result.telemetry,
-            error=str(result.error) if result.error else None,
-            # Pass existing entities context for resolving matched_entity_index later
-            existing_entities_context=doc_entities.get(section.get("document_id", ""), []),
+            document_id=row["document_id"],
+            section_id=row["section_id"],
+            section_number=row.get("section_number", 1),
+            section_heading=row.get("heading") or row.get("section_heading"),
+            metadata_json=to_dict(row.get("metadata")),
+            entities_json=to_list(row.get("entities")),
+            relationships_json=to_list(row.get("relationships")),
+            claims_json=to_list(row.get("claims")),
+            existing_entities_context_json=[
+                {"index": e.get("index"), "id": e.get("id")}
+                for e in doc_entities.get(row.get("document_id", ""), [])
+            ],
         )
-        for section, result in zip(sections, batch_results)
+        for row in df.to_dict("records")
     ]
 
     # Log extraction stats
-    successful = sum(1 for r in rows if r.error is None)
     total_entities = sum(len(r.entities_json or []) for r in rows)
     total_claims = sum(len(r.claims_json or []) for r in rows)
-    logger.info(
-        f"Extracted {successful}/{len(rows)} sections: "
-        f"{total_entities} entities, {total_claims} claims"
-    )
+    logger.info(f"Extracted {len(rows)} sections: {total_entities} entities, {total_claims} claims")
 
     result = writer.write(rows)
     result["sections"] = len(rows)
     result["entities"] = total_entities
     result["claims"] = total_claims
     return result
-
-
-# ============================================================================
-# Helper Functions
-# ============================================================================
-
-
-def _load_existing_entities_by_document(sections_df: pd.DataFrame) -> dict[str, list[dict]]:
-    """Load existing entities grouped by document ID using a single batch query.
-
-    Returns a dict mapping document_id -> list of entity dicts for that document.
-    This ensures each section receives only the entities relevant to its document,
-    enabling the LLM to properly match entities with resolution_status=EXISTING.
-
-    Args:
-        sections_df: DataFrame with document_id column
-
-    Returns:
-        Dict mapping document_id (str) -> list of entity dicts with id, index, name, type, description
-    """
-    from kurt.db.graph_queries import get_entities_by_document
-
-    document_ids = sections_df["document_id"].unique().tolist()
-
-    # Single batch query to get all entities grouped by document
-    entities_by_doc = get_entities_by_document(document_ids)
-
-    # Format entities with index for LLM matching
-    doc_entities: dict[str, list[dict]] = {}
-    for doc_id, entities in entities_by_doc.items():
-        doc_entities[doc_id] = [
-            {
-                "index": idx,
-                "id": str(entity.id),
-                "name": entity.name,
-                "type": entity.entity_type,
-                "description": entity.description or "",
-                "aliases": entity.aliases or [],
-            }
-            for idx, entity in enumerate(entities)
-        ]
-
-    # Ensure all document IDs are in the result (even if empty)
-    for doc_id in document_ids:
-        if str(doc_id) not in doc_entities:
-            doc_entities[str(doc_id)] = []
-
-    total_entities = sum(len(ents) for ents in doc_entities.values())
-    logger.debug(f"Loaded {total_entities} existing entities across {len(doc_entities)} documents")
-
-    return doc_entities
-
-
-def _prepare_task(
-    section: dict, existing_entities: list[dict], max_entities_context: int = 20
-) -> dict:
-    """Prepare a single DSPy extraction task from section data."""
-    # Build section content with overlap context
-    content = section.get("content", section.get("section_content", ""))
-    if section.get("overlap_prefix"):
-        content = f"[...{section['overlap_prefix']}]\n\n{content}"
-    if section.get("overlap_suffix"):
-        content = f"{content}\n\n[{section['overlap_suffix']}...]"
-
-    # Build title with section info
-    title = section.get("document_title", "Unknown Document")
-    heading = section.get("heading") or section.get("section_heading")
-    section_number = section.get("section_number", 1)
-    if heading:
-        title = f"{title} - {heading}"
-    else:
-        title = f"{title} - Section {section_number}"
-
-    return {
-        "document_title": title,
-        "document_content": content,
-        "existing_entities": json.dumps(existing_entities[:max_entities_context])
-        if existing_entities
-        else "[]",
-        # Pass through for progress callback
-        "document_id": section.get("document_id", ""),
-        "section_number": section_number,
-    }

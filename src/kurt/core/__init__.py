@@ -3,7 +3,14 @@ Framework utilities for model-based indexing pipeline.
 """
 
 from .dbos_integration import configure_dbos_writer
-from .decorator import model
+from .decorator import (
+    apply_dspy_on_df,
+    create_timestamp_triggers,
+    get_all_tables,
+    get_table,
+    model,
+    table,
+)
 from .display import (
     display,
     make_progress_callback,
@@ -17,6 +24,9 @@ from .dspy_helpers import (
     LLMAuthenticationError,
     LLMRateLimitError,
     get_dspy_lm,
+    parse_json_columns,
+    to_dict,
+    to_list,
 )
 from .mixins import (
     LLMTelemetryMixin,
@@ -73,8 +83,18 @@ __all__ = [
     "apply_field_renames",
     # DSPy helpers
     "get_dspy_lm",
+    "parse_json_columns",
+    "to_dict",
+    "to_list",
     # LLM Errors
     "LLMAuthenticationError",
     "LLMRateLimitError",
     "LLMAPIError",
+    # Table/Data Model decorators (NEW)
+    "table",
+    "get_table",
+    "get_all_tables",
+    "create_timestamp_triggers",
+    # DSPy DataFrame utility
+    "apply_dspy_on_df",
 ]

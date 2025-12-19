@@ -9,11 +9,79 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Type, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Type, Union
 
 import dspy
 
+if TYPE_CHECKING:
+    import pandas as pd
+
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Generic Conversion Utilities
+# ============================================================================
+
+
+def to_dict(value: Any) -> Optional[dict]:
+    """Convert Pydantic model or dict to dict.
+
+    Args:
+        value: Pydantic model, dict, or None
+
+    Returns:
+        Dict representation or None
+    """
+    if value is None:
+        return None
+    if hasattr(value, "model_dump"):
+        return value.model_dump()
+    return value
+
+
+def to_list(value: Any) -> Optional[list]:
+    """Convert list of Pydantic models to list of dicts.
+
+    Args:
+        value: List of Pydantic models, list of dicts, or None
+
+    Returns:
+        List of dicts or None
+    """
+    if value is None:
+        return None
+    return [v.model_dump() if hasattr(v, "model_dump") else v for v in value]
+
+
+def parse_json_columns(
+    df: "pd.DataFrame", columns: List[str], default: Any = None
+) -> "pd.DataFrame":
+    """Parse JSON string columns in a DataFrame.
+
+    SQLite stores JSON as text strings. This function parses them back to Python objects.
+
+    Args:
+        df: DataFrame with JSON string columns
+        columns: List of column names to parse
+        default: Default value if parsing fails (default: None, uses [] for *_json columns)
+
+    Returns:
+        DataFrame with parsed JSON columns
+
+    Example:
+        df = parse_json_columns(df, ["entities_json", "claims_json"])
+    """
+    import json
+
+    for col in columns:
+        if col not in df.columns:
+            continue
+        col_default = default if default is not None else ([] if col.endswith("_json") else {})
+        df[col] = df[col].apply(
+            lambda v: json.loads(v) if isinstance(v, str) else (v if v is not None else col_default)
+        )
+    return df
 
 
 class LLMAuthenticationError(Exception):

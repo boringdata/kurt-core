@@ -173,7 +173,8 @@ def get_documents_entities(
 def get_entities_by_document(
     document_ids: list[Union[UUID, str]],
     session: Optional[Session] = None,
-) -> dict[str, list[Entity]]:
+    as_dicts: bool = False,
+) -> dict[str, list]:
     """Get entities grouped by document ID in a single query.
 
     This avoids N+1 queries when loading entities for multiple documents.
@@ -181,9 +182,12 @@ def get_entities_by_document(
     Args:
         document_ids: List of document IDs (as UUIDs or strings)
         session: SQLModel session (optional)
+        as_dicts: If True, return formatted dicts with index for LLM context.
+                  If False, return Entity objects.
 
     Returns:
-        Dict mapping document_id (str) -> list of Entity objects
+        Dict mapping document_id (str) -> list of Entity objects or dicts
+        When as_dicts=True, each dict has: index, id, name, type, description, aliases
     """
     if not document_ids:
         return {}
@@ -214,9 +218,24 @@ def get_entities_by_document(
     )
 
     # Group results by document
-    result: dict[str, list[Entity]] = {str(doc_id): [] for doc_id in doc_uuids}
+    result: dict[str, list] = {str(doc_id): [] for doc_id in doc_uuids}
     for doc_id, entity in session.exec(query).all():
         result[str(doc_id)].append(entity)
+
+    # Convert to dicts with index if requested
+    if as_dicts:
+        for doc_id, entities in result.items():
+            result[doc_id] = [
+                {
+                    "index": idx,
+                    "id": str(entity.id),
+                    "name": entity.name,
+                    "type": entity.entity_type,
+                    "description": entity.description or "",
+                    "aliases": entity.aliases or [],
+                }
+                for idx, entity in enumerate(entities)
+            ]
 
     return result
 

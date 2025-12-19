@@ -27,6 +27,7 @@ from kurt.core import (
     TableWriter,
     configure_dbos_writer,
     model,
+    table,
 )
 
 
@@ -64,13 +65,13 @@ def setup_test_models():
 
     @model(
         name="e2e.document_processor",
-        db_model=DocumentProcessingRow,
         primary_key=["document_id"],
         description="Process documents and extract basic metrics",
     )
+    @table(DocumentProcessingRow)
     def process_documents(
         ctx: PipelineContext,
-        documents=Reference("documents", load_content={"document_id_column": "document_id"}),
+        documents=Reference("documents"),
         writer: TableWriter = None,
         **kwargs,
     ):
@@ -99,10 +100,10 @@ def setup_test_models():
 
     @model(
         name="e2e.document_summarizer",
-        db_model=DocumentSummaryRow,
         primary_key=["document_id"],
         description="Generate summaries from processed documents",
     )
+    @table(DocumentSummaryRow)
     def summarize_documents(
         ctx: PipelineContext,
         processed=Reference("e2e.document_processor"),

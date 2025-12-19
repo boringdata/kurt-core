@@ -356,12 +356,7 @@ def mock_run_batch(response_factory: Optional[Any] = None):
         "kurt.core.dspy_helpers.run_batch_sync",
         side_effect=mock_run_batch_sync,
     ):
-        # Also patch where it's imported
-        with patch(
-            "kurt.content.indexing.step_extract_sections.run_batch_sync",
-            side_effect=mock_run_batch_sync,
-        ):
-            yield
+        yield
 
 
 def create_extraction_response_factory(

@@ -12,12 +12,12 @@ Output table: indexing_entity_groups (clustering + resolution decisions)
 """
 
 import asyncio
-import json
 import logging
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 import dspy
+import pandas as pd
 from pydantic import BaseModel
 from pydantic import Field as PydanticField
 from sqlalchemy import JSON, Column
@@ -31,6 +31,8 @@ from kurt.core import (
     Reference,
     TableWriter,
     model,
+    parse_json_columns,
+    table,
 )
 from kurt.db.graph_entities import cluster_entities_by_similarity
 from kurt.db.graph_resolution import (
@@ -220,19 +222,15 @@ class EntityGroupRow(PipelineModelBase, LLMTelemetryMixin, table=True):
 
 @model(
     name="indexing.entity_clustering",
-    db_model=EntityGroupRow,
     primary_key=["entity_name", "workflow_id"],
     write_strategy="replace",
     description="Cluster and resolve entities across all sections",
     config_schema=EntityClusteringConfig,
 )
+@table(EntityGroupRow)
 def entity_clustering(
     ctx: PipelineContext,
-    # Dict filter with callable - SQL pushdown with runtime value from ctx
-    extractions=Reference(
-        "indexing.section_extractions",
-        filter={"workflow_id": lambda ctx: ctx.workflow_id},
-    ),
+    extractions=Reference("indexing.section_extractions"),
     writer: TableWriter = None,
     config: EntityClusteringConfig = None,
 ):
@@ -255,23 +253,19 @@ def entity_clustering(
         config: Entity clustering configuration
     """
     workflow_id = ctx.workflow_id
-    # Lazy load - data fetched when accessed
-    extractions_df = extractions.df
+    # Filter extractions by workflow_id (explicit filtering)
+    query = extractions.query.filter(extractions.model_class.workflow_id == workflow_id)
+    extractions_df = pd.read_sql(query.statement, extractions.session.bind)
 
     if extractions_df.empty:
         logger.warning("No section extractions found to process")
         return {"rows_written": 0}
 
-    extraction_records = extractions_df.to_dict("records")
-
     # Parse JSON fields (SQLite stores JSON as text)
-    for extraction in extraction_records:
-        for field in ["entities_json", "relationships_json", "claims_json", "metadata_json"]:
-            if field in extraction and isinstance(extraction[field], str):
-                try:
-                    extraction[field] = json.loads(extraction[field])
-                except json.JSONDecodeError:
-                    extraction[field] = [] if field != "metadata_json" else {}
+    extractions_df = parse_json_columns(
+        extractions_df, ["entities_json", "relationships_json", "claims_json", "metadata_json"]
+    )
+    extraction_records = extractions_df.to_dict("records")
 
     logger.info(f"Processing {len(extraction_records)} section extractions for entity clustering")
 
@@ -585,54 +579,49 @@ def _build_group_rows(
     """Build output rows from resolutions."""
     from collections import defaultdict
 
-    # Build entity->documents mapping
+    # Build entity->documents mapping using nested comprehension
     entity_to_docs = defaultdict(list)
     for doc_id, kg_data in doc_to_kg_data.items():
         for entity in kg_data.get("new_entities", []):
-            entity_name = entity.get("name")
-            if entity_name:
-                entity_to_docs[entity_name].append(str(doc_id))
+            if entity.get("name"):
+                entity_to_docs[entity["name"]].append(str(doc_id))
 
-    # Build entity->cluster mapping
-    entity_to_cluster = {}
-    for cluster_id, entities in groups.items():
-        for entity in entities:
-            entity_to_cluster[entity["name"]] = (cluster_id, len(entities))
+    # Build entity->cluster mapping using dict comprehension
+    entity_to_cluster = {
+        entity["name"]: (cluster_id, len(entities))
+        for cluster_id, entities in groups.items()
+        for entity in entities
+    }
 
-    # Build entity->similar_existing mapping
-    entity_to_similar = {}
-    for task in group_tasks:
-        for entity in task["group_entities"]:
-            entity_to_similar[entity["name"]] = task["similar_existing"]
+    # Build entity->similar_existing mapping using dict comprehension
+    entity_to_similar = {
+        entity["name"]: task["similar_existing"]
+        for task in group_tasks
+        for entity in task["group_entities"]
+    }
 
-    rows = []
-    seen_entities = set()  # Track unique entity names within this batch
+    # Deduplicate resolutions by entity name and build rows
+    seen = set()
+    unique_resolutions = [
+        r
+        for r in resolutions
+        if r.get("entity_name", "") not in seen and not seen.add(r.get("entity_name", ""))
+    ]
 
-    for resolution in resolutions:
-        entity_name = resolution.get("entity_name", "")
-
-        # Skip duplicate entity names (same name can appear multiple times in resolutions)
-        if entity_name in seen_entities:
-            continue
-        seen_entities.add(entity_name)
-
-        cluster_id, cluster_size = entity_to_cluster.get(entity_name, (-1, 1))
-
-        rows.append(
-            EntityGroupRow(
-                entity_name=entity_name,
-                workflow_id=workflow_id,
-                entity_details=resolution.get("entity_details", {}),
-                document_ids_json=entity_to_docs.get(entity_name, []),
-                mention_count=len(entity_to_docs.get(entity_name, [])),
-                cluster_id=cluster_id,
-                cluster_size=cluster_size,
-                decision=resolution.get("decision", ""),
-                canonical_name=resolution.get("canonical_name"),
-                aliases_json=resolution.get("aliases", []),
-                reasoning=resolution.get("reasoning"),
-                similar_existing_json=entity_to_similar.get(entity_name, []),
-            )
+    return [
+        EntityGroupRow(
+            entity_name=resolution.get("entity_name", ""),
+            workflow_id=workflow_id,
+            entity_details=resolution.get("entity_details", {}),
+            document_ids_json=entity_to_docs.get(resolution.get("entity_name", ""), []),
+            mention_count=len(entity_to_docs.get(resolution.get("entity_name", ""), [])),
+            cluster_id=entity_to_cluster.get(resolution.get("entity_name", ""), (-1, 1))[0],
+            cluster_size=entity_to_cluster.get(resolution.get("entity_name", ""), (-1, 1))[1],
+            decision=resolution.get("decision", ""),
+            canonical_name=resolution.get("canonical_name"),
+            aliases_json=resolution.get("aliases", []),
+            reasoning=resolution.get("reasoning"),
+            similar_existing_json=entity_to_similar.get(resolution.get("entity_name", ""), []),
         )
-
-    return rows
+        for resolution in unique_resolutions
+    ]
