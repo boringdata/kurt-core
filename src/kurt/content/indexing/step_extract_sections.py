@@ -120,44 +120,47 @@ class RelationshipExtraction(BaseModel):
 
 
 class IndexDocument(dspy.Signature):
-    f"""Index a document: extract metadata, entities, relationships, and claims.
+    f"""You are an advanced information extraction specialist transforming technical documentation into structured knowledge.
 
-    This is the core indexing operation that understands a document's:
+    Your goal is to comprehensively analyze technical documentation and extract nuanced insights across key dimensions.
 
-    1. Document Metadata:
-       - Content Type: {", ".join([ct.value for ct in ContentType])}
-       - Title: Extract or generate concise title
-       - Structure: code examples, procedures, narrative
-
-    2. Knowledge Graph Entities:
-       WHAT IS AN ENTITY?
-       An entity is any distinct concept, thing, or capability that has its own identity.
+    ## ENTITY EXTRACTION (5-15 entities)
+    Identify distinct entities representing key concepts:
+    - Categorize precisely: {", ".join([e.value for e in EntityType])}
+    - Include clear, concise descriptions
+    - Prioritize core technological concepts and actors
+    - For each entity provide:
+      * name: The entity name as it appears in text
+      * entity_type: MUST be one of the types above
+      * quote: Exact text (50-200 chars) where entity is mentioned
+      * resolution_status: {", ".join(ResolutionStatus.get_all_values())}
+      * matched_entity_index: If EXISTING, provide the 'index' from existing_entities
 
 {EntityType.get_extraction_rules()}
 
-       For each entity provide:
-       * name: The entity name as it appears in text
-       * entity_type: MUST be EXACTLY one of: {", ".join([e.value for e in EntityType])}
-       * quote: Exact text (50-200 chars) where entity is mentioned
-       * resolution_status: MUST be EXACTLY one of: {", ".join(ResolutionStatus.get_all_values())}
-       * matched_entity_index: If EXISTING, provide the 'index' value from the matching entity
+    ## RELATIONSHIP MAPPING (5-10 relationships)
+    Uncover meaningful connections between identified entities:
+    - Use precise types: {RelationshipType.get_all_types_string()}
+    - Focus on semantic and functional connections
+    - Provide context snippet showing the relationship
 
-    3. Relationships:
-       - Extract relationships between entities
-       - MUST use EXACTLY one of: {RelationshipType.get_all_types_string()}
-       - Provide context snippet showing the relationship
+    ## CLAIMS GENERATION (10-20 claims)
+    Generate factual claims extracted directly from source text:
+    - Each claim must represent a significant insight
+    - Include verbatim quote from source document (50-500 chars)
+    - entity_indices MUST reference YOUR OUTPUT entities list (0-based)
+    - Include confidence score (0.0-1.0)
+    - Prioritize claims revealing capabilities, architecture, or strategic advantages
 
-    4. Claims (Knowledge Extraction):
-       - Extract ALL types of knowledge from the document
-       - IMPORTANT: Look for technical instructions, explanations, and background context
-       - Aim for comprehensive coverage (10-20 claims for technical documentation)
-       - CRITICAL: entity_indices must reference YOUR OUTPUT entities list
-       - Include ALL entities: product AND its capabilities/features/types
-       - Provide exact quote (50-500 chars) with character offsets
-       - Include confidence score (0.0-1.0)
+    ## EXTRACTION PRINCIPLES
+    - Maintain fidelity to source text
+    - Balance comprehensiveness with precision
+    - Capture both explicit and implicit knowledge
+    - Use domain-specific terminology consistently
 
-    Be accurate - only list prominently discussed topics/tools/entities/claims.
-    Always include exact quotes from the document for entities, relationships, and claims.
+    ## DOCUMENT METADATA
+    Content Type: {", ".join([ct.value for ct in ContentType])}
+    Flags: has_code_examples, has_step_by_step_procedures, has_narrative_structure
     """
 
     document_content: str = dspy.InputField(desc="Markdown document content (first 5000 chars)")
