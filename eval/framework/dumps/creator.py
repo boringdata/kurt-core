@@ -10,17 +10,16 @@ import shutil
 import sys
 from pathlib import Path
 
-# Add src to path to import kurt modules
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
-
-from sqlalchemy import text
-
-from kurt.db.database import get_session
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
 
 
 def create_dump(project_path: Path, dump_name: str):
     """Create JSONL dumps of all tables from a Kurt project."""
-    db_path = project_path / ".kurt" / "kurt.sqlite"
+    # Try new path first (.kurt/data/db.sqlite), fall back to legacy (.kurt/kurt.sqlite)
+    db_path = project_path / ".kurt" / "data" / "db.sqlite"
+    if not db_path.exists():
+        db_path = project_path / ".kurt" / "kurt.sqlite"
 
     if not db_path.exists():
         raise FileNotFoundError(f"No database found at {db_path}")
@@ -35,12 +34,16 @@ def create_dump(project_path: Path, dump_name: str):
     dump_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Creating dump from: {project_path}")
+    print(f"Database: {db_path}")
     print(f"Output directory: {project_dir}")
 
     # Tables to export (we'll get columns dynamically from the schema)
     tables = ["documents", "entities", "document_entities", "entity_relationships"]
 
-    session = get_session()
+    # Create direct connection to the project's database
+    engine = create_engine(f"sqlite:///{db_path}")
+    session_factory = sessionmaker(bind=engine)
+    session = session_factory()
 
     try:
         for table_name in tables:
