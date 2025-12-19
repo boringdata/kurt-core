@@ -286,22 +286,18 @@ def section_extractions(
     # 2. Pre-process: Build content and existing entities context
     doc_entities = _load_existing_entities_by_document(df)
 
-    def build_document_content(row):
-        """Build document_content from section content with overlap."""
-        content = row.get("content", "")
-        if row.get("overlap_prefix"):
-            content = f"[...{row['overlap_prefix']}]\n\n{content}"
-        if row.get("overlap_suffix"):
-            content = f"{content}\n\n[{row['overlap_suffix']}...]"
-        return content
-
-    def build_existing_entities(row):
-        """Build existing_entities JSON string for LLM context."""
-        entities = doc_entities.get(row.get("document_id", ""), [])
-        return json.dumps(entities[: config.max_entities_context]) if entities else "[]"
-
-    df["document_content"] = df.apply(build_document_content, axis=1)
-    df["existing_entities"] = df.apply(build_existing_entities, axis=1)
+    df["document_content"] = df.apply(
+        lambda r: (f"[...{r['overlap_prefix']}]\n\n" if r.get("overlap_prefix") else "")
+        + r.get("content", "")
+        + (f"\n\n[{r['overlap_suffix']}...]" if r.get("overlap_suffix") else ""),
+        axis=1,
+    )
+    df["existing_entities"] = df.apply(
+        lambda r: json.dumps(doc_entities.get(r["document_id"], [])[: config.max_entities_context])
+        if doc_entities.get(r["document_id"])
+        else "[]",
+        axis=1,
+    )
 
     # 3. Apply DSPy extraction
     df = apply_dspy_on_df(
