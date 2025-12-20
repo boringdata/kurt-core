@@ -146,21 +146,13 @@ def map_url(
     from kurt.core import run_pipeline_workflow
 
     try:
-        from kurt.commands.content._live_display import (
-            print_command_summary,
-            print_intro_block,
-            print_stage_header,
-        )
+        from kurt.core.display import display as core_display
+        from kurt.core.display import print_info
 
         # Dry-run mode bypasses workflow system (no DB writes)
         if dry_run:
-            print_intro_block(
-                console,
-                [
-                    "[bold]DRY RUN - Preview only[/bold]",
-                    f"Discovering content from: {url}\n",
-                ],
-            )
+            print_info("[bold]DRY RUN - Preview only[/bold]")
+            print_info(f"Discovering content from: {url}")
 
             result = map_url_content(
                 url=url,
@@ -200,9 +192,8 @@ def map_url(
                 return  # Background mode complete, exit early
 
             # Foreground mode: use original function with progress UI
-            print_intro_block(console, [f"Discovering content from: {url}\n"])
-
-            print_stage_header(console, 1, "DISCOVER CONTENT")
+            print_info(f"Discovering content from: {url}")
+            core_display.start_step("landing.discovery", f"Discovering from {url}")
 
             with Progress(
                 SpinnerColumn(),
@@ -243,25 +234,30 @@ def map_url(
                 if len(result["discovered"]) > 5:
                     console.print(f"  [dim]... and {len(result['discovered']) - 5} more[/dim]")
 
-            # Build summary
-            summary_items = []
-            if result.get("dry_run"):
-                summary_items.append(("ℹ", "Would discover", f"{result['total']} page(s)"))
-            else:
-                summary_items.extend(
-                    [
-                        ("✓", "Discovered", f"{result['total']} page(s)"),
-                        ("✓", "New", f"{result['new']} page(s)"),
-                        ("ℹ", "Existing", f"{result['existing']} page(s)"),
-                    ]
-                )
+            # End step and show summary
+            core_display.end_step(
+                "landing.discovery",
+                {
+                    "status": "completed",
+                    "pages_discovered": result["total"],
+                    "pages_new": result.get("new", 0),
+                },
+            )
 
-            summary_items.append(("ℹ", "Method", result["method"]))
+            # Print summary
+            console.print()
+            console.print("[bold]Summary[/bold]")
+            if result.get("dry_run"):
+                console.print(f"  ℹ Would discover: {result['total']} page(s)")
+            else:
+                console.print(f"  ✓ Discovered: {result['total']} page(s)")
+                console.print(f"  ✓ New: {result['new']} page(s)")
+                console.print(f"  [dim]ℹ Existing: {result['existing']} page(s)[/dim]")
+
+            console.print(f"  [dim]ℹ Method: {result['method']}[/dim]")
 
             if result.get("cluster_count"):
-                summary_items.append(("✓", "Clusters created", str(result["cluster_count"])))
-
-            print_command_summary(console, "Summary", summary_items)
+                console.print(f"  ✓ Clusters created: {result['cluster_count']}")
 
             # Clustering tip (if not clustered)
             if result["total"] >= 50 and not cluster_urls:

@@ -302,13 +302,14 @@ def fetch_cmd(
             return
 
     # Step 10: Display intro block
-    from kurt.commands.content._live_display import print_intro_block
+    from kurt.core.display import print_info
 
     engine_display = get_engine_display(docs, engine)
     intro_messages = build_intro_messages(
         len(doc_ids_to_fetch), concurrency, engine_display, skip_index
     )
-    print_intro_block(console, intro_messages)
+    for msg in intro_messages:
+        print_info(msg)
 
     # Step 11: Background mode support
     if background:
@@ -337,53 +338,43 @@ def fetch_cmd(
     try:
         from dbos import DBOS
 
-        from kurt.commands.content._live_display import (
-            LiveProgressDisplay,
-            print_command_summary,
-            print_stage_header,
-            print_stage_summary,
-        )
         from kurt.content.filtering import DocumentFilters
+        from kurt.core.display import display as core_display
         from kurt.workflows import get_dbos
 
         get_dbos()  # Initialize DBOS
         overall_start = time.time()
 
+        # Create filters for the pipeline
+        filters = DocumentFilters(ids=",".join(doc_ids_to_fetch))
+
         # ====================================================================
         # STAGE 1: Fetch Content (new pipeline model)
         # ====================================================================
-        print_stage_header(console, 1, "FETCH CONTENT & GENERATE EMBEDDINGS")
+        core_display.start_step("landing.fetch", f"Fetching {len(doc_ids_to_fetch)} documents")
 
-        with LiveProgressDisplay(console, max_log_lines=10) as display:
-            display.start_stage("Fetching content", total=len(doc_ids_to_fetch))
+        # Start fetch workflow using new pipeline
+        handle = DBOS.start_workflow(
+            run_pipeline_workflow,
+            target="landing.fetch",
+            filters=filters,
+            incremental_mode="full",
+        )
 
-            # Create filters for the pipeline
-            filters = DocumentFilters(ids=",".join(doc_ids_to_fetch))
-
-            # Start fetch workflow using new pipeline
-            handle = DBOS.start_workflow(
-                run_pipeline_workflow,
-                target="landing.fetch",
-                filters=filters,
-                incremental_mode="full",
-            )
-
-            # Wait for result (no streaming in new model)
-            fetch_result = handle.get_result()
-
-            display.complete_stage()
+        # Wait for result
+        fetch_result = handle.get_result()
 
         # Extract stats from pipeline result
         documents_fetched = fetch_result.get("landing.fetch", {}).get("documents_fetched", 0)
         documents_failed = fetch_result.get("landing.fetch", {}).get("documents_failed", 0)
 
-        # Stage 1 summary
-        print_stage_summary(
-            console,
-            [
-                ("✓", "Fetched", f"{documents_fetched} document(s)"),
-                ("✗", "Failed", f"{documents_failed} document(s)"),
-            ],
+        core_display.end_step(
+            "landing.fetch",
+            {
+                "status": "completed" if documents_failed == 0 else "completed",
+                "documents_fetched": documents_fetched,
+                "documents_failed": documents_failed,
+            },
         )
 
         # Display errors if any
@@ -404,7 +395,7 @@ def fetch_cmd(
             # ====================================================================
             # STAGE 2: Indexing (new declarative pipeline)
             # ====================================================================
-            print_stage_header(console, 2, "INDEXING")
+            core_display.start_step("staging", f"Indexing {documents_fetched} documents")
 
             # Run the indexing workflow using the new pipeline (same filters)
             index_handle = DBOS.start_workflow(
@@ -415,28 +406,22 @@ def fetch_cmd(
                 reprocess_unchanged=False,
             )
 
-            with LiveProgressDisplay(console, max_log_lines=10) as display:
-                display.start_stage("Indexing documents", total=documents_fetched)
-
-                # The new pipeline doesn't emit per-document streams,
-                # so we just wait for completion
-                index_result = index_handle.get_result()
-
-                display.complete_stage()
+            # Wait for result
+            index_result = index_handle.get_result()
 
             # Extract stats from new pipeline result format
             indexed = index_result.get("documents_processed", 0)
             skipped_count = index_result.get("skipped_docs", 0)
             index_failed = len(index_result.get("errors", {}))
 
-            # Stage 2 summary
-            print_stage_summary(
-                console,
-                [
-                    ("✓", "Indexed", f"{indexed} document(s)"),
-                    ("○", "Skipped", f"{skipped_count} document(s)"),
-                    ("✗", "Failed", f"{index_failed} document(s)"),
-                ],
+            core_display.end_step(
+                "staging",
+                {
+                    "status": "completed" if index_failed == 0 else "failed",
+                    "documents_indexed": indexed,
+                    "documents_skipped": skipped_count,
+                    "documents_failed": index_failed,
+                },
             )
 
             # Display indexing error details if any documents failed
@@ -458,49 +443,29 @@ def fetch_cmd(
                         "relationships_created", 0
                     ),
                 }
-                print_stage_summary(
-                    console,
-                    [
-                        ("✓", "Entities created", str(kg_result.get("entities_created", 0))),
-                        ("✓", "Entities linked", str(kg_result.get("entities_linked_existing", 0))),
-                        (
-                            "✓",
-                            "Relationships created",
-                            str(kg_result.get("relationships_created", 0)),
-                        ),
-                    ],
-                )
 
         # ====================================================================
         # Global Command Summary
         # ====================================================================
         overall_elapsed = time.time() - overall_start
-        summary_items = [
-            ("✓", "Fetched", f"{documents_fetched} document(s)"),
-        ]
+        console.print()
+        console.print("[bold]Summary[/bold]")
+        console.print(f"  ✓ Fetched: {documents_fetched} document(s)")
 
         if not skip_index and documents_fetched > 0:
-            summary_items.append(("✓", "Indexed", f"{indexed} document(s)"))
+            console.print(f"  ✓ Indexed: {indexed} document(s)")
 
             if indexed > 0 and kg_result and "error" not in kg_result:
-                summary_items.extend(
-                    [
-                        ("✓", "Entities created", str(kg_result["entities_created"])),
-                        ("✓", "Entities linked", str(kg_result.get("entities_linked_existing", 0))),
-                        (
-                            "✓",
-                            "Relationships created",
-                            str(kg_result.get("relationships_created", 0)),
-                        ),
-                    ]
+                console.print(f"  ✓ Entities created: {kg_result['entities_created']}")
+                console.print(
+                    f"  ✓ Entities linked: {kg_result.get('entities_linked_existing', 0)}"
                 )
+                console.print(f"  ✓ Relationships: {kg_result.get('relationships_created', 0)}")
 
         if documents_failed > 0:
-            summary_items.append(("✗", "Failed", f"{documents_failed} document(s)"))
+            console.print(f"  [red]✗ Failed: {documents_failed} document(s)[/red]")
 
-        summary_items.append(("ℹ", "Time elapsed", f"{overall_elapsed:.1f}s"))
-
-        print_command_summary(console, "Summary", summary_items)
+        console.print(f"  [dim]ℹ Time elapsed: {overall_elapsed:.1f}s[/dim]")
 
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
