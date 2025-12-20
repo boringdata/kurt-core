@@ -42,49 +42,12 @@ class FetchConfig(ModelConfig):
         description="Fetch engine: trafilatura, httpx, firecrawl",
     )
     embedding_max_chars: int = ConfigParam(
+        fallback="INGESTION_EMBEDDING_MAX_CHARS",
         default=1000,
         ge=100,
         le=5000,
         description="Maximum characters for embedding generation",
     )
-
-    @classmethod
-    def load(cls, model_name: str) -> "FetchConfig":
-        """Load config with runtime environment variable overrides."""
-        import os
-        from typing import get_type_hints
-
-        # First, load from config file (parent method)
-        config = super().load(model_name)
-
-        # Override with environment variables if present
-        type_hints = get_type_hints(cls)
-        env_overrides = {}
-
-        for field_name in cls._param_metadata.keys():
-            env_key = f"KURT_FETCH_{field_name.upper()}"
-            env_value = os.environ.get(env_key)
-
-            if env_value is not None:
-                # Type coercion
-                target_type = type_hints.get(field_name)
-                if target_type:
-                    if target_type is bool:
-                        env_value = env_value.lower() in ("true", "1", "yes", "on")
-                    elif target_type is int:
-                        try:
-                            env_value = int(env_value)
-                        except ValueError:
-                            continue
-                env_overrides[field_name] = env_value
-
-        # Create new config with overrides
-        if env_overrides:
-            config_dict = config.model_dump()
-            config_dict.update(env_overrides)
-            return cls(**config_dict)
-
-        return config
 
 
 # ============================================================================

@@ -401,7 +401,7 @@ class TestReferenceFiltering:
 
         # Run document_sections model with workflow_id = "workflow-1"
         from kurt.core.model_runner import execute_model_sync
-        from kurt.models.staging.step_document_sections import (
+        from kurt.models.staging.indexing.step_document_sections import (
             DocumentSectionRow,
         )
 
@@ -485,7 +485,7 @@ class TestReferenceFiltering:
         # Create table using the SQLModel metadata
         from sqlalchemy import create_engine
 
-        from kurt.models.staging.step_document_sections import (
+        from kurt.models.staging.indexing.step_document_sections import (
             DocumentSectionRow,
             DocumentSectionsConfig,
             document_sections,
@@ -571,7 +571,7 @@ class TestReferenceFiltering:
         # Create table using the SQLModel metadata
         from sqlalchemy import create_engine
 
-        from kurt.models.staging.step_document_sections import (
+        from kurt.models.staging.indexing.step_document_sections import (
             DocumentSectionRow,
             DocumentSectionsConfig,
             document_sections,
@@ -781,7 +781,7 @@ class TestReferenceFiltering:
         # Create table
         from sqlalchemy import create_engine
 
-        from kurt.models.staging.step_document_sections import (
+        from kurt.models.staging.indexing.step_document_sections import (
             DocumentSectionRow,
             DocumentSectionsConfig,
             document_sections,
@@ -1201,7 +1201,7 @@ class TestClaimCreationEdgeCases:
         from uuid import uuid4
 
         from kurt.db.database import get_session
-        from kurt.models.staging.step_claim_resolution import _create_claim
+        from kurt.models.staging.indexing.step_claim_resolution import _create_claim
 
         session = get_session()
 
@@ -1239,7 +1239,7 @@ class TestClaimCreationEdgeCases:
 
         from kurt.core import PipelineContext, TableWriter
         from kurt.db.database import get_session
-        from kurt.models.staging.step_claim_resolution import (
+        from kurt.models.staging.indexing.step_claim_resolution import (
             ClaimResolutionRow,
             claim_resolution,
         )

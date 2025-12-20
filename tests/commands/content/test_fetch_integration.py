@@ -104,7 +104,10 @@ Python is a high-level programming language.
         mock_extraction_output = MockIndexDocumentOutput()
 
         # Mock entity resolution
-        from kurt.models.staging.step_entity_clustering import EntityResolution, GroupResolution
+        from kurt.models.staging.indexing.step_entity_clustering import (
+            EntityResolution,
+            GroupResolution,
+        )
 
         mock_resolution = GroupResolution(
             resolutions=[
@@ -252,7 +255,10 @@ Python is a high-level programming language.
         mock_extraction_docker.relationships = []
 
         # Mock resolution
-        from kurt.models.staging.step_entity_clustering import EntityResolution, GroupResolution
+        from kurt.models.staging.indexing.step_entity_clustering import (
+            EntityResolution,
+            GroupResolution,
+        )
 
         mock_resolution = GroupResolution(
             resolutions=[
