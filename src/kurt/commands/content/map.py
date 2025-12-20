@@ -169,11 +169,18 @@ def map_url(
             # Handle clustering if requested (skip for dry_run)
             cluster_count = None
             if cluster_urls and documents_discovered > 0 and not is_dry_run:
-                from kurt.content.cluster import compute_topic_clusters
+                import asyncio
+
+                from kurt.core import run_pipeline_workflow
+                from kurt.utils.filtering import DocumentFilters
 
                 print_info("Clustering discovered documents...")
-                cluster_result = compute_topic_clusters()
-                cluster_count = len(cluster_result.get("clusters", []))
+                cluster_result = asyncio.run(
+                    run_pipeline_workflow(
+                        target="staging.topic_clustering", filters=DocumentFilters()
+                    )
+                )
+                cluster_count = cluster_result.get("clusters_discovered", 0)
 
             # Display results
             if output_format == "json":
@@ -468,11 +475,18 @@ def map_cms(
             # Handle clustering if requested
             cluster_count = None
             if cluster_urls and documents_discovered > 0 and not is_dry_run:
-                from kurt.content.cluster import compute_topic_clusters
+                import asyncio
+
+                from kurt.core import run_pipeline_workflow
+                from kurt.utils.filtering import DocumentFilters
 
                 print_info("Clustering discovered documents...")
-                cluster_result = compute_topic_clusters()
-                cluster_count = len(cluster_result.get("clusters", []))
+                cluster_result = asyncio.run(
+                    run_pipeline_workflow(
+                        target="staging.topic_clustering", filters=DocumentFilters()
+                    )
+                )
+                cluster_count = cluster_result.get("clusters_discovered", 0)
 
             # Display results
             if output_format == "json":

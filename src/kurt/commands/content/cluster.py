@@ -1,14 +1,14 @@
 """Cluster-urls command - organize documents into topics."""
 
+import asyncio
 import logging
 
 import click
 from rich.console import Console
-from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 from rich.table import Table
 
 from kurt.admin.telemetry.decorators import track_command
-from kurt.commands.content._shared_options import add_output_options, include_option
+from kurt.commands.content._shared_options import add_filter_options, add_output_options
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 @click.command("cluster-urls")
 @track_command
-@include_option
+@add_filter_options(exclude=False, status=False, content_type=False, cluster=False)
 @click.option(
     "--force",
     is_flag=True,
@@ -25,6 +25,8 @@ logger = logging.getLogger(__name__)
 @add_output_options(table_format=True)
 def cluster_urls_cmd(
     include_pattern: str,
+    ids: str,
+    limit: int,
     force: bool,
     output_format: str,
 ):
@@ -36,7 +38,7 @@ def cluster_urls_cmd(
     - Groups documents by topic (using URLs only, no content needed)
     - Classifies content types (tutorial, guide, blog, etc.)
     - Works on ANY status: NOT_FETCHED, FETCHED, or ERROR
-    - Single LLM call for efficiency
+    - Uses LLM for intelligent clustering
 
     \b
     Incremental clustering (default):
@@ -64,157 +66,106 @@ def cluster_urls_cmd(
         # JSON output for AI agents
         kurt content cluster-urls --format json
     """
-    from kurt.content.cluster import compute_topic_clusters
+    from kurt.core import run_pipeline_workflow
+    from kurt.utils.filtering import DocumentFilters
 
     try:
-        # Check for existing clusters first
-        from kurt.content.cluster import get_existing_clusters_summary
-        from kurt.db.documents import list_content
+        # Build filters
+        filters = DocumentFilters(
+            ids=ids,
+            include_pattern=include_pattern,
+            limit=limit,
+        )
 
-        # Get document count
-        doc_count = len(list_content(include_pattern=include_pattern, limit=None))
+        # Build config for the model
+        config = {"force_fresh": force}
 
-        # Get existing clusters summary
-        clusters_summary = get_existing_clusters_summary()
-        existing_cluster_count = clusters_summary["count"]
-        existing_clusters = clusters_summary["clusters"]
+        console.print("[bold]Computing topic clusters and classifying content types...[/bold]\n")
 
-        if existing_cluster_count > 0 and not force:
-            console.print(
-                f"[bold cyan]ℹ[/bold cyan] Found {existing_cluster_count} existing clusters for {doc_count} documents - will refine and update them\n"
+        # Run the pipeline
+        result = asyncio.run(
+            run_pipeline_workflow(
+                target="staging.topic_clustering",
+                filters=filters,
+                config=config,
             )
-            # Show existing cluster names
-            if existing_cluster_count <= 10:
-                console.print("[dim]  Existing clusters:[/dim]")
-                for cluster in existing_clusters[:10]:
-                    console.print(f"[dim]    • {cluster.name}[/dim]")
-            else:
-                console.print(
-                    f"[dim]  Existing clusters: {', '.join([c.name for c in existing_clusters[:5]])} and {existing_cluster_count - 5} more...[/dim]"
-                )
-            console.print()
-            console.print(
-                "[dim]  (Use --force to ignore existing clusters and create fresh)[/dim]\n"
-            )
-        elif force and existing_cluster_count > 0:
-            console.print(
-                f"[bold yellow]⚡[/bold yellow] Force mode: ignoring {existing_cluster_count} existing clusters, creating fresh for {doc_count} documents\n"
-            )
-        elif doc_count > 0:
-            console.print(
-                f"[bold cyan]ℹ[/bold cyan] No existing clusters - creating fresh for {doc_count} documents\n"
-            )
-
-        console.print("[bold]Computing topic clusters and classifying content types...[/bold]")
-
-        # Warn if large batch (>500 docs) - guardrail
-        if doc_count > 500:
-            console.print(
-                f"\n[yellow]⚠ Large dataset:[/yellow] Processing {doc_count} documents in batches of 200"
-            )
-            console.print(f"[dim]  Estimated time: ~{(doc_count // 200 + 1) * 30} seconds[/dim]")
-            console.print(
-                f"[dim]  This will make {(doc_count // 200 + 1)} LLM calls (incremental refinement)[/dim]\n"
-            )
-        elif doc_count > 200:
-            console.print(f"\n[cyan]ℹ[/cyan] Processing {doc_count} documents in batches of 200\n")
-        else:
-            console.print()  # Just add spacing
-
-        # Run clustering with progress tracking
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
-            console=console,
-        ) as progress:
-            task_id = progress.add_task("Starting clustering...", total=None)
-
-            def progress_callback(message):
-                progress.update(task_id, description=message)
-
-            # Run clustering with glob pattern (or None to cluster ALL documents)
-            result = compute_topic_clusters(
-                include_pattern=include_pattern,
-                force=force,
-                progress_callback=progress_callback,
-            )
-
-            progress.update(task_id, description="Clustering complete", completed=1, total=1)
-
-        console.print()  # Add spacing after progress bar
+        )
 
         # Display results
         if output_format == "json":
             import json
 
-            # Format for AI agents
-            output = {
-                "clusters": result["clusters"],
-                "total_docs": result["total_pages"],
-                "edges_created": result["edges_created"],
-                "classifications": result["classifications"],
-            }
-
-            console.print(json.dumps(output, indent=2))
-
+            console.print(json.dumps(result, indent=2, default=str))
         else:
-            # Table format
-            console.print(f"[green]✓[/green] Analyzed {result['total_pages']} documents")
-
-            # Show refinement info if applicable
-            if result["refined"]:
-                console.print(
-                    f"[green]✓[/green] Refined {result['existing_clusters_count']} existing clusters → {len(result['clusters'])} clusters"
-                )
-            else:
-                console.print(f"[green]✓[/green] Created {len(result['clusters'])} clusters")
-
-            console.print(
-                f"[green]✓[/green] Created {result['edges_created']} document-cluster links"
-            )
-            console.print(
-                f"[green]✓[/green] Classified {result['classifications']['classified']} documents\n"
-            )
-
-            # Show classification breakdown
-            if result["classifications"]["content_types"]:
-                console.print("[dim]Content types:[/dim]")
-                for content_type, count in sorted(
-                    result["classifications"]["content_types"].items(),
-                    key=lambda x: x[1],
-                    reverse=True,
-                ):
-                    console.print(f"  {content_type}: {count}")
-                console.print()
-
-            table = Table(title=f"Topic Clusters ({len(result['clusters'])} total)")
-            table.add_column("Cluster", style="cyan bold", no_wrap=False)
-            table.add_column("Doc Count", style="green", justify="right")
-
-            # Get doc counts per cluster from service
-            from kurt.content.cluster import get_cluster_document_counts
-
-            cluster_names = [cluster["name"] for cluster in result["clusters"]]
-            doc_counts = get_cluster_document_counts(cluster_names)
-
-            for cluster in result["clusters"]:
-                doc_count = doc_counts.get(cluster["name"], 0)
-
-                table.add_row(
-                    f"{cluster['name']}\n{cluster['description']}",
-                    str(doc_count),
-                )
-
-            console.print(table)
-
-            # Show tip for next step
-            console.print(
-                '\n[dim]💡 Next: Use [cyan]kurt content fetch --in-cluster "ClusterName"[/cyan] to fetch documents from a specific cluster[/dim]'
-            )
+            _display_result(result)
 
     except Exception as e:
         console.print(f"[bold red]Error:[/bold red] {e}")
         logger.exception("Failed to compute clusters")
         raise click.Abort()
+
+
+def _display_result(result: dict) -> None:
+    """Display clustering results in table format."""
+    docs_processed = result.get("documents_processed", 0)
+    clusters_discovered = result.get("clusters_discovered", 0)
+    docs_classified = result.get("documents_classified", 0)
+    docs_assigned = result.get("documents_assigned", 0)
+
+    console.print(f"[green]✓[/green] Analyzed {docs_processed} documents")
+    console.print(f"[green]✓[/green] Discovered {clusters_discovered} clusters")
+    console.print(f"[green]✓[/green] Classified {docs_classified} documents")
+    console.print(f"[green]✓[/green] Assigned {docs_assigned} documents to clusters\n")
+
+    # Show cluster summary from staging table
+    _show_cluster_summary()
+
+    # Show tip for next step
+    console.print(
+        '\n[dim]Tip: Use [cyan]kurt content fetch --in-cluster "ClusterName"[/cyan] to fetch documents from a specific cluster[/dim]'
+    )
+
+
+def _show_cluster_summary() -> None:
+    """Show cluster summary from staging_topic_clustering table."""
+    from kurt.db.database import get_session
+
+    session = get_session()
+
+    try:
+        # Get cluster counts from staging table
+        sql = """
+            SELECT
+                cluster_name,
+                cluster_description,
+                COUNT(*) as doc_count
+            FROM staging_topic_clustering
+            WHERE cluster_name IS NOT NULL
+            GROUP BY cluster_name, cluster_description
+            ORDER BY doc_count DESC
+        """
+        result = session.execute(sql)
+        rows = result.fetchall()
+
+        if not rows:
+            console.print("[dim]No clusters found in staging table[/dim]")
+            return
+
+        table = Table(title=f"Topic Clusters ({len(rows)} total)")
+        table.add_column("Cluster", style="cyan bold", no_wrap=False)
+        table.add_column("Doc Count", style="green", justify="right")
+
+        for row in rows:
+            cluster_name, cluster_desc, doc_count = row
+            display_text = f"{cluster_name}"
+            if cluster_desc:
+                display_text += f"\n{cluster_desc}"
+            table.add_row(display_text, str(doc_count))
+
+        console.print(table)
+
+    except Exception as e:
+        logger.debug(f"Could not query staging table: {e}")
+        console.print("[dim]Cluster summary not available[/dim]")
+    finally:
+        session.close()

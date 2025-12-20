@@ -1301,7 +1301,7 @@ class TestClaimCreationEdgeCases:
         writer = TableWriter(workflow_id=workflow_id)
 
         # Mock embedding generation to avoid API calls
-        with patch("kurt.content.indexing.step_claim_resolution.generate_embeddings") as mock_embed:
+        with patch("kurt.utils.embeddings.generate_embeddings") as mock_embed:
             mock_embed.return_value = [[0.1] * 384]
 
             result = claim_resolution(
