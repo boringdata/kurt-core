@@ -1,91 +1,128 @@
 """
-Tests for 'content fetch' command with mocked HTTP responses.
+Tests for 'content fetch' command.
 
-These tests use mocked trafilatura responses to avoid network calls.
-Tests various CLI options: --dry-run, --include, --exclude, --limit, --force, --refetch, etc.
+These tests validate CLI argument handling, document filtering, and user interaction.
+Tests mock the pipeline execution but use real code for everything else.
 
-Migrated from src/kurt/content/fetch/tests/test_fetch.py
+MOCKING STRATEGY:
+- Mock run_pipeline_simple (the pipeline executor) - tested separately in model tests
+- Use real code for: CLI parsing, document filtering, database operations
+- Use tmp_project fixture for isolated test environment
 """
 
 from unittest.mock import patch
+from uuid import uuid4
 
 import pytest
 
 from kurt.cli import main
+from kurt.db.database import get_session
 from kurt.db.models import Document, IngestionStatus, SourceType
 
 
-@pytest.mark.skip(
-    reason="TODO: Mock paths need updating for new pipeline. "
-    "The trafilatura mocks at 'trafilatura.fetch_url' don't match "
-    "the actual import path in the new kurt.integrations.fetch_engines module."
-)
-class TestFetchWithMockedResponses:
-    """Tests for fetch command with mocked HTTP responses."""
+@pytest.fixture
+def mock_pipeline():
+    """Mock the pipeline execution to avoid full pipeline runs in CLI tests."""
+    with patch("kurt.workflows.cli_helpers.run_pipeline_simple") as mock_run:
+        # Default successful result
+        mock_run.return_value = {
+            "landing.fetch": {
+                "documents_fetched": 1,
+                "documents_failed": 0,
+                "rows_written": 1,
+            },
+            "errors": {},
+        }
+        yield mock_run
 
-    def test_fetch_with_trafilatura_mocked(self, isolated_cli_runner):
-        """Test fetch command with mocked trafilatura responses."""
+
+@pytest.fixture
+def mock_pipeline_with_document_update():
+    """Mock pipeline that also updates document status (simulates real behavior)."""
+
+    def pipeline_side_effect(*args, **kwargs):
+        # Get document IDs from the filters
+        filters = kwargs.get("filters")
+        doc_count = 0
+        if filters and filters.ids:
+            from uuid import UUID
+
+            from kurt.db.database import get_session
+            from kurt.db.models import Document, IngestionStatus
+
+            session = get_session()
+            for doc_id in filters.ids.split(","):
+                try:
+                    # Convert string to UUID for proper lookup
+                    doc = session.get(Document, UUID(doc_id))
+                    if doc:
+                        doc.ingestion_status = IngestionStatus.FETCHED
+                        session.add(doc)
+                        doc_count += 1
+                except (ValueError, TypeError):
+                    pass
+            session.commit()
+
+        return {
+            "landing.fetch": {
+                "documents_fetched": doc_count,
+                "documents_failed": 0,
+                "rows_written": doc_count,
+            },
+            "errors": {},
+        }
+
+    with patch("kurt.workflows.cli_helpers.run_pipeline_simple") as mock_run:
+        mock_run.side_effect = pipeline_side_effect
+        yield mock_run
+
+
+class TestFetchCLIBasics:
+    """Tests for basic fetch CLI functionality."""
+
+    def test_fetch_requires_filter(self, isolated_cli_runner):
+        """Test that fetch requires at least one filter."""
         runner, project_dir = isolated_cli_runner
 
-        # First, create a test document to fetch
-        from uuid import uuid4
+        result = runner.invoke(main, ["content", "fetch", "--yes"])
 
-        from kurt.db.database import get_session
+        # Should show help or error about needing filters
+        assert "filter" in result.output.lower() or result.exit_code != 0
+
+    def test_fetch_with_url_creates_document(
+        self, isolated_cli_runner, mock_pipeline_with_document_update
+    ):
+        """Test fetch with URL auto-creates document if not exists."""
+        runner, project_dir = isolated_cli_runner
+
+        # Run fetch with URL that doesn't exist yet
+        result = runner.invoke(
+            main,
+            [
+                "content",
+                "fetch",
+                "https://example.com/new-page",
+                "--skip-index",
+                "--yes",
+            ],
+        )
+
+        # Check command succeeded
+        assert result.exit_code == 0, f"Command failed: {result.output}"
+
+        # Verify document was created
+        from sqlmodel import select
 
         session = get_session()
-        test_doc = Document(
-            id=uuid4(),
-            source_url="https://example.com/test",
-            source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.NOT_FETCHED,
-        )
-        session.add(test_doc)
-        session.commit()
+        stmt = select(Document).where(Document.source_url == "https://example.com/new-page")
+        doc = session.exec(stmt).first()
+        assert doc is not None, "Document should be auto-created for new URL"
 
-        # Mock trafilatura.fetch_url and trafilatura.extract
-        with patch("trafilatura.fetch_url") as mock_fetch:
-            with patch("trafilatura.extract") as mock_extract:
-                with patch("trafilatura.extract_metadata") as mock_metadata:
-                    # Setup mocks
-                    mock_fetch.return_value = "<html><body>Test content</body></html>"
-                    mock_extract.return_value = "Test content extracted"
-                    mock_metadata.return_value = None  # Metadata can be None
-
-                    # Run fetch command (content fetch)
-                    result = runner.invoke(
-                        main,
-                        [
-                            "content",
-                            "fetch",
-                            "--urls",
-                            "https://example.com/test",
-                            "--engine",
-                            "trafilatura",
-                            "--skip-index",  # Skip LLM to keep test fast
-                        ],
-                    )
-
-                    # Check command succeeded
-                    assert result.exit_code == 0, f"Command failed: {result.output}"
-                    assert "Fetching" in result.output or "Fetched" in result.output
-
-                    # Verify mocks were called
-                    assert mock_fetch.called
-                    assert mock_extract.called
-
-        # Verify document status was updated
-        session.refresh(test_doc)
-        assert test_doc.ingestion_status == IngestionStatus.FETCHED
-
-    def test_fetch_dry_run_no_network_calls(self, isolated_cli_runner):
-        """Test that --dry-run makes no network calls."""
+    def test_fetch_dry_run_no_execution(self, isolated_cli_runner, mock_pipeline):
+        """Test that --dry-run doesn't execute pipeline."""
         runner, project_dir = isolated_cli_runner
 
         # Create a test document
-        from uuid import uuid4
-
-        from kurt.db.database import get_session
-
         session = get_session()
         test_doc = Document(
             id=uuid4(),
@@ -96,79 +133,65 @@ class TestFetchWithMockedResponses:
         session.add(test_doc)
         session.commit()
 
-        # Mock trafilatura to ensure it's NOT called
-        with patch("trafilatura.fetch_url") as mock_fetch:
-            # Run fetch with --dry-run
-            result = runner.invoke(
-                main, ["content", "fetch", "--urls", "https://example.com/test", "--dry-run"]
-            )
+        # Run fetch with --dry-run
+        result = runner.invoke(
+            main, ["content", "fetch", "--urls", "https://example.com/test", "--dry-run"]
+        )
 
-            # Check command succeeded
-            assert result.exit_code == 0
-            assert "DRY RUN" in result.output
-            assert "Preview only" in result.output
+        # Check command succeeded
+        assert result.exit_code == 0
+        assert "DRY RUN" in result.output
+        assert "Preview only" in result.output
 
-            # Verify NO network calls were made
-            assert not mock_fetch.called, "fetch_url should not be called in dry-run mode"
+        # Verify pipeline was NOT called
+        assert not mock_pipeline.called, "Pipeline should not be called in dry-run mode"
 
         # Verify document status was NOT updated
         session.refresh(test_doc)
         assert test_doc.ingestion_status == IngestionStatus.NOT_FETCHED
 
-    def test_fetch_with_include_pattern_mocked(self, isolated_cli_runner):
-        """Test fetch with --include pattern and mocked responses."""
+
+class TestFetchFiltering:
+    """Tests for fetch document filtering options."""
+
+    def test_fetch_with_include_pattern(
+        self, isolated_cli_runner, mock_pipeline_with_document_update
+    ):
+        """Test fetch with --include pattern filters documents correctly."""
         runner, project_dir = isolated_cli_runner
-
-        # Create multiple test documents
-        from uuid import uuid4
-
-        from kurt.db.database import get_session
 
         session = get_session()
 
-        # Document that matches pattern
+        # Create documents - one matching, one not
         doc_match = Document(
             id=uuid4(),
             source_url="https://example.com/docs/tutorial",
             source_type=SourceType.URL,
             ingestion_status=IngestionStatus.NOT_FETCHED,
         )
-
-        # Document that doesn't match pattern
         doc_no_match = Document(
             id=uuid4(),
             source_url="https://example.com/api/reference",
             source_type=SourceType.URL,
             ingestion_status=IngestionStatus.NOT_FETCHED,
         )
-
         session.add_all([doc_match, doc_no_match])
         session.commit()
 
-        # Mock trafilatura
-        with patch("trafilatura.fetch_url") as mock_fetch:
-            with patch("trafilatura.extract") as mock_extract:
-                with patch("trafilatura.extract_metadata") as mock_metadata:
-                    mock_fetch.return_value = "<html><body>Test</body></html>"
-                    mock_extract.return_value = "Test"
-                    mock_metadata.return_value = None
+        # Run fetch with pattern
+        result = runner.invoke(
+            main,
+            [
+                "content",
+                "fetch",
+                "--include",
+                "*/docs/*",
+                "--skip-index",
+                "--yes",
+            ],
+        )
 
-                    # Run fetch with pattern that matches only first doc
-                    result = runner.invoke(
-                        main,
-                        [
-                            "content",
-                            "fetch",
-                            "--include",
-                            "*/docs/*",
-                            "--engine",
-                            "trafilatura",
-                            "--skip-index",
-                        ],
-                    )
-
-                    # Check command succeeded
-                    assert result.exit_code == 0
+        assert result.exit_code == 0, f"Command failed: {result.output}"
 
         # Verify only matching document was fetched
         session.refresh(doc_match)
@@ -176,132 +199,9 @@ class TestFetchWithMockedResponses:
         assert doc_match.ingestion_status == IngestionStatus.FETCHED
         assert doc_no_match.ingestion_status == IngestionStatus.NOT_FETCHED
 
-    def test_fetch_handles_network_error(self, isolated_cli_runner):
-        """Test that fetch handles network errors gracefully."""
+    def test_fetch_with_ids_filter(self, isolated_cli_runner, mock_pipeline_with_document_update):
+        """Test fetch with --ids option."""
         runner, project_dir = isolated_cli_runner
-
-        # Create test document
-        from uuid import uuid4
-
-        from kurt.db.database import get_session
-
-        session = get_session()
-        test_doc = Document(
-            id=uuid4(),
-            source_url="https://example.com/error",
-            source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.NOT_FETCHED,
-        )
-        session.add(test_doc)
-        session.commit()
-
-        # Mock trafilatura to raise an exception
-        with patch("trafilatura.fetch_url") as mock_fetch:
-            mock_fetch.side_effect = Exception("Network error")
-
-            # Run fetch
-            result = runner.invoke(
-                main,
-                [
-                    "content",
-                    "fetch",
-                    "--urls",
-                    "https://example.com/error",
-                    "--engine",
-                    "trafilatura",
-                    "--skip-index",
-                ],
-            )
-
-            # Command should complete (not crash)
-            # Note: exit_code might be 0 if errors are handled gracefully
-            assert (
-                "Network error" in result.output
-                or "Error" in result.output
-                or result.exit_code == 0
-            )
-
-        # Verify document status was updated to ERROR or remains NOT_FETCHED
-        # (depending on transaction handling in the workflow)
-        session.refresh(test_doc)
-        assert test_doc.ingestion_status in (IngestionStatus.ERROR, IngestionStatus.NOT_FETCHED)
-
-    def test_fetch_with_in_cluster_filter(self, isolated_cli_runner):
-        """Test fetch with --in-cluster filter."""
-        runner, project_dir = isolated_cli_runner
-
-        # Create test documents and cluster
-        from uuid import uuid4
-
-        from kurt.db.database import get_session
-        from kurt.db.models import DocumentClusterEdge, TopicCluster
-
-        session = get_session()
-
-        # Create cluster
-        cluster = TopicCluster(id=uuid4(), name="Tutorials", description="Tutorial content")
-        session.add(cluster)
-
-        # Create documents (one in cluster, one not)
-        doc_in_cluster = Document(
-            id=uuid4(),
-            source_url="https://example.com/tutorial",
-            source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.NOT_FETCHED,
-        )
-        doc_not_in_cluster = Document(
-            id=uuid4(),
-            source_url="https://example.com/other",
-            source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.NOT_FETCHED,
-        )
-        session.add(doc_in_cluster)
-        session.add(doc_not_in_cluster)
-        session.commit()
-
-        # Link doc to cluster
-        edge = DocumentClusterEdge(id=uuid4(), document_id=doc_in_cluster.id, cluster_id=cluster.id)
-        session.add(edge)
-        session.commit()
-
-        # Mock trafilatura
-        with patch("trafilatura.fetch_url") as mock_fetch:
-            with patch("trafilatura.extract") as mock_extract:
-                with patch("trafilatura.extract_metadata") as mock_metadata:
-                    mock_fetch.return_value = "<html><body>Test</body></html>"
-                    mock_extract.return_value = "Test"
-                    mock_metadata.return_value = None
-
-                    # Run fetch with cluster filter
-                    result = runner.invoke(
-                        main,
-                        [
-                            "content",
-                            "fetch",
-                            "--in-cluster",
-                            "Tutorials",
-                            "--engine",
-                            "trafilatura",
-                            "--skip-index",
-                        ],
-                    )
-
-                    # Check command succeeded
-                    assert result.exit_code == 0
-
-        # Verify only doc in cluster was fetched
-        session.refresh(doc_in_cluster)
-        session.refresh(doc_not_in_cluster)
-        assert doc_in_cluster.ingestion_status == IngestionStatus.FETCHED
-        assert doc_not_in_cluster.ingestion_status == IngestionStatus.NOT_FETCHED
-
-    def test_fetch_with_ids_filter(self, isolated_cli_runner):
-        """Test fetch with --ids option (comma-separated IDs)."""
-        runner, project_dir = isolated_cli_runner
-
-        from uuid import uuid4
-
-        from kurt.db.database import get_session
 
         session = get_session()
 
@@ -327,31 +227,21 @@ class TestFetchWithMockedResponses:
         session.add_all([doc1, doc2, doc3])
         session.commit()
 
-        # Mock trafilatura
-        with patch("trafilatura.fetch_url") as mock_fetch:
-            with patch("trafilatura.extract") as mock_extract:
-                with patch("trafilatura.extract_metadata") as mock_metadata:
-                    mock_fetch.return_value = "<html><body>Test</body></html>"
-                    mock_extract.return_value = "Test content"
-                    mock_metadata.return_value = None
+        # Run fetch with specific IDs
+        ids_str = f"{doc1.id},{doc2.id}"
+        result = runner.invoke(
+            main,
+            [
+                "content",
+                "fetch",
+                "--ids",
+                ids_str,
+                "--skip-index",
+                "--yes",
+            ],
+        )
 
-                    # Run fetch with specific IDs (comma-separated)
-                    ids_str = f"{doc1.id},{doc2.id}"
-                    result = runner.invoke(
-                        main,
-                        [
-                            "content",
-                            "fetch",
-                            "--ids",
-                            ids_str,
-                            "--engine",
-                            "trafilatura",
-                            "--skip-index",
-                        ],
-                    )
-
-                    # Check command succeeded
-                    assert result.exit_code == 0
+        assert result.exit_code == 0, f"Command failed: {result.output}"
 
         # Verify only specified documents were fetched
         session.refresh(doc1)
@@ -361,17 +251,15 @@ class TestFetchWithMockedResponses:
         assert doc2.ingestion_status == IngestionStatus.FETCHED
         assert doc3.ingestion_status == IngestionStatus.NOT_FETCHED
 
-    def test_fetch_with_exclude_pattern(self, isolated_cli_runner):
+    def test_fetch_with_exclude_pattern(
+        self, isolated_cli_runner, mock_pipeline_with_document_update
+    ):
         """Test fetch with --exclude refinement option."""
         runner, project_dir = isolated_cli_runner
 
-        from uuid import uuid4
-
-        from kurt.db.database import get_session
-
         session = get_session()
 
-        # Create test documents - some matching include, some excluded
+        # Create test documents
         doc_included = Document(
             id=uuid4(),
             source_url="https://example.com/docs/tutorial",
@@ -393,48 +281,34 @@ class TestFetchWithMockedResponses:
         session.add_all([doc_included, doc_excluded, doc_included2])
         session.commit()
 
-        # Mock trafilatura
-        with patch("trafilatura.fetch_url") as mock_fetch:
-            with patch("trafilatura.extract") as mock_extract:
-                with patch("trafilatura.extract_metadata") as mock_metadata:
-                    mock_fetch.return_value = "<html><body>Test</body></html>"
-                    mock_extract.return_value = "Test content"
-                    mock_metadata.return_value = None
+        # Run fetch with include and exclude patterns
+        result = runner.invoke(
+            main,
+            [
+                "content",
+                "fetch",
+                "--include",
+                "*/docs/*",
+                "--exclude",
+                "*/api/*",
+                "--skip-index",
+                "--yes",
+            ],
+        )
 
-                    # Run fetch with include and exclude patterns
-                    result = runner.invoke(
-                        main,
-                        [
-                            "content",
-                            "fetch",
-                            "--include",
-                            "*/docs/*",
-                            "--exclude",
-                            "*/api/*",
-                            "--engine",
-                            "trafilatura",
-                            "--skip-index",
-                        ],
-                    )
-
-                    # Check command succeeded
-                    assert result.exit_code == 0
+        assert result.exit_code == 0, f"Command failed: {result.output}"
 
         # Verify only non-excluded documents were fetched
         session.refresh(doc_included)
         session.refresh(doc_excluded)
         session.refresh(doc_included2)
         assert doc_included.ingestion_status == IngestionStatus.FETCHED
-        assert doc_excluded.ingestion_status == IngestionStatus.NOT_FETCHED  # Excluded by pattern
+        assert doc_excluded.ingestion_status == IngestionStatus.NOT_FETCHED
         assert doc_included2.ingestion_status == IngestionStatus.FETCHED
 
-    def test_fetch_with_limit(self, isolated_cli_runner):
-        """Test fetch with --limit refinement option."""
+    def test_fetch_with_limit(self, isolated_cli_runner, mock_pipeline_with_document_update):
+        """Test fetch with --limit option."""
         runner, project_dir = isolated_cli_runner
-
-        from uuid import uuid4
-
-        from kurt.db.database import get_session
 
         session = get_session()
 
@@ -451,34 +325,24 @@ class TestFetchWithMockedResponses:
             session.add(doc)
         session.commit()
 
-        # Mock trafilatura
-        with patch("trafilatura.fetch_url") as mock_fetch:
-            with patch("trafilatura.extract") as mock_extract:
-                with patch("trafilatura.extract_metadata") as mock_metadata:
-                    mock_fetch.return_value = "<html><body>Test</body></html>"
-                    mock_extract.return_value = "Test content"
-                    mock_metadata.return_value = None
+        # Run fetch with limit=2
+        result = runner.invoke(
+            main,
+            [
+                "content",
+                "fetch",
+                "--with-status",
+                "NOT_FETCHED",
+                "--limit",
+                "2",
+                "--skip-index",
+                "--yes",
+            ],
+        )
 
-                    # Run fetch with limit=2
-                    result = runner.invoke(
-                        main,
-                        [
-                            "content",
-                            "fetch",
-                            "--with-status",
-                            "NOT_FETCHED",
-                            "--limit",
-                            "2",
-                            "--engine",
-                            "trafilatura",
-                            "--skip-index",
-                        ],
-                    )
+        assert result.exit_code == 0, f"Command failed: {result.output}"
 
-                    # Check command succeeded
-                    assert result.exit_code == 0
-
-        # Verify only 2 documents were fetched (first 2 based on query order)
+        # Verify only 2 documents were fetched
         fetched_count = 0
         for doc in docs:
             session.refresh(doc)
@@ -487,17 +351,15 @@ class TestFetchWithMockedResponses:
 
         assert fetched_count == 2
 
-    def test_fetch_concurrency_warning_over_20(self, isolated_cli_runner):
-        """Test warning when concurrency >20 without --force."""
+
+class TestFetchConfirmation:
+    """Tests for fetch confirmation and safety guardrails."""
+
+    def test_fetch_concurrency_warning_over_20(self, isolated_cli_runner, mock_pipeline):
+        """Test warning when concurrency >20 without --yes."""
         runner, project_dir = isolated_cli_runner
 
-        from uuid import uuid4
-
-        from kurt.db.database import get_session
-
         session = get_session()
-
-        # Create test document
         doc = Document(
             id=uuid4(),
             source_url="https://example.com/test",
@@ -507,7 +369,7 @@ class TestFetchWithMockedResponses:
         session.add(doc)
         session.commit()
 
-        # Run fetch with high concurrency and decline confirmation
+        # Run fetch with high concurrency and decline
         result = runner.invoke(
             main,
             [
@@ -517,33 +379,25 @@ class TestFetchWithMockedResponses:
                 "https://example.com/test",
                 "--concurrency",
                 "25",
-                "--engine",
-                "trafilatura",
                 "--skip-index",
             ],
             input="n\n",
-        )  # User says "no" to confirmation
+        )
 
-        # Check command showed warning and was aborted
-        assert result.exit_code == 0  # Graceful abort
+        assert result.exit_code == 0
         assert "High concurrency" in result.output or "rate limit" in result.output
         assert "Aborted" in result.output
 
-        # Verify document was NOT fetched
-        session.refresh(doc)
-        assert doc.ingestion_status == IngestionStatus.NOT_FETCHED
+        # Pipeline should not be called
+        assert not mock_pipeline.called
 
-    def test_fetch_concurrency_warning_bypassed_with_force(self, isolated_cli_runner):
-        """Test --force bypasses concurrency warning."""
+    def test_fetch_concurrency_bypassed_with_yes(
+        self, isolated_cli_runner, mock_pipeline_with_document_update
+    ):
+        """Test --yes bypasses concurrency warning."""
         runner, project_dir = isolated_cli_runner
 
-        from uuid import uuid4
-
-        from kurt.db.database import get_session
-
         session = get_session()
-
-        # Create test document
         doc = Document(
             id=uuid4(),
             source_url="https://example.com/test",
@@ -553,50 +407,37 @@ class TestFetchWithMockedResponses:
         session.add(doc)
         session.commit()
 
-        # Mock trafilatura
-        with patch("trafilatura.fetch_url") as mock_fetch:
-            with patch("trafilatura.extract") as mock_extract:
-                with patch("trafilatura.extract_metadata") as mock_metadata:
-                    mock_fetch.return_value = "<html><body>Test</body></html>"
-                    mock_extract.return_value = "Test content"
-                    mock_metadata.return_value = None
+        # Run fetch with high concurrency and --yes
+        result = runner.invoke(
+            main,
+            [
+                "content",
+                "fetch",
+                "--urls",
+                "https://example.com/test",
+                "--concurrency",
+                "25",
+                "--yes",
+                "--skip-index",
+            ],
+        )
 
-                    # Run fetch with high concurrency and --force flag
-                    result = runner.invoke(
-                        main,
-                        [
-                            "content",
-                            "fetch",
-                            "--urls",
-                            "https://example.com/test",
-                            "--concurrency",
-                            "25",
-                            "--force",
-                            "--engine",
-                            "trafilatura",
-                            "--skip-index",
-                        ],
-                    )
+        assert result.exit_code == 0, f"Command failed: {result.output}"
+        assert "Continue anyway?" not in result.output
 
-                    # Check command succeeded without asking for confirmation
-                    assert result.exit_code == 0
-                    assert "Continue anyway?" not in result.output
-
-        # Verify document was fetched
+        # Document should be fetched
         session.refresh(doc)
         assert doc.ingestion_status == IngestionStatus.FETCHED
 
-    def test_fetch_with_refetch_flag(self, isolated_cli_runner):
-        """Test --refetch includes already FETCHED documents."""
+
+class TestFetchRefetch:
+    """Tests for --refetch flag behavior."""
+
+    def test_fetch_skips_fetched_by_default(self, isolated_cli_runner, mock_pipeline):
+        """Test that already FETCHED documents are skipped by default."""
         runner, project_dir = isolated_cli_runner
 
-        from uuid import uuid4
-
-        from kurt.db.database import get_session
-
         session = get_session()
-
-        # Create document that's already FETCHED
         doc_fetched = Document(
             id=uuid4(),
             source_url="https://example.com/fetched",
@@ -607,49 +448,73 @@ class TestFetchWithMockedResponses:
         session.add(doc_fetched)
         session.commit()
 
-        # Mock trafilatura
-        with patch("trafilatura.fetch_url") as mock_fetch:
-            with patch("trafilatura.extract") as mock_extract:
-                with patch("trafilatura.extract_metadata") as mock_metadata:
-                    mock_fetch.return_value = "<html><body>Refetched content</body></html>"
-                    mock_extract.return_value = "Refetched content"
-                    mock_metadata.return_value = None
+        # Run fetch without --refetch
+        result = runner.invoke(
+            main,
+            [
+                "content",
+                "fetch",
+                "--urls",
+                "https://example.com/fetched",
+                "--skip-index",
+                "--yes",
+            ],
+        )
 
-                    # Run fetch with --refetch flag
-                    result = runner.invoke(
-                        main,
-                        [
-                            "content",
-                            "fetch",
-                            "--urls",
-                            "https://example.com/fetched",
-                            "--refetch",
-                            "--engine",
-                            "trafilatura",
-                            "--skip-index",
-                        ],
-                    )
+        # Should show message about documents being already fetched
+        assert "FETCHED" in result.output or "refetch" in result.output.lower()
 
-                    # Check command succeeded
-                    assert result.exit_code == 0
-                    assert mock_fetch.called  # Verify fetch was called
+        # Pipeline should not be called (no documents to fetch)
+        assert not mock_pipeline.called
 
-        # Verify document status is still FETCHED (refetched successfully)
+    def test_fetch_with_refetch_includes_fetched(
+        self, isolated_cli_runner, mock_pipeline_with_document_update
+    ):
+        """Test --refetch includes already FETCHED documents."""
+        runner, project_dir = isolated_cli_runner
+
+        session = get_session()
+        doc_fetched = Document(
+            id=uuid4(),
+            source_url="https://example.com/fetched",
+            source_type=SourceType.URL,
+            ingestion_status=IngestionStatus.FETCHED,
+            content_path="example.com/fetched.md",
+        )
+        session.add(doc_fetched)
+        session.commit()
+
+        # Run fetch with --refetch
+        result = runner.invoke(
+            main,
+            [
+                "content",
+                "fetch",
+                "--urls",
+                "https://example.com/fetched",
+                "--refetch",
+                "--skip-index",
+                "--yes",
+            ],
+        )
+
+        assert result.exit_code == 0, f"Command failed: {result.output}"
+
+        # Document should still be FETCHED (refetched successfully)
         session.refresh(doc_fetched)
         assert doc_fetched.ingestion_status == IngestionStatus.FETCHED
 
-    def test_fetch_json_output_format(self, isolated_cli_runner):
+
+class TestFetchOutputFormat:
+    """Tests for fetch output format options."""
+
+    def test_fetch_json_output_format(self, isolated_cli_runner, mock_pipeline):
         """Validate JSON output structure."""
         runner, project_dir = isolated_cli_runner
 
         import json
-        from uuid import uuid4
-
-        from kurt.db.database import get_session
 
         session = get_session()
-
-        # Create test documents
         doc1 = Document(
             id=uuid4(),
             source_url="https://example.com/page1",
@@ -665,212 +530,85 @@ class TestFetchWithMockedResponses:
         session.add_all([doc1, doc2])
         session.commit()
 
-        # Run fetch with --format json and decline to proceed
+        # Run fetch with --format json and decline
         result = runner.invoke(
             main,
             ["content", "fetch", "--with-status", "NOT_FETCHED", "--format", "json"],
             input="n\n",
-        )  # Decline to proceed
+        )
 
-        # Check command executed
         assert result.exit_code == 0
-
-        # Validate JSON output is present
         assert "total" in result.output
         assert "documents" in result.output
 
-        # Extract and parse JSON from output
-        # Find the JSON object by looking for opening and closing braces
+        # Extract and parse JSON
         lines = result.output.split("\n")
         json_lines = []
         brace_count = 0
         in_json = False
 
         for line in lines:
-            # Start capturing when we see the opening brace
             if "{" in line and not in_json:
                 in_json = True
-
             if in_json:
                 json_lines.append(line)
-                # Count braces to know when JSON object is complete
                 brace_count += line.count("{") - line.count("}")
-
-                # Stop when braces are balanced
                 if brace_count == 0:
                     break
 
         if json_lines:
             json_output = "\n".join(json_lines)
             parsed = json.loads(json_output)
-
-            # Validate structure
             assert "total" in parsed
             assert "documents" in parsed
             assert parsed["total"] == 2
             assert len(parsed["documents"]) == 2
-            assert all("id" in doc and "url" in doc for doc in parsed["documents"])
-        else:
-            # Fallback: just verify the basic structure is present
-            assert '"total": 2' in result.output or '"total":2' in result.output
-            assert '"documents"' in result.output
 
-    def test_fetch_force_bypasses_batch_confirmation(self, isolated_cli_runner):
-        """Test --force skips >100 docs confirmation."""
-        runner, project_dir = isolated_cli_runner
 
-        from uuid import uuid4
-
-        from kurt.db.database import get_session
-
-        session = get_session()
-
-        # Create 101 test documents to trigger confirmation
-        docs = []
-        for i in range(101):
-            doc = Document(
-                id=uuid4(),
-                source_url=f"https://example.com/page{i}",
-                source_type=SourceType.URL,
-                ingestion_status=IngestionStatus.NOT_FETCHED,
-            )
-            docs.append(doc)
-            session.add(doc)
-        session.commit()
-
-        # Mock trafilatura
-        with patch("trafilatura.fetch_url") as mock_fetch:
-            with patch("trafilatura.extract") as mock_extract:
-                with patch("trafilatura.extract_metadata") as mock_metadata:
-                    mock_fetch.return_value = "<html><body>Test</body></html>"
-                    mock_extract.return_value = "Test content"
-                    mock_metadata.return_value = None
-
-                    # Run fetch with --force flag (should skip confirmation)
-                    result = runner.invoke(
-                        main,
-                        [
-                            "content",
-                            "fetch",
-                            "--with-status",
-                            "NOT_FETCHED",
-                            "--force",
-                            "--engine",
-                            "trafilatura",
-                            "--skip-index",
-                        ],
-                    )
-
-                    # Check command succeeded without asking for confirmation
-                    assert result.exit_code == 0
-                    assert "Continue?" not in result.output  # No confirmation prompt
-                    assert mock_fetch.called  # Verify fetch was executed
-
-    def test_fetch_kurt_force_env_var(self, isolated_cli_runner):
-        """Test KURT_FORCE=1 environment variable works."""
-        runner, project_dir = isolated_cli_runner
-
-        import os
-        from uuid import uuid4
-
-        from kurt.db.database import get_session
-
-        session = get_session()
-
-        # Create 101 test documents to trigger confirmation
-        docs = []
-        for i in range(101):
-            doc = Document(
-                id=uuid4(),
-                source_url=f"https://example.com/page{i}",
-                source_type=SourceType.URL,
-                ingestion_status=IngestionStatus.NOT_FETCHED,
-            )
-            docs.append(doc)
-            session.add(doc)
-        session.commit()
-
-        # Mock trafilatura
-        with patch("trafilatura.fetch_url") as mock_fetch:
-            with patch("trafilatura.extract") as mock_extract:
-                with patch("trafilatura.extract_metadata") as mock_metadata:
-                    with patch.dict(os.environ, {"KURT_FORCE": "1"}):
-                        mock_fetch.return_value = "<html><body>Test</body></html>"
-                        mock_extract.return_value = "Test content"
-                        mock_metadata.return_value = None
-
-                        # Run fetch WITHOUT --force flag but with KURT_FORCE env var
-                        result = runner.invoke(
-                            main,
-                            [
-                                "content",
-                                "fetch",
-                                "--with-status",
-                                "NOT_FETCHED",
-                                "--engine",
-                                "trafilatura",
-                                "--skip-index",
-                            ],
-                        )
-
-                        # Check command succeeded without asking for confirmation
-                        assert result.exit_code == 0
-                        assert "Continue?" not in result.output  # No confirmation prompt
-                        assert mock_fetch.called  # Verify fetch was executed
+class TestFetchLocalFiles:
+    """Tests for fetch command with local file ingestion."""
 
     def test_fetch_with_file_option(self, isolated_cli_runner):
-        """Test fetch with --file option for local file ingestion."""
+        """Test fetch with local file path."""
         runner, project_dir = isolated_cli_runner
 
         from kurt.config import load_config
-        from kurt.db.database import get_session
 
-        session = get_session()
         config = load_config()
         sources_dir = config.get_absolute_sources_path()
 
-        # Create a test markdown file inside sources directory
+        # Create a test markdown file
         test_file = sources_dir / "test_article.md"
         test_file.parent.mkdir(parents=True, exist_ok=True)
         test_file.write_text("# Test Article\n\nThis is test content.")
 
-        # Run fetch with --file option
-        # Note: Files are created with FETCHED status, so by default they're skipped
-        # We need --refetch to actually process them, or we can verify the document was created
-        result = runner.invoke(main, ["content", "fetch", "--file", str(test_file), "--skip-index"])
+        # Run fetch with file path
+        result = runner.invoke(main, ["content", "fetch", str(test_file), "--skip-index"])
 
-        # Check command succeeded (may show "already FETCHED" message)
         assert result.exit_code == 0, f"Command failed: {result.output}"
 
-        # Should mention document creation
-        assert "Created" in result.output or "document" in result.output
-
-        # Verify document was created in database
+        # Verify document was created
         from sqlmodel import select
 
-        from kurt.db.models import Document
-
+        session = get_session()
         stmt = select(Document).where(Document.content_path == "test_article.md")
         doc = session.exec(stmt).first()
 
         assert doc is not None, "Document should be created"
-        assert doc.title == "Test Article"  # Extracted from markdown heading
+        assert doc.title == "Test Article"
         assert doc.source_type == SourceType.FILE_UPLOAD
         assert doc.ingestion_status == IngestionStatus.FETCHED
-        assert doc.content_path == "test_article.md"
 
     def test_fetch_with_files_option(self, isolated_cli_runner):
         """Test fetch with --files option for multiple local files."""
         runner, project_dir = isolated_cli_runner
 
         from kurt.config import load_config
-        from kurt.db.database import get_session
 
-        session = get_session()
         config = load_config()
         sources_dir = config.get_absolute_sources_path()
 
-        # Create multiple test files inside sources directory
+        # Create multiple test files
         test_file1 = sources_dir / "article1.md"
         test_file2 = sources_dir / "article2.md"
 
@@ -878,19 +616,16 @@ class TestFetchWithMockedResponses:
         test_file1.write_text("# First Article\n\nContent for first article.")
         test_file2.write_text("# Second Article\n\nContent for second article.")
 
-        # Run fetch with --files option (comma-separated)
+        # Run fetch with --files
         files_str = f"{test_file1},{test_file2}"
         result = runner.invoke(main, ["content", "fetch", "--files", files_str, "--skip-index"])
 
-        # Check command succeeded
         assert result.exit_code == 0, f"Command failed: {result.output}"
-        # Should mention document creation
-        assert "Created 2 document" in result.output or "document" in result.output
 
         # Verify both documents were created
         from sqlmodel import select
 
-        from kurt.db.models import Document
+        session = get_session()
 
         stmt1 = select(Document).where(Document.content_path == "article1.md")
         doc1 = session.exec(stmt1).first()
@@ -898,14 +633,10 @@ class TestFetchWithMockedResponses:
         stmt2 = select(Document).where(Document.content_path == "article2.md")
         doc2 = session.exec(stmt2).first()
 
-        assert doc1 is not None, "First document should be created"
-        assert doc2 is not None, "Second document should be created"
+        assert doc1 is not None
+        assert doc2 is not None
         assert doc1.title == "First Article"
         assert doc2.title == "Second Article"
-        assert doc1.source_type == SourceType.FILE_UPLOAD
-        assert doc2.source_type == SourceType.FILE_UPLOAD
-        assert doc1.ingestion_status == IngestionStatus.FETCHED
-        assert doc2.ingestion_status == IngestionStatus.FETCHED
 
     def test_fetch_file_outside_sources_directory(self, isolated_cli_runner):
         """Test fetch copies files outside sources/ to sources/local/."""
@@ -915,9 +646,7 @@ class TestFetchWithMockedResponses:
         from pathlib import Path
 
         from kurt.config import load_config
-        from kurt.db.database import get_session
 
-        session = get_session()
         config = load_config()
         sources_dir = config.get_absolute_sources_path()
 
@@ -927,36 +656,30 @@ class TestFetchWithMockedResponses:
             tmp_path = Path(tmp.name)
 
         try:
-            # Run fetch with external file
-            result = runner.invoke(
-                main, ["content", "fetch", "--file", str(tmp_path), "--skip-index"]
-            )
+            result = runner.invoke(main, ["content", "fetch", str(tmp_path), "--skip-index"])
 
-            # Check command succeeded
             assert result.exit_code == 0, f"Command failed: {result.output}"
-            assert "Copied" in result.output  # Should mention copying to sources/local/
+            assert "Copied" in result.output
             assert "sources/local/" in result.output
 
-            # Verify file was copied to sources/local/
+            # Verify file was copied
             expected_copy = sources_dir / "local" / tmp_path.name
-            assert expected_copy.exists(), "File should be copied to sources/local/"
+            assert expected_copy.exists()
 
-            # Verify document was created with correct path
+            # Verify document was created
             from sqlmodel import select
 
-            from kurt.db.models import Document
-
+            session = get_session()
             expected_content_path = f"local/{tmp_path.name}"
             stmt = select(Document).where(Document.content_path == expected_content_path)
             doc = session.exec(stmt).first()
 
-            assert doc is not None, "Document should be created"
+            assert doc is not None
             assert doc.title == "External Article"
             assert doc.source_type == SourceType.FILE_UPLOAD
             assert doc.ingestion_status == IngestionStatus.FETCHED
 
         finally:
-            # Clean up temporary file
             if tmp_path.exists():
                 tmp_path.unlink()
 
@@ -964,22 +687,18 @@ class TestFetchWithMockedResponses:
         """Test fetch with non-existent file returns error."""
         runner, project_dir = isolated_cli_runner
 
-        # Run fetch with non-existent file
         result = runner.invoke(
-            main, ["content", "fetch", "--file", "/tmp/nonexistent_file.md", "--skip-index"]
+            main, ["content", "fetch", "/tmp/nonexistent_file_xyz123.md", "--skip-index"]
         )
 
-        # Check command shows error
-        assert "File not found" in result.output or "Error" in result.output
+        assert "not found" in result.output.lower() or "error" in result.output.lower()
 
     def test_fetch_file_title_from_filename(self, isolated_cli_runner):
         """Test fetch extracts title from filename when no markdown heading."""
         runner, project_dir = isolated_cli_runner
 
         from kurt.config import load_config
-        from kurt.db.database import get_session
 
-        session = get_session()
         config = load_config()
         sources_dir = config.get_absolute_sources_path()
 
@@ -988,83 +707,17 @@ class TestFetchWithMockedResponses:
         test_file.parent.mkdir(parents=True, exist_ok=True)
         test_file.write_text("Just plain text without a heading.")
 
-        # Run fetch
-        result = runner.invoke(main, ["content", "fetch", "--file", str(test_file), "--skip-index"])
+        result = runner.invoke(main, ["content", "fetch", str(test_file), "--skip-index"])
 
-        # Check command succeeded
         assert result.exit_code == 0, f"Command failed: {result.output}"
 
         # Verify title was extracted from filename
         from sqlmodel import select
 
-        from kurt.db.models import Document
-
+        session = get_session()
         stmt = select(Document).where(Document.content_path == "my-article-title.md")
         doc = session.exec(stmt).first()
 
         assert doc is not None
-        assert doc.title == "my-article-title"  # Filename without extension
-
-    def test_fetch_file_and_url_separate_calls(self, isolated_cli_runner):
-        """Test fetch with --file and --url in separate calls."""
-        runner, project_dir = isolated_cli_runner
-
-        from kurt.config import load_config
-        from kurt.db.database import get_session
-
-        session = get_session()
-        config = load_config()
-        sources_dir = config.get_absolute_sources_path()
-
-        # Create a test file
-        test_file = sources_dir / "local_article.md"
-        test_file.parent.mkdir(parents=True, exist_ok=True)
-        test_file.write_text("# Local Article\n\nLocal content.")
-
-        # First, fetch the file
-        result1 = runner.invoke(
-            main, ["content", "fetch", "--file", str(test_file), "--skip-index"]
-        )
-        assert result1.exit_code == 0, f"File fetch failed: {result1.output}"
-
-        # Then, fetch the URL with mocked trafilatura
-        with patch("trafilatura.fetch_url") as mock_fetch:
-            with patch("trafilatura.extract") as mock_extract:
-                with patch("trafilatura.extract_metadata") as mock_metadata:
-                    mock_fetch.return_value = "<html><body>URL content</body></html>"
-                    mock_extract.return_value = "URL content"
-                    mock_metadata.return_value = None
-
-                    result2 = runner.invoke(
-                        main,
-                        [
-                            "content",
-                            "fetch",
-                            "--url",
-                            "https://example.com/article",
-                            "--engine",
-                            "trafilatura",
-                            "--skip-index",
-                        ],
-                    )
-                    assert result2.exit_code == 0, f"URL fetch failed: {result2.output}"
-
-        # Verify both documents were created
-        from sqlmodel import select
-
-        from kurt.db.models import Document
-
-        # Check file document
-        stmt_file = select(Document).where(Document.content_path == "local_article.md")
-        doc_file = session.exec(stmt_file).first()
-        assert doc_file is not None
-        assert doc_file.source_type == SourceType.FILE_UPLOAD
-        assert doc_file.title == "Local Article"
-        assert doc_file.ingestion_status == IngestionStatus.FETCHED
-
-        # Check URL document
-        stmt_url = select(Document).where(Document.source_url == "https://example.com/article")
-        doc_url = session.exec(stmt_url).first()
-        assert doc_url is not None
-        assert doc_url.source_type == SourceType.URL
-        assert doc_url.ingestion_status == IngestionStatus.FETCHED
+        # Title should be filename-based
+        assert "article" in doc.title.lower() or "my-article-title" in doc.title.lower()

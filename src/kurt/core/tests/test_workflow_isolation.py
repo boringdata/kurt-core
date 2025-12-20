@@ -1,26 +1,37 @@
-"""Tests for workflow isolation via Reference filtering.
+"""Tests for workflow isolation via explicit Reference filtering.
 
 Verifies that:
-1. References with workflow_id filter only see rows from their own workflow
-2. Back-to-back workflows don't leak data between each other
-3. The _filter_by_workflow_id pattern works correctly
+1. The workflow_id filtering pattern works correctly with pandas DataFrames
+2. References with explicit query filtering only see rows from their own workflow
+3. Back-to-back workflows don't leak data between each other
 """
 
 from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
+from sqlmodel import Field, SQLModel
 
 from kurt.core import PipelineContext, Reference
-from kurt.core.table_io import TableReader
 from kurt.utils.filtering import DocumentFilters
+
+
+# Test model class for workflow isolation tests
+class WorkflowTestRow(SQLModel, table=True):
+    """Test SQLModel for workflow isolation tests."""
+
+    __tablename__ = "workflow_test_rows"
+
+    id: str = Field(primary_key=True)
+    entity_name: str
+    workflow_id: str
 
 
 class TestWorkflowFilterFunction:
     """Test the _filter_by_workflow_id pattern used in models."""
 
     def test_filter_by_workflow_id_basic(self):
-        """Test basic workflow_id filtering."""
+        """Test basic workflow_id filtering on DataFrame."""
 
         # Simulate the filter function pattern used in models
         def _filter_by_workflow_id(df, ctx):
@@ -114,70 +125,58 @@ class TestWorkflowFilterFunction:
         assert len(result) == 0
 
 
-class TestReferenceWithWorkflowFilter:
-    """Test Reference with workflow_id filter function."""
+class TestReferenceExplicitFiltering:
+    """Test Reference with explicit query filtering.
 
-    def test_reference_applies_filter_function(self):
-        """Test that Reference correctly applies filter function."""
+    The new Reference API requires models to filter explicitly:
+        query = ref.query.filter(ref.model_class.workflow_id == ctx.workflow_id)
+        df = pd.read_sql(query.statement, ref.session.bind)
+    """
 
-        # Create filter function
-        def workflow_filter(df, ctx):
-            if ctx and ctx.workflow_id and "workflow_id" in df.columns:
-                return df[df["workflow_id"] == ctx.workflow_id]
-            return df
+    def test_reference_provides_query_for_filtering(self):
+        """Test that Reference provides query object for explicit filtering."""
+        ref = Reference("indexing.entity_clustering")
 
-        # Create reference with filter
-        ref = Reference(
-            model_name="indexing.entity_clustering",
-            filter=workflow_filter,
-        )
-
-        # Mock reader
-        mock_reader = MagicMock(spec=TableReader)
-        mock_reader.load.return_value = pd.DataFrame(
-            [
-                {"entity_name": "Python", "workflow_id": "wf-1"},
-                {"entity_name": "Go", "workflow_id": "wf-2"},
-            ]
-        )
-
-        # Bind context
-        ctx = PipelineContext(filters=DocumentFilters(), workflow_id="wf-1")
-        ref._bind(mock_reader, ctx)
-
-        # Load data
-        result = ref.df
-
-        # Should only have wf-1 data
-        assert len(result) == 1
-        assert result.iloc[0]["entity_name"] == "Python"
-
-    def test_reference_without_filter(self):
-        """Test that Reference without filter returns all data."""
-        ref = Reference(model_name="indexing.entity_clustering")
-
-        mock_reader = MagicMock(spec=TableReader)
-        mock_reader.load.return_value = pd.DataFrame(
-            [
-                {"entity_name": "Python", "workflow_id": "wf-1"},
-                {"entity_name": "Go", "workflow_id": "wf-2"},
-            ]
-        )
+        mock_session = MagicMock()
+        mock_query = MagicMock()
+        mock_session.query.return_value = mock_query
 
         ctx = PipelineContext(filters=DocumentFilters(), workflow_id="wf-1")
-        ref._bind(mock_reader, ctx)
+        ref._bind(mock_session, ctx, WorkflowTestRow)
 
-        result = ref.df
+        # Access query - should call session.query with model class
+        query = ref.query
+        mock_session.query.assert_called_once_with(WorkflowTestRow)
+        assert query is mock_query
 
-        # No filter, all data returned
-        assert len(result) == 2
+    def test_reference_model_class_for_filter_building(self):
+        """Test that Reference provides model_class for building filters."""
+        ref = Reference("indexing.entity_clustering")
+
+        mock_session = MagicMock()
+        ctx = PipelineContext(filters=DocumentFilters(), workflow_id="wf-1")
+        ref._bind(mock_session, ctx, WorkflowTestRow)
+
+        # Access model_class - should return the bound class
+        assert ref.model_class is WorkflowTestRow
+
+    def test_reference_ctx_for_workflow_id(self):
+        """Test that Reference provides ctx for accessing workflow_id."""
+        ref = Reference("indexing.entity_clustering")
+
+        mock_session = MagicMock()
+        ctx = PipelineContext(filters=DocumentFilters(), workflow_id="wf-1")
+        ref._bind(mock_session, ctx, WorkflowTestRow)
+
+        # Access ctx.workflow_id - should return the bound context's workflow_id
+        assert ref.ctx.workflow_id == "wf-1"
 
 
 class TestBackToBackWorkflows:
     """Test workflow isolation with back-to-back workflow executions.
 
     Simulates running two indexing workflows in sequence and verifies
-    that each workflow only sees its own data.
+    that each workflow only sees its own data when filtering explicitly.
     """
 
     @pytest.fixture
@@ -252,32 +251,18 @@ class TestBackToBackWorkflows:
             ),
         }
 
-    def _create_filter_func(self):
-        """Create the standard workflow filter function."""
-
-        def _filter_by_workflow_id(df, ctx):
-            if ctx and ctx.workflow_id and "workflow_id" in df.columns:
-                return df[df["workflow_id"] == ctx.workflow_id]
-            return df
-
-        return _filter_by_workflow_id
+    def _filter_by_workflow_id(self, df, workflow_id):
+        """Standard workflow filter function."""
+        if workflow_id and "workflow_id" in df.columns:
+            return df[df["workflow_id"] == workflow_id]
+        return df
 
     def test_workflow1_sees_only_its_data(self, mock_database):
-        """Test that workflow 1 only sees its own extractions."""
-        filter_func = self._create_filter_func()
+        """Test that workflow 1 only sees its own extractions after filtering."""
+        df = mock_database["indexing_section_extractions"]
 
-        ref = Reference(
-            model_name="indexing.section_extractions",
-            filter=filter_func,
-        )
-
-        mock_reader = MagicMock(spec=TableReader)
-        mock_reader.load.return_value = mock_database["indexing_section_extractions"]
-
-        ctx = PipelineContext(filters=DocumentFilters(), workflow_id="workflow-1")
-        ref._bind(mock_reader, ctx)
-
-        result = ref.df
+        # Filter for workflow-1
+        result = self._filter_by_workflow_id(df, "workflow-1")
 
         # Should only see workflow-1 data
         assert len(result) == 2
@@ -285,21 +270,11 @@ class TestBackToBackWorkflows:
         assert set(result["section_id"]) == {"sec-1", "sec-2"}
 
     def test_workflow2_sees_only_its_data(self, mock_database):
-        """Test that workflow 2 only sees its own extractions."""
-        filter_func = self._create_filter_func()
+        """Test that workflow 2 only sees its own extractions after filtering."""
+        df = mock_database["indexing_section_extractions"]
 
-        ref = Reference(
-            model_name="indexing.section_extractions",
-            filter=filter_func,
-        )
-
-        mock_reader = MagicMock(spec=TableReader)
-        mock_reader.load.return_value = mock_database["indexing_section_extractions"]
-
-        ctx = PipelineContext(filters=DocumentFilters(), workflow_id="workflow-2")
-        ref._bind(mock_reader, ctx)
-
-        result = ref.df
+        # Filter for workflow-2
+        result = self._filter_by_workflow_id(df, "workflow-2")
 
         # Should only see workflow-2 data
         assert len(result) == 2
@@ -308,24 +283,10 @@ class TestBackToBackWorkflows:
 
     def test_entity_clustering_isolation(self, mock_database):
         """Test that entity clustering data is isolated by workflow."""
-        filter_func = self._create_filter_func()
+        df = mock_database["indexing_entity_clustering"]
 
-        # Workflow 1
-        ref1 = Reference(model_name="indexing.entity_clustering", filter=filter_func)
-        mock_reader1 = MagicMock(spec=TableReader)
-        mock_reader1.load.return_value = mock_database["indexing_entity_clustering"]
-        ctx1 = PipelineContext(filters=DocumentFilters(), workflow_id="workflow-1")
-        ref1._bind(mock_reader1, ctx1)
-
-        # Workflow 2
-        ref2 = Reference(model_name="indexing.entity_clustering", filter=filter_func)
-        mock_reader2 = MagicMock(spec=TableReader)
-        mock_reader2.load.return_value = mock_database["indexing_entity_clustering"]
-        ctx2 = PipelineContext(filters=DocumentFilters(), workflow_id="workflow-2")
-        ref2._bind(mock_reader2, ctx2)
-
-        result1 = ref1.df
-        result2 = ref2.df
+        result1 = self._filter_by_workflow_id(df, "workflow-1")
+        result2 = self._filter_by_workflow_id(df, "workflow-2")
 
         # Each should see only their entities
         assert set(result1["entity_name"]) == {"Python", "Django"}
@@ -333,24 +294,10 @@ class TestBackToBackWorkflows:
 
     def test_claim_clustering_isolation(self, mock_database):
         """Test that claim clustering data is isolated by workflow."""
-        filter_func = self._create_filter_func()
+        df = mock_database["indexing_claim_clustering"]
 
-        # Workflow 1
-        ref1 = Reference(model_name="indexing.claim_clustering", filter=filter_func)
-        mock_reader1 = MagicMock(spec=TableReader)
-        mock_reader1.load.return_value = mock_database["indexing_claim_clustering"]
-        ctx1 = PipelineContext(filters=DocumentFilters(), workflow_id="workflow-1")
-        ref1._bind(mock_reader1, ctx1)
-
-        # Workflow 2
-        ref2 = Reference(model_name="indexing.claim_clustering", filter=filter_func)
-        mock_reader2 = MagicMock(spec=TableReader)
-        mock_reader2.load.return_value = mock_database["indexing_claim_clustering"]
-        ctx2 = PipelineContext(filters=DocumentFilters(), workflow_id="workflow-2")
-        ref2._bind(mock_reader2, ctx2)
-
-        result1 = ref1.df
-        result2 = ref2.df
+        result1 = self._filter_by_workflow_id(df, "workflow-1")
+        result2 = self._filter_by_workflow_id(df, "workflow-2")
 
         # Each should see only their claims
         assert "Python is versatile" in result1["statement"].values
@@ -366,29 +313,20 @@ class TestBackToBackWorkflows:
         1. Workflow 1 runs and writes to tables
         2. Workflow 2 runs and should only see its own data
         """
-        filter_func = self._create_filter_func()
+        df = mock_database["indexing_entity_clustering"]
 
         # Accumulator to track all data each workflow "sees"
         workflow1_entities = set()
         workflow2_entities = set()
 
         # Simulate workflow 1 execution
-        ref1 = Reference(model_name="indexing.entity_clustering", filter=filter_func)
-        mock_reader = MagicMock(spec=TableReader)
-        mock_reader.load.return_value = mock_database["indexing_entity_clustering"]
-        ctx1 = PipelineContext(filters=DocumentFilters(), workflow_id="workflow-1")
-        ref1._bind(mock_reader, ctx1)
-
-        for row in ref1:
+        result1 = self._filter_by_workflow_id(df, "workflow-1")
+        for _, row in result1.iterrows():
             workflow1_entities.add(row["entity_name"])
 
         # Simulate workflow 2 execution (right after workflow 1)
-        ref2 = Reference(model_name="indexing.entity_clustering", filter=filter_func)
-        ref2._bind(
-            mock_reader, PipelineContext(filters=DocumentFilters(), workflow_id="workflow-2")
-        )
-
-        for row in ref2:
+        result2 = self._filter_by_workflow_id(df, "workflow-2")
+        for _, row in result2.iterrows():
             workflow2_entities.add(row["entity_name"])
 
         # Verify complete isolation
@@ -400,63 +338,45 @@ class TestBackToBackWorkflows:
 class TestMultipleReferenceFilters:
     """Test models with multiple References, each filtered by workflow."""
 
-    def test_all_references_filtered(self):
-        """Test that a model with multiple references filters all of them."""
-
-        def filter_func(df, ctx):
-            if ctx and ctx.workflow_id and "workflow_id" in df.columns:
-                return df[df["workflow_id"] == ctx.workflow_id]
-            return df
-
+    def test_all_references_filtered_independently(self):
+        """Test that multiple references maintain independent state."""
         # Create mock data for different tables
-        extractions = pd.DataFrame(
+        extractions_df = pd.DataFrame(
             [
                 {"id": "e1", "workflow_id": "wf-1"},
                 {"id": "e2", "workflow_id": "wf-2"},
             ]
         )
-        entities = pd.DataFrame(
+        entities_df = pd.DataFrame(
             [
                 {"id": "ent1", "workflow_id": "wf-1"},
                 {"id": "ent2", "workflow_id": "wf-2"},
             ]
         )
-        claims = pd.DataFrame(
+        claims_df = pd.DataFrame(
             [
                 {"id": "c1", "workflow_id": "wf-1"},
                 {"id": "c2", "workflow_id": "wf-2"},
             ]
         )
 
-        # Create references
-        ref_extractions = Reference("indexing.section_extractions", filter=filter_func)
-        ref_entities = Reference("indexing.entity_clustering", filter=filter_func)
-        ref_claims = Reference("indexing.claim_clustering", filter=filter_func)
+        # Filter all for wf-1
+        def filter_wf1(df):
+            return df[df["workflow_id"] == "wf-1"]
 
-        # Bind all to workflow-1
-        ctx = PipelineContext(filters=DocumentFilters(), workflow_id="wf-1")
-
-        mock_reader1 = MagicMock(spec=TableReader)
-        mock_reader1.load.return_value = extractions
-        ref_extractions._bind(mock_reader1, ctx)
-
-        mock_reader2 = MagicMock(spec=TableReader)
-        mock_reader2.load.return_value = entities
-        ref_entities._bind(mock_reader2, ctx)
-
-        mock_reader3 = MagicMock(spec=TableReader)
-        mock_reader3.load.return_value = claims
-        ref_claims._bind(mock_reader3, ctx)
+        result_extractions = filter_wf1(extractions_df)
+        result_entities = filter_wf1(entities_df)
+        result_claims = filter_wf1(claims_df)
 
         # All should return only wf-1 data
-        assert len(ref_extractions.df) == 1
-        assert ref_extractions.df.iloc[0]["id"] == "e1"
+        assert len(result_extractions) == 1
+        assert result_extractions.iloc[0]["id"] == "e1"
 
-        assert len(ref_entities.df) == 1
-        assert ref_entities.df.iloc[0]["id"] == "ent1"
+        assert len(result_entities) == 1
+        assert result_entities.iloc[0]["id"] == "ent1"
 
-        assert len(ref_claims.df) == 1
-        assert ref_claims.df.iloc[0]["id"] == "c1"
+        assert len(result_claims) == 1
+        assert result_claims.iloc[0]["id"] == "c1"
 
 
 class TestWorkflowIdEdgeCases:
@@ -532,225 +452,73 @@ class TestWorkflowIdEdgeCases:
         assert all(r == "workflow-42" for r in result["workflow_id"])
 
 
-class TestDictFilterWithCallable:
-    """Test the dict filter pattern with callable values for SQL pushdown.
+class TestExplicitQueryFiltering:
+    """Test the explicit query filtering pattern used in models.
 
-    This tests the recommended pattern:
-        filter={"workflow_id": lambda ctx: ctx.workflow_id}
-
-    which provides SQL-level filtering with runtime values from ctx.
+    The new Reference API uses this pattern:
+        query = ref.query.filter(ref.model_class.workflow_id == ctx.workflow_id)
+        df = pd.read_sql(query.statement, ref.session.bind)
     """
 
-    def test_dict_filter_evaluates_callable_at_runtime(self):
-        """Test that callable values in dict filter are evaluated with ctx."""
-        # Create a Reference with dict filter containing callable
-        ref = Reference(
-            model_name="indexing.entity_clustering",
-            filter={"workflow_id": lambda ctx: ctx.workflow_id},
-        )
+    def test_query_filter_returns_filtered_query(self):
+        """Test that query.filter() returns a new filtered query."""
+        ref = Reference("indexing.entity_clustering")
 
-        # Create mock reader that captures the where clause
-        mock_reader = MagicMock(spec=TableReader)
-        captured_where = {}
+        mock_session = MagicMock()
+        mock_query = MagicMock()
+        mock_filtered_query = MagicMock()
+        mock_query.filter.return_value = mock_filtered_query
+        mock_session.query.return_value = mock_query
 
-        def capture_load(table_name, where=None, **kwargs):
-            captured_where["value"] = where
-            return pd.DataFrame(
-                [
-                    {"entity_name": "Python", "workflow_id": "wf-1"},
-                ]
-            )
-
-        mock_reader.load.side_effect = capture_load
-
-        # Bind with context
         ctx = PipelineContext(filters=DocumentFilters(), workflow_id="wf-1")
-        ref._bind(mock_reader, ctx)
+        ref._bind(mock_session, ctx, WorkflowTestRow)
 
-        # Load data
-        result = ref.df
+        # Simulate model code pattern
+        query = ref.query.filter(ref.model_class.workflow_id == ctx.workflow_id)
 
-        # Verify callable was evaluated and passed as static value
-        assert captured_where["value"] == {"workflow_id": "wf-1"}
-        assert len(result) == 1
+        mock_query.filter.assert_called_once()
+        assert query is mock_filtered_query
 
-    def test_dict_filter_with_static_value(self):
-        """Test that static values in dict filter are passed through."""
-        ref = Reference(
-            model_name="indexing.entity_clustering",
-            filter={"workflow_id": "static-wf"},  # Static value, not callable
+    def test_multiple_filters_can_be_chained(self):
+        """Test that multiple filters can be chained."""
+        ref = Reference("indexing.entity_clustering")
+
+        mock_session = MagicMock()
+        mock_query = MagicMock()
+        mock_filtered_query = MagicMock()
+        mock_query.filter.return_value = mock_filtered_query
+        mock_filtered_query.filter.return_value = mock_filtered_query  # Chain returns same
+        mock_session.query.return_value = mock_query
+
+        ctx = PipelineContext(
+            filters=DocumentFilters(ids="doc1,doc2"),
+            workflow_id="wf-1",
+        )
+        ref._bind(mock_session, ctx, WorkflowTestRow)
+
+        # Simulate model code with multiple filters
+        ref.query.filter(ref.model_class.workflow_id == ctx.workflow_id).filter(
+            ref.model_class.id.in_(ctx.document_ids)
         )
 
-        mock_reader = MagicMock(spec=TableReader)
-        captured_where = {}
+        assert mock_query.filter.called
+        assert mock_filtered_query.filter.called
 
-        def capture_load(table_name, where=None, **kwargs):
-            captured_where["value"] = where
-            return pd.DataFrame([{"entity_name": "Go"}])
+    def test_reference_with_none_workflow_id(self):
+        """Test Reference when ctx.workflow_id is None."""
+        ref = Reference("indexing.entity_clustering")
 
-        mock_reader.load.side_effect = capture_load
-
-        ctx = PipelineContext(filters=DocumentFilters(), workflow_id="different-wf")
-        ref._bind(mock_reader, ctx)
-
-        ref.df
-
-        # Static value should be used, not ctx.workflow_id
-        assert captured_where["value"] == {"workflow_id": "static-wf"}
-
-    def test_dict_filter_with_multiple_columns(self):
-        """Test dict filter with multiple columns, mix of callable and static."""
-        ref = Reference(
-            model_name="indexing.claim_clustering",
-            filter={
-                "workflow_id": lambda ctx: ctx.workflow_id,
-                "status": "active",  # Static value
-            },
-        )
-
-        mock_reader = MagicMock(spec=TableReader)
-        captured_where = {}
-
-        def capture_load(table_name, where=None, **kwargs):
-            captured_where["value"] = where
-            return pd.DataFrame([])
-
-        mock_reader.load.side_effect = capture_load
-
-        ctx = PipelineContext(filters=DocumentFilters(), workflow_id="my-workflow")
-        ref._bind(mock_reader, ctx)
-
-        ref.df
-
-        # Both values should be in where clause
-        assert captured_where["value"] == {
-            "workflow_id": "my-workflow",
-            "status": "active",
-        }
-
-    def test_dict_filter_with_none_workflow_id(self):
-        """Test dict filter when ctx.workflow_id is None."""
-        ref = Reference(
-            model_name="indexing.entity_clustering",
-            filter={"workflow_id": lambda ctx: ctx.workflow_id},
-        )
-
-        mock_reader = MagicMock(spec=TableReader)
-        captured_where = {}
-
-        def capture_load(table_name, where=None, **kwargs):
-            captured_where["value"] = where
-            return pd.DataFrame([])
-
-        mock_reader.load.side_effect = capture_load
+        mock_session = MagicMock()
+        mock_query = MagicMock()
+        mock_session.query.return_value = mock_query
 
         ctx = PipelineContext(filters=DocumentFilters(), workflow_id=None)
-        ref._bind(mock_reader, ctx)
+        ref._bind(mock_session, ctx, WorkflowTestRow)
 
-        ref.df
+        # ctx.workflow_id is None
+        assert ref.ctx.workflow_id is None
 
-        # None should be passed as the value (SQL will handle appropriately)
-        assert captured_where["value"] == {"workflow_id": None}
-
-    def test_dict_filter_vs_callable_filter_isolation(self):
-        """Test that dict filter provides same isolation as callable filter.
-
-        Both patterns should filter data to only the current workflow.
-        """
-        # Test data with two workflows
-        test_data = pd.DataFrame(
-            [
-                {"entity_name": "Python", "workflow_id": "workflow-1"},
-                {"entity_name": "JavaScript", "workflow_id": "workflow-1"},
-                {"entity_name": "Go", "workflow_id": "workflow-2"},
-                {"entity_name": "Rust", "workflow_id": "workflow-2"},
-            ]
-        )
-
-        # Dict filter pattern (SQL pushdown - reader handles filtering)
-        ref_dict = Reference(
-            model_name="indexing.entity_clustering",
-            filter={"workflow_id": lambda ctx: ctx.workflow_id},
-        )
-
-        # Old callable filter pattern (post-load filtering)
-        def workflow_filter(df, ctx):
-            if ctx and ctx.workflow_id and "workflow_id" in df.columns:
-                return df[df["workflow_id"] == ctx.workflow_id]
-            return df
-
-        ref_callable = Reference(
-            model_name="indexing.entity_clustering",
-            filter=workflow_filter,
-        )
-
-        ctx = PipelineContext(filters=DocumentFilters(), workflow_id="workflow-1")
-
-        # For dict filter, mock reader returns pre-filtered data (simulates SQL WHERE)
-        mock_reader_dict = MagicMock(spec=TableReader)
-        mock_reader_dict.load.return_value = test_data[test_data["workflow_id"] == "workflow-1"]
-        ref_dict._bind(mock_reader_dict, ctx)
-
-        # For callable filter, mock reader returns full data (filter applied post-load)
-        mock_reader_callable = MagicMock(spec=TableReader)
-        mock_reader_callable.load.return_value = test_data.copy()
-        ref_callable._bind(mock_reader_callable, ctx)
-
-        result_dict = ref_dict.df
-        result_callable = ref_callable.df
-
-        # Both should return same filtered data
-        assert len(result_dict) == 2
-        assert len(result_callable) == 2
-        assert set(result_dict["entity_name"]) == {"Python", "JavaScript"}
-        assert set(result_callable["entity_name"]) == {"Python", "JavaScript"}
-
-    def test_dict_filter_back_to_back_workflows(self):
-        """Test dict filter provides isolation for back-to-back workflows."""
-        # Simulate database state after two workflows have written data
-        database_data = pd.DataFrame(
-            [
-                {"entity_name": "Python", "workflow_id": "workflow-1"},
-                {"entity_name": "Django", "workflow_id": "workflow-1"},
-                {"entity_name": "Go", "workflow_id": "workflow-2"},
-                {"entity_name": "Gin", "workflow_id": "workflow-2"},
-            ]
-        )
-
-        # Workflow 1 execution
-        ref1 = Reference(
-            model_name="indexing.entity_clustering",
-            filter={"workflow_id": lambda ctx: ctx.workflow_id},
-        )
-
-        mock_reader1 = MagicMock(spec=TableReader)
-        # Simulate SQL WHERE workflow_id = 'workflow-1'
-        mock_reader1.load.return_value = database_data[
-            database_data["workflow_id"] == "workflow-1"
-        ].copy()
-
-        ctx1 = PipelineContext(filters=DocumentFilters(), workflow_id="workflow-1")
-        ref1._bind(mock_reader1, ctx1)
-
-        # Workflow 2 execution (immediately after workflow 1)
-        ref2 = Reference(
-            model_name="indexing.entity_clustering",
-            filter={"workflow_id": lambda ctx: ctx.workflow_id},
-        )
-
-        mock_reader2 = MagicMock(spec=TableReader)
-        # Simulate SQL WHERE workflow_id = 'workflow-2'
-        mock_reader2.load.return_value = database_data[
-            database_data["workflow_id"] == "workflow-2"
-        ].copy()
-
-        ctx2 = PipelineContext(filters=DocumentFilters(), workflow_id="workflow-2")
-        ref2._bind(mock_reader2, ctx2)
-
-        # Each workflow should only see its own data
-        result1 = ref1.df
-        result2 = ref2.df
-
-        assert set(result1["entity_name"]) == {"Python", "Django"}
-        assert set(result2["entity_name"]) == {"Go", "Gin"}
-        assert set(result1["entity_name"]).isdisjoint(set(result2["entity_name"]))
+        # Model code should check for None before filtering
+        # This is the pattern:
+        # if ctx.workflow_id:
+        #     query = query.filter(...)

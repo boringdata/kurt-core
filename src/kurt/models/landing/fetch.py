@@ -120,7 +120,9 @@ def fetch(
     # Filter documents by ctx.document_ids (explicit filtering)
     query = documents.query
     if ctx.document_ids:
-        query = query.filter(documents.model_class.id.in_(ctx.document_ids))
+        # Convert string IDs to UUIDs for SQLAlchemy
+        uuid_ids = [UUID(id) for id in ctx.document_ids]
+        query = query.filter(documents.model_class.id.in_(uuid_ids))
     docs_df = pd.read_sql(query.statement, documents.session.bind)
 
     if docs_df.empty:

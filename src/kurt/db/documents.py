@@ -540,19 +540,59 @@ def load_document_content(doc: Document, strip_frontmatter: bool = True) -> str:
     if not doc.content_path:
         raise ValueError(f"Document {doc.id} has no content_path")
 
+    return load_content_by_path(doc.content_path, strip_frontmatter=strip_frontmatter)
+
+
+def load_content_by_path(
+    content_path: str, strip_frontmatter: bool = True, raise_on_error: bool = False
+) -> str:
+    """
+    Load document content from filesystem by content_path.
+
+    This is a lower-level utility that works with just the content_path string,
+    useful for DataFrame operations where you don't have a full Document object.
+
+    Args:
+        content_path: Relative path to content file (from sources directory)
+        strip_frontmatter: If True (default), removes YAML frontmatter from content
+        raise_on_error: If True, raises ValueError on errors; otherwise returns ""
+
+    Returns:
+        Document content as string (with frontmatter stripped by default),
+        or empty string if file not found and raise_on_error=False
+
+    Raises:
+        ValueError: If content_path is missing or file doesn't exist (only when raise_on_error=True)
+
+    Example:
+        # Direct usage (raises on error)
+        content = load_content_by_path("example.com/page.md", raise_on_error=True)
+
+        # DataFrame apply usage (returns empty string on error)
+        df["content"] = df["content_path"].apply(load_content_by_path)
+    """
+    if not content_path:
+        if raise_on_error:
+            raise ValueError("content_path is empty or None")
+        return ""
+
     from kurt.config import load_config
 
     config = load_config()
     source_base = config.get_absolute_sources_path()
-    content_file = source_base / doc.content_path
+    content_file = source_base / content_path
 
     if not content_file.exists():
-        raise ValueError(f"Content file not found: {content_file}")
+        if raise_on_error:
+            raise ValueError(f"Content file not found: {content_file}")
+        return ""
 
     content = content_file.read_text(encoding="utf-8")
 
     if not content.strip():
-        raise ValueError(f"Document {doc.id} has empty content")
+        if raise_on_error:
+            raise ValueError(f"Content file is empty: {content_file}")
+        return ""
 
     if strip_frontmatter:
         content = _strip_frontmatter(content)

@@ -9,12 +9,13 @@ This test proves the framework can:
 5. Stream events to DBOS
 
 NOTE: These tests require tmp_project fixture.
-The document loading uses Reference-based API.
+The document loading uses Reference-based API with pd.read_sql().
 """
 
 import json
 from typing import Optional
 
+import pandas as pd
 import pytest
 from sqlmodel import Field, SQLModel
 
@@ -28,6 +29,8 @@ from kurt.core import (
     model,
     table,
 )
+from kurt.db.documents import load_content_by_path
+from kurt.db.models import Document
 from kurt.utils.filtering import DocumentFilters
 
 
@@ -76,15 +79,25 @@ def setup_test_models():
         **kwargs,
     ):
         """Load and process documents using Reference-based API."""
-        # Lazy load documents via Reference
-        documents_df = documents.df
+        # Load documents via Reference using pd.read_sql
+        query = documents.query
+        documents_df = pd.read_sql(query.statement, documents.session.bind)
+
+        # Rename 'id' to 'document_id' for consistency
+        if "id" in documents_df.columns:
+            documents_df["document_id"] = documents_df["id"].astype(str)
+
+        # Load content from files
+        documents_df["content"] = documents_df["content_path"].apply(
+            lambda p: load_content_by_path(p) if p else ""
+        )
 
         results = []
         for doc in documents_df.to_dict("records"):
-            if doc.get("skip"):
+            content = doc.get("content", "")
+            if not content:
                 continue
 
-            content = doc.get("content", "")
             results.append(
                 DocumentProcessingRow(
                     document_id=doc["document_id"],
@@ -112,10 +125,11 @@ def setup_test_models():
     ):
         """Read processed docs and generate summaries."""
         # Read from previous model's output via Reference
-        processed = processed.df
+        query = processed.query
+        processed_df = pd.read_sql(query.statement, processed.session.bind)
 
         summaries = []
-        for _, row in processed.iterrows():
+        for _, row in processed_df.iterrows():
             # Simulate summary generation
             summary = f"Document '{row['title']}' contains {row['word_count']} words"
             if row.get("has_code"):
@@ -239,7 +253,7 @@ More content here with multiple words to count.
 
         from kurt.db.database import get_session
         from kurt.db.documents import add_document
-        from kurt.db.models import Document, IngestionStatus
+        from kurt.db.models import IngestionStatus
 
         session = get_session()
 
@@ -305,70 +319,13 @@ More content here with multiple words to count.
         assert len(df) == 0
 
 
-class TestReferenceFiltering:
-    """Integration tests for Reference filtering behavior.
+class TestWorkflowExecution:
+    """Tests for workflow execution behavior.
 
     These tests verify that:
-    1. Documents are filtered by ctx.document_ids when using filter function
-    2. Downstream models filter by workflow_id to only process current workflow data
-    3. Incremental mode properly updates indexed_with_hash
+    1. Models execute correctly with workflow context
+    2. Multiple workflow runs work independently
     """
-
-    def test_documents_filtered_by_ctx_document_ids(self, tmp_project):
-        """Test that documents Reference filters by ctx.document_ids.
-
-        This test verifies that when ctx.document_ids is set, only those
-        specific documents are loaded - not all documents in the database.
-        """
-        from kurt.db.database import get_session
-        from kurt.db.documents import add_document
-        from kurt.db.models import Document, IngestionStatus
-
-        session = get_session()
-
-        # Create 3 test documents
-        doc_ids = []
-        for i in range(3):
-            doc_id = add_document(f"https://example.com/filter-doc{i}")
-            doc = session.get(Document, doc_id)
-            doc.title = f"Document {i}"
-            doc.content_path = f"filter_doc{i}.md"
-            doc.ingestion_status = IngestionStatus.FETCHED
-            doc_ids.append(str(doc_id))
-            session.commit()  # Commit each one to avoid lock
-
-        # Create content files
-        from kurt.config import load_config
-
-        config = load_config()
-        sources_path = config.get_absolute_sources_path()
-        sources_path.mkdir(parents=True, exist_ok=True)
-        for i in range(3):
-            (sources_path / f"filter_doc{i}.md").write_text(f"Content for document {i}")
-
-        # Load with filter for only the first document
-        from kurt.core import Reference
-
-        filters = DocumentFilters(ids=doc_ids[0])
-        ctx = PipelineContext(
-            filters=filters,
-            workflow_id="test-filter",
-            incremental_mode="full",
-        )
-
-        reader = TableReader(filters=ctx.filters, workflow_id=ctx.workflow_id)
-        ref = Reference(
-            "documents",
-            load_content={"document_id_column": "document_id"},
-            filter="id",  # Filter by id column using ctx.document_ids
-        )
-        ref._bind(reader, ctx)
-
-        df = ref.load()
-
-        # Should only get 1 document, not all 3
-        assert len(df) == 1
-        assert df.iloc[0]["document_id"] == doc_ids[0]
 
     def test_workflow_id_isolation_between_runs(self, tmp_project, setup_test_models):
         """Test that downstream models only see data from current workflow.
@@ -379,7 +336,7 @@ class TestReferenceFiltering:
         """
         from kurt.db.database import get_session
         from kurt.db.documents import add_document
-        from kurt.db.models import Document, IngestionStatus
+        from kurt.db.models import IngestionStatus
 
         session = get_session()
 
@@ -445,743 +402,6 @@ class TestReferenceFiltering:
         # This verifies the model ran twice successfully
         assert total_rows >= 1
 
-    def test_indexed_hash_updated_after_processing(self, tmp_project):
-        """Test that indexed_with_hash is updated after document processing.
-
-        This test verifies that after successfully processing a document through
-        document_sections, the indexed_with_hash column is updated with the
-        content hash, enabling incremental mode to skip unchanged documents.
-        """
-        import hashlib
-
-        from kurt.db.database import get_session
-        from kurt.db.documents import add_document
-        from kurt.db.models import Document, IngestionStatus
-
-        session = get_session()
-
-        # Create a test document
-        doc_id = add_document("https://example.com/hash-test")
-        doc = session.get(Document, doc_id)
-        doc.title = "Hash Test"
-        doc.content_path = "hash_test.md"
-        doc.ingestion_status = IngestionStatus.FETCHED
-        session.commit()
-
-        # Create content file
-        from kurt.config import load_config
-
-        config = load_config()
-        sources_path = config.get_absolute_sources_path()
-        sources_path.mkdir(parents=True, exist_ok=True)
-        content = "Test content for hash verification"
-        (sources_path / "hash_test.md").write_text(content)
-        expected_hash = hashlib.sha256(content.encode()).hexdigest()
-
-        # Verify indexed_with_hash is initially None
-        session.refresh(doc)
-        assert doc.indexed_with_hash is None
-
-        # Create table using the SQLModel metadata
-        from sqlalchemy import create_engine
-
-        from kurt.models.staging.indexing.step_document_sections import (
-            DocumentSectionRow,
-            DocumentSectionsConfig,
-            document_sections,
-        )
-
-        db_path = tmp_project / ".kurt" / "kurt.sqlite"
-        engine = create_engine(f"sqlite:///{db_path}")
-        DocumentSectionRow.metadata.create_all(engine)
-        engine.dispose()
-
-        filters = DocumentFilters(ids=str(doc_id))
-        ctx = PipelineContext(
-            filters=filters,
-            workflow_id="hash-test",
-            incremental_mode="full",
-        )
-
-        reader = TableReader(filters=ctx.filters, workflow_id=ctx.workflow_id)
-        writer = TableWriter(workflow_id=ctx.workflow_id)
-
-        # Create a proper Reference and bind it
-        # No custom filter needed - TableReader handles document filtering via filters
-        from kurt.core import Reference
-
-        docs_ref = Reference(
-            "documents",
-            load_content={"document_id_column": "document_id"},
-        )
-        docs_ref._bind(reader, ctx)
-
-        # Create config with explicit values (ConfigParam needs explicit values when not loaded via config_schema.load())
-        config = DocumentSectionsConfig(
-            max_section_chars=5000,
-            overlap_chars=200,
-            min_section_size=500,
-        )
-
-        result = document_sections(
-            ctx=ctx,
-            documents=docs_ref,
-            writer=writer,
-            config=config,
-        )
-
-        assert result["rows_written"] >= 1
-
-        # Verify indexed_with_hash was updated
-        session.expire_all()
-        doc = session.get(Document, doc_id)
-        assert doc.indexed_with_hash == expected_hash
-
-    def test_incremental_mode_skips_unchanged_documents(self, tmp_project):
-        """Test that incremental mode skips documents with unchanged content.
-
-        This test verifies the full incremental workflow:
-        1. Process document first time - should process and update hash
-        2. Process again without changes - should skip (content_unchanged)
-        3. Modify content and process - should process again
-        """
-        from kurt.db.database import get_session
-        from kurt.db.documents import add_document
-        from kurt.db.models import Document, IngestionStatus
-
-        session = get_session()
-
-        # Create a test document
-        doc_id = add_document("https://example.com/incremental-test")
-        doc = session.get(Document, doc_id)
-        doc.title = "Incremental Test"
-        doc.content_path = "incremental.md"
-        doc.ingestion_status = IngestionStatus.FETCHED
-        session.commit()
-
-        # Create content file
-        from kurt.config import load_config
-
-        config = load_config()
-        sources_path = config.get_absolute_sources_path()
-        sources_path.mkdir(parents=True, exist_ok=True)
-        content_v1 = "Original content"
-        (sources_path / "incremental.md").write_text(content_v1)
-
-        # Create table using the SQLModel metadata
-        from sqlalchemy import create_engine
-
-        from kurt.models.staging.indexing.step_document_sections import (
-            DocumentSectionRow,
-            DocumentSectionsConfig,
-            document_sections,
-        )
-
-        db_path = tmp_project / ".kurt" / "kurt.sqlite"
-        engine = create_engine(f"sqlite:///{db_path}")
-        DocumentSectionRow.metadata.create_all(engine)
-        engine.dispose()
-
-        filters = DocumentFilters(ids=str(doc_id))
-
-        # First run: should process
-        ctx1 = PipelineContext(
-            filters=filters,
-            workflow_id="incremental-1",
-            incremental_mode="delta",
-            reprocess_unchanged=False,
-        )
-
-        reader1 = TableReader(filters=ctx1.filters, workflow_id=ctx1.workflow_id)
-        writer1 = TableWriter(workflow_id=ctx1.workflow_id)
-
-        from kurt.core import Reference
-
-        docs_ref1 = Reference(
-            "documents",
-            load_content={"document_id_column": "document_id"},
-            filter="id",
-        )
-        docs_ref1._bind(reader1, ctx1)
-
-        # Create config with explicit values (ConfigParam needs explicit values)
-        config = DocumentSectionsConfig(
-            max_section_chars=5000,
-            overlap_chars=200,
-            min_section_size=500,
-        )
-
-        result1 = document_sections(
-            ctx=ctx1,
-            documents=docs_ref1,
-            writer=writer1,
-            config=config,
-        )
-
-        assert result1["documents"] == 1
-        assert result1.get("skipped", 0) == 0
-
-        # Second run: should skip (content unchanged)
-        ctx2 = PipelineContext(
-            filters=filters,
-            workflow_id="incremental-2",
-            incremental_mode="delta",
-            reprocess_unchanged=False,
-        )
-
-        reader2 = TableReader(filters=ctx2.filters, workflow_id=ctx2.workflow_id)
-        writer2 = TableWriter(workflow_id=ctx2.workflow_id)
-
-        docs_ref2 = Reference(
-            "documents",
-            load_content={"document_id_column": "document_id"},
-            filter="id",
-        )
-        docs_ref2._bind(reader2, ctx2)
-
-        result2 = document_sections(
-            ctx=ctx2,
-            documents=docs_ref2,
-            writer=writer2,
-            config=config,
-        )
-
-        # Document should be skipped because content is unchanged
-        # When all docs are skipped, model returns skipped count without documents key
-        assert result2.get("skipped", 0) == 1
-        assert result2["rows_written"] == 0
-
-        # Third run: modify content and process
-        content_v2 = "Modified content - different from original"
-        (sources_path / "incremental.md").write_text(content_v2)
-
-        ctx3 = PipelineContext(
-            filters=filters,
-            workflow_id="incremental-3",
-            incremental_mode="delta",
-            reprocess_unchanged=False,
-        )
-
-        reader3 = TableReader(filters=ctx3.filters, workflow_id=ctx3.workflow_id)
-        writer3 = TableWriter(workflow_id=ctx3.workflow_id)
-
-        docs_ref3 = Reference(
-            "documents",
-            load_content={"document_id_column": "document_id"},
-            filter="id",
-        )
-        docs_ref3._bind(reader3, ctx3)
-
-        result3 = document_sections(
-            ctx=ctx3,
-            documents=docs_ref3,
-            writer=writer3,
-            config=config,
-        )
-
-        # Should process because content changed
-        assert result3["documents"] == 1
-        assert result3.get("skipped", 0) == 0
-        assert result3["rows_written"] >= 1
-
-    def test_documents_filtered_by_multiple_ids(self, tmp_project):
-        """Test that DocumentFilters with multiple IDs loads only those documents.
-
-        This test verifies that when ctx.document_ids contains multiple IDs,
-        only those specific documents are loaded - not all documents in the database.
-        """
-        from kurt.db.database import get_session
-        from kurt.db.documents import add_document
-        from kurt.db.models import Document, IngestionStatus
-
-        session = get_session()
-
-        # Create 4 test documents
-        doc_ids = []
-        for i in range(4):
-            doc_id = add_document(f"https://example.com/multi-filter-doc{i}")
-            doc = session.get(Document, doc_id)
-            doc.title = f"Document {i}"
-            doc.content_path = f"multi_filter_doc{i}.md"
-            doc.ingestion_status = IngestionStatus.FETCHED
-            doc_ids.append(str(doc_id))
-            session.commit()
-
-        # Create content files
-        from kurt.config import load_config
-
-        config = load_config()
-        sources_path = config.get_absolute_sources_path()
-        sources_path.mkdir(parents=True, exist_ok=True)
-        for i in range(4):
-            (sources_path / f"multi_filter_doc{i}.md").write_text(f"Content for document {i}")
-
-        # Load with filter for documents 0 and 2 (skip 1 and 3)
-        from kurt.core import Reference
-
-        selected_ids = [doc_ids[0], doc_ids[2]]
-        filters = DocumentFilters(ids=",".join(selected_ids))
-        ctx = PipelineContext(
-            filters=filters,
-            workflow_id="test-multi-filter",
-            incremental_mode="full",
-        )
-
-        reader = TableReader(filters=ctx.filters, workflow_id=ctx.workflow_id)
-        ref = Reference(
-            "documents",
-            load_content={"document_id_column": "document_id"},
-            filter="id",
-        )
-        ref._bind(reader, ctx)
-
-        df = ref.load()
-
-        # Should only get 2 documents, not all 4
-        assert len(df) == 2
-        loaded_ids = set(df["document_id"].tolist())
-        assert loaded_ids == set(selected_ids)
-
-    def test_reprocess_unchanged_forces_reprocessing(self, tmp_project):
-        """Test that reprocess_unchanged=True forces reprocessing even when hash matches.
-
-        This test verifies that when a document has already been indexed (hash matches),
-        setting reprocess_unchanged=True overrides the skip behavior and processes it anyway.
-        """
-        import hashlib
-
-        from kurt.db.database import get_session
-        from kurt.db.documents import add_document
-        from kurt.db.models import Document, IngestionStatus
-
-        session = get_session()
-
-        # Create a test document
-        doc_id = add_document("https://example.com/reprocess-test")
-        doc = session.get(Document, doc_id)
-        doc.title = "Reprocess Test"
-        doc.content_path = "reprocess.md"
-        doc.ingestion_status = IngestionStatus.FETCHED
-        session.commit()
-
-        # Create content file
-        from kurt.config import load_config
-
-        config = load_config()
-        sources_path = config.get_absolute_sources_path()
-        sources_path.mkdir(parents=True, exist_ok=True)
-        content = "Content for reprocess test"
-        (sources_path / "reprocess.md").write_text(content)
-
-        # Pre-set indexed_with_hash to match current content (simulate already indexed)
-        content_hash = hashlib.sha256(content.encode()).hexdigest()
-        doc.indexed_with_hash = content_hash
-        session.commit()
-
-        # Create table
-        from sqlalchemy import create_engine
-
-        from kurt.models.staging.indexing.step_document_sections import (
-            DocumentSectionRow,
-            DocumentSectionsConfig,
-            document_sections,
-        )
-
-        db_path = tmp_project / ".kurt" / "kurt.sqlite"
-        engine = create_engine(f"sqlite:///{db_path}")
-        DocumentSectionRow.metadata.create_all(engine)
-        engine.dispose()
-
-        filters = DocumentFilters(ids=str(doc_id))
-
-        # First run: reprocess_unchanged=False should skip
-        ctx1 = PipelineContext(
-            filters=filters,
-            workflow_id="reprocess-test-1",
-            incremental_mode="delta",
-            reprocess_unchanged=False,
-        )
-
-        reader1 = TableReader(filters=ctx1.filters, workflow_id=ctx1.workflow_id)
-        writer1 = TableWriter(workflow_id=ctx1.workflow_id)
-
-        from kurt.core import Reference
-
-        docs_ref1 = Reference(
-            "documents",
-            load_content={"document_id_column": "document_id"},
-            filter="id",
-        )
-        docs_ref1._bind(reader1, ctx1)
-
-        config = DocumentSectionsConfig(
-            max_section_chars=5000,
-            overlap_chars=200,
-            min_section_size=500,
-        )
-
-        result1 = document_sections(
-            ctx=ctx1,
-            documents=docs_ref1,
-            writer=writer1,
-            config=config,
-        )
-
-        # Should skip because hash matches and reprocess_unchanged=False
-        assert result1.get("skipped", 0) == 1
-        assert result1["rows_written"] == 0
-
-        # Second run: reprocess_unchanged=True should force processing
-        ctx2 = PipelineContext(
-            filters=filters,
-            workflow_id="reprocess-test-2",
-            incremental_mode="delta",
-            reprocess_unchanged=True,  # Force reprocessing
-        )
-
-        reader2 = TableReader(filters=ctx2.filters, workflow_id=ctx2.workflow_id)
-        writer2 = TableWriter(workflow_id=ctx2.workflow_id)
-
-        docs_ref2 = Reference(
-            "documents",
-            load_content={"document_id_column": "document_id"},
-            filter="id",
-        )
-        docs_ref2._bind(reader2, ctx2)
-
-        result2 = document_sections(
-            ctx=ctx2,
-            documents=docs_ref2,
-            writer=writer2,
-            config=config,
-        )
-
-        # Should process because reprocess_unchanged=True
-        assert result2.get("skipped", 0) == 0
-        assert result2["rows_written"] >= 1
-
-    def test_skip_reason_metadata_propagated(self, tmp_project):
-        """Test that skip_reason metadata is properly propagated through the pipeline.
-
-        This test verifies that when TableReader marks a document as skip=True,
-        the skip_reason is properly set and accessible to downstream processing.
-        """
-        import hashlib
-
-        from kurt.db.database import get_session
-        from kurt.db.documents import add_document
-        from kurt.db.models import Document, IngestionStatus
-
-        session = get_session()
-
-        # Create a test document that's already indexed
-        doc_id = add_document("https://example.com/skip-reason-test")
-        doc = session.get(Document, doc_id)
-        doc.title = "Skip Reason Test"
-        doc.content_path = "skip_reason.md"
-        doc.ingestion_status = IngestionStatus.FETCHED
-        session.commit()
-
-        # Create content file
-        from kurt.config import load_config
-
-        config = load_config()
-        sources_path = config.get_absolute_sources_path()
-        sources_path.mkdir(parents=True, exist_ok=True)
-        content = "Content for skip reason test"
-        (sources_path / "skip_reason.md").write_text(content)
-
-        # Pre-set indexed_with_hash to match current content
-        content_hash = hashlib.sha256(content.encode()).hexdigest()
-        doc.indexed_with_hash = content_hash
-        session.commit()
-
-        # Load documents with reprocess_unchanged=False
-        filters = DocumentFilters(ids=str(doc_id))
-        ctx = PipelineContext(
-            filters=filters,
-            workflow_id="skip-reason-test",
-            incremental_mode="delta",
-            reprocess_unchanged=False,
-        )
-
-        reader = TableReader(filters=ctx.filters, workflow_id=ctx.workflow_id)
-
-        from kurt.core import Reference
-
-        docs_ref = Reference(
-            "documents",
-            load_content={"document_id_column": "document_id"},
-            filter="id",
-        )
-        docs_ref._bind(reader, ctx)
-
-        df = docs_ref.load()
-
-        # Verify skip metadata is set correctly
-        assert len(df) == 1
-        doc_row = df.iloc[0]
-        assert doc_row["skip"] == True  # noqa: E712 - numpy bool comparison
-        assert doc_row["skip_reason"] == "content_unchanged"
-
-    def test_document_filters_with_status_applied_at_sql_level(self, tmp_project):
-        """Test that DocumentFilters.with_status filters at SQL level.
-
-        This test verifies that when with_status is set, only documents with
-        matching ingestion_status are returned from the database query.
-        """
-        from kurt.db.database import get_session
-        from kurt.db.documents import add_document
-        from kurt.db.models import Document, IngestionStatus
-
-        session = get_session()
-
-        # Create documents with different statuses
-        doc_fetched = add_document("https://example.com/status-fetched")
-        doc_pending = add_document("https://example.com/status-pending")
-        doc_error = add_document("https://example.com/status-error")
-
-        doc = session.get(Document, doc_fetched)
-        doc.title = "Fetched Document"
-        doc.content_path = "status_fetched.md"
-        doc.ingestion_status = IngestionStatus.FETCHED
-        session.commit()
-
-        doc = session.get(Document, doc_pending)
-        doc.title = "Not Fetched Document"
-        doc.content_path = "status_not_fetched.md"
-        doc.ingestion_status = IngestionStatus.NOT_FETCHED
-        session.commit()
-
-        doc = session.get(Document, doc_error)
-        doc.title = "Error Document"
-        doc.content_path = "status_error.md"
-        doc.ingestion_status = IngestionStatus.ERROR
-        session.commit()
-
-        # Create content files
-        from kurt.config import load_config
-
-        config = load_config()
-        sources_path = config.get_absolute_sources_path()
-        sources_path.mkdir(parents=True, exist_ok=True)
-        (sources_path / "status_fetched.md").write_text("Fetched content")
-        (sources_path / "status_not_fetched.md").write_text("Not fetched content")
-        (sources_path / "status_error.md").write_text("Error content")
-
-        # Filter with with_status="FETCHED" (no specific IDs)
-        filters = DocumentFilters(with_status="FETCHED")
-        ctx = PipelineContext(
-            filters=filters,
-            workflow_id="status-filter-test",
-            incremental_mode="full",
-        )
-
-        reader = TableReader(filters=ctx.filters, workflow_id=ctx.workflow_id)
-        ref = Reference(
-            "documents",
-            load_content={"document_id_column": "document_id"},
-            # No filter="id" - we want all fetched documents
-        )
-        ref._bind(reader, ctx)
-
-        df = ref.load()
-
-        # Should only get the FETCHED document
-        assert len(df) == 1
-        assert df.iloc[0]["title"] == "Fetched Document"
-
-    def test_document_filters_limit_applied_at_sql_level(self, tmp_project):
-        """Test that DocumentFilters.limit limits at SQL level.
-
-        This test verifies that when limit is set, the database query returns
-        at most that many documents, without loading all documents first.
-        """
-        from kurt.db.database import get_session
-        from kurt.db.documents import add_document
-        from kurt.db.models import Document, IngestionStatus
-
-        session = get_session()
-
-        # Create 5 documents
-        doc_ids = []
-        for i in range(5):
-            doc_id = add_document(f"https://example.com/limit-test-{i}")
-            doc = session.get(Document, doc_id)
-            doc.title = f"Limit Test Document {i}"
-            doc.content_path = f"limit_test_{i}.md"
-            doc.ingestion_status = IngestionStatus.FETCHED
-            doc_ids.append(str(doc_id))
-            session.commit()
-
-        # Create content files
-        from kurt.config import load_config
-
-        config = load_config()
-        sources_path = config.get_absolute_sources_path()
-        sources_path.mkdir(parents=True, exist_ok=True)
-        for i in range(5):
-            (sources_path / f"limit_test_{i}.md").write_text(f"Content {i}")
-
-        # Filter with limit=2 (no specific IDs, just limit)
-        filters = DocumentFilters(limit=2)
-        ctx = PipelineContext(
-            filters=filters,
-            workflow_id="limit-filter-test",
-            incremental_mode="full",
-        )
-
-        reader = TableReader(filters=ctx.filters, workflow_id=ctx.workflow_id)
-        ref = Reference(
-            "documents",
-            load_content={"document_id_column": "document_id"},
-            # No filter="id" - we want all documents with limit applied
-        )
-        ref._bind(reader, ctx)
-
-        df = ref.load()
-
-        # Should only get 2 documents, not all 5
-        assert len(df) == 2
-
-    def test_document_filters_include_pattern_applied(self, tmp_project):
-        """Test that DocumentFilters.include_pattern filters by path pattern.
-
-        This test verifies that only documents matching the include_pattern
-        are returned, with non-matching documents filtered out.
-        """
-        from kurt.db.database import get_session
-        from kurt.db.documents import add_document
-        from kurt.db.models import Document, IngestionStatus
-
-        session = get_session()
-
-        # Create documents with different paths
-        doc_python = add_document("https://example.com/docs/python/tutorial.md")
-        doc_java = add_document("https://example.com/docs/java/guide.md")
-        doc_rust = add_document("https://example.com/docs/rust/intro.md")
-
-        doc = session.get(Document, doc_python)
-        doc.title = "Python Tutorial"
-        doc.content_path = "docs/python/tutorial.md"
-        doc.ingestion_status = IngestionStatus.FETCHED
-        session.commit()
-
-        doc = session.get(Document, doc_java)
-        doc.title = "Java Guide"
-        doc.content_path = "docs/java/guide.md"
-        doc.ingestion_status = IngestionStatus.FETCHED
-        session.commit()
-
-        doc = session.get(Document, doc_rust)
-        doc.title = "Rust Intro"
-        doc.content_path = "docs/rust/intro.md"
-        doc.ingestion_status = IngestionStatus.FETCHED
-        session.commit()
-
-        # Create content files
-        from kurt.config import load_config
-
-        config = load_config()
-        sources_path = config.get_absolute_sources_path()
-        (sources_path / "docs" / "python").mkdir(parents=True, exist_ok=True)
-        (sources_path / "docs" / "java").mkdir(parents=True, exist_ok=True)
-        (sources_path / "docs" / "rust").mkdir(parents=True, exist_ok=True)
-        (sources_path / "docs" / "python" / "tutorial.md").write_text("Python content")
-        (sources_path / "docs" / "java" / "guide.md").write_text("Java content")
-        (sources_path / "docs" / "rust" / "intro.md").write_text("Rust content")
-
-        # Filter with include_pattern to only get Python docs (no specific IDs)
-        filters = DocumentFilters(include_pattern="**/python/**")
-        ctx = PipelineContext(
-            filters=filters,
-            workflow_id="include-pattern-test",
-            incremental_mode="full",
-        )
-
-        reader = TableReader(filters=ctx.filters, workflow_id=ctx.workflow_id)
-        ref = Reference(
-            "documents",
-            load_content={"document_id_column": "document_id"},
-            # No filter="id" - we want all documents matching pattern
-        )
-        ref._bind(reader, ctx)
-
-        df = ref.load()
-
-        # Should only get Python document
-        assert len(df) == 1
-        assert df.iloc[0]["title"] == "Python Tutorial"
-
-    def test_document_filters_exclude_pattern_applied(self, tmp_project):
-        """Test that DocumentFilters.exclude_pattern filters out matching paths.
-
-        This test verifies that documents matching exclude_pattern are filtered
-        out from the results.
-        """
-        from kurt.db.database import get_session
-        from kurt.db.documents import add_document
-        from kurt.db.models import Document, IngestionStatus
-
-        session = get_session()
-
-        # Create documents with different paths
-        doc_main = add_document("https://example.com/docs/main.md")
-        doc_test = add_document("https://example.com/tests/test_main.md")
-        doc_readme = add_document("https://example.com/README.md")
-
-        doc = session.get(Document, doc_main)
-        doc.title = "Main Doc"
-        doc.content_path = "docs/main.md"
-        doc.ingestion_status = IngestionStatus.FETCHED
-        session.commit()
-
-        doc = session.get(Document, doc_test)
-        doc.title = "Test Doc"
-        doc.content_path = "tests/test_main.md"
-        doc.ingestion_status = IngestionStatus.FETCHED
-        session.commit()
-
-        doc = session.get(Document, doc_readme)
-        doc.title = "README"
-        doc.content_path = "README.md"
-        doc.ingestion_status = IngestionStatus.FETCHED
-        session.commit()
-
-        # Create content files
-        from kurt.config import load_config
-
-        config = load_config()
-        sources_path = config.get_absolute_sources_path()
-        (sources_path / "docs").mkdir(parents=True, exist_ok=True)
-        (sources_path / "tests").mkdir(parents=True, exist_ok=True)
-        (sources_path / "docs" / "main.md").write_text("Main content")
-        (sources_path / "tests" / "test_main.md").write_text("Test content")
-        (sources_path / "README.md").write_text("Readme content")
-
-        # Filter to exclude tests directory (no specific IDs)
-        filters = DocumentFilters(exclude_pattern="**/tests/**")
-        ctx = PipelineContext(
-            filters=filters,
-            workflow_id="exclude-pattern-test",
-            incremental_mode="full",
-        )
-
-        reader = TableReader(filters=ctx.filters, workflow_id=ctx.workflow_id)
-        ref = Reference(
-            "documents",
-            load_content={"document_id_column": "document_id"},
-            # No filter="id" - we want all documents except excluded pattern
-        )
-        ref._bind(reader, ctx)
-
-        df = ref.load()
-
-        # Should get 2 documents (excluding test doc)
-        assert len(df) == 2
-        titles = set(df["title"].tolist())
-        assert titles == {"Main Doc", "README"}
-
 
 class TestClaimCreationEdgeCases:
     """Integration tests for claim creation with edge cases.
@@ -1234,83 +454,106 @@ class TestClaimCreationEdgeCases:
         inserted into the database, not claims that were skipped due to missing
         entity linkage.
         """
-        from unittest.mock import MagicMock, patch
         from uuid import uuid4
 
-        from kurt.core import PipelineContext, TableWriter
+        from kurt.core import PipelineContext, Reference, TableWriter
         from kurt.db.database import get_session
+        from kurt.models.staging.indexing.step_claim_clustering import ClaimGroupRow
         from kurt.models.staging.indexing.step_claim_resolution import (
             ClaimResolutionRow,
             claim_resolution,
+        )
+        from kurt.models.staging.indexing.step_entity_resolution import (
+            EntityResolutionRow,
+        )
+        from kurt.models.staging.indexing.step_extract_sections import (
+            SectionExtractionRow,
         )
         from kurt.utils.filtering import DocumentFilters
 
         session = get_session()
 
-        # Create tables
+        # Create all required tables
         ClaimResolutionRow.metadata.create_all(session.get_bind())
+        ClaimGroupRow.metadata.create_all(session.get_bind())
+        EntityResolutionRow.metadata.create_all(session.get_bind())
+        SectionExtractionRow.metadata.create_all(session.get_bind())
 
         doc_id = str(uuid4())
         workflow_id = "claim-stats-test"
 
-        # Create mock references with claims that have NO entity linkage
-        mock_claim_groups = MagicMock()
-        mock_claim_groups.df = MagicMock()
-        mock_claim_groups.df.empty = False
-        mock_claim_groups.df.to_dict.return_value = [
-            {
-                "claim_hash": "hash1",
-                "document_id": doc_id,
-                "section_id": "section-1",
-                "statement": "Claim 1 without entity",
-                "claim_type": "definition",
-                "confidence": 0.8,
-                "decision": "CREATE_NEW",
-                "entity_indices_json": [],  # No entities
-            },
-            {
-                "claim_hash": "hash2",
-                "document_id": doc_id,
-                "section_id": "section-2",
-                "statement": "Claim 2 without entity",
-                "claim_type": "definition",
-                "confidence": 0.7,
-                "decision": "CREATE_NEW",
-                "entity_indices_json": [],  # No entities
-            },
+        # Insert claim groups without entity linkage (empty entity_indices_json)
+        claim_groups = [
+            ClaimGroupRow(
+                claim_hash="hash1",
+                workflow_id=workflow_id,
+                document_id=doc_id,
+                section_id=f"{doc_id}_s1",
+                statement="Claim 1 without entity",
+                claim_type="definition",
+                confidence=0.8,
+                decision="CREATE_NEW",
+                entity_indices_json=[],  # No entities
+            ),
+            ClaimGroupRow(
+                claim_hash="hash2",
+                workflow_id=workflow_id,
+                document_id=doc_id,
+                section_id=f"{doc_id}_s2",
+                statement="Claim 2 without entity",
+                claim_type="definition",
+                confidence=0.7,
+                decision="CREATE_NEW",
+                entity_indices_json=[],  # No entities
+            ),
         ]
+        for row in claim_groups:
+            session.add(row)
 
-        # Mock entity_resolution with no entities
-        mock_entity_resolution = MagicMock()
-        mock_entity_resolution.df = MagicMock()
-        mock_entity_resolution.df.empty = True
-        mock_entity_resolution.df.iterrows.return_value = iter([])
-
-        # Mock section_extractions
-        mock_section_extractions = MagicMock()
-        mock_section_extractions.df = MagicMock()
-        mock_section_extractions.df.empty = True
-        mock_section_extractions.df.iterrows.return_value = iter([])
+        # Insert section extractions (empty entities)
+        section_extractions = [
+            SectionExtractionRow(
+                document_id=doc_id,
+                section_id=f"{doc_id}_s1",
+                workflow_id=workflow_id,
+                entities_json=[],
+            ),
+            SectionExtractionRow(
+                document_id=doc_id,
+                section_id=f"{doc_id}_s2",
+                workflow_id=workflow_id,
+                entities_json=[],
+            ),
+        ]
+        for row in section_extractions:
+            session.add(row)
+        session.commit()
 
         ctx = PipelineContext(
-            filters=DocumentFilters(),
+            filters=DocumentFilters(ids=doc_id),
             workflow_id=workflow_id,
             incremental_mode="full",
         )
 
+        # Create bound references for real database queries
+        def create_bound_reference(model_class, session, ctx):
+            ref = Reference(model_name=model_class.__tablename__)
+            ref._bind(session, ctx, model_class)
+            return ref
+
+        claim_groups_ref = create_bound_reference(ClaimGroupRow, session, ctx)
+        entity_resolution_ref = create_bound_reference(EntityResolutionRow, session, ctx)
+        section_extractions_ref = create_bound_reference(SectionExtractionRow, session, ctx)
+
         writer = TableWriter(workflow_id=workflow_id)
 
-        # Mock embedding generation to avoid API calls
-        with patch("kurt.utils.embeddings.generate_embeddings") as mock_embed:
-            mock_embed.return_value = [[0.1] * 384]
-
-            result = claim_resolution(
-                ctx=ctx,
-                claim_groups=mock_claim_groups,
-                entity_resolution=mock_entity_resolution,
-                section_extractions=mock_section_extractions,
-                writer=writer,
-            )
+        result = claim_resolution(
+            ctx=ctx,
+            claim_groups=claim_groups_ref,
+            entity_resolution=entity_resolution_ref,
+            section_extractions=section_extractions_ref,
+            writer=writer,
+        )
 
         # created should be 0 since no claims had entity linkage
         assert result["created"] == 0
@@ -1324,7 +567,7 @@ class TestClaimCreationEdgeCases:
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT resolution_action FROM indexing_claim_resolution WHERE workflow_id = ?",
+            "SELECT resolution_action FROM staging_claim_resolution WHERE workflow_id = ?",
             (workflow_id,),
         )
         actions = [row[0] for row in cursor.fetchall()]
@@ -1338,7 +581,7 @@ class TestFrameworkUtilities:
 
     These tests verify:
     1. TableReader filtering behavior for non-document tables
-    2. Reference binding and caching behavior
+    2. Reference binding behavior
     3. DSPy helpers parameter handling
     """
 
@@ -1383,52 +626,49 @@ class TestFrameworkUtilities:
         assert set(df["metric_name"].tolist()) == {"cpu_usage", "memory_usage"}
 
     def test_reference_raises_when_accessed_outside_model_execution(self):
-        """Test that Reference.df raises RuntimeError when accessed without binding.
+        """Test that Reference.query raises RuntimeError when accessed without binding.
 
-        This verifies that accessing .df or calling .load() on a Reference that
-        hasn't been bound to a reader/context raises an appropriate error.
+        This verifies that accessing .query on a Reference that
+        hasn't been bound to a session raises an appropriate error.
         """
         from kurt.core import Reference
 
         ref = Reference("some.model")
 
         with pytest.raises(RuntimeError) as exc_info:
-            _ = ref.df
+            _ = ref.query
 
-        assert "not bound to reader" in str(exc_info.value)
+        assert "not bound to session" in str(exc_info.value)
 
-    def test_reference_caches_results_after_first_load(self, tmp_project):
-        """Test that Reference caches results and doesn't re-query on subsequent access.
+    def test_reference_model_class_raises_when_not_bound(self):
+        """Test that Reference.model_class raises RuntimeError when not bound.
 
-        This verifies that once .df is accessed, the same DataFrame is returned
-        on subsequent accesses without hitting the database again.
+        This verifies that accessing .model_class on a Reference that
+        hasn't been bound raises an appropriate error.
         """
-        from unittest.mock import MagicMock
-
         from kurt.core import Reference
 
-        # Create a mock reader
-        mock_reader = MagicMock(spec=TableReader)
-        mock_df = MagicMock()
-        mock_reader.load.return_value = mock_df
+        ref = Reference("some.model")
 
-        mock_ctx = MagicMock(spec=PipelineContext)
-        mock_ctx.document_ids = []
-        mock_ctx.reprocess_unchanged = False
+        with pytest.raises(RuntimeError) as exc_info:
+            _ = ref.model_class
 
-        ref = Reference("test.model")
-        ref._bind(mock_reader, mock_ctx)
+        assert "has no model class" in str(exc_info.value)
 
-        # First access should call load
-        result1 = ref.df
-        assert mock_reader.load.call_count == 1
+    def test_reference_session_raises_when_not_bound(self):
+        """Test that Reference.session raises RuntimeError when not bound.
 
-        # Second access should use cache, not call load again
-        result2 = ref.df
-        assert mock_reader.load.call_count == 1  # Still 1, not 2
+        This verifies that accessing .session on a Reference that
+        hasn't been bound raises an appropriate error.
+        """
+        from kurt.core import Reference
 
-        # Both should return the same object
-        assert result1 is result2
+        ref = Reference("some.model")
+
+        with pytest.raises(RuntimeError) as exc_info:
+            _ = ref.session
+
+        assert "not bound to session" in str(exc_info.value)
 
 
 class TestDSPyHelpersParameters:
@@ -1535,7 +775,7 @@ class TestWorkflowIntegration:
         """
         from kurt.db.database import get_session
         from kurt.db.documents import add_document
-        from kurt.db.models import Document, IngestionStatus
+        from kurt.db.models import IngestionStatus
 
         session = get_session()
 

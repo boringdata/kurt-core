@@ -99,6 +99,8 @@ def execute_model_sync(
     Returns:
         Model execution result dict
     """
+    from kurt.db.database import get_session
+
     from .registry import ModelRegistry
 
     model_metadata = ModelRegistry.get(model_name)
@@ -115,11 +117,18 @@ def execute_model_sync(
         workflow_id=ctx.workflow_id,
     )
 
-    return model_func(
-        ctx=ctx,
-        reader=reader,
-        writer=writer,
-    )
+    # Get session for Reference binding
+    session = get_session()
+
+    try:
+        return model_func(
+            ctx=ctx,
+            reader=reader,
+            writer=writer,
+            session=session,
+        )
+    finally:
+        session.close()
 
 
 async def run_models(
@@ -175,17 +184,26 @@ async def run_models(
             if payloads is None:
                 payloads = []
 
-            # Models are synchronous, wrap them for DBOS
-            @DBOS.step()
-            def execute_model():
-                return model_func(
-                    ctx=ctx,
-                    reader=reader,
-                    writer=writer,
-                    payloads=payloads,
-                )
+            # Get session for Reference binding
+            from kurt.db.database import get_session
 
-            result = await execute_model()
+            session = get_session()
+
+            try:
+                # Models are synchronous, wrap them for DBOS
+                @DBOS.step()
+                def execute_model():
+                    return model_func(
+                        ctx=ctx,
+                        reader=reader,
+                        writer=writer,
+                        payloads=payloads,
+                        session=session,
+                    )
+
+                result = await execute_model()
+            finally:
+                session.close()
 
             logger.info(
                 f"Model {model_name} completed: {result.get('rows_written', 0)} rows written"
@@ -278,6 +296,7 @@ async def run_pipeline(
     # Helper to execute a single model as an async DBOS step
     async def execute_model_step(model_name: str) -> Tuple[str, Dict[str, Any], Optional[str]]:
         """Execute a single model and return (model_name, result, error)."""
+
         model_metadata = ModelRegistry.get(model_name)
         if not model_metadata:
             error_msg = f"Model '{model_name}' not found in registry"
@@ -312,12 +331,24 @@ async def run_pipeline(
             # reasoning about why they use start_workflow() instead of queues.
             @DBOS.step(name=model_name)
             async def execute_step():
-                return await asyncio.to_thread(
-                    model_func,
-                    ctx=ctx,
-                    reader=reader,
-                    writer=writer,
-                )
+                # Create session in the thread where it will be used (SQLAlchemy sessions
+                # are not thread-safe, so we create it in the execution thread)
+                from kurt.db.database import get_session
+
+                def run_model_with_session():
+                    """Run model function with session created in this thread."""
+                    session = get_session()
+                    try:
+                        return model_func(
+                            ctx=ctx,
+                            reader=reader,
+                            writer=writer,
+                            session=session,
+                        )
+                    finally:
+                        session.close()
+
+                return await asyncio.to_thread(run_model_with_session)
 
             result = await execute_step()
 

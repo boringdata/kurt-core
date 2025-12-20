@@ -29,6 +29,7 @@ from kurt.core import (
     model,
     table,
 )
+from kurt.db.documents import load_content_by_path
 
 logger = logging.getLogger(__name__)
 
@@ -136,15 +137,43 @@ def document_sections(
 
     Args:
         ctx: Pipeline context with filters, workflow_id, and incremental_mode
-        documents: Lazy reference to documents table (loads content from files)
+        documents: Lazy reference to documents table
         writer: TableWriter for outputting section rows
         config: Configuration for section splitting parameters
     """
-    # Filter documents by ctx.document_ids (explicit filtering)
+    from uuid import UUID
+
+    # Query documents via Reference and load into DataFrame
     query = documents.query
     if ctx.document_ids:
-        query = query.filter(documents.model_class.id.in_(ctx.document_ids))
+        # Convert string IDs to UUIDs for filtering
+        uuid_ids = [
+            UUID(id_str) if isinstance(id_str, str) else id_str for id_str in ctx.document_ids
+        ]
+        query = query.filter(documents.model_class.id.in_(uuid_ids))
+
     documents_df = pd.read_sql(query.statement, documents.session.bind)
+
+    if documents_df.empty:
+        logger.warning("No documents to process")
+        return {"rows_written": 0, "documents_processed": 0, "documents_skipped": 0}
+
+    # Rename 'id' to 'document_id' for consistency
+    documents_df["document_id"] = documents_df["id"].astype(str)
+
+    # Load content from files - load_content_by_path handles missing paths and errors
+    documents_df["content"] = documents_df["content_path"].apply(
+        lambda p: load_content_by_path(p) if p else ""
+    )
+
+    # Compute content hash
+    documents_df["content_hash"] = documents_df["content"].apply(
+        lambda c: hashlib.sha256(c.encode()).hexdigest() if c else ""
+    )
+
+    # Mark documents with no content as skip
+    documents_df["skip"] = documents_df["content"].apply(lambda c: not bool(c))
+    documents_df["error"] = documents_df["content"].apply(lambda c: None if c else "No content")
 
     if documents_df.empty:
         logger.warning("No documents to process")
