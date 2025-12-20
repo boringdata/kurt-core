@@ -15,6 +15,7 @@ from rich.console import Console
 from rich.table import Table
 
 from kurt.admin.telemetry.decorators import track_command
+from kurt.commands.content._shared_options import add_filter_options
 from kurt.utils.filtering import DocumentFilters
 
 console = Console()
@@ -23,36 +24,7 @@ logger = logging.getLogger(__name__)
 
 @click.command()
 @click.argument("target")
-@click.option(
-    "--ids",
-    help="Comma-separated document IDs (supports partial UUIDs, URLs, file paths)",
-)
-@click.option(
-    "--include-pattern",
-    help="Glob pattern to include (e.g., '*/docs/*')",
-)
-@click.option(
-    "--exclude-pattern",
-    help="Glob pattern to exclude (e.g., '*/internal/*')",
-)
-@click.option(
-    "--with-status",
-    type=click.Choice(["NOT_FETCHED", "FETCHED", "ERROR"], case_sensitive=False),
-    help="Filter by ingestion status",
-)
-@click.option(
-    "--in-cluster",
-    help="Filter by cluster name",
-)
-@click.option(
-    "--with-content-type",
-    help="Filter by content type (tutorial, guide, blog, etc.)",
-)
-@click.option(
-    "--limit",
-    type=int,
-    help="Maximum number of documents to process",
-)
+@add_filter_options(exclude=True)
 @click.option(
     "--mode",
     type=click.Choice(["full", "delta"], case_sensitive=False),
@@ -80,13 +52,13 @@ logger = logging.getLogger(__name__)
 @track_command
 def run(
     target: str,
-    ids: Optional[str],
     include_pattern: Optional[str],
-    exclude_pattern: Optional[str],
-    with_status: Optional[str],
+    ids: Optional[str],
     in_cluster: Optional[str],
+    with_status: Optional[str],
     with_content_type: Optional[str],
     limit: Optional[int],
+    exclude_pattern: Optional[str],
     mode: str,
     reprocess: bool,
     source_url: Optional[str],
