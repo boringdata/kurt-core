@@ -9,9 +9,9 @@ import numpy as np
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from kurt.content.embeddings import embedding_to_bytes, generate_embeddings
 from kurt.db.database import async_session_scope
 from kurt.db.models import Entity, EntityType
+from kurt.utils.embeddings import embedding_to_bytes, generate_embeddings
 
 if TYPE_CHECKING:
     pass

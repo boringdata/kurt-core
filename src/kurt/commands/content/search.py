@@ -64,8 +64,8 @@ def search_cmd(
     from fnmatch import fnmatch
 
     from kurt.content.document import list_documents
-    from kurt.content.embeddings import embedding_to_bytes, generate_embeddings
     from kurt.db.sqlite import SQLiteClient
+    from kurt.utils.embeddings import embedding_to_bytes, generate_embeddings
 
     # Generate query embedding
     try:

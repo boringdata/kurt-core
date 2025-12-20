@@ -186,8 +186,8 @@ def _fetch_document(doc: pd.Series, config: FetchConfig) -> dict:
     embedding_dims, links_extracted, public_url, metadata, error
     """
     from kurt.content.document import save_document_content_and_metadata, save_document_links
-    from kurt.content.embeddings import generate_document_embedding
     from kurt.integrations.cms import fetch_from_cms
+    from kurt.utils.embeddings import generate_document_embedding
     from kurt.utils.fetching import extract_document_links, fetch_from_web
 
     doc_id = doc.get("id")

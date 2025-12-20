@@ -16,9 +16,9 @@ import numpy as np
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
-from kurt.content.embeddings import generate_embeddings as get_embeddings
 from kurt.db.claim_models import Claim, ClaimEntity, ClaimRelationship, ClaimType
 from kurt.db.models import Document
+from kurt.utils.embeddings import generate_embeddings as get_embeddings
 
 logger = logging.getLogger(__name__)
 

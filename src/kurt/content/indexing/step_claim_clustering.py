@@ -325,7 +325,7 @@ def _cluster_claims_by_similarity(
     import numpy as np
     from sklearn.cluster import DBSCAN
 
-    from kurt.content.embeddings import generate_embeddings
+    from kurt.utils.embeddings import generate_embeddings
 
     if not claims:
         return {}

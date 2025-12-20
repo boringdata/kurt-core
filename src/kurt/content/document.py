@@ -640,7 +640,7 @@ def save_document_content_and_metadata(
     from datetime import datetime
 
     from kurt.config import load_config
-    from kurt.content.paths import create_cms_content_path, create_content_path
+    from kurt.utils.paths import create_cms_content_path, create_content_path
 
     session = get_session()
     doc = session.get(Document, doc_id)

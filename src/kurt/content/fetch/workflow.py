@@ -22,7 +22,6 @@ from kurt.content.document import (
     resolve_or_create_document,
     save_document_content_and_metadata,
 )
-from kurt.content.embeddings import generate_document_embedding
 from kurt.content.fetch import (
     DocumentFetchFilters,
     _get_fetch_engine,
@@ -32,6 +31,7 @@ from kurt.content.fetch import (
     fetch_from_web,
 )
 from kurt.content.fetch.engines_firecrawl import fetch_with_firecrawl
+from kurt.utils.embeddings import generate_document_embedding
 
 logger = logging.getLogger(__name__)
 

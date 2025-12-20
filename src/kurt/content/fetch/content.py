@@ -14,7 +14,7 @@ from typing import Any, Optional
 
 from kurt.content.fetch.engines_firecrawl import fetch_with_firecrawl
 from kurt.content.fetch.engines_trafilatura import fetch_with_httpx, fetch_with_trafilatura
-from kurt.content.paths import parse_source_identifier
+from kurt.utils.paths import parse_source_identifier
 
 logger = logging.getLogger(__name__)
 

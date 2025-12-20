@@ -7,12 +7,12 @@ NO DATABASE OPERATIONS - pure Network I/O.
 
 import logging
 
-from kurt.content.paths import parse_source_identifier
 from kurt.integrations.fetch_engines import (
     fetch_with_firecrawl,
     fetch_with_httpx,
     fetch_with_trafilatura,
 )
+from kurt.utils.paths import parse_source_identifier
 
 logger = logging.getLogger(__name__)
 
