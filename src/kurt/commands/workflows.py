@@ -365,19 +365,16 @@ def process_workflows(process_all, workflow_id, keep_alive):
             console.print("[dim]Or --workflow-id <id> to process a specific workflow[/dim]")
             return
 
-        # Import workflow modules to register them with DBOS
-        console.print("\n[cyan]Registering workflow modules...[/cyan]")
+        # Import model modules to register them with the pipeline
+        console.print("\n[cyan]Registering model modules...[/cyan]")
         try:
-            # Import all workflow modules to register decorated functions
-            from kurt.workflows import map as _map_workflows  # noqa
-            from kurt.workflows import fetch as _fetch_workflows  # noqa
-            from kurt.workflows import index as _index_workflows  # noqa
+            # Import model modules to register them
+            import kurt.models.landing  # noqa: F401
+            import kurt.models.staging  # noqa: F401
 
-            console.print("[dim]✓ Workflow modules registered[/dim]\n")
+            console.print("[dim]✓ Model modules registered[/dim]\n")
         except ImportError as e:
-            console.print(
-                f"[yellow]Warning: Could not import some workflow modules: {e}[/yellow]\n"
-            )
+            console.print(f"[yellow]Warning: Could not import some model modules: {e}[/yellow]\n")
 
         # Resume enqueued workflows in background using ThreadPoolExecutor
         console.print(
