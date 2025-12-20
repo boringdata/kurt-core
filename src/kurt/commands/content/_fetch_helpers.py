@@ -244,29 +244,6 @@ def build_intro_messages(
     return messages
 
 
-def build_background_filter_desc(
-    include_pattern: Optional[str],
-    urls: Optional[str],
-    in_cluster: Optional[str],
-    with_status: Optional[str],
-    with_content_type: Optional[str],
-) -> Optional[str]:
-    """Build filter description for background workflow display."""
-    filter_desc = []
-    if include_pattern:
-        filter_desc.append(f"include: {include_pattern}")
-    if urls:
-        filter_desc.append(f"urls: {urls[:50]}...")
-    if in_cluster:
-        filter_desc.append(f"cluster: {in_cluster}")
-    if with_status:
-        filter_desc.append(f"status: {with_status}")
-    if with_content_type:
-        filter_desc.append(f"type: {with_content_type}")
-
-    return " | ".join(filter_desc) if filter_desc else None
-
-
 def display_json_output(docs: list, console: Console) -> bool:
     """
     Display JSON output and prompt for confirmation.
@@ -284,35 +261,3 @@ def display_json_output(docs: list, console: Console) -> bool:
     if not click.confirm("\nProceed with fetch?"):
         return False
     return True
-
-
-def display_fetch_errors(failed: list, console: Console) -> None:
-    """Display error details for failed documents."""
-    if not failed:
-        return
-
-    console.print("\n[bold red]Failed documents:[/bold red]")
-    for result in failed:
-        doc_id = result.get("document_id", "unknown")[:8]
-        url = result.get("source_url", result.get("identifier", "unknown"))
-        error = result.get("error", "Unknown error")
-        console.print(f"  [red]✗[/red] [{doc_id}] {url}")
-        console.print(f"    [dim red]Error: {error}[/dim red]")
-
-
-def display_indexing_errors(extract_results: dict, console: Console) -> None:
-    """Display error details for failed indexing."""
-    index_failed = extract_results.get("failed", 0)
-    if index_failed == 0:
-        return
-
-    index_errors = extract_results.get("errors", [])
-    if not index_errors:
-        return
-
-    console.print("\n[bold red]Indexing errors:[/bold red]")
-    for error_result in index_errors:
-        doc_id = error_result.get("document_id", "unknown")[:8]
-        error = error_result.get("error", "Unknown error")
-        console.print(f"  [red]✗[/red] [{doc_id}]")
-        console.print(f"    [dim red]Error: {error}[/dim red]")

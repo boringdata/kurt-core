@@ -186,15 +186,14 @@ def index(
 
         # Display the knowledge graph for single document
         if len(documents) == 1 and indexed_count > 0:
+            from kurt.core.display import display_knowledge_graph
             from kurt.db.graph_queries import get_document_knowledge_graph
 
             try:
                 doc_id = str(documents[0].id)
                 kg = get_document_knowledge_graph(doc_id)
                 if kg:
-                    console.print("\n[bold]Knowledge Graph[/bold]")
-                    for entity in kg.get("entities", [])[:5]:
-                        console.print(f"  • {entity.get('name', 'Unknown')}")
+                    display_knowledge_graph(kg, console)
             except Exception as e:
                 logger.debug(f"Could not retrieve KG for display: {e}")
 
