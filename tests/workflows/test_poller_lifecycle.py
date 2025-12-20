@@ -15,7 +15,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -309,24 +309,18 @@ class TestKurtCommandDBOSIntegration:
         # For now, we'll test the initialization path
 
         # Mock the actual discovery functions to avoid network calls
-        with patch("kurt.content.map.sitemap.discover_sitemap_urls") as mock_sitemap:
+        with patch("kurt.utils.discovery.discover_sitemap_urls") as mock_sitemap:
             mock_sitemap.return_value = []
 
-            with patch("kurt.content.map.workflow.get_map_queue") as mock_queue:
-                mock_handle = MagicMock()
-                mock_handle.workflow_id = "test-123"
-                mock_handle.get_status.return_value.status = "SUCCESS"
-                mock_queue.return_value.enqueue.return_value = mock_handle
+            # This simulates what happens in the CLI
+            from kurt.workflows import init_dbos
 
-                # This simulates what happens in the CLI
-                from kurt.workflows import init_dbos
+            init_dbos()
 
-                init_dbos()
+            # Should have initialized DBOS
+            from kurt.workflows import _dbos_initialized
 
-                # Should have initialized DBOS
-                from kurt.workflows import _dbos_initialized
-
-                assert _dbos_initialized, "DBOS should be initialized by Kurt commands"
+            assert _dbos_initialized, "DBOS should be initialized by Kurt commands"
 
 
 if __name__ == "__main__":

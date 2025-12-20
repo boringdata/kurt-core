@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from kurt.content.fetch.engines_firecrawl import _extract_metadata, fetch_with_firecrawl
+from kurt.integrations.fetch_engines.firecrawl import _extract_metadata, fetch_with_firecrawl
 
 
 class TestExtractMetadata:

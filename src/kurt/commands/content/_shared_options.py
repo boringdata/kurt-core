@@ -6,7 +6,10 @@ All filter options use the same help text and parameter names.
 
 import click
 
-# Common filter options
+# =============================================================================
+# Filter Options
+# =============================================================================
+
 include_option = click.option(
     "--include",
     "include_pattern",
@@ -46,8 +49,74 @@ exclude_option = click.option(
     help="Exclude documents matching glob pattern",
 )
 
+# =============================================================================
+# Output Format Options
+# =============================================================================
 
-# Compose filter groups
+format_option = click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["json", "text"], case_sensitive=False),
+    default="text",
+    help="Output format (json for AI agents, text for humans)",
+)
+
+format_table_option = click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["json", "table"], case_sensitive=False),
+    default="table",
+    help="Output format (json for AI agents, table for humans)",
+)
+
+# =============================================================================
+# Safety/Confirmation Options
+# =============================================================================
+
+dry_run_option = click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Preview what would happen without making changes",
+)
+
+yes_option = click.option(
+    "--yes",
+    "-y",
+    "yes_flag",
+    is_flag=True,
+    help="Skip confirmation prompts (for automation/CI)",
+)
+
+force_option_deprecated = click.option(
+    "--force",
+    is_flag=True,
+    hidden=True,
+    help="[DEPRECATED: use --yes/-y] Skip confirmation prompts",
+)
+
+# =============================================================================
+# Background/Workflow Options
+# =============================================================================
+
+background_option = click.option(
+    "--background",
+    is_flag=True,
+    help="Run as background workflow (non-blocking)",
+)
+
+priority_option = click.option(
+    "--priority",
+    type=int,
+    default=10,
+    help="Priority for background execution (1=highest, default=10)",
+)
+
+
+# =============================================================================
+# Composed Decorators
+# =============================================================================
+
+
 def add_filter_options(
     include: bool = True,
     ids: bool = True,
@@ -95,6 +164,63 @@ def add_filter_options(
             f = ids_option(f)
         if include:
             f = include_option(f)
+        return f
+
+    return decorator
+
+
+def add_output_options(table_format: bool = False):
+    """
+    Decorator to add output format option.
+
+    Args:
+        table_format: Use table/json instead of text/json (default: False)
+    """
+
+    def decorator(f):
+        if table_format:
+            f = format_table_option(f)
+        else:
+            f = format_option(f)
+        return f
+
+    return decorator
+
+
+def add_background_options():
+    """
+    Decorator to add --background and --priority options for pipeline commands.
+
+    Usage:
+        @click.command("fetch")
+        @add_background_options()
+        def fetch(background, priority):
+            ...
+    """
+
+    def decorator(f):
+        # Apply in reverse order (Click requirement)
+        f = priority_option(f)
+        f = background_option(f)
+        return f
+
+    return decorator
+
+
+def add_confirmation_options(with_deprecated_force: bool = False):
+    """
+    Decorator to add --yes/-y and --dry-run options.
+
+    Args:
+        with_deprecated_force: Also add hidden --force for backwards compat
+    """
+
+    def decorator(f):
+        # Apply in reverse order (Click requirement)
+        if with_deprecated_force:
+            f = force_option_deprecated(f)
+        f = yes_option(f)
+        f = dry_run_option(f)
         return f
 
     return decorator

@@ -53,18 +53,17 @@ class TestRunWithBackgroundSupport:
         """Should spawn detached worker process when background=True."""
         from kurt.workflows.cli_helpers import run_with_background_support
 
-        workflow_func = Mock(__name__="map_url_workflow")
-        workflow_args = {"url": "https://example.com"}
+        workflow_func = Mock(__name__="run_pipeline_workflow")
+        workflow_args = {"target": "landing.discovery"}
 
         with patch("kurt.workflows.cli_helpers.get_dbos"):
-            with patch("kurt.content.map.workflow.get_map_queue"):
-                with patch("subprocess.Popen") as mock_popen:
-                    with patch("kurt.workflows.cli_helpers.console"):
-                        run_with_background_support(
-                            workflow_func=workflow_func,
-                            workflow_args=workflow_args,
-                            background=True,
-                        )
+            with patch("subprocess.Popen") as mock_popen:
+                with patch("kurt.workflows.cli_helpers.console"):
+                    run_with_background_support(
+                        workflow_func=workflow_func,
+                        workflow_args=workflow_args,
+                        background=True,
+                    )
 
         # Verify subprocess.Popen was called
         assert mock_popen.called
@@ -80,19 +79,18 @@ class TestRunWithBackgroundSupport:
         """Should pass KURT_WORKFLOW_ID_FILE environment variable to worker."""
         from kurt.workflows.cli_helpers import run_with_background_support
 
-        workflow_func = Mock(__name__="map_url_workflow")
-        workflow_args = {"url": "https://example.com"}
+        workflow_func = Mock(__name__="run_pipeline_workflow")
+        workflow_args = {"target": "landing.discovery"}
 
         with patch("kurt.workflows.cli_helpers.get_dbos"):
-            with patch("kurt.content.map.workflow.get_map_queue"):
-                with patch("subprocess.Popen") as mock_popen:
-                    with patch("kurt.workflows.cli_helpers.console"):
-                        with patch("pathlib.Path.exists", return_value=False):
-                            run_with_background_support(
-                                workflow_func=workflow_func,
-                                workflow_args=workflow_args,
-                                background=True,
-                            )
+            with patch("subprocess.Popen") as mock_popen:
+                with patch("kurt.workflows.cli_helpers.console"):
+                    with patch("pathlib.Path.exists", return_value=False):
+                        run_with_background_support(
+                            workflow_func=workflow_func,
+                            workflow_args=workflow_args,
+                            background=True,
+                        )
 
         # Verify environment variable was set
         call_args = mock_popen.call_args
@@ -301,19 +299,18 @@ class TestPriorityHandling:
 
         from kurt.workflows.cli_helpers import run_with_background_support
 
-        workflow_func = Mock(__name__="map_url_workflow")
-        workflow_args = {"url": "https://example.com"}
+        workflow_func = Mock(__name__="run_pipeline_workflow")
+        workflow_args = {"target": "landing.discovery"}
 
         with patch("kurt.workflows.cli_helpers.get_dbos"):
-            with patch("kurt.content.map.workflow.get_map_queue"):
-                with patch("subprocess.Popen") as mock_popen:
-                    with patch("kurt.workflows.cli_helpers.console"):
-                        run_with_background_support(
-                            workflow_func=workflow_func,
-                            workflow_args=workflow_args,
-                            background=True,
-                            # No priority specified
-                        )
+            with patch("subprocess.Popen") as mock_popen:
+                with patch("kurt.workflows.cli_helpers.console"):
+                    run_with_background_support(
+                        workflow_func=workflow_func,
+                        workflow_args=workflow_args,
+                        background=True,
+                        # No priority specified
+                    )
 
         # Verify default priority of 10 was used
         call_args = mock_popen.call_args[0][0]
@@ -324,20 +321,19 @@ class TestPriorityHandling:
 
         from kurt.workflows.cli_helpers import run_with_background_support
 
-        workflow_func = Mock(__name__="map_url_workflow")
-        workflow_args = {"url": "https://example.com"}
+        workflow_func = Mock(__name__="run_pipeline_workflow")
+        workflow_args = {"target": "landing.discovery"}
         priority = 1  # High priority
 
         with patch("kurt.workflows.cli_helpers.get_dbos"):
-            with patch("kurt.content.map.workflow.get_map_queue"):
-                with patch("subprocess.Popen") as mock_popen:
-                    with patch("kurt.workflows.cli_helpers.console"):
-                        run_with_background_support(
-                            workflow_func=workflow_func,
-                            workflow_args=workflow_args,
-                            background=True,
-                            priority=priority,
-                        )
+            with patch("subprocess.Popen") as mock_popen:
+                with patch("kurt.workflows.cli_helpers.console"):
+                    run_with_background_support(
+                        workflow_func=workflow_func,
+                        workflow_args=workflow_args,
+                        background=True,
+                        priority=priority,
+                    )
 
         # Verify custom priority was used
         call_args = mock_popen.call_args[0][0]

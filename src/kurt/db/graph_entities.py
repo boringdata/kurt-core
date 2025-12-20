@@ -9,8 +9,8 @@ import numpy as np
 from sklearn.cluster import DBSCAN
 from sqlmodel import select
 
-from kurt.content.embeddings import embedding_to_bytes, generate_embeddings
 from kurt.db.models import DocumentEntity, Entity, EntityType
+from kurt.utils.embeddings import embedding_to_bytes, generate_embeddings
 
 if TYPE_CHECKING:
     pass

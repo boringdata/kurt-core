@@ -342,7 +342,7 @@ def apply_dspy_on_df(
     # Create progress callback if needed
     on_progress = None
     if progress:
-        on_progress = make_progress_callback(description="Processing with DSPy")
+        on_progress = make_progress_callback(prefix="Processing with DSPy")
 
     # Run batch in parallel
     results = run_batch_sync(
@@ -404,9 +404,10 @@ def create_timestamp_triggers(engine) -> None:
 def _get_model_class_for_reference(model_name: str) -> Optional[Type[SQLModel]]:
     """Get SQLModel class for a reference by model name.
 
-    Looks up in both:
+    Looks up in:
     - _table_registry (for @table decorated models)
     - ModelRegistry (for registered pipeline models)
+    - Core DB models (for base tables like 'documents')
     """
     # Convert model name to table name (e.g., "indexing.sections" -> "indexing_sections")
     table_name = model_name.replace(".", "_")
@@ -421,6 +422,12 @@ def _get_model_class_for_reference(model_name: str) -> Optional[Type[SQLModel]]:
     metadata = ModelRegistry.get(model_name)
     if metadata and "db_model" in metadata:
         return metadata["db_model"]
+
+    # Check core DB models for base tables
+    if model_name == "documents":
+        from kurt.db.models import Document
+
+        return Document
 
     logger.warning(f"No model class found for reference '{model_name}'")
     return None
@@ -546,20 +553,33 @@ def model(
 
                 # Load and inject config if schema is provided and not already passed
                 if config_schema is not None and "config" in params and "config" not in kwargs:
-                    try:
-                        config_instance = config_schema.load(name)
-                        kwargs["config"] = config_instance
-                        logger.debug(f"Loaded config for {name}: {config_instance}")
-                    except Exception as e:
-                        logger.warning(f"Failed to load config for {name}: {e}")
-                        # Continue without config - use defaults from _param_metadata
-                        # Only include params that have non-None defaults (skip fallback-only params)
-                        defaults = {
-                            param_name: param.default
-                            for param_name, param in config_schema._param_metadata.items()
-                            if param.default is not None
-                        }
-                        kwargs["config"] = config_schema(**defaults)
+                    # Check if config override is provided in context metadata
+                    ctx = kwargs.get("ctx")
+                    config_instance = None
+
+                    if ctx and hasattr(ctx, "metadata") and ctx.metadata:
+                        model_configs = ctx.metadata.get("model_configs", {})
+                        if name in model_configs:
+                            config_instance = model_configs[name]
+                            logger.debug(f"Using config override from context for {name}")
+
+                    # If no override, load from config file
+                    if config_instance is None:
+                        try:
+                            config_instance = config_schema.load(name)
+                            logger.debug(f"Loaded config for {name}: {config_instance}")
+                        except Exception as e:
+                            logger.warning(f"Failed to load config for {name}: {e}")
+                            # Continue without config - use defaults from _param_metadata
+                            # Only include params that have non-None defaults (skip fallback-only params)
+                            defaults = {
+                                param_name: param.default
+                                for param_name, param in config_schema._param_metadata.items()
+                                if param.default is not None
+                            }
+                            config_instance = config_schema(**defaults)
+
+                    kwargs["config"] = config_instance
 
                 # Filter kwargs to only include parameters the function accepts
                 filtered_kwargs = {k: v for k, v in kwargs.items() if k in params}

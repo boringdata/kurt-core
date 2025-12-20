@@ -882,7 +882,7 @@ def import_cmd(platform: str, source_dir: str):
     """
     from pathlib import Path
 
-    from kurt.content.fetch import add_document
+    from kurt.db.documents import add_document
 
     try:
         import yaml

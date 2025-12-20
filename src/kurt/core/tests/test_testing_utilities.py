@@ -202,7 +202,7 @@ class TestMockEmbeddings:
         }
 
         with mock_embeddings(embeddings):
-            from kurt.content.embeddings import generate_embeddings
+            from kurt.utils.embeddings import generate_embeddings
 
             # generate_embeddings takes a list and returns a list
             result = generate_embeddings(["test text"])
@@ -215,7 +215,7 @@ class TestMockEmbeddings:
     def test_mock_embeddings_default(self):
         """Test mock embeddings returns deterministic hash-based vectors for unknown text."""
         with mock_embeddings():
-            from kurt.content.embeddings import generate_embeddings
+            from kurt.utils.embeddings import generate_embeddings
 
             result = generate_embeddings(["unknown text"])
             assert len(result) == 1

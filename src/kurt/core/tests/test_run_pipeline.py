@@ -14,13 +14,13 @@ from unittest.mock import patch
 
 import pytest
 
-from kurt.content.filtering import DocumentFilters
 from kurt.core import (
     PipelineConfig,
     PipelineContext,
 )
 from kurt.core.model_runner import run_pipeline
 from kurt.core.registry import ModelRegistry
+from kurt.utils.filtering import DocumentFilters
 
 logger = logging.getLogger(__name__)
 

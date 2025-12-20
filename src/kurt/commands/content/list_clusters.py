@@ -29,7 +29,7 @@ def list_clusters_cmd(output_format: str):
         kurt content list-clusters
         kurt content list-clusters --format json
     """
-    from kurt.content.document import list_clusters
+    from kurt.db.documents import list_clusters
 
     try:
         clusters = list_clusters()
@@ -47,11 +47,9 @@ def list_clusters_cmd(output_format: str):
 
             output = [
                 {
-                    "id": str(cluster["id"]),
                     "name": cluster["name"],
                     "description": cluster["description"],
                     "doc_count": cluster["doc_count"],
-                    "created_at": cluster["created_at"].isoformat(),
                 }
                 for cluster in clusters
             ]
@@ -62,7 +60,6 @@ def list_clusters_cmd(output_format: str):
             table.add_column("Name", style="cyan bold", no_wrap=False)
             table.add_column("Description", style="white", no_wrap=False)
             table.add_column("Docs", style="green", justify="right")
-            table.add_column("Created", style="dim")
 
             for cluster in clusters:
                 # Truncate description if too long
@@ -72,14 +69,10 @@ def list_clusters_cmd(output_format: str):
                     else (cluster["description"] or "N/A")
                 )
 
-                # Format created_at
-                created = cluster["created_at"].strftime("%Y-%m-%d")
-
                 table.add_row(
                     cluster["name"],
                     description,
                     str(cluster["doc_count"]),
-                    created,
                 )
 
             console.print(table)

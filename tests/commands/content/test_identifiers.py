@@ -655,7 +655,7 @@ class TestEdgeCases:
         session.commit()
 
         # Test resolve_ids_to_uuids with mixed identifiers
-        from kurt.content.filtering import resolve_ids_to_uuids
+        from kurt.utils.filtering import resolve_ids_to_uuids
 
         partial_uuid = str(doc3_id)[:8]
         mixed_ids = f"https://example.com/doc1,example.com/doc2.md,{partial_uuid}"

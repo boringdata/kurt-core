@@ -1,185 +1,220 @@
 """
-Tests for Reference column-based filtering (Issue 2).
+Tests for Reference behavior and query building.
 
-This test suite ensures that Reference(..., filter={"workflow_id": ...}) and other
-column-based filters correctly add WHERE clauses to SQL queries and provide proper
-isolation between workflow runs.
-
-Key scenarios tested:
-1. Dict filter with callable generates correct WHERE clause
-2. Dict filter with static value generates correct WHERE clause
-3. Multiple columns in dict filter are ANDed together
-4. Workflow isolation: two workflows accessing same table see only their own data
-5. SQL parameter naming doesn't collide
-6. Edge cases: None values, empty strings, special characters
+This test suite ensures that:
+1. Reference correctly binds to session, context, and model class
+2. Reference.query returns proper SQLAlchemy Query object
+3. Reference properties raise appropriate errors when not bound
+4. TableReader SQL generation for where clauses works correctly
 """
 
 from unittest.mock import MagicMock, patch
-from uuid import uuid4
 
 import pandas as pd
 import pytest
+from sqlmodel import Field, SQLModel
 
-from kurt.content.filtering import DocumentFilters
 from kurt.core import PipelineContext, Reference, TableReader
+from kurt.utils.filtering import DocumentFilters
 
 
-class TestDictFilterSQLGeneration:
-    """Test that dict filters generate correct SQL WHERE clauses."""
+# Test model class for Reference tests
+class TestModelRow(SQLModel, table=True):
+    """Test SQLModel for Reference binding tests."""
 
-    def test_single_column_callable_filter(self):
-        """Dict filter with single callable column should generate WHERE col = :value."""
-        workflow_id = "workflow-abc-123"
+    __tablename__ = "test_model_rows"
+
+    id: str = Field(primary_key=True)
+    workflow_id: str
+    status: str = "active"
+
+
+class TestReferenceBinding:
+    """Test Reference binding behavior."""
+
+    def test_reference_only_takes_model_name(self):
+        """Test that Reference only accepts model_name parameter."""
+        ref = Reference("indexing.entity_groups")
+        assert ref.model_name == "indexing.entity_groups"
+
+    def test_reference_table_name_from_model_name(self):
+        """Test table_name property converts dots to underscores."""
+        ref = Reference("indexing.entity_groups")
+        assert ref.table_name == "indexing_entity_groups"
+
+    def test_reference_table_name_passthrough(self):
+        """Test table_name passthrough for direct table names."""
+        ref = Reference("documents")
+        assert ref.table_name == "documents"
+
+    def test_upstream_model_for_dotted_names(self):
+        """Test upstream_model returns model name for dotted names."""
+        ref = Reference("indexing.entity_groups")
+        assert ref.upstream_model == "indexing.entity_groups"
+
+    def test_upstream_model_none_for_table_names(self):
+        """Test upstream_model returns None for table names."""
+        ref = Reference("documents")
+        assert ref.upstream_model is None
+
+    def test_query_raises_when_not_bound(self):
+        """Test that accessing query before binding raises RuntimeError."""
+        ref = Reference("indexing.entity_groups")
+
+        with pytest.raises(RuntimeError) as exc_info:
+            _ = ref.query
+
+        assert "not bound to session" in str(exc_info.value)
+
+    def test_model_class_raises_when_not_bound(self):
+        """Test that accessing model_class before binding raises RuntimeError."""
+        ref = Reference("indexing.entity_groups")
+
+        with pytest.raises(RuntimeError) as exc_info:
+            _ = ref.model_class
+
+        assert "has no model class" in str(exc_info.value)
+
+    def test_session_raises_when_not_bound(self):
+        """Test that accessing session before binding raises RuntimeError."""
+        ref = Reference("indexing.entity_groups")
+
+        with pytest.raises(RuntimeError) as exc_info:
+            _ = ref.session
+
+        assert "not bound to session" in str(exc_info.value)
+
+    def test_bind_sets_all_properties(self):
+        """Test that _bind sets session, ctx, and model_class."""
+        ref = Reference("test.model")
+
+        mock_session = MagicMock()
+        mock_ctx = MagicMock(spec=PipelineContext)
+        mock_model_class = MagicMock()
+
+        ref._bind(mock_session, mock_ctx, mock_model_class)
+
+        assert ref._session is mock_session
+        assert ref._ctx is mock_ctx
+        assert ref._model_class is mock_model_class
+
+    def test_ctx_property_returns_bound_context(self):
+        """Test that ctx property returns the bound context."""
+        ref = Reference("test.model")
+
+        mock_session = MagicMock()
+        mock_ctx = PipelineContext(
+            filters=DocumentFilters(),
+            workflow_id="test-workflow",
+        )
+        mock_model_class = MagicMock()
+
+        ref._bind(mock_session, mock_ctx, mock_model_class)
+
+        assert ref.ctx is mock_ctx
+        assert ref.ctx.workflow_id == "test-workflow"
+
+
+class TestReferenceQueryExecution:
+    """Test Reference query execution patterns."""
+
+    def test_query_returns_session_query(self):
+        """Test that query property returns session.query(model_class)."""
+        ref = Reference("test.model")
+
+        mock_session = MagicMock()
+        mock_query = MagicMock()
+        mock_session.query.return_value = mock_query
+        mock_ctx = MagicMock(spec=PipelineContext)
+        mock_model_class = MagicMock()
+
+        ref._bind(mock_session, mock_ctx, mock_model_class)
+
+        result = ref.query
+
+        mock_session.query.assert_called_once_with(mock_model_class)
+        assert result is mock_query
+
+    def test_model_class_property(self):
+        """Test that model_class property returns bound model class."""
+        ref = Reference("test.model")
+
+        mock_session = MagicMock()
+        mock_ctx = MagicMock(spec=PipelineContext)
+        mock_model_class = TestModelRow
+
+        ref._bind(mock_session, mock_ctx, mock_model_class)
+
+        assert ref.model_class is TestModelRow
+
+    def test_session_property(self):
+        """Test that session property returns bound session."""
+        ref = Reference("test.model")
+
+        mock_session = MagicMock()
+        mock_ctx = MagicMock(spec=PipelineContext)
+        mock_model_class = MagicMock()
+
+        ref._bind(mock_session, mock_ctx, mock_model_class)
+
+        assert ref.session is mock_session
+
+
+class TestWorkflowIsolationPattern:
+    """Test the workflow isolation pattern using explicit filtering.
+
+    The new Reference API requires explicit filtering in model code:
+        query = ref.query.filter(ref.model_class.workflow_id == ctx.workflow_id)
+        df = pd.read_sql(query.statement, ref.session.bind)
+
+    These tests verify this pattern works correctly.
+    """
+
+    def test_workflow_filtering_pattern(self):
+        """Test the explicit workflow filtering pattern."""
+        ref = Reference("indexing.entity_groups")
+
+        mock_session = MagicMock()
+        mock_query = MagicMock()
+        mock_filtered_query = MagicMock()
+        mock_query.filter.return_value = mock_filtered_query
+        mock_session.query.return_value = mock_query
+
         ctx = PipelineContext(
             filters=DocumentFilters(),
-            workflow_id=workflow_id,
+            workflow_id="workflow-123",
         )
 
-        mock_reader = MagicMock(spec=TableReader)
-        mock_reader.load.return_value = pd.DataFrame()
+        ref._bind(mock_session, ctx, TestModelRow)
 
-        ref = Reference(
-            "indexing.entity_groups",
-            filter={"workflow_id": lambda ctx: ctx.workflow_id},
-        )
-        ref._bind(mock_reader, ctx)
-        ref.load()
+        # This is the pattern used in model code
+        query = ref.query.filter(ref.model_class.workflow_id == ctx.workflow_id)
 
-        # Verify WHERE clause
-        call_kwargs = mock_reader.load.call_args[1]
-        assert call_kwargs["where"] == {"workflow_id": workflow_id}
+        mock_query.filter.assert_called_once()
+        assert query is mock_filtered_query
 
-    def test_single_column_static_filter(self):
-        """Dict filter with static value should generate WHERE col = :value."""
-        ctx = PipelineContext(filters=DocumentFilters())
+    def test_document_id_filtering_pattern(self):
+        """Test the explicit document_id filtering pattern."""
+        ref = Reference("indexing.section_extractions")
 
-        mock_reader = MagicMock(spec=TableReader)
-        mock_reader.load.return_value = pd.DataFrame()
+        mock_session = MagicMock()
+        mock_query = MagicMock()
+        mock_filtered_query = MagicMock()
+        mock_query.filter.return_value = mock_filtered_query
+        mock_session.query.return_value = mock_query
 
-        ref = Reference("some_table", filter={"status": "active"})
-        ref._bind(mock_reader, ctx)
-        ref.load()
-
-        call_kwargs = mock_reader.load.call_args[1]
-        assert call_kwargs["where"] == {"status": "active"}
-
-    def test_multiple_columns_generates_and_clause(self):
-        """Multiple columns in dict filter should be ANDed in WHERE clause."""
-        workflow_id = "workflow-xyz"
         ctx = PipelineContext(
-            filters=DocumentFilters(),
-            workflow_id=workflow_id,
+            filters=DocumentFilters(ids="doc1,doc2"),
+            workflow_id="workflow-123",
         )
 
-        mock_reader = MagicMock(spec=TableReader)
-        mock_reader.load.return_value = pd.DataFrame()
+        ref._bind(mock_session, ctx, TestModelRow)
 
-        ref = Reference(
-            "some_table",
-            filter={
-                "workflow_id": lambda ctx: ctx.workflow_id,
-                "is_active": True,
-                "status": "processed",
-            },
-        )
-        ref._bind(mock_reader, ctx)
-        ref.load()
+        # This is the pattern used in model code for document filtering
+        query = ref.query.filter(ref.model_class.id.in_(ctx.document_ids))
 
-        call_kwargs = mock_reader.load.call_args[1]
-        where = call_kwargs["where"]
-        assert where["workflow_id"] == workflow_id
-        assert where["is_active"] is True
-        assert where["status"] == "processed"
-
-    def test_list_values_generate_in_clause(self):
-        """List values in dict filter should generate IN clause."""
-        ctx = PipelineContext(filters=DocumentFilters())
-
-        mock_reader = MagicMock(spec=TableReader)
-        mock_reader.load.return_value = pd.DataFrame()
-
-        ref = Reference(
-            "some_table",
-            filter={"status": ["active", "pending", "review"]},
-        )
-        ref._bind(mock_reader, ctx)
-        ref.load()
-
-        call_kwargs = mock_reader.load.call_args[1]
-        assert call_kwargs["where"] == {"status": ["active", "pending", "review"]}
-
-
-class TestWorkflowIsolation:
-    """Test that workflow_id filtering properly isolates data between workflows."""
-
-    def test_two_workflows_see_different_data(self):
-        """Two workflows with same Reference should filter to different data."""
-        # Workflow 1 context
-        ctx_1 = PipelineContext(
-            filters=DocumentFilters(),
-            workflow_id="workflow-1",
-        )
-
-        # Workflow 2 context
-        ctx_2 = PipelineContext(
-            filters=DocumentFilters(),
-            workflow_id="workflow-2",
-        )
-
-        # Same Reference definition (as would be in a model)
-        filter_def = {"workflow_id": lambda ctx: ctx.workflow_id}
-
-        # Create separate readers and bind
-        mock_reader_1 = MagicMock(spec=TableReader)
-        mock_reader_1.load.return_value = pd.DataFrame()
-
-        mock_reader_2 = MagicMock(spec=TableReader)
-        mock_reader_2.load.return_value = pd.DataFrame()
-
-        ref_1 = Reference("indexing.entity_groups", filter=filter_def)
-        ref_1._bind(mock_reader_1, ctx_1)
-
-        ref_2 = Reference("indexing.entity_groups", filter=filter_def)
-        ref_2._bind(mock_reader_2, ctx_2)
-
-        # Load both
-        ref_1.load()
-        ref_2.load()
-
-        # Verify different WHERE clauses
-        where_1 = mock_reader_1.load.call_args[1]["where"]
-        where_2 = mock_reader_2.load.call_args[1]["where"]
-
-        assert where_1 == {"workflow_id": "workflow-1"}
-        assert where_2 == {"workflow_id": "workflow-2"}
-        assert where_1 != where_2
-
-    def test_workflow_isolation_with_document_filter(self):
-        """Workflow isolation should work alongside document ID filtering."""
-        doc_ids = [str(uuid4()), str(uuid4())]
-        ctx = PipelineContext(
-            filters=DocumentFilters(ids=",".join(doc_ids)),
-            workflow_id="workflow-with-docs",
-        )
-
-        mock_reader = MagicMock(spec=TableReader)
-        mock_reader.load.return_value = pd.DataFrame()
-
-        # Reference filters by both workflow_id and document_id
-        ref = Reference(
-            "indexing.section_extractions",
-            filter={
-                "workflow_id": lambda ctx: ctx.workflow_id,
-                "document_id": lambda ctx: ctx.document_ids,
-            },
-        )
-        ref._bind(mock_reader, ctx)
-        ref.load()
-
-        call_kwargs = mock_reader.load.call_args[1]
-        where = call_kwargs["where"]
-        assert where["workflow_id"] == "workflow-with-docs"
-        assert where["document_id"] == doc_ids
+        mock_query.filter.assert_called_once()
+        assert query is mock_filtered_query
 
 
 class TestTableReaderSQLGeneration:
@@ -271,252 +306,104 @@ class TestTableReaderSQLGeneration:
             assert "1 = 0" in sql
 
 
-class TestEdgeCases:
-    """Test edge cases in column-based filtering."""
-
-    def test_none_workflow_id_from_callable(self):
-        """Callable returning None should pass None to WHERE clause."""
-        ctx = PipelineContext(
-            filters=DocumentFilters(),
-            workflow_id=None,  # No workflow ID
-        )
-
-        mock_reader = MagicMock(spec=TableReader)
-        mock_reader.load.return_value = pd.DataFrame()
-
-        ref = Reference(
-            "some_table",
-            filter={"workflow_id": lambda ctx: ctx.workflow_id},
-        )
-        ref._bind(mock_reader, ctx)
-        ref.load()
-
-        call_kwargs = mock_reader.load.call_args[1]
-        assert call_kwargs["where"] == {"workflow_id": None}
-
-    def test_empty_string_workflow_id(self):
-        """Empty string workflow_id should be passed to WHERE clause."""
-        ctx = PipelineContext(
-            filters=DocumentFilters(),
-            workflow_id="",  # Empty string
-        )
-
-        mock_reader = MagicMock(spec=TableReader)
-        mock_reader.load.return_value = pd.DataFrame()
-
-        ref = Reference(
-            "some_table",
-            filter={"workflow_id": lambda ctx: ctx.workflow_id},
-        )
-        ref._bind(mock_reader, ctx)
-        ref.load()
-
-        call_kwargs = mock_reader.load.call_args[1]
-        assert call_kwargs["where"] == {"workflow_id": ""}
-
-    def test_special_characters_in_workflow_id(self):
-        """Special characters in workflow_id should be handled safely."""
-        special_workflow_id = "workflow-with-'quotes'-and-\"doubles\""
-        ctx = PipelineContext(
-            filters=DocumentFilters(),
-            workflow_id=special_workflow_id,
-        )
-
-        mock_reader = MagicMock(spec=TableReader)
-        mock_reader.load.return_value = pd.DataFrame()
-
-        ref = Reference(
-            "some_table",
-            filter={"workflow_id": lambda ctx: ctx.workflow_id},
-        )
-        ref._bind(mock_reader, ctx)
-        ref.load()
-
-        call_kwargs = mock_reader.load.call_args[1]
-        # The special characters should be passed through (parameterized queries handle escaping)
-        assert call_kwargs["where"] == {"workflow_id": special_workflow_id}
-
-    def test_uuid_workflow_id(self):
-        """UUID workflow_id should work correctly."""
-        workflow_uuid = str(uuid4())
-        ctx = PipelineContext(
-            filters=DocumentFilters(),
-            workflow_id=workflow_uuid,
-        )
-
-        mock_reader = MagicMock(spec=TableReader)
-        mock_reader.load.return_value = pd.DataFrame()
-
-        ref = Reference(
-            "some_table",
-            filter={"workflow_id": lambda ctx: ctx.workflow_id},
-        )
-        ref._bind(mock_reader, ctx)
-        ref.load()
-
-        call_kwargs = mock_reader.load.call_args[1]
-        assert call_kwargs["where"] == {"workflow_id": workflow_uuid}
-
-    def test_boolean_filter_values(self):
-        """Boolean filter values should work correctly."""
-        ctx = PipelineContext(filters=DocumentFilters())
-
-        mock_reader = MagicMock(spec=TableReader)
-        mock_reader.load.return_value = pd.DataFrame()
-
-        ref = Reference(
-            "some_table",
-            filter={"is_active": True, "is_deleted": False},
-        )
-        ref._bind(mock_reader, ctx)
-        ref.load()
-
-        call_kwargs = mock_reader.load.call_args[1]
-        assert call_kwargs["where"] == {"is_active": True, "is_deleted": False}
-
-    def test_integer_filter_values(self):
-        """Integer filter values should work correctly."""
-        ctx = PipelineContext(filters=DocumentFilters())
-
-        mock_reader = MagicMock(spec=TableReader)
-        mock_reader.load.return_value = pd.DataFrame()
-
-        ref = Reference(
-            "some_table",
-            filter={"priority": 5, "count": 0},
-        )
-        ref._bind(mock_reader, ctx)
-        ref.load()
-
-        call_kwargs = mock_reader.load.call_args[1]
-        assert call_kwargs["where"] == {"priority": 5, "count": 0}
-
-
-class TestReferenceBindingIsolation:
-    """Test that Reference binding doesn't share state between instances."""
+class TestReferenceStateIsolation:
+    """Test that Reference instances maintain isolated state."""
 
     def test_separate_references_have_separate_state(self):
         """Two Reference instances should have independent state."""
         ctx_1 = PipelineContext(filters=DocumentFilters(), workflow_id="wf-1")
         ctx_2 = PipelineContext(filters=DocumentFilters(), workflow_id="wf-2")
 
-        mock_reader_1 = MagicMock(spec=TableReader)
-        mock_reader_1.load.return_value = pd.DataFrame({"a": [1]})
+        mock_session_1 = MagicMock()
+        mock_session_2 = MagicMock()
+        mock_model_class = MagicMock()
 
-        mock_reader_2 = MagicMock(spec=TableReader)
-        mock_reader_2.load.return_value = pd.DataFrame({"a": [2]})
+        # Create two references
+        ref_1 = Reference("test.model")
+        ref_2 = Reference("test.model")
 
-        # Create two references from same "template"
-        ref_1 = Reference("table", filter={"workflow_id": lambda ctx: ctx.workflow_id})
-        ref_2 = Reference("table", filter={"workflow_id": lambda ctx: ctx.workflow_id})
+        ref_1._bind(mock_session_1, ctx_1, mock_model_class)
+        ref_2._bind(mock_session_2, ctx_2, mock_model_class)
 
-        ref_1._bind(mock_reader_1, ctx_1)
-        ref_2._bind(mock_reader_2, ctx_2)
+        # Each should have its own context
+        assert ref_1.ctx.workflow_id == "wf-1"
+        assert ref_2.ctx.workflow_id == "wf-2"
 
-        # Load ref_1 first
-        df_1 = ref_1.load()
+        # Each should have its own session
+        assert ref_1.session is mock_session_1
+        assert ref_2.session is mock_session_2
 
-        # ref_2 should still be unloaded
-        assert ref_2._loaded is False
-        assert ref_2._cached_df is None
-
-        # Load ref_2
-        df_2 = ref_2.load()
-
-        # Both should have their own cached data
-        assert ref_1._loaded is True
-        assert ref_2._loaded is True
-        assert df_1 is not df_2
-
-    def test_rebinding_reference_clears_cache(self):
-        """Rebinding a Reference should not reuse old cached data."""
+    def test_rebinding_reference_updates_state(self):
+        """Rebinding a Reference should update all state."""
         ctx_1 = PipelineContext(filters=DocumentFilters(), workflow_id="wf-1")
         ctx_2 = PipelineContext(filters=DocumentFilters(), workflow_id="wf-2")
 
-        mock_reader_1 = MagicMock(spec=TableReader)
-        mock_reader_1.load.return_value = pd.DataFrame({"val": ["from-wf-1"]})
+        mock_session_1 = MagicMock()
+        mock_session_2 = MagicMock()
+        mock_model_class = MagicMock()
 
-        mock_reader_2 = MagicMock(spec=TableReader)
-        mock_reader_2.load.return_value = pd.DataFrame({"val": ["from-wf-2"]})
+        ref = Reference("test.model")
 
-        # Single reference instance
-        ref = Reference("table", filter={"workflow_id": lambda ctx: ctx.workflow_id})
+        # First binding
+        ref._bind(mock_session_1, ctx_1, mock_model_class)
+        assert ref.ctx.workflow_id == "wf-1"
+        assert ref.session is mock_session_1
 
-        # First binding and load
-        ref._bind(mock_reader_1, ctx_1)
-        df_1 = ref.load()
-        assert df_1["val"].iloc[0] == "from-wf-1"
-
-        # Create fresh reference (as framework does for each model invocation)
-        ref_fresh = Reference("table", filter={"workflow_id": lambda ctx: ctx.workflow_id})
-        ref_fresh._bind(mock_reader_2, ctx_2)
-        df_2 = ref_fresh.load()
-
-        # Should get new data, not cached from first workflow
-        assert df_2["val"].iloc[0] == "from-wf-2"
+        # Second binding (rebind)
+        ref._bind(mock_session_2, ctx_2, mock_model_class)
+        assert ref.ctx.workflow_id == "wf-2"
+        assert ref.session is mock_session_2
 
 
-class TestCallableFilterEvaluation:
-    """Test that callable filters are evaluated correctly."""
+class TestContextPropertyAccess:
+    """Test accessing various PipelineContext properties through Reference."""
 
-    def test_callable_evaluated_at_load_time(self):
-        """Callable should be evaluated when load() is called, not at bind time."""
-        ctx = PipelineContext(filters=DocumentFilters(), workflow_id="initial")
-
-        mock_reader = MagicMock(spec=TableReader)
-        mock_reader.load.return_value = pd.DataFrame()
-
-        evaluation_count = 0
-
-        def counting_callable(ctx):
-            nonlocal evaluation_count
-            evaluation_count += 1
-            return ctx.workflow_id
-
-        ref = Reference("table", filter={"workflow_id": counting_callable})
-        ref._bind(mock_reader, ctx)
-
-        # Should not have been evaluated yet
-        assert evaluation_count == 0
-
-        # Now load
-        ref.load()
-
-        # Should have been evaluated once
-        assert evaluation_count == 1
-
-        # Loading again should use cache, not re-evaluate
-        ref.load()
-        assert evaluation_count == 1
-
-    def test_callable_can_access_all_context_attributes(self):
-        """Callable should have access to all PipelineContext attributes."""
-        filters = DocumentFilters(ids="doc-1,doc-2", with_status="FETCHED")
+    def test_access_workflow_id_through_ctx(self):
+        """Test accessing workflow_id through ref.ctx."""
+        ref = Reference("test.model")
         ctx = PipelineContext(
-            filters=filters,
-            workflow_id="test-wf",
+            filters=DocumentFilters(),
+            workflow_id="test-workflow-123",
+        )
+
+        ref._bind(MagicMock(), ctx, MagicMock())
+
+        assert ref.ctx.workflow_id == "test-workflow-123"
+
+    def test_access_document_ids_through_ctx(self):
+        """Test accessing document_ids through ref.ctx."""
+        ref = Reference("test.model")
+        ctx = PipelineContext(
+            filters=DocumentFilters(ids="doc1,doc2,doc3"),
+            workflow_id="test-workflow",
+        )
+
+        ref._bind(MagicMock(), ctx, MagicMock())
+
+        assert ref.ctx.document_ids == ["doc1", "doc2", "doc3"]
+
+    def test_access_incremental_mode_through_ctx(self):
+        """Test accessing incremental_mode through ref.ctx."""
+        ref = Reference("test.model")
+        ctx = PipelineContext(
+            filters=DocumentFilters(),
+            workflow_id="test-workflow",
             incremental_mode="delta",
-            reprocess_unchanged=True,
+        )
+
+        ref._bind(MagicMock(), ctx, MagicMock())
+
+        assert ref.ctx.incremental_mode == "delta"
+
+    def test_access_metadata_through_ctx(self):
+        """Test accessing metadata through ref.ctx."""
+        ref = Reference("test.model")
+        ctx = PipelineContext(
+            filters=DocumentFilters(),
+            workflow_id="test-workflow",
             metadata={"custom_key": "custom_value"},
         )
 
-        mock_reader = MagicMock(spec=TableReader)
-        mock_reader.load.return_value = pd.DataFrame()
+        ref._bind(MagicMock(), ctx, MagicMock())
 
-        captured_ctx = None
-
-        def capture_callable(ctx):
-            nonlocal captured_ctx
-            captured_ctx = ctx
-            return ctx.workflow_id
-
-        ref = Reference("table", filter={"workflow_id": capture_callable})
-        ref._bind(mock_reader, ctx)
-        ref.load()
-
-        # Verify all attributes were accessible
-        assert captured_ctx.workflow_id == "test-wf"
-        assert captured_ctx.incremental_mode == "delta"
-        assert captured_ctx.reprocess_unchanged is True
-        assert captured_ctx.document_ids == ["doc-1", "doc-2"]
-        assert captured_ctx.metadata["custom_key"] == "custom_value"
+        assert ref.ctx.metadata["custom_key"] == "custom_value"

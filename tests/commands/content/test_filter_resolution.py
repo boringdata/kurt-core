@@ -4,9 +4,9 @@ from uuid import uuid4
 
 import pytest
 
-from kurt.content.filtering import DocumentFilters, resolve_filters
 from kurt.db.database import get_session
 from kurt.db.models import Document, IngestionStatus, SourceType
+from kurt.utils.filtering import DocumentFilters, resolve_filters
 
 
 class TestFilterResolution:

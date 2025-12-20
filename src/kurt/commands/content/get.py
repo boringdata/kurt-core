@@ -29,8 +29,8 @@ def get_document_cmd(identifier: str, format: str):
         kurt content get https://example.com/article
         kurt content get ./docs/article.md
     """
-    from kurt.content.document import get_document
-    from kurt.content.filtering import resolve_identifier_to_doc_id
+    from kurt.db.documents import get_document
+    from kurt.utils.filtering import resolve_identifier_to_doc_id
 
     try:
         # Resolve identifier to document ID (supports partial UUIDs)
@@ -86,7 +86,7 @@ def get_document_cmd(identifier: str, format: str):
 
             # Show knowledge graph if included
             if kg:
-                from kurt.commands.content._live_display import display_knowledge_graph
+                from kurt.core.display import display_knowledge_graph
 
                 display_knowledge_graph(kg, console)
 

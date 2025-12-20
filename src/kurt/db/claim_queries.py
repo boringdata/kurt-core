@@ -13,9 +13,9 @@ import numpy as np
 from sqlalchemy import and_, or_
 from sqlmodel import Session, select
 
-from kurt.content.embeddings import generate_embeddings as get_embeddings
 from kurt.db.claim_models import Claim, ClaimEntity, ClaimRelationship
 from kurt.db.models import Document, Entity
+from kurt.utils.embeddings import generate_embeddings as get_embeddings
 
 logger = logging.getLogger(__name__)
 

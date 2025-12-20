@@ -32,27 +32,21 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
     init_dbos()
     get_dbos()
 
-    # Import workflow modules to register them
-    from kurt.content.map import workflow as _map  # noqa
-    from kurt.content.fetch import workflow as _fetch  # noqa
-    import kurt.content.indexing  # noqa - registers indexing models
+    # Import model packages to register them
+    import kurt.models.landing  # noqa - registers landing models (discovery, fetch)
+    import kurt.models.staging  # noqa - registers staging models (indexing)
 
     # Get the workflow function
+    # All workflows now go through run_pipeline_workflow
     workflow_func = None
-    if workflow_name == "map_url_workflow":
-        from kurt.content.map.workflow import map_url_workflow
-
-        workflow_func = map_url_workflow
-    elif workflow_name == "fetch_workflow":
-        from kurt.content.fetch.workflow import fetch_workflow
-
-        workflow_func = fetch_workflow
-    elif workflow_name == "run_pipeline_workflow":
+    if workflow_name == "run_pipeline_workflow":
         from kurt.core import run_pipeline_workflow
 
         workflow_func = run_pipeline_workflow
     else:
-        sys.exit(1)  # Unknown workflow
+        # Unknown workflow
+        print(f"Unknown workflow: {workflow_name}", file=sys.stderr)
+        sys.exit(1)
 
     # Parse arguments
     workflow_args = json.loads(workflow_args_json)

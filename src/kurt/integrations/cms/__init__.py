@@ -3,6 +3,7 @@
 from typing import Any, Dict
 
 from kurt.integrations.cms.base import CMSAdapter, CMSDocument
+from kurt.integrations.cms.fetch import fetch_batch_from_cms, fetch_from_cms
 
 
 def get_adapter(platform: str, config: Dict[str, Any]) -> CMSAdapter:
@@ -34,4 +35,10 @@ def get_adapter(platform: str, config: Dict[str, Any]) -> CMSAdapter:
         )
 
 
-__all__ = ["CMSAdapter", "CMSDocument", "get_adapter"]
+__all__ = [
+    "CMSAdapter",
+    "CMSDocument",
+    "get_adapter",
+    "fetch_from_cms",
+    "fetch_batch_from_cms",
+]

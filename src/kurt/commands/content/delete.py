@@ -42,8 +42,8 @@ def delete_document_cmd(identifier: str, delete_content: bool, yes_flag: bool, f
         kurt content delete https://example.com/article
         kurt content delete ./docs/article.md
     """
-    from kurt.content.document import delete_document, get_document
-    from kurt.content.filtering import resolve_identifier_to_doc_id
+    from kurt.db.documents import delete_document, get_document
+    from kurt.utils.filtering import resolve_identifier_to_doc_id
 
     try:
         # Resolve identifier to document ID (supports partial UUIDs)

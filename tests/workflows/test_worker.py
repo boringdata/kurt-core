@@ -60,8 +60,8 @@ class TestWorkerArgumentParsing:
     def test_worker_main_with_valid_args(self):
         """Worker should parse valid arguments correctly."""
 
-        workflow_name = "map_url_workflow"
-        workflow_args = json.dumps({"url": "https://example.com"})
+        workflow_name = "run_pipeline_workflow"
+        workflow_args = json.dumps({"target": "landing.discovery"})
         priority = "5"
 
         with patch.object(sys, "argv", ["_worker.py", workflow_name, workflow_args, priority]):
@@ -100,13 +100,13 @@ class TestWorkerDBOSInitialization:
         mock_handle.workflow_id = "test-workflow-id"
         mock_handle.get_status.return_value.status = "SUCCESS"
 
-        workflow_name = "map_url_workflow"
-        workflow_args_json = json.dumps({"url": "https://example.com"})
+        workflow_name = "run_pipeline_workflow"
+        workflow_args_json = json.dumps({"target": "landing.discovery"})
 
         # We need to patch ALL uses of time.time throughout the call chain
         with patch("time.time", return_value=0):  # Don't timeout
             with patch("time.sleep"):
-                with patch("kurt.content.map.workflow.map_url_workflow"):
+                with patch("kurt.core.run_pipeline_workflow"):
                     with patch("dbos.DBOS.start_workflow", return_value=mock_handle):
                         with patch("sys.exit"):
                             try:
@@ -141,12 +141,12 @@ class TestWorkerLogFileHandling:
         mock_handle.workflow_id = "test-workflow-123"
         mock_handle.get_status.return_value.status = "SUCCESS"
 
-        workflow_name = "map_url_workflow"
-        workflow_args_json = json.dumps({"url": "https://example.com"})
+        workflow_name = "run_pipeline_workflow"
+        workflow_args_json = json.dumps({"target": "landing.discovery"})
 
         with patch("time.time", side_effect=[0, 100, 200]):
             with patch("time.sleep"):
-                with patch("kurt.content.map.workflow.map_url_workflow"):
+                with patch("kurt.core.run_pipeline_workflow"):
                     with patch("dbos.DBOS.start_workflow", return_value=mock_handle):
                         with patch("sys.exit"):
                             try:
@@ -210,12 +210,12 @@ class TestWorkerStatusPolling:
             mock_status_success,
         ]
 
-        workflow_name = "map_url_workflow"
-        workflow_args_json = json.dumps({"url": "https://example.com"})
+        workflow_name = "run_pipeline_workflow"
+        workflow_args_json = json.dumps({"target": "landing.discovery"})
 
         with patch("time.time", return_value=0):  # Don't timeout
             with patch("time.sleep") as mock_sleep:
-                with patch("kurt.content.map.workflow.map_url_workflow"):
+                with patch("kurt.core.run_pipeline_workflow"):
                     with patch("dbos.DBOS.start_workflow", return_value=mock_handle):
                         with patch("sys.exit"):
                             try:
@@ -251,12 +251,12 @@ class TestWorkerStatusPolling:
 
         mock_handle.get_status.return_value = mock_status_error
 
-        workflow_name = "map_url_workflow"
-        workflow_args_json = json.dumps({"url": "https://example.com"})
+        workflow_name = "run_pipeline_workflow"
+        workflow_args_json = json.dumps({"target": "landing.discovery"})
 
         with patch("time.time", return_value=0):
             with patch("time.sleep"):
-                with patch("kurt.content.map.workflow.map_url_workflow"):
+                with patch("kurt.core.run_pipeline_workflow"):
                     with patch("dbos.DBOS.start_workflow", return_value=mock_handle):
                         with patch("sys.exit") as mock_exit:
                             run_workflow_worker(workflow_name, workflow_args_json, priority=10)
@@ -286,13 +286,13 @@ class TestWorkerStatusPolling:
 
         mock_handle.get_status.return_value = mock_status_pending
 
-        workflow_name = "map_url_workflow"
-        workflow_args_json = json.dumps({"url": "https://example.com"})
+        workflow_name = "run_pipeline_workflow"
+        workflow_args_json = json.dumps({"target": "landing.discovery"})
 
         # Simulate time passing beyond 600 seconds
         with patch("time.time", side_effect=[0, 300, 601]):  # Start, middle, timeout
             with patch("time.sleep"):
-                with patch("kurt.content.map.workflow.map_url_workflow"):
+                with patch("kurt.core.run_pipeline_workflow"):
                     with patch("dbos.DBOS.start_workflow", return_value=mock_handle):
                         with patch("sys.exit") as mock_exit:
                             run_workflow_worker(workflow_name, workflow_args_json, priority=10)
@@ -309,10 +309,10 @@ class TestWorkerWorkflowSelection:
     @patch("os.open")
     @patch("os.dup2")
     @patch("os.close")
-    def test_selects_map_workflow(
+    def test_selects_run_pipeline_workflow(
         self, mock_close, mock_dup2, mock_open, mock_get_dbos, mock_init_dbos
     ):
-        """Worker should select map_url_workflow when workflow_name is 'map_url_workflow'."""
+        """Worker should select run_pipeline_workflow when workflow_name is 'run_pipeline_workflow'."""
         from kurt.workflows._worker import run_workflow_worker
 
         mock_dbos = MagicMock()
@@ -323,11 +323,11 @@ class TestWorkerWorkflowSelection:
 
         with patch("time.time", side_effect=[0, 100, 200]):
             with patch("time.sleep"):
-                with patch("kurt.content.map.workflow.map_url_workflow"):
+                with patch("kurt.core.run_pipeline_workflow"):
                     with patch("dbos.DBOS.start_workflow", return_value=mock_handle) as mock_start:
                         with patch("sys.exit"):
                             run_workflow_worker(
-                                "map_url_workflow", json.dumps({"url": "https://example.com"})
+                                "run_pipeline_workflow", json.dumps({"target": "landing.discovery"})
                             )
 
         # Verify DBOS.start_workflow was called

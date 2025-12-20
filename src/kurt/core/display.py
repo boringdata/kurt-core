@@ -617,3 +617,137 @@ def make_progress_callback(prefix: str = "", show_items: bool = True) -> callabl
                 print(f"  {desc}: {total}/{total} completed")
 
     return callback
+
+
+def display_summary(
+    stats: dict,
+    console=None,
+    title: str = "Summary",
+    show_time: bool = True,
+) -> None:
+    """
+    Display a standardized command summary.
+
+    Args:
+        stats: Dictionary with stat keys and values. Special keys:
+            - elapsed: Time in seconds (shown as "Time elapsed: Xs")
+            - Any key with value > 0 shown as "✓ Key: value"
+            - Keys ending with "_failed" or "_errors" shown in red with ✗
+            - Keys ending with "_skipped" shown with ○
+        console: Rich Console instance (uses global if None)
+        title: Summary title (default: "Summary")
+        show_time: Whether to show elapsed time if present
+
+    Usage:
+        display_summary({
+            "fetched": 10,
+            "indexed": 8,
+            "skipped": 2,
+            "failed": 0,
+            "elapsed": 12.5,
+        })
+    """
+    c = console or _console
+
+    c.print()
+    c.print(f"[bold]{title}[/bold]")
+
+    elapsed = stats.pop("elapsed", None)
+
+    for key, value in stats.items():
+        if value is None or (isinstance(value, (int, float)) and value == 0):
+            continue
+
+        # Format the key for display
+        display_key = key.replace("_", " ").title()
+
+        # Choose icon and style based on key name
+        if "failed" in key.lower() or "error" in key.lower():
+            c.print(f"  [red]✗ {display_key}: {value}[/red]")
+        elif "skipped" in key.lower():
+            c.print(f"  ○ {display_key}: {value}")
+        else:
+            c.print(f"  ✓ {display_key}: {value}")
+
+    # Show elapsed time
+    if show_time and elapsed is not None:
+        c.print(f"  [dim]ℹ Time elapsed: {elapsed:.1f}s[/dim]")
+
+
+def display_knowledge_graph(kg: dict, console=None, title: str = "Knowledge Graph"):
+    """Display knowledge graph using inline tables.
+
+    Args:
+        kg: Knowledge graph data with stats, entities, and relationships
+        console: Rich Console instance for output (uses global if None)
+        title: Title to display (default: "Knowledge Graph")
+    """
+    if not kg:
+        return
+
+    c = console or _console
+    stats = kg.get("stats", {})
+
+    # Header
+    entity_count = stats.get("entity_count", 0)
+    rel_count = stats.get("relationship_count", 0)
+    claim_count = stats.get("claim_count", len(kg.get("claims", [])))
+
+    c.print(f"\n[bold cyan]{title}[/bold cyan]")
+    c.print(f"[dim]{entity_count} entities, {rel_count} relationships, {claim_count} claims[/dim]")
+
+    # Claims table
+    if kg.get("claims"):
+        c.print("\n[bold]Claims[/bold]")
+        claims_data = [
+            {
+                "statement": claim["statement"],
+                "type": claim["claim_type"].replace("ClaimType.", "").replace("DEFINITION", "DEF"),
+                "confidence": f"{claim['confidence']:.2f}",
+            }
+            for claim in kg["claims"]
+        ]
+        print_inline_table(
+            claims_data,
+            columns=["statement", "type", "confidence"],
+            max_items=10,
+            column_widths={"statement": 70, "type": 12, "confidence": 8},
+        )
+
+    # Entities table
+    if kg.get("entities"):
+        c.print("\n[bold]Entities[/bold]")
+        entities_data = [
+            {
+                "name": entity["name"],
+                "type": entity["type"],
+                "confidence": f"{entity['confidence']:.2f}",
+                "mentions": entity.get("mentions_in_doc", 0),
+            }
+            for entity in kg["entities"]
+        ]
+        print_inline_table(
+            entities_data,
+            columns=["name", "type", "confidence", "mentions"],
+            max_items=10,
+            column_widths={"name": 30, "type": 15, "confidence": 8, "mentions": 8},
+        )
+
+    # Relationships table
+    if kg.get("relationships"):
+        c.print("\n[bold]Relationships[/bold]")
+        rels_data = [
+            {
+                "source": rel["source_entity"],
+                "relationship": rel.get("relationship_type", "related_to"),
+                "target": rel["target_entity"],
+                "confidence": f"{rel['confidence']:.2f}",
+            }
+            for rel in kg["relationships"]
+        ]
+        print_inline_table(
+            rels_data,
+            columns=["source", "relationship", "target", "confidence"],
+            max_items=10,
+            column_widths={"source": 25, "relationship": 20, "target": 25, "confidence": 8},
+        )

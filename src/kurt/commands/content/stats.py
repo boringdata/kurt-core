@@ -44,7 +44,7 @@ def stats_cmd(
         kurt content stats --include "*docs.company.com*" --with-analytics
     """
     from kurt.admin.telemetry.analytics import get_analytics_stats
-    from kurt.content.document import get_document_stats
+    from kurt.db.documents import get_document_stats
 
     try:
         stats = get_document_stats(

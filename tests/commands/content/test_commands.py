@@ -542,58 +542,39 @@ class TestContentListClustersCommand:
         """Test list-clusters with existing clusters."""
         runner, project_dir = isolated_cli_runner
 
-        # Create test clusters
+        # Create test data in staging_topic_clustering table
         from uuid import uuid4
 
         from kurt.db.database import get_session
-        from kurt.db.models import (
-            Document,
-            DocumentClusterEdge,
-            IngestionStatus,
-            SourceType,
-            TopicCluster,
-        )
+        from kurt.models.staging.clustering.step_topic_clustering import TopicClusteringRow
 
         session = get_session()
 
-        # Create clusters
-        cluster1 = TopicCluster(
-            id=uuid4(), name="Tutorials", description="Tutorial content for beginners"
-        )
-        cluster2 = TopicCluster(
-            id=uuid4(), name="API Reference", description="API documentation and references"
-        )
-        session.add(cluster1)
-        session.add(cluster2)
-        session.flush()
+        # Ensure table exists
+        from sqlmodel import SQLModel
 
-        # Create documents
-        doc1 = Document(
-            id=uuid4(),
-            source_url="https://example.com/tutorial1",
-            source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.NOT_FETCHED,
-        )
-        doc2 = Document(
-            id=uuid4(),
-            source_url="https://example.com/tutorial2",
-            source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.NOT_FETCHED,
-        )
-        doc3 = Document(
-            id=uuid4(),
-            source_url="https://example.com/api-ref",
-            source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.NOT_FETCHED,
-        )
-        session.add_all([doc1, doc2, doc3])
-        session.flush()
+        SQLModel.metadata.create_all(session.bind)
 
-        # Link documents to clusters
-        edge1 = DocumentClusterEdge(id=uuid4(), document_id=doc1.id, cluster_id=cluster1.id)
-        edge2 = DocumentClusterEdge(id=uuid4(), document_id=doc2.id, cluster_id=cluster1.id)
-        edge3 = DocumentClusterEdge(id=uuid4(), document_id=doc3.id, cluster_id=cluster2.id)
-        session.add_all([edge1, edge2, edge3])
+        # Create staging rows for clusters
+        row1 = TopicClusteringRow(
+            document_id=str(uuid4()),
+            workflow_id="test-workflow",
+            cluster_name="Tutorials",
+            cluster_description="Tutorial content for beginners",
+        )
+        row2 = TopicClusteringRow(
+            document_id=str(uuid4()),
+            workflow_id="test-workflow",
+            cluster_name="Tutorials",
+            cluster_description="Tutorial content for beginners",
+        )
+        row3 = TopicClusteringRow(
+            document_id=str(uuid4()),
+            workflow_id="test-workflow",
+            cluster_name="API Reference",
+            cluster_description="API documentation and references",
+        )
+        session.add_all([row1, row2, row3])
         session.commit()
 
         # Test listing clusters
@@ -608,15 +589,26 @@ class TestContentListClustersCommand:
         """Test list-clusters with JSON output."""
         runner, project_dir = isolated_cli_runner
 
-        # Create test cluster
+        # Create test data in staging_topic_clustering table
         from uuid import uuid4
 
         from kurt.db.database import get_session
-        from kurt.db.models import TopicCluster
+        from kurt.models.staging.clustering.step_topic_clustering import TopicClusteringRow
 
         session = get_session()
-        cluster = TopicCluster(id=uuid4(), name="Test Cluster", description="Test description")
-        session.add(cluster)
+
+        # Ensure table exists
+        from sqlmodel import SQLModel
+
+        SQLModel.metadata.create_all(session.bind)
+
+        row = TopicClusteringRow(
+            document_id=str(uuid4()),
+            workflow_id="test-workflow",
+            cluster_name="Test Cluster",
+            cluster_description="Test description",
+        )
+        session.add(row)
         session.commit()
 
         # Test JSON output
@@ -632,7 +624,7 @@ class TestContentListClustersCommand:
         assert len(output) == 1
         assert output[0]["name"] == "Test Cluster"
         assert output[0]["description"] == "Test description"
-        assert output[0]["doc_count"] == 0
+        assert output[0]["doc_count"] == 1
 
     def test_list_clusters_help(self, isolated_cli_runner):
         """Test that list-clusters help works."""
@@ -782,7 +774,7 @@ class TestContentDeleteCommandExpanded:
         assert "Document to Delete" in result.output
 
         # Verify document was deleted
-        from kurt.content.document import get_document
+        from kurt.db.documents import get_document
 
         try:
             get_document(str(doc_id))
@@ -818,7 +810,7 @@ class TestContentDeleteCommandExpanded:
         assert "Cancelled" in result.output
 
         # Verify document still exists
-        from kurt.content.document import get_document
+        from kurt.db.documents import get_document
 
         retrieved_doc = get_document(str(doc_id))
         assert retrieved_doc.id == doc_id
@@ -852,7 +844,7 @@ class TestContentDeleteCommandExpanded:
         assert "Are you sure?" not in result.output  # No confirmation prompt
 
         # Verify document was deleted
-        from kurt.content.document import get_document
+        from kurt.db.documents import get_document
 
         try:
             get_document(str(doc_id))

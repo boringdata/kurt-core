@@ -4,8 +4,8 @@ from uuid import uuid4
 
 import pytest
 
-from kurt.content.document import list_content
 from kurt.db.database import get_session
+from kurt.db.documents import list_content
 from kurt.db.models import (
     Document,
     DocumentEntity,

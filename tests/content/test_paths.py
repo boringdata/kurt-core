@@ -5,7 +5,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from kurt.content.paths import (
+from kurt.utils.paths import (
     create_cms_content_path,
     create_content_path,
     parse_source_identifier,

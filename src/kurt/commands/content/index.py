@@ -2,16 +2,17 @@
 
 import click
 
+from kurt.admin.telemetry.decorators import track_command
+from kurt.commands.content._shared_options import (
+    add_background_options,
+    add_filter_options,
+)
+
 
 @click.command("index")
+@track_command
 @click.argument("identifier", required=False)
-@click.option("--ids", help="Comma-separated list of document IDs")
-@click.option(
-    "--include", "include_pattern", help="Glob pattern to match source_url or content_path"
-)
-@click.option("--in-cluster", help="Cluster name filter")
-@click.option("--with-status", help="Status filter")
-@click.option("--with-content-type", help="Content type filter")
+@add_filter_options(exclude=False, limit=False)
 @click.option("--limit", type=int, default=100, help="Max documents to process")
 @click.option(
     "--all",
@@ -23,6 +24,7 @@ import click
     is_flag=True,
     help="Re-index documents even if already indexed",
 )
+@add_background_options()
 def index(
     identifier: str,
     include_pattern: str,
@@ -33,6 +35,8 @@ def index(
     all: bool,
     force: bool,
     limit: int,
+    background: bool,
+    priority: int,
 ):
     """
     Index documents: extract metadata, entities, and relationships.
@@ -77,29 +81,33 @@ def index(
 
         # Re-index already indexed documents
         kurt index --include "*/docs/*" --force
+
+        # Run in background
+        kurt index --all --background
     """
     # Lazy import all dependencies when command is actually run
     import logging
+    import time
 
     from rich.console import Console
 
-    from kurt.content.document import list_documents_for_indexing
+    from kurt.core.display import display_summary, print_info
+    from kurt.db.documents import list_documents_for_indexing
+    from kurt.utils.filtering import DocumentFilters, resolve_filters
+    from kurt.workflows.cli_helpers import dbos_cleanup_context, run_pipeline_simple
 
     console = Console()
     logger = logging.getLogger(__name__)
 
-    try:
-        # Get documents to index using service layer function
+    with dbos_cleanup_context():
         try:
-            from kurt.content.filtering import resolve_filters
-
             # Resolve and merge filters (handles identifier merging)
             filters = resolve_filters(
                 identifier=identifier,
                 ids=ids,
                 include_pattern=include_pattern,
                 in_cluster=in_cluster,
-                with_status=with_status,
+                with_status=with_status.upper() if with_status else None,
                 with_content_type=with_content_type,
                 limit=None,  # Will apply limit later
             )
@@ -130,30 +138,42 @@ def index(
             )
             documents = documents[:limit]
 
-        intro_messages.append(f"Indexing {len(documents)} document(s)...\n")
+        intro_messages.append(f"Indexing {len(documents)} document(s)...")
 
         # Print intro block
-        from kurt.commands.content._live_display import print_intro_block
+        for msg in intro_messages:
+            print_info(msg)
 
-        print_intro_block(console, intro_messages)
+        # Run indexing pipeline
+        start_time = time.time()
 
-        # Use workflow-based indexing for all documents (single or batch)
-        from kurt.commands.content._live_display import (
-            index_and_finalize_with_two_stage_progress,
+        # Create filters from document IDs
+        document_ids = [str(doc.id) for doc in documents]
+        filters = DocumentFilters(ids=",".join(document_ids))
+        incremental_mode = "full" if force else "delta"
+
+        # Run the staging pipeline (display handled by framework)
+        workflow_result = run_pipeline_simple(
+            target="staging",
+            filters=filters,
+            incremental_mode=incremental_mode,
+            reprocess_unchanged=force,
+            background=background,
+            priority=priority,
         )
 
-        # Two-stage indexing: metadata extraction + entity resolution
-        result = index_and_finalize_with_two_stage_progress(documents, console, force=force)
+        # Background mode returns early
+        if background:
+            return
 
-        batch_result = result["indexing"]
-        # Note: "succeeded" already excludes skipped documents (from workflow_indexing.py)
-        indexed_count = batch_result["succeeded"]
-        _skipped_count = batch_result["skipped"]  # noqa: F841
-        _error_count = batch_result["failed"]  # noqa: F841
+        # Extract stats
+        indexed_count = workflow_result.get("documents_processed", 0)
+        skipped_count = workflow_result.get("skipped_docs", 0)
+        error_count = len(workflow_result.get("errors", {}))
 
         # Display the knowledge graph for single document
         if len(documents) == 1 and indexed_count > 0:
-            from kurt.commands.content._live_display import display_knowledge_graph
+            from kurt.core.display import display_knowledge_graph
             from kurt.db.graph_queries import get_document_knowledge_graph
 
             try:
@@ -165,44 +185,18 @@ def index(
                 logger.debug(f"Could not retrieve KG for display: {e}")
 
         # Process any pending metadata sync queue items
-        # (handles SQL/agent updates that bypassed normal indexing)
         from kurt.db.metadata_sync import process_metadata_sync_queue
 
-        queue_result = process_metadata_sync_queue()
-        _queue_synced = queue_result["processed"]  # noqa: F841
+        process_metadata_sync_queue()
 
-        # Note: Summary is now displayed by index_and_finalize_with_two_stage_progress for all documents
-        # No need for separate single-document summary
-
-    except Exception as e:
-        console.print(f"[bold red]Error:[/bold red] {e}")
-        raise click.Abort()
-    finally:
-        # Explicit cleanup to prevent hanging
-        import gc
-        import sys
-        import threading
-        import time
-
-        # Force garbage collection
-        gc.collect()
-
-        # Ensure DBOS is cleaned up if it was initialized
-        try:
-            from dbos import DBOS
-
-            # Force immediate DBOS cleanup
-            DBOS.destroy(workflow_completion_timeout_sec=0)
-        except Exception:
-            pass  # Ignore if DBOS wasn't initialized
-
-        # Workaround for DBOS and other executor bugs
-        # Force any non-daemon ThreadPoolExecutor threads to become daemons
-        time.sleep(0.1)  # Brief pause for normal cleanup
-        for thread in threading.enumerate():
-            if thread.name.startswith("ThreadPoolExecutor-") and not thread.daemon:
-                thread.daemon = True  # Make it daemon so it won't block exit
-
-        # Flush output buffers
-        sys.stdout.flush()
-        sys.stderr.flush()
+        # Print summary using helper
+        elapsed = time.time() - start_time
+        display_summary(
+            {
+                "indexed": f"{indexed_count} document(s)",
+                "skipped": f"{skipped_count} document(s)" if skipped_count > 0 else None,
+                "failed": f"{error_count} document(s)" if error_count > 0 else None,
+                "elapsed": elapsed,
+            },
+            console=console,
+        )

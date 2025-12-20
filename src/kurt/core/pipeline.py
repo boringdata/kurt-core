@@ -96,10 +96,10 @@ def get_pipeline(namespace: str) -> PipelineConfig:
 
     Example:
         # First, ensure models are imported
-        import kurt.content.indexing  # noqa: F401
+        import kurt.models.staging  # noqa: F401
 
         # Then get the pipeline
-        pipeline = get_pipeline("indexing")
+        pipeline = get_pipeline("staging")
 
         # Run it
         result = await run_workflow(pipeline, filters)
