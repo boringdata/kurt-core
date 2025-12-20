@@ -143,6 +143,7 @@ def map_url(
         kurt content map url https://example.com --cluster-urls
     """
     from kurt.content.map import map_url_content
+    from kurt.core import run_pipeline_workflow
 
     try:
         from kurt.commands.content._live_display import (
@@ -178,21 +179,19 @@ def map_url(
             # Use workflow system for background mode only
             # For foreground, use original function with progress UI
             if background:
-                from kurt.content.map.workflow import map_url_workflow
+                from kurt.content.filtering import DocumentFilters
                 from kurt.workflows.cli_helpers import run_with_background_support
 
+                # Build config for the new pipeline model
+                # The config is passed via environment or context
+                filters = DocumentFilters()
+
                 result = run_with_background_support(
-                    workflow_func=map_url_workflow,
+                    workflow_func=run_pipeline_workflow,
                     workflow_args={
-                        "url": url,
-                        "sitemap_path": sitemap_path,
-                        "include_blogrolls": include_blogrolls,
-                        "max_depth": max_depth,
-                        "max_pages": max_pages,
-                        "allow_external": allow_external,
-                        "include_patterns": include_patterns,
-                        "exclude_patterns": exclude_patterns,
-                        "cluster_urls": cluster_urls,
+                        "target": "landing.discovery",
+                        "filters": filters,
+                        "incremental_mode": "full",
                     },
                     background=True,
                     workflow_id=None,

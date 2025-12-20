@@ -225,34 +225,20 @@ def resolve_pipeline(target: str) -> PipelineConfig:
     # Try importing known model packages for the namespace
     namespace = target
     try:
-        # Try to import models for this namespace
-        # Convention: Check multiple locations for model definitions
-        for module_path in [
-            f"kurt.content.{namespace}_new.models",
-            f"kurt.content.{namespace}.models",
-            f"kurt.content.{namespace}",  # Models may be defined in step_*.py files
-        ]:
-            try:
-                importlib.import_module(module_path)
-                logger.debug(f"Imported {module_path}")
-            except ImportError:
-                pass
+        # Import models from kurt.models package (new location)
+        # Map namespace aliases to model packages
+        namespace_to_package = {
+            "landing": "kurt.models.landing",
+            "staging": "kurt.models.staging",
+            "indexing": "kurt.models.staging",  # Alias: indexing -> staging
+        }
 
-        # For indexing namespace, also import step modules which register models
-        if namespace == "indexing":
-            for step_module in [
-                "kurt.content.indexing.step_document_sections",
-                "kurt.content.indexing.step_extract_sections",
-                "kurt.content.indexing.step_entity_clustering",
-                "kurt.content.indexing.step_entity_resolution",
-                "kurt.content.indexing.step_claim_clustering",
-                "kurt.content.indexing.step_claim_resolution",
-            ]:
-                try:
-                    importlib.import_module(step_module)
-                    logger.debug(f"Imported {step_module}")
-                except ImportError as e:
-                    logger.debug(f"Could not import {step_module}: {e}")
+        if namespace in namespace_to_package:
+            try:
+                importlib.import_module(namespace_to_package[namespace])
+                logger.debug(f"Imported {namespace_to_package[namespace]}")
+            except ImportError as e:
+                logger.debug(f"Could not import {namespace_to_package[namespace]}: {e}")
     except Exception as e:
         logger.debug(f"Could not auto-import models for namespace {namespace}: {e}")
 

@@ -796,10 +796,10 @@ def index_and_finalize_with_two_stage_progress(documents, console, force: bool =
     incremental_mode = "full" if force else "delta"
 
     # Run the workflow using automatic pipeline discovery
-    # "indexing" namespace auto-discovers all indexing.* models
+    # "staging" namespace auto-discovers all staging.* models
     handle = DBOS.start_workflow(
         run_pipeline_workflow,
-        target="indexing",
+        target="staging",
         filters=filters,
         incremental_mode=incremental_mode,
         reprocess_unchanged=force,

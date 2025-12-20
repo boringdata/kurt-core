@@ -212,7 +212,6 @@ def fetch_cmd(
 
     from kurt.admin.telemetry.tracker import track_event
     from kurt.commands.content._fetch_helpers import (
-        build_background_filter_desc,
         build_intro_messages,
         check_guardrails,
         display_dry_run_preview,
@@ -225,7 +224,7 @@ def fetch_cmd(
         merge_identifier_into_filters,
     )
     from kurt.content.fetch import select_documents_for_fetch
-    from kurt.content.fetch.workflow import fetch_workflow
+    from kurt.core import run_pipeline_workflow
     from kurt.utils import should_force
 
     console = Console()
@@ -313,19 +312,20 @@ def fetch_cmd(
 
     # Step 11: Background mode support
     if background:
+        from kurt.content.filtering import DocumentFilters
         from kurt.workflows.cli_helpers import run_with_background_support
 
         console.print("[dim]Enqueueing workflow...[/dim]\n")
-        filter_desc = build_background_filter_desc(
-            include_pattern, urls, in_cluster, with_status, with_content_type
-        )
+
+        # Create filters for the new pipeline
+        filters = DocumentFilters(ids=",".join(doc_ids_to_fetch))
 
         run_with_background_support(
-            workflow_func=fetch_workflow,
+            workflow_func=run_pipeline_workflow,
             workflow_args={
-                "identifiers": doc_ids_to_fetch,
-                "fetch_engine": engine,
-                "filter_description": filter_desc,
+                "target": "landing.fetch",
+                "filters": filters,
+                "incremental_mode": "full",
             },
             background=True,
             workflow_id=None,
@@ -343,223 +343,80 @@ def fetch_cmd(
             print_stage_header,
             print_stage_summary,
         )
+        from kurt.content.filtering import DocumentFilters
         from kurt.workflows import get_dbos
 
         get_dbos()  # Initialize DBOS
         overall_start = time.time()
 
         # ====================================================================
-        # STAGE 1: Fetch & Index Content (combined workflow)
+        # STAGE 1: Fetch Content (new pipeline model)
         # ====================================================================
-        if skip_index:
-            print_stage_header(console, 1, "FETCH CONTENT & GENERATE EMBEDDINGS")
-        else:
-            print_stage_header(console, 1, "FETCH CONTENT & GENERATE EMBEDDINGS")
+        print_stage_header(console, 1, "FETCH CONTENT & GENERATE EMBEDDINGS")
 
         with LiveProgressDisplay(console, max_log_lines=10) as display:
             display.start_stage("Fetching content", total=len(doc_ids_to_fetch))
 
-            # Start fetch workflow and poll events for progress
-            import queue
-            import threading
+            # Create filters for the pipeline
+            filters = DocumentFilters(ids=",".join(doc_ids_to_fetch))
 
-            from dbos import DBOS
-
+            # Start fetch workflow using new pipeline
             handle = DBOS.start_workflow(
-                fetch_workflow,
-                identifiers=doc_ids_to_fetch,
-                fetch_engine=engine,
-                max_concurrent=concurrency,
+                run_pipeline_workflow,
+                target="landing.fetch",
+                filters=filters,
+                incremental_mode="full",
             )
 
-            # Read streams for live progress with sorted display
-            total = len(doc_ids_to_fetch)
-            completed_count = 0
-            completed_lock = threading.Lock()
-
-            # Event queue for sorting by timestamp
-            event_queue = queue.Queue()
-            display_thread_stop = threading.Event()
-
-            def format_event(update, doc_id):
-                """Format an event for display."""
-                status = update.get("status")
-                duration_ms = update.get("duration_ms")
-                timing = f" ({duration_ms}ms)" if duration_ms else ""
-                timestamp = update.get("timestamp", "")
-
-                if timestamp:
-                    time_str = timestamp.split("T")[1][:12]
-                    ts_display = f"[{time_str}] "
-                else:
-                    ts_display = ""
-
-                if status == "started":
-                    return (timestamp, f"{ts_display}⠋ Started [{doc_id}]", "dim")
-                elif status == "resolved":
-                    return (timestamp, f"{ts_display}→ Resolved [{doc_id}]{timing}", "dim")
-                elif status == "fetched":
-                    return (timestamp, f"{ts_display}⠋ Fetched [{doc_id}]{timing}", "dim cyan")
-                elif status == "embedded":
-                    return (
-                        timestamp,
-                        f"{ts_display}⠋ Embeddings extracted [{doc_id}]{timing}",
-                        "dim",
-                    )
-                elif status == "saved":
-                    return (timestamp, f"{ts_display}⠋ Saved [{doc_id}]{timing}", "dim")
-                elif status == "links_extracted":
-                    return (timestamp, f"{ts_display}→ Extracted links [{doc_id}]{timing}", "dim")
-                elif status == "completed":
-                    return (timestamp, f"{ts_display}✓ Completed [{doc_id}]{timing}", "dim green")
-                elif status == "error":
-                    error = update.get("error", "Unknown error")
-                    error_short = error[:60] + "..." if len(error) > 60 else error
-                    return (timestamp, f"✗ Error [{doc_id}] {error_short}", "dim red")
-                return None
-
-            def display_sorted_events():
-                """Periodically flush events sorted by timestamp."""
-                buffer = []
-                while not display_thread_stop.is_set() or not event_queue.empty():
-                    # Collect events for 100ms
-                    deadline = time.time() + 0.1
-                    while time.time() < deadline:
-                        try:
-                            event = event_queue.get(timeout=0.01)
-                            buffer.append(event)
-                        except queue.Empty:
-                            pass
-
-                    # Sort by timestamp and display
-                    if buffer:
-                        # Safe sort: treat empty timestamps as very old (sort first)
-                        buffer.sort(key=lambda x: x[0] if x[0] else "")
-                        for timestamp, message, style in buffer:
-                            display.log(message, style=style)
-                        buffer = []
-
-            def read_progress_stream(index: int):
-                """Read progress stream for one document."""
-                nonlocal completed_count
-                doc_id = "..."
-
-                try:
-                    for update in DBOS.read_stream(handle.workflow_id, f"doc_{index}_progress"):
-                        status = update.get("status")
-
-                        # Extract document ID from stream if available
-                        if "identifier" in update:
-                            identifier = update["identifier"]
-                            doc_id = identifier[:8] if len(identifier) > 8 else identifier
-                        elif "document_id" in update:
-                            document_id = update["document_id"]
-                            doc_id = document_id[:8] if len(document_id) > 8 else document_id
-
-                        # Format and queue event
-                        formatted = format_event(update, doc_id)
-                        if formatted:
-                            event_queue.put(formatted)
-
-                        # Update progress for terminal statuses
-                        if status in ("completed", "error"):
-                            display.update_progress(advance=1)
-                            with completed_lock:
-                                completed_count += 1
-
-                except Exception as e:
-                    event_queue.put(("", f"Stream error for doc_{index}: {str(e)}", "dim red"))
-
-            # Start display thread
-            display_thread = threading.Thread(target=display_sorted_events)
-            display_thread.start()
-
-            # Start thread for each document stream
-            threads = []
-            for i in range(total):
-                t = threading.Thread(target=read_progress_stream, args=(i,))
-                t.start()
-                threads.append(t)
-
-            # Wait for all streams to complete
-            for t in threads:
-                t.join()
-
-            # Stop display thread and wait for final flush
-            display_thread_stop.set()
-            display_thread.join()
-
-            # Get final result
-            fetch_results = handle.get_result()
-
-            # Normalize results to a list
-            if isinstance(fetch_results, dict):
-                if "results" in fetch_results:
-                    # Batch response with results list
-                    fetch_results = fetch_results["results"]
-                else:
-                    # Single document response - wrap in list
-                    fetch_results = [fetch_results]
+            # Wait for result (no streaming in new model)
+            fetch_result = handle.get_result()
 
             display.complete_stage()
 
-        # Extract successful/failed from results
-        successful = [r for r in fetch_results if r.get("status") == "FETCHED"]
-        failed = [r for r in fetch_results if r.get("status") != "FETCHED"]
+        # Extract stats from pipeline result
+        documents_fetched = fetch_result.get("landing.fetch", {}).get("documents_fetched", 0)
+        documents_failed = fetch_result.get("landing.fetch", {}).get("documents_failed", 0)
 
         # Stage 1 summary
         print_stage_summary(
             console,
             [
-                ("✓", "Fetched", f"{len(successful)} document(s)"),
-                ("✗", "Failed", f"{len(failed)} document(s)"),
+                ("✓", "Fetched", f"{documents_fetched} document(s)"),
+                ("✗", "Failed", f"{documents_failed} document(s)"),
             ],
         )
 
-        # Display error details if any documents failed
-        if failed:
-            console.print("\n[bold red]Failed documents:[/bold red]")
-            for result in failed:
-                doc_id = result.get("document_id", "unknown")[:8]
-                url = result.get("source_url", result.get("identifier", "unknown"))
-                error = result.get("error", "Unknown error")
-                console.print(f"  [red]✗[/red] [{doc_id}] {url}")
-                console.print(f"    [dim red]Error: {error}[/dim red]")
+        # Display errors if any
+        errors = fetch_result.get("errors", {})
+        if errors:
+            console.print("\n[bold red]Errors:[/bold red]")
+            for model_name, error in errors.items():
+                console.print(f"  [red]✗[/red] {model_name}: {error}")
 
         # ====================================================================
         # STAGES 2-3: Indexing (Metadata Extraction + Entity Resolution)
         # ====================================================================
         indexed = 0
         skipped_count = 0
-        indexed_results = []
         kg_result = None
 
-        if not skip_index and successful:
-            from kurt.content.filtering import DocumentFilters
-            from kurt.core import run_pipeline_workflow
-
-            # Extract document IDs from successful fetch results
-            doc_ids_to_index = [r["document_id"] for r in successful]
-
+        if not skip_index and documents_fetched > 0:
             # ====================================================================
             # STAGE 2: Indexing (new declarative pipeline)
             # ====================================================================
             print_stage_header(console, 2, "INDEXING")
 
-            # Create filters from document IDs
-            filters = DocumentFilters(ids=",".join(doc_ids_to_index))
-
-            # Run the indexing workflow using the new pipeline
+            # Run the indexing workflow using the new pipeline (same filters)
             index_handle = DBOS.start_workflow(
                 run_pipeline_workflow,
-                target="indexing",
+                target="staging",
                 filters=filters,
                 incremental_mode="full",
                 reprocess_unchanged=False,
             )
 
             with LiveProgressDisplay(console, max_log_lines=10) as display:
-                display.start_stage("Indexing documents", total=len(doc_ids_to_index))
+                display.start_stage("Indexing documents", total=documents_fetched)
 
                 # The new pipeline doesn't emit per-document streams,
                 # so we just wait for completion
@@ -592,8 +449,7 @@ def fetch_cmd(
                         console.print(f"    [dim red]Error: {error}[/dim red]")
 
             # Extract KG stats from entity_resolution results
-            entity_resolution_result = index_result.get("indexing.entity_resolution", {})
-            kg_result = None
+            entity_resolution_result = index_result.get("staging.entity_resolution", {})
             if entity_resolution_result:
                 kg_result = {
                     "entities_created": entity_resolution_result.get("entities_created", 0),
@@ -615,21 +471,18 @@ def fetch_cmd(
                     ],
                 )
 
-            # Store results for final summary
-            indexed_results = []
-
         # ====================================================================
         # Global Command Summary
         # ====================================================================
         overall_elapsed = time.time() - overall_start
         summary_items = [
-            ("✓", "Fetched", f"{len(successful)} document(s)"),
+            ("✓", "Fetched", f"{documents_fetched} document(s)"),
         ]
 
-        if not skip_index and successful:
+        if not skip_index and documents_fetched > 0:
             summary_items.append(("✓", "Indexed", f"{indexed} document(s)"))
 
-            if indexed > 0 and "kg_result" in locals() and kg_result and "error" not in kg_result:
+            if indexed > 0 and kg_result and "error" not in kg_result:
                 summary_items.extend(
                     [
                         ("✓", "Entities created", str(kg_result["entities_created"])),
@@ -642,8 +495,8 @@ def fetch_cmd(
                     ]
                 )
 
-        if failed:
-            summary_items.append(("✗", "Failed", f"{len(failed)} document(s)"))
+        if documents_failed > 0:
+            summary_items.append(("✗", "Failed", f"{documents_failed} document(s)"))
 
         summary_items.append(("ℹ", "Time elapsed", f"{overall_elapsed:.1f}s"))
 
