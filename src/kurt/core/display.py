@@ -617,3 +617,92 @@ def make_progress_callback(prefix: str = "", show_items: bool = True) -> callabl
                 print(f"  {desc}: {total}/{total} completed")
 
     return callback
+
+
+def display_knowledge_graph(kg: dict, console=None, title: str = "Knowledge Graph"):
+    """Display knowledge graph in a consistent format.
+
+    Args:
+        kg: Knowledge graph data with stats, entities, and relationships
+        console: Rich Console instance for output (uses global if None)
+        title: Title to display (default: "Knowledge Graph")
+    """
+    import re
+
+    if not kg:
+        return
+
+    c = console or _console
+
+    # Claims section
+    if kg.get("claims"):
+        claim_count = len(kg["claims"])
+        c.print(f"\n[bold cyan]Claims ({claim_count})[/bold cyan]")
+        c.print(f"[dim]{'─' * 60}[/dim]")
+
+        for claim in kg["claims"][:10]:
+            statement = claim["statement"]
+            highlighted_statement = statement
+
+            # Highlight entities
+            entities_in_claim = claim.get("referenced_entities", [])
+            for entity_name in entities_in_claim:
+                pattern = re.compile(r"\b" + re.escape(entity_name) + r"\b", re.IGNORECASE)
+                highlighted_statement = pattern.sub(
+                    f"[bold magenta]{entity_name}[/bold magenta]", highlighted_statement
+                )
+
+            claim_type_short = (
+                claim["claim_type"].replace("ClaimType.", "").replace("DEFINITION", "DEF")
+            )
+            c.print(f"• [[dim]{claim_type_short}[/dim]] {highlighted_statement}")
+
+            if entities_in_claim:
+                c.print(f"  [dim]Entities: {', '.join(entities_in_claim)}[/dim]")
+            c.print(f"  [dim]Confidence: {claim['confidence']:.2f}[/dim]")
+            c.print()
+
+    # Entities & Relationships section
+    entity_count = kg["stats"]["entity_count"]
+    rel_count = kg["stats"]["relationship_count"]
+    c.print(
+        f"[bold cyan]Entities & Relationships ({entity_count} entities, {rel_count} relationships)[/bold cyan]"
+    )
+    c.print(f"[dim]{'─' * 60}[/dim]")
+
+    # Group relationships by source entity
+    relationships_by_entity = {}
+    if kg.get("relationships"):
+        for rel in kg["relationships"]:
+            source = rel["source_entity"]
+            if source not in relationships_by_entity:
+                relationships_by_entity[source] = []
+            relationships_by_entity[source].append(rel)
+
+    # Display entities with their relationships
+    if kg.get("entities"):
+        for entity in kg["entities"][:10]:
+            c.print(
+                f"• [bold]{entity['name']}[/bold] [{entity['type']}] • "
+                f"Conf: {entity['confidence']:.2f} • Mentions: {entity['mentions_in_doc']}"
+            )
+
+            entity_rels = relationships_by_entity.get(entity["name"], [])
+            for rel in entity_rels[:3]:
+                rel_type = rel.get("relationship_type", "related_to")
+                context = rel.get("context", "")
+                if len(context) > 60:
+                    c.print(
+                        f"  → [italic]{rel_type}[/italic] → {rel['target_entity']} "
+                        f"[dim]({rel['confidence']:.2f}): {context[:60]}...[/dim]"
+                    )
+                else:
+                    c.print(
+                        f"  → [italic]{rel_type}[/italic] → {rel['target_entity']} "
+                        f"[dim]({rel['confidence']:.2f})[/dim]"
+                    )
+
+            if not entity_rels:
+                c.print("  [dim](no relationships)[/dim]")
+
+    c.print()

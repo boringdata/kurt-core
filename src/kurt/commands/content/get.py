@@ -86,7 +86,7 @@ def get_document_cmd(identifier: str, format: str):
 
             # Show knowledge graph if included
             if kg:
-                from kurt.commands.content._live_display import display_knowledge_graph
+                from kurt.core.display import display_knowledge_graph
 
                 display_knowledge_graph(kg, console)
 
