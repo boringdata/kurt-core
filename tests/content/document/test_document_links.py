@@ -1,7 +1,7 @@
 """
 DB integration tests for document links.
 
-Tests save_document_links and get_document_links from kurt.content.document.
+Tests save_document_links and get_document_links from kurt.db.documents.
 Requires tmp_project fixture for database setup.
 
 Migrated from src/kurt/content/fetch/tests/test_document_links.py
@@ -11,10 +11,10 @@ from uuid import uuid4
 
 import pytest
 
-from kurt.content.document import get_document_links, save_document_links
-from kurt.content.fetch.links import extract_document_links
 from kurt.db.database import get_session
+from kurt.db.documents import get_document_links, save_document_links
 from kurt.db.models import Document, DocumentLink, IngestionStatus, SourceType
+from kurt.utils.fetching import extract_document_links
 
 
 class TestSaveDocumentLinks:

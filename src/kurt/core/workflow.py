@@ -17,7 +17,7 @@ from typing import Any, Dict, Optional
 
 from dbos import DBOS
 
-from kurt.content.filtering import DocumentFilters
+from kurt.utils.filtering import DocumentFilters
 
 from .dbos_events import emit_batch_status
 from .model_runner import ModelContext, run_pipeline
@@ -34,6 +34,7 @@ async def run_workflow(
     incremental_mode: str = "full",
     reprocess_unchanged: bool = False,
     workflow_id: Optional[str] = None,
+    model_configs: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Generic DBOS workflow for any dbt-like pipeline.
@@ -93,6 +94,7 @@ async def run_workflow(
         incremental_mode=incremental_mode,
         reprocess_unchanged=reprocess_unchanged,
         workflow_id=workflow_id,
+        metadata={"model_configs": model_configs or {}},
     )
     pipeline_result = await run_pipeline(pipeline, ctx)
 
@@ -261,6 +263,7 @@ async def run_pipeline_workflow(
     incremental_mode: str = "full",
     reprocess_unchanged: bool = False,
     workflow_id: Optional[str] = None,
+    model_configs: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Generic workflow that resolves target and runs pipeline.
 
@@ -298,4 +301,5 @@ async def run_pipeline_workflow(
         incremental_mode=incremental_mode,
         reprocess_unchanged=reprocess_unchanged,
         workflow_id=workflow_id,
+        model_configs=model_configs,
     )

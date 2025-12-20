@@ -24,8 +24,8 @@ from uuid import uuid4
 import pandas as pd
 import pytest
 
-from kurt.content.filtering import DocumentFilters, resolve_filters
 from kurt.core import PipelineContext, Reference, TableReader
+from kurt.utils.filtering import DocumentFilters, resolve_filters
 
 
 class TestResolveFiltersFromCLI:

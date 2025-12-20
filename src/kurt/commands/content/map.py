@@ -2,9 +2,13 @@
 
 import click
 from rich.console import Console
-from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 
 from kurt.admin.telemetry.decorators import track_command
+from kurt.commands.content._shared_options import (
+    add_background_options,
+    add_output_options,
+    dry_run_option,
+)
 from kurt.utils.url_utils import get_domain_from_url
 
 console = Console()
@@ -71,31 +75,11 @@ def map_cmd():
 @click.option(
     "--cluster-urls",
     is_flag=True,
-    help="Cluster discovered URLs into topics (opt-in, uses LLM, creates 5-10 clusters, links ALL documents, warns if >500 docs)",
+    help="Cluster discovered URLs into topics (opt-in, uses LLM, creates 5-10 clusters)",
 )
-@click.option(
-    "--dry-run",
-    is_flag=True,
-    help="Preview discovery without creating records (safe for testing, no DB changes)",
-)
-@click.option(
-    "--format",
-    "output_format",
-    type=click.Choice(["json", "text"]),
-    default="text",
-    help="Output format for AI agents",
-)
-@click.option(
-    "--background",
-    is_flag=True,
-    help="Run as background workflow (non-blocking, useful for long crawls/clustering)",
-)
-@click.option(
-    "--priority",
-    type=int,
-    default=10,
-    help="Priority for background execution (1=highest, default=10)",
-)
+@dry_run_option
+@add_output_options()
+@add_background_options()
 def map_url(
     url: str,
     sitemap_path: str,
@@ -141,143 +125,103 @@ def map_url(
 
         # Discover and cluster immediately
         kurt content map url https://example.com --cluster-urls
+
+        # Run in background
+        kurt content map url https://example.com --background
     """
-    from kurt.content.map import map_url_content
-    from kurt.core import run_pipeline_workflow
+    from kurt.core.display import display_summary, print_info
+    from kurt.models.landing.discovery import DiscoveryConfig
+    from kurt.workflows.cli_helpers import dbos_cleanup_context, run_pipeline_simple
 
-    try:
-        from kurt.core.display import display as core_display
-        from kurt.core.display import print_info
-
-        # Dry-run mode bypasses workflow system (no DB writes)
-        if dry_run:
-            print_info("[bold]DRY RUN - Preview only[/bold]")
-            print_info(f"Discovering content from: {url}")
-
-            result = map_url_content(
-                url=url,
-                sitemap_path=sitemap_path,
-                include_blogrolls=include_blogrolls,
-                max_depth=max_depth,
+    with dbos_cleanup_context():
+        try:
+            # Create DiscoveryConfig with runtime values
+            discovery_config = DiscoveryConfig(
+                source_url=url,
                 max_pages=max_pages,
+                max_depth=max_depth,
                 allow_external=allow_external,
-                include_patterns=include_patterns,
-                exclude_patterns=exclude_patterns,
-                dry_run=True,
-                cluster_urls=False,  # No clustering in dry-run
-                progress=None,
+                include_blogrolls=include_blogrolls,
+                include_patterns=",".join(include_patterns) if include_patterns else None,
+                exclude_patterns=",".join(exclude_patterns) if exclude_patterns else None,
+                dry_run=dry_run,
             )
-        else:
-            # Use workflow system for background mode only
-            # For foreground, use original function with progress UI
+
+            # Run workflow (display handled by framework)
+            workflow_result = run_pipeline_simple(
+                target="landing.discovery",
+                model_configs={"landing.discovery": discovery_config},
+                background=background,
+                priority=priority,
+            )
+
+            # Background mode returns early
             if background:
-                from kurt.content.filtering import DocumentFilters
-                from kurt.workflows.cli_helpers import run_with_background_support
+                return
 
-                # Build config for the new pipeline model
-                # The config is passed via environment or context
-                filters = DocumentFilters()
+            # Extract stats from pipeline result
+            discovery_result = workflow_result.get("landing.discovery", {})
+            documents_discovered = discovery_result.get("documents_discovered", 0)
+            documents_existing = discovery_result.get("documents_existing", 0)
+            discovery_method = discovery_result.get("discovery_method", "unknown")
+            is_dry_run = discovery_result.get("dry_run", False)
 
-                result = run_with_background_support(
-                    workflow_func=run_pipeline_workflow,
-                    workflow_args={
-                        "target": "landing.discovery",
-                        "filters": filters,
-                        "incremental_mode": "full",
-                    },
-                    background=True,
-                    workflow_id=None,
-                    priority=priority,
-                )
-                return  # Background mode complete, exit early
+            # Handle clustering if requested (skip for dry_run)
+            cluster_count = None
+            if cluster_urls and documents_discovered > 0 and not is_dry_run:
+                from kurt.content.cluster import compute_topic_clusters
 
-            # Foreground mode: use original function with progress UI
-            print_info(f"Discovering content from: {url}")
-            core_display.start_step("landing.discovery", f"Discovering from {url}")
+                print_info("Clustering discovered documents...")
+                cluster_result = compute_topic_clusters()
+                cluster_count = len(cluster_result.get("clusters", []))
 
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(),
-                TaskProgressColumn(),
-                console=console,
-            ) as progress:
-                result = map_url_content(
-                    url=url,
-                    sitemap_path=sitemap_path,
-                    include_blogrolls=include_blogrolls,
-                    max_depth=max_depth,
-                    max_pages=max_pages,
-                    allow_external=allow_external,
-                    include_patterns=include_patterns,
-                    exclude_patterns=exclude_patterns,
-                    dry_run=False,
-                    cluster_urls=cluster_urls,
-                    progress=progress,
-                )
+            # Display results
+            if output_format == "json":
+                import json
 
-        # Display results
-        if output_format == "json":
-            import json
-
-            console.print(json.dumps(result, indent=2, default=str))
-        else:
-            # Show sample URLs
-            if result["discovered"]:
-                console.print("\n[bold]Sample URLs:[/bold]")
-                for item in result["discovered"][:5]:
-                    # Handle both string URLs (dry-run) and dict objects (normal mode)
-                    if isinstance(item, str):
-                        console.print(f"  • {item}")
-                    else:
-                        console.print(f"  • {item.get('url', item.get('path', 'N/A'))}")
-                if len(result["discovered"]) > 5:
-                    console.print(f"  [dim]... and {len(result['discovered']) - 5} more[/dim]")
-
-            # End step and show summary
-            core_display.end_step(
-                "landing.discovery",
-                {
-                    "status": "completed",
-                    "pages_discovered": result["total"],
-                    "pages_new": result.get("new", 0),
-                },
-            )
-
-            # Print summary
-            console.print()
-            console.print("[bold]Summary[/bold]")
-            if result.get("dry_run"):
-                console.print(f"  ℹ Would discover: {result['total']} page(s)")
+                result = {
+                    "discovered": discovery_result.get("discovered_urls", []) if is_dry_run else [],
+                    "total": documents_discovered + documents_existing,
+                    "new": documents_discovered,
+                    "existing": documents_existing,
+                    "method": discovery_method,
+                    "dry_run": is_dry_run,
+                }
+                if cluster_count is not None:
+                    result["cluster_count"] = cluster_count
+                console.print(json.dumps(result, indent=2, default=str))
             else:
-                console.print(f"  ✓ Discovered: {result['total']} page(s)")
-                console.print(f"  ✓ New: {result['new']} page(s)")
-                console.print(f"  [dim]ℹ Existing: {result['existing']} page(s)[/dim]")
+                # Build summary stats
+                total = documents_discovered + documents_existing
+                if is_dry_run:
+                    summary_stats = {"would_discover": f"{total} page(s)"}
+                else:
+                    summary_stats = {
+                        "discovered": f"{total} page(s)",
+                        "new": f"{documents_discovered} page(s)",
+                    }
+                    if documents_existing > 0:
+                        summary_stats["existing"] = f"{documents_existing} page(s)"
+                    if cluster_count:
+                        summary_stats["clusters_created"] = cluster_count
 
-            console.print(f"  [dim]ℹ Method: {result['method']}[/dim]")
+                display_summary(summary_stats, console=console, show_time=False)
+                console.print(f"  [dim]ℹ Method: {discovery_method}[/dim]")
 
-            if result.get("cluster_count"):
-                console.print(f"  ✓ Clusters created: {result['cluster_count']}")
+                # Clustering tip (if not clustered)
+                if total >= 50 and not cluster_urls:
+                    domain = get_domain_from_url(url, strip_www=True)
+                    example_pattern = f"*{domain}*"
+                    console.print(
+                        f'\n[dim]💡 Tip: Cluster with [cyan]kurt content cluster-urls --include "{example_pattern}"[/cyan][/dim]'
+                    )
 
-            # Clustering tip (if not clustered)
-            if result["total"] >= 50 and not cluster_urls:
-                # Generate pattern based on user's URL (using centralized utility)
-                domain = get_domain_from_url(url, strip_www=True)
-                example_pattern = f"*{domain}*"
+        except Exception as e:
+            console.print(f"[red]Error:[/red] {e}")
+            import traceback
 
-                console.print(
-                    f'\n[dim]💡 Tip: Cluster these URLs with [cyan]kurt content cluster-urls --include "{example_pattern}"[/cyan] (or just [cyan]kurt content cluster-urls[/cyan] for all)[/dim]'
-                )
-                console.print(
-                    f'[dim]💡 Tip: Explore URLs by depth with [cyan]kurt content list --include "{example_pattern}" --max-depth 2[/cyan][/dim]'
-                )
-
-    except Exception as e:
-        console.print(f"[red]Error:[/red] {e}")
-        import traceback
-
-        console.print(f"[dim]{traceback.format_exc()}[/dim]")
-        raise click.Abort()
+            console.print(f"[dim]{traceback.format_exc()}[/dim]")
+            raise click.Abort()
 
 
 @map_cmd.command("folder")
@@ -289,20 +233,17 @@ def map_url(
 @click.option(
     "--exclude", "exclude_patterns", multiple=True, help="Exclude file pattern (glob, repeatable)"
 )
-@click.option("--dry-run", is_flag=True, help="Preview without creating records")
-@click.option(
-    "--format",
-    "output_format",
-    type=click.Choice(["json", "text"]),
-    default="text",
-    help="Output format",
-)
+@dry_run_option
+@add_output_options()
+@add_background_options()
 def map_folder(
     path: str,
     include_patterns: tuple,
     exclude_patterns: tuple,
     dry_run: bool,
     output_format: str,
+    background: bool,
+    priority: int,
 ):
     """
     Discover markdown files from local folder.
@@ -323,10 +264,15 @@ def map_folder(
 
         # Preview without creating records
         kurt content map folder ./docs --dry-run
+
+        # Run in background
+        kurt content map folder ./docs --background
     """
     from pathlib import Path
 
-    from kurt.content.map import map_folder_content
+    from kurt.core.display import display_summary
+    from kurt.models.landing.discovery import DiscoveryConfig
+    from kurt.workflows.cli_helpers import dbos_cleanup_context, run_pipeline_simple
 
     folder = Path(path)
 
@@ -338,63 +284,66 @@ def map_folder(
         console.print(f"[red]Error:[/red] Not a directory: {path}")
         raise click.Abort()
 
-    try:
-        # Display mode indicator
-        if dry_run:
-            console.print("[bold]DRY RUN - Preview only[/bold]\n")
-
-        console.print(f"[cyan]Discovering content from:[/cyan] {path}\n")
-
-        # Create progress context
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
-            console=console,
-        ) as progress:
-            # Call ingestion layer (handles dry-run logic)
-            result = map_folder_content(
-                folder_path=path,
-                include_patterns=include_patterns,
-                exclude_patterns=exclude_patterns,
+    with dbos_cleanup_context():
+        try:
+            # Create DiscoveryConfig with runtime values
+            discovery_config = DiscoveryConfig(
+                source_folder=str(folder.absolute()),
+                include_patterns=",".join(include_patterns) if include_patterns else None,
+                exclude_patterns=",".join(exclude_patterns) if exclude_patterns else None,
                 dry_run=dry_run,
-                progress=progress,
             )
 
-        # Display results
-        if output_format == "json":
-            import json
+            # Run workflow (display handled by framework)
+            workflow_result = run_pipeline_simple(
+                target="landing.discovery",
+                model_configs={"landing.discovery": discovery_config},
+                background=background,
+                priority=priority,
+            )
 
-            console.print(json.dumps(result, indent=2, default=str))
-        else:
-            if result.get("dry_run"):
-                console.print(f"[green]✓ Would discover {result['total']} files[/green]")
+            # Background mode returns early
+            if background:
+                return
+
+            # Extract stats
+            discovery_result = workflow_result.get("landing.discovery", {})
+            documents_discovered = discovery_result.get("documents_discovered", 0)
+            documents_existing = discovery_result.get("documents_existing", 0)
+            is_dry_run = discovery_result.get("dry_run", False)
+
+            # Display results
+            if output_format == "json":
+                import json
+
+                result = {
+                    "discovered": discovery_result.get("discovered_urls", []) if is_dry_run else [],
+                    "total": documents_discovered + documents_existing,
+                    "new": documents_discovered,
+                    "existing": documents_existing,
+                    "dry_run": is_dry_run,
+                }
+                console.print(json.dumps(result, indent=2, default=str))
             else:
-                console.print(f"[green]✓ Discovered {result['total']} files[/green]")
-                console.print(f"  New: {result['new']}")
-                console.print(f"  Existing: {result['existing']}")
+                total = documents_discovered + documents_existing
+                if is_dry_run:
+                    summary_stats = {"would_discover": f"{total} file(s)"}
+                else:
+                    summary_stats = {
+                        "discovered": f"{total} file(s)",
+                        "new": f"{documents_discovered} file(s)",
+                    }
+                    if documents_existing > 0:
+                        summary_stats["existing"] = f"{documents_existing} file(s)"
 
-            # Show sample files
-            if result["discovered"]:
-                console.print("\n[bold]Sample files:[/bold]")
-                for item in result["discovered"][:5]:
-                    # Handle both string paths (dry-run) and dict objects (normal mode)
-                    if isinstance(item, str):
-                        console.print(f"  • {item}")
-                    elif "error" in item:
-                        console.print(f"  ✗ {item['path']} - {item['error']}")
-                    else:
-                        console.print(f"  • {item['path']}")
-                if len(result["discovered"]) > 5:
-                    console.print(f"  [dim]... and {len(result['discovered']) - 5} more[/dim]")
+                display_summary(summary_stats, console=console, show_time=False)
 
-    except Exception as e:
-        console.print(f"[red]Error:[/red] {e}")
-        import traceback
+        except Exception as e:
+            console.print(f"[red]Error:[/red] {e}")
+            import traceback
 
-        console.print(f"[dim]{traceback.format_exc()}[/dim]")
-        raise click.Abort()
+            console.print(f"[dim]{traceback.format_exc()}[/dim]")
+            raise click.Abort()
 
 
 @map_cmd.command("cms")
@@ -403,7 +352,7 @@ def map_folder(
     "--platform",
     type=click.Choice(["sanity"]),
     required=True,
-    help="CMS platform (currently only sanity is supported; contentful and wordpress coming soon)",
+    help="CMS platform (currently only sanity is supported)",
 )
 @click.option(
     "--instance",
@@ -430,18 +379,9 @@ def map_folder(
     is_flag=True,
     help="Cluster discovered documents into topics (opt-in, uses LLM)",
 )
-@click.option(
-    "--dry-run",
-    is_flag=True,
-    help="Preview discovery without creating records",
-)
-@click.option(
-    "--format",
-    "output_format",
-    type=click.Choice(["json", "text"]),
-    default="text",
-    help="Output format",
-)
+@dry_run_option
+@add_output_options()
+@add_background_options()
 def map_cms(
     platform: str,
     instance: str,
@@ -451,6 +391,8 @@ def map_cms(
     cluster_urls: bool,
     dry_run: bool,
     output_format: str,
+    background: bool,
+    priority: int,
 ):
     """
     Discover content from CMS (creates NOT_FETCHED documents, no download/LLM).
@@ -470,9 +412,14 @@ def map_cms(
 
         # Preview without creating records
         kurt content map cms --platform sanity --dry-run
+
+        # Run in background
+        kurt content map cms --platform sanity --background
     """
-    from kurt.content.map import map_cms_content
+    from kurt.core.display import display_summary, print_info
     from kurt.integrations.cms.config import list_platform_instances, platform_configured
+    from kurt.models.landing.discovery import DiscoveryConfig
+    from kurt.workflows.cli_helpers import dbos_cleanup_context, run_pipeline_simple
 
     # Check if platform is configured
     if not platform_configured(platform):
@@ -490,74 +437,82 @@ def map_cms(
                 f"Available: {', '.join(instances)}[/yellow]\n"
             )
 
-    try:
-        # Display mode indicator
-        if dry_run:
-            console.print("[bold]DRY RUN - Preview only[/bold]\n")
-
-        console.print(f"[cyan]Discovering content from:[/cyan] {platform}/{instance}\n")
-
-        # Create progress context
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
-            console=console,
-        ) as progress:
-            # Call ingestion layer
-            result = map_cms_content(
-                platform=platform,
-                instance=instance,
-                content_type=content_type,
-                status=status,
-                limit=limit,
-                cluster_urls=cluster_urls,
+    with dbos_cleanup_context():
+        try:
+            # Create DiscoveryConfig with runtime values
+            discovery_config = DiscoveryConfig(
+                cms_platform=platform,
+                cms_instance=instance,
+                max_pages=limit if limit is not None else 1000,
                 dry_run=dry_run,
-                progress=progress,
             )
 
-        # Display results
-        if output_format == "json":
-            import json
-
-            console.print(json.dumps(result, indent=2, default=str))
-        else:
-            action = "Would discover" if result.get("dry_run") else "Discovered"
-            console.print(
-                f"[green]✓ {action} {result['total']} documents from {platform}/{instance}[/green]"
+            # Run workflow (display handled by framework)
+            workflow_result = run_pipeline_simple(
+                target="landing.discovery",
+                model_configs={"landing.discovery": discovery_config},
+                background=background,
+                priority=priority,
             )
 
-            if not result.get("dry_run"):
-                console.print(f"  New: {result['new']}")
-                console.print(f"  Existing: {result['existing']}")
+            # Background mode returns early
+            if background:
+                return
 
-            # Show sample documents
-            if result["discovered"]:
-                console.print("\n[bold]Sample documents:[/bold]")
-                for doc in result["discovered"][:5]:
-                    if isinstance(doc, dict):
-                        console.print(f"  • {doc.get('title', 'Untitled')} ({doc['content_type']})")
-                    else:
-                        console.print(f"  • {doc}")
-                if len(result["discovered"]) > 5:
-                    console.print(f"  [dim]... and {len(result['discovered']) - 5} more[/dim]")
+            # Extract stats
+            discovery_result = workflow_result.get("landing.discovery", {})
+            documents_discovered = discovery_result.get("documents_discovered", 0)
+            documents_existing = discovery_result.get("documents_existing", 0)
+            is_dry_run = discovery_result.get("dry_run", False)
 
-            # Show clustering message if enabled
-            if cluster_urls and not result.get("dry_run"):
+            # Handle clustering if requested
+            cluster_count = None
+            if cluster_urls and documents_discovered > 0 and not is_dry_run:
+                from kurt.content.cluster import compute_topic_clusters
+
+                print_info("Clustering discovered documents...")
+                cluster_result = compute_topic_clusters()
+                cluster_count = len(cluster_result.get("clusters", []))
+
+            # Display results
+            if output_format == "json":
+                import json
+
+                result = {
+                    "total": documents_discovered + documents_existing,
+                    "new": documents_discovered,
+                    "existing": documents_existing,
+                    "dry_run": is_dry_run,
+                }
+                if cluster_count is not None:
+                    result["cluster_count"] = cluster_count
+                console.print(json.dumps(result, indent=2, default=str))
+            else:
+                total = documents_discovered + documents_existing
+                if is_dry_run:
+                    summary_stats = {
+                        "would_discover": f"{total} document(s) from {platform}/{instance}"
+                    }
+                else:
+                    summary_stats = {
+                        "discovered": f"{total} document(s) from {platform}/{instance}",
+                        "new": f"{documents_discovered} document(s)",
+                    }
+                    if documents_existing > 0:
+                        summary_stats["existing"] = f"{documents_existing} document(s)"
+                    if cluster_count:
+                        summary_stats["clusters_created"] = cluster_count
+
+                display_summary(summary_stats, console=console, show_time=False)
+
+                # Show next steps
                 console.print(
-                    "\n[dim]💡 Documents will be clustered. View with: "
-                    "[cyan]kurt content cluster-urls[/cyan][/dim]"
+                    f'\n[dim]💡 Next: Fetch content with [cyan]kurt content fetch --include "{platform}/{instance}/*"[/cyan][/dim]'
                 )
 
-            # Show next steps
-            console.print(
-                f'\n[dim]💡 Next: Fetch content with [cyan]kurt content fetch --include "{platform}/{instance}/*"[/cyan][/dim]'
-            )
+        except Exception as e:
+            console.print(f"[red]Error:[/red] {e}")
+            import traceback
 
-    except Exception as e:
-        console.print(f"[red]Error:[/red] {e}")
-        import traceback
-
-        console.print(f"[dim]{traceback.format_exc()}[/dim]")
-        raise click.Abort()
+            console.print(f"[dim]{traceback.format_exc()}[/dim]")
+            raise click.Abort()

@@ -9,7 +9,7 @@ import os
 from kurt.config import KurtConfig, load_config
 
 
-def _get_fetch_engine(override: str = None) -> str:
+def get_fetch_engine(override: str = None) -> str:
     """Determine which fetch engine to use based on config and API key availability."""
     # Handle override
     if override:
@@ -52,8 +52,3 @@ def _get_fetch_engine(override: str = None) -> str:
     except Exception:
         # Priority 3: Config file not found or failed to load → use default
         return KurtConfig.DEFAULT_FETCH_ENGINE
-
-
-__all__ = [
-    "_get_fetch_engine",
-]

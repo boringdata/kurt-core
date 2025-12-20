@@ -782,7 +782,7 @@ class TestContentDeleteCommandExpanded:
         assert "Document to Delete" in result.output
 
         # Verify document was deleted
-        from kurt.content.document import get_document
+        from kurt.db.documents import get_document
 
         try:
             get_document(str(doc_id))
@@ -818,7 +818,7 @@ class TestContentDeleteCommandExpanded:
         assert "Cancelled" in result.output
 
         # Verify document still exists
-        from kurt.content.document import get_document
+        from kurt.db.documents import get_document
 
         retrieved_doc = get_document(str(doc_id))
         assert retrieved_doc.id == doc_id
@@ -852,7 +852,7 @@ class TestContentDeleteCommandExpanded:
         assert "Are you sure?" not in result.output  # No confirmation prompt
 
         # Verify document was deleted
-        from kurt.content.document import get_document
+        from kurt.db.documents import get_document
 
         try:
             get_document(str(doc_id))

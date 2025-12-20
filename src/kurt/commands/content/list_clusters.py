@@ -29,7 +29,7 @@ def list_clusters_cmd(output_format: str):
         kurt content list-clusters
         kurt content list-clusters --format json
     """
-    from kurt.content.document import list_clusters
+    from kurt.db.documents import list_clusters
 
     try:
         clusters = list_clusters()

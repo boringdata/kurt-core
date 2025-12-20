@@ -28,10 +28,6 @@ from uuid import uuid4
 import pytest
 
 from kurt.cli import main
-from kurt.content.indexing.step_extract_sections import (
-    DocumentMetadataOutput,
-    EntityExtraction,
-)
 from kurt.db.database import get_session
 from kurt.db.models import (
     ContentType,
@@ -39,6 +35,10 @@ from kurt.db.models import (
     Entity,
     EntityType,
     IngestionStatus,
+)
+from kurt.models.staging.indexing.step_extract_sections import (
+    DocumentMetadataOutput,
+    EntityExtraction,
 )
 
 
@@ -104,7 +104,7 @@ Python is a high-level programming language.
         mock_extraction_output = MockIndexDocumentOutput()
 
         # Mock entity resolution
-        from kurt.content.indexing.step_entity_clustering import EntityResolution, GroupResolution
+        from kurt.models.staging.step_entity_clustering import EntityResolution, GroupResolution
 
         mock_resolution = GroupResolution(
             resolutions=[
@@ -120,8 +120,8 @@ Python is a high-level programming language.
 
         # Mock external dependencies
         with patch("kurt.content.fetch.content.fetch_with_trafilatura") as mock_fetch:
-            with patch("kurt.content.embeddings.generate_document_embedding") as mock_embed_gen:
-                with patch("kurt.content.embeddings.generate_embeddings") as mock_embed_cluster:
+            with patch("kurt.utils.embeddings.generate_document_embedding") as mock_embed_gen:
+                with patch("kurt.utils.embeddings.generate_embeddings") as mock_embed_cluster:
                     # Setup fetch mock
                     mock_fetch.return_value = (test_content, {"title": "Python Tutorial"})
 
@@ -252,7 +252,7 @@ Python is a high-level programming language.
         mock_extraction_docker.relationships = []
 
         # Mock resolution
-        from kurt.content.indexing.step_entity_clustering import EntityResolution, GroupResolution
+        from kurt.models.staging.step_entity_clustering import EntityResolution, GroupResolution
 
         mock_resolution = GroupResolution(
             resolutions=[
@@ -274,8 +274,8 @@ Python is a high-level programming language.
         )
 
         with patch("kurt.content.fetch.content.fetch_with_trafilatura") as mock_fetch:
-            with patch("kurt.content.embeddings.generate_document_embedding") as mock_doc_embed:
-                with patch("kurt.content.embeddings.generate_embeddings") as mock_embed:
+            with patch("kurt.utils.embeddings.generate_document_embedding") as mock_doc_embed:
+                with patch("kurt.utils.embeddings.generate_embeddings") as mock_embed:
                     # Mock fetch to return different content based on URL
                     def fetch_side_effect(url, *args, **kwargs):
                         if "python" in url:
@@ -330,7 +330,7 @@ Python is a high-level programming language.
         test_url = "https://example.com/test"
         test_content = "# Test\nTest content."
 
-        with patch("kurt.content.fetch.content.fetch_with_trafilatura") as mock_fetch:
+        with patch("kurt.integrations.fetch_engines.fetch_with_trafilatura") as mock_fetch:
             mock_fetch.return_value = (test_content, {"title": "Test"})
 
             # Execute with --skip-index
@@ -501,7 +501,7 @@ class TestFetchIntegrationErrorCases:
         test_url = "https://example.com/fail-test"
         test_content = "Test content"
 
-        with patch("kurt.content.fetch.content.fetch_with_trafilatura") as mock_fetch:
+        with patch("kurt.integrations.fetch_engines.fetch_with_trafilatura") as mock_fetch:
             with patch("dspy.ChainOfThought") as mock_cot:
                 # Mock fetch succeeds
                 mock_fetch.return_value = (test_content, {"title": "Test"})
@@ -528,7 +528,7 @@ class TestFetchIntegrationErrorCases:
 
         test_url = "https://invalid-url-that-doesnt-exist.com/test"
 
-        with patch("kurt.content.fetch.content.fetch_with_trafilatura") as mock_fetch:
+        with patch("kurt.integrations.fetch_engines.fetch_with_trafilatura") as mock_fetch:
             # Mock fetch fails
             mock_fetch.side_effect = Exception("Connection failed")
 

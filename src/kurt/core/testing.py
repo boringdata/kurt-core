@@ -261,7 +261,7 @@ def mock_embeddings(embeddings: Optional[Dict[str, List[float]]] = None):
 
     # Patch all locations where embeddings are used
     with (
-        patch("kurt.content.embeddings.generate_embeddings", side_effect=mock_generate),
+        patch("kurt.utils.embeddings.generate_embeddings", side_effect=mock_generate),
         patch("kurt.db.graph_entities.generate_embeddings", side_effect=mock_generate),
         patch("kurt.db.graph_similarity.generate_embeddings", side_effect=mock_generate),
     ):

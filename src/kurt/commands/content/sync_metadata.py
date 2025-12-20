@@ -38,7 +38,7 @@ def sync_metadata(include_patterns: tuple, all: bool):
         # Sync all documents
         kurt content sync-metadata --all
     """
-    from kurt.content.document import list_content
+    from kurt.db.documents import list_content
     from kurt.db.metadata_sync import process_metadata_sync_queue
 
     try:

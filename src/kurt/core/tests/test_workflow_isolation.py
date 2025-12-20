@@ -11,9 +11,9 @@ from unittest.mock import MagicMock
 import pandas as pd
 import pytest
 
-from kurt.content.filtering import DocumentFilters
 from kurt.core import PipelineContext, Reference
 from kurt.core.table_io import TableReader
+from kurt.utils.filtering import DocumentFilters
 
 
 class TestWorkflowFilterFunction:

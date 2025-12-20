@@ -5,13 +5,61 @@ This module provides helper functions to integrate DBOS workflows
 with existing CLI commands without major refactoring.
 """
 
-from typing import Any, Callable
+import contextlib
+import gc
+import logging
+import sys
+import threading
+import time
+from typing import Any, Callable, Dict, Optional
 
 from rich.console import Console
 
+from kurt.core import run_pipeline_workflow
+from kurt.utils.filtering import DocumentFilters
 from kurt.workflows import get_dbos
 
 console = Console()
+logger = logging.getLogger(__name__)
+
+
+@contextlib.contextmanager
+def dbos_cleanup_context():
+    """
+    Context manager for proper DBOS cleanup after pipeline execution.
+
+    This handles cleanup of DBOS resources and thread pools to prevent
+    hanging after command completion.
+
+    Usage:
+        with dbos_cleanup_context():
+            result = run_pipeline_simple(...)
+            # process result
+    """
+    try:
+        yield
+    finally:
+        # Force garbage collection
+        gc.collect()
+
+        # Ensure DBOS is cleaned up if it was initialized
+        try:
+            dbos = get_dbos()
+            # Force immediate DBOS cleanup
+            dbos.destroy(workflow_completion_timeout_sec=0)
+        except Exception:
+            pass  # Ignore if DBOS wasn't initialized
+
+        # Workaround for DBOS and other executor bugs
+        # Force any non-daemon ThreadPoolExecutor threads to become daemons
+        time.sleep(0.1)  # Brief pause for normal cleanup
+        for thread in threading.enumerate():
+            if thread.name.startswith("ThreadPoolExecutor-") and not thread.daemon:
+                thread.daemon = True  # Make it daemon so it won't block exit
+
+        # Flush output buffers
+        sys.stdout.flush()
+        sys.stderr.flush()
 
 
 def run_with_background_support(
@@ -41,12 +89,12 @@ def run_with_background_support(
         - Otherwise: workflow result (dict)
 
     Example:
-        from kurt.content.fetch.workflow import fetch_workflow
+        from kurt.core import run_pipeline_workflow
         from kurt.workflows.cli_helpers import run_with_background_support
 
         result = run_with_background_support(
-            workflow_func=fetch_workflow,
-            workflow_args={"identifiers": doc_ids, "fetch_engine": "trafilatura"},
+            workflow_func=run_pipeline_workflow,
+            workflow_args={"target": "landing.fetch", "filters": filters},
             background=background_flag,
             workflow_id=workflow_id_arg,
             priority=priority_arg
@@ -114,24 +162,6 @@ def run_with_background_support(
     # Case 2: Start new workflow in background
     if background:
         console.print("[dim]Enqueueing workflow...[/dim]")
-
-        # Get the appropriate queue for this workflow type
-        # The queue automatically manages thread pool and waits for available threads
-        if "fetch" in workflow_func.__name__:
-            pass
-        elif "index" in workflow_func.__name__:
-            pass
-        elif "map" in workflow_func.__name__:
-            from kurt.content.map.workflow import get_map_queue
-
-            get_map_queue()
-        else:
-            # Fallback: start directly without queue
-            handle = dbos.start_workflow(workflow_func, **workflow_args)
-            wf_id = handle.workflow_id
-            console.print(f"\n[green]✓ Workflow started: {wf_id}[/green]")
-            console.print(f"[dim]Check status: kurt workflows status {wf_id}[/dim]")
-            return wf_id
 
         # Spawn a completely independent background worker process
         # This allows the CLI to exit immediately while the workflow executes
@@ -219,4 +249,77 @@ def run_with_background_support(
     return None  # Signal to caller that they should handle sync execution themselves
 
 
-__all__ = ["run_with_background_support"]
+def run_pipeline_simple(
+    target: str,
+    filters: Optional[DocumentFilters] = None,
+    model_configs: Optional[Dict[str, Any]] = None,
+    background: bool = False,
+    priority: int = 10,
+    incremental_mode: str = "full",
+    reprocess_unchanged: bool = False,
+) -> Dict[str, Any]:
+    """
+    Simplified helper to run a pipeline workflow.
+
+    Handles DBOS initialization, background mode, and returns the result.
+    Display is automatically handled by the framework.
+
+    Args:
+        target: Pipeline target (e.g., "landing.discovery", "staging")
+        filters: Document filters (defaults to empty filters)
+        model_configs: Optional dict mapping model names to config instances
+        background: If True, run in background and return workflow ID
+        priority: Priority for background execution
+        incremental_mode: Processing mode ("full" or "delta")
+        reprocess_unchanged: If True, reprocess unchanged documents
+
+    Returns:
+        Workflow result dict (or workflow ID if background=True)
+
+    Example:
+        from kurt.models.landing.discovery import DiscoveryConfig
+        from kurt.workflows.cli_helpers import run_pipeline_simple
+
+        config = DiscoveryConfig(source_url="https://example.com")
+        result = run_pipeline_simple(
+            target="landing.discovery",
+            model_configs={"landing.discovery": config},
+        )
+    """
+    get_dbos()  # Initialize DBOS
+
+    if filters is None:
+        filters = DocumentFilters()
+
+    if background:
+        console.print("[dim]Enqueueing workflow...[/dim]\n")
+        return run_with_background_support(
+            workflow_func=run_pipeline_workflow,
+            workflow_args={
+                "target": target,
+                "filters": filters,
+                "incremental_mode": incremental_mode,
+                "reprocess_unchanged": reprocess_unchanged,
+                "model_configs": model_configs,
+            },
+            background=True,
+            workflow_id=None,
+            priority=priority,
+        )
+
+    # Foreground mode
+    from dbos import DBOS
+
+    handle = DBOS.start_workflow(
+        run_pipeline_workflow,
+        target=target,
+        filters=filters,
+        incremental_mode=incremental_mode,
+        reprocess_unchanged=reprocess_unchanged,
+        model_configs=model_configs,
+    )
+
+    return handle.get_result()
+
+
+__all__ = ["run_with_background_support", "run_pipeline_simple", "dbos_cleanup_context"]

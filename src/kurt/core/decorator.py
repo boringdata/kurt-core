@@ -546,20 +546,33 @@ def model(
 
                 # Load and inject config if schema is provided and not already passed
                 if config_schema is not None and "config" in params and "config" not in kwargs:
-                    try:
-                        config_instance = config_schema.load(name)
-                        kwargs["config"] = config_instance
-                        logger.debug(f"Loaded config for {name}: {config_instance}")
-                    except Exception as e:
-                        logger.warning(f"Failed to load config for {name}: {e}")
-                        # Continue without config - use defaults from _param_metadata
-                        # Only include params that have non-None defaults (skip fallback-only params)
-                        defaults = {
-                            param_name: param.default
-                            for param_name, param in config_schema._param_metadata.items()
-                            if param.default is not None
-                        }
-                        kwargs["config"] = config_schema(**defaults)
+                    # Check if config override is provided in context metadata
+                    ctx = kwargs.get("ctx")
+                    config_instance = None
+
+                    if ctx and hasattr(ctx, "metadata") and ctx.metadata:
+                        model_configs = ctx.metadata.get("model_configs", {})
+                        if name in model_configs:
+                            config_instance = model_configs[name]
+                            logger.debug(f"Using config override from context for {name}")
+
+                    # If no override, load from config file
+                    if config_instance is None:
+                        try:
+                            config_instance = config_schema.load(name)
+                            logger.debug(f"Loaded config for {name}: {config_instance}")
+                        except Exception as e:
+                            logger.warning(f"Failed to load config for {name}: {e}")
+                            # Continue without config - use defaults from _param_metadata
+                            # Only include params that have non-None defaults (skip fallback-only params)
+                            defaults = {
+                                param_name: param.default
+                                for param_name, param in config_schema._param_metadata.items()
+                                if param.default is not None
+                            }
+                            config_instance = config_schema(**defaults)
+
+                    kwargs["config"] = config_instance
 
                 # Filter kwargs to only include parameters the function accepts
                 filtered_kwargs = {k: v for k, v in kwargs.items() if k in params}

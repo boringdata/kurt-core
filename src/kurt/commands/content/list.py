@@ -5,6 +5,10 @@ from rich.console import Console
 from rich.table import Table
 
 from kurt.admin.telemetry.decorators import track_command
+from kurt.commands.content._shared_options import (
+    add_filter_options,
+    add_output_options,
+)
 from kurt.db.models import EntityType, RelationshipType
 
 console = Console()
@@ -16,41 +20,12 @@ RELATIONSHIP_TYPES_STR = ", ".join([r.value for r in RelationshipType])
 
 @click.command("list")
 @track_command
+@add_filter_options(ids=False, exclude=False)
 @click.option(
-    "--with-status",
-    type=click.Choice(["NOT_FETCHED", "FETCHED", "ERROR"], case_sensitive=False),
-    help="Filter by ingestion status (NOT_FETCHED | FETCHED | ERROR)",
+    "--max-depth", type=int, help="Filter by maximum URL depth (e.g., depth 2 = example.com/a/b)"
 )
-@click.option(
-    "--include",
-    "include_pattern",
-    type=str,
-    help="Filter by URL/path pattern (glob matching source_url or content_path)",
-)
-@click.option(
-    "--in-cluster",
-    type=str,
-    help="Filter by cluster name",
-)
-@click.option(
-    "--with-content-type",
-    type=str,
-    help="Filter by content type (tutorial | guide | blog | etc)",
-)
-@click.option(
-    "--max-depth",
-    type=int,
-    help="Filter by maximum URL depth (e.g., example.com/a/b has depth 2)",
-)
-@click.option("--limit", type=int, help="Limit number of results")
 @click.option("--offset", type=int, default=0, help="Number of documents to skip (for pagination)")
-@click.option(
-    "--format",
-    "output_format",
-    type=click.Choice(["table", "json"], case_sensitive=False),
-    default="table",
-    help="Output format for AI agents",
-)
+@add_output_options(table_format=True)
 @click.option(
     "--with-analytics",
     is_flag=True,
@@ -133,7 +108,7 @@ def list_documents_cmd(
         kurt content list --with-analytics --trend decreasing --min-pageviews 1000
         kurt content list --with-analytics --max-pageviews 0
     """
-    from kurt.content.document import list_content
+    from kurt.db.documents import list_content
 
     try:
         # Validate analytics flags
@@ -214,7 +189,7 @@ def list_documents_cmd(
             table.add_column("URL", style="dim")
 
             # Calculate child counts for each document (from entire database, not just filtered results)
-            from kurt.content.document import list_content
+            from kurt.db.documents import list_content
             from kurt.utils.url_utils import get_url_depth
 
             # Get ALL documents to calculate accurate child counts

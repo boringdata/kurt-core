@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 from dbos import DBOS
 
-from kurt.content.filtering import DocumentFilters
+from kurt.utils.filtering import DocumentFilters
 
 from .display import display
 from .references import build_dependency_graph, topological_sort

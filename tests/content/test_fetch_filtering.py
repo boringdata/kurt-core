@@ -2,8 +2,8 @@
 
 from uuid import uuid4
 
-from kurt.content.filtering import build_document_query
 from kurt.db.models import Document, IngestionStatus, SourceType
+from kurt.utils.filtering import build_document_query
 
 
 def test_fetch_excludes_fetched_by_default(session):

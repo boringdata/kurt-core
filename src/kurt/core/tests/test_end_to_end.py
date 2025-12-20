@@ -18,7 +18,6 @@ from typing import Optional
 import pytest
 from sqlmodel import Field, SQLModel
 
-from kurt.content.filtering import DocumentFilters
 from kurt.core import (
     ModelRegistry,
     PipelineContext,
@@ -29,6 +28,7 @@ from kurt.core import (
     model,
     table,
 )
+from kurt.utils.filtering import DocumentFilters
 
 
 class DocumentProcessingRow(SQLModel, table=True):
@@ -151,8 +151,8 @@ class TestEndToEnd:
         configure_dbos_writer(workflow_id="test_e2e")
 
         # Create some test documents in the database
-        from kurt.content.document import add_document
         from kurt.db.database import get_session
+        from kurt.db.documents import add_document
         from kurt.db.models import Document, IngestionStatus
 
         session = get_session()
@@ -237,8 +237,8 @@ More content here with multiple words to count.
         """Test that incremental mode correctly skips unchanged documents."""
         import hashlib
 
-        from kurt.content.document import add_document
         from kurt.db.database import get_session
+        from kurt.db.documents import add_document
         from kurt.db.models import Document, IngestionStatus
 
         session = get_session()
@@ -320,8 +320,8 @@ class TestReferenceFiltering:
         This test verifies that when ctx.document_ids is set, only those
         specific documents are loaded - not all documents in the database.
         """
-        from kurt.content.document import add_document
         from kurt.db.database import get_session
+        from kurt.db.documents import add_document
         from kurt.db.models import Document, IngestionStatus
 
         session = get_session()
@@ -377,8 +377,8 @@ class TestReferenceFiltering:
         workflow_ids, each run only processes its own data - not data from
         previous runs.
         """
-        from kurt.content.document import add_document
         from kurt.db.database import get_session
+        from kurt.db.documents import add_document
         from kurt.db.models import Document, IngestionStatus
 
         session = get_session()
@@ -454,8 +454,8 @@ class TestReferenceFiltering:
         """
         import hashlib
 
-        from kurt.content.document import add_document
         from kurt.db.database import get_session
+        from kurt.db.documents import add_document
         from kurt.db.models import Document, IngestionStatus
 
         session = get_session()
@@ -545,8 +545,8 @@ class TestReferenceFiltering:
         2. Process again without changes - should skip (content_unchanged)
         3. Modify content and process - should process again
         """
-        from kurt.content.document import add_document
         from kurt.db.database import get_session
+        from kurt.db.documents import add_document
         from kurt.db.models import Document, IngestionStatus
 
         session = get_session()
@@ -690,8 +690,8 @@ class TestReferenceFiltering:
         This test verifies that when ctx.document_ids contains multiple IDs,
         only those specific documents are loaded - not all documents in the database.
         """
-        from kurt.content.document import add_document
         from kurt.db.database import get_session
+        from kurt.db.documents import add_document
         from kurt.db.models import Document, IngestionStatus
 
         session = get_session()
@@ -750,8 +750,8 @@ class TestReferenceFiltering:
         """
         import hashlib
 
-        from kurt.content.document import add_document
         from kurt.db.database import get_session
+        from kurt.db.documents import add_document
         from kurt.db.models import Document, IngestionStatus
 
         session = get_session()
@@ -868,8 +868,8 @@ class TestReferenceFiltering:
         """
         import hashlib
 
-        from kurt.content.document import add_document
         from kurt.db.database import get_session
+        from kurt.db.documents import add_document
         from kurt.db.models import Document, IngestionStatus
 
         session = get_session()
@@ -930,8 +930,8 @@ class TestReferenceFiltering:
         This test verifies that when with_status is set, only documents with
         matching ingestion_status are returned from the database query.
         """
-        from kurt.content.document import add_document
         from kurt.db.database import get_session
+        from kurt.db.documents import add_document
         from kurt.db.models import Document, IngestionStatus
 
         session = get_session()
@@ -997,8 +997,8 @@ class TestReferenceFiltering:
         This test verifies that when limit is set, the database query returns
         at most that many documents, without loading all documents first.
         """
-        from kurt.content.document import add_document
         from kurt.db.database import get_session
+        from kurt.db.documents import add_document
         from kurt.db.models import Document, IngestionStatus
 
         session = get_session()
@@ -1050,8 +1050,8 @@ class TestReferenceFiltering:
         This test verifies that only documents matching the include_pattern
         are returned, with non-matching documents filtered out.
         """
-        from kurt.content.document import add_document
         from kurt.db.database import get_session
+        from kurt.db.documents import add_document
         from kurt.db.models import Document, IngestionStatus
 
         session = get_session()
@@ -1119,8 +1119,8 @@ class TestReferenceFiltering:
         This test verifies that documents matching exclude_pattern are filtered
         out from the results.
         """
-        from kurt.content.document import add_document
         from kurt.db.database import get_session
+        from kurt.db.documents import add_document
         from kurt.db.models import Document, IngestionStatus
 
         session = get_session()
@@ -1237,13 +1237,13 @@ class TestClaimCreationEdgeCases:
         from unittest.mock import MagicMock, patch
         from uuid import uuid4
 
-        from kurt.content.filtering import DocumentFilters
         from kurt.core import PipelineContext, TableWriter
         from kurt.db.database import get_session
         from kurt.models.staging.step_claim_resolution import (
             ClaimResolutionRow,
             claim_resolution,
         )
+        from kurt.utils.filtering import DocumentFilters
 
         session = get_session()
 
@@ -1533,8 +1533,8 @@ class TestWorkflowIntegration:
         This test runs a simple pipeline and verifies the result dictionary
         contains the expected keys for document counts and model stats.
         """
-        from kurt.content.document import add_document
         from kurt.db.database import get_session
+        from kurt.db.documents import add_document
         from kurt.db.models import Document, IngestionStatus
 
         session = get_session()

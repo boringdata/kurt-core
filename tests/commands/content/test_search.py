@@ -60,7 +60,7 @@ class TestContentSearchCommand:
         session.commit()
 
         # Mock the embedding generation and search
-        with patch("kurt.content.embeddings.generate_embeddings") as mock_gen:
+        with patch("kurt.utils.embeddings.generate_embeddings") as mock_gen:
             with patch("kurt.db.sqlite.SQLiteClient.search_similar_documents") as mock_search:
                 # Mock embedding generation
                 mock_gen.return_value = [[0.1] * 512]  # Mock 512-dim embedding
@@ -111,7 +111,7 @@ class TestContentSearchCommand:
         session.commit()
 
         # Mock embeddings and search
-        with patch("kurt.content.embeddings.generate_embeddings") as mock_gen:
+        with patch("kurt.utils.embeddings.generate_embeddings") as mock_gen:
             with patch("kurt.db.sqlite.SQLiteClient.search_similar_documents") as mock_search:
                 mock_gen.return_value = [[0.1] * 512]
                 # Return both documents
@@ -155,7 +155,7 @@ class TestContentSearchCommand:
         session.commit()
 
         # Mock embeddings and search
-        with patch("kurt.content.embeddings.generate_embeddings") as mock_gen:
+        with patch("kurt.utils.embeddings.generate_embeddings") as mock_gen:
             with patch("kurt.db.sqlite.SQLiteClient.search_similar_documents") as mock_search:
                 mock_gen.return_value = [[0.1] * 512]
 
@@ -194,7 +194,7 @@ class TestContentSearchCommand:
         session.commit()
 
         # Mock embeddings and search
-        with patch("kurt.content.embeddings.generate_embeddings") as mock_gen:
+        with patch("kurt.utils.embeddings.generate_embeddings") as mock_gen:
             with patch("kurt.db.sqlite.SQLiteClient.search_similar_documents") as mock_search:
                 mock_gen.return_value = [[0.1] * 512]
                 mock_search.return_value = [(str(doc_id), 0.95)]
@@ -230,7 +230,7 @@ class TestContentSearchCommand:
         session.commit()
 
         # Mock embeddings and search
-        with patch("kurt.content.embeddings.generate_embeddings") as mock_gen:
+        with patch("kurt.utils.embeddings.generate_embeddings") as mock_gen:
             with patch("kurt.db.sqlite.SQLiteClient.search_similar_documents") as mock_search:
                 mock_gen.return_value = [[0.1] * 512]
                 mock_search.return_value = [(str(doc_id), 0.82)]
@@ -256,7 +256,7 @@ class TestContentSearchCommand:
         runner, project_dir = isolated_cli_runner
 
         # Mock embeddings and search with no results
-        with patch("kurt.content.embeddings.generate_embeddings") as mock_gen:
+        with patch("kurt.utils.embeddings.generate_embeddings") as mock_gen:
             with patch("kurt.db.sqlite.SQLiteClient.search_similar_documents") as mock_search:
                 mock_gen.return_value = [[0.1] * 512]
                 mock_search.return_value = []  # No results

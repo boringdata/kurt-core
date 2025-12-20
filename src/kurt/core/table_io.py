@@ -24,8 +24,8 @@ from sqlalchemy import (
 )
 from sqlmodel import Session, SQLModel, select
 
-from kurt.content.filtering import DocumentFilters
 from kurt.db.database import get_session
+from kurt.utils.filtering import DocumentFilters
 
 logger = logging.getLogger(__name__)
 
@@ -239,8 +239,8 @@ class TableReader:
         import hashlib
         from uuid import UUID
 
-        from kurt.content.document import load_document_content
-        from kurt.content.filtering import (
+        from kurt.db.documents import load_document_content
+        from kurt.utils.filtering import (
             apply_glob_filters,
             build_document_query,
             resolve_ids_to_uuids,

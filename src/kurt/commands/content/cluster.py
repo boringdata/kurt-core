@@ -8,6 +8,7 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn
 from rich.table import Table
 
 from kurt.admin.telemetry.decorators import track_command
+from kurt.commands.content._shared_options import add_output_options, include_option
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -15,24 +16,13 @@ logger = logging.getLogger(__name__)
 
 @click.command("cluster-urls")
 @track_command
-@click.option(
-    "--include",
-    "include_pattern",
-    type=str,
-    help="Cluster specific URL/path pattern (glob, filter before clustering)",
-)
+@include_option
 @click.option(
     "--force",
     is_flag=True,
     help="Ignore existing clusters and create fresh (default: refine existing clusters)",
 )
-@click.option(
-    "--format",
-    "output_format",
-    type=click.Choice(["table", "json"], case_sensitive=False),
-    default="table",
-    help="Output format for AI agents",
-)
+@add_output_options(table_format=True)
 def cluster_urls_cmd(
     include_pattern: str,
     force: bool,
@@ -79,7 +69,7 @@ def cluster_urls_cmd(
     try:
         # Check for existing clusters first
         from kurt.content.cluster import get_existing_clusters_summary
-        from kurt.content.document import list_content
+        from kurt.db.documents import list_content
 
         # Get document count
         doc_count = len(list_content(include_pattern=include_pattern, limit=None))

@@ -89,6 +89,57 @@ class DiscoveryConfig(ModelConfig):
         default=False,
         description="Enable LLM-powered blogroll/changelog discovery",
     )
+    dry_run: bool = ConfigParam(
+        default=False,
+        description="Preview discovery without creating database records",
+    )
+
+    @classmethod
+    def load(cls, model_name: str) -> "DiscoveryConfig":
+        """Load config with runtime environment variable overrides.
+
+        Checks environment variables (KURT_DISCOVERY_*) for runtime overrides
+        before falling back to config file and defaults.
+        """
+        import os
+        from typing import get_type_hints
+
+        # First, load from config file (parent method)
+        config = super().load(model_name)
+
+        # Override with environment variables if present (runtime overrides)
+        type_hints = get_type_hints(cls)
+        env_overrides = {}
+
+        for field_name in cls._param_metadata.keys():
+            env_key = f"KURT_DISCOVERY_{field_name.upper()}"
+            env_value = os.environ.get(env_key)
+
+            if env_value is not None:
+                # Type coercion
+                target_type = type_hints.get(field_name)
+                if target_type:
+                    if target_type is bool:
+                        env_value = env_value.lower() in ("true", "1", "yes", "on")
+                    elif target_type is int:
+                        try:
+                            env_value = int(env_value)
+                        except ValueError:
+                            continue
+                    elif target_type is Optional[int]:
+                        try:
+                            env_value = int(env_value) if env_value else None
+                        except ValueError:
+                            continue
+                env_overrides[field_name] = env_value
+
+        # Create new config with overrides
+        if env_overrides:
+            config_dict = config.model_dump()
+            config_dict.update(env_overrides)
+            return cls(**config_dict)
+
+        return config
 
 
 # ============================================================================
@@ -207,6 +258,19 @@ def discovery(
         f"(method: {discovery_method})"
     )
 
+    # Dry run mode: return preview without writing to database
+    if config.dry_run:
+        return {
+            "rows_written": 0,
+            "documents_discovered": int(discovered),
+            "documents_existing": int(existing),
+            "documents_errors": int(errors),
+            "discovery_method": discovery_method,
+            "dry_run": True,
+            "discovered_urls": df["source_url"].tolist(),
+        }
+
+    # Normal mode: write to database
     result = writer.write(rows)
     result["documents_discovered"] = int(discovered)
     result["documents_existing"] = int(existing)

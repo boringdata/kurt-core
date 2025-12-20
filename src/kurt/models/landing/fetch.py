@@ -48,6 +48,44 @@ class FetchConfig(ModelConfig):
         description="Maximum characters for embedding generation",
     )
 
+    @classmethod
+    def load(cls, model_name: str) -> "FetchConfig":
+        """Load config with runtime environment variable overrides."""
+        import os
+        from typing import get_type_hints
+
+        # First, load from config file (parent method)
+        config = super().load(model_name)
+
+        # Override with environment variables if present
+        type_hints = get_type_hints(cls)
+        env_overrides = {}
+
+        for field_name in cls._param_metadata.keys():
+            env_key = f"KURT_FETCH_{field_name.upper()}"
+            env_value = os.environ.get(env_key)
+
+            if env_value is not None:
+                # Type coercion
+                target_type = type_hints.get(field_name)
+                if target_type:
+                    if target_type is bool:
+                        env_value = env_value.lower() in ("true", "1", "yes", "on")
+                    elif target_type is int:
+                        try:
+                            env_value = int(env_value)
+                        except ValueError:
+                            continue
+                env_overrides[field_name] = env_value
+
+        # Create new config with overrides
+        if env_overrides:
+            config_dict = config.model_dump()
+            config_dict.update(env_overrides)
+            return cls(**config_dict)
+
+        return config
+
 
 # ============================================================================
 # Output Schema
@@ -185,7 +223,7 @@ def _fetch_document(doc: pd.Series, config: FetchConfig) -> dict:
     Returns dict with: status, content_length, content_hash, content_path,
     embedding_dims, links_extracted, public_url, metadata, error
     """
-    from kurt.content.document import save_document_content_and_metadata, save_document_links
+    from kurt.db.documents import save_document_content_and_metadata, save_document_links
     from kurt.integrations.cms import fetch_from_cms
     from kurt.utils.embeddings import generate_document_embedding
     from kurt.utils.fetching import extract_document_links, fetch_from_web

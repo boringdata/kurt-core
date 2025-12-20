@@ -15,7 +15,7 @@ from rich.console import Console
 from rich.table import Table
 
 from kurt.admin.telemetry.decorators import track_command
-from kurt.content.filtering import DocumentFilters
+from kurt.utils.filtering import DocumentFilters
 
 console = Console()
 logger = logging.getLogger(__name__)

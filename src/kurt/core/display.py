@@ -619,6 +619,61 @@ def make_progress_callback(prefix: str = "", show_items: bool = True) -> callabl
     return callback
 
 
+def display_summary(
+    stats: dict,
+    console=None,
+    title: str = "Summary",
+    show_time: bool = True,
+) -> None:
+    """
+    Display a standardized command summary.
+
+    Args:
+        stats: Dictionary with stat keys and values. Special keys:
+            - elapsed: Time in seconds (shown as "Time elapsed: Xs")
+            - Any key with value > 0 shown as "✓ Key: value"
+            - Keys ending with "_failed" or "_errors" shown in red with ✗
+            - Keys ending with "_skipped" shown with ○
+        console: Rich Console instance (uses global if None)
+        title: Summary title (default: "Summary")
+        show_time: Whether to show elapsed time if present
+
+    Usage:
+        display_summary({
+            "fetched": 10,
+            "indexed": 8,
+            "skipped": 2,
+            "failed": 0,
+            "elapsed": 12.5,
+        })
+    """
+    c = console or _console
+
+    c.print()
+    c.print(f"[bold]{title}[/bold]")
+
+    elapsed = stats.pop("elapsed", None)
+
+    for key, value in stats.items():
+        if value is None or (isinstance(value, (int, float)) and value == 0):
+            continue
+
+        # Format the key for display
+        display_key = key.replace("_", " ").title()
+
+        # Choose icon and style based on key name
+        if "failed" in key.lower() or "error" in key.lower():
+            c.print(f"  [red]✗ {display_key}: {value}[/red]")
+        elif "skipped" in key.lower():
+            c.print(f"  ○ {display_key}: {value}")
+        else:
+            c.print(f"  ✓ {display_key}: {value}")
+
+    # Show elapsed time
+    if show_time and elapsed is not None:
+        c.print(f"  [dim]ℹ Time elapsed: {elapsed:.1f}s[/dim]")
+
+
 def display_knowledge_graph(kg: dict, console=None, title: str = "Knowledge Graph"):
     """Display knowledge graph using inline tables.
 

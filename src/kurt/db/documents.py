@@ -1271,7 +1271,7 @@ def list_documents_for_indexing(
 
     # Mode 1: Documents by IDs (single or multiple, supports partial UUIDs/URLs/file paths)
     if ids:
-        from kurt.content.filtering import resolve_ids_to_uuids
+        from kurt.utils.filtering import resolve_ids_to_uuids
 
         try:
             # Resolve all identifiers to full UUIDs

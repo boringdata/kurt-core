@@ -2,7 +2,7 @@
 
 from unittest.mock import MagicMock, patch
 
-from kurt.content.fetch.content import fetch_batch_from_cms
+from kurt.integrations.cms.fetch import fetch_batch_from_cms
 
 
 class TestFetchBatchFromCMS:

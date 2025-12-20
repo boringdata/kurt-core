@@ -20,8 +20,8 @@ from uuid import uuid4
 import pandas as pd
 import pytest
 
-from kurt.content.filtering import DocumentFilters
 from kurt.core import PipelineContext, Reference, TableReader
+from kurt.utils.filtering import DocumentFilters
 
 
 class TestDictFilterSQLGeneration:
