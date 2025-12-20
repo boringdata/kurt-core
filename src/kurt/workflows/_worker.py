@@ -32,10 +32,9 @@ def run_workflow_worker(workflow_name: str, workflow_args_json: str, priority: i
     init_dbos()
     get_dbos()
 
-    # Import workflow modules to register them
-    from kurt.content.map import workflow as _map  # noqa
-    from kurt.content.fetch import workflow as _fetch  # noqa
-    import kurt.content.indexing  # noqa - registers indexing models
+    # Import model packages to register them
+    import kurt.models.landing  # noqa - registers landing models (discovery, fetch)
+    import kurt.models.staging  # noqa - registers staging models (indexing)
 
     # Get the workflow function
     workflow_func = None
