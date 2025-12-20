@@ -620,89 +620,79 @@ def make_progress_callback(prefix: str = "", show_items: bool = True) -> callabl
 
 
 def display_knowledge_graph(kg: dict, console=None, title: str = "Knowledge Graph"):
-    """Display knowledge graph in a consistent format.
+    """Display knowledge graph using inline tables.
 
     Args:
         kg: Knowledge graph data with stats, entities, and relationships
         console: Rich Console instance for output (uses global if None)
         title: Title to display (default: "Knowledge Graph")
     """
-    import re
-
     if not kg:
         return
 
     c = console or _console
+    stats = kg.get("stats", {})
 
-    # Claims section
+    # Header
+    entity_count = stats.get("entity_count", 0)
+    rel_count = stats.get("relationship_count", 0)
+    claim_count = stats.get("claim_count", len(kg.get("claims", [])))
+
+    c.print(f"\n[bold cyan]{title}[/bold cyan]")
+    c.print(f"[dim]{entity_count} entities, {rel_count} relationships, {claim_count} claims[/dim]")
+
+    # Claims table
     if kg.get("claims"):
-        claim_count = len(kg["claims"])
-        c.print(f"\n[bold cyan]Claims ({claim_count})[/bold cyan]")
-        c.print(f"[dim]{'─' * 60}[/dim]")
+        c.print("\n[bold]Claims[/bold]")
+        claims_data = [
+            {
+                "statement": claim["statement"],
+                "type": claim["claim_type"].replace("ClaimType.", "").replace("DEFINITION", "DEF"),
+                "confidence": f"{claim['confidence']:.2f}",
+            }
+            for claim in kg["claims"]
+        ]
+        print_inline_table(
+            claims_data,
+            columns=["statement", "type", "confidence"],
+            max_items=10,
+            column_widths={"statement": 70, "type": 12, "confidence": 8},
+        )
 
-        for claim in kg["claims"][:10]:
-            statement = claim["statement"]
-            highlighted_statement = statement
-
-            # Highlight entities
-            entities_in_claim = claim.get("referenced_entities", [])
-            for entity_name in entities_in_claim:
-                pattern = re.compile(r"\b" + re.escape(entity_name) + r"\b", re.IGNORECASE)
-                highlighted_statement = pattern.sub(
-                    f"[bold magenta]{entity_name}[/bold magenta]", highlighted_statement
-                )
-
-            claim_type_short = (
-                claim["claim_type"].replace("ClaimType.", "").replace("DEFINITION", "DEF")
-            )
-            c.print(f"• [[dim]{claim_type_short}[/dim]] {highlighted_statement}")
-
-            if entities_in_claim:
-                c.print(f"  [dim]Entities: {', '.join(entities_in_claim)}[/dim]")
-            c.print(f"  [dim]Confidence: {claim['confidence']:.2f}[/dim]")
-            c.print()
-
-    # Entities & Relationships section
-    entity_count = kg["stats"]["entity_count"]
-    rel_count = kg["stats"]["relationship_count"]
-    c.print(
-        f"[bold cyan]Entities & Relationships ({entity_count} entities, {rel_count} relationships)[/bold cyan]"
-    )
-    c.print(f"[dim]{'─' * 60}[/dim]")
-
-    # Group relationships by source entity
-    relationships_by_entity = {}
-    if kg.get("relationships"):
-        for rel in kg["relationships"]:
-            source = rel["source_entity"]
-            if source not in relationships_by_entity:
-                relationships_by_entity[source] = []
-            relationships_by_entity[source].append(rel)
-
-    # Display entities with their relationships
+    # Entities table
     if kg.get("entities"):
-        for entity in kg["entities"][:10]:
-            c.print(
-                f"• [bold]{entity['name']}[/bold] [{entity['type']}] • "
-                f"Conf: {entity['confidence']:.2f} • Mentions: {entity['mentions_in_doc']}"
-            )
+        c.print("\n[bold]Entities[/bold]")
+        entities_data = [
+            {
+                "name": entity["name"],
+                "type": entity["type"],
+                "confidence": f"{entity['confidence']:.2f}",
+                "mentions": entity.get("mentions_in_doc", 0),
+            }
+            for entity in kg["entities"]
+        ]
+        print_inline_table(
+            entities_data,
+            columns=["name", "type", "confidence", "mentions"],
+            max_items=10,
+            column_widths={"name": 30, "type": 15, "confidence": 8, "mentions": 8},
+        )
 
-            entity_rels = relationships_by_entity.get(entity["name"], [])
-            for rel in entity_rels[:3]:
-                rel_type = rel.get("relationship_type", "related_to")
-                context = rel.get("context", "")
-                if len(context) > 60:
-                    c.print(
-                        f"  → [italic]{rel_type}[/italic] → {rel['target_entity']} "
-                        f"[dim]({rel['confidence']:.2f}): {context[:60]}...[/dim]"
-                    )
-                else:
-                    c.print(
-                        f"  → [italic]{rel_type}[/italic] → {rel['target_entity']} "
-                        f"[dim]({rel['confidence']:.2f})[/dim]"
-                    )
-
-            if not entity_rels:
-                c.print("  [dim](no relationships)[/dim]")
-
-    c.print()
+    # Relationships table
+    if kg.get("relationships"):
+        c.print("\n[bold]Relationships[/bold]")
+        rels_data = [
+            {
+                "source": rel["source_entity"],
+                "relationship": rel.get("relationship_type", "related_to"),
+                "target": rel["target_entity"],
+                "confidence": f"{rel['confidence']:.2f}",
+            }
+            for rel in kg["relationships"]
+        ]
+        print_inline_table(
+            rels_data,
+            columns=["source", "relationship", "target", "confidence"],
+            max_items=10,
+            column_widths={"source": 25, "relationship": 20, "target": 25, "confidence": 8},
+        )
