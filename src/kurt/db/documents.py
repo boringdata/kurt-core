@@ -914,12 +914,12 @@ def list_clusters() -> list[dict]:
     """
     List all topic clusters with document counts.
 
+    Queries the staging_topic_clustering table for cluster information.
+
     Returns:
         List of dictionaries with cluster information:
-            - id: UUID
             - name: str
             - description: str
-            - created_at: datetime
             - doc_count: int
 
     Example:
@@ -927,37 +927,35 @@ def list_clusters() -> list[dict]:
         for cluster in clusters:
             print(f"{cluster['name']}: {cluster['doc_count']} docs")
     """
-    from sqlalchemy import func, select
-
-    from kurt.db.models import DocumentClusterEdge, TopicCluster
+    from sqlalchemy import text
 
     session = get_session()
 
-    # Get all clusters with document counts
-    stmt = (
-        select(
-            TopicCluster.id,
-            TopicCluster.name,
-            TopicCluster.description,
-            TopicCluster.created_at,
-            func.count(DocumentClusterEdge.document_id).label("doc_count"),
-        )
-        .outerjoin(DocumentClusterEdge, TopicCluster.id == DocumentClusterEdge.cluster_id)
-        .group_by(TopicCluster.id)
-        .order_by(func.count(DocumentClusterEdge.document_id).desc())
-    )
+    # Query staging_topic_clustering for cluster summary
+    sql = text("""
+        SELECT
+            cluster_name as name,
+            cluster_description as description,
+            COUNT(*) as doc_count
+        FROM staging_topic_clustering
+        WHERE cluster_name IS NOT NULL
+        GROUP BY cluster_name, cluster_description
+        ORDER BY doc_count DESC
+    """)
 
-    results = session.exec(stmt).all()
+    try:
+        results = session.execute(sql).fetchall()
+    except Exception:
+        # Table may not exist yet
+        return []
 
     # Convert to list of dicts
     clusters = []
     for row in results:
         clusters.append(
             {
-                "id": row.id,
                 "name": row.name,
                 "description": row.description,
-                "created_at": row.created_at,
                 "doc_count": row.doc_count,
             }
         )

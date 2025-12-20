@@ -310,16 +310,14 @@ def build_document_query(
         # Default: exclude FETCHED documents unless refetch=True
         stmt = stmt.where(Document.ingestion_status != IngestionStatus.FETCHED)
 
-    # Filter by cluster
+    # Filter by cluster (uses staging_topic_clustering table)
     if in_cluster:
-        # Join with DocumentClusterEdge and TopicCluster to filter by cluster name
-        from kurt.db.models import DocumentClusterEdge, TopicCluster
+        from kurt.models.staging.clustering.step_topic_clustering import TopicClusteringRow
 
-        stmt = (
-            stmt.join(DocumentClusterEdge, Document.id == DocumentClusterEdge.document_id)
-            .join(TopicCluster, DocumentClusterEdge.cluster_id == TopicCluster.id)
-            .where(TopicCluster.name == in_cluster)
-        )
+        stmt = stmt.join(
+            TopicClusteringRow,
+            Document.id == TopicClusteringRow.document_id,
+        ).where(TopicClusteringRow.cluster_name == in_cluster)
 
     # Filter by content type
     if with_content_type:
