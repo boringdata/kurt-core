@@ -10,20 +10,53 @@ import dspy
 import numpy as np
 
 
-def get_embedding_model() -> str:
-    """Get configured embedding model from Kurt config.
+def get_embedding_config() -> tuple[str, str | None, str | None]:
+    """Get configured embedding model and API settings from Kurt config.
+
+    Configuration resolution (in order of priority):
+        1. EMBEDDING.MODEL, EMBEDDING.API_BASE, EMBEDDING.API_KEY
+        2. EMBEDDING_MODEL (legacy fallback for model)
 
     Returns:
-        Model identifier string (e.g., "openai/text-embedding-3-small")
+        Tuple of (model, api_base, api_key)
     """
     from kurt.config import load_config
+    from kurt.config.base import get_step_config
 
     config = load_config()
-    return config.EMBEDDING_MODEL
+
+    # Resolution: EMBEDDING.MODEL -> EMBEDDING_MODEL
+    model = get_step_config(
+        config,
+        "EMBEDDING",
+        None,
+        "MODEL",
+        fallback_key="EMBEDDING_MODEL",
+        default=config.EMBEDDING_MODEL,
+    )
+
+    # Resolution: EMBEDDING.API_BASE -> None
+    api_base = get_step_config(config, "EMBEDDING", None, "API_BASE", default=None)
+
+    # Resolution: EMBEDDING.API_KEY -> None
+    api_key = get_step_config(config, "EMBEDDING", None, "API_KEY", default=None)
+
+    return model, api_base, api_key
 
 
 def generate_embeddings(texts: list[str]) -> list[list[float]]:
     """Generate embeddings for a list of texts using configured model.
+
+    Supports both cloud providers (OpenAI, etc.) and local
+    OpenAI-compatible servers.
+
+    Example kurt.config:
+        # Cloud provider (default)
+        EMBEDDING_MODEL="openai/text-embedding-3-small"
+
+        # Or local server
+        EMBEDDING.API_BASE="http://localhost:8080/v1/"
+        EMBEDDING.MODEL="nomic-embed-text"
 
     Args:
         texts: List of text strings to embed
@@ -35,8 +68,22 @@ def generate_embeddings(texts: list[str]) -> list[list[float]]:
         embeddings = generate_embeddings(["Python", "FastAPI"])
         # Returns: [[0.1, 0.2, ...], [0.3, 0.4, ...]]
     """
-    embedding_model = get_embedding_model()
-    embedder = dspy.Embedder(model=embedding_model)
+    model, api_base, api_key = get_embedding_config()
+
+    if api_base:
+        # Local OpenAI-compatible server
+        # Strip provider prefix if present since we're using a local server
+        if "/" in model:
+            model = model.split("/", 1)[1]
+        embedder = dspy.Embedder(
+            model=f"openai/{model}",
+            api_base=api_base,
+            api_key=api_key or "not_needed",
+        )
+    else:
+        # Cloud provider
+        embedder = dspy.Embedder(model=model)
+
     return embedder(texts)
 
 

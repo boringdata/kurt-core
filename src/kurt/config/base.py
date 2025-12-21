@@ -297,6 +297,20 @@ def create_config(
         f.write(f'EMBEDDING_MODEL="{config.EMBEDDING_MODEL}"\n')
         f.write(f'INGESTION_FETCH_ENGINE="{config.INGESTION_FETCH_ENGINE}"\n')
         f.write(f"MAX_CONCURRENT_INDEXING={config.MAX_CONCURRENT_INDEXING}\n")
+        f.write("\n# Local LLM Configuration (optional, hierarchical)\n")
+        f.write("# Use LLM.API_BASE for all LLM calls, or LLM.<TYPE>.API_BASE for specific types\n")
+        f.write("# Types: INDEXING, ANSWER\n")
+        f.write("#\n")
+        f.write('# LLM.API_BASE="http://localhost:8080/v1/"\n')
+        f.write('# LLM.API_KEY="not_needed"\n')
+        f.write("#\n")
+        f.write("# Override for specific type:\n")
+        f.write('# LLM.ANSWER.API_BASE="http://localhost:9090/v1/"\n')
+        f.write('# LLM.ANSWER.MODEL="llama-3-70b"\n')
+        f.write("#\n")
+        f.write("# Embedding model config:\n")
+        f.write('# EMBEDDING.API_BASE="http://localhost:8080/v1/"\n')
+        f.write('# EMBEDDING.MODEL="nomic-embed-text"\n')
         f.write("\n# Telemetry Configuration\n")
         # Write boolean as True/False (not "True"/"False" string)
         f.write(f"TELEMETRY_ENABLED={config.TELEMETRY_ENABLED}\n")
@@ -353,6 +367,7 @@ def update_config(config: KurtConfig) -> None:
         f.write(f'ANSWER_LLM_MODEL="{config.ANSWER_LLM_MODEL}"\n')
         f.write(f'EMBEDDING_MODEL="{config.EMBEDDING_MODEL}"\n')
         f.write(f'INGESTION_FETCH_ENGINE="{config.INGESTION_FETCH_ENGINE}"\n')
+        f.write(f"MAX_CONCURRENT_INDEXING={config.MAX_CONCURRENT_INDEXING}\n")
         f.write("\n# Telemetry Configuration\n")
         # Write boolean as True/False (not "True"/"False" string)
         f.write(f"TELEMETRY_ENABLED={config.TELEMETRY_ENABLED}\n")
@@ -412,7 +427,7 @@ def update_config(config: KurtConfig) -> None:
 def get_step_config(
     config: KurtConfig,
     module: str,
-    step: str,
+    step: str | None,
     param: str,
     fallback_key: str | None = None,
     default: Any = None,
@@ -422,14 +437,16 @@ def get_step_config(
 
     Resolution order:
     1. Step-specific: MODULE.STEP.PARAM (e.g., INDEXING.SECTION_EXTRACTIONS.LLM_MODEL)
+       Or module-level: MODULE.PARAM (e.g., EMBEDDING.API_BASE) when step is None/empty
     2. Global fallback: fallback_key (e.g., INDEXING_LLM_MODEL)
     3. Default value
 
     Args:
         config: KurtConfig instance
-        module: Module name (e.g., "INDEXING", "FETCH")
+        module: Module name (e.g., "INDEXING", "FETCH", "LLM", "EMBEDDING")
         step: Step name (e.g., "SECTION_EXTRACTIONS", "ENTITY_CLUSTERING")
-        param: Parameter name (e.g., "LLM_MODEL", "EPS")
+              Use None or "" for 2-part keys like EMBEDDING.API_BASE
+        param: Parameter name (e.g., "LLM_MODEL", "EPS", "API_BASE")
         fallback_key: Global config key to use as fallback (e.g., "INDEXING_LLM_MODEL")
         default: Default value if not found anywhere
 
@@ -438,18 +455,30 @@ def get_step_config(
 
     Example:
         >>> config = load_config()
+        >>> # 3-part key: INDEXING.SECTION_EXTRACTIONS.LLM_MODEL
         >>> llm_model = get_step_config(
         ...     config, "INDEXING", "SECTION_EXTRACTIONS", "LLM_MODEL",
         ...     fallback_key="INDEXING_LLM_MODEL",
         ...     default="openai/gpt-4o-mini"
         ... )
+        >>> # 2-part key: EMBEDDING.API_BASE
+        >>> api_base = get_step_config(
+        ...     config, "EMBEDDING", None, "API_BASE",
+        ...     default=None
+        ... )
     """
     extra = getattr(config, "__pydantic_extra__", {})
 
-    # Try step-specific key: MODULE.STEP.PARAM
-    step_key = f"{module}.{step}.{param}"
-    if step_key in extra:
-        return extra[step_key]
+    # Build key based on whether step is provided
+    if step:
+        # 3-part key: MODULE.STEP.PARAM
+        config_key = f"{module}.{step}.{param}"
+    else:
+        # 2-part key: MODULE.PARAM
+        config_key = f"{module}.{param}"
+
+    if config_key in extra:
+        return extra[config_key]
 
     # Try global fallback
     if fallback_key:

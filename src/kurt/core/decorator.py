@@ -270,7 +270,7 @@ def apply_dspy_on_df(
     post_hook: Callable = None,
     max_concurrent: int = 5,
     progress: bool = True,
-    llm_model: str = None,
+    model_type: str = "INDEXING",
 ) -> "pd.DataFrame":
     """Apply a DSPy signature to DataFrame rows in parallel.
 
@@ -291,7 +291,7 @@ def apply_dspy_on_df(
         post_hook: Optional function (row_dict, result) -> row_dict to postprocess
         max_concurrent: Number of parallel LLM calls (default: 5)
         progress: Show progress bar (default: True)
-        llm_model: Optional LLM model name (default: uses INDEXING_LLM_MODEL)
+        model_type: LLM model type to use - "INDEXING" or "ANSWER"
 
     Returns:
         DataFrame with new columns from DSPy output
@@ -364,7 +364,7 @@ def apply_dspy_on_df(
         items=batch_items,
         max_concurrent=max_concurrent,
         on_progress=on_progress,
-        llm_model=llm_model,
+        model_type=model_type,
     )
 
     # Merge results back into rows
