@@ -63,10 +63,10 @@ exclude = ["eval/mock/projects/", "eval/results/"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W"]
-ignore = ["E501", "F811"]  # F811 gives false positives for pytest fixtures
+ignore = ["E501"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "src"]
+testpaths = ["src/kurt"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
