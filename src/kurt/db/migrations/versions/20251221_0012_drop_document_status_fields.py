@@ -53,7 +53,27 @@ def upgrade() -> None:
     conn = op.get_bind()
     dialect = conn.dialect.name
 
-    # Check which columns actually exist
+    # Step 1: Recreate the metadata_sync_trigger without removed columns
+    # The old trigger may reference content_type which is being dropped
+    print("  Recreating metadata_sync_trigger without removed columns...")
+    op.execute("DROP TRIGGER IF EXISTS documents_metadata_sync_trigger")
+    op.execute("""
+        CREATE TRIGGER IF NOT EXISTS documents_metadata_sync_trigger
+        AFTER UPDATE ON documents
+        WHEN (
+            NEW.title != OLD.title OR
+            NEW.description != OLD.description OR
+            NEW.author != OLD.author OR
+            NEW.published_date != OLD.published_date OR
+            NEW.indexed_with_hash != OLD.indexed_with_hash
+        )
+        BEGIN
+            INSERT INTO metadata_sync_queue (document_id, created_at)
+            VALUES (NEW.id, datetime('now'));
+        END;
+    """)
+
+    # Step 2: Check which columns actually exist
     if dialect == "sqlite":
         result = conn.execute(sa.text("PRAGMA table_info(documents)"))
         existing_columns = {row[1] for row in result}

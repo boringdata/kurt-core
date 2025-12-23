@@ -6,6 +6,11 @@ Tests various update scenarios:
 2. Updates via direct SQL
 3. Queue population and processing
 4. Queue cleanup after direct sync
+
+Note: content_type, ingestion_status, and related fields have been removed from
+the Document model as part of the document table refactoring. These are now
+derived from staging tables. The metadata sync trigger now only watches for
+changes to: title, description, author, published_date, indexed_with_hash.
 """
 
 import sqlite3
@@ -18,9 +23,7 @@ from sqlmodel import Session, SQLModel, create_engine
 
 from kurt.db.metadata_sync import process_metadata_sync_queue, write_frontmatter_to_file
 from kurt.db.models import (
-    ContentType,
     Document,
-    IngestionStatus,
     MetadataSyncQueue,
     SourceType,
 )
@@ -66,13 +69,13 @@ def test_db_with_queue(temp_project_dir, monkeypatch):
     SQLModel.metadata.create_all(engine)
 
     # Setup trigger (using pure SQL - must match migration trigger)
+    # Note: content_type removed as part of document table refactoring
     conn = sqlite3.connect(str(db_path))
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TRIGGER IF NOT EXISTS documents_metadata_sync_trigger
         AFTER UPDATE ON documents
         WHEN (
-            NEW.content_type != OLD.content_type OR
             NEW.title != OLD.title OR
             NEW.description != OLD.description OR
             NEW.author != OLD.author OR
@@ -110,7 +113,6 @@ def test_queue_populated_via_orm_update(test_db_with_queue):
         title="Test Doc",
         source_type=SourceType.URL,
         source_url="https://example.com/test",
-        ingestion_status=IngestionStatus.FETCHED,
         content_path="example.com/test.md",
     )
     session.add(doc)
@@ -121,7 +123,6 @@ def test_queue_populated_via_orm_update(test_db_with_queue):
     assert len(queue_items) == 0
 
     # Update metadata via ORM
-    doc.content_type = ContentType.TUTORIAL
     doc.title = "Updated Test Doc"
     doc.description = "Test description"
     session.add(doc)
@@ -144,10 +145,8 @@ def test_queue_populated_via_sql_update(test_db_with_queue):
         title="Test Doc",
         source_type=SourceType.URL,
         source_url="https://example.com/test",
-        ingestion_status=IngestionStatus.FETCHED,
         content_path="example.com/test.md",
-        content_type=ContentType.TUTORIAL,  # Start with a value
-        description="Initial description",  # Start with a value
+        description="Initial description",
     )
     session.add(doc)
     session.commit()
@@ -163,7 +162,7 @@ def test_queue_populated_via_sql_update(test_db_with_queue):
     cursor.execute(
         """
         UPDATE documents
-        SET content_type = 'GUIDE', description = 'Updated via SQL'
+        SET title = 'Updated via SQL', description = 'Updated via SQL'
         WHERE id = ?
     """,
         (str(doc_id).replace("-", ""),),
@@ -180,7 +179,7 @@ def test_queue_populated_via_sql_update(test_db_with_queue):
     assert queue_items[0].document_id == doc_id
 
 
-def test_direct_sync_cleans_queue(test_db_with_queue):
+def test_direct_sync_cleans_queue(test_db_with_queue, monkeypatch):
     """Test that write_frontmatter_to_file() cleans up queue entries."""
     from kurt.config import load_config
 
@@ -197,15 +196,24 @@ def test_direct_sync_cleans_queue(test_db_with_queue):
     full_content_path.parent.mkdir(parents=True, exist_ok=True)
     full_content_path.write_text("# Test Content", encoding="utf-8")
 
+    # Mock get_document_status to return FETCHED (staging tables not set up in this test)
+    monkeypatch.setattr(
+        "kurt.db.documents.get_document_status",
+        lambda doc_id: {"status": "FETCHED", "details": {}},
+    )
+    # Mock get_document_with_metadata to return metadata
+    monkeypatch.setattr(
+        "kurt.db.documents.get_document_with_metadata",
+        lambda doc_id: {"content_type": "tutorial"},
+    )
+
     try:
         doc = Document(
             id=doc_id,
             title="Test Doc",
             source_type=SourceType.URL,
             source_url="https://example.com/test-sync",
-            ingestion_status=IngestionStatus.FETCHED,
             content_path=content_path,
-            content_type=ContentType.TUTORIAL,
             description="Test description",
         )
         session.add(doc)
@@ -233,7 +241,7 @@ def test_direct_sync_cleans_queue(test_db_with_queue):
             full_content_path.unlink()
 
 
-def test_process_queue_syncs_and_clears(test_db_with_queue):
+def test_process_queue_syncs_and_clears(test_db_with_queue, monkeypatch):
     """Test that process_metadata_sync_queue() syncs files and clears queue."""
     from kurt.config import load_config
 
@@ -242,6 +250,17 @@ def test_process_queue_syncs_and_clears(test_db_with_queue):
     # Use real sources directory
     config = load_config()
     real_sources_dir = config.get_absolute_sources_path()
+
+    # Mock get_document_status to return FETCHED (staging tables not set up in this test)
+    monkeypatch.setattr(
+        "kurt.db.documents.get_document_status",
+        lambda doc_id: {"status": "FETCHED", "details": {}},
+    )
+    # Mock get_document_with_metadata to return metadata
+    monkeypatch.setattr(
+        "kurt.db.documents.get_document_with_metadata",
+        lambda doc_id: {"content_type": "tutorial"},
+    )
 
     # Create two documents with content files
     docs = []
@@ -259,9 +278,7 @@ def test_process_queue_syncs_and_clears(test_db_with_queue):
             title=f"Test Doc {i}",
             source_type=SourceType.URL,
             source_url=f"https://example.com/test-process{i}",
-            ingestion_status=IngestionStatus.FETCHED,
             content_path=content_path,
-            content_type=ContentType.TUTORIAL,
             description="Test description",
         )
         session.add(doc)
@@ -290,7 +307,8 @@ def test_process_queue_syncs_and_clears(test_db_with_queue):
             full_content_path = real_sources_dir / doc.content_path
             content = full_content_path.read_text(encoding="utf-8")
             assert content.startswith("---\n")
-            assert "content_type: tutorial" in content
+            # Check for title in frontmatter
+            assert f"title: Test Doc {i}" in content
 
         # Verify queue is empty
         session.expire_all()
@@ -314,7 +332,6 @@ def test_trigger_only_fires_on_metadata_changes(test_db_with_queue):
         title="Test Doc",
         source_type=SourceType.URL,
         source_url="https://example.com/test",
-        ingestion_status=IngestionStatus.FETCHED,
         content_path="example.com/test.md",
     )
     session.add(doc)
@@ -337,7 +354,7 @@ def test_trigger_only_fires_on_metadata_changes(test_db_with_queue):
     assert len(queue_items) == 1
 
 
-def test_sql_update_then_process_queue_syncs_file(test_db_with_queue):
+def test_sql_update_then_process_queue_syncs_file(test_db_with_queue, monkeypatch):
     """Test that SQL update to doc1, then processing queue, syncs doc1's frontmatter."""
     from kurt.config import load_config
 
@@ -346,6 +363,17 @@ def test_sql_update_then_process_queue_syncs_file(test_db_with_queue):
     # Use real sources directory
     config = load_config()
     real_sources_dir = config.get_absolute_sources_path()
+
+    # Mock get_document_status to return FETCHED (staging tables not set up in this test)
+    monkeypatch.setattr(
+        "kurt.db.documents.get_document_status",
+        lambda doc_id: {"status": "FETCHED", "details": {}},
+    )
+    # Mock get_document_with_metadata to return metadata
+    monkeypatch.setattr(
+        "kurt.db.documents.get_document_with_metadata",
+        lambda doc_id: {"content_type": "tutorial"},
+    )
 
     # Create doc1 with content file
     doc1_id = uuid4()
@@ -368,9 +396,7 @@ def test_sql_update_then_process_queue_syncs_file(test_db_with_queue):
             title="Doc 1",
             source_type=SourceType.URL,
             source_url="https://example.com/doc1-sql-queue",
-            ingestion_status=IngestionStatus.FETCHED,
             content_path=doc1_content_path,
-            content_type=ContentType.TUTORIAL,
             description="Original description",
         )
         doc2 = Document(
@@ -378,9 +404,7 @@ def test_sql_update_then_process_queue_syncs_file(test_db_with_queue):
             title="Doc 2",
             source_type=SourceType.URL,
             source_url="https://example.com/doc2-sql-queue",
-            ingestion_status=IngestionStatus.FETCHED,
             content_path=doc2_content_path,
-            content_type=ContentType.GUIDE,
             description="Test description",
         )
         session.add(doc1)
@@ -399,7 +423,7 @@ def test_sql_update_then_process_queue_syncs_file(test_db_with_queue):
         cursor.execute(
             """
             UPDATE documents
-            SET content_type = 'GUIDE', description = 'SQL Update via Agent'
+            SET title = 'Updated via SQL', description = 'SQL Update via Agent'
             WHERE id = ?
         """,
             (str(doc1_id).replace("-", ""),),
@@ -429,7 +453,7 @@ def test_sql_update_then_process_queue_syncs_file(test_db_with_queue):
         # Step 3: Check that doc1's frontmatter is now updated
         doc1_content_after = doc1_full_path.read_text(encoding="utf-8")
         assert doc1_content_after.startswith("---\n")
-        assert "content_type: guide" in doc1_content_after
+        assert "title: Updated via SQL" in doc1_content_after
         assert "description: SQL Update via Agent" in doc1_content_after
 
         # Queue should be empty (cleaned up)
@@ -463,7 +487,6 @@ def test_multiple_updates_create_multiple_queue_entries(test_db_with_queue):
         title="Test Doc",
         source_type=SourceType.URL,
         source_url="https://example.com/test-multiple",
-        ingestion_status=IngestionStatus.FETCHED,
         content_path=content_path,
     )
     session.add(doc)
@@ -487,13 +510,12 @@ def test_multiple_updates_create_multiple_queue_entries(test_db_with_queue):
     full_content_path.write_text("# Test", encoding="utf-8")
 
     try:
-        doc.content_type = ContentType.TUTORIAL
         doc.description = "Test update"
         session.add(doc)
         session.commit()
 
         result = process_metadata_sync_queue(session=session)
-        # All 4 queue entries (3 + 1 from content_type update), but only 1 document processed
+        # All 4 queue entries (3 + 1 from description update), but only 1 document processed
         assert result["processed"] == 1
     finally:
         # Clean up test file
