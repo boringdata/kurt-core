@@ -174,12 +174,13 @@ def _is_reasoning_model(model_name: str) -> bool:
     return any(pattern in model_lower for pattern in reasoning_patterns)
 
 
-def _infer_model_type_from_caller() -> str:
+def _infer_model_type_from_caller() -> str | None:
     """Infer model type from caller's module path.
 
     Returns:
         "ANSWER" if caller is in kurt.commands.ask.* or kurt.answer.*
-        "INDEXING" otherwise (default)
+        "INDEXING" if caller is in kurt.content.indexing.*
+        None otherwise (use global LLM.* config)
     """
     import inspect
 
@@ -189,12 +190,12 @@ def _infer_model_type_from_caller() -> str:
         # Check for answer-related modules
         if "kurt.commands.ask" in module or "kurt.answer" in module:
             return "ANSWER"
-        # Check for indexing-related modules (explicit match)
+        # Check for indexing-related modules
         if "kurt.content.indexing" in module:
             return "INDEXING"
 
-    # Default to INDEXING
-    return "INDEXING"
+    # No specific module detected - use global config
+    return None
 
 
 def get_dspy_lm(model_type: str | None = None) -> dspy.LM:
@@ -207,24 +208,26 @@ def get_dspy_lm(model_type: str | None = None) -> dspy.LM:
         1. Explicit model_type parameter (if provided)
         2. Inferred from caller's module path:
            - kurt.commands.ask.* or kurt.answer.* -> "ANSWER"
-           - Otherwise -> "INDEXING"
+           - kurt.content.indexing.* -> "INDEXING"
+           - Otherwise -> None (use global LLM.* config)
 
     Configuration resolution (in order of priority):
-        1. LLM.<type>.MODEL, LLM.<type>.API_BASE, LLM.<type>.API_KEY
-        2. LLM.API_BASE, LLM.API_KEY (module-level defaults)
+        1. LLM.<type>.* (if model_type is set)
+        2. LLM.* (global defaults)
         3. INDEXING_LLM_MODEL or ANSWER_LLM_MODEL (legacy fallback)
 
     Example kurt.config:
-        # Per-model config
-        LLM.INDEXING.API_BASE="http://localhost:8080/v1/"
-        LLM.INDEXING.MODEL="mlx-community/Mistral-7B"
-
-        # Or module-level default for all LLM types
+        # Global config for all LLM calls
         LLM.API_BASE="http://localhost:8080/v1/"
         LLM.API_KEY="not_needed"
+        LLM.MODEL="mistral-7b"
+
+        # Or per-type overrides
+        LLM.INDEXING.MODEL="mistral-7b"
+        LLM.ANSWER.MODEL="llama-3-70b"
 
     Args:
-        model_type: Type of model - "INDEXING" or "ANSWER".
+        model_type: Type of model - "INDEXING", "ANSWER", or None.
                     If None, inferred from caller's module path.
 
     Returns:
@@ -244,21 +247,30 @@ def get_dspy_lm(model_type: str | None = None) -> dspy.LM:
         fallback_model_key = "ANSWER_LLM_MODEL"
         default_model = config.ANSWER_LLM_MODEL
     else:
+        # INDEXING or None - use INDEXING as legacy fallback
         fallback_model_key = "INDEXING_LLM_MODEL"
         default_model = config.INDEXING_LLM_MODEL
 
-    # Resolution: LLM.<type>.MODEL -> fallback to legacy config
-    model_name = get_step_config(
-        config, "LLM", model_type, "MODEL", fallback_key=fallback_model_key, default=default_model
-    )
+    # Resolution: LLM.<type>.MODEL -> LLM.MODEL -> legacy fallback
+    model_name = None
+    if model_type:
+        model_name = get_step_config(config, "LLM", model_type, "MODEL", default=None)
+    if model_name is None:
+        model_name = get_step_config(
+            config, "LLM", None, "MODEL", fallback_key=fallback_model_key, default=default_model
+        )
 
     # Resolution: LLM.<type>.API_BASE -> LLM.API_BASE -> None
-    api_base = get_step_config(config, "LLM", model_type, "API_BASE", default=None)
+    api_base = None
+    if model_type:
+        api_base = get_step_config(config, "LLM", model_type, "API_BASE", default=None)
     if api_base is None:
         api_base = get_step_config(config, "LLM", None, "API_BASE", default=None)
 
     # Resolution: LLM.<type>.API_KEY -> LLM.API_KEY -> None
-    api_key = get_step_config(config, "LLM", model_type, "API_KEY", default=None)
+    api_key = None
+    if model_type:
+        api_key = get_step_config(config, "LLM", model_type, "API_KEY", default=None)
     if api_key is None:
         api_key = get_step_config(config, "LLM", None, "API_KEY", default=None)
 
