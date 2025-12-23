@@ -80,8 +80,12 @@ class TestRunPipelineParallel:
     """Test run_pipeline parallel execution."""
 
     @pytest.fixture(autouse=True)
-    def setup(self):
-        """Reset state before each test."""
+    def setup(self, tmp_project):
+        """Reset state before each test.
+
+        Requires tmp_project fixture to ensure database is set up properly
+        before any models try to access it.
+        """
         reset_execution_log()
         # Clear any test models from registry
         ModelRegistry._models = {

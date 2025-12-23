@@ -477,3 +477,42 @@ def mock_all_llm_calls():
                 "lm": mock_lm_instance,
                 "configure": mock_configure,
             }
+
+
+def mark_document_as_fetched(doc_id, session=None, workflow_id="test"):
+    """
+    Mark a document as FETCHED by inserting into landing_fetch table.
+
+    This is a test utility that simulates what the fetch pipeline does.
+    Status is now derived from staging tables, not stored on Document.
+
+    Args:
+        doc_id: Document UUID (string or UUID object)
+        session: Optional SQLModel session
+        workflow_id: Optional workflow ID for the landing_fetch record
+    """
+    from sqlalchemy import text
+
+    from kurt.db.database import get_session
+
+    if session is None:
+        session = get_session()
+
+    doc_id_str = str(doc_id)
+
+    try:
+        # Insert into landing_fetch to mark as FETCHED
+        session.execute(
+            text("""
+                INSERT OR REPLACE INTO landing_fetch
+                (document_id, status, workflow_id, created_at, updated_at, model_name, content_length, links_extracted, embedding_dims)
+                VALUES (:doc_id, 'FETCHED', :workflow_id, datetime('now'), datetime('now'), 'landing.fetch', 0, 0, 512)
+            """),
+            {"doc_id": doc_id_str, "workflow_id": workflow_id},
+        )
+        session.commit()
+    except Exception as e:
+        # Table may not exist in all test setups
+        import logging
+
+        logging.debug(f"Could not mark document as fetched: {e}")

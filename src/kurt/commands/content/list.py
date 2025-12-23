@@ -228,9 +228,19 @@ def list_documents_cmd(
                 # Get child count
                 child_count = child_counts.get(doc.source_url, 0)
 
+                # Get status from staging tables
+                from kurt.db.documents import get_document_status
+
+                try:
+                    status_info = get_document_status(doc.id)
+                    status_str = status_info["status"]
+                except Exception:
+                    status_str = "UNKNOWN"
+
                 # Color status
-                status_str = doc.ingestion_status.value
-                if status_str == "FETCHED":
+                if status_str == "INDEXED":
+                    status_display = f"[blue]{status_str}[/blue]"
+                elif status_str == "FETCHED":
                     status_display = f"[green]{status_str}[/green]"
                 elif status_str == "ERROR":
                     status_display = f"[red]{status_str}[/red]"

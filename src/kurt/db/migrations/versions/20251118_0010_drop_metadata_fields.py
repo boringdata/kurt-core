@@ -38,6 +38,8 @@ def migrate_metadata_to_entities(conn) -> dict:
 
     Returns:
         Dictionary with migration statistics
+
+    Note: For fresh databases where these columns don't exist, returns empty stats.
     """
     stats = {
         "topics_created": 0,
@@ -45,6 +47,14 @@ def migrate_metadata_to_entities(conn) -> dict:
         "topics_linked": 0,
         "tools_linked": 0,
     }
+
+    # Check if columns exist (they may not exist in fresh databases)
+    col_result = conn.execute(text("PRAGMA table_info(documents)"))
+    columns = {row[1] for row in col_result}
+
+    if "primary_topics" not in columns or "tools_technologies" not in columns:
+        # Columns don't exist - nothing to migrate
+        return stats
 
     # Get documents with metadata using raw SQL
     result = conn.execute(
@@ -279,22 +289,33 @@ def upgrade() -> None:
     else:
         print("  No metadata to migrate")
 
-    # Step 2: Drop the deprecated columns
-    dialect = conn.dialect.name
+    # Step 2: Drop the deprecated columns if they exist
+    # Check which columns exist
+    result = conn.execute(text("PRAGMA table_info(documents)"))
+    columns = {row[1] for row in result}
 
-    if dialect == "sqlite":
-        # SQLite: Recreate table without deprecated columns
-        with op.batch_alter_table("documents", schema=None) as batch_op:
-            batch_op.drop_column("primary_topics")
-            batch_op.drop_column("tools_technologies")
-    elif dialect == "postgresql":
-        # PostgreSQL: Direct column drop
-        op.drop_column("documents", "primary_topics")
-        op.drop_column("documents", "tools_technologies")
-    else:
-        # For other databases, try direct drop
-        op.drop_column("documents", "primary_topics")
-        op.drop_column("documents", "tools_technologies")
+    columns_to_drop = []
+    if "primary_topics" in columns:
+        columns_to_drop.append("primary_topics")
+    if "tools_technologies" in columns:
+        columns_to_drop.append("tools_technologies")
+
+    if columns_to_drop:
+        dialect = conn.dialect.name
+
+        if dialect == "sqlite":
+            # SQLite: Recreate table without deprecated columns
+            with op.batch_alter_table("documents", schema=None) as batch_op:
+                for col in columns_to_drop:
+                    batch_op.drop_column(col)
+        elif dialect == "postgresql":
+            # PostgreSQL: Direct column drop
+            for col in columns_to_drop:
+                op.drop_column("documents", col)
+        else:
+            # For other databases, try direct drop
+            for col in columns_to_drop:
+                op.drop_column("documents", col)
 
 
 def downgrade() -> None:

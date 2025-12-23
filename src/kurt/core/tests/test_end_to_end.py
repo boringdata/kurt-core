@@ -165,9 +165,11 @@ class TestEndToEnd:
         configure_dbos_writer(workflow_id="test_e2e")
 
         # Create some test documents in the database
+        from sqlalchemy import text
+
         from kurt.db.database import get_session
         from kurt.db.documents import add_document
-        from kurt.db.models import Document, IngestionStatus
+        from kurt.db.models import Document
 
         session = get_session()
 
@@ -176,8 +178,22 @@ class TestEndToEnd:
         doc = session.get(Document, doc_id)
         doc.title = "Test Document"
         doc.content_path = "test.md"
-        doc.ingestion_status = IngestionStatus.FETCHED
         session.commit()
+
+        # Mark as FETCHED by inserting into landing_fetch table
+        # (Status is now derived from staging tables, not stored on Document)
+        try:
+            session.execute(
+                text("""
+                    INSERT INTO landing_fetch (document_id, status, workflow_id, created_at, updated_at, model_name)
+                    VALUES (:doc_id, 'FETCHED', 'test_e2e', datetime('now'), datetime('now'), 'landing.fetch')
+                """),
+                {"doc_id": str(doc_id)},
+            )
+            session.commit()
+        except Exception:
+            # Table may not exist in test, that's OK
+            pass
 
         # Create test content file
         from kurt.config import load_config
@@ -253,7 +269,7 @@ More content here with multiple words to count.
 
         from kurt.db.database import get_session
         from kurt.db.documents import add_document
-        from kurt.db.models import IngestionStatus
+        from tests.conftest import mark_document_as_fetched
 
         session = get_session()
 
@@ -262,7 +278,10 @@ More content here with multiple words to count.
         doc = session.get(Document, doc_id)
         doc.title = "Already Indexed"
         doc.content_path = "indexed.md"
-        doc.ingestion_status = IngestionStatus.FETCHED
+        session.commit()
+
+        # Mark as fetched via landing_fetch table
+        mark_document_as_fetched(doc_id, session)
 
         # Create content and set the indexed hash
         from kurt.config import load_config
@@ -336,7 +355,7 @@ class TestWorkflowExecution:
         """
         from kurt.db.database import get_session
         from kurt.db.documents import add_document
-        from kurt.db.models import IngestionStatus
+        from tests.conftest import mark_document_as_fetched
 
         session = get_session()
 
@@ -345,8 +364,8 @@ class TestWorkflowExecution:
         doc = session.get(Document, doc_id)
         doc.title = "Workflow Test"
         doc.content_path = "workflow_test.md"
-        doc.ingestion_status = IngestionStatus.FETCHED
         session.commit()
+        mark_document_as_fetched(doc_id, session)
 
         # Create content file
         from kurt.config import load_config
@@ -362,8 +381,10 @@ class TestWorkflowExecution:
             DocumentSectionRow,
         )
 
-        # Ensure table exists
-        DocumentSectionRow.metadata.create_all(session.get_bind())
+        # Ensure table exists - close session first to avoid connection pool issues
+        engine = session.get_bind()
+        session.close()
+        DocumentSectionRow.metadata.create_all(engine)
 
         filters = DocumentFilters(ids=str(doc_id))
         ctx1 = PipelineContext(
@@ -779,7 +800,7 @@ class TestWorkflowIntegration:
         """
         from kurt.db.database import get_session
         from kurt.db.documents import add_document
-        from kurt.db.models import IngestionStatus
+        from tests.conftest import mark_document_as_fetched
 
         session = get_session()
 
@@ -788,8 +809,8 @@ class TestWorkflowIntegration:
         doc = session.get(Document, doc_id)
         doc.title = "Stats Test"
         doc.content_path = "stats_test.md"
-        doc.ingestion_status = IngestionStatus.FETCHED
         session.commit()
+        mark_document_as_fetched(doc_id, session)
 
         # Create content file
         from kurt.config import load_config

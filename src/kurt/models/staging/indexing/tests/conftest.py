@@ -43,7 +43,8 @@ def add_test_documents(tmp_project):  # noqa: F811
     from kurt.config import load_config
     from kurt.db.database import get_session
     from kurt.db.documents import add_document
-    from kurt.db.models import Document, IngestionStatus
+    from kurt.db.models import Document
+    from tests.conftest import mark_document_as_fetched
 
     def _add_documents(documents: List[Dict[str, Any]]) -> List[str]:
         config = load_config()
@@ -70,10 +71,10 @@ def add_test_documents(tmp_project):  # noqa: F811
 
                     # Update document
                     db_doc.content_path = content_path
-                    db_doc.ingestion_status = IngestionStatus.FETCHED
                     if "description" in doc:
                         db_doc.description = doc["description"]
                     session.commit()
+                    mark_document_as_fetched(doc_id, session)
                 session.close()
 
         return doc_ids

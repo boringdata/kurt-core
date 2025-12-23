@@ -26,44 +26,62 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Add cms_platform and cms_instance columns to documents table."""
+    """Add cms_platform and cms_instance columns to documents table.
 
-    # Add cms_platform column
-    op.add_column(
-        "documents",
-        sa.Column("cms_platform", sa.String(), nullable=True),
-    )
+    Note: Columns may already exist if initial schema was updated.
+    """
+    conn = op.get_bind()
 
-    # Add cms_instance column
-    op.add_column(
-        "documents",
-        sa.Column("cms_instance", sa.String(), nullable=True),
-    )
+    # Check which columns already exist
+    result = conn.execute(sa.text("PRAGMA table_info(documents)"))
+    columns = {row[1] for row in result}
 
-    # Create index on cms_platform for filtering CMS documents
-    op.create_index(
-        op.f("ix_documents_cms_platform"),
-        "documents",
-        ["cms_platform"],
-        unique=False,
-    )
+    # Add cms_platform column if not exists
+    if "cms_platform" not in columns:
+        op.add_column(
+            "documents",
+            sa.Column("cms_platform", sa.String(), nullable=True),
+        )
+        op.create_index(
+            op.f("ix_documents_cms_platform"),
+            "documents",
+            ["cms_platform"],
+            unique=False,
+        )
 
-    # Create index on cms_instance for filtering by instance
-    op.create_index(
-        op.f("ix_documents_cms_instance"),
-        "documents",
-        ["cms_instance"],
-        unique=False,
-    )
+    # Add cms_instance column if not exists
+    if "cms_instance" not in columns:
+        op.add_column(
+            "documents",
+            sa.Column("cms_instance", sa.String(), nullable=True),
+        )
+        op.create_index(
+            op.f("ix_documents_cms_instance"),
+            "documents",
+            ["cms_instance"],
+            unique=False,
+        )
 
 
 def downgrade() -> None:
     """Remove cms_platform and cms_instance columns from documents table."""
+    conn = op.get_bind()
 
-    # Drop indexes
-    op.drop_index(op.f("ix_documents_cms_instance"), table_name="documents")
-    op.drop_index(op.f("ix_documents_cms_platform"), table_name="documents")
+    # Check which columns exist
+    result = conn.execute(sa.text("PRAGMA table_info(documents)"))
+    columns = {row[1] for row in result}
 
-    # Drop columns
-    op.drop_column("documents", "cms_instance")
-    op.drop_column("documents", "cms_platform")
+    # Drop indexes and columns if they exist
+    if "cms_instance" in columns:
+        try:
+            op.drop_index(op.f("ix_documents_cms_instance"), table_name="documents")
+        except Exception:
+            pass
+        op.drop_column("documents", "cms_instance")
+
+    if "cms_platform" in columns:
+        try:
+            op.drop_index(op.f("ix_documents_cms_platform"), table_name="documents")
+        except Exception:
+            pass
+        op.drop_column("documents", "cms_platform")

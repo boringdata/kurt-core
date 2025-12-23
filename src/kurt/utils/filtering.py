@@ -292,9 +292,10 @@ def build_document_query(
         ... )
         >>> # Then execute: docs = session.exec(stmt).all()
     """
+    from sqlalchemy import text
     from sqlmodel import select
 
-    from kurt.db.models import Document, IngestionStatus
+    from kurt.db.models import Document
 
     stmt = select(Document)
 
@@ -302,13 +303,41 @@ def build_document_query(
     if id_uuids:
         stmt = stmt.where(Document.id.in_(id_uuids))
 
-    # Filter by status
+    # Filter by status using subqueries on staging tables
+    # Status is now derived: INDEXED > FETCHED > DISCOVERED > NOT_FETCHED
     if with_status:
-        status_enum = IngestionStatus[with_status]
-        stmt = stmt.where(Document.ingestion_status == status_enum)
+        status_upper = with_status.upper()
+        if status_upper == "INDEXED":
+            stmt = stmt.where(
+                text("CAST(id AS TEXT) IN (SELECT document_id FROM staging_section_extractions)")
+            )
+        elif status_upper == "FETCHED":
+            stmt = stmt.where(
+                text(
+                    "CAST(id AS TEXT) IN (SELECT document_id FROM landing_fetch WHERE status = 'FETCHED')"
+                )
+            )
+        elif status_upper == "NOT_FETCHED":
+            stmt = stmt.where(
+                text(
+                    "CAST(id AS TEXT) NOT IN (SELECT document_id FROM landing_fetch WHERE status = 'FETCHED')"
+                )
+            )
+        elif status_upper == "ERROR":
+            stmt = stmt.where(
+                text(
+                    "CAST(id AS TEXT) IN ("
+                    "SELECT document_id FROM landing_fetch WHERE error IS NOT NULL "
+                    "UNION SELECT document_id FROM landing_discovery WHERE error IS NOT NULL)"
+                )
+            )
     elif not refetch:
         # Default: exclude FETCHED documents unless refetch=True
-        stmt = stmt.where(Document.ingestion_status != IngestionStatus.FETCHED)
+        stmt = stmt.where(
+            text(
+                "CAST(id AS TEXT) NOT IN (SELECT document_id FROM landing_fetch WHERE status = 'FETCHED')"
+            )
+        )
 
     # Filter by cluster (uses staging_topic_clustering table)
     if in_cluster:
@@ -319,9 +348,15 @@ def build_document_query(
             Document.id == TopicClusteringRow.document_id,
         ).where(TopicClusteringRow.cluster_name == in_cluster)
 
-    # Filter by content type
+    # Filter by content type (uses staging_topic_clustering table)
     if with_content_type:
-        stmt = stmt.where(Document.content_type == with_content_type)
+        stmt = stmt.where(
+            text(
+                f"CAST(id AS TEXT) IN ("
+                f"SELECT document_id FROM staging_topic_clustering "
+                f"WHERE content_type = '{with_content_type.lower()}')"
+            )
+        )
 
     # Apply limit
     if limit:
@@ -561,7 +596,6 @@ def select_documents_for_fetch(
 
     from kurt.db.database import get_session
     from kurt.db.documents import add_documents_for_files, add_documents_for_urls
-    from kurt.db.models import IngestionStatus
     from kurt.utils.filtering import (
         apply_glob_filters,
         build_document_query,
@@ -677,13 +711,23 @@ def select_documents_for_fetch(
     # Calculate estimated cost
     estimated_cost = estimate_fetch_cost(len(filtered_docs), skip_index)
 
-    # Count excluded FETCHED documents
+    # Count excluded FETCHED documents (uses staging tables)
     excluded_fetched_count = 0
     if not with_status and not refetch and docs_before_status_filter:
-        fetched_docs = [
-            d for d in docs_before_status_filter if d.ingestion_status == IngestionStatus.FETCHED
-        ]
-        excluded_fetched_count = len(fetched_docs)
+        # Query landing_fetch to find which docs are fetched
+        from sqlalchemy import text
+
+        doc_ids_str = ",".join(f"'{str(d.id)}'" for d in docs_before_status_filter)
+        try:
+            fetched_sql = text(f"""
+                SELECT COUNT(DISTINCT document_id) as count
+                FROM landing_fetch
+                WHERE document_id IN ({doc_ids_str})
+                AND status = 'FETCHED'
+            """)
+            excluded_fetched_count = session.execute(fetched_sql).scalar() or 0
+        except Exception:
+            excluded_fetched_count = 0
 
     return {
         "docs": filtered_docs,

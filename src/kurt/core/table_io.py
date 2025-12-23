@@ -313,17 +313,26 @@ class TableReader:
             )
 
         # Build records with content loaded from files
+        # Get document metadata from staging tables
+        from kurt.db.documents import get_document_with_metadata
+
         records = []
         skipped_unchanged = 0
         for doc in documents:
+            # Get derived metadata from staging tables
+            try:
+                doc_metadata = get_document_with_metadata(doc.id)
+            except Exception:
+                doc_metadata = {}
+
             record = {
                 document_id_column: str(doc.id),
                 "title": doc.title,
                 "source_url": doc.source_url,
                 "source_type": doc.source_type.value if doc.source_type else None,
                 "content_path": doc.content_path,
-                "content_type": doc.content_type.value if doc.content_type else None,
-                "ingestion_status": doc.ingestion_status.value if doc.ingestion_status else None,
+                "content_type": doc_metadata.get("content_type"),
+                "status": doc_metadata.get("status", "NOT_FETCHED"),
                 "created_at": doc.created_at.isoformat() if doc.created_at else None,
                 "updated_at": doc.updated_at.isoformat() if doc.updated_at else None,
                 # Delta info - previous hash from last indexing

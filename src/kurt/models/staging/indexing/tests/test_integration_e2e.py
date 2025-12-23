@@ -28,7 +28,6 @@ from kurt.db.models import (
     DocumentEntity,
     Entity,
     EntityRelationship,
-    IngestionStatus,
     RelationshipType,
 )
 from kurt.models.staging.indexing.step_claim_clustering import ClaimGroupRow
@@ -38,6 +37,7 @@ from kurt.models.staging.indexing.step_entity_resolution import EntityResolution
 from kurt.models.staging.indexing.step_extract_sections import SectionExtractionRow
 from kurt.utils.filtering import DocumentFilters
 
+from tests.helpers.status_helpers import mark_document_as_fetched
 
 def create_bound_reference(model_class, session, ctx):
     """Create a Reference object bound to a real session and model class.
@@ -73,8 +73,8 @@ def test_doc_with_relationships(tmp_project):
     doc = session.get(Document, doc_id)
     doc.title = "DuckDB and MotherDuck Integration"
     doc.content_path = "relationships_test.md"
-    doc.ingestion_status = IngestionStatus.FETCHED
     session.commit()
+    mark_document_as_fetched(doc_id, session)
 
     # Create content file with clear relationships
     config = load_config()
@@ -117,8 +117,8 @@ def test_docs_with_conflicting_claims(tmp_project):
     doc1 = session.get(Document, doc1_id)
     doc1.title = "DuckDB Limits (Old)"
     doc1.content_path = "duckdb_limits_v1.md"
-    doc1.ingestion_status = IngestionStatus.FETCHED
     session.commit()
+    mark_document_as_fetched(doc1_id, session)
 
     content1 = """# DuckDB Memory Limits
 
@@ -132,8 +132,8 @@ This is a limitation of the in-process architecture.
     doc2 = session.get(Document, doc2_id)
     doc2.title = "DuckDB Limits (New)"
     doc2.content_path = "duckdb_limits_v2.md"
-    doc2.ingestion_status = IngestionStatus.FETCHED
     session.commit()
+    mark_document_as_fetched(doc2_id, session)
 
     content2 = """# DuckDB Memory Limits
 
@@ -165,8 +165,8 @@ def test_doc_for_reindexing(tmp_project):
     doc = session.get(Document, doc_id)
     doc.title = "Python Programming"
     doc.content_path = "reindex_test.md"
-    doc.ingestion_status = IngestionStatus.FETCHED
     session.commit()
+    mark_document_as_fetched(doc_id, session)
 
     content = """# Python Programming
 

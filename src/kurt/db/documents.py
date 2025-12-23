@@ -2,7 +2,7 @@
 Document utility functions for Kurt.
 
 These functions provide CRUD operations for documents:
-- add_document: Create new document record (NOT_FETCHED status)
+- add_document: Create new document record
 - resolve_or_create_document: Find or create document by ID/URL
 - get_document: Get document by ID
 - list_documents: List all documents with filtering
@@ -10,6 +10,12 @@ These functions provide CRUD operations for documents:
 - save_document_content_and_metadata: Update document content and metadata
 - delete_document: Delete document by ID
 - get_document_stats: Get statistics about documents
+- get_document_status: Get document status derived from staging tables
+- get_document_with_metadata: Get document with full metadata from staging tables
+
+Status and metadata are derived from staging tables:
+- Status: landing_discovery, landing_fetch, staging_section_extractions
+- Metadata: staging_topic_clustering, staging_section_extractions
 
 These can be used directly by agents or wrapped by CLI commands.
 """
@@ -21,7 +27,7 @@ from sqlmodel import select
 
 from kurt.config import load_config
 from kurt.db.database import get_session
-from kurt.db.models import Document, IngestionStatus, PageAnalytics, SourceType
+from kurt.db.models import Document, PageAnalytics, SourceType
 from kurt.integrations.analytics.utils import normalize_url_for_analytics
 
 # ============================================================================
@@ -158,7 +164,8 @@ def add_documents_for_files(
             title=title,
             source_type=SourceType.FILE_UPLOAD,
             content_path=content_path_str,
-            ingestion_status=IngestionStatus.FETCHED,  # Already have the file
+            # Note: Status is now derived from staging tables via get_document_status()
+            # For local files, content is already available so they're effectively "fetched"
         )
 
         session.add(new_doc)
@@ -171,9 +178,8 @@ def add_documents_for_files(
         for doc in created_docs:
             session.refresh(doc)
 
-    new_count = len(
-        [d for d in created_docs if d.id and d.ingestion_status == IngestionStatus.FETCHED]
-    )
+    # Count newly created docs (local files have content, so count all with IDs)
+    new_count = len([d for d in created_docs if d.id])
 
     return created_docs, new_count, errors, copied_files
 
@@ -209,11 +215,12 @@ def add_document(url: str, title: str = None) -> UUID:
         title = url.rstrip("/").split("/")[-1] or url
 
     # Create document
+    # Note: Status is now derived from staging tables via get_document_status()
+    # New documents without landing_fetch records are considered NOT_FETCHED
     doc = Document(
         title=title,
         source_type=SourceType.URL,
         source_url=url,
-        ingestion_status=IngestionStatus.NOT_FETCHED,
     )
 
     session.add(doc)
@@ -285,7 +292,7 @@ def resolve_or_create_document(identifier: str | UUID) -> dict:
 
 
 def list_documents(
-    status: Optional[IngestionStatus] = None,
+    status: Optional[str] = None,
     url_prefix: Optional[str] = None,
     url_contains: Optional[str] = None,
     limit: Optional[int] = None,
@@ -300,8 +307,12 @@ def list_documents(
     """
     List all documents with optional filtering.
 
+    Note: Status is now derived from staging tables, not stored on Document.
+    Use get_document_status() for individual document status.
+
     Args:
-        status: Filter by ingestion status (NOT_FETCHED, FETCHED, ERROR)
+        status: Filter by derived status (NOT_FETCHED, FETCHED, INDEXED, ERROR)
+                Uses subqueries on staging tables for efficient filtering.
         url_prefix: Filter by URL prefix (e.g., "https://example.com")
         url_contains: Filter by URL substring (e.g., "blog")
         limit: Maximum number of documents to return
@@ -320,7 +331,7 @@ def list_documents(
         docs = list_documents()
 
         # List only fetched documents
-        docs = list_documents(status=IngestionStatus.FETCHED)
+        docs = list_documents(status="FETCHED")
 
         # List documents from specific domain
         docs = list_documents(url_prefix="https://example.com")
@@ -329,7 +340,7 @@ def list_documents(
         docs = list_documents(url_contains="blog")
 
         # Combine filters
-        docs = list_documents(status=IngestionStatus.FETCHED, url_prefix="https://example.com")
+        docs = list_documents(status="FETCHED", url_prefix="https://example.com")
 
         # List first 10 documents
         docs = list_documents(limit=10)
@@ -343,6 +354,8 @@ def list_documents(
         # Filter by traffic trend
         docs = list_documents(with_analytics=True, pageviews_trend="decreasing")
     """
+    from sqlalchemy import text
+
     session = get_session()
 
     # Determine if we need analytics
@@ -357,9 +370,48 @@ def list_documents(
     # Build base document query
     stmt = select(Document)
 
-    # Apply basic filters
+    # Apply status filter using subqueries on staging tables
+    # Status is derived: INDEXED > FETCHED > DISCOVERED > NOT_FETCHED
     if status:
-        stmt = stmt.where(Document.ingestion_status == status)
+        status_upper = status.upper() if isinstance(status, str) else status.value
+        if status_upper == "INDEXED":
+            # Has records in staging_section_extractions
+            stmt = stmt.where(
+                text("CAST(id AS TEXT) IN (SELECT document_id FROM staging_section_extractions)")
+            )
+        elif status_upper == "FETCHED":
+            # Has records in landing_fetch with status=FETCHED, but NOT indexed
+            stmt = stmt.where(
+                text(
+                    "CAST(id AS TEXT) IN (SELECT document_id FROM landing_fetch WHERE status = 'FETCHED') "
+                    "AND CAST(id AS TEXT) NOT IN (SELECT document_id FROM staging_section_extractions)"
+                )
+            )
+        elif status_upper == "DISCOVERED":
+            # Has records in landing_discovery but NOT fetched
+            stmt = stmt.where(
+                text(
+                    "CAST(id AS TEXT) IN (SELECT document_id FROM landing_discovery) "
+                    "AND CAST(id AS TEXT) NOT IN (SELECT document_id FROM landing_fetch WHERE status = 'FETCHED')"
+                )
+            )
+        elif status_upper == "NOT_FETCHED":
+            # No records in landing_fetch with status=FETCHED
+            stmt = stmt.where(
+                text(
+                    "CAST(id AS TEXT) NOT IN (SELECT document_id FROM landing_fetch WHERE status = 'FETCHED')"
+                )
+            )
+        elif status_upper == "ERROR":
+            # Has error in any staging table
+            stmt = stmt.where(
+                text(
+                    "CAST(id AS TEXT) IN ("
+                    "SELECT document_id FROM landing_fetch WHERE error IS NOT NULL "
+                    "UNION SELECT document_id FROM landing_discovery WHERE error IS NOT NULL"
+                    ")"
+                )
+            )
     if url_prefix:
         stmt = stmt.where(Document.source_url.startswith(url_prefix))
     if url_contains:
@@ -744,7 +796,8 @@ def save_document_content_and_metadata(
     # Update document record
     source_base = config.get_absolute_sources_path()
     doc.content_path = str(content_path.relative_to(source_base))
-    doc.ingestion_status = IngestionStatus.FETCHED
+    # Note: Status is now derived from landing_fetch table, not stored on Document
+    # The landing.fetch model writes to landing_fetch with status=FETCHED
 
     session.commit()
 
@@ -859,10 +912,12 @@ def get_document_stats(
     """
     Get statistics about documents in the database.
 
+    Note: Status is now derived from staging tables, not stored on Document.
+
     Args:
         include_pattern: Optional glob pattern to filter documents (e.g., "*docs.dagster.io*")
         in_cluster: Optional cluster name to filter documents
-        with_status: Optional ingestion status filter (NOT_FETCHED, FETCHED, ERROR)
+        with_status: Optional status filter (NOT_FETCHED, FETCHED, INDEXED, ERROR)
         with_content_type: Optional content type filter (tutorial, guide, blog, etc.)
         limit: Optional limit on number of documents to include in stats
 
@@ -870,7 +925,8 @@ def get_document_stats(
         Dictionary with statistics:
             - total: int (total number of documents)
             - not_fetched: int
-            - fetched: int
+            - fetched: int (includes indexed)
+            - indexed: int
             - error: int
 
     Example:
@@ -884,34 +940,35 @@ def get_document_stats(
     """
     from fnmatch import fnmatch
 
+    from sqlalchemy import text
+
     session = get_session()
 
-    # Build base query
+    # Get all document IDs first
     stmt = select(Document)
 
-    # Apply filters (SQL-based when possible)
-    if with_status:
-        status_enum = IngestionStatus[with_status.upper()]
-        stmt = stmt.where(Document.ingestion_status == status_enum)
-
     if in_cluster:
-        # Join with clusters to filter
-        from kurt.db.models import ClusterMembership
-
-        stmt = stmt.join(ClusterMembership, Document.id == ClusterMembership.document_id).where(
-            ClusterMembership.cluster_name == in_cluster
+        # Join with staging_topic_clustering to filter by cluster
+        stmt = stmt.where(
+            text(
+                "CAST(id AS TEXT) IN ("
+                "SELECT document_id FROM staging_topic_clustering "
+                f"WHERE cluster_name = '{in_cluster}')"
+            )
         )
 
     if with_content_type:
-        # Need to join with document_classifications
-        from kurt.db.models import DocumentClassification
+        # Filter by content_type from staging_topic_clustering
+        stmt = stmt.where(
+            text(
+                "CAST(id AS TEXT) IN ("
+                "SELECT document_id FROM staging_topic_clustering "
+                f"WHERE content_type = '{with_content_type}')"
+            )
+        )
 
-        stmt = stmt.join(
-            DocumentClassification, Document.id == DocumentClassification.document_id
-        ).where(DocumentClassification.document_type == with_content_type)
-
-    # Fetch documents (need glob filtering)
-    all_docs = session.exec(stmt).all()
+    # Fetch documents
+    all_docs = list(session.exec(stmt).all())
 
     # Apply glob pattern filtering (post-fetch)
     if include_pattern:
@@ -927,17 +984,100 @@ def get_document_stats(
     if limit and len(all_docs) > limit:
         all_docs = all_docs[:limit]
 
-    # Count by status
+    # Get status counts using SQL for efficiency
+    doc_ids = [str(d.id) for d in all_docs]
+    if not doc_ids:
+        return {"total": 0, "not_fetched": 0, "fetched": 0, "indexed": 0, "error": 0}
+
+    # Create a temporary view of filtered doc IDs for counting
+    doc_ids_str = ",".join(f"'{d}'" for d in doc_ids)
+
+    # Count indexed (has section extractions)
+    try:
+        indexed_sql = text(f"""
+            SELECT COUNT(DISTINCT document_id) as count
+            FROM staging_section_extractions
+            WHERE document_id IN ({doc_ids_str})
+        """)
+        indexed_count = session.execute(indexed_sql).scalar() or 0
+    except Exception:
+        indexed_count = 0
+
+    # Count fetched (has landing_fetch with FETCHED status)
+    try:
+        fetched_sql = text(f"""
+            SELECT COUNT(DISTINCT document_id) as count
+            FROM landing_fetch
+            WHERE document_id IN ({doc_ids_str})
+            AND status = 'FETCHED'
+        """)
+        fetched_count = session.execute(fetched_sql).scalar() or 0
+    except Exception:
+        fetched_count = 0
+
+    # Count errors
+    try:
+        error_sql = text(f"""
+            SELECT COUNT(DISTINCT document_id) as count
+            FROM (
+                SELECT document_id FROM landing_fetch
+                WHERE document_id IN ({doc_ids_str}) AND error IS NOT NULL
+                UNION
+                SELECT document_id FROM landing_discovery
+                WHERE document_id IN ({doc_ids_str}) AND error IS NOT NULL
+            )
+        """)
+        error_count = session.execute(error_sql).scalar() or 0
+    except Exception:
+        error_count = 0
+
     total = len(all_docs)
-    not_fetched = sum(1 for d in all_docs if d.ingestion_status == IngestionStatus.NOT_FETCHED)
-    fetched = sum(1 for d in all_docs if d.ingestion_status == IngestionStatus.FETCHED)
-    error = sum(1 for d in all_docs if d.ingestion_status == IngestionStatus.ERROR)
+    # not_fetched = total - fetched (those not in landing_fetch with FETCHED)
+    not_fetched = total - fetched_count
+
+    # Apply status filter if specified
+    if with_status:
+        status_upper = with_status.upper()
+        if status_upper == "FETCHED":
+            # Return only fetched count
+            return {
+                "total": fetched_count,
+                "not_fetched": 0,
+                "fetched": fetched_count,
+                "indexed": indexed_count,
+                "error": 0,
+            }
+        elif status_upper == "NOT_FETCHED":
+            return {
+                "total": not_fetched,
+                "not_fetched": not_fetched,
+                "fetched": 0,
+                "indexed": 0,
+                "error": 0,
+            }
+        elif status_upper == "ERROR":
+            return {
+                "total": error_count,
+                "not_fetched": 0,
+                "fetched": 0,
+                "indexed": 0,
+                "error": error_count,
+            }
+        elif status_upper == "INDEXED":
+            return {
+                "total": indexed_count,
+                "not_fetched": 0,
+                "fetched": indexed_count,
+                "indexed": indexed_count,
+                "error": 0,
+            }
 
     return {
         "total": total,
         "not_fetched": not_fetched,
-        "fetched": fetched,
-        "error": error,
+        "fetched": fetched_count,
+        "indexed": indexed_count,
+        "error": error_count,
     }
 
 
@@ -1082,6 +1222,8 @@ def list_content(
     """
     from fnmatch import fnmatch
 
+    from sqlalchemy import text
+
     from kurt.db.models import DocumentClusterEdge, TopicCluster
 
     session = get_session()
@@ -1097,17 +1239,44 @@ def list_content(
             .where(TopicCluster.name.ilike(f"%{in_cluster}%"))
         )
 
-    # Apply status filter
+    # Apply status filter using subqueries on staging tables
     if with_status:
-        status_enum = IngestionStatus(with_status)
-        stmt = stmt.where(Document.ingestion_status == status_enum)
+        status_upper = with_status.upper() if isinstance(with_status, str) else with_status
+        if status_upper == "INDEXED":
+            stmt = stmt.where(
+                text("CAST(id AS TEXT) IN (SELECT document_id FROM staging_section_extractions)")
+            )
+        elif status_upper == "FETCHED":
+            stmt = stmt.where(
+                text(
+                    "CAST(id AS TEXT) IN (SELECT document_id FROM landing_fetch WHERE status = 'FETCHED')"
+                )
+            )
+        elif status_upper == "NOT_FETCHED":
+            stmt = stmt.where(
+                text(
+                    "CAST(id AS TEXT) NOT IN (SELECT document_id FROM landing_fetch WHERE status = 'FETCHED')"
+                )
+            )
+        elif status_upper == "ERROR":
+            stmt = stmt.where(
+                text(
+                    "CAST(id AS TEXT) IN ("
+                    "SELECT document_id FROM landing_fetch WHERE error IS NOT NULL "
+                    "UNION SELECT document_id FROM landing_discovery WHERE error IS NOT NULL"
+                    ")"
+                )
+            )
 
-    # Apply content_type filter
+    # Apply content_type filter using staging_topic_clustering table
     if with_content_type:
-        from kurt.db.models import ContentType
-
-        content_type_enum = ContentType(with_content_type.lower())
-        stmt = stmt.where(Document.content_type == content_type_enum)
+        stmt = stmt.where(
+            text(
+                f"CAST(id AS TEXT) IN ("
+                f"SELECT document_id FROM staging_topic_clustering "
+                f"WHERE content_type = '{with_content_type.lower()}')"
+            )
+        )
 
     # Apply ordering (if not analytics-based, since analytics needs post-query sorting)
     if not (with_analytics and order_by):
@@ -1329,16 +1498,8 @@ def list_documents_for_indexing(
     # Mode 2+: Batch mode - get documents by filters
     if include_pattern or in_cluster or with_status or with_content_type or all_flag:
         # Determine status filter (default to FETCHED if not specified)
-        if with_status:
-            try:
-                status_filter = IngestionStatus[with_status]
-            except KeyError:
-                raise ValueError(
-                    f"Invalid status: {with_status}. Must be one of: NOT_FETCHED, FETCHED, ERROR"
-                )
-        else:
-            # Default to FETCHED for backwards compatibility
-            status_filter = IngestionStatus.FETCHED
+        # Status is now derived from staging tables, not stored on Document
+        status_filter = with_status.upper() if with_status else "FETCHED"
 
         # Get documents with status filter
         docs = list_documents(
@@ -1348,28 +1509,41 @@ def list_documents_for_indexing(
             limit=None,
         )
 
-        # Apply cluster filter if provided
+        # Apply cluster filter if provided (use staging_topic_clustering)
         if in_cluster:
-            docs = [d for d in docs if d.cluster and d.cluster == in_cluster]
-
-        # Apply content type filter if provided
-        if with_content_type:
-            from kurt.db.database import get_session
-            from kurt.db.models import DocumentClassification
+            from sqlalchemy import text
 
             session = get_session()
-            # Get document IDs with matching content type
-            classified_ids = set()
-            for doc in docs:
-                classification = (
-                    session.query(DocumentClassification)
-                    .filter(DocumentClassification.document_id == doc.id)
-                    .first()
-                )
-                if classification and classification.document_type == with_content_type:
-                    classified_ids.add(doc.id)
+            cluster_doc_ids = set()
+            try:
+                cluster_sql = text("""
+                    SELECT document_id FROM staging_topic_clustering
+                    WHERE cluster_name = :cluster_name
+                """)
+                results = session.execute(cluster_sql, {"cluster_name": in_cluster}).fetchall()
+                cluster_doc_ids = {r[0] for r in results}
+            except Exception:
+                pass
+            docs = [d for d in docs if str(d.id) in cluster_doc_ids]
 
-            docs = [d for d in docs if d.id in classified_ids]
+        # Apply content type filter if provided (use staging_topic_clustering)
+        if with_content_type:
+            from sqlalchemy import text
+
+            session = get_session()
+            content_type_doc_ids = set()
+            try:
+                content_type_sql = text("""
+                    SELECT document_id FROM staging_topic_clustering
+                    WHERE content_type = :content_type
+                """)
+                results = session.execute(
+                    content_type_sql, {"content_type": with_content_type.lower()}
+                ).fetchall()
+                content_type_doc_ids = {r[0] for r in results}
+            except Exception:
+                pass
+            docs = [d for d in docs if str(d.id) in content_type_doc_ids]
 
         # Apply glob pattern filter if provided
         if include_pattern:
@@ -1392,17 +1566,21 @@ def list_documents_for_indexing(
 
             # If no docs with requested status but pattern matched other statuses, provide helpful error
             if not docs and matching_any_status:
+                # Get status from staging tables for each doc
                 status_counts = {}
                 for d in matching_any_status:
-                    status = d.ingestion_status.value
-                    status_counts[status] = status_counts.get(status, 0) + 1
+                    try:
+                        doc_status = get_document_status(d.id)["status"]
+                    except Exception:
+                        doc_status = "UNKNOWN"
+                    status_counts[doc_status] = status_counts.get(doc_status, 0) + 1
 
                 status_summary = ", ".join(
                     [f"{count} {status}" for status, count in status_counts.items()]
                 )
                 raise ValueError(
                     f"Found {len(matching_any_status)} document(s) matching pattern '{include_pattern}' "
-                    f"({status_summary}), but none are {status_filter.value}.\n"
+                    f"({status_summary}), but none are {status_filter}.\n"
                     f"Tip: Use 'kurt content fetch --include \"{include_pattern}\"' to fetch these documents first."
                 )
 
@@ -1506,6 +1684,304 @@ def save_document_links(doc_id: UUID, links: list[dict]) -> int:
 
     session.commit()
     return saved_count
+
+
+# ============================================================================
+# Document Status and Metadata (Derived from Staging Tables)
+# ============================================================================
+
+
+def get_document_status(document_id: str | UUID) -> dict:
+    """
+    Get document status derived from staging tables.
+
+    Status is determined by checking staging tables in priority order:
+    1. staging_section_extractions → INDEXED (content has been indexed)
+    2. landing_fetch → FETCHED (content downloaded but not indexed)
+    3. landing_discovery → DISCOVERED (URL discovered but not fetched)
+    4. None of above → NOT_FETCHED
+
+    Any error in staging tables → ERROR
+
+    Args:
+        document_id: Document UUID as string or UUID object
+
+    Returns:
+        dict with keys:
+            - status: str (INDEXED, FETCHED, DISCOVERED, NOT_FETCHED, ERROR)
+            - is_indexed: bool (has section extractions)
+            - is_fetched: bool (has fetch record)
+            - is_discovered: bool (has discovery record)
+            - fetch_engine: str | None (from landing_fetch)
+            - discovery_method: str | None (from landing_discovery)
+            - error: str | None (first error found)
+            - error_source: str | None (table where error was found)
+
+    Example:
+        >>> status = get_document_status("550e8400")
+        >>> print(status["status"])  # "INDEXED", "FETCHED", etc.
+        >>> if status["is_indexed"]:
+        ...     print("Document has been indexed")
+    """
+    from sqlalchemy import text
+
+    session = get_session()
+
+    # Resolve document ID
+    doc = get_document(str(document_id))
+    doc_id_str = str(doc.id)
+
+    result = {
+        "status": "NOT_FETCHED",
+        "is_indexed": False,
+        "is_fetched": False,
+        "is_discovered": False,
+        "fetch_engine": None,
+        "discovery_method": None,
+        "error": None,
+        "error_source": None,
+    }
+
+    # Check staging_section_extractions (INDEXED status)
+    try:
+        extractions_sql = text("""
+            SELECT COUNT(*) as count, MAX(error) as error
+            FROM staging_section_extractions
+            WHERE document_id = :doc_id
+        """)
+        extractions_result = session.execute(extractions_sql, {"doc_id": doc_id_str}).fetchone()
+
+        if extractions_result and extractions_result.count > 0:
+            result["is_indexed"] = True
+            if extractions_result.error:
+                result["error"] = extractions_result.error
+                result["error_source"] = "staging_section_extractions"
+    except Exception:
+        # Table may not exist yet
+        pass
+
+    # Check landing_fetch (FETCHED status)
+    try:
+        fetch_sql = text("""
+            SELECT status, fetch_engine, error
+            FROM landing_fetch
+            WHERE document_id = :doc_id
+            ORDER BY created_at DESC
+            LIMIT 1
+        """)
+        fetch_result = session.execute(fetch_sql, {"doc_id": doc_id_str}).fetchone()
+
+        if fetch_result:
+            result["is_fetched"] = fetch_result.status == "FETCHED"
+            result["fetch_engine"] = fetch_result.fetch_engine
+            if fetch_result.error and not result["error"]:
+                result["error"] = fetch_result.error
+                result["error_source"] = "landing_fetch"
+    except Exception:
+        # Table may not exist yet
+        pass
+
+    # Check landing_discovery (DISCOVERED status)
+    try:
+        discovery_sql = text("""
+            SELECT status, discovery_method, error
+            FROM landing_discovery
+            WHERE document_id = :doc_id
+            ORDER BY created_at DESC
+            LIMIT 1
+        """)
+        discovery_result = session.execute(discovery_sql, {"doc_id": doc_id_str}).fetchone()
+
+        if discovery_result:
+            result["is_discovered"] = discovery_result.status in ("DISCOVERED", "EXISTING")
+            result["discovery_method"] = discovery_result.discovery_method
+            if discovery_result.error and not result["error"]:
+                result["error"] = discovery_result.error
+                result["error_source"] = "landing_discovery"
+    except Exception:
+        # Table may not exist yet
+        pass
+
+    # Determine overall status (priority: ERROR > INDEXED > FETCHED > DISCOVERED > NOT_FETCHED)
+    if result["error"]:
+        result["status"] = "ERROR"
+    elif result["is_indexed"]:
+        result["status"] = "INDEXED"
+    elif result["is_fetched"]:
+        result["status"] = "FETCHED"
+    elif result["is_discovered"]:
+        result["status"] = "DISCOVERED"
+    else:
+        result["status"] = "NOT_FETCHED"
+
+    return result
+
+
+def get_document_with_metadata(document_id: str | UUID) -> dict:
+    """
+    Get document with full metadata reconstructed from staging tables.
+
+    Joins the minimal Document record with metadata from staging tables:
+    - landing_discovery: discovery_method, discovery_url
+    - landing_fetch: content_hash, content_length, fetch_engine
+    - staging_topic_clustering: content_type, cluster_name
+    - staging_section_extractions: has_code_examples, has_step_by_step_procedures, has_narrative_structure
+
+    Args:
+        document_id: Document UUID as string or UUID object
+
+    Returns:
+        dict with all document fields plus derived metadata:
+            # Core document fields
+            - id: str (UUID)
+            - title: str | None
+            - source_type: str
+            - source_url: str | None
+            - content_path: str | None
+            - cms_document_id: str | None
+            - cms_platform: str | None
+            - cms_instance: str | None
+            - content_hash: str | None
+            - description: str | None
+            - author: list | None
+            - published_date: datetime | None
+            - indexed_with_hash: str | None
+            - created_at: datetime
+            - updated_at: datetime
+
+            # Derived from staging tables
+            - status: str (from get_document_status)
+            - discovery_method: str | None (from landing_discovery)
+            - discovery_url: str | None (from landing_discovery)
+            - fetch_engine: str | None (from landing_fetch)
+            - content_type: str | None (from staging_topic_clustering)
+            - cluster_name: str | None (from staging_topic_clustering)
+            - has_code_examples: bool (from staging_section_extractions)
+            - has_step_by_step_procedures: bool (from staging_section_extractions)
+            - has_narrative_structure: bool (from staging_section_extractions)
+
+    Example:
+        >>> doc = get_document_with_metadata("550e8400")
+        >>> print(doc["title"], doc["content_type"])
+        >>> if doc["has_code_examples"]:
+        ...     print("Document contains code examples")
+    """
+    from sqlalchemy import text
+
+    session = get_session()
+
+    # Get base document
+    doc = get_document(str(document_id))
+    doc_id_str = str(doc.id)
+
+    # Build result with core document fields
+    result = {
+        # Identity
+        "id": str(doc.id),
+        "title": doc.title,
+        "source_type": doc.source_type.value if doc.source_type else None,
+        "source_url": doc.source_url,
+        # Content location
+        "content_path": doc.content_path,
+        # CMS integration
+        "cms_document_id": doc.cms_document_id,
+        "cms_platform": doc.cms_platform,
+        "cms_instance": doc.cms_instance,
+        # Content metadata
+        "content_hash": doc.content_hash,
+        "description": doc.description,
+        "author": doc.author,
+        "published_date": doc.published_date,
+        # Indexing tracking
+        "indexed_with_hash": doc.indexed_with_hash,
+        # Timestamps
+        "created_at": doc.created_at,
+        "updated_at": doc.updated_at,
+        # Derived fields (to be filled from staging tables)
+        "status": "NOT_FETCHED",
+        "discovery_method": None,
+        "discovery_url": None,
+        "fetch_engine": None,
+        "content_type": None,
+        "cluster_name": None,
+        "has_code_examples": False,
+        "has_step_by_step_procedures": False,
+        "has_narrative_structure": False,
+    }
+
+    # Get status info (includes discovery_method, fetch_engine)
+    status_info = get_document_status(doc.id)
+    result["status"] = status_info["status"]
+    result["discovery_method"] = status_info["discovery_method"]
+    result["fetch_engine"] = status_info["fetch_engine"]
+
+    # Get discovery_url from landing_discovery
+    try:
+        discovery_sql = text("""
+            SELECT discovery_url
+            FROM landing_discovery
+            WHERE document_id = :doc_id
+            ORDER BY created_at DESC
+            LIMIT 1
+        """)
+        discovery_result = session.execute(discovery_sql, {"doc_id": doc_id_str}).fetchone()
+
+        if discovery_result:
+            result["discovery_url"] = discovery_result.discovery_url
+    except Exception:
+        pass
+
+    # Get content_type and cluster_name from staging_topic_clustering
+    try:
+        clustering_sql = text("""
+            SELECT content_type, cluster_name
+            FROM staging_topic_clustering
+            WHERE document_id = :doc_id
+            ORDER BY created_at DESC
+            LIMIT 1
+        """)
+        clustering_result = session.execute(clustering_sql, {"doc_id": doc_id_str}).fetchone()
+
+        if clustering_result:
+            result["content_type"] = clustering_result.content_type
+            result["cluster_name"] = clustering_result.cluster_name
+    except Exception:
+        pass
+
+    # Get content analysis flags from staging_section_extractions
+    # These are stored in metadata_json field
+    try:
+        extractions_sql = text("""
+            SELECT metadata_json
+            FROM staging_section_extractions
+            WHERE document_id = :doc_id
+            AND metadata_json IS NOT NULL
+            ORDER BY section_number ASC
+            LIMIT 1
+        """)
+        extractions_result = session.execute(extractions_sql, {"doc_id": doc_id_str}).fetchone()
+
+        if extractions_result and extractions_result.metadata_json:
+            import json
+
+            metadata = extractions_result.metadata_json
+            # Handle both string and dict forms
+            if isinstance(metadata, str):
+                metadata = json.loads(metadata)
+
+            result["has_code_examples"] = metadata.get("has_code_examples", False)
+            result["has_step_by_step_procedures"] = metadata.get(
+                "has_step_by_step_procedures", False
+            )
+            result["has_narrative_structure"] = metadata.get("has_narrative_structure", False)
+
+            # Also get content_type from extractions if not from clustering
+            if not result["content_type"] and metadata.get("content_type"):
+                result["content_type"] = metadata["content_type"]
+    except Exception:
+        pass
+
+    return result
 
 
 def get_document_links(document_id: UUID, direction: str) -> list[dict]:

@@ -60,19 +60,24 @@ def write_frontmatter_to_file(doc, session=None) -> None:
     """
     from sqlmodel import delete
 
-    from kurt.db.models import IngestionStatus, MetadataSyncQueue
+    from kurt.db.documents import get_document_status, get_document_with_metadata
+    from kurt.db.models import MetadataSyncQueue
 
     # Skip if no content path
     if not doc.content_path:
         return
 
-    # Skip if not fetched
-    if doc.ingestion_status != IngestionStatus.FETCHED:
+    # Skip if not fetched (status is now derived from staging tables)
+    status_info = get_document_status(doc.id)
+    if status_info["status"] not in ("FETCHED", "INDEXED"):
         return
+
+    # Get document metadata from staging tables
+    doc_metadata = get_document_with_metadata(doc.id)
 
     # Skip if no metadata to write (check content_type only, topics/tools checked below)
     # NOTE: topics and tools are fetched from knowledge graph, not from document fields
-    if not doc.content_type:
+    if not doc_metadata.get("content_type"):
         # Still write frontmatter if document has entities, even without content_type
         # We'll check this below after fetching from knowledge graph
         pass
@@ -117,13 +122,13 @@ def write_frontmatter_to_file(doc, session=None) -> None:
             entities_by_type[field_name].append(entity_name)
 
         # Skip if no metadata to write
-        if not any([doc.content_type, entities_by_type]):
+        if not any([doc_metadata.get("content_type"), entities_by_type]):
             return
 
-        # Build frontmatter model
+        # Build frontmatter model using derived metadata from staging tables
         frontmatter = MetadataFrontmatter(
             title=doc.title,
-            content_type=doc.content_type.value if doc.content_type else None,
+            content_type=doc_metadata.get("content_type"),
             entities=entities_by_type if entities_by_type else None,
             description=doc.description,
             author=doc.author,
@@ -131,11 +136,9 @@ def write_frontmatter_to_file(doc, session=None) -> None:
             source_url=doc.source_url,
             indexed_at=datetime.utcnow().isoformat(),
             content_hash=doc.indexed_with_hash[:16] if doc.indexed_with_hash else None,
-            has_code_examples=doc.has_code_examples if doc.has_code_examples else None,
-            has_step_by_step=doc.has_step_by_step_procedures
-            if doc.has_step_by_step_procedures
-            else None,
-            has_narrative=doc.has_narrative_structure if doc.has_narrative_structure else None,
+            has_code_examples=doc_metadata.get("has_code_examples"),
+            has_step_by_step=doc_metadata.get("has_step_by_step_procedures"),
+            has_narrative=doc_metadata.get("has_narrative_structure"),
         )
 
         # Convert to dict and remove None values
