@@ -174,11 +174,40 @@ def _is_reasoning_model(model_name: str) -> bool:
     return any(pattern in model_lower for pattern in reasoning_patterns)
 
 
-def get_dspy_lm(model_type: str = "INDEXING") -> dspy.LM:
+def _infer_model_type_from_caller() -> str:
+    """Infer model type from caller's module path.
+
+    Returns:
+        "ANSWER" if caller is in kurt.commands.ask.* or kurt.answer.*
+        "INDEXING" otherwise (default)
+    """
+    import inspect
+
+    # Walk up the call stack to find the calling module
+    for frame_info in inspect.stack():
+        module = frame_info.frame.f_globals.get("__name__", "")
+        # Check for answer-related modules
+        if "kurt.commands.ask" in module or "kurt.answer" in module:
+            return "ANSWER"
+        # Check for indexing-related modules (explicit match)
+        if "kurt.content.indexing" in module:
+            return "INDEXING"
+
+    # Default to INDEXING
+    return "INDEXING"
+
+
+def get_dspy_lm(model_type: str | None = None) -> dspy.LM:
     """Get a DSPy LM instance for the specified model type.
 
     Supports both cloud providers (OpenAI, Anthropic, etc.) and local
     OpenAI-compatible servers (e.g., mlx_lm.server, ollama, vllm).
+
+    Model type resolution:
+        1. Explicit model_type parameter (if provided)
+        2. Inferred from caller's module path:
+           - kurt.commands.ask.* or kurt.answer.* -> "ANSWER"
+           - Otherwise -> "INDEXING"
 
     Configuration resolution (in order of priority):
         1. LLM.<type>.MODEL, LLM.<type>.API_BASE, LLM.<type>.API_KEY
@@ -195,13 +224,18 @@ def get_dspy_lm(model_type: str = "INDEXING") -> dspy.LM:
         LLM.API_KEY="not_needed"
 
     Args:
-        model_type: Type of model - "INDEXING" or "ANSWER"
+        model_type: Type of model - "INDEXING" or "ANSWER".
+                    If None, inferred from caller's module path.
 
     Returns:
         dspy.LM instance configured for the model
     """
     from kurt.config import get_config_or_default
     from kurt.config.base import get_step_config
+
+    # Infer model type if not explicitly provided
+    if model_type is None:
+        model_type = _infer_model_type_from_caller()
 
     config = get_config_or_default()
 
@@ -275,7 +309,7 @@ def get_dspy_lm(model_type: str = "INDEXING") -> dspy.LM:
     return lm
 
 
-def configure_dspy_model(model_type: str = "INDEXING") -> None:
+def configure_dspy_model(model_type: str | None = None) -> None:
     """Configure DSPy globally with a specific LLM model.
 
     WARNING: This uses dspy.configure() which can only be called from
@@ -283,7 +317,8 @@ def configure_dspy_model(model_type: str = "INDEXING") -> None:
     use get_dspy_lm() with dspy.context() instead.
 
     Args:
-        model_type: Type of model - "INDEXING" or "ANSWER"
+        model_type: Type of model - "INDEXING" or "ANSWER".
+                    If None, inferred from caller's module path.
     """
     lm = get_dspy_lm(model_type)
     dspy.configure(lm=lm)
@@ -307,7 +342,7 @@ async def run_batch(
     max_concurrent: int = 1,
     context: Optional[Dict[str, Any]] = None,
     timeout: Optional[float] = None,
-    model_type: str = "INDEXING",
+    model_type: Optional[str] = None,
 ) -> List[DSPyResult]:
     """
     Run a DSPy signature or module on a batch of items concurrently.
@@ -321,7 +356,8 @@ async def run_batch(
         max_concurrent: Maximum number of concurrent executions
         context: Optional shared context for all calls
         timeout: Optional timeout in seconds for each call
-        model_type: LLM model type to use - "INDEXING" or "ANSWER"
+        model_type: LLM model type - "INDEXING" or "ANSWER".
+                    If None, inferred from caller's module path.
 
     Returns:
         List of DSPyResult objects with results or errors
@@ -458,7 +494,7 @@ def run_batch_sync(
     context: Optional[Dict[str, Any]] = None,
     timeout: Optional[float] = None,
     on_progress: Optional[Callable[[int, int, Optional[DSPyResult]], None]] = None,
-    model_type: str = "INDEXING",
+    model_type: Optional[str] = None,
 ) -> List[DSPyResult]:
     """
     Synchronous version of run_batch using thread pool.
@@ -473,7 +509,8 @@ def run_batch_sync(
         context: Optional shared context
         timeout: Optional timeout per call
         on_progress: Optional callback(completed, total, result) called after each item completes
-        model_type: LLM model type to use - "INDEXING" or "ANSWER"
+        model_type: LLM model type - "INDEXING" or "ANSWER".
+                    If None, inferred from caller's module path.
 
     Returns:
         List of DSPyResult objects
