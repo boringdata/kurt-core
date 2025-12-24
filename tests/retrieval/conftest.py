@@ -21,21 +21,62 @@ from kurt.db.models import (
 )
 
 
-def create_embedding(seed: int, dim: int = 512) -> bytes:
+def create_embedding(seed: int, dim: int = 512, similarity_group: int = 0) -> bytes:
     """Create a deterministic embedding vector for testing.
 
     Args:
         seed: Seed for random number generation (makes embeddings deterministic)
         dim: Embedding dimensions (default 512 as per schema)
+        similarity_group: Group ID for creating similar embeddings (0-9)
+                         Items in the same group will have more similar embeddings
 
     Returns:
         Embedding as bytes (float32 array)
     """
     rng = np.random.RandomState(seed)
-    # Generate normalized vector
+
+    # Base random vector
     vec = rng.randn(dim).astype(np.float32)
-    vec = vec / np.linalg.norm(vec)  # Normalize to unit length
+
+    # If similarity_group is specified, add a group bias to make items similar
+    if similarity_group > 0:
+        # Create a group vector that's the same for all items in this group
+        group_rng = np.random.RandomState(similarity_group * 1000)
+        group_vec = group_rng.randn(dim).astype(np.float32)
+        # Mix 70% group vector + 30% individual vector for similarity
+        vec = 0.7 * group_vec + 0.3 * vec
+
+    # Normalize to unit length
+    vec = vec / np.linalg.norm(vec)
     return vec.tobytes()
+
+
+def embedding_to_array(embedding_bytes: bytes, dim: int = 512) -> np.ndarray:
+    """Convert embedding bytes back to numpy array.
+
+    Args:
+        embedding_bytes: Embedding as bytes
+        dim: Expected dimension
+
+    Returns:
+        Numpy array of floats
+    """
+    return np.frombuffer(embedding_bytes, dtype=np.float32).reshape(dim)
+
+
+def cosine_similarity(emb1_bytes: bytes, emb2_bytes: bytes) -> float:
+    """Calculate cosine similarity between two embeddings.
+
+    Args:
+        emb1_bytes: First embedding as bytes
+        emb2_bytes: Second embedding as bytes
+
+    Returns:
+        Cosine similarity score (0-1, higher is more similar)
+    """
+    vec1 = embedding_to_array(emb1_bytes)
+    vec2 = embedding_to_array(emb2_bytes)
+    return float(np.dot(vec1, vec2))  # Already normalized, so just dot product
 
 
 @pytest.fixture
@@ -152,8 +193,10 @@ Comparison:
     ]
 
     documents = []
+    # Similarity groups: 1=DuckDB/database, 2=cloud/MotherDuck, 3=data formats
+    doc_similarity_groups = [1, 2, 3, 1, 2]  # Map docs to semantic groups
     for i, doc_data in enumerate(docs_data):
-        # Create document with embedding
+        # Create document with embedding in similarity group
         doc = Document(
             id=doc_data["id"],
             title=doc_data["title"],
@@ -162,7 +205,10 @@ Comparison:
             ingestion_status=IngestionStatus.FETCHED,
             content_type=doc_data["content_type"],
             content_path=f"doc_{i}.md",
-            embedding=create_embedding(seed=1000 + i),  # Deterministic embeddings
+            embedding=create_embedding(
+                seed=1000 + i,
+                similarity_group=doc_similarity_groups[i]
+            ),
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow(),
         )
@@ -190,6 +236,8 @@ Comparison:
     ]
 
     entities = []
+    # Similarity groups for entities: 1=databases/SQL, 2=cloud/serverless, 3=file formats
+    entity_similarity_groups = [1, 2, 3, 1, 1, 2, 2, 1, 1, 3]
     for idx, ent_data in enumerate(entities_data):
         entity = Entity(
             id=uuid4(),
@@ -199,7 +247,10 @@ Comparison:
             description=ent_data["description"],
             confidence_score=0.95,
             source_mentions=1,
-            embedding=create_embedding(seed=2000 + idx),  # Deterministic embeddings
+            embedding=create_embedding(
+                seed=2000 + idx,
+                similarity_group=entity_similarity_groups[idx]
+            ),
             created_at=datetime.utcnow(),
         )
         session.add(entity)
