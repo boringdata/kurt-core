@@ -313,7 +313,7 @@ def mock_run_batch(response_factory: Optional[Any] = None):
         context=None,
         timeout=None,
         on_progress=None,
-        model_type=None,
+        config=None,
     ):
         """Mock implementation of run_batch_sync."""
         # Call progress callback with start (0/N)

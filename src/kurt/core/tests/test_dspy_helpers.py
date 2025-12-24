@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import dspy
 import pytest
 
-from kurt.core.dspy_helpers import DSPyResult, run_batch, run_batch_sync
+from kurt.core.dspy_helpers import DSPyResult, get_dspy_lm, run_batch, run_batch_sync
 
 
 class SampleDSPySignature(dspy.Signature):
@@ -200,3 +200,170 @@ class TestRunBatchSync:
             result = results[0]
             assert result.error is not None
             assert isinstance(result.error, ValueError)
+
+
+class TestGetDspyLm:
+    """Tests for get_dspy_lm with config parameter."""
+
+    def test_get_dspy_lm_with_config_llm_model(self):
+        """Test get_dspy_lm uses config.llm_model when provided."""
+        mock_config = MagicMock()
+        mock_config.llm_model = "anthropic/claude-3-haiku-20240307"
+
+        with patch("dspy.LM") as mock_lm_class:
+            mock_lm_class.return_value = MagicMock()
+
+            get_dspy_lm(config=mock_config)
+
+            # Should use the model from config
+            mock_lm_class.assert_called_once()
+            call_args = mock_lm_class.call_args
+            assert "anthropic/claude-3-haiku-20240307" in str(call_args)
+
+    def test_get_dspy_lm_with_config_no_llm_model(self):
+        """Test get_dspy_lm falls back to global config when config.llm_model is missing."""
+        mock_config = MagicMock(spec=[])  # Empty spec, no llm_model attribute
+
+        with (
+            patch("dspy.LM") as mock_lm_class,
+            patch("kurt.config.get_config_or_default") as mock_get_config,
+        ):
+            mock_kurt_config = MagicMock()
+            mock_kurt_config.INDEXING_LLM_MODEL = "openai/gpt-4o-mini"
+            mock_kurt_config.ANSWER_LLM_MODEL = "openai/gpt-4o"
+            mock_get_config.return_value = mock_kurt_config
+            mock_lm_class.return_value = MagicMock()
+
+            get_dspy_lm(config=mock_config)
+
+            # Should fall back to global config
+            mock_lm_class.assert_called_once()
+
+    def test_get_dspy_lm_with_none_config(self):
+        """Test get_dspy_lm works when config is None."""
+        with (
+            patch("dspy.LM") as mock_lm_class,
+            patch("kurt.config.get_config_or_default") as mock_get_config,
+        ):
+            mock_kurt_config = MagicMock()
+            mock_kurt_config.INDEXING_LLM_MODEL = "openai/gpt-4o-mini"
+            mock_kurt_config.ANSWER_LLM_MODEL = "openai/gpt-4o"
+            mock_get_config.return_value = mock_kurt_config
+            mock_lm_class.return_value = MagicMock()
+
+            get_dspy_lm(config=None)
+
+            # Should use global config fallback
+            mock_lm_class.assert_called_once()
+
+    def test_get_dspy_lm_with_config_empty_llm_model(self):
+        """Test get_dspy_lm falls back when config.llm_model is empty string."""
+        mock_config = MagicMock()
+        mock_config.llm_model = ""  # Empty string
+
+        with (
+            patch("dspy.LM") as mock_lm_class,
+            patch("kurt.config.get_config_or_default") as mock_get_config,
+        ):
+            mock_kurt_config = MagicMock()
+            mock_kurt_config.INDEXING_LLM_MODEL = "openai/gpt-4o-mini"
+            mock_kurt_config.ANSWER_LLM_MODEL = "openai/gpt-4o"
+            mock_get_config.return_value = mock_kurt_config
+            mock_lm_class.return_value = MagicMock()
+
+            get_dspy_lm(config=mock_config)
+
+            # Should fall back to global config since llm_model is falsy
+            mock_lm_class.assert_called_once()
+
+
+class TestRunBatchWithConfig:
+    """Tests for run_batch and run_batch_sync with config parameter."""
+
+    @pytest.mark.asyncio
+    async def test_run_batch_passes_config_to_get_dspy_lm(self):
+        """Test that run_batch passes config to get_dspy_lm."""
+        mock_executor = MagicMock()
+        mock_executor.return_value = MagicMock()
+        mock_executor.acall = None
+
+        mock_config = MagicMock()
+        mock_config.llm_model = "test-model"
+
+        with (
+            patch("dspy.ChainOfThought", return_value=mock_executor),
+            patch("kurt.core.dspy_helpers.get_dspy_lm", return_value=MagicMock()) as mock_get_lm,
+        ):
+            items = [{"input_text": "test"}]
+
+            await run_batch(
+                signature=SampleDSPySignature,
+                items=items,
+                config=mock_config,
+            )
+
+            mock_get_lm.assert_called_once_with(mock_config)
+
+    def test_run_batch_sync_passes_config_to_get_dspy_lm(self):
+        """Test that run_batch_sync passes config to get_dspy_lm."""
+        mock_executor = MagicMock()
+        mock_executor.return_value = MagicMock()
+
+        mock_config = MagicMock()
+        mock_config.llm_model = "test-model"
+
+        with (
+            patch("dspy.ChainOfThought", return_value=mock_executor),
+            patch("kurt.core.dspy_helpers.get_dspy_lm", return_value=MagicMock()) as mock_get_lm,
+        ):
+            items = [{"input_text": "test"}]
+
+            run_batch_sync(
+                signature=SampleDSPySignature,
+                items=items,
+                config=mock_config,
+            )
+
+            mock_get_lm.assert_called_once_with(mock_config)
+
+    @pytest.mark.asyncio
+    async def test_run_batch_works_without_config(self):
+        """Test that run_batch works when config is not provided."""
+        mock_executor = MagicMock()
+        mock_executor.return_value = MagicMock()
+        mock_executor.acall = None
+
+        with (
+            patch("dspy.ChainOfThought", return_value=mock_executor),
+            patch("kurt.core.dspy_helpers.get_dspy_lm", return_value=MagicMock()) as mock_get_lm,
+        ):
+            items = [{"input_text": "test"}]
+
+            await run_batch(
+                signature=SampleDSPySignature,
+                items=items,
+                # No config parameter
+            )
+
+            # Should be called with None (default)
+            mock_get_lm.assert_called_once_with(None)
+
+    def test_run_batch_sync_works_without_config(self):
+        """Test that run_batch_sync works when config is not provided."""
+        mock_executor = MagicMock()
+        mock_executor.return_value = MagicMock()
+
+        with (
+            patch("dspy.ChainOfThought", return_value=mock_executor),
+            patch("kurt.core.dspy_helpers.get_dspy_lm", return_value=MagicMock()) as mock_get_lm,
+        ):
+            items = [{"input_text": "test"}]
+
+            run_batch_sync(
+                signature=SampleDSPySignature,
+                items=items,
+                # No config parameter
+            )
+
+            # Should be called with None (default)
+            mock_get_lm.assert_called_once_with(None)

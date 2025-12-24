@@ -315,7 +315,7 @@ def section_extractions(
         },
         tracking_fields=["document_id", "section_number"],
         max_concurrent=config.max_concurrent,
-        llm_model=config.llm_model,
+        config=config,
     )
 
     # 4. Post-process: Create SectionExtractionRow objects

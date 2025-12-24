@@ -16,6 +16,8 @@ import dspy
 if TYPE_CHECKING:
     import pandas as pd
 
+    from kurt.config import ModelConfig
+
 logger = logging.getLogger(__name__)
 
 
@@ -198,37 +200,35 @@ def _infer_model_type_from_caller() -> str | None:
     return None
 
 
-def get_dspy_lm(model_type: str | None = None) -> dspy.LM:
-    """Get a DSPy LM instance for the specified model type.
+def get_dspy_lm(config: "ModelConfig | None" = None) -> dspy.LM:
+    """Get a DSPy LM instance using step config or auto-inferred settings.
 
     Supports both cloud providers (OpenAI, Anthropic, etc.) and local
     OpenAI-compatible servers (e.g., mlx_lm.server, ollama, vllm).
 
-    Model type resolution:
-        1. Explicit model_type parameter (if provided)
+    Model resolution:
+        1. config.llm_model (if config provided with llm_model attribute)
         2. Inferred from caller's module path:
-           - kurt.commands.ask.* or kurt.answer.* -> "ANSWER"
-           - kurt.content.indexing.* -> "INDEXING"
-           - Otherwise -> None (use global LLM.* config)
+           - kurt.commands.ask.* or kurt.answer.* -> ANSWER_LLM_MODEL
+           - kurt.content.indexing.* -> INDEXING_LLM_MODEL
+           - Otherwise -> LLM.MODEL global config
 
-    Configuration resolution (in order of priority):
-        1. LLM.<type>.* (if model_type is set)
-        2. LLM.* (global defaults)
-        3. INDEXING_LLM_MODEL or ANSWER_LLM_MODEL (legacy fallback)
+    API settings resolution (in order of priority):
+        1. LLM.<type>.API_BASE, LLM.<type>.API_KEY (if model_type inferred)
+        2. LLM.API_BASE, LLM.API_KEY (global defaults)
 
     Example kurt.config:
         # Global config for all LLM calls
         LLM.API_BASE="http://localhost:8080/v1/"
         LLM.API_KEY="not_needed"
-        LLM.MODEL="mistral-7b"
 
         # Or per-type overrides
-        LLM.INDEXING.MODEL="mistral-7b"
-        LLM.ANSWER.MODEL="llama-3-70b"
+        LLM.INDEXING.API_BASE="http://localhost:8080/v1/"
+        LLM.ANSWER.API_BASE="http://localhost:9090/v1/"
 
     Args:
-        model_type: Type of model - "INDEXING", "ANSWER", or None.
-                    If None, inferred from caller's module path.
+        config: Step's ModelConfig instance with llm_model attribute.
+                If None, model is inferred from caller's module path.
 
     Returns:
         dspy.LM instance configured for the model
@@ -236,43 +236,51 @@ def get_dspy_lm(model_type: str | None = None) -> dspy.LM:
     from kurt.config import get_config_or_default
     from kurt.config.base import get_step_config
 
-    # Infer model type if not explicitly provided
-    if model_type is None:
-        model_type = _infer_model_type_from_caller()
+    kurt_config = get_config_or_default()
 
-    config = get_config_or_default()
+    # Infer model type from caller's module path (for API settings resolution)
+    model_type = _infer_model_type_from_caller()
 
-    # Determine fallback key based on model type
-    if model_type == "ANSWER":
-        fallback_model_key = "ANSWER_LLM_MODEL"
-        default_model = config.ANSWER_LLM_MODEL
+    # Get model name from config or infer from global settings
+    if config and hasattr(config, "llm_model") and config.llm_model:
+        model_name = config.llm_model
     else:
-        # INDEXING or None - use INDEXING as legacy fallback
-        fallback_model_key = "INDEXING_LLM_MODEL"
-        default_model = config.INDEXING_LLM_MODEL
+        # Determine fallback key based on model type
+        if model_type == "ANSWER":
+            fallback_model_key = "ANSWER_LLM_MODEL"
+            default_model = kurt_config.ANSWER_LLM_MODEL
+        else:
+            # INDEXING or None - use INDEXING as legacy fallback
+            fallback_model_key = "INDEXING_LLM_MODEL"
+            default_model = kurt_config.INDEXING_LLM_MODEL
 
-    # Resolution: LLM.<type>.MODEL -> LLM.MODEL -> legacy fallback
-    model_name = None
-    if model_type:
-        model_name = get_step_config(config, "LLM", model_type, "MODEL", default=None)
-    if model_name is None:
-        model_name = get_step_config(
-            config, "LLM", None, "MODEL", fallback_key=fallback_model_key, default=default_model
-        )
+        # Resolution: LLM.<type>.MODEL -> LLM.MODEL -> legacy fallback
+        model_name = None
+        if model_type:
+            model_name = get_step_config(kurt_config, "LLM", model_type, "MODEL", default=None)
+        if model_name is None:
+            model_name = get_step_config(
+                kurt_config,
+                "LLM",
+                None,
+                "MODEL",
+                fallback_key=fallback_model_key,
+                default=default_model,
+            )
 
     # Resolution: LLM.<type>.API_BASE -> LLM.API_BASE -> None
     api_base = None
     if model_type:
-        api_base = get_step_config(config, "LLM", model_type, "API_BASE", default=None)
+        api_base = get_step_config(kurt_config, "LLM", model_type, "API_BASE", default=None)
     if api_base is None:
-        api_base = get_step_config(config, "LLM", None, "API_BASE", default=None)
+        api_base = get_step_config(kurt_config, "LLM", None, "API_BASE", default=None)
 
     # Resolution: LLM.<type>.API_KEY -> LLM.API_KEY -> None
     api_key = None
     if model_type:
-        api_key = get_step_config(config, "LLM", model_type, "API_KEY", default=None)
+        api_key = get_step_config(kurt_config, "LLM", model_type, "API_KEY", default=None)
     if api_key is None:
-        api_key = get_step_config(config, "LLM", None, "API_KEY", default=None)
+        api_key = get_step_config(kurt_config, "LLM", None, "API_KEY", default=None)
 
     # Check if this is a reasoning model requiring special parameters
     if _is_reasoning_model(model_name):
@@ -321,7 +329,7 @@ def get_dspy_lm(model_type: str | None = None) -> dspy.LM:
     return lm
 
 
-def configure_dspy_model(model_type: str | None = None) -> None:
+def configure_dspy_model(config: "ModelConfig | None" = None) -> None:
     """Configure DSPy globally with a specific LLM model.
 
     WARNING: This uses dspy.configure() which can only be called from
@@ -329,12 +337,12 @@ def configure_dspy_model(model_type: str | None = None) -> None:
     use get_dspy_lm() with dspy.context() instead.
 
     Args:
-        model_type: Type of model - "INDEXING" or "ANSWER".
-                    If None, inferred from caller's module path.
+        config: Step's ModelConfig instance with llm_model attribute.
+                If None, model is inferred from caller's module path.
     """
-    lm = get_dspy_lm(model_type)
+    lm = get_dspy_lm(config)
     dspy.configure(lm=lm)
-    logger.debug(f"Configured DSPy globally with model type {model_type}")
+    logger.debug("Configured DSPy globally")
 
 
 @dataclass
@@ -354,7 +362,7 @@ async def run_batch(
     max_concurrent: int = 1,
     context: Optional[Dict[str, Any]] = None,
     timeout: Optional[float] = None,
-    model_type: Optional[str] = None,
+    config: "ModelConfig | None" = None,
 ) -> List[DSPyResult]:
     """
     Run a DSPy signature or module on a batch of items concurrently.
@@ -368,14 +376,14 @@ async def run_batch(
         max_concurrent: Maximum number of concurrent executions
         context: Optional shared context for all calls
         timeout: Optional timeout in seconds for each call
-        model_type: LLM model type - "INDEXING" or "ANSWER".
-                    If None, inferred from caller's module path.
+        config: Step's ModelConfig instance with llm_model attribute.
+                If None, model is inferred from caller's module path.
 
     Returns:
         List of DSPyResult objects with results or errors
     """
     # Get LM instance (don't use dspy.configure() - not safe for parallel async)
-    lm = get_dspy_lm(model_type)
+    lm = get_dspy_lm(config)
 
     semaphore = asyncio.Semaphore(max_concurrent)
     context = context or {}
@@ -506,7 +514,7 @@ def run_batch_sync(
     context: Optional[Dict[str, Any]] = None,
     timeout: Optional[float] = None,
     on_progress: Optional[Callable[[int, int, Optional[DSPyResult]], None]] = None,
-    model_type: Optional[str] = None,
+    config: "ModelConfig | None" = None,
 ) -> List[DSPyResult]:
     """
     Synchronous version of run_batch using thread pool.
@@ -521,8 +529,8 @@ def run_batch_sync(
         context: Optional shared context
         timeout: Optional timeout per call
         on_progress: Optional callback(completed, total, result) called after each item completes
-        model_type: LLM model type - "INDEXING" or "ANSWER".
-                    If None, inferred from caller's module path.
+        config: Step's ModelConfig instance with llm_model attribute.
+                If None, model is inferred from caller's module path.
 
     Returns:
         List of DSPyResult objects
@@ -531,7 +539,7 @@ def run_batch_sync(
     import threading
 
     # Get LM instance (don't use dspy.configure() - not safe for parallel threads)
-    lm = get_dspy_lm(model_type)
+    lm = get_dspy_lm(config)
 
     context = context or {}
     results = []
