@@ -139,8 +139,8 @@ class TestEmbeddingSimilarity:
             for doc2 in docs[i+1:]:
                 sim = cosine_similarity(doc1.embedding, doc2.embedding)
 
-                # Cosine similarity should be in [-1, 1], but our normalized vectors give [0, 1]
-                assert 0 <= sim <= 1, \
+                # Cosine similarity should be in [-1, 1] for normalized vectors
+                assert -1 <= sim <= 1, \
                     f"Similarity between {doc1.title} and {doc2.title} out of range: {sim}"
 
     def test_semantic_search_simulation(self, minimal_retrieval_fixture):
