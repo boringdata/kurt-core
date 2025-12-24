@@ -59,6 +59,7 @@ class LazyGroup(click.Group):
         "workflows": ("kurt.commands.workflows", "workflows_group"),
         "show": ("kurt.commands.show", "show"),
         "run": ("kurt.commands.run", "run"),
+        "retrieve": ("kurt.commands.retrieve", "retrieve_cmd"),
     },
 )
 @click.version_option(version=__version__, prog_name="kurt")
