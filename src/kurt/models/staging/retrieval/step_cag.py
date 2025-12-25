@@ -198,34 +198,38 @@ def load_context(
     topics: list[str],
     matched_entity_names: list[str],
     config: CAGConfig,
+    matched_entity_ids: list = None,
 ) -> dict:
-    """Load all context for given topics from database.
+    """Load all context for given topics and matched entities from database.
+
+    Uses both topics AND entity IDs to find relevant documents, ensuring
+    we don't miss documents that have entities but no topic cluster assigned.
 
     Returns dict with entities, relationships, claims, sources.
     """
+    from uuid import UUID
+
     session = get_session()
+    matched_entity_ids = matched_entity_ids or []
 
-    if not topics:
-        return {"entities": [], "relationships": [], "claims": [], "sources": []}
+    doc_ids = set()
 
-    # Get document IDs in these topics
-    doc_id_rows = (
-        session.query(TopicClusteringRow.document_id)
-        .filter(TopicClusteringRow.cluster_name.in_(topics))
-        .distinct()
-        .all()
-    )
-    doc_ids_str = [row.document_id for row in doc_id_rows]
+    # Strategy 1: Get document IDs from topics (staging table)
+    if topics:
+        doc_id_rows = (
+            session.query(TopicClusteringRow.document_id)
+            .filter(TopicClusteringRow.cluster_name.in_(topics))
+            .distinct()
+            .all()
+        )
+        for row in doc_id_rows:
+            try:
+                doc_ids.add(UUID(row.document_id))
+            except (ValueError, TypeError):
+                pass
 
-    try:
-        from uuid import UUID
-
-        doc_ids = [UUID(did) for did in doc_ids_str]
-    except (ValueError, TypeError):
-        doc_ids = []
-
-    # Fallback to TopicCluster table
-    if not doc_ids:
+    # Strategy 2: Get document IDs from TopicCluster table (fallback)
+    if not doc_ids and topics:
         doc_id_rows = (
             session.query(DocumentClusterEdge.document_id)
             .join(TopicCluster, DocumentClusterEdge.cluster_id == TopicCluster.id)
@@ -233,7 +237,21 @@ def load_context(
             .distinct()
             .all()
         )
-        doc_ids = [row.document_id for row in doc_id_rows]
+        for row in doc_id_rows:
+            doc_ids.add(row.document_id)
+
+    # Strategy 3: Get document IDs from matched entities (always include)
+    if matched_entity_ids:
+        entity_doc_rows = (
+            session.query(DocumentEntity.document_id)
+            .filter(DocumentEntity.entity_id.in_(matched_entity_ids))
+            .distinct()
+            .all()
+        )
+        for row in entity_doc_rows:
+            doc_ids.add(row.document_id)
+
+    doc_ids = list(doc_ids)
 
     if not doc_ids:
         return {"entities": [], "relationships": [], "claims": [], "sources": []}
@@ -463,7 +481,7 @@ def cag_retrieve(
         return {"rows_written": 0, "error": str(e)}
 
     # Step 2: Route to topics via entity similarity
-    topics, matched_entities, _ = route_to_topics(
+    topics, matched_entities, matched_entity_ids = route_to_topics(
         query_embedding,
         top_k=config.top_k_entities,
         min_similarity=config.min_similarity,
@@ -472,7 +490,7 @@ def cag_retrieve(
     logger.info(f"Matched {len(matched_entities)} entities, {len(topics)} topics")
 
     # Step 3: Load context (SQL only)
-    context = load_context(topics, matched_entities, config)
+    context = load_context(topics, matched_entities, config, matched_entity_ids)
 
     # Step 4: Format as markdown
     context_md = format_markdown(query, topics, context)
