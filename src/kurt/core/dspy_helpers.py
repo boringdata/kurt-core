@@ -161,6 +161,19 @@ def _handle_llm_error(exc: Exception) -> Exception:
     return exc
 
 
+def _is_reasoning_model(model_name: str) -> bool:
+    """Check if a model is a reasoning model that requires special parameters.
+
+    Reasoning models (o1, o3, gpt-5-mini) require:
+    - temperature=1.0 (exactly 1.0, no other values allowed)
+    - max_tokens >= 16000 (minimum for reasoning output)
+    """
+    model_lower = model_name.lower()
+    # OpenAI reasoning models: o1, o3, gpt-5 series
+    reasoning_patterns = ["o1", "o3", "gpt-5"]
+    return any(pattern in model_lower for pattern in reasoning_patterns)
+
+
 def get_dspy_lm(model_name: Optional[str] = None) -> dspy.LM:
     """Get a DSPy LM instance for the specified model.
 
@@ -176,9 +189,18 @@ def get_dspy_lm(model_name: Optional[str] = None) -> dspy.LM:
         config = get_config_or_default()
         model_name = config.INDEXING_LLM_MODEL
 
-    max_tokens = 4000 if "haiku" in model_name.lower() else 8000
-    lm = dspy.LM(model_name, max_tokens=max_tokens)
-    logger.debug(f"Created DSPy LM for model {model_name}")
+    # Check if this is a reasoning model requiring special parameters
+    if _is_reasoning_model(model_name):
+        # Reasoning models require temperature=1.0 and max_tokens >= 16000
+        lm = dspy.LM(model_name, temperature=1.0, max_tokens=16000)
+        logger.debug(
+            f"Created DSPy LM for reasoning model {model_name} (temperature=1.0, max_tokens=16000)"
+        )
+    else:
+        max_tokens = 4000 if "haiku" in model_name.lower() else 8000
+        lm = dspy.LM(model_name, max_tokens=max_tokens)
+        logger.debug(f"Created DSPy LM for model {model_name}")
+
     return lm
 
 

@@ -353,9 +353,15 @@ def topic_clustering(
 
 def _fetch_existing_clusters(docs_df: pd.DataFrame, session) -> list[dict]:
     """Fetch existing clusters linked to the documents being processed."""
+    from uuid import UUID
+
     from kurt.db.models import DocumentClusterEdge, TopicCluster
 
-    doc_ids = docs_df["id"].tolist()
+    # Ensure doc_ids are UUID objects (pd.read_sql may return strings)
+    doc_ids = [
+        UUID(str(doc_id)) if not isinstance(doc_id, UUID) else doc_id
+        for doc_id in docs_df["id"].tolist()
+    ]
 
     existing_cluster_records = (
         session.query(TopicCluster)
