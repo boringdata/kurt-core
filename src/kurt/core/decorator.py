@@ -319,10 +319,10 @@ def apply_dspy_on_df(
     if output_fields is None:
         output_fields = {}
         for field_name, field_info in signature.model_fields.items():
-            # Check if it's an output field (has json_schema_extra with __dspy_field_type__)
+            # Check if it's an output field (has json_schema_extra with __dspy_field_type)
             if hasattr(field_info, "json_schema_extra") and field_info.json_schema_extra:
                 extra = field_info.json_schema_extra
-                if isinstance(extra, dict) and extra.get("__dspy_field_type__") == "output":
+                if isinstance(extra, dict) and extra.get("__dspy_field_type") == "output":
                     output_fields[field_name] = field_name
 
     # Convert DataFrame rows to items for run_batch_sync
