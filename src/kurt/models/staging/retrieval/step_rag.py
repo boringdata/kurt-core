@@ -179,8 +179,8 @@ def graph_search(entities: list[str], top_k: int) -> list[tuple[str, float, list
         # Find documents mentioning this entity
         docs = find_documents_with_entity(entity_name)
 
-        for doc in docs:
-            doc_id = str(doc.id)
+        for doc_uuid in docs:
+            doc_id = str(doc_uuid)
             if doc_id not in doc_scores:
                 doc_scores[doc_id] = 0
                 doc_entities[doc_id] = []
@@ -190,7 +190,7 @@ def graph_search(entities: list[str], top_k: int) -> list[tuple[str, float, list
             doc_entities[doc_id].append(entity_name)
 
             # Get relationships for this document
-            kg = get_document_knowledge_graph(doc.id)
+            kg = get_document_knowledge_graph(doc_id)
             if kg and "relationships" in kg:
                 doc_relationships[doc_id].extend(kg["relationships"][:5])
 
