@@ -245,13 +245,19 @@ def topic_clustering(
         config: Topic clustering configuration
     """
     import json
+    from uuid import UUID
 
     workflow_id = ctx.workflow_id
 
     # Filter documents by ctx.document_ids
     query = documents.query
     if ctx.document_ids:
-        query = query.filter(documents.model_class.id.in_(ctx.document_ids))
+        # Ensure doc_ids are UUID objects (ctx.document_ids may contain strings)
+        doc_ids = [
+            UUID(str(doc_id)) if not isinstance(doc_id, UUID) else doc_id
+            for doc_id in ctx.document_ids
+        ]
+        query = query.filter(documents.model_class.id.in_(doc_ids))
     docs_df = pd.read_sql(query.statement, documents.session.bind)
 
     if docs_df.empty:
