@@ -206,25 +206,36 @@ def get_dspy_lm(config: "ModelConfig | None" = None) -> dspy.LM:
     Supports both cloud providers (OpenAI, Anthropic, etc.) and local
     OpenAI-compatible servers (e.g., mlx_lm.server, ollama, vllm).
 
-    Model resolution:
+    Model resolution (module-first hierarchy):
         1. config.llm_model (if config provided with llm_model attribute)
-        2. Inferred from caller's module path:
-           - kurt.commands.ask.* or kurt.answer.* -> ANSWER_LLM_MODEL
-           - kurt.content.indexing.* -> INDEXING_LLM_MODEL
-           - Otherwise -> LLM.MODEL global config
+        2. <MODULE>.<STEP>.LLM_MODEL (e.g., INDEXING.SECTION_EXTRACTIONS.LLM_MODEL)
+        3. <MODULE>.LLM_MODEL (e.g., INDEXING.LLM_MODEL, ANSWER.LLM_MODEL)
+        4. LLM_MODEL (global)
+        5. INDEXING_LLM_MODEL or ANSWER_LLM_MODEL (legacy fallback)
 
-    API settings resolution (in order of priority):
-        1. LLM.<type>.API_BASE, LLM.<type>.API_KEY (if model_type inferred)
-        2. LLM.API_BASE, LLM.API_KEY (global defaults)
+    API settings resolution:
+        1. <MODULE>.<STEP>.LLM_API_BASE
+        2. <MODULE>.LLM_API_BASE
+        3. LLM_API_BASE (global)
+
+    Additional parameters:
+        - LLM_TEMPERATURE or <MODULE>.LLM_TEMPERATURE
+        - LLM_MAX_TOKENS or <MODULE>.LLM_MAX_TOKENS
 
     Example kurt.config:
         # Global config for all LLM calls
-        LLM.API_BASE="http://localhost:8080/v1/"
-        LLM.API_KEY="not_needed"
+        LLM_MODEL="openai/gpt-4o-mini"
+        LLM_API_BASE="http://localhost:8080/v1/"
+        LLM_API_KEY="not_needed"
+        LLM_TEMPERATURE=0.7
 
-        # Or per-type overrides
-        LLM.INDEXING.API_BASE="http://localhost:8080/v1/"
-        LLM.ANSWER.API_BASE="http://localhost:9090/v1/"
+        # Module-level overrides
+        INDEXING.LLM_MODEL="mistral-7b"
+        ANSWER.LLM_MODEL="llama-3-70b"
+        ANSWER.LLM_API_BASE="http://localhost:9090/v1/"
+
+        # Step-level overrides
+        INDEXING.SECTION_EXTRACTIONS.LLM_MODEL="claude-3-haiku"
 
     Args:
         config: Step's ModelConfig instance with llm_model attribute.
@@ -233,98 +244,59 @@ def get_dspy_lm(config: "ModelConfig | None" = None) -> dspy.LM:
     Returns:
         dspy.LM instance configured for the model
     """
-    from kurt.config import get_config_or_default
-    from kurt.config.base import get_step_config
+    from kurt.config.base import resolve_model_settings
 
-    kurt_config = get_config_or_default()
+    # Infer module name from caller's module path
+    module_name = _infer_model_type_from_caller()
 
-    # Infer model type from caller's module path (for API settings resolution)
-    model_type = _infer_model_type_from_caller()
+    # Use generic resolution
+    settings = resolve_model_settings(
+        model_category="LLM",
+        module_name=module_name,
+        step_config=config,
+    )
 
-    # Get model name from config or infer from global settings
-    if config and hasattr(config, "llm_model") and config.llm_model:
-        model_name = config.llm_model
-    else:
-        # Determine fallback key based on model type
-        if model_type == "ANSWER":
-            fallback_model_key = "ANSWER_LLM_MODEL"
-            default_model = kurt_config.ANSWER_LLM_MODEL
-        else:
-            # INDEXING or None - use INDEXING as legacy fallback
-            fallback_model_key = "INDEXING_LLM_MODEL"
-            default_model = kurt_config.INDEXING_LLM_MODEL
-
-        # Resolution: LLM.<type>.MODEL -> LLM.MODEL -> legacy fallback
-        model_name = None
-        if model_type:
-            model_name = get_step_config(kurt_config, "LLM", model_type, "MODEL", default=None)
-        if model_name is None:
-            model_name = get_step_config(
-                kurt_config,
-                "LLM",
-                None,
-                "MODEL",
-                fallback_key=fallback_model_key,
-                default=default_model,
-            )
-
-    # Resolution: LLM.<type>.API_BASE -> LLM.API_BASE -> None
-    api_base = None
-    if model_type:
-        api_base = get_step_config(kurt_config, "LLM", model_type, "API_BASE", default=None)
-    if api_base is None:
-        api_base = get_step_config(kurt_config, "LLM", None, "API_BASE", default=None)
-
-    # Resolution: LLM.<type>.API_KEY -> LLM.API_KEY -> None
-    api_key = None
-    if model_type:
-        api_key = get_step_config(kurt_config, "LLM", model_type, "API_KEY", default=None)
-    if api_key is None:
-        api_key = get_step_config(kurt_config, "LLM", None, "API_KEY", default=None)
+    model_name = settings.model
+    api_base = settings.api_base
+    api_key = settings.api_key
 
     # Check if this is a reasoning model requiring special parameters
     if _is_reasoning_model(model_name):
         # Reasoning models require temperature=1.0 and max_tokens >= 16000
-        if api_base:
-            # Local server with reasoning model
-            if "/" in model_name:
-                model_name = model_name.split("/", 1)[1]
-            lm = dspy.LM(
-                model=f"openai/{model_name}",
-                api_base=api_base,
-                api_key=api_key or "not_needed",
-                temperature=1.0,
-                max_tokens=16000,
-            )
-            logger.debug(
-                f"Created DSPy LM for local reasoning model {model_name} at {api_base} "
-                f"(temperature=1.0, max_tokens=16000)"
-            )
-        else:
-            lm = dspy.LM(model_name, temperature=1.0, max_tokens=16000)
-            logger.debug(
-                f"Created DSPy LM for reasoning model {model_name} (temperature=1.0, max_tokens=16000)"
-            )
+        temperature = 1.0
+        max_tokens = 16000
     else:
-        max_tokens = 4000 if "haiku" in model_name.lower() else 8000
+        # Use config values or defaults
+        temperature = settings.temperature  # None means use DSPy default
+        max_tokens = settings.max_tokens
+        if max_tokens is None:
+            max_tokens = 4000 if "haiku" in model_name.lower() else 8000
 
-        if api_base:
-            # Use OpenAI-compatible endpoint for local servers
-            # Strip provider prefix if present (e.g., "openai/gpt-4o" -> "gpt-4o")
-            # since we're using a local server with openai-compatible API
-            if "/" in model_name:
-                model_name = model_name.split("/", 1)[1]
-            lm = dspy.LM(
-                model=f"openai/{model_name}",
-                api_base=api_base,
-                api_key=api_key or "not_needed",
-                max_tokens=max_tokens,
-            )
-            logger.debug(f"Created DSPy LM for local model {model_name} at {api_base}")
-        else:
-            # Standard cloud provider
-            lm = dspy.LM(model_name, max_tokens=max_tokens)
-            logger.debug(f"Created DSPy LM for model {model_name}")
+    if api_base:
+        # Use OpenAI-compatible endpoint for local servers
+        # Strip provider prefix if present (e.g., "openai/gpt-4o" -> "gpt-4o")
+        if "/" in model_name:
+            model_name = model_name.split("/", 1)[1]
+
+        lm_kwargs = {
+            "model": f"openai/{model_name}",
+            "api_base": api_base,
+            "api_key": api_key or "not_needed",
+            "max_tokens": max_tokens,
+        }
+        if temperature is not None:
+            lm_kwargs["temperature"] = temperature
+
+        lm = dspy.LM(**lm_kwargs)
+        logger.debug(f"Created DSPy LM for local model {model_name} at {api_base}")
+    else:
+        # Standard cloud provider
+        lm_kwargs = {"max_tokens": max_tokens}
+        if temperature is not None:
+            lm_kwargs["temperature"] = temperature
+
+        lm = dspy.LM(model_name, **lm_kwargs)
+        logger.debug(f"Created DSPy LM for model {model_name}")
 
     return lm
 
