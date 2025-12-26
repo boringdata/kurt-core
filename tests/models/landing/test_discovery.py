@@ -13,17 +13,17 @@ class TestDiscoveryModel:
         assert DiscoveryRow is not None
 
     def test_discovery_config_defaults(self):
-        """Test DiscoveryConfig ConfigParam defaults."""
+        """Test DiscoveryConfig default values."""
         from kurt.models.landing import DiscoveryConfig
 
         config = DiscoveryConfig()
 
-        # ConfigParam fields have default attribute
-        assert config.source_url.default is None
-        assert config.source_folder.default is None
-        assert config.discovery_method.default == "auto"
-        assert config.max_pages.default == 1000
-        assert config.allow_external.default is False
+        # When accessing config attributes, you get the actual value (not ConfigParam)
+        assert config.source_url is None
+        assert config.source_folder is None
+        assert config.discovery_method == "auto"
+        assert config.max_pages == 1000
+        assert config.allow_external is False
 
     def test_discovery_row_schema(self):
         """Test DiscoveryRow schema fields."""

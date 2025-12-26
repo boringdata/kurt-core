@@ -38,11 +38,11 @@ class TestExecuteModelSync:
             incremental_mode="full",
         )
 
-        result = execute_model_sync("staging.document_sections", ctx)
+        result = execute_model_sync("staging.indexing.document_sections", ctx)
 
         assert "rows_written" in result
         assert result["rows_written"] == 1
-        assert result["table_name"] == "staging_document_sections"
+        assert result["table_name"] == "staging_indexing_document_sections"
 
     def test_execute_model_with_skip(self, tmp_project, add_test_documents):
         """Test that documents without content don't produce output."""
@@ -57,7 +57,7 @@ class TestExecuteModelSync:
             incremental_mode="full",
         )
 
-        result = execute_model_sync("staging.document_sections", ctx)
+        result = execute_model_sync("staging.indexing.document_sections", ctx)
 
         # Should have no rows written (document has no content)
         assert result.get("rows_written", 0) == 0
@@ -135,4 +135,4 @@ class TestIndexingPipeline:
 
         assert pipeline.name == "staging"
         assert len(pipeline.models) >= 1
-        assert "staging.document_sections" in pipeline.models
+        assert "staging.indexing.document_sections" in pipeline.models

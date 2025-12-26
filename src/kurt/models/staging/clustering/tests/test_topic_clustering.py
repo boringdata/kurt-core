@@ -85,13 +85,13 @@ class TestTopicClusteringConfig:
     """Test configuration loading."""
 
     def test_default_values(self):
-        """Test default configuration values (from ConfigParam metadata)."""
-        # Access the defaults from ConfigParam metadata
+        """Test default configuration values."""
+        # Instantiate config to get defaults
+        config = TopicClusteringConfig()
 
-        # batch_size default
-        assert TopicClusteringConfig.model_fields["batch_size"].default.default == 200
-        assert TopicClusteringConfig.model_fields["max_concurrent"].default.default == 1
-        assert TopicClusteringConfig.model_fields["force_fresh"].default.default is False
+        assert config.batch_size == 200
+        assert config.max_concurrent == 1
+        assert config.force_fresh is False
 
 
 class TestTopicClusteringRow:
@@ -132,7 +132,10 @@ class TestFetchExistingClusters:
 
     def test_empty_when_no_clusters(self):
         """Test returns empty list when no clusters exist."""
-        docs_df = pd.DataFrame({"id": ["doc-1", "doc-2"]})
+        from uuid import uuid4
+
+        doc_id_1, doc_id_2 = str(uuid4()), str(uuid4())
+        docs_df = pd.DataFrame({"id": [doc_id_1, doc_id_2]})
 
         mock_session = MagicMock()
         mock_query = MagicMock()
@@ -147,7 +150,10 @@ class TestFetchExistingClusters:
 
     def test_returns_cluster_data(self):
         """Test returns cluster data when clusters exist."""
-        docs_df = pd.DataFrame({"id": ["doc-1", "doc-2"]})
+        from uuid import uuid4
+
+        doc_id_1, doc_id_2 = str(uuid4()), str(uuid4())
+        docs_df = pd.DataFrame({"id": [doc_id_1, doc_id_2]})
 
         mock_cluster_1 = MagicMock()
         mock_cluster_1.name = "Tutorials"
