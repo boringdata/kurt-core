@@ -170,7 +170,7 @@ class TestApplyDspyOnDf:
         df = pd.DataFrame({"content": ["hello", "world", "test"]})
 
         # Mock run_batch_sync to return results for each row
-        def mock_run_batch_sync(*, signature, items, max_concurrent, on_progress, llm_model):
+        def mock_run_batch_sync(*, signature, items, max_concurrent, on_progress, config=None):
             results = []
             for item in items:
                 mock_result = MagicMock()
@@ -244,7 +244,7 @@ class TestApplyDspyOnDf:
         df = pd.DataFrame({"content": ["hello", "world"]})
         captured_items = []
 
-        def mock_run_batch_sync(*, signature, items, max_concurrent, on_progress, llm_model):
+        def mock_run_batch_sync(*, signature, items, max_concurrent, on_progress, config=None):
             captured_items.extend(items)
             results = []
             for item in items:
@@ -288,7 +288,7 @@ class TestApplyDspyOnDf:
 
         df = pd.DataFrame({"content": ["hello world"]})
 
-        def mock_run_batch_sync(*, signature, items, max_concurrent, on_progress, llm_model):
+        def mock_run_batch_sync(*, signature, items, max_concurrent, on_progress, config=None):
             mock_result = MagicMock()
             mock_result.summary = "This is a test summary"
             return [DSPyResult(payload=items[0], result=mock_result, error=None, telemetry={})]
@@ -316,7 +316,7 @@ class TestApplyDspyOnDf:
 
         df = pd.DataFrame({"content": ["good", "bad", "good2"]})
 
-        def mock_run_batch_sync(*, signature, items, max_concurrent, on_progress, llm_model):
+        def mock_run_batch_sync(*, signature, items, max_concurrent, on_progress, config=None):
             results = []
             for item in items:
                 if item.get("text") == "bad":
@@ -370,7 +370,7 @@ class TestApplyDspyOnDf:
 
         df = pd.DataFrame({"title": ["Doc 1", "Doc 2"], "body": ["Content 1", "Content 2"]})
 
-        def mock_run_batch_sync(*, signature, items, max_concurrent, on_progress, llm_model):
+        def mock_run_batch_sync(*, signature, items, max_concurrent, on_progress, config=None):
             results = []
             for item in items:
                 mock_result = MagicMock()
@@ -411,7 +411,7 @@ class TestApplyDspyOnDf:
 
         call_count = [0]
 
-        def mock_run_batch_sync(*, signature, items, max_concurrent, on_progress, llm_model):
+        def mock_run_batch_sync(*, signature, items, max_concurrent, on_progress, config=None):
             call_count[0] += 1
             # Verify all items are passed in a single batch
             assert len(items) == 10
@@ -462,7 +462,7 @@ class TestApplyDspyOnDf:
             }
         )
 
-        def mock_run_batch_sync(*, signature, items, max_concurrent, on_progress, llm_model):
+        def mock_run_batch_sync(*, signature, items, max_concurrent, on_progress, config=None):
             results = []
             for item in items:
                 mock_result = MagicMock()
@@ -497,12 +497,15 @@ class TestApplyDspyOnDf:
         assert list(result["id"]) == [1, 2, 3]
         assert list(result["extra_col"]) == ["x", "y", "z"]
 
-    def test_llm_model_passed_to_run_batch_sync(self):
-        """Verify llm_model parameter is passed through to run_batch_sync."""
+    def test_config_passed_to_run_batch_sync(self):
+        """Verify config parameter is passed through to run_batch_sync."""
         from kurt.core.dspy_helpers import DSPyResult
 
         class MockSignature:
             model_fields = {}
+
+        class MockConfig:
+            llm_model = "gpt-4"
 
         df = pd.DataFrame({"content": ["hello"]})
         captured_kwargs = {}
@@ -513,17 +516,19 @@ class TestApplyDspyOnDf:
             mock_result.summary = "done"
             return [DSPyResult(payload={}, result=mock_result, error=None, telemetry={})]
 
+        mock_config = MockConfig()
+
         with patch("kurt.core.dspy_helpers.run_batch_sync", side_effect=mock_run_batch_sync):
             apply_dspy_on_df(
                 df,
                 MockSignature,
                 input_fields={"text": "content"},
                 output_fields={"summary": "summary"},
-                llm_model="gpt-4",
+                config=mock_config,
                 progress=False,
             )
 
-        assert captured_kwargs["llm_model"] == "gpt-4"
+        assert captured_kwargs["config"] is mock_config
 
 
 class TestModelDecorator:

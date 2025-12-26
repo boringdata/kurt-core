@@ -274,24 +274,30 @@ class TestGetDspyLm:
                 assert result == mock_lm
                 mock_lm_class.assert_called_once()
 
-    def test_get_dspy_lm_with_explicit_model(self):
-        """Test get_dspy_lm with explicit model name."""
+    def test_get_dspy_lm_with_config_llm_model(self):
+        """Test get_dspy_lm with config containing llm_model."""
+        mock_config = MagicMock()
+        mock_config.llm_model = "openai/gpt-4"
+
         with patch.object(dspy, "LM") as mock_lm_class:
             mock_lm = MagicMock()
             mock_lm_class.return_value = mock_lm
 
-            result = get_dspy_lm("openai/gpt-4")
+            result = get_dspy_lm(config=mock_config)
 
             assert result == mock_lm
             mock_lm_class.assert_called_once_with("openai/gpt-4", max_tokens=8000)
 
     def test_get_dspy_lm_haiku_uses_smaller_max_tokens(self):
         """Test that haiku models get smaller max_tokens."""
+        mock_config = MagicMock()
+        mock_config.llm_model = "anthropic/claude-3-haiku-20240307"
+
         with patch.object(dspy, "LM") as mock_lm_class:
             mock_lm = MagicMock()
             mock_lm_class.return_value = mock_lm
 
-            get_dspy_lm("anthropic/claude-3-haiku-20240307")
+            get_dspy_lm(config=mock_config)
 
             mock_lm_class.assert_called_once_with(
                 "anthropic/claude-3-haiku-20240307",

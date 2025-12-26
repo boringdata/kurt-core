@@ -10,23 +10,45 @@ import dspy
 import numpy as np
 
 
-def get_embedding_model() -> str:
-    """Get configured embedding model from Kurt config.
-
-    Returns:
-        Model identifier string (e.g., "openai/text-embedding-3-small")
-    """
-    from kurt.config import load_config
-
-    config = load_config()
-    return config.EMBEDDING_MODEL
-
-
-def generate_embeddings(texts: list[str]) -> list[list[float]]:
+def generate_embeddings(
+    texts: list[str], module_name: str | None = None, step_name: str | None = None, step_config=None
+) -> list[list[float]]:
     """Generate embeddings for a list of texts using configured model.
+
+    Supports both cloud providers (OpenAI, etc.) and local
+    OpenAI-compatible servers.
+
+    Model resolution (module-first hierarchy):
+        1. step_config.embedding_model (if provided)
+        2. <MODULE>.<STEP>.EMBEDDING_MODEL (e.g., INDEXING.ENTITY_CLUSTERING.EMBEDDING_MODEL)
+        3. <MODULE>.EMBEDDING_MODEL (e.g., INDEXING.EMBEDDING_MODEL)
+        4. EMBEDDING_MODEL (global)
+
+    API settings resolution:
+        1. <MODULE>.<STEP>.EMBEDDING_API_BASE
+        2. <MODULE>.EMBEDDING_API_BASE
+        3. EMBEDDING_API_BASE (global)
+
+    Example kurt.config:
+        # Cloud provider (default)
+        EMBEDDING_MODEL="openai/text-embedding-3-small"
+
+        # Or local server (global)
+        EMBEDDING_API_BASE="http://localhost:8080/v1/"
+        EMBEDDING_MODEL="nomic-embed-text"
+
+        # Module-level overrides
+        INDEXING.EMBEDDING_MODEL="bge-large"
+        INDEXING.EMBEDDING_API_BASE="http://localhost:8080/v1/"
+
+        # Step-level overrides
+        INDEXING.ENTITY_CLUSTERING.EMBEDDING_MODEL="bge-small"
 
     Args:
         texts: List of text strings to embed
+        module_name: Optional module name - "INDEXING", "RETRIEVAL", etc.
+        step_name: Optional step name - "ENTITY_CLUSTERING", etc.
+        step_config: Optional step config with embedding_model attribute
 
     Returns:
         List of embedding vectors (each is a list of floats)
@@ -34,9 +56,38 @@ def generate_embeddings(texts: list[str]) -> list[list[float]]:
     Example:
         embeddings = generate_embeddings(["Python", "FastAPI"])
         # Returns: [[0.1, 0.2, ...], [0.3, 0.4, ...]]
+
+        # With module-specific config
+        embeddings = generate_embeddings(["query"], module_name="RETRIEVAL")
     """
-    embedding_model = get_embedding_model()
-    embedder = dspy.Embedder(model=embedding_model)
+    from kurt.config.base import resolve_model_settings
+
+    # Use generic resolution
+    settings = resolve_model_settings(
+        model_category="EMBEDDING",
+        module_name=module_name,
+        step_name=step_name,
+        step_config=step_config,
+    )
+
+    model = settings.model
+    api_base = settings.api_base
+    api_key = settings.api_key
+
+    if api_base:
+        # Local OpenAI-compatible server
+        # Strip provider prefix if present since we're using a local server
+        if "/" in model:
+            model = model.split("/", 1)[1]
+        embedder = dspy.Embedder(
+            model=f"openai/{model}",
+            api_base=api_base,
+            api_key=api_key or "not_needed",
+        )
+    else:
+        # Cloud provider
+        embedder = dspy.Embedder(model=model)
+
     return embedder(texts)
 
 

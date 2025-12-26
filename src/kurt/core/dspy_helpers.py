@@ -16,6 +16,8 @@ import dspy
 if TYPE_CHECKING:
     import pandas as pd
 
+    from kurt.config import ModelConfig
+
 logger = logging.getLogger(__name__)
 
 
@@ -174,37 +176,132 @@ def _is_reasoning_model(model_name: str) -> bool:
     return any(pattern in model_lower for pattern in reasoning_patterns)
 
 
-def get_dspy_lm(model_name: Optional[str] = None) -> dspy.LM:
-    """Get a DSPy LM instance for the specified model.
+def _infer_model_type_from_caller() -> str | None:
+    """Infer model type from caller's module path.
+
+    Returns:
+        "ANSWER" if caller is in kurt.commands.ask.* or kurt.answer.*
+        "INDEXING" if caller is in kurt.content.indexing.*
+        None otherwise (use global LLM.* config)
+    """
+    import inspect
+
+    # Walk up the call stack to find the calling module
+    for frame_info in inspect.stack():
+        module = frame_info.frame.f_globals.get("__name__", "")
+        # Check for answer-related modules
+        if "kurt.commands.ask" in module or "kurt.answer" in module:
+            return "ANSWER"
+        # Check for indexing-related modules
+        if "kurt.content.indexing" in module:
+            return "INDEXING"
+
+    # No specific module detected - use global config
+    return None
+
+
+def get_dspy_lm(config: "ModelConfig | None" = None) -> dspy.LM:
+    """Get a DSPy LM instance using step config or auto-inferred settings.
+
+    Supports both cloud providers (OpenAI, Anthropic, etc.) and local
+    OpenAI-compatible servers (e.g., mlx_lm.server, ollama, vllm).
+
+    Model resolution (module-first hierarchy):
+        1. config.llm_model (if config provided with llm_model attribute)
+        2. <MODULE>.<STEP>.LLM_MODEL (e.g., INDEXING.SECTION_EXTRACTIONS.LLM_MODEL)
+        3. <MODULE>.LLM_MODEL (e.g., INDEXING.LLM_MODEL, ANSWER.LLM_MODEL)
+        4. LLM_MODEL (global)
+        5. INDEXING_LLM_MODEL or ANSWER_LLM_MODEL (legacy fallback)
+
+    API settings resolution:
+        1. <MODULE>.<STEP>.LLM_API_BASE
+        2. <MODULE>.LLM_API_BASE
+        3. LLM_API_BASE (global)
+
+    Additional parameters:
+        - LLM_TEMPERATURE or <MODULE>.LLM_TEMPERATURE
+        - LLM_MAX_TOKENS or <MODULE>.LLM_MAX_TOKENS
+
+    Example kurt.config:
+        # Global config for all LLM calls
+        LLM_MODEL="openai/gpt-4o-mini"
+        LLM_API_BASE="http://localhost:8080/v1/"
+        LLM_API_KEY="not_needed"
+        LLM_TEMPERATURE=0.7
+
+        # Module-level overrides
+        INDEXING.LLM_MODEL="mistral-7b"
+        ANSWER.LLM_MODEL="llama-3-70b"
+        ANSWER.LLM_API_BASE="http://localhost:9090/v1/"
+
+        # Step-level overrides
+        INDEXING.SECTION_EXTRACTIONS.LLM_MODEL="claude-3-haiku"
 
     Args:
-        model_name: Model name to use. If None, uses INDEXING_LLM_MODEL from config.
+        config: Step's ModelConfig instance with llm_model attribute.
+                If None, model is inferred from caller's module path.
 
     Returns:
         dspy.LM instance configured for the model
     """
-    from kurt.config import get_config_or_default
+    from kurt.config.base import resolve_model_settings
 
-    if model_name is None:
-        config = get_config_or_default()
-        model_name = config.INDEXING_LLM_MODEL
+    # Infer module name from caller's module path
+    module_name = _infer_model_type_from_caller()
+
+    # Use generic resolution
+    settings = resolve_model_settings(
+        model_category="LLM",
+        module_name=module_name,
+        step_config=config,
+    )
+
+    model_name = settings.model
+    api_base = settings.api_base
+    api_key = settings.api_key
 
     # Check if this is a reasoning model requiring special parameters
     if _is_reasoning_model(model_name):
         # Reasoning models require temperature=1.0 and max_tokens >= 16000
-        lm = dspy.LM(model_name, temperature=1.0, max_tokens=16000)
-        logger.debug(
-            f"Created DSPy LM for reasoning model {model_name} (temperature=1.0, max_tokens=16000)"
-        )
+        temperature = 1.0
+        max_tokens = 16000
     else:
-        max_tokens = 4000 if "haiku" in model_name.lower() else 8000
-        lm = dspy.LM(model_name, max_tokens=max_tokens)
+        # Use config values or defaults
+        temperature = settings.temperature  # None means use DSPy default
+        max_tokens = settings.max_tokens
+        if max_tokens is None:
+            max_tokens = 4000 if "haiku" in model_name.lower() else 8000
+
+    if api_base:
+        # Use OpenAI-compatible endpoint for local servers
+        # Strip provider prefix if present (e.g., "openai/gpt-4o" -> "gpt-4o")
+        if "/" in model_name:
+            model_name = model_name.split("/", 1)[1]
+
+        lm_kwargs = {
+            "model": f"openai/{model_name}",
+            "api_base": api_base,
+            "api_key": api_key or "not_needed",
+            "max_tokens": max_tokens,
+        }
+        if temperature is not None:
+            lm_kwargs["temperature"] = temperature
+
+        lm = dspy.LM(**lm_kwargs)
+        logger.debug(f"Created DSPy LM for local model {model_name} at {api_base}")
+    else:
+        # Standard cloud provider
+        lm_kwargs = {"max_tokens": max_tokens}
+        if temperature is not None:
+            lm_kwargs["temperature"] = temperature
+
+        lm = dspy.LM(model_name, **lm_kwargs)
         logger.debug(f"Created DSPy LM for model {model_name}")
 
     return lm
 
 
-def configure_dspy_model(model_name: Optional[str] = None) -> None:
+def configure_dspy_model(config: "ModelConfig | None" = None) -> None:
     """Configure DSPy globally with a specific LLM model.
 
     WARNING: This uses dspy.configure() which can only be called from
@@ -212,11 +309,12 @@ def configure_dspy_model(model_name: Optional[str] = None) -> None:
     use get_dspy_lm() with dspy.context() instead.
 
     Args:
-        model_name: Model name to use. If None, uses INDEXING_LLM_MODEL from config.
+        config: Step's ModelConfig instance with llm_model attribute.
+                If None, model is inferred from caller's module path.
     """
-    lm = get_dspy_lm(model_name)
+    lm = get_dspy_lm(config)
     dspy.configure(lm=lm)
-    logger.debug(f"Configured DSPy globally with model {model_name or 'default'}")
+    logger.debug("Configured DSPy globally")
 
 
 @dataclass
@@ -236,7 +334,7 @@ async def run_batch(
     max_concurrent: int = 1,
     context: Optional[Dict[str, Any]] = None,
     timeout: Optional[float] = None,
-    llm_model: Optional[str] = None,
+    config: "ModelConfig | None" = None,
 ) -> List[DSPyResult]:
     """
     Run a DSPy signature or module on a batch of items concurrently.
@@ -250,13 +348,14 @@ async def run_batch(
         max_concurrent: Maximum number of concurrent executions
         context: Optional shared context for all calls
         timeout: Optional timeout in seconds for each call
-        llm_model: Optional LLM model name to use (default: INDEXING_LLM_MODEL)
+        config: Step's ModelConfig instance with llm_model attribute.
+                If None, model is inferred from caller's module path.
 
     Returns:
         List of DSPyResult objects with results or errors
     """
     # Get LM instance (don't use dspy.configure() - not safe for parallel async)
-    lm = get_dspy_lm(llm_model)
+    lm = get_dspy_lm(config)
 
     semaphore = asyncio.Semaphore(max_concurrent)
     context = context or {}
@@ -387,7 +486,7 @@ def run_batch_sync(
     context: Optional[Dict[str, Any]] = None,
     timeout: Optional[float] = None,
     on_progress: Optional[Callable[[int, int, Optional[DSPyResult]], None]] = None,
-    llm_model: Optional[str] = None,
+    config: "ModelConfig | None" = None,
 ) -> List[DSPyResult]:
     """
     Synchronous version of run_batch using thread pool.
@@ -402,7 +501,8 @@ def run_batch_sync(
         context: Optional shared context
         timeout: Optional timeout per call
         on_progress: Optional callback(completed, total, result) called after each item completes
-        llm_model: Optional LLM model name to use (default: INDEXING_LLM_MODEL)
+        config: Step's ModelConfig instance with llm_model attribute.
+                If None, model is inferred from caller's module path.
 
     Returns:
         List of DSPyResult objects
@@ -411,7 +511,7 @@ def run_batch_sync(
     import threading
 
     # Get LM instance (don't use dspy.configure() - not safe for parallel threads)
-    lm = get_dspy_lm(llm_model)
+    lm = get_dspy_lm(config)
 
     context = context or {}
     results = []

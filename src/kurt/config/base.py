@@ -5,10 +5,14 @@ Loads configuration from .kurt file in the current directory.
 This file stores project-specific settings like database path and project root.
 """
 
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from pydantic import BaseModel, Field, field_validator
+
+if TYPE_CHECKING:
+    from kurt.config.base import KurtConfig
 
 
 class KurtConfig(BaseModel):
@@ -297,6 +301,20 @@ def create_config(
         f.write(f'EMBEDDING_MODEL="{config.EMBEDDING_MODEL}"\n')
         f.write(f'INGESTION_FETCH_ENGINE="{config.INGESTION_FETCH_ENGINE}"\n')
         f.write(f"MAX_CONCURRENT_INDEXING={config.MAX_CONCURRENT_INDEXING}\n")
+        f.write("\n# Local LLM Configuration (optional, hierarchical)\n")
+        f.write("# Use LLM.API_BASE for all LLM calls, or LLM.<TYPE>.API_BASE for specific types\n")
+        f.write("# Types: INDEXING, ANSWER\n")
+        f.write("#\n")
+        f.write('# LLM.API_BASE="http://localhost:8080/v1/"\n')
+        f.write('# LLM.API_KEY="not_needed"\n')
+        f.write("#\n")
+        f.write("# Override for specific type:\n")
+        f.write('# LLM.ANSWER.API_BASE="http://localhost:9090/v1/"\n')
+        f.write('# LLM.ANSWER.MODEL="llama-3-70b"\n')
+        f.write("#\n")
+        f.write("# Embedding model config:\n")
+        f.write('# EMBEDDING.API_BASE="http://localhost:8080/v1/"\n')
+        f.write('# EMBEDDING.MODEL="nomic-embed-text"\n')
         f.write("\n# Telemetry Configuration\n")
         # Write boolean as True/False (not "True"/"False" string)
         f.write(f"TELEMETRY_ENABLED={config.TELEMETRY_ENABLED}\n")
@@ -353,6 +371,7 @@ def update_config(config: KurtConfig) -> None:
         f.write(f'ANSWER_LLM_MODEL="{config.ANSWER_LLM_MODEL}"\n')
         f.write(f'EMBEDDING_MODEL="{config.EMBEDDING_MODEL}"\n')
         f.write(f'INGESTION_FETCH_ENGINE="{config.INGESTION_FETCH_ENGINE}"\n')
+        f.write(f"MAX_CONCURRENT_INDEXING={config.MAX_CONCURRENT_INDEXING}\n")
         f.write("\n# Telemetry Configuration\n")
         # Write boolean as True/False (not "True"/"False" string)
         f.write(f"TELEMETRY_ENABLED={config.TELEMETRY_ENABLED}\n")
@@ -412,7 +431,7 @@ def update_config(config: KurtConfig) -> None:
 def get_step_config(
     config: KurtConfig,
     module: str,
-    step: str,
+    step: str | None,
     param: str,
     fallback_key: str | None = None,
     default: Any = None,
@@ -422,14 +441,16 @@ def get_step_config(
 
     Resolution order:
     1. Step-specific: MODULE.STEP.PARAM (e.g., INDEXING.SECTION_EXTRACTIONS.LLM_MODEL)
+       Or module-level: MODULE.PARAM (e.g., EMBEDDING.API_BASE) when step is None/empty
     2. Global fallback: fallback_key (e.g., INDEXING_LLM_MODEL)
     3. Default value
 
     Args:
         config: KurtConfig instance
-        module: Module name (e.g., "INDEXING", "FETCH")
+        module: Module name (e.g., "INDEXING", "FETCH", "LLM", "EMBEDDING")
         step: Step name (e.g., "SECTION_EXTRACTIONS", "ENTITY_CLUSTERING")
-        param: Parameter name (e.g., "LLM_MODEL", "EPS")
+              Use None or "" for 2-part keys like EMBEDDING.API_BASE
+        param: Parameter name (e.g., "LLM_MODEL", "EPS", "API_BASE")
         fallback_key: Global config key to use as fallback (e.g., "INDEXING_LLM_MODEL")
         default: Default value if not found anywhere
 
@@ -438,18 +459,30 @@ def get_step_config(
 
     Example:
         >>> config = load_config()
+        >>> # 3-part key: INDEXING.SECTION_EXTRACTIONS.LLM_MODEL
         >>> llm_model = get_step_config(
         ...     config, "INDEXING", "SECTION_EXTRACTIONS", "LLM_MODEL",
         ...     fallback_key="INDEXING_LLM_MODEL",
         ...     default="openai/gpt-4o-mini"
         ... )
+        >>> # 2-part key: EMBEDDING.API_BASE
+        >>> api_base = get_step_config(
+        ...     config, "EMBEDDING", None, "API_BASE",
+        ...     default=None
+        ... )
     """
     extra = getattr(config, "__pydantic_extra__", {})
 
-    # Try step-specific key: MODULE.STEP.PARAM
-    step_key = f"{module}.{step}.{param}"
-    if step_key in extra:
-        return extra[step_key]
+    # Build key based on whether step is provided
+    if step:
+        # 3-part key: MODULE.STEP.PARAM
+        config_key = f"{module}.{step}.{param}"
+    else:
+        # 2-part key: MODULE.PARAM
+        config_key = f"{module}.{param}"
+
+    if config_key in extra:
+        return extra[config_key]
 
     # Try global fallback
     if fallback_key:
@@ -459,6 +492,189 @@ def get_step_config(
             return extra[fallback_key]
 
     return default
+
+
+@dataclass
+class ModelSettings:
+    """Resolved model settings for LLM or embedding calls.
+
+    This is a generic container for any model configuration, supporting:
+    - LLM calls (via DSPy LM)
+    - Embedding calls (via DSPy Embedder)
+    - Any future model types
+
+    All fields are optional - only set fields are used.
+    """
+
+    model: str
+    api_base: str | None = None
+    api_key: str | None = None
+    # Additional parameters that can be passed to dspy.LM or dspy.Embedder
+    temperature: float | None = None
+    max_tokens: int | None = None
+
+
+def resolve_model_settings(
+    model_category: str,
+    module_name: str | None = None,
+    step_name: str | None = None,
+    step_config: Any = None,
+    config: "KurtConfig | None" = None,
+) -> ModelSettings:
+    """Resolve model settings with hierarchical fallback (module-first).
+
+    Generic resolution for any model category (LLM, EMBEDDING, etc.)
+    with support for module-level and step-level overrides.
+
+    Resolution order for each setting (e.g., LLM_MODEL, LLM_API_BASE):
+        1. step_config attribute (e.g., step_config.llm_model)
+        2. <MODULE>.<STEP>.<CATEGORY>_<PARAM> (e.g., INDEXING.SECTION_EXTRACTIONS.LLM_MODEL)
+        3. <MODULE>.<CATEGORY>_<PARAM> (e.g., INDEXING.LLM_MODEL)
+        4. <CATEGORY>_<PARAM> (e.g., LLM_MODEL, LLM_API_BASE)
+
+    Args:
+        model_category: Category of model - "LLM" or "EMBEDDING"
+        module_name: Module name - "INDEXING", "ANSWER", or None
+        step_name: Step name within module - "SECTION_EXTRACTIONS", etc.
+        step_config: Optional step config object with model attributes
+        config: Optional KurtConfig (loaded if not provided)
+
+    Returns:
+        ModelSettings with resolved values
+
+    Example:
+        # For LLM calls (with module)
+        settings = resolve_model_settings("LLM", "INDEXING")
+
+        # For step-specific config
+        settings = resolve_model_settings("LLM", "INDEXING", "SECTION_EXTRACTIONS")
+
+        # For embedding calls
+        settings = resolve_model_settings("EMBEDDING", "INDEXING")
+
+        # With step config override
+        settings = resolve_model_settings("LLM", "INDEXING", step_config=my_step_config)
+
+    Example kurt.config:
+        # Global defaults (flat keys)
+        LLM_MODEL="openai/gpt-4o-mini"
+        LLM_API_BASE="http://localhost:8080/v1/"
+        LLM_API_KEY="not_needed"
+        LLM_TEMPERATURE=0.7
+        EMBEDDING_MODEL="openai/text-embedding-3-small"
+
+        # Module-level overrides
+        INDEXING.LLM_MODEL="mistral-7b"
+        ANSWER.LLM_MODEL="llama-3-70b"
+        ANSWER.LLM_API_BASE="http://localhost:9090/v1/"
+
+        # Step-level overrides
+        INDEXING.SECTION_EXTRACTIONS.LLM_MODEL="claude-3-haiku"
+        INDEXING.ENTITY_CLUSTERING.LLM_MAX_TOKENS=4000
+    """
+    from kurt.config import get_config_or_default
+
+    if config is None:
+        config = get_config_or_default()
+
+    extra = getattr(config, "__pydantic_extra__", {})
+
+    # Determine attribute name on step_config based on category
+    step_attr_model = "llm_model" if model_category == "LLM" else "embedding_model"
+
+    # Determine global fallback keys and defaults
+    if model_category == "LLM":
+        global_model_key = "LLM_MODEL"
+        # Legacy keys for backwards compatibility
+        if module_name == "ANSWER":
+            legacy_model_key = "ANSWER_LLM_MODEL"
+            default_model = config.ANSWER_LLM_MODEL
+        else:
+            legacy_model_key = "INDEXING_LLM_MODEL"
+            default_model = config.INDEXING_LLM_MODEL
+    else:  # EMBEDDING
+        global_model_key = "EMBEDDING_MODEL"
+        legacy_model_key = "EMBEDDING_MODEL"
+        default_model = config.EMBEDDING_MODEL
+
+    def resolve_param(param: str, global_key: str | None = None, default: Any = None) -> Any:
+        """Resolve a single parameter with full hierarchy (module-first).
+
+        Resolution order:
+        1. MODULE.STEP.CATEGORY_PARAM (e.g., INDEXING.SECTION_EXTRACTIONS.LLM_MODEL)
+        2. MODULE.CATEGORY_PARAM (e.g., INDEXING.LLM_MODEL)
+        3. CATEGORY_PARAM (e.g., LLM_MODEL) - global flat key
+        4. Default value
+        """
+        full_param = f"{model_category}_{param}"  # e.g., LLM_MODEL, EMBEDDING_API_BASE
+
+        # 1. Step-specific: MODULE.STEP.CATEGORY_PARAM
+        if module_name and step_name:
+            key = f"{module_name}.{step_name}.{full_param}"
+            if key in extra:
+                return extra[key]
+
+        # 2. Module-level: MODULE.CATEGORY_PARAM
+        if module_name:
+            key = f"{module_name}.{full_param}"
+            if key in extra:
+                return extra[key]
+
+        # 3. Global flat key: CATEGORY_PARAM (e.g., LLM_MODEL, LLM_API_BASE)
+        if global_key:
+            # Check extra first (user might have set LLM_MODEL in config file)
+            if global_key in extra:
+                return extra[global_key]
+            # Then check KurtConfig attributes
+            if hasattr(config, global_key):
+                return getattr(config, global_key)
+
+        return default
+
+    # --- Resolve MODEL ---
+    model_name = None
+
+    # 1. Step config attribute
+    if step_config and hasattr(step_config, step_attr_model):
+        model_name = getattr(step_config, step_attr_model)
+
+    # 2-4. Hierarchical resolution
+    if model_name is None:
+        # First try the new global key (LLM_MODEL), then legacy (INDEXING_LLM_MODEL)
+        model_name = resolve_param("MODEL", global_key=global_model_key, default=None)
+        if model_name is None and legacy_model_key != global_model_key:
+            # Try legacy key
+            if hasattr(config, legacy_model_key):
+                model_name = getattr(config, legacy_model_key)
+        if model_name is None:
+            model_name = default_model
+
+    # --- Resolve API_BASE ---
+    api_base = resolve_param("API_BASE", global_key=f"{model_category}_API_BASE", default=None)
+
+    # --- Resolve API_KEY ---
+    api_key = resolve_param("API_KEY", global_key=f"{model_category}_API_KEY", default=None)
+
+    # --- Resolve additional parameters (LLM-specific) ---
+    temperature = None
+    max_tokens = None
+
+    if model_category == "LLM":
+        temp_val = resolve_param("TEMPERATURE", global_key="LLM_TEMPERATURE", default=None)
+        if temp_val is not None:
+            temperature = float(temp_val)
+
+        tokens_val = resolve_param("MAX_TOKENS", global_key="LLM_MAX_TOKENS", default=None)
+        if tokens_val is not None:
+            max_tokens = int(tokens_val)
+
+    return ModelSettings(
+        model=model_name,
+        api_base=api_base,
+        api_key=api_key,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
 
 
 def validate_config(config: KurtConfig) -> list[str]:

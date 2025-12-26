@@ -270,7 +270,7 @@ def apply_dspy_on_df(
     post_hook: Callable = None,
     max_concurrent: int = 5,
     progress: bool = True,
-    llm_model: str = None,
+    config: "ModelConfig | None" = None,
 ) -> "pd.DataFrame":
     """Apply a DSPy signature to DataFrame rows in parallel.
 
@@ -291,7 +291,8 @@ def apply_dspy_on_df(
         post_hook: Optional function (row_dict, result) -> row_dict to postprocess
         max_concurrent: Number of parallel LLM calls (default: 5)
         progress: Show progress bar (default: True)
-        llm_model: Optional LLM model name (default: uses INDEXING_LLM_MODEL)
+        config: Step's ModelConfig instance with llm_model attribute.
+                If None, model is inferred from caller's module path.
 
     Returns:
         DataFrame with new columns from DSPy output
@@ -306,6 +307,7 @@ def apply_dspy_on_df(
             input_fields={"text": "content"},
             output_fields={"summary": "summary"},
             max_concurrent=10,  # Increase parallelism
+            config=config,  # Pass step config for LLM settings
         )
 
         writer.write(df)
@@ -364,7 +366,7 @@ def apply_dspy_on_df(
         items=batch_items,
         max_concurrent=max_concurrent,
         on_progress=on_progress,
-        llm_model=llm_model,
+        config=config,
     )
 
     # Merge results back into rows

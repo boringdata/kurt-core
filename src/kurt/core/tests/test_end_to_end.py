@@ -704,15 +704,19 @@ class TestDSPyHelpersParameters:
         ):
             items = [{"input_text": "test"}]
 
+            # Create a mock config with llm_model
+            mock_config = MagicMock()
+            mock_config.llm_model = "anthropic/claude-3-haiku-20240307"
+
             await run_batch(
                 signature=TestSignature,
                 items=items,
-                llm_model="anthropic/claude-3-haiku-20240307",
+                config=mock_config,
             )
 
-            # Verify get_dspy_lm was called with the specified model
+            # Verify get_dspy_lm was called with the config
             # (run_batch uses dspy.context() with the LM instance, not configure_dspy_model)
-            mock_get_lm.assert_called_once_with("anthropic/claude-3-haiku-20240307")
+            mock_get_lm.assert_called_once_with(mock_config)
 
     @pytest.mark.asyncio
     async def test_run_batch_telemetry_in_result(self):

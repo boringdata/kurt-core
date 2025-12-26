@@ -213,10 +213,18 @@ Fetch content from web sources to use as grounding material:
 #   - httpx: Proxy-friendly alternative to trafilatura
 INGESTION_FETCH_ENGINE="trafilatura"
 
-# LLM models for content analysis (format: provider/model-name)
+# LLM models (format: provider/model-name)
 # Alternatives: "anthropic/claude-3-haiku", "google/gemini-1.5-flash", "groq/llama-3.1-8b"
-INDEXING_LLM_MODEL="openai/gpt-4o-mini"              # For metadata extraction
+LLM_MODEL="openai/gpt-4o-mini"                       # Global LLM model
 EMBEDDING_MODEL="openai/text-embedding-3-small"      # For embeddings
+
+# Optional: Module-specific overrides (see src/kurt/config/README.md for details)
+# INDEXING.LLM_MODEL="openai/gpt-4o-mini"            # For metadata extraction
+# ANSWER.LLM_MODEL="openai/gpt-4o"                   # For answering questions
+
+# Optional: Local LLM server (Ollama, vLLM, llama.cpp, etc.)
+# LLM_API_BASE="http://localhost:8080/v1/"
+# LLM_API_KEY="not_needed"
 ```
 
 **API Keys** (add to `.env` file):

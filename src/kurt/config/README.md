@@ -1,285 +1,235 @@
-# Module-Level Configuration Design
+# Hierarchical Configuration System
 
-## Problem
+Kurt supports a hierarchical configuration system for LLM and embedding models, allowing you to set defaults globally and override them at the module or step level.
 
-Currently, all configuration is flat in `kurt.config`:
-```
-INDEXING_LLM_MODEL="anthropic/claude-3-haiku-20240307"
-MAX_CONCURRENT_INDEXING=50
-```
+## Configuration Hierarchy
 
-This doesn't scale well when:
-1. Different pipeline steps need different settings (e.g., different LLM models for extraction vs resolution)
-2. Modules (indexing, fetch) have step-specific configs
-3. We want to expose tunable parameters without polluting the global config
+Resolution order (first match wins):
 
-## Proposed Design
+1. **Step-specific**: `<MODULE>.<STEP>.<CATEGORY>_<PARAM>`
+2. **Module-level**: `<MODULE>.<CATEGORY>_<PARAM>`
+3. **Global**: `<CATEGORY>_<PARAM>`
+4. **Legacy keys** (backwards compatible): `INDEXING_LLM_MODEL`, `ANSWER_LLM_MODEL`
 
-### Config Structure
+Where:
+- `MODULE` = `INDEXING`, `ANSWER`, `RETRIEVAL`
+- `STEP` = step name like `SECTION_EXTRACTIONS`, `ENTITY_CLUSTERING`
+- `CATEGORY` = `LLM` or `EMBEDDING`
+- `PARAM` = `MODEL`, `API_BASE`, `API_KEY`, `TEMPERATURE`, `MAX_TOKENS`
 
-Use dot notation for hierarchy: `<MODULE>.<STEP>.<PARAM>`
+## Quick Examples
+
+### Cloud Provider (Default)
 
 ```ini
 # kurt.config
 
-# === Global defaults (used when step-specific not set) ===
-INDEXING_LLM_MODEL="anthropic/claude-3-haiku-20240307"
-MAX_CONCURRENT_INDEXING=50
-
-# === Module-specific overrides ===
-
-# Indexing module - step-specific configs
-INDEXING.SECTION_EXTRACTIONS.LLM_MODEL="anthropic/claude-3-5-sonnet-20241022"
-INDEXING.SECTION_EXTRACTIONS.MAX_CONCURRENT=20
-INDEXING.SECTION_EXTRACTIONS.BATCH_SIZE=10
-
-INDEXING.ENTITY_CLUSTERING.EPS=0.25
-INDEXING.ENTITY_CLUSTERING.MIN_SAMPLES=2
-
-INDEXING.ENTITY_RESOLUTION.LLM_MODEL="anthropic/claude-3-haiku-20240307"
-INDEXING.ENTITY_RESOLUTION.MAX_CONCURRENT=30
-
-INDEXING.CLAIM_CLUSTERING.EPS=0.3
-
-# Fetch module configs
-FETCH.FIRECRAWL.API_KEY="fc-xxx"
-FETCH.FIRECRAWL.TIMEOUT=30
-
-FETCH.TRAFILATURA.INCLUDE_IMAGES=false
-FETCH.TRAFILATURA.FAVOR_PRECISION=true
+# Use OpenAI for everything
+LLM_MODEL="openai/gpt-4o-mini"
+EMBEDDING_MODEL="openai/text-embedding-3-small"
 ```
 
-### Naming Convention
+### Local LLM Server
+
+```ini
+# kurt.config
+
+# Point all LLM calls to a local server
+LLM_MODEL="mistral-7b"
+LLM_API_BASE="http://localhost:8080/v1/"
+LLM_API_KEY="not_needed"
+
+# Local embeddings too
+EMBEDDING_MODEL="nomic-embed-text"
+EMBEDDING_API_BASE="http://localhost:8080/v1/"
+```
+
+### Module-Specific Overrides
+
+```ini
+# kurt.config
+
+# Global defaults
+LLM_MODEL="openai/gpt-4o-mini"
+EMBEDDING_MODEL="openai/text-embedding-3-small"
+
+# Use a smarter model for answering questions
+ANSWER.LLM_MODEL="openai/gpt-4o"
+
+# Use a local model for indexing (cheaper/faster)
+INDEXING.LLM_MODEL="mistral-7b"
+INDEXING.LLM_API_BASE="http://localhost:8080/v1/"
+```
+
+### Step-Level Overrides
+
+```ini
+# kurt.config
+
+# Global defaults
+LLM_MODEL="openai/gpt-4o-mini"
+
+# Most indexing uses gpt-4o-mini, but section extraction needs a smarter model
+INDEXING.SECTION_EXTRACTIONS.LLM_MODEL="anthropic/claude-3-5-sonnet-20241022"
+
+# Entity clustering uses local embeddings
+INDEXING.ENTITY_CLUSTERING.EMBEDDING_MODEL="bge-large"
+INDEXING.ENTITY_CLUSTERING.EMBEDDING_API_BASE="http://localhost:8080/v1/"
+```
+
+## Full Configuration Reference
+
+### LLM Settings
+
+| Key Pattern | Example | Description |
+|-------------|---------|-------------|
+| `LLM_MODEL` | `"openai/gpt-4o-mini"` | Global LLM model |
+| `LLM_API_BASE` | `"http://localhost:8080/v1/"` | Global API endpoint |
+| `LLM_API_KEY` | `"sk-..."` or `"not_needed"` | API key (optional for local) |
+| `LLM_TEMPERATURE` | `0.7` | Temperature (optional) |
+| `LLM_MAX_TOKENS` | `4000` | Max tokens (optional) |
+| `<MODULE>.LLM_MODEL` | `INDEXING.LLM_MODEL` | Module-level model |
+| `<MODULE>.LLM_API_BASE` | `ANSWER.LLM_API_BASE` | Module-level endpoint |
+| `<MODULE>.<STEP>.LLM_MODEL` | `INDEXING.SECTION_EXTRACTIONS.LLM_MODEL` | Step-level model |
+
+### Embedding Settings
+
+| Key Pattern | Example | Description |
+|-------------|---------|-------------|
+| `EMBEDDING_MODEL` | `"openai/text-embedding-3-small"` | Global embedding model |
+| `EMBEDDING_API_BASE` | `"http://localhost:8080/v1/"` | Global embedding endpoint |
+| `EMBEDDING_API_KEY` | `"sk-..."` | Embedding API key |
+| `<MODULE>.EMBEDDING_MODEL` | `INDEXING.EMBEDDING_MODEL` | Module-level embedding |
+| `<MODULE>.<STEP>.EMBEDDING_MODEL` | `INDEXING.ENTITY_CLUSTERING.EMBEDDING_MODEL` | Step-level embedding |
+
+### Legacy Keys (Backwards Compatible)
+
+These keys still work for backwards compatibility:
+
+| Legacy Key | Equivalent New Key |
+|------------|-------------------|
+| `INDEXING_LLM_MODEL` | `INDEXING.LLM_MODEL` or `LLM_MODEL` |
+| `ANSWER_LLM_MODEL` | `ANSWER.LLM_MODEL` or `LLM_MODEL` |
+
+## API Implementation
+
+### Using `resolve_model_settings()`
+
+The `resolve_model_settings()` function provides hierarchical config resolution:
+
+```python
+from kurt.config.base import resolve_model_settings
+
+# Get LLM settings for indexing module
+settings = resolve_model_settings("LLM", module_name="INDEXING")
+print(settings.model)     # e.g., "mistral-7b"
+print(settings.api_base)  # e.g., "http://localhost:8080/v1/"
+
+# Get embedding settings for a specific step
+settings = resolve_model_settings(
+    "EMBEDDING",
+    module_name="INDEXING",
+    step_name="ENTITY_CLUSTERING"
+)
+
+# Use with step config override
+settings = resolve_model_settings(
+    "LLM",
+    module_name="INDEXING",
+    step_config=my_step_config  # Has llm_model attribute
+)
+```
+
+### ModelSettings Dataclass
+
+```python
+@dataclass
+class ModelSettings:
+    model: str
+    api_base: str | None = None
+    api_key: str | None = None
+    temperature: float | None = None
+    max_tokens: int | None = None
+```
+
+### Using in DSPy
+
+```python
+from kurt.core.dspy_helpers import get_dspy_lm
+from kurt.utils.embeddings import generate_embeddings
+
+# LLM - auto-detects module from call stack
+lm = get_dspy_lm()
+
+# LLM - with explicit step config
+lm = get_dspy_lm(config=my_step_config)
+
+# Embeddings - with module context
+embeddings = generate_embeddings(
+    ["text1", "text2"],
+    module_name="INDEXING",
+    step_name="ENTITY_CLUSTERING"
+)
+```
+
+## Naming Conventions
 
 - **Dots (`.`)**: Separate hierarchy levels (module, step, param)
 - **Underscores (`_`)**: Separate words within a level
 - **ALL_CAPS**: Consistent with existing config style
 
 Examples:
-- `INDEXING.SECTION_EXTRACTIONS.LLM_MODEL` - module.step.param
-- `INDEXING.ENTITY_CLUSTERING.MIN_SAMPLES` - multi-word param
-- `FETCH.TRAFILATURA.FAVOR_PRECISION` - fetch module config
+- `INDEXING.SECTION_EXTRACTIONS.LLM_MODEL` - module.step.category_param
+- `ANSWER.LLM_API_BASE` - module.category_param
+- `LLM_MODEL` - global flat key
 
-### Implementation
+## Common Configurations
 
-#### 1. Step Config Schema (in each model file)
+### Ollama
 
-Each step declares its configurable parameters:
+```ini
+LLM_MODEL="mistral"
+LLM_API_BASE="http://localhost:11434/v1/"
+LLM_API_KEY="not_needed"
 
-```python
-# step_extract_sections.py
-from kurt.content.indexing_new.framework import StepConfig, ConfigParam
-
-class SectionExtractionsConfig(StepConfig):
-    """Configuration for section_extractions step."""
-
-    llm_model: str = ConfigParam(
-        default=None,  # Falls back to global INDEXING_LLM_MODEL
-        description="LLM model for extraction"
-    )
-    max_concurrent: int = ConfigParam(
-        default=None,  # Falls back to global MAX_CONCURRENT_INDEXING
-        ge=1, le=100,
-        description="Max concurrent LLM calls"
-    )
-    batch_size: int = ConfigParam(
-        default=50,
-        ge=1, le=200,
-        description="Batch size for DSPy calls"
-    )
-
-
-@model(
-    name="indexing.section_extractions",
-    config_schema=SectionExtractionsConfig,  # <-- NEW
-    ...
-)
-def section_extractions(sources, writer, config: SectionExtractionsConfig, **kwargs):
-    # Use config.llm_model, config.batch_size, etc.
-    ...
+EMBEDDING_MODEL="nomic-embed-text"
+EMBEDDING_API_BASE="http://localhost:11434/v1/"
 ```
 
-The config key is derived from the model name:
-- `indexing.section_extractions` → `INDEXING.SECTION_EXTRACTIONS.`
-- Parameter `llm_model` → `LLM_MODEL`
-- Full key: `INDEXING.SECTION_EXTRACTIONS.LLM_MODEL`
+### LM Studio
 
-#### 2. Config Resolution (in framework)
-
-```python
-# framework/config.py
-
-from pydantic import BaseModel, Field
-from typing import Optional, Any, Dict, get_type_hints
-from kurt.config import load_config
-
-
-class ConfigParam:
-    """Metadata for step config parameters with fallback support."""
-
-    def __init__(
-        self,
-        default: Any = None,
-        fallback_global: Optional[str] = None,  # e.g., "INDEXING_LLM_MODEL"
-        description: str = "",
-        ge: Optional[float] = None,
-        le: Optional[float] = None,
-    ):
-        self.default = default
-        self.fallback_global = fallback_global
-        self.description = description
-        self.ge = ge
-        self.le = le
-
-
-class StepConfig(BaseModel):
-    """Base class for step configuration."""
-
-    # Store metadata about fields (set by subclasses)
-    _config_params: Dict[str, ConfigParam] = {}
-
-    @classmethod
-    def load(cls, model_name: str) -> "StepConfig":
-        """Load config for this step with fallback resolution.
-
-        Resolution order:
-        1. Step-specific: INDEXING.SECTION_EXTRACTIONS.LLM_MODEL
-        2. Global fallback: INDEXING_LLM_MODEL
-        3. Default from schema
-
-        Args:
-            model_name: Full model name like "indexing.section_extractions"
-        """
-        kurt_config = load_config()
-
-        # Convert model name to config prefix: indexing.section_extractions -> INDEXING.SECTION_EXTRACTIONS
-        prefix = model_name.upper().replace("_", ".").replace("..", ".")
-        # Normalize: indexing.section_extractions -> INDEXING.SECTION_EXTRACTIONS
-        parts = model_name.split(".")
-        prefix = ".".join(p.upper() for p in parts)
-
-        values = {}
-        for field_name, param in cls._config_params.items():
-            # Build step-specific key: INDEXING.SECTION_EXTRACTIONS.LLM_MODEL
-            step_key = f"{prefix}.{field_name.upper()}"
-
-            # Try step-specific first
-            if hasattr(kurt_config, step_key):
-                values[field_name] = getattr(kurt_config, step_key)
-                continue
-
-            # Try global fallback (e.g., INDEXING_LLM_MODEL)
-            if param.fallback_global and hasattr(kurt_config, param.fallback_global):
-                values[field_name] = getattr(kurt_config, param.fallback_global)
-                continue
-
-            # Use default from param
-            if param.default is not None:
-                values[field_name] = param.default
-
-        return cls(**values)
+```ini
+LLM_MODEL="local-model"
+LLM_API_BASE="http://localhost:1234/v1/"
+LLM_API_KEY="not_needed"
 ```
 
-#### 3. Integration with @model decorator
+### vLLM
 
-```python
-# framework/decorator.py
-
-def model(
-    name: str,
-    config_schema: Optional[Type[StepConfig]] = None,
-    ...
-):
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            # Load step config if schema defined
-            if config_schema:
-                config = config_schema.load(name)
-                kwargs['config'] = config
-
-            return func(*args, **kwargs)
-
-        return wrapper
-    return decorator
+```ini
+LLM_MODEL="mistralai/Mistral-7B-Instruct-v0.2"
+LLM_API_BASE="http://localhost:8000/v1/"
+LLM_API_KEY="not_needed"
 ```
 
-### Config File Parsing
+### llama.cpp Server
 
-Extend `kurt/config/base.py` to handle dot notation:
-
-```python
-# In load_config()
-
-# Parse hierarchical keys with dots
-# INDEXING.SECTION_EXTRACTIONS.LLM_MODEL is stored as-is
-# Config loader should support dots in key names
+```ini
+LLM_MODEL="local"
+LLM_API_BASE="http://localhost:8080/v1/"
+LLM_API_KEY="not_needed"
 ```
 
-### Benefits
+### Mixed: Local Indexing + Cloud Answering
 
-1. **Step-specific tuning**: Each step can have different LLM models, concurrency limits
-2. **Clear ownership**: Config params defined alongside the code that uses them
-3. **Fallback chain**: Step-specific -> Global -> Default
-4. **Type-safe**: Pydantic validation at load time
-5. **Self-documenting**: Each step declares what's configurable
-6. **Backwards compatible**: Global configs still work as fallbacks
-7. **Readable hierarchy**: Dots clearly show module.step.param structure
+```ini
+# Use local model for indexing (cheaper)
+INDEXING.LLM_MODEL="mistral-7b"
+INDEXING.LLM_API_BASE="http://localhost:8080/v1/"
 
-### Example Usage
+# Use cloud for answering (smarter)
+ANSWER.LLM_MODEL="openai/gpt-4o"
 
-```python
-# In step_entity_clustering.py
-
-class EntityClusteringConfig(StepConfig):
-    _config_params = {
-        "eps": ConfigParam(
-            default=0.25,
-            ge=0.0, le=1.0,
-            description="DBSCAN epsilon parameter for clustering"
-        ),
-        "min_samples": ConfigParam(
-            default=2,
-            ge=1,
-            description="DBSCAN min_samples parameter"
-        ),
-        "llm_model": ConfigParam(
-            default=None,
-            fallback_global="INDEXING_LLM_MODEL",
-            description="LLM for resolution decisions"
-        ),
-    }
-
-    eps: float = 0.25
-    min_samples: int = 2
-    llm_model: Optional[str] = None
-
-
-@model(
-    name="indexing.entity_clustering",
-    config_schema=EntityClusteringConfig,
-    ...
-)
-def entity_clustering(sources, writer, config: EntityClusteringConfig, **kwargs):
-    # Use typed config
-    clustering = DBSCAN(eps=config.eps, min_samples=config.min_samples)
-    ...
+# Use OpenAI for embeddings
+EMBEDDING_MODEL="openai/text-embedding-3-small"
 ```
-
-### Migration Path
-
-1. Add `StepConfig` and `ConfigParam` classes to `framework/config.py`
-2. Update `@model` decorator to accept `config_schema` parameter
-3. Update config parser in `kurt/config/base.py` to support dot notation in keys
-4. Gradually add `config_schema` to each step (backwards compatible)
-5. Existing code continues working (uses global fallbacks)
-
-### Design Decisions
-
-1. **Naming**: `INDEXING.SECTION_EXTRACTIONS.LLM_MODEL` (dots for hierarchy, underscores for multi-word)
-
-2. **Defaults location**: Step file owns defaults, global config is for overrides
-
-3. **Validation**: Validate on load (fail fast)
-
-4. **Backwards compatibility**: Global keys like `INDEXING_LLM_MODEL` still work as fallbacks
