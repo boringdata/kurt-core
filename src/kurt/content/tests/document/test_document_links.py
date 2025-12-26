@@ -13,7 +13,7 @@ import pytest
 
 from kurt.db.database import get_session
 from kurt.db.documents import get_document_links, save_document_links
-from kurt.db.models import Document, DocumentLink, IngestionStatus, SourceType
+from kurt.db.models import Document, DocumentLink, SourceType
 from kurt.utils.fetching import extract_document_links
 
 
@@ -28,13 +28,11 @@ class TestSaveDocumentLinks:
             title="Source",
             source_url="https://example.com/source",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
         )
         target_doc = Document(
             title="Target",
             source_url="https://example.com/target",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
         )
         session.add(source_doc)
         session.add(target_doc)
@@ -66,7 +64,6 @@ class TestSaveDocumentLinks:
             title="Source",
             source_url="https://example.com/source",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
         )
         session.add(source_doc)
         session.commit()
@@ -93,19 +90,16 @@ class TestSaveDocumentLinks:
             title="Source",
             source_url="https://example.com/source",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
         )
         target1 = Document(
             title="Target 1",
             source_url="https://example.com/target1",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
         )
         target2 = Document(
             title="Target 2",
             source_url="https://example.com/target2",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
         )
         session.add_all([source_doc, target1, target2])
         session.commit()
@@ -137,19 +131,16 @@ class TestSaveDocumentLinks:
             title="Source",
             source_url="https://example.com/source",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
         )
         target1 = Document(
             title="Target 1",
             source_url="https://example.com/target1",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
         )
         target2 = Document(
             title="Target 2",
             source_url="https://example.com/target2",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
         )
         session.add_all([source_doc, target1, target2])
         session.commit()
@@ -176,7 +167,6 @@ class TestSaveDocumentLinks:
             title="Source",
             source_url="https://example.com/source",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
         )
         session.add(source_doc)
         session.commit()
@@ -197,13 +187,11 @@ class TestGetDocumentLinks:
             title="Source",
             source_url="https://example.com/source",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
         )
         target_doc = Document(
             title="Target",
             source_url="https://example.com/target",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
         )
         session.add_all([source_doc, target_doc])
         session.commit()
@@ -233,13 +221,11 @@ class TestGetDocumentLinks:
             title="Source",
             source_url="https://example.com/source",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
         )
         target_doc = Document(
             title="Target",
             source_url="https://example.com/target",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
         )
         session.add_all([source_doc, target_doc])
         session.commit()
@@ -268,7 +254,6 @@ class TestGetDocumentLinks:
             title="Isolated",
             source_url="https://example.com/isolated",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
         )
         session.add(doc)
         session.commit()
@@ -284,7 +269,6 @@ class TestGetDocumentLinks:
             title="Doc",
             source_url="https://example.com/doc",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
         )
         session.add(doc)
         session.commit()
@@ -311,19 +295,16 @@ class TestIntegration:
             title="Introduction",
             source_url="https://example.com/intro",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
         )
         doc2 = Document(
             title="Setup",
             source_url="https://example.com/setup",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
         )
         doc3 = Document(
             title="Tutorial",
             source_url="https://example.com/tutorial",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
         )
         session.add_all([doc1, doc2, doc3])
         session.commit()

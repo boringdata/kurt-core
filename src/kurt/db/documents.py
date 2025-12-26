@@ -23,12 +23,85 @@ These can be used directly by agents or wrapped by CLI commands.
 from typing import Optional
 from uuid import UUID
 
+from sqlalchemy import text
 from sqlmodel import select
 
 from kurt.config import load_config
 from kurt.db.database import get_session
 from kurt.db.models import Document, PageAnalytics, SourceType
 from kurt.integrations.analytics.utils import normalize_url_for_analytics
+
+# ============================================================================
+# Staging Table Helpers
+# ============================================================================
+
+
+def _table_exists(session, table_name: str) -> bool:
+    """Check if a table exists in the database.
+
+    This is used to handle queries on staging tables that may not exist yet
+    (e.g., landing_fetch, landing_discovery, staging_section_extractions).
+    These tables are created dynamically when pipeline models run.
+    """
+    result = session.execute(
+        text(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'")
+    )
+    return result.fetchone() is not None
+
+
+def _get_status_subquery(session, status_upper: str) -> str | None:
+    """Build a status filter subquery, handling missing staging tables gracefully.
+
+    Returns a SQL WHERE clause string, or None if the status cannot be satisfied
+    (e.g., filtering for FETCHED when landing_fetch table doesn't exist).
+
+    Status hierarchy: INDEXED > FETCHED > DISCOVERED > NOT_FETCHED
+    """
+    has_landing_fetch = _table_exists(session, "landing_fetch")
+    has_landing_discovery = _table_exists(session, "landing_discovery")
+    has_section_extractions = _table_exists(session, "staging_section_extractions")
+
+    if status_upper == "INDEXED":
+        if not has_section_extractions:
+            return "1=0"  # No documents can be INDEXED if table doesn't exist
+        return "CAST(id AS TEXT) IN (SELECT document_id FROM staging_section_extractions)"
+
+    elif status_upper == "FETCHED":
+        if not has_landing_fetch:
+            return "1=0"  # No documents can be FETCHED if table doesn't exist
+        # Has records in landing_fetch with status=FETCHED, but NOT indexed
+        base = (
+            "CAST(id AS TEXT) IN (SELECT document_id FROM landing_fetch WHERE status = 'FETCHED')"
+        )
+        if has_section_extractions:
+            return f"{base} AND CAST(id AS TEXT) NOT IN (SELECT document_id FROM staging_section_extractions)"
+        return base
+
+    elif status_upper == "DISCOVERED":
+        if not has_landing_discovery:
+            return "1=0"  # No documents can be DISCOVERED if table doesn't exist
+        base = "CAST(id AS TEXT) IN (SELECT document_id FROM landing_discovery)"
+        if has_landing_fetch:
+            return f"{base} AND CAST(id AS TEXT) NOT IN (SELECT document_id FROM landing_fetch WHERE status = 'FETCHED')"
+        return base
+
+    elif status_upper == "NOT_FETCHED":
+        if not has_landing_fetch:
+            return "1=1"  # All documents are NOT_FETCHED if no landing_fetch table
+        return "CAST(id AS TEXT) NOT IN (SELECT document_id FROM landing_fetch WHERE status = 'FETCHED')"
+
+    elif status_upper == "ERROR":
+        parts = []
+        if has_landing_fetch:
+            parts.append("SELECT document_id FROM landing_fetch WHERE error IS NOT NULL")
+        if has_landing_discovery:
+            parts.append("SELECT document_id FROM landing_discovery WHERE error IS NOT NULL")
+        if not parts:
+            return "1=0"  # No error records possible if no staging tables
+        return f"CAST(id AS TEXT) IN ({' UNION '.join(parts)})"
+
+    return None  # Unknown status
+
 
 # ============================================================================
 # Document Creation (CRUD - Create)
@@ -354,8 +427,6 @@ def list_documents(
         # Filter by traffic trend
         docs = list_documents(with_analytics=True, pageviews_trend="decreasing")
     """
-    from sqlalchemy import text
-
     session = get_session()
 
     # Determine if we need analytics
@@ -370,48 +441,12 @@ def list_documents(
     # Build base document query
     stmt = select(Document)
 
-    # Apply status filter using subqueries on staging tables
-    # Status is derived: INDEXED > FETCHED > DISCOVERED > NOT_FETCHED
+    # Apply status filter using helper that handles missing staging tables
     if status:
         status_upper = status.upper() if isinstance(status, str) else status.value
-        if status_upper == "INDEXED":
-            # Has records in staging_section_extractions
-            stmt = stmt.where(
-                text("CAST(id AS TEXT) IN (SELECT document_id FROM staging_section_extractions)")
-            )
-        elif status_upper == "FETCHED":
-            # Has records in landing_fetch with status=FETCHED, but NOT indexed
-            stmt = stmt.where(
-                text(
-                    "CAST(id AS TEXT) IN (SELECT document_id FROM landing_fetch WHERE status = 'FETCHED') "
-                    "AND CAST(id AS TEXT) NOT IN (SELECT document_id FROM staging_section_extractions)"
-                )
-            )
-        elif status_upper == "DISCOVERED":
-            # Has records in landing_discovery but NOT fetched
-            stmt = stmt.where(
-                text(
-                    "CAST(id AS TEXT) IN (SELECT document_id FROM landing_discovery) "
-                    "AND CAST(id AS TEXT) NOT IN (SELECT document_id FROM landing_fetch WHERE status = 'FETCHED')"
-                )
-            )
-        elif status_upper == "NOT_FETCHED":
-            # No records in landing_fetch with status=FETCHED
-            stmt = stmt.where(
-                text(
-                    "CAST(id AS TEXT) NOT IN (SELECT document_id FROM landing_fetch WHERE status = 'FETCHED')"
-                )
-            )
-        elif status_upper == "ERROR":
-            # Has error in any staging table
-            stmt = stmt.where(
-                text(
-                    "CAST(id AS TEXT) IN ("
-                    "SELECT document_id FROM landing_fetch WHERE error IS NOT NULL "
-                    "UNION SELECT document_id FROM landing_discovery WHERE error IS NOT NULL"
-                    ")"
-                )
-            )
+        status_subquery = _get_status_subquery(session, status_upper)
+        if status_subquery:
+            stmt = stmt.where(text(status_subquery))
     if url_prefix:
         stmt = stmt.where(Document.source_url.startswith(url_prefix))
     if url_contains:
@@ -766,9 +801,8 @@ def save_document_content_and_metadata(
             except (ValueError, AttributeError):
                 pass
 
-    # Store public URL (for CMS documents - used for link matching)
-    if public_url:
-        doc.discovery_url = public_url
+    # Note: public_url (discovery_url) is now stored in landing_discovery table
+    # and passed to fetch model, not on the Document model itself
 
     # Store embedding
     if embedding:
@@ -947,25 +981,36 @@ def get_document_stats(
     # Get all document IDs first
     stmt = select(Document)
 
+    # Check if staging_topic_clustering table exists for cluster/content_type filters
+    has_topic_clustering = _table_exists(session, "staging_topic_clustering")
+
     if in_cluster:
-        # Join with staging_topic_clustering to filter by cluster
-        stmt = stmt.where(
-            text(
-                "CAST(id AS TEXT) IN ("
-                "SELECT document_id FROM staging_topic_clustering "
-                f"WHERE cluster_name = '{in_cluster}')"
+        if has_topic_clustering:
+            # Join with staging_topic_clustering to filter by cluster
+            stmt = stmt.where(
+                text(
+                    "CAST(id AS TEXT) IN ("
+                    "SELECT document_id FROM staging_topic_clustering "
+                    f"WHERE cluster_name = '{in_cluster}')"
+                )
             )
-        )
+        else:
+            # No documents can match if table doesn't exist
+            stmt = stmt.where(text("1=0"))
 
     if with_content_type:
-        # Filter by content_type from staging_topic_clustering
-        stmt = stmt.where(
-            text(
-                "CAST(id AS TEXT) IN ("
-                "SELECT document_id FROM staging_topic_clustering "
-                f"WHERE content_type = '{with_content_type}')"
+        if has_topic_clustering:
+            # Filter by content_type from staging_topic_clustering
+            stmt = stmt.where(
+                text(
+                    "CAST(id AS TEXT) IN ("
+                    "SELECT document_id FROM staging_topic_clustering "
+                    f"WHERE content_type = '{with_content_type}')"
+                )
             )
-        )
+        else:
+            # No documents can match if table doesn't exist
+            stmt = stmt.where(text("1=0"))
 
     # Fetch documents
     all_docs = list(session.exec(stmt).all())
@@ -1239,44 +1284,27 @@ def list_content(
             .where(TopicCluster.name.ilike(f"%{in_cluster}%"))
         )
 
-    # Apply status filter using subqueries on staging tables
+    # Apply status filter using helper that handles missing staging tables
     if with_status:
         status_upper = with_status.upper() if isinstance(with_status, str) else with_status
-        if status_upper == "INDEXED":
-            stmt = stmt.where(
-                text("CAST(id AS TEXT) IN (SELECT document_id FROM staging_section_extractions)")
-            )
-        elif status_upper == "FETCHED":
-            stmt = stmt.where(
-                text(
-                    "CAST(id AS TEXT) IN (SELECT document_id FROM landing_fetch WHERE status = 'FETCHED')"
-                )
-            )
-        elif status_upper == "NOT_FETCHED":
-            stmt = stmt.where(
-                text(
-                    "CAST(id AS TEXT) NOT IN (SELECT document_id FROM landing_fetch WHERE status = 'FETCHED')"
-                )
-            )
-        elif status_upper == "ERROR":
-            stmt = stmt.where(
-                text(
-                    "CAST(id AS TEXT) IN ("
-                    "SELECT document_id FROM landing_fetch WHERE error IS NOT NULL "
-                    "UNION SELECT document_id FROM landing_discovery WHERE error IS NOT NULL"
-                    ")"
-                )
-            )
+        status_subquery = _get_status_subquery(session, status_upper)
+        if status_subquery:
+            stmt = stmt.where(text(status_subquery))
 
     # Apply content_type filter using staging_topic_clustering table
     if with_content_type:
-        stmt = stmt.where(
-            text(
-                f"CAST(id AS TEXT) IN ("
-                f"SELECT document_id FROM staging_topic_clustering "
-                f"WHERE content_type = '{with_content_type.lower()}')"
+        has_topic_clustering = _table_exists(session, "staging_topic_clustering")
+        if has_topic_clustering:
+            stmt = stmt.where(
+                text(
+                    f"CAST(id AS TEXT) IN ("
+                    f"SELECT document_id FROM staging_topic_clustering "
+                    f"WHERE content_type = '{with_content_type.lower()}')"
+                )
             )
-        )
+        else:
+            # No documents can match if table doesn't exist
+            stmt = stmt.where(text("1=0"))
 
     # Apply ordering (if not analytics-based, since analytics needs post-query sorting)
     if not (with_analytics and order_by):
@@ -1614,26 +1642,20 @@ def resolve_urls_to_doc_ids(url_list: list[str]) -> dict[str, UUID]:
         >>> url_to_id = resolve_urls_to_doc_ids(["https://example.com/page1", "https://example.com/page2"])
         >>> # Returns: {"https://example.com/page1": UUID(...), ...}
     """
-    from sqlmodel import or_
-
     session = get_session()
 
     if not url_list:
         return {}
 
-    # Query for documents matching these URLs
-    # Check both source_url and discovery_url (for CMS documents with public URLs)
-    stmt = select(Document).where(
-        or_(Document.source_url.in_(url_list), Document.discovery_url.in_(url_list))
-    )
+    # Query for documents matching these URLs by source_url
+    # Note: discovery_url was removed from Document model - now in landing_discovery table
+    stmt = select(Document).where(Document.source_url.in_(url_list))
 
-    # Build mapping of URL -> doc_id (check both source_url and discovery_url)
+    # Build mapping of URL -> doc_id
     url_to_id = {}
     for doc in session.exec(stmt).all():
         if doc.source_url in url_list:
             url_to_id[doc.source_url] = doc.id
-        if doc.discovery_url in url_list:
-            url_to_id[doc.discovery_url] = doc.id
 
     return url_to_id
 

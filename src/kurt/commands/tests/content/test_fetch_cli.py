@@ -8,6 +8,9 @@ MOCKING STRATEGY:
 - Mock run_pipeline_simple (the pipeline executor) - tested separately in model tests
 - Use real code for: CLI parsing, document filtering, database operations
 - Use tmp_project fixture for isolated test environment
+
+NOTE: Status is now derived from staging tables (landing_fetch, staging_section_extractions).
+Tests use _mark_document_as_fetched() helper to simulate fetched status.
 """
 
 from unittest.mock import patch
@@ -17,7 +20,13 @@ import pytest
 
 from kurt.cli import main
 from kurt.db.database import get_session
-from kurt.db.models import Document, IngestionStatus, SourceType
+from kurt.db.models import Document, SourceType
+from tests.helpers.status_helpers import (
+    get_doc_status as _get_doc_status,
+)
+from tests.helpers.status_helpers import (
+    mark_document_as_fetched as _mark_document_as_fetched,
+)
 
 
 @pytest.fixture
@@ -38,7 +47,11 @@ def mock_pipeline():
 
 @pytest.fixture
 def mock_pipeline_with_document_update():
-    """Mock pipeline that also updates document status (simulates real behavior)."""
+    """Mock pipeline that also updates document status (simulates real behavior).
+
+    Creates landing_fetch records to simulate successful fetch (status is now derived
+    from staging tables, not stored on Document model).
+    """
 
     def pipeline_side_effect(*args, **kwargs):
         # Get document IDs from the filters
@@ -48,7 +61,7 @@ def mock_pipeline_with_document_update():
             from uuid import UUID
 
             from kurt.db.database import get_session
-            from kurt.db.models import Document, IngestionStatus
+            from kurt.db.models import Document
 
             session = get_session()
             for doc_id in filters.ids.split(","):
@@ -56,12 +69,10 @@ def mock_pipeline_with_document_update():
                     # Convert string to UUID for proper lookup
                     doc = session.get(Document, UUID(doc_id))
                     if doc:
-                        doc.ingestion_status = IngestionStatus.FETCHED
-                        session.add(doc)
+                        _mark_document_as_fetched(str(doc.id), session)
                         doc_count += 1
                 except (ValueError, TypeError):
                     pass
-            session.commit()
 
         return {
             "landing.fetch": {
@@ -122,13 +133,12 @@ class TestFetchCLIBasics:
         """Test that --dry-run doesn't execute pipeline."""
         runner, project_dir = isolated_cli_runner
 
-        # Create a test document
+        # Create a test document (status is NOT_FETCHED by default - no landing_fetch record)
         session = get_session()
         test_doc = Document(
             id=uuid4(),
             source_url="https://example.com/test",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.NOT_FETCHED,
         )
         session.add(test_doc)
         session.commit()
@@ -146,9 +156,8 @@ class TestFetchCLIBasics:
         # Verify pipeline was NOT called
         assert not mock_pipeline.called, "Pipeline should not be called in dry-run mode"
 
-        # Verify document status was NOT updated
-        session.refresh(test_doc)
-        assert test_doc.ingestion_status == IngestionStatus.NOT_FETCHED
+        # Verify document status was NOT updated (still NOT_FETCHED - no landing_fetch record)
+        assert _get_doc_status(test_doc.id) == "NOT_FETCHED"
 
 
 class TestFetchFiltering:
@@ -162,18 +171,16 @@ class TestFetchFiltering:
 
         session = get_session()
 
-        # Create documents - one matching, one not
+        # Create documents - one matching, one not (status is NOT_FETCHED by default)
         doc_match = Document(
             id=uuid4(),
             source_url="https://example.com/docs/tutorial",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.NOT_FETCHED,
         )
         doc_no_match = Document(
             id=uuid4(),
             source_url="https://example.com/api/reference",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.NOT_FETCHED,
         )
         session.add_all([doc_match, doc_no_match])
         session.commit()
@@ -193,11 +200,9 @@ class TestFetchFiltering:
 
         assert result.exit_code == 0, f"Command failed: {result.output}"
 
-        # Verify only matching document was fetched
-        session.refresh(doc_match)
-        session.refresh(doc_no_match)
-        assert doc_match.ingestion_status == IngestionStatus.FETCHED
-        assert doc_no_match.ingestion_status == IngestionStatus.NOT_FETCHED
+        # Verify only matching document was fetched (status derived from staging tables)
+        assert _get_doc_status(doc_match.id) == "FETCHED"
+        assert _get_doc_status(doc_no_match.id) == "NOT_FETCHED"
 
     def test_fetch_with_ids_filter(self, isolated_cli_runner, mock_pipeline_with_document_update):
         """Test fetch with --ids option."""
@@ -205,24 +210,21 @@ class TestFetchFiltering:
 
         session = get_session()
 
-        # Create test documents
+        # Create test documents (status is NOT_FETCHED by default)
         doc1 = Document(
             id=uuid4(),
             source_url="https://example.com/page1",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.NOT_FETCHED,
         )
         doc2 = Document(
             id=uuid4(),
             source_url="https://example.com/page2",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.NOT_FETCHED,
         )
         doc3 = Document(
             id=uuid4(),
             source_url="https://example.com/page3",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.NOT_FETCHED,
         )
         session.add_all([doc1, doc2, doc3])
         session.commit()
@@ -243,13 +245,10 @@ class TestFetchFiltering:
 
         assert result.exit_code == 0, f"Command failed: {result.output}"
 
-        # Verify only specified documents were fetched
-        session.refresh(doc1)
-        session.refresh(doc2)
-        session.refresh(doc3)
-        assert doc1.ingestion_status == IngestionStatus.FETCHED
-        assert doc2.ingestion_status == IngestionStatus.FETCHED
-        assert doc3.ingestion_status == IngestionStatus.NOT_FETCHED
+        # Verify only specified documents were fetched (status derived from staging tables)
+        assert _get_doc_status(doc1.id) == "FETCHED"
+        assert _get_doc_status(doc2.id) == "FETCHED"
+        assert _get_doc_status(doc3.id) == "NOT_FETCHED"
 
     def test_fetch_with_exclude_pattern(
         self, isolated_cli_runner, mock_pipeline_with_document_update
@@ -259,24 +258,21 @@ class TestFetchFiltering:
 
         session = get_session()
 
-        # Create test documents
+        # Create test documents (status is NOT_FETCHED by default)
         doc_included = Document(
             id=uuid4(),
             source_url="https://example.com/docs/tutorial",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.NOT_FETCHED,
         )
         doc_excluded = Document(
             id=uuid4(),
             source_url="https://example.com/docs/api/reference",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.NOT_FETCHED,
         )
         doc_included2 = Document(
             id=uuid4(),
             source_url="https://example.com/docs/guide",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.NOT_FETCHED,
         )
         session.add_all([doc_included, doc_excluded, doc_included2])
         session.commit()
@@ -298,13 +294,10 @@ class TestFetchFiltering:
 
         assert result.exit_code == 0, f"Command failed: {result.output}"
 
-        # Verify only non-excluded documents were fetched
-        session.refresh(doc_included)
-        session.refresh(doc_excluded)
-        session.refresh(doc_included2)
-        assert doc_included.ingestion_status == IngestionStatus.FETCHED
-        assert doc_excluded.ingestion_status == IngestionStatus.NOT_FETCHED
-        assert doc_included2.ingestion_status == IngestionStatus.FETCHED
+        # Verify only non-excluded documents were fetched (status derived from staging tables)
+        assert _get_doc_status(doc_included.id) == "FETCHED"
+        assert _get_doc_status(doc_excluded.id) == "NOT_FETCHED"
+        assert _get_doc_status(doc_included2.id) == "FETCHED"
 
     def test_fetch_with_limit(self, isolated_cli_runner, mock_pipeline_with_document_update):
         """Test fetch with --limit option."""
@@ -312,14 +305,13 @@ class TestFetchFiltering:
 
         session = get_session()
 
-        # Create multiple test documents
+        # Create multiple test documents (status is NOT_FETCHED by default)
         docs = []
         for i in range(5):
             doc = Document(
                 id=uuid4(),
                 source_url=f"https://example.com/page{i}",
                 source_type=SourceType.URL,
-                ingestion_status=IngestionStatus.NOT_FETCHED,
             )
             docs.append(doc)
             session.add(doc)
@@ -342,13 +334,8 @@ class TestFetchFiltering:
 
         assert result.exit_code == 0, f"Command failed: {result.output}"
 
-        # Verify only 2 documents were fetched
-        fetched_count = 0
-        for doc in docs:
-            session.refresh(doc)
-            if doc.ingestion_status == IngestionStatus.FETCHED:
-                fetched_count += 1
-
+        # Verify only 2 documents were fetched (status derived from staging tables)
+        fetched_count = sum(1 for doc in docs if _get_doc_status(doc.id) == "FETCHED")
         assert fetched_count == 2
 
 
@@ -364,7 +351,6 @@ class TestFetchConfirmation:
             id=uuid4(),
             source_url="https://example.com/test",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.NOT_FETCHED,
         )
         session.add(doc)
         session.commit()
@@ -402,7 +388,6 @@ class TestFetchConfirmation:
             id=uuid4(),
             source_url="https://example.com/test",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.NOT_FETCHED,
         )
         session.add(doc)
         session.commit()
@@ -425,9 +410,8 @@ class TestFetchConfirmation:
         assert result.exit_code == 0, f"Command failed: {result.output}"
         assert "Continue anyway?" not in result.output
 
-        # Document should be fetched
-        session.refresh(doc)
-        assert doc.ingestion_status == IngestionStatus.FETCHED
+        # Document should be fetched (status derived from staging tables)
+        assert _get_doc_status(doc.id) == "FETCHED"
 
 
 class TestFetchRefetch:
@@ -438,15 +422,16 @@ class TestFetchRefetch:
         runner, project_dir = isolated_cli_runner
 
         session = get_session()
+        # Create document and mark as FETCHED via landing_fetch table
         doc_fetched = Document(
             id=uuid4(),
             source_url="https://example.com/fetched",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             content_path="example.com/fetched.md",
         )
         session.add(doc_fetched)
         session.commit()
+        _mark_document_as_fetched(str(doc_fetched.id), session)
 
         # Run fetch without --refetch
         result = runner.invoke(
@@ -474,15 +459,16 @@ class TestFetchRefetch:
         runner, project_dir = isolated_cli_runner
 
         session = get_session()
+        # Create document and mark as FETCHED via landing_fetch table
         doc_fetched = Document(
             id=uuid4(),
             source_url="https://example.com/fetched",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             content_path="example.com/fetched.md",
         )
         session.add(doc_fetched)
         session.commit()
+        _mark_document_as_fetched(str(doc_fetched.id), session)
 
         # Run fetch with --refetch
         result = runner.invoke(
@@ -501,8 +487,7 @@ class TestFetchRefetch:
         assert result.exit_code == 0, f"Command failed: {result.output}"
 
         # Document should still be FETCHED (refetched successfully)
-        session.refresh(doc_fetched)
-        assert doc_fetched.ingestion_status == IngestionStatus.FETCHED
+        assert _get_doc_status(doc_fetched.id) == "FETCHED"
 
 
 class TestFetchOutputFormat:
@@ -519,13 +504,11 @@ class TestFetchOutputFormat:
             id=uuid4(),
             source_url="https://example.com/page1",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.NOT_FETCHED,
         )
         doc2 = Document(
             id=uuid4(),
             source_url="https://example.com/page2",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.NOT_FETCHED,
         )
         session.add_all([doc1, doc2])
         session.commit()
@@ -597,7 +580,8 @@ class TestFetchLocalFiles:
         assert doc is not None, "Document should be created"
         assert doc.title == "Test Article"
         assert doc.source_type == SourceType.FILE_UPLOAD
-        assert doc.ingestion_status == IngestionStatus.FETCHED
+        # Status derived from staging tables (local files are marked FETCHED via landing_fetch)
+        assert _get_doc_status(doc.id) == "FETCHED"
 
     def test_fetch_with_files_option(self, isolated_cli_runner):
         """Test fetch with --files option for multiple local files."""
@@ -677,7 +661,8 @@ class TestFetchLocalFiles:
             assert doc is not None
             assert doc.title == "External Article"
             assert doc.source_type == SourceType.FILE_UPLOAD
-            assert doc.ingestion_status == IngestionStatus.FETCHED
+            # Status derived from staging tables
+            assert _get_doc_status(doc.id) == "FETCHED"
 
         finally:
             if tmp_path.exists():

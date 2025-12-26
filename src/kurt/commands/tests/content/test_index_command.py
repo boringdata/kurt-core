@@ -212,7 +212,6 @@ Docker is useful for deploying both.
             source_url=f"file://{test_file}",
             source_path=str(test_file),
             content_path=str(content_file),
-            ingestion_status=IngestionStatus.FETCHED,
             title="Test Document",
             raw_content=test_file.read_text(),
         )
@@ -255,7 +254,6 @@ Docker is useful for deploying both.
                 source_url=f"file://{test_file}",
                 source_path=str(test_file),
                 content_path=str(content_file),
-                ingestion_status=IngestionStatus.FETCHED,
                 title=f"Document {i}",
                 raw_content=test_file.read_text(),
             )
@@ -286,7 +284,6 @@ Docker is useful for deploying both.
             source_url="file:///nonexistent.md",
             source_path="/nonexistent.md",
             content_path="/nonexistent/content.md",
-            ingestion_status=IngestionStatus.FETCHED,
             title="Missing Content",
         )
         session.add(doc)
@@ -347,7 +344,6 @@ class TestIndexCommandWithSimpleFactory:
             source_url=f"file://{test_file}",
             source_path=str(test_file),
             content_path=str(content_file),
-            ingestion_status=IngestionStatus.FETCHED,
             title="Factory Test",
             raw_content=test_file.read_text(),
         )

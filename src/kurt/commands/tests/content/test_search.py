@@ -45,7 +45,7 @@ class TestContentSearchCommand:
 
         # Create a mock document with embedding
         from kurt.db.database import get_session
-        from kurt.db.models import Document, IngestionStatus, SourceType
+        from kurt.db.models import Document, SourceType
 
         session = get_session()
         doc_id = uuid4()
@@ -54,7 +54,6 @@ class TestContentSearchCommand:
             title="Test Document",
             source_url="https://example.com/test",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
         )
         session.add(doc)
         session.commit()
@@ -84,7 +83,7 @@ class TestContentSearchCommand:
 
         # Create documents with different URLs
         from kurt.db.database import get_session
-        from kurt.db.models import Document, IngestionStatus, SourceType
+        from kurt.db.models import Document, SourceType
 
         session = get_session()
 
@@ -94,7 +93,6 @@ class TestContentSearchCommand:
             title="Docs Page",
             source_url="https://example.com/docs/auth",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
         )
 
         doc2_id = uuid4()
@@ -103,7 +101,6 @@ class TestContentSearchCommand:
             title="Blog Post",
             source_url="https://example.com/blog/auth",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
         )
 
         session.add(doc1)
@@ -135,7 +132,7 @@ class TestContentSearchCommand:
 
         # Create multiple documents
         from kurt.db.database import get_session
-        from kurt.db.models import Document, IngestionStatus, SourceType
+        from kurt.db.models import Document, SourceType
 
         session = get_session()
         doc_ids = []
@@ -148,7 +145,6 @@ class TestContentSearchCommand:
                 title=f"Doc {i}",
                 source_url=f"https://example.com/doc{i}",
                 source_type=SourceType.URL,
-                ingestion_status=IngestionStatus.FETCHED,
             )
             session.add(doc)
 
@@ -179,7 +175,7 @@ class TestContentSearchCommand:
 
         # Create a document
         from kurt.db.database import get_session
-        from kurt.db.models import Document, IngestionStatus, SourceType
+        from kurt.db.models import Document, SourceType
 
         session = get_session()
         doc_id = uuid4()
@@ -188,7 +184,6 @@ class TestContentSearchCommand:
             title="Test Doc",
             source_url="https://example.com/test",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
         )
         session.add(doc)
         session.commit()
@@ -215,7 +210,7 @@ class TestContentSearchCommand:
 
         # Create a document
         from kurt.db.database import get_session
-        from kurt.db.models import Document, IngestionStatus, SourceType
+        from kurt.db.models import Document, SourceType
 
         session = get_session()
         doc_id = uuid4()
@@ -224,7 +219,6 @@ class TestContentSearchCommand:
             title="JSON Test",
             source_url="https://example.com/json",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
         )
         session.add(doc)
         session.commit()

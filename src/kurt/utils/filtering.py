@@ -266,6 +266,7 @@ def build_document_query(
     in_cluster: str = None,
     with_content_type: str = None,
     limit: int = None,
+    session=None,
 ):
     """
     Build SQLModel query for document selection.
@@ -280,6 +281,7 @@ def build_document_query(
         in_cluster: Cluster name filter
         with_content_type: Content type filter
         limit: Maximum documents to return
+        session: Optional SQLModel session (for testing with isolated sessions)
 
     Returns:
         SQLModel Select statement
@@ -295,7 +297,14 @@ def build_document_query(
     from sqlalchemy import text
     from sqlmodel import select
 
+    from kurt.db.documents import _get_status_subquery, _table_exists
     from kurt.db.models import Document
+
+    # Get session for table existence checks
+    if session is None:
+        from kurt.db.database import get_session
+
+        session = get_session()
 
     stmt = select(Document)
 
@@ -303,60 +312,44 @@ def build_document_query(
     if id_uuids:
         stmt = stmt.where(Document.id.in_(id_uuids))
 
-    # Filter by status using subqueries on staging tables
-    # Status is now derived: INDEXED > FETCHED > DISCOVERED > NOT_FETCHED
+    # Filter by status using helper that handles missing staging tables
     if with_status:
         status_upper = with_status.upper()
-        if status_upper == "INDEXED":
-            stmt = stmt.where(
-                text("CAST(id AS TEXT) IN (SELECT document_id FROM staging_section_extractions)")
-            )
-        elif status_upper == "FETCHED":
-            stmt = stmt.where(
-                text(
-                    "CAST(id AS TEXT) IN (SELECT document_id FROM landing_fetch WHERE status = 'FETCHED')"
-                )
-            )
-        elif status_upper == "NOT_FETCHED":
-            stmt = stmt.where(
-                text(
-                    "CAST(id AS TEXT) NOT IN (SELECT document_id FROM landing_fetch WHERE status = 'FETCHED')"
-                )
-            )
-        elif status_upper == "ERROR":
-            stmt = stmt.where(
-                text(
-                    "CAST(id AS TEXT) IN ("
-                    "SELECT document_id FROM landing_fetch WHERE error IS NOT NULL "
-                    "UNION SELECT document_id FROM landing_discovery WHERE error IS NOT NULL)"
-                )
-            )
+        status_subquery = _get_status_subquery(session, status_upper)
+        if status_subquery:
+            stmt = stmt.where(text(status_subquery))
     elif not refetch:
         # Default: exclude FETCHED documents unless refetch=True
-        stmt = stmt.where(
-            text(
-                "CAST(id AS TEXT) NOT IN (SELECT document_id FROM landing_fetch WHERE status = 'FETCHED')"
-            )
-        )
+        status_subquery = _get_status_subquery(session, "NOT_FETCHED")
+        if status_subquery:
+            stmt = stmt.where(text(status_subquery))
 
     # Filter by cluster (uses staging_topic_clustering table)
     if in_cluster:
-        from kurt.models.staging.clustering.step_topic_clustering import TopicClusteringRow
+        if _table_exists(session, "staging_topic_clustering"):
+            from kurt.models.staging.clustering.step_topic_clustering import TopicClusteringRow
 
-        stmt = stmt.join(
-            TopicClusteringRow,
-            Document.id == TopicClusteringRow.document_id,
-        ).where(TopicClusteringRow.cluster_name == in_cluster)
+            stmt = stmt.join(
+                TopicClusteringRow,
+                Document.id == TopicClusteringRow.document_id,
+            ).where(TopicClusteringRow.cluster_name == in_cluster)
+        else:
+            # No documents can match if table doesn't exist
+            stmt = stmt.where(text("1=0"))
 
     # Filter by content type (uses staging_topic_clustering table)
     if with_content_type:
-        stmt = stmt.where(
-            text(
-                f"CAST(id AS TEXT) IN ("
-                f"SELECT document_id FROM staging_topic_clustering "
-                f"WHERE content_type = '{with_content_type.lower()}')"
+        if _table_exists(session, "staging_topic_clustering"):
+            stmt = stmt.where(
+                text(
+                    f"CAST(id AS TEXT) IN ("
+                    f"SELECT document_id FROM staging_topic_clustering "
+                    f"WHERE content_type = '{with_content_type.lower()}')"
+                )
             )
-        )
+        else:
+            # No documents can match if table doesn't exist
+            stmt = stmt.where(text("1=0"))
 
     # Apply limit
     if limit:
@@ -788,6 +781,7 @@ def select_documents_to_fetch(filters: DocumentFetchFilters) -> list[dict]:
     )
 
     # Convert to lightweight dicts for checkpoint
+    # Note: discovery_url removed from Document model - now in landing_discovery table
     return [
         {
             "id": str(doc.id),
@@ -795,7 +789,6 @@ def select_documents_to_fetch(filters: DocumentFetchFilters) -> list[dict]:
             "cms_platform": doc.cms_platform,
             "cms_instance": doc.cms_instance,
             "cms_document_id": doc.cms_document_id,
-            "discovery_url": doc.discovery_url,
         }
         for doc in filtered_docs
     ]

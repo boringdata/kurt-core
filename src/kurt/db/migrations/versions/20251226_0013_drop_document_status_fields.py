@@ -1,8 +1,8 @@
 """Drop status and metadata fields from documents table
 
-Revision ID: 012_drop_document_status_fields
-Revises: 011_add_claims
-Create Date: 2025-12-21
+Revision ID: 013_drop_document_status_fields
+Revises: 012_add_section_tracking
+Create Date: 2025-12-26
 
 This migration removes duplicated fields from the documents table that are now
 derived from staging tables:
@@ -32,8 +32,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "012_drop_document_status_fields"
-down_revision: Union[str, None] = "011_add_claims"
+revision: str = "013_drop_document_status_fields"
+down_revision: Union[str, None] = "012_add_section_tracking"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

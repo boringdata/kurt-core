@@ -11,7 +11,7 @@ Tests the common _identifiers.py module that handles:
 from uuid import uuid4
 
 from kurt.cli import main
-from kurt.db.models import Document, IngestionStatus, SourceType
+from kurt.db.models import Document, SourceType
 
 
 class TestIdentifierResolutionByURL:
@@ -31,7 +31,6 @@ class TestIdentifierResolutionByURL:
             id=doc_id,
             source_url=test_url,
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             title="Test Article by URL",
         )
         session.add(doc)
@@ -57,7 +56,6 @@ class TestIdentifierResolutionByURL:
             id=doc_id,
             source_url=test_url,
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             title="Document to Delete by URL",
         )
         session.add(doc)
@@ -95,7 +93,6 @@ class TestIdentifierResolutionByFilePath:
             id=doc_id,
             source_url="https://example.com/article",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             title="Document with File Path",
             content_path="example.com/article.md",
         )
@@ -120,7 +117,6 @@ class TestIdentifierResolutionByFilePath:
             id=doc_id,
             source_url="https://example.com/guide",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             title="Guide with sources/ prefix test",
             content_path="example.com/guide.md",  # Stored without sources/
         )
@@ -145,7 +141,6 @@ class TestIdentifierResolutionByFilePath:
             id=doc_id,
             source_url="https://docs.example.com/tutorial/intro.html",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             title="Tutorial Intro",
             content_path="docs.example.com/tutorial/intro.md",
         )
@@ -170,7 +165,6 @@ class TestIdentifierResolutionByFilePath:
             id=doc_id,
             source_url="https://example.com/delete-by-path",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             title="Delete by File Path",
             content_path="example.com/delete-by-path.md",
         )
@@ -205,14 +199,12 @@ class TestIdentifierResolutionByFilePath:
             id=uuid4(),
             source_url="https://site1.com/intro",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             content_path="site1.com/docs/intro.md",
         )
         doc2 = Document(
             id=uuid4(),
             source_url="https://site2.com/intro",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             content_path="site2.com/docs/intro.md",
         )
         session.add_all([doc1, doc2])
@@ -249,7 +241,6 @@ class TestPartialUUIDInFilters:
             id=doc1_id,
             source_url="https://example.com/doc1",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             title="Doc 1 for Partial UUID Test",
             content_path="doc1.md",
         )
@@ -257,7 +248,6 @@ class TestPartialUUIDInFilters:
             id=doc2_id,
             source_url="https://example.com/doc2",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             title="Doc 2 for Partial UUID Test",
             content_path="doc2.md",
         )
@@ -293,7 +283,6 @@ class TestYesFlagReplacesForceFInYesFlagReplacesForce:
             id=doc_id,
             source_url="https://example.com/yes-flag-test",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             title="Document for --yes test",
         )
         session.add(doc)
@@ -318,7 +307,6 @@ class TestYesFlagReplacesForceFInYesFlagReplacesForce:
             id=doc_id,
             source_url="https://example.com/y-shorthand-test",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             title="Document for -y test",
         )
         session.add(doc)
@@ -343,7 +331,6 @@ class TestYesFlagReplacesForceFInYesFlagReplacesForce:
             id=doc_id,
             source_url="https://example.com/force-deprecation",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             title="Document for --force deprecation test",
         )
         session.add(doc)
@@ -378,7 +365,6 @@ class TestIndexCommandIdentifiers:
             id=doc_id,
             source_url="https://example.com/test-index",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             title="Test Index Partial UUID",
             content_path="test-index.md",
         )
@@ -413,7 +399,6 @@ class TestIndexCommandIdentifiers:
             id=doc_id,
             source_url=test_url,
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             title="Index by URL Test",
             content_path="index-url.md",
         )
@@ -446,7 +431,6 @@ class TestIndexCommandIdentifiers:
             id=doc_id,
             source_url="https://example.com/index",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             title="Index by File Path Test",
             content_path="example.com/index.md",
         )
@@ -475,13 +459,11 @@ class TestFetchCommandFilters:
             id=uuid4(),
             source_url="https://docs.example.com/guide",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.NOT_FETCHED,
         )
         doc2 = Document(
             id=uuid4(),
             source_url="https://blog.example.com/post",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.NOT_FETCHED,
         )
         session.add_all([doc1, doc2])
         session.commit()
@@ -506,13 +488,11 @@ class TestFetchCommandFilters:
             id=uuid4(),
             source_url="https://example.com/not-fetched",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.NOT_FETCHED,
         )
         doc_fetched = Document(
             id=uuid4(),
             source_url="https://example.com/fetched",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
         )
         session.add_all([doc_not_fetched, doc_fetched])
         session.commit()
@@ -538,14 +518,12 @@ class TestFetchCommandFilters:
             id=uuid4(),
             source_url="https://example.com/tutorial",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.NOT_FETCHED,
             content_type=ContentType.TUTORIAL,
         )
         doc_guide = Document(
             id=uuid4(),
             source_url="https://example.com/guide",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.NOT_FETCHED,
             content_type=ContentType.GUIDE,
         )
         session.add_all([doc_tutorial, doc_guide])
@@ -591,7 +569,6 @@ class TestEdgeCases:
             id=doc_id,
             source_url=test_url,
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             title="URL Resolution Test Document",
         )
         session.add(doc)
@@ -620,7 +597,6 @@ class TestEdgeCases:
             id=doc1_id,
             source_url="https://example.com/doc1",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             title="Doc 1",
         )
         session.add(doc1)
@@ -636,7 +612,6 @@ class TestEdgeCases:
             id=doc2_id,
             source_url="https://example.com/doc2",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             title="Doc 2",
             content_path="example.com/doc2.md",
         )
@@ -648,7 +623,6 @@ class TestEdgeCases:
             id=doc3_id,
             source_url="https://example.com/doc3",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             title="Doc 3",
         )
         session.add(doc3)

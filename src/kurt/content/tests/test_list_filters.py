@@ -10,7 +10,6 @@ from kurt.db.models import (
     Document,
     DocumentEntity,
     Entity,
-    IngestionStatus,
     SourceType,
 )
 
@@ -26,7 +25,6 @@ def test_documents(tmp_project):
         title="Python FastAPI Tutorial",
         source_type=SourceType.URL,
         source_url="https://example.com/python-fastapi",
-        ingestion_status=IngestionStatus.FETCHED,
     )
 
     doc2 = Document(
@@ -34,7 +32,6 @@ def test_documents(tmp_project):
         title="Machine Learning with TensorFlow",
         source_type=SourceType.URL,
         source_url="https://example.com/ml-tensorflow",
-        ingestion_status=IngestionStatus.FETCHED,
     )
 
     doc3 = Document(
@@ -42,7 +39,6 @@ def test_documents(tmp_project):
         title="Django REST Framework Guide",
         source_type=SourceType.URL,
         source_url="https://example.com/django-rest",
-        ingestion_status=IngestionStatus.FETCHED,
     )
 
     doc4 = Document(
@@ -50,7 +46,6 @@ def test_documents(tmp_project):
         title="React and TypeScript",
         source_type=SourceType.URL,
         source_url="https://example.com/react-typescript",
-        ingestion_status=IngestionStatus.FETCHED,
     )
 
     doc5 = Document(
@@ -58,7 +53,6 @@ def test_documents(tmp_project):
         title="Document without metadata",
         source_type=SourceType.URL,
         source_url="https://example.com/no-metadata",
-        ingestion_status=IngestionStatus.FETCHED,
     )
 
     session.add_all([doc1, doc2, doc3, doc4, doc5])

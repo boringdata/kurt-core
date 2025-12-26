@@ -12,7 +12,7 @@ from uuid import uuid4
 import pytest
 
 from kurt.db.metadata_sync import write_frontmatter_to_file
-from kurt.db.models import ContentType, Document, IngestionStatus, SourceType
+from kurt.db.models import ContentType, Document, SourceType
 
 
 @pytest.fixture
@@ -123,7 +123,6 @@ def test_frontmatter_sync_on_index(test_db_with_triggers):
             source_type=SourceType.URL,
             source_url="https://example.com/test-frontmatter",
             content_path=content_path,
-            ingestion_status=IngestionStatus.FETCHED,
         )
 
         session.add(doc)
@@ -219,7 +218,6 @@ def test_frontmatter_sync_updates_existing_frontmatter(test_db_with_triggers):
             source_type=SourceType.URL,
             source_url="https://example.com/update-frontmatter-test",
             content_path=content_path,
-            ingestion_status=IngestionStatus.FETCHED,
         )
 
         session.add(doc)
@@ -345,7 +343,6 @@ def test_frontmatter_sync_skip_when_no_metadata(test_db_with_triggers):
             source_type=SourceType.URL,
             source_url="https://example.com/no-frontmatter-metadata",
             content_path=content_path,
-            ingestion_status=IngestionStatus.FETCHED,
         )
 
         session.add(doc)

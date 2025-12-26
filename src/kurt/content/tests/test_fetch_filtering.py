@@ -1,37 +1,45 @@
-"""Tests for fetch document filtering behavior."""
+"""Tests for fetch document filtering behavior.
+
+Status is now derived from staging tables (landing_fetch, staging_section_extractions).
+These tests use the status_helpers module to set up document status correctly.
+"""
 
 from uuid import uuid4
 
-from kurt.db.models import Document, IngestionStatus, SourceType
+from kurt.db.models import Document, SourceType
 from kurt.utils.filtering import build_document_query
+from tests.helpers.status_helpers import create_staging_tables, mark_document_as_fetched
 
 
 def test_fetch_excludes_fetched_by_default(session):
     """Test that fetch excludes FETCHED documents by default."""
+    # Create staging tables first
+    create_staging_tables(session)
+
     # Create test documents with different statuses
     doc1 = Document(
         id=uuid4(),
         source_type=SourceType.URL,
         source_url="https://example.com/not-fetched",
-        ingestion_status=IngestionStatus.NOT_FETCHED,
     )
     doc2 = Document(
         id=uuid4(),
         source_type=SourceType.URL,
         source_url="https://example.com/fetched",
-        ingestion_status=IngestionStatus.FETCHED,
     )
     doc3 = Document(
         id=uuid4(),
         source_type=SourceType.URL,
         source_url="https://example.com/error",
-        ingestion_status=IngestionStatus.ERROR,
     )
 
     session.add(doc1)
     session.add(doc2)
     session.add(doc3)
     session.commit()
+
+    # Mark doc2 as FETCHED in landing_fetch table
+    mark_document_as_fetched(doc2.id, session)
 
     # Query without refetch flag
     stmt = build_document_query(
@@ -41,36 +49,41 @@ def test_fetch_excludes_fetched_by_default(session):
         in_cluster=None,
         with_content_type=None,
         limit=None,
+        session=session,
     )
 
     results = list(session.exec(stmt).all())
     result_ids = [doc.id for doc in results]
 
-    # Should include NOT_FETCHED and ERROR, but NOT FETCHED
+    # Should include NOT_FETCHED, but NOT FETCHED
     assert doc1.id in result_ids, "Should include NOT_FETCHED document"
     assert doc2.id not in result_ids, "Should exclude FETCHED document"
-    assert doc3.id in result_ids, "Should include ERROR document"
+    assert doc3.id in result_ids, "Should include document without status (NOT_FETCHED)"
 
 
 def test_fetch_with_refetch_flag_includes_fetched(session):
     """Test that fetch with --refetch flag includes FETCHED documents."""
+    # Create staging tables first
+    create_staging_tables(session)
+
     # Create test documents
     doc1 = Document(
         id=uuid4(),
         source_type=SourceType.URL,
         source_url="https://example.com/not-fetched",
-        ingestion_status=IngestionStatus.NOT_FETCHED,
     )
     doc2 = Document(
         id=uuid4(),
         source_type=SourceType.URL,
         source_url="https://example.com/fetched",
-        ingestion_status=IngestionStatus.FETCHED,
     )
 
     session.add(doc1)
     session.add(doc2)
     session.commit()
+
+    # Mark doc2 as FETCHED
+    mark_document_as_fetched(doc2.id, session)
 
     # Query with refetch=True
     stmt = build_document_query(
@@ -80,6 +93,7 @@ def test_fetch_with_refetch_flag_includes_fetched(session):
         in_cluster=None,
         with_content_type=None,
         limit=None,
+        session=session,
     )
 
     results = list(session.exec(stmt).all())
@@ -92,23 +106,28 @@ def test_fetch_with_refetch_flag_includes_fetched(session):
 
 def test_fetch_with_specific_ids_respects_status_filter(session):
     """Test that fetch with specific IDs still respects the status filter."""
+    # Create staging tables first
+    create_staging_tables(session)
+
     # Create test documents
     doc1 = Document(
         id=uuid4(),
         source_type=SourceType.URL,
         source_url="https://example.com/fetched-1",
-        ingestion_status=IngestionStatus.FETCHED,
     )
     doc2 = Document(
         id=uuid4(),
         source_type=SourceType.URL,
         source_url="https://example.com/fetched-2",
-        ingestion_status=IngestionStatus.FETCHED,
     )
 
     session.add(doc1)
     session.add(doc2)
     session.commit()
+
+    # Mark both as FETCHED
+    mark_document_as_fetched(doc1.id, session)
+    mark_document_as_fetched(doc2.id, session)
 
     # Query with specific IDs but without refetch
     stmt = build_document_query(
@@ -118,6 +137,7 @@ def test_fetch_with_specific_ids_respects_status_filter(session):
         in_cluster=None,
         with_content_type=None,
         limit=None,
+        session=session,
     )
 
     results = list(session.exec(stmt).all())
@@ -130,23 +150,27 @@ def test_fetch_with_specific_ids_respects_status_filter(session):
 
 def test_fetch_with_ids_and_refetch_includes_all(session):
     """Test that fetch with specific IDs and --refetch includes them."""
+    # Create staging tables first
+    create_staging_tables(session)
+
     # Create test documents
     doc1 = Document(
         id=uuid4(),
         source_type=SourceType.URL,
         source_url="https://example.com/fetched-1",
-        ingestion_status=IngestionStatus.FETCHED,
     )
     doc2 = Document(
         id=uuid4(),
         source_type=SourceType.URL,
         source_url="https://example.com/not-fetched",
-        ingestion_status=IngestionStatus.NOT_FETCHED,
     )
 
     session.add(doc1)
     session.add(doc2)
     session.commit()
+
+    # Mark only doc1 as FETCHED
+    mark_document_as_fetched(doc1.id, session)
 
     # Query with specific IDs and refetch=True
     stmt = build_document_query(
@@ -156,6 +180,7 @@ def test_fetch_with_ids_and_refetch_includes_all(session):
         in_cluster=None,
         with_content_type=None,
         limit=None,
+        session=session,
     )
 
     results = list(session.exec(stmt).all())
@@ -168,23 +193,27 @@ def test_fetch_with_ids_and_refetch_includes_all(session):
 
 def test_fetch_with_explicit_status_filter(session):
     """Test that explicit --with-status filter overrides default behavior."""
+    # Create staging tables first
+    create_staging_tables(session)
+
     # Create test documents
     doc1 = Document(
         id=uuid4(),
         source_type=SourceType.URL,
         source_url="https://example.com/not-fetched",
-        ingestion_status=IngestionStatus.NOT_FETCHED,
     )
     doc2 = Document(
         id=uuid4(),
         source_type=SourceType.URL,
         source_url="https://example.com/fetched",
-        ingestion_status=IngestionStatus.FETCHED,
     )
 
     session.add(doc1)
     session.add(doc2)
     session.commit()
+
+    # Mark doc2 as FETCHED
+    mark_document_as_fetched(doc2.id, session)
 
     # Query with explicit status filter for FETCHED
     stmt = build_document_query(
@@ -194,6 +223,7 @@ def test_fetch_with_explicit_status_filter(session):
         in_cluster=None,
         with_content_type=None,
         limit=None,
+        session=session,
     )
 
     results = list(session.exec(stmt).all())
