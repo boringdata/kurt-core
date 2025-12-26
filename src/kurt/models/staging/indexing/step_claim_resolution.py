@@ -83,7 +83,7 @@ class ClaimResolutionRow(PipelineModelBase, table=True):
 
 
 @model(
-    name="staging.claim_resolution",
+    name="staging.indexing.claim_resolution",
     primary_key=["claim_hash", "workflow_id"],
     write_strategy="replace",
     description="Resolve claims and create them in the database from clustering decisions",
@@ -91,9 +91,9 @@ class ClaimResolutionRow(PipelineModelBase, table=True):
 @table(ClaimResolutionRow)
 def claim_resolution(
     ctx: PipelineContext,
-    claim_groups=Reference("staging.claim_clustering"),
-    entity_resolution=Reference("staging.entity_resolution"),
-    section_extractions=Reference("staging.section_extractions"),
+    claim_groups=Reference("staging.indexing.claim_clustering"),
+    entity_resolution=Reference("staging.indexing.entity_resolution"),
+    section_extractions=Reference("staging.indexing.section_extractions"),
     writer: TableWriter = None,
 ):
     """Create claims in the database from clustering decisions.
@@ -263,19 +263,45 @@ def claim_resolution(
     result["created"] = claims_created
     result["deduplicated"] = claims_deduplicated
 
-    # Print inline table of created claims
-    created_claims = [
-        {"statement": r.statement, "type": r.claim_type, "action": r.resolution_action}
-        for r in rows
-        if r.resolution_action == "created"
-    ]
-    if created_claims:
-        print_inline_table(
-            created_claims,
-            columns=["statement", "type", "action"],
-            max_items=10,
-            cli_command="kurt kg claims" if len(created_claims) > 10 else None,
-        )
+    # Print claims table (verbose mode shows all, normal shows created only)
+    verbose = ctx.metadata.get("verbose", False)
+
+    if verbose:
+        # Verbose mode: show all claim operations
+        from kurt.core.display import print_info
+
+        if rows:
+            print_info("Claim operations:")
+            all_claims = [
+                {
+                    "statement": r.statement[:50] + "..." if len(r.statement) > 50 else r.statement,
+                    "type": r.claim_type.replace("ClaimType.", ""),
+                    "action": r.resolution_action,
+                    "entities": len(r.linked_entity_ids_json or []),
+                }
+                for r in rows
+            ]
+            print_inline_table(
+                all_claims,
+                columns=["statement", "type", "action", "entities"],
+                max_items=25,
+                column_widths={"statement": 50, "type": 15, "action": 12, "entities": 8},
+                cli_command="kurt kg claims" if len(all_claims) > 25 else None,
+            )
+    else:
+        # Normal mode: only show created claims
+        created_claims = [
+            {"statement": r.statement, "type": r.claim_type, "action": r.resolution_action}
+            for r in rows
+            if r.resolution_action == "created"
+        ]
+        if created_claims:
+            print_inline_table(
+                created_claims,
+                columns=["statement", "type", "action"],
+                max_items=10,
+                cli_command="kurt kg claims" if len(created_claims) > 10 else None,
+            )
 
     return result
 
@@ -367,7 +393,7 @@ def _resolve_entity_indices(
 
     Args:
         section_id: Section ID to look up entity list
-        entity_indices: List of indices into the section's entity list
+        entity_indices: List of indices into the section's entity list (0-based)
         section_entity_lists: Mapping of section_id -> entity names list
         entity_name_to_id: Mapping of entity name -> UUID
 
@@ -381,15 +407,30 @@ def _resolve_entity_indices(
     resolved_ids = []
 
     for idx in entity_indices:
+        # Try direct 0-based index first
         if 0 <= idx < len(entity_names):
             entity_name = entity_names[idx]
-            entity_id = entity_name_to_id.get(entity_name)
-            if entity_id:
-                resolved_ids.append(entity_id)
-            else:
-                logger.debug(f"Entity '{entity_name}' not found in resolution mapping")
         else:
-            logger.debug(f"Entity index {idx} out of range for section {section_id}")
+            # LLM may have used 1-based indexing - try adjusting
+            adjusted = idx - 1
+            if 0 <= adjusted < len(entity_names):
+                logger.debug(
+                    f"Entity index {idx} out of range (0-{len(entity_names)-1}), "
+                    f"adjusting to {adjusted} (assuming 1-based indexing)"
+                )
+                entity_name = entity_names[adjusted]
+            else:
+                logger.debug(
+                    f"Entity index {idx} out of range for section {section_id} "
+                    f"(valid: 0-{len(entity_names)-1})"
+                )
+                continue
+
+        entity_id = entity_name_to_id.get(entity_name)
+        if entity_id:
+            resolved_ids.append(entity_id)
+        else:
+            logger.debug(f"Entity '{entity_name}' not found in resolution mapping")
 
     return resolved_ids
 

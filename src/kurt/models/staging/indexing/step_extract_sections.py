@@ -134,7 +134,7 @@ class IndexDocument(dspy.Signature):
       * entity_type: MUST be one of the types above
       * quote: Exact text (50-200 chars) where entity is mentioned
       * resolution_status: {", ".join(ResolutionStatus.get_all_values())}
-      * matched_entity_index: If EXISTING, provide the 'index' from existing_entities
+      * matched_entity_index: If EXISTING, provide the 'index' (0-based!) from existing_entities
 
 {EntityType.get_extraction_rules()}
 
@@ -254,7 +254,7 @@ class SectionExtractionRow(PipelineModelBase, LLMTelemetryMixin, table=True):
 
 
 @model(
-    name="staging.section_extractions",
+    name="staging.indexing.section_extractions",
     primary_key=["document_id", "section_id"],
     write_strategy="replace",
     description="Extract metadata from document sections using DSPy",
@@ -263,7 +263,7 @@ class SectionExtractionRow(PipelineModelBase, LLMTelemetryMixin, table=True):
 @table(SectionExtractionRow)
 def section_extractions(
     ctx: PipelineContext,
-    sections=Reference("staging.document_sections"),
+    sections=Reference("staging.indexing.document_sections"),
     writer: TableWriter = None,
     config: SectionExtractionsConfig = None,
 ):
@@ -313,6 +313,7 @@ def section_extractions(
             "document_content": "document_content",
             "existing_entities": "existing_entities",
         },
+        tracking_fields=["document_id", "section_number"],
         max_concurrent=config.max_concurrent,
         llm_model=config.llm_model,
     )
@@ -345,4 +346,55 @@ def section_extractions(
     result["sections"] = len(rows)
     result["entities"] = total_entities
     result["claims"] = total_claims
+
+    # Verbose output: show extracted entities and claims per section
+    verbose = ctx.metadata.get("verbose", False)
+    if verbose:
+        from kurt.core.display import print_info, print_inline_table
+
+        # Show entities table
+        all_entities = []
+        for r in rows:
+            doc_id_short = r.document_id[:8] if r.document_id else ""
+            for entity in r.entities_json or []:
+                all_entities.append(
+                    {
+                        "doc": doc_id_short,
+                        "name": entity.get("name", ""),
+                        "type": entity.get("entity_type", ""),
+                        "status": entity.get("resolution_status", "NEW"),
+                    }
+                )
+
+        if all_entities:
+            print_info("Extracted entities:")
+            print_inline_table(
+                all_entities,
+                columns=["doc", "name", "type", "status"],
+                max_items=20,
+                column_widths={"doc": 10, "name": 30, "type": 15, "status": 10},
+            )
+
+        # Show claims table
+        all_claims = []
+        for r in rows:
+            doc_id_short = r.document_id[:8] if r.document_id else ""
+            for claim in r.claims_json or []:
+                all_claims.append(
+                    {
+                        "doc": doc_id_short,
+                        "statement": claim.get("statement", "")[:60],
+                        "type": claim.get("claim_type", "").replace("ClaimType.", ""),
+                    }
+                )
+
+        if all_claims:
+            print_info("Extracted claims:")
+            print_inline_table(
+                all_claims,
+                columns=["doc", "statement", "type"],
+                max_items=15,
+                column_widths={"doc": 10, "statement": 60, "type": 15},
+            )
+
     return result

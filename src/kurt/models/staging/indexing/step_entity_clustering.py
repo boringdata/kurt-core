@@ -136,13 +136,14 @@ class ResolveEntityGroup(dspy.Signature):
     - If this is a novel concept, use CREATE_NEW (target_index should be null)
     - Provide canonical name and aliases for each resolution
 
-    CRITICAL: Use INDEXES, not text! entity_index and target_index are 0-based integers.
-    CRITICAL: For MERGE_WITH_PEER, target_index must be a different entity in the group (not the same entity).
+    CRITICAL: Indexes are 0-BASED! For N entities, valid indexes are 0 to N-1.
+    CRITICAL: entity_index must be in range [0, len(group_entities)-1].
+    CRITICAL: For MERGE_WITH_PEER, target_index must be a DIFFERENT entity in the group.
 
     IMPORTANT: Return one resolution for EACH entity in the group.
 
     Example:
-    - group_entities: [{name: "Python"}, {name: "python lang"}]  (indexes 0 and 1)
+    - group_entities: [{name: "Python"}, {name: "python lang"}]  (indexes 0 and 1, so valid range is 0-1)
     - existing_candidates: [{id: "abc", name: "JavaScript"}]  (index 0)
     - If merging Python and python lang: entity_index=1, decision_type='MERGE_WITH_PEER', target_index=0
     """
@@ -221,7 +222,7 @@ class EntityGroupRow(PipelineModelBase, LLMTelemetryMixin, table=True):
 
 
 @model(
-    name="staging.entity_clustering",
+    name="staging.indexing.entity_clustering",
     primary_key=["entity_name", "workflow_id"],
     write_strategy="replace",
     description="Cluster and resolve entities across all sections",
@@ -230,7 +231,7 @@ class EntityGroupRow(PipelineModelBase, LLMTelemetryMixin, table=True):
 @table(EntityGroupRow)
 def entity_clustering(
     ctx: PipelineContext,
-    extractions=Reference("staging.section_extractions"),
+    extractions=Reference("staging.indexing.section_extractions"),
     writer: TableWriter = None,
     config: EntityClusteringConfig = None,
 ):
@@ -333,6 +334,31 @@ def entity_clustering(
     result = writer.write(rows)
     result["entities"] = len(validated_resolutions)
     result["clusters"] = len(groups)
+
+    # Verbose output: show clustering decisions
+    verbose = ctx.metadata.get("verbose", False)
+    if verbose:
+        from kurt.core.display import print_info, print_inline_table
+
+        # Show clustering decisions table
+        if rows:
+            print_info("Entity clustering decisions:")
+            cluster_data = [
+                {
+                    "entity": r.entity_name[:30] if len(r.entity_name) > 30 else r.entity_name,
+                    "type": r.entity_type or "-",
+                    "decision": r.decision[:25] if len(r.decision) > 25 else r.decision,
+                    "canonical": (r.canonical_name[:20] if r.canonical_name else "-"),
+                }
+                for r in rows
+            ]
+            print_inline_table(
+                cluster_data,
+                columns=["entity", "type", "decision", "canonical"],
+                max_items=25,
+                column_widths={"entity": 30, "type": 15, "decision": 25, "canonical": 20},
+            )
+
     return result
 
 
@@ -366,12 +392,21 @@ def _convert_decision_to_string(
         if target_index is None:
             logger.warning("MERGE_WITH_PEER missing target_index, defaulting to CREATE_NEW")
             return "CREATE_NEW"
+        # Try to fix 1-based indexing from LLM
         if not (0 <= target_index < len(group_entities)):
-            logger.warning(
-                f"Invalid MERGE_WITH_PEER target_index {target_index}, "
-                f"group has {len(group_entities)} entities. Defaulting to CREATE_NEW."
-            )
-            return "CREATE_NEW"
+            adjusted = target_index - 1
+            if 0 <= adjusted < len(group_entities):
+                logger.warning(
+                    f"MERGE_WITH_PEER target_index {target_index} out of range, "
+                    f"adjusting to {adjusted} (assuming 1-based indexing)"
+                )
+                target_index = adjusted
+            else:
+                logger.warning(
+                    f"Invalid MERGE_WITH_PEER target_index {target_index}, "
+                    f"group has {len(group_entities)} entities. Defaulting to CREATE_NEW."
+                )
+                return "CREATE_NEW"
         target_name = group_entities[target_index]["name"]
         source_name = group_entities[resolution.entity_index]["name"]
         # Handle self-reference: entity pointing to itself is the canonical one
@@ -394,12 +429,21 @@ def _convert_decision_to_string(
         if target_index is None:
             logger.warning("LINK_TO_EXISTING missing target_index, defaulting to CREATE_NEW")
             return "CREATE_NEW"
+        # Try to fix 1-based indexing from LLM
         if not (0 <= target_index < len(existing_candidates)):
-            logger.warning(
-                f"Invalid LINK_TO_EXISTING target_index {target_index}, "
-                f"existing_candidates has {len(existing_candidates)} entities. Defaulting to CREATE_NEW."
-            )
-            return "CREATE_NEW"
+            adjusted = target_index - 1
+            if 0 <= adjusted < len(existing_candidates):
+                logger.warning(
+                    f"LINK_TO_EXISTING target_index {target_index} out of range, "
+                    f"adjusting to {adjusted} (assuming 1-based indexing)"
+                )
+                target_index = adjusted
+            else:
+                logger.warning(
+                    f"Invalid LINK_TO_EXISTING target_index {target_index}, "
+                    f"existing_candidates has {len(existing_candidates)} entities. Defaulting to CREATE_NEW."
+                )
+                return "CREATE_NEW"
         # Return the UUID of the existing entity
         return existing_candidates[target_index]["id"]
 
@@ -544,11 +588,20 @@ async def _resolve_single_group(
         if 0 <= entity_idx < len(group_entities):
             entity_details = group_entities[entity_idx]
         else:
-            logger.warning(
-                f"Invalid entity_index {entity_idx}, using first entity. "
-                f"Group has {len(group_entities)} entities."
-            )
-            entity_details = group_entities[0]
+            # LLM likely used 1-based indexing - try adjusting
+            adjusted_idx = entity_idx - 1
+            if 0 <= adjusted_idx < len(group_entities):
+                logger.warning(
+                    f"entity_index {entity_idx} out of range (0-{len(group_entities)-1}), "
+                    f"adjusting to {adjusted_idx} (assuming 1-based indexing from LLM)"
+                )
+                entity_details = group_entities[adjusted_idx]
+            else:
+                logger.warning(
+                    f"Invalid entity_index {entity_idx}, using first entity. "
+                    f"Group has {len(group_entities)} entities (valid: 0-{len(group_entities)-1})."
+                )
+                entity_details = group_entities[0]
 
         # Convert index-based decision to string-based format for downstream compatibility
         decision = _convert_decision_to_string(

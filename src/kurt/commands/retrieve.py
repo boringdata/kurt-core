@@ -1,6 +1,5 @@
 """Retrieve command - Hybrid retrieval from knowledge graph and embeddings."""
 
-import asyncio
 import json
 
 import click
@@ -95,41 +94,76 @@ def retrieve_cmd(
     console.print(f"[dim]Retrieving context for:[/dim] [bold]{query}[/bold]")
 
     if mode == "cag":
-        # CAG mode: fast, entity-based retrieval using unified step
-        from kurt.retrieval.cag import retrieve_cag
+        # CAG mode: fast, entity-based retrieval using workflow runner
+        from kurt.models.staging.retrieval.step_cag import CAGConfig
+        from kurt.utils.filtering import DocumentFilters
+        from kurt.workflows.cli_helpers import dbos_cleanup_context, run_pipeline_simple
 
         console.print(f"[dim]Mode: CAG (top_k={top_k}, min_sim={min_similarity})[/dim]")
         console.print("[dim]Using unified retrieval.cag step[/dim]")
         console.print()
 
-        try:
-            result = asyncio.run(
-                retrieve_cag(
-                    query,
+        with dbos_cleanup_context():
+            try:
+                # Build config for the model
+                config = CAGConfig(
                     top_k_entities=top_k,
                     min_similarity=min_similarity,
                 )
-            )
-        except Exception as e:
-            console.print(f"[red]Error during CAG retrieval:[/red] {e}")
-            raise click.Abort()
+
+                # Run via workflow runner
+                workflow_result = run_pipeline_simple(
+                    target="retrieval.cag",
+                    filters=DocumentFilters(),
+                    model_configs={"retrieval.cag": config},
+                    metadata={"query": query},
+                )
+
+                # Read result from the table
+                from sqlalchemy import text
+
+                from kurt.db.database import get_session
+
+                with get_session() as session:
+                    row = session.execute(
+                        text(
+                            "SELECT query, matched_entities, topics, context_markdown, "
+                            "token_estimate, sources, telemetry "
+                            "FROM retrieval_cag_context WHERE query_id = :wf_id"
+                        ),
+                        {"wf_id": workflow_result.get("workflow_id")},
+                    ).fetchone()
+
+                if not row:
+                    console.print("[yellow]No results found[/yellow]")
+                    return
+
+                # Parse JSON fields
+                matched_entities = json.loads(row.matched_entities)
+                topics = json.loads(row.topics)
+                sources = json.loads(row.sources)
+                telemetry = json.loads(row.telemetry)
+
+            except Exception as e:
+                console.print(f"[red]Error during CAG retrieval:[/red] {e}")
+                raise click.Abort()
 
         # Output based on format
         if output_format == "json":
             output = {
                 "query": query,
                 "mode": "cag",
-                "topics": result.topics,
-                "matched_entities": result.matched_entities,
-                "context_markdown": result.context_markdown,
-                "token_estimate": result.token_estimate,
-                "sources": result.sources,
-                "telemetry": result.telemetry,
+                "topics": topics,
+                "matched_entities": matched_entities,
+                "context_markdown": row.context_markdown,
+                "token_estimate": row.token_estimate,
+                "sources": sources,
+                "telemetry": telemetry,
             }
             print(json.dumps(output, indent=2))
 
         elif output_format == "citations":
-            if not result.sources:
+            if not sources:
                 console.print("[yellow]No sources found[/yellow]")
                 return
 
@@ -141,7 +175,7 @@ def retrieve_cmd(
             table.add_column("Title", style="bold")
             table.add_column("URL", style="dim")
 
-            for i, src in enumerate(result.sources, 1):
+            for i, src in enumerate(sources, 1):
                 title = src.get("title", "Untitled")
                 if len(title) > 50:
                     title = title[:47] + "..."
@@ -152,12 +186,12 @@ def retrieve_cmd(
 
             console.print(table)
             console.print()
-            console.print(f"[dim]Total: {len(result.sources)} sources[/dim]")
+            console.print(f"[dim]Total: {len(sources)} sources[/dim]")
 
         else:  # context (default)
             console.print(
                 Panel(
-                    result.context_markdown,
+                    row.context_markdown,
                     title="[bold cyan]Agent Context (CAG)[/bold cyan]",
                     border_style="cyan",
                 )
@@ -166,36 +200,68 @@ def retrieve_cmd(
             # Show stats
             console.print()
             console.print("[dim]Stats:[/dim]")
-            console.print(f"  Topics: {', '.join(result.topics) if result.topics else 'None'}")
-            console.print(f"  Matched entities: {', '.join(result.matched_entities[:5])}")
-            console.print(f"  Token estimate: {result.token_estimate}")
-            if result.telemetry:
-                console.print(f"  Claims loaded: {result.telemetry.get('claims_loaded', 0)}")
-                console.print(f"  Sources: {result.telemetry.get('sources_loaded', 0)}")
+            console.print(f"  Topics: {', '.join(topics) if topics else 'None'}")
+            console.print(f"  Matched entities: {', '.join(matched_entities[:5])}")
+            console.print(f"  Token estimate: {row.token_estimate}")
+            if telemetry:
+                console.print(f"  Claims loaded: {telemetry.get('claims_loaded', 0)}")
+                console.print(f"  Sources: {telemetry.get('sources_loaded', 0)}")
 
         return
 
-    # RAG mode: unified multi-signal retrieval
-    from kurt.retrieval import RetrievalContext, retrieve
+    # RAG mode: unified multi-signal retrieval using workflow runner
+    from kurt.models.staging.retrieval.step_rag import RAGConfig
+    from kurt.utils.filtering import DocumentFilters
+    from kurt.workflows.cli_helpers import dbos_cleanup_context, run_pipeline_simple
 
     console.print(f"[dim]Mode: RAG ({query_type})" + (" (deep)" if deep else "") + "[/dim]")
     console.print("[dim]Using unified retrieval.rag step[/dim]")
     console.print()
 
-    # Create retrieval context
-    ctx = RetrievalContext(
-        query=query,
-        query_type=query_type,
-        deep_mode=deep,
-        session_id=session_id,
-    )
+    with dbos_cleanup_context():
+        try:
+            # Build config for the model
+            config = RAGConfig()
 
-    # Run retrieval
-    try:
-        result = asyncio.run(retrieve(ctx))
-    except Exception as e:
-        console.print(f"[red]Error during retrieval:[/red] {e}")
-        raise click.Abort()
+            # Run via workflow runner
+            workflow_result = run_pipeline_simple(
+                target="retrieval.rag",
+                filters=DocumentFilters(),
+                model_configs={"retrieval.rag": config},
+                metadata={
+                    "query": query,
+                    "query_type": query_type,
+                    "deep_mode": deep,
+                },
+            )
+
+            # Read result from the table
+            from sqlalchemy import text
+
+            from kurt.db.database import get_session
+
+            with get_session() as session:
+                row = session.execute(
+                    text(
+                        "SELECT query, context_text, doc_ids, entities, claims, "
+                        "citations, telemetry "
+                        "FROM retrieval_rag_context WHERE query_id = :wf_id"
+                    ),
+                    {"wf_id": workflow_result.get("workflow_id")},
+                ).fetchone()
+
+            if not row:
+                console.print("[yellow]No results found[/yellow]")
+                return
+
+            # Parse JSON fields
+            citations = json.loads(row.citations)
+            telemetry = json.loads(row.telemetry)
+            entities = json.loads(row.entities)
+
+        except Exception as e:
+            console.print(f"[red]Error during RAG retrieval:[/red] {e}")
+            raise click.Abort()
 
     # Output based on format
     if output_format == "json":
@@ -203,26 +269,15 @@ def retrieve_cmd(
             "query": query,
             "query_type": query_type,
             "deep_mode": deep,
-            "context_text": result.context_text,
-            "citations": [
-                {
-                    "doc_id": c.doc_id,
-                    "title": c.title,
-                    "source_url": c.source_url,
-                    "confidence": c.confidence,
-                }
-                for c in result.citations
-            ],
-            "graph_payload": {
-                "nodes": result.graph_payload.nodes if result.graph_payload else [],
-                "edges": result.graph_payload.edges if result.graph_payload else [],
-            },
-            "telemetry": result.telemetry,
+            "context_text": row.context_text,
+            "citations": citations,
+            "entities": entities,
+            "telemetry": telemetry,
         }
         print(json.dumps(output, indent=2))
 
     elif output_format == "citations":
-        if not result.citations:
+        if not citations:
             console.print("[yellow]No citations found[/yellow]")
             return
 
@@ -235,37 +290,36 @@ def retrieve_cmd(
         table.add_column("Score", style="green", width=8, justify="right")
         table.add_column("URL", style="dim")
 
-        for i, citation in enumerate(result.citations, 1):
-            title = citation.title or "Untitled"
+        for i, citation in enumerate(citations, 1):
+            title = citation.get("title") or "Untitled"
             if len(title) > 50:
                 title = title[:47] + "..."
-            url = citation.source_url or "N/A"
+            url = citation.get("url") or "N/A"
             if len(url) > 40:
                 url = url[:37] + "..."
 
             table.add_row(
                 str(i),
                 title,
-                f"{citation.confidence:.1%}",
+                f"{citation.get('score', 0):.1%}",
                 url,
             )
 
         console.print(table)
         console.print()
-        console.print(f"[dim]Total: {len(result.citations)} citations[/dim]")
+        console.print(f"[dim]Total: {len(citations)} citations[/dim]")
 
     else:  # context (default)
         # Show context in a panel
         console.print(
             Panel(
-                result.context_text,
+                row.context_text,
                 title="[bold cyan]Retrieved Context[/bold cyan]",
                 border_style="cyan",
             )
         )
 
         # Show summary stats
-        telemetry = result.telemetry or {}
         console.print()
         console.print("[dim]Stats:[/dim]")
         if "graph_results" in telemetry:
@@ -274,11 +328,5 @@ def retrieve_cmd(
             console.print(f"  Semantic results: {telemetry['semantic_results']}")
         if "entities" in telemetry:
             console.print(f"  Entities: {telemetry['entities']}")
-        if result.citations:
-            console.print(f"  Citations: {len(result.citations)}")
-
-        # Show suggested prompt if available
-        if result.suggested_prompt:
-            console.print()
-            console.print("[dim]Suggested prompt:[/dim]")
-            console.print(f"  {result.suggested_prompt}")
+        if citations:
+            console.print(f"  Citations: {len(citations)}")

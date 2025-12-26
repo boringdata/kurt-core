@@ -24,6 +24,12 @@ from kurt.commands.content._shared_options import (
     is_flag=True,
     help="Re-index documents even if already indexed",
 )
+@click.option(
+    "-v",
+    "--verbose",
+    is_flag=True,
+    help="Show detailed step-by-step tables during indexing",
+)
 @add_background_options()
 def index(
     identifier: str,
@@ -34,6 +40,7 @@ def index(
     with_content_type: str,
     all: bool,
     force: bool,
+    verbose: bool,
     limit: int,
     background: bool,
     priority: int,
@@ -84,6 +91,9 @@ def index(
 
         # Run in background
         kurt index --all --background
+
+        # Verbose mode - show detailed tables for each step
+        kurt index 44ea066e -v
     """
     # Lazy import all dependencies when command is actually run
     import logging
@@ -152,14 +162,15 @@ def index(
         filters = DocumentFilters(ids=",".join(document_ids))
         incremental_mode = "full" if force else "delta"
 
-        # Run the staging pipeline (display handled by framework)
+        # Run the indexing pipeline (display handled by framework)
         workflow_result = run_pipeline_simple(
-            target="staging",
+            target="staging.indexing",
             filters=filters,
             incremental_mode=incremental_mode,
             reprocess_unchanged=force,
             background=background,
             priority=priority,
+            verbose=verbose,
         )
 
         # Background mode returns early

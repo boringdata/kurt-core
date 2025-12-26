@@ -35,6 +35,7 @@ async def run_workflow(
     reprocess_unchanged: bool = False,
     workflow_id: Optional[str] = None,
     model_configs: Optional[Dict[str, Any]] = None,
+    metadata: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Generic DBOS workflow for any dbt-like pipeline.
@@ -51,6 +52,7 @@ async def run_workflow(
         reprocess_unchanged: If True, reprocess docs even if content unchanged.
                             Default False means unchanged docs are skipped.
         workflow_id: Optional workflow ID (defaults to DBOS.workflow_id)
+        metadata: Optional dict with additional context (e.g., {"verbose": True})
 
     Returns:
         Dict containing model results and workflow metadata
@@ -89,12 +91,16 @@ async def run_workflow(
     )
 
     # Run pipeline - models read from tables via sources={}
+    # Merge model_configs into metadata (metadata takes precedence for verbose, etc.)
+    combined_metadata = {"model_configs": model_configs or {}}
+    if metadata:
+        combined_metadata.update(metadata)
     ctx = ModelContext(
         filters=filters,
         incremental_mode=incremental_mode,
         reprocess_unchanged=reprocess_unchanged,
         workflow_id=workflow_id,
-        metadata={"model_configs": model_configs or {}},
+        metadata=combined_metadata,
     )
     pipeline_result = await run_pipeline(pipeline, ctx)
 
@@ -264,6 +270,7 @@ async def run_pipeline_workflow(
     reprocess_unchanged: bool = False,
     workflow_id: Optional[str] = None,
     model_configs: Optional[Dict[str, Any]] = None,
+    metadata: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Generic workflow that resolves target and runs pipeline.
 
@@ -280,6 +287,7 @@ async def run_pipeline_workflow(
         incremental_mode: Processing mode ("full" or "delta")
         reprocess_unchanged: If True, reprocess unchanged documents
         workflow_id: Optional workflow ID
+        metadata: Optional dict with additional context (e.g., {"verbose": True})
 
     Returns:
         Dict with workflow results
@@ -302,4 +310,5 @@ async def run_pipeline_workflow(
         reprocess_unchanged=reprocess_unchanged,
         workflow_id=workflow_id,
         model_configs=model_configs,
+        metadata=metadata,
     )

@@ -217,7 +217,7 @@ class TopicClusteringRow(PipelineModelBase, table=True):
 
 
 @model(
-    name="staging.topic_clustering",
+    name="staging.clustering.topic_clustering",
     primary_key=["document_id", "workflow_id"],
     write_strategy="replace",
     description="Compute topic clusters and classify content types for documents",
@@ -308,6 +308,7 @@ def topic_clustering(
             "cluster_name": "cluster_name",
             "reasoning": "reasoning",
         },
+        tracking_fields=["id", "title"],
         max_concurrent=config.max_concurrent,
         llm_model=config.llm_model,
         progress=True,

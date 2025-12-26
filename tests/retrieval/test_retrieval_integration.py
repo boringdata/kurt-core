@@ -6,7 +6,6 @@ real data from the MotherDuck knowledge graph dump.
 
 from unittest.mock import MagicMock, patch
 
-import pytest
 from sqlalchemy import text
 
 from kurt.db.database import get_session
@@ -42,35 +41,35 @@ class TestRetrievalPipelineIntegration:
         assert "entities" in kg
         assert "relationships" in kg or "edges" in kg
 
-    @pytest.mark.asyncio
-    async def test_retrieve_graph_mode(self, motherduck_project, mock_retrieval_llm):
-        """Test full retrieval pipeline in graph-only mode."""
-        from kurt.retrieval import RetrievalContext, retrieve
+    @patch("kurt.models.staging.retrieval.step_cag.generate_embeddings")
+    def test_retrieve_cag_mode(self, mock_embeddings, motherduck_project):
+        """Test CAG retrieval pipeline step."""
+        from kurt.models.staging.retrieval.step_cag import CAGConfig, cag_retrieve
 
-        # Mock the LLM call for query analysis
-        with patch("dspy.ChainOfThought") as mock_cot:
-            mock_module = MagicMock()
-            mock_result = MagicMock()
-            mock_result.intent = "technical_question"
-            mock_result.entities = ["DuckDB", "MotherDuck"]
-            mock_result.keywords = ["database", "analytics"]
-            mock_module.return_value = mock_result
-            mock_cot.return_value = mock_module
+        # Mock embeddings to return vectors similar to DuckDB
+        mock_embeddings.return_value = [[0.9, 0.1, 0.0] + [0.0] * 1533]
 
-            # Also mock dspy.configure to avoid LM initialization
-            with patch("dspy.configure"):
-                ctx = RetrievalContext(
-                    query="What is DuckDB and how does it work with MotherDuck?",
-                    query_type="graph",  # Use graph-only mode (no embeddings needed)
-                )
+        config = CAGConfig(
+            top_k_entities=5,
+            min_similarity=0.3,
+        )
 
-                result = await retrieve(ctx)
+        mock_ctx = MagicMock()
+        mock_ctx.metadata = {
+            "query": "What is DuckDB and how does it work with MotherDuck?",
+            "model_configs": {"retrieval.cag": config},
+        }
+        mock_ctx.workflow_id = "test-retrieve-graph"
 
-                # Verify result structure
-                assert hasattr(result, "context_text")
-                assert hasattr(result, "citations")
-                assert hasattr(result, "graph_payload")
-                assert hasattr(result, "telemetry")
+        mock_writer = MagicMock()
+        mock_writer.write.return_value = {"rows_written": 1}
+
+        result = cag_retrieve(ctx=mock_ctx, writer=mock_writer)
+
+        # Verify result structure
+        assert "rows_written" in result
+        assert "entities_matched" in result
+        mock_writer.write.assert_called_once()
 
     def test_entities_in_database(self, motherduck_project):
         """Verify expected entities exist in the mock database."""
@@ -129,64 +128,69 @@ class TestRetrievalSteps:
 class TestRetrievalConfig:
     """Test retrieval configuration."""
 
-    def test_default_config(self):
-        """Test default retrieval config values."""
-        from kurt.retrieval.config import RetrievalConfig
+    def test_cag_config_defaults(self):
+        """Test CAGConfig default values."""
+        from kurt.models.staging.retrieval.step_cag import CAGConfig
 
-        config = RetrievalConfig()
+        config = CAGConfig()
 
-        # ConfigParam stores metadata, access .default for the value
-        assert config.default_query_type.default == "hybrid"
-        assert config.semantic_top_k.default == 10
-        assert config.graph_top_k.default == 20
-        assert config.max_context_tokens.default == 4000
+        # Access default values
+        assert config.top_k_entities == 5
+        assert config.min_similarity == 0.3
+        assert config.max_claims == 50
 
-    def test_config_validation(self):
-        """Test config validation."""
-        from kurt.retrieval.config import RetrievalConfig
+    def test_rag_config_defaults(self):
+        """Test RAGConfig default values."""
+        from kurt.models.staging.retrieval.step_rag import RAGConfig
 
-        # Check config structure
-        config = RetrievalConfig()
-        assert config.semantic_top_k.ge == 1
-        assert config.semantic_top_k.le == 50
+        config = RAGConfig()
 
+        assert config.semantic_top_k == 10
+        assert config.graph_top_k == 20
+        assert config.min_similarity == 0.5
 
-class TestRetrievalTypes:
-    """Test retrieval type definitions."""
+    def test_cag_config_custom_values(self):
+        """Test CAGConfig with custom values."""
+        from kurt.models.staging.retrieval.step_cag import CAGConfig
 
-    def test_retrieval_context_creation(self):
-        """Test RetrievalContext dataclass."""
-        from kurt.retrieval.types import RetrievalContext
-
-        ctx = RetrievalContext(
-            query="test query",
-            query_type="hybrid",
-            deep_mode=True,
-            session_id="test-session",
+        config = CAGConfig(
+            top_k_entities=10,
+            min_similarity=0.5,
+            max_claims=100,
         )
 
-        assert ctx.query == "test query"
-        assert ctx.query_type == "hybrid"
-        assert ctx.deep_mode is True
-        assert ctx.session_id == "test-session"
+        assert config.top_k_entities == 10
+        assert config.min_similarity == 0.5
+        assert config.max_claims == 100
 
-    def test_retrieval_result_creation(self):
-        """Test RetrievalResult dataclass."""
-        from kurt.retrieval.types import Citation, RetrievalResult
 
-        result = RetrievalResult(
-            context_text="Test context",
-            citations=[
-                Citation(
-                    doc_id="1",
-                    title="Test",
-                    source_url="http://test.com",
-                    snippet="test snippet",
-                    confidence=0.9,
-                )
-            ],
-        )
+class TestRetrievalOutputSchemas:
+    """Test retrieval output schema definitions."""
 
-        assert result.context_text == "Test context"
-        assert len(result.citations) == 1
-        assert result.citations[0].title == "Test"
+    def test_cag_context_row_schema(self):
+        """Test CAGContextRow output schema."""
+        from kurt.models.staging.retrieval.step_cag import CAGContextRow
+
+        # Verify required fields exist
+        assert hasattr(CAGContextRow, "query_id")
+        assert hasattr(CAGContextRow, "query")
+        assert hasattr(CAGContextRow, "matched_entities")
+        assert hasattr(CAGContextRow, "topics")
+        assert hasattr(CAGContextRow, "context_markdown")
+        assert hasattr(CAGContextRow, "token_estimate")
+        assert hasattr(CAGContextRow, "sources")
+        assert hasattr(CAGContextRow, "telemetry")
+
+    def test_rag_context_row_schema(self):
+        """Test RAGContextRow output schema."""
+        from kurt.models.staging.retrieval.step_rag import RAGContextRow
+
+        # Verify required fields exist
+        assert hasattr(RAGContextRow, "query_id")
+        assert hasattr(RAGContextRow, "query")
+        assert hasattr(RAGContextRow, "context_text")
+        assert hasattr(RAGContextRow, "doc_ids")
+        assert hasattr(RAGContextRow, "entities")
+        assert hasattr(RAGContextRow, "claims")
+        assert hasattr(RAGContextRow, "citations")
+        assert hasattr(RAGContextRow, "telemetry")

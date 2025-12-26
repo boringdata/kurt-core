@@ -104,9 +104,12 @@ class ModelConfig(BaseModel):
 
         # Collect ConfigParam instances from class attributes
         cls._param_metadata = {}
-        for name, value in vars(cls).items():
+        for name, value in list(vars(cls).items()):
             if isinstance(value, ConfigParam):
                 cls._param_metadata[name] = value
+                # Replace ConfigParam with its default value so Pydantic uses it
+                # This allows direct instantiation: CAGConfig(top_k=10) to work
+                setattr(cls, name, value.default)
 
     @classmethod
     def load(cls, model_name: str) -> "ModelConfig":

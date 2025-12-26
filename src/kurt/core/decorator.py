@@ -265,6 +265,7 @@ def apply_dspy_on_df(
     *,
     input_fields: dict[str, str],
     output_fields: dict[str, str] = None,
+    tracking_fields: list[str] = None,
     pre_hook: Callable = None,
     post_hook: Callable = None,
     max_concurrent: int = 5,
@@ -284,6 +285,8 @@ def apply_dspy_on_df(
         input_fields: Map signature inputs to df columns {"sig_field": "df_column"}
         output_fields: Map signature outputs to df columns {"sig_field": "df_column"}
                       If None, uses signature output field names as column names
+        tracking_fields: List of df column names to include in progress display
+                        (e.g., ["document_id", "section_number"] for per-item logging)
         pre_hook: Optional function (row_dict) -> row_dict to preprocess each row
         post_hook: Optional function (row_dict, result) -> row_dict to postprocess
         max_concurrent: Number of parallel LLM calls (default: 5)
@@ -337,6 +340,11 @@ def apply_dspy_on_df(
         item = {sig_field: row.get(df_col) for sig_field, df_col in input_fields.items()}
         # Store original row for later merging
         item["__original_row__"] = row
+        # Include tracking fields for progress display (step specifies which fields matter)
+        if tracking_fields:
+            for field in tracking_fields:
+                if field in row and row[field] is not None:
+                    item[field] = row[field]
         items.append(item)
 
     # Create progress callback if needed
@@ -344,10 +352,16 @@ def apply_dspy_on_df(
     if progress:
         on_progress = make_progress_callback(prefix="Processing with DSPy")
 
+    # Build batch items: include input fields + tracking fields (exclude __original_row__)
+    batch_items = []
+    for item in items:
+        batch_item = {k: v for k, v in item.items() if k != "__original_row__"}
+        batch_items.append(batch_item)
+
     # Run batch in parallel
     results = run_batch_sync(
         signature=signature,
-        items=[{k: v for k, v in item.items() if k != "__original_row__"} for item in items],
+        items=batch_items,
         max_concurrent=max_concurrent,
         on_progress=on_progress,
         llm_model=llm_model,
