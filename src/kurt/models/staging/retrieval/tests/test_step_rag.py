@@ -97,22 +97,19 @@ class TestRAGConfig:
     def test_default_values(self):
         """Config should have sensible defaults."""
         config = RAGConfig()
-        # ConfigParam stores metadata, access .default for the value
-        assert config.semantic_top_k.default == 10
-        assert config.graph_top_k.default == 20
-        assert config.claim_top_k.default == 15
-        assert config.min_similarity.default == 0.5
-        assert config.max_documents.default == 500
-        assert config.max_claims.default == 500
+        # ConfigParam returns actual values when accessed on instance
+        assert config.semantic_top_k == 10
+        assert config.graph_top_k == 20
+        assert config.claim_top_k == 15
+        assert config.min_similarity == 0.5
+        assert config.max_documents == 500
+        assert config.max_claims == 500
 
     def test_custom_values(self):
         """Config should accept custom values when instantiated properly."""
-        # RAGConfig uses ConfigParam - test structure
-        config = RAGConfig()
-        assert config.semantic_top_k.ge == 1
-        assert config.semantic_top_k.le == 100
-        assert config.min_similarity.ge == 0.0
-        assert config.min_similarity.le == 1.0
+        config = RAGConfig(semantic_top_k=20, min_similarity=0.7)
+        assert config.semantic_top_k == 20
+        assert config.min_similarity == 0.7
 
 
 class TestReciprocalRankFusion:

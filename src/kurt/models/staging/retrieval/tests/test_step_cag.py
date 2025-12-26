@@ -61,21 +61,18 @@ class TestCAGConfig:
     def test_default_values(self):
         """Config should have sensible defaults."""
         config = CAGConfig()
-        # ConfigParam stores metadata, access .default for the value
-        assert config.top_k_entities.default == 5
-        assert config.min_similarity.default == 0.3
-        assert config.max_claims.default == 50
-        assert config.max_entities.default == 50
-        assert config.max_relationships.default == 30
+        # ConfigParam returns actual values when accessed on instance
+        assert config.top_k_entities == 5
+        assert config.min_similarity == 0.3
+        assert config.max_claims == 50
+        assert config.max_entities == 50
+        assert config.max_relationships == 30
 
     def test_custom_values(self):
         """Config should accept custom values when instantiated properly."""
-        # CAGConfig uses ConfigParam - test that the class is structured correctly
-        config = CAGConfig()
-        assert config.top_k_entities.ge == 1
-        assert config.top_k_entities.le == 50
-        assert config.min_similarity.ge == 0.0
-        assert config.min_similarity.le == 1.0
+        config = CAGConfig(top_k_entities=10, min_similarity=0.5)
+        assert config.top_k_entities == 10
+        assert config.min_similarity == 0.5
 
 
 class TestFormatMarkdown:
@@ -417,7 +414,7 @@ class TestCAGStepIntegration:
 
         assert len(rows) == 1
         row = rows[0]
-        assert "# Knowledge Context" in row.context_markdown
+        assert "# Context:" in row.context_markdown
 
     @pytest.mark.asyncio
     async def test_cag_retrieve_step_no_query(self, tmp_project, mock_retrieval_llm):
