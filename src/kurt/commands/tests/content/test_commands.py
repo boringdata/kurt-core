@@ -209,8 +209,8 @@ class TestContentListCommand:
         assert result.exit_code == 0
         # Check that only one document is shown (the one in cluster)
         assert "Documents (1 shown)" in result.output or "documents (1 shown)" in result.output
-        # Should show the tutorial URL (might be truncated)
-        assert "tuto" in result.output.lower()
+        # Should show the document ID (URLs may be truncated)
+        assert str(doc_in_cluster.id)[:8] in result.output
 
     def test_content_list_with_content_type_filter(self, isolated_cli_runner):
         """Test --with-content-type filter."""
@@ -220,34 +220,37 @@ class TestContentListCommand:
         from uuid import uuid4
 
         from kurt.db.database import get_session
-        from kurt.db.models import ContentType, Document, SourceType
+        from kurt.db.models import Document, SourceType
+        from tests.helpers.status_helpers import set_document_content_type
 
         session = get_session()
 
-        # Create documents with different content types
+        # Create documents (content_type now stored in staging_topic_clustering)
         doc_tutorial = Document(
             id=uuid4(),
             source_url="https://example.com/tutorial",
             source_type=SourceType.URL,
-            content_type=ContentType.TUTORIAL,
         )
         doc_guide = Document(
             id=uuid4(),
             source_url="https://example.com/guide",
             source_type=SourceType.URL,
-            content_type=ContentType.GUIDE,
         )
         session.add(doc_tutorial)
         session.add(doc_guide)
         session.commit()
+
+        # Set content types in staging table
+        set_document_content_type(doc_tutorial.id, "tutorial", session)
+        set_document_content_type(doc_guide.id, "guide", session)
 
         # Test filtering by content type
         result = runner.invoke(main, ["content", "list", "--with-content-type", "tutorial"])
         assert result.exit_code == 0, f"Command failed: {result.output}"
         # Should only show tutorial (check for 1 document shown)
         assert "Documents (1 shown)" in result.output or "documents (1 shown)" in result.output
-        # Should show the tutorial URL (might be truncated)
-        assert "tuto" in result.output.lower()
+        # Should show the document ID (URLs may be truncated)
+        assert str(doc_tutorial.id)[:8] in result.output
 
     def test_content_list_with_limit(self, isolated_cli_runner):
         """Test --limit parameter."""

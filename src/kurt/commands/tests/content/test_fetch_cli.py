@@ -51,28 +51,66 @@ def mock_pipeline_with_document_update():
 
     Creates landing_fetch records to simulate successful fetch (status is now derived
     from staging tables, not stored on Document model).
+
+    Handles multiple filter types: ids, include_pattern, limit
     """
+    from fnmatch import fnmatch
 
     def pipeline_side_effect(*args, **kwargs):
-        # Get document IDs from the filters
+        from sqlmodel import select
+
+        from kurt.db.database import get_session
+        from kurt.db.models import Document
+
+        # Get filters from kwargs
         filters = kwargs.get("filters")
+        session = get_session()
         doc_count = 0
-        if filters and filters.ids:
-            from uuid import UUID
 
-            from kurt.db.database import get_session
-            from kurt.db.models import Document
+        if not filters:
+            return {
+                "landing.fetch": {"documents_fetched": 0, "documents_failed": 0, "rows_written": 0},
+                "errors": {},
+            }
 
-            session = get_session()
-            for doc_id in filters.ids.split(","):
-                try:
-                    # Convert string to UUID for proper lookup
-                    doc = session.get(Document, UUID(doc_id))
-                    if doc:
-                        _mark_document_as_fetched(str(doc.id), session)
-                        doc_count += 1
-                except (ValueError, TypeError):
-                    pass
+        # Get all documents first
+        docs = list(session.exec(select(Document)).all())
+
+        # Apply filters to find matching documents
+        matching_docs = []
+
+        for doc in docs:
+            # Check ID filter
+            if filters.ids:
+                doc_ids = [d.strip() for d in filters.ids.split(",")]
+                if str(doc.id) not in doc_ids:
+                    continue
+
+            # Check include_pattern filter
+            if filters.include_pattern:
+                pattern = filters.include_pattern
+                if doc.source_url and not fnmatch(doc.source_url, pattern):
+                    if not doc.content_path or not fnmatch(doc.content_path, pattern):
+                        continue
+
+            # Check exclude_pattern filter
+            if filters.exclude_pattern:
+                pattern = filters.exclude_pattern
+                if doc.source_url and fnmatch(doc.source_url, pattern):
+                    continue
+                if doc.content_path and fnmatch(doc.content_path, pattern):
+                    continue
+
+            matching_docs.append(doc)
+
+        # Apply limit
+        if filters.limit:
+            matching_docs = matching_docs[: filters.limit]
+
+        # Mark matching docs as fetched
+        for doc in matching_docs:
+            _mark_document_as_fetched(str(doc.id), session)
+            doc_count += 1
 
         return {
             "landing.fetch": {

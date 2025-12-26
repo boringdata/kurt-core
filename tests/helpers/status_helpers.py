@@ -48,8 +48,9 @@ def mark_document_as_fetched(doc_id: str | UUID, session=None) -> None:
         )
     )
 
-    # Convert UUID to string format matching SQLModel storage (no hyphens)
-    doc_id_str = str(doc_id).replace("-", "")
+    # Convert UUID to string format - keep hyphens to match pipeline behavior
+    # The actual pipeline uses str(row["id"]) which includes hyphens
+    doc_id_str = str(doc_id)
 
     # Insert or replace the fetch record
     session.execute(
@@ -101,8 +102,8 @@ def mark_document_as_indexed(doc_id: str | UUID, session=None) -> None:
     # Insert a section extraction record
     from uuid import uuid4
 
-    # Convert UUID to string format matching SQLModel storage (no hyphens)
-    doc_id_str = str(doc_id).replace("-", "")
+    # Convert UUID to string format - keep hyphens to match pipeline behavior
+    doc_id_str = str(doc_id)
 
     session.execute(
         text(
@@ -112,7 +113,53 @@ def mark_document_as_indexed(doc_id: str | UUID, session=None) -> None:
         VALUES (:id, :doc_id, 0, 'Test Section', 'Test content', 'test-workflow')
     """
         ),
-        {"id": str(uuid4()).replace("-", ""), "doc_id": doc_id_str},
+        {"id": str(uuid4()), "doc_id": doc_id_str},
+    )
+    session.commit()
+
+
+def set_document_content_type(doc_id: str | UUID, content_type: str, session=None) -> None:
+    """Set document content_type in staging_topic_clustering table.
+
+    Content type is now stored in the staging_topic_clustering table,
+    not on the Document model directly.
+    """
+    if session is None:
+        from kurt.db.database import get_session
+
+        session = get_session()
+
+    # Ensure staging_topic_clustering table exists
+    session.execute(
+        text(
+            """
+        CREATE TABLE IF NOT EXISTS staging_topic_clustering (
+            document_id TEXT PRIMARY KEY,
+            cluster_name TEXT,
+            content_type TEXT,
+            metadata_json TEXT,
+            workflow_id TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            model_name TEXT,
+            error TEXT
+        )
+    """
+        )
+    )
+
+    # Convert UUID to string format - keep hyphens to match pipeline behavior
+    doc_id_str = str(doc_id)
+
+    # Insert or replace the clustering record
+    session.execute(
+        text(
+            """
+        INSERT OR REPLACE INTO staging_topic_clustering (document_id, content_type, workflow_id)
+        VALUES (:doc_id, :content_type, 'test-workflow')
+    """
+        ),
+        {"doc_id": doc_id_str, "content_type": content_type.lower()},
     )
     session.commit()
 
