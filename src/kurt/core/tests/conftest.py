@@ -1,6 +1,5 @@
 """
-Import fixtures from main test suite.
-"""
+Core tests conftest.
 
-# Import the fixtures we need from main conftest
-from tests.conftest import reset_dbos_state, tmp_project  # noqa: F401
+Fixtures tmp_project and reset_dbos_state are auto-discovered from src/kurt/conftest.py
+"""
