@@ -202,6 +202,17 @@ class TestBuildGroupRows:
 class TestEntityClusteringModel:
     """Test the entity_clustering model function."""
 
+    @pytest.fixture(autouse=True)
+    def mock_dspy_settings(self):
+        """Mock DSPy settings to prevent threading issues in tests.
+
+        This ensures DSPy's global settings don't conflict with other tests
+        that may configure DSPy in different threads during parallel execution.
+        """
+        with patch("dspy.settings") as mock_settings:
+            mock_settings.lm = MagicMock()
+            yield
+
     @pytest.fixture
     def mock_writer(self):
         """Create a mock TableWriter."""
