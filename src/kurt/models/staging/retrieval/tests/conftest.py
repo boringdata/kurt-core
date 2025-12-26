@@ -8,15 +8,19 @@ Test Strategy:
 - Pre-populate database with test documents, entities, and claims
 """
 
+import json
+from pathlib import Path
 from typing import Any, Dict, List
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import numpy as np
 import pytest
+from sqlalchemy import text
 
 # Fixtures tmp_project and reset_dbos_state are auto-discovered from src/kurt/conftest.py
 from kurt.core.dspy_helpers import DSPyResult
+from kurt.db.database import get_session
 
 
 @pytest.fixture
@@ -283,8 +287,8 @@ def mock_retrieval_llm():
     def mock_generate(texts):
         """Generate deterministic embeddings based on text hash."""
         results = []
-        for text in texts:
-            rng = random.Random(hash(text.lower().strip()))
+        for txt in texts:
+            rng = random.Random(hash(txt.lower().strip()))
             results.append([rng.random() for _ in range(1536)])
         return results
 
@@ -408,3 +412,86 @@ def sample_retrieval_data(
         "claim_ids": claim_ids,
         "section_ids": section_ids,
     }
+
+
+# ============================================================================
+# Fixtures for retrieval integration tests
+# ============================================================================
+
+
+@pytest.fixture
+def motherduck_project(tmp_project):
+    """
+    Load the MotherDuck mock project into a temporary Kurt project.
+
+    This fixture:
+    - Uses tmp_project to create isolated test environment
+    - Loads documents, entities, and relationships from motherduck dump
+    - Returns the project directory path
+
+    Usage:
+        def test_retrieval(motherduck_project):
+            # Database is populated with motherduck data
+            result = await retrieve("DuckDB embeddings")
+    """
+    # Path to mock project dump (relative to project root)
+    # Go up from src/kurt/models/staging/retrieval/tests/ to project root
+    project_root = Path(__file__).parent.parent.parent.parent.parent.parent.parent
+    dump_dir = project_root / "eval" / "mock" / "projects" / "motherduck" / "database"
+
+    if not dump_dir.exists():
+        pytest.skip(f"MotherDuck dump not found at {dump_dir}")
+
+    # Tables to load in dependency order
+    tables = [
+        "documents",
+        "entities",
+        "document_entities",
+        "entity_relationships",
+    ]
+
+    session = get_session()
+
+    try:
+        for table_name in tables:
+            input_file = dump_dir / f"{table_name}.jsonl"
+
+            if not input_file.exists():
+                continue
+
+            # Get valid columns for this table
+            pragma_query = text(f"PRAGMA table_info({table_name})")
+            table_columns_info = session.execute(pragma_query).fetchall()
+            valid_columns = {col[1] for col in table_columns_info}
+
+            # Read and insert records
+            count = 0
+            with open(input_file, "r") as f:
+                for line in f:
+                    record = json.loads(line)
+
+                    # Filter to valid columns only
+                    filtered_record = {k: v for k, v in record.items() if k in valid_columns}
+
+                    if not filtered_record:
+                        continue
+
+                    # Build INSERT statement
+                    columns = list(filtered_record.keys())
+                    placeholders = [f":{col}" for col in columns]
+
+                    insert_sql = text(
+                        f"INSERT OR REPLACE INTO {table_name} "
+                        f"({', '.join(columns)}) "
+                        f"VALUES ({', '.join(placeholders)})"
+                    )
+
+                    session.execute(insert_sql, filtered_record)
+                    count += 1
+
+            session.commit()
+
+        yield tmp_project
+
+    finally:
+        session.close()
