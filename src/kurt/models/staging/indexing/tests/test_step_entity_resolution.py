@@ -257,8 +257,9 @@ class TestBuildDocToKgDataFromExtractions:
         assert len(doc_to_kg) == 1
         doc_uuid = UUID(doc_id)
         assert doc_uuid in doc_to_kg
-        # Existing entity should be tracked
-        assert existing_entity_id in doc_to_kg[doc_uuid]["existing_entities"]
+        # Existing entity should be tracked (now stored as dict with entity_id and section_id)
+        existing_entity_ids = [e["entity_id"] for e in doc_to_kg[doc_uuid]["existing_entities"]]
+        assert existing_entity_id in existing_entity_ids
 
     def test_extracts_relationships_from_extractions(self):
         """Test that relationships from extractions are included."""
@@ -875,11 +876,12 @@ class TestBuildDocToKgDataEdgeCases:
 
         result = _build_doc_to_kg_data_from_extractions(extractions_df, groups)
 
-        # Should have existing entity ID resolved
+        # Should have existing entity ID resolved (now stored as dict with entity_id and section_id)
         from uuid import UUID
 
         doc_uuid = UUID(doc_id)
-        assert existing_id in result[doc_uuid]["existing_entities"]
+        existing_entity_ids = [e["entity_id"] for e in result[doc_uuid]["existing_entities"]]
+        assert existing_id in existing_entity_ids
 
     def test_extractions_with_missing_context(self):
         """Test extracting existing entities when context is missing."""

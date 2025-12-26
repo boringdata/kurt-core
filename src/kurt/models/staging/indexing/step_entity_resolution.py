@@ -311,6 +311,7 @@ def _build_doc_to_kg_data_from_extractions(extractions_df, groups: List[dict]) -
 
         for extraction in extractions:
             doc_id_str = extraction.get("document_id", "")
+            section_id = extraction.get("section_id")  # Get section_id from extraction
             try:
                 doc_id = UUID(doc_id_str)
             except (ValueError, TypeError):
@@ -346,18 +347,18 @@ def _build_doc_to_kg_data_from_extractions(extractions_df, groups: List[dict]) -
                                 f"using {adjusted_idx} (assuming 1-based indexing)"
                             )
 
-                    if (
-                        existing_id
-                        and existing_id not in doc_to_kg_data[doc_id]["existing_entities"]
-                    ):
-                        doc_to_kg_data[doc_id]["existing_entities"].append(existing_id)
-                    elif not existing_id:
+                    if existing_id:
+                        # Store as dict with section_id for section-level tracking
+                        existing_entry = {"entity_id": existing_id, "section_id": section_id}
+                        if existing_entry not in doc_to_kg_data[doc_id]["existing_entities"]:
+                            doc_to_kg_data[doc_id]["existing_entities"].append(existing_entry)
+                    else:
                         logger.debug(
                             f"Could not resolve matched_entity_index {matched_idx} for entity "
                             f"'{entity.get('name')}' - index not in context"
                         )
 
-            # Add relationships with document context
+            # Add relationships with document and section context
             for rel in relationships_json:
                 doc_to_kg_data[doc_id]["relationships"].append(
                     {
@@ -366,8 +367,30 @@ def _build_doc_to_kg_data_from_extractions(extractions_df, groups: List[dict]) -
                         "relationship_type": rel.get("relationship_type"),
                         "confidence": rel.get("confidence", 0.8),
                         "context": rel.get("context"),
+                        "section_id": section_id,  # Include section_id
                     }
                 )
+
+    # Build a lookup of entity_name -> section info from extractions
+    # This allows us to map new entities (from groups) back to their sections
+    entity_section_lookup = {}  # (doc_id, entity_name) -> list of section_ids
+    if extractions_df is not None and not extractions_df.empty:
+        for extraction in extractions:
+            doc_id_str = extraction.get("document_id", "")
+            section_id = extraction.get("section_id")
+            try:
+                doc_id = UUID(doc_id_str)
+            except (ValueError, TypeError):
+                continue
+
+            for entity in extraction.get("entities_json") or []:
+                entity_name = entity.get("name", "")
+                if entity_name:
+                    key = (doc_id, entity_name)
+                    if key not in entity_section_lookup:
+                        entity_section_lookup[key] = []
+                    if section_id not in entity_section_lookup[key]:
+                        entity_section_lookup[key].append(section_id)
 
     # Then add new_entities from groups (clustering determined these are new)
     for group in groups:
@@ -380,13 +403,18 @@ def _build_doc_to_kg_data_from_extractions(extractions_df, groups: List[dict]) -
             except (ValueError, TypeError):
                 continue
 
-            doc_to_kg_data[doc_id]["new_entities"].append(
-                {
-                    "name": entity_name,
-                    "type": group.get("entity_type"),
-                    "confidence": group.get("confidence", 0.8),
-                }
-            )
+            # Look up which sections this entity appeared in for this doc
+            section_ids = entity_section_lookup.get((doc_id, entity_name), [None])
+
+            for section_id in section_ids:
+                doc_to_kg_data[doc_id]["new_entities"].append(
+                    {
+                        "name": entity_name,
+                        "type": group.get("entity_type"),
+                        "confidence": group.get("confidence", 0.8),
+                        "section_id": section_id,
+                    }
+                )
 
     # Log stats
     total_existing = sum(len(d["existing_entities"]) for d in doc_to_kg_data.values())
