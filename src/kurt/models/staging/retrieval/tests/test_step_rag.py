@@ -9,16 +9,16 @@ from uuid import uuid4
 import numpy as np
 import pytest
 
-from kurt.models.staging.retrieval.step_rag import (
-    RAGConfig,
+from kurt.models.staging.retrieval.step_rag import RAGConfig
+from kurt.models.staging.retrieval.tests.conftest import mock_retrieval_llm  # noqa: F401
+from kurt.utils.retrieval import (
     cosine_similarity,
     cosine_similarity_batch,
     extract_entities_from_query,
-    format_context,
     reciprocal_rank_fusion,
     semantic_search,
 )
-from kurt.models.staging.retrieval.tests.conftest import mock_retrieval_llm  # noqa: F401
+from kurt.utils.retrieval.formatting import format_rag_context as format_context
 
 # Import fixtures
 from tests.conftest import reset_dbos_state, tmp_project  # noqa: F401

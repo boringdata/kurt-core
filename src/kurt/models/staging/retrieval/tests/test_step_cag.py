@@ -9,14 +9,15 @@ from uuid import uuid4
 import numpy as np
 import pytest
 
-from kurt.models.staging.retrieval.step_cag import (
-    CAGConfig,
-    cosine_similarity,
-    format_markdown,
-    load_context,
-    route_to_topics,
-)
+from kurt.models.staging.retrieval.step_cag import CAGConfig
 from kurt.models.staging.retrieval.tests.conftest import mock_retrieval_llm  # noqa: F401
+from kurt.utils.retrieval import (
+    cosine_similarity,
+    get_topics_for_entities,
+    load_context_for_documents,
+    search_entities_by_embedding,
+)
+from kurt.utils.retrieval.formatting import format_markdown_legacy as format_markdown
 
 # Import fixtures
 from tests.conftest import reset_dbos_state, tmp_project  # noqa: F401
@@ -336,35 +337,50 @@ class TestCAGStepIntegration:
             "topic_name": "Customer Data Platforms",
         }
 
-    def test_route_to_topics_with_real_db(self, tmp_project, cag_step_test_data):
-        """Test entity routing with real database."""
+    def test_search_entities_with_real_db(self, tmp_project, cag_step_test_data):
+        """Test entity search with real database."""
         # Query embedding similar to "Segment" entity
         query_embedding = [0.85, 0.15, 0.0] + [0.0] * 1533
 
-        topics, matched_names, matched_ids = route_to_topics(
+        # Search entities by embedding
+        results = search_entities_by_embedding(
             query_embedding,
             top_k=5,
             min_similarity=0.3,
         )
+
+        # Extract matched entity names and IDs
+        matched_names = [entity.name for entity, _ in results]
+        matched_ids = [entity.id for entity, _ in results]
+
+        # Verify we can get topics for matched entities
+        assert get_topics_for_entities(matched_ids) is not None
 
         assert "Segment" in matched_names
         assert len(matched_ids) > 0
 
     def test_load_context_with_real_db(self, tmp_project, cag_step_test_data):
         """Test context loading with real database."""
-        config = CAGConfig(max_claims=10, max_entities=20, max_relationships=10)
 
-        context = load_context(
-            topics=["Customer Data Platforms"],
+        from kurt.utils.retrieval.context_loading import get_document_ids_from_topics
+
+        # Get document IDs from topics
+        doc_ids = list(get_document_ids_from_topics(["Customer Data Platforms"]))
+
+        context = load_context_for_documents(
+            doc_ids=doc_ids,
             matched_entity_names=["Segment"],
-            config=config,
+            topics=["Customer Data Platforms"],
+            max_claims=10,
+            max_entities=20,
+            max_relationships=10,
         )
 
-        assert len(context["entities"]) > 0
-        assert any(e["name"] == "Segment" for e in context["entities"])
-        assert len(context["claims"]) > 0
-        assert any("300+ integrations" in c["statement"] for c in context["claims"])
-        assert len(context["sources"]) == 2
+        assert len(context.entities) > 0
+        assert any(e["name"] == "Segment" for e in context.entities)
+        assert len(context.claims) > 0
+        assert any("300+ integrations" in c["statement"] for c in context.claims)
+        assert len(context.sources) == 2
 
     @pytest.mark.asyncio
     async def test_cag_retrieve_step_full_flow(

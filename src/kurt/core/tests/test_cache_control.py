@@ -10,8 +10,8 @@ from unittest.mock import MagicMock, patch
 
 import pandas as pd
 
-from kurt.content.filtering import DocumentFilters
 from kurt.core import PipelineContext
+from kurt.utils.filtering import DocumentFilters
 
 
 class TestWorkflowNoCacheParameter:
