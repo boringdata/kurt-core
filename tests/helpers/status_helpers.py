@@ -48,9 +48,9 @@ def mark_document_as_fetched(doc_id: str | UUID, session=None) -> None:
         )
     )
 
-    # Convert UUID to string format - keep hyphens to match pipeline behavior
-    # The actual pipeline uses str(row["id"]) which includes hyphens
-    doc_id_str = str(doc_id)
+    # Convert UUID to string format WITHOUT hyphens to match pipeline behavior
+    # The actual pipeline uses str(row["id"]) from pandas which reads SQLite without hyphens
+    doc_id_str = str(doc_id).replace("-", "")
 
     # Insert or replace the fetch record
     session.execute(
@@ -102,8 +102,8 @@ def mark_document_as_indexed(doc_id: str | UUID, session=None) -> None:
     # Insert a section extraction record
     from uuid import uuid4
 
-    # Convert UUID to string format - keep hyphens to match pipeline behavior
-    doc_id_str = str(doc_id)
+    # Convert UUID to string format WITHOUT hyphens to match pipeline behavior
+    doc_id_str = str(doc_id).replace("-", "")
 
     session.execute(
         text(
@@ -113,7 +113,7 @@ def mark_document_as_indexed(doc_id: str | UUID, session=None) -> None:
         VALUES (:id, :doc_id, 0, 'Test Section', 'Test content', 'test-workflow')
     """
         ),
-        {"id": str(uuid4()), "doc_id": doc_id_str},
+        {"id": str(uuid4()).replace("-", ""), "doc_id": doc_id_str},
     )
     session.commit()
 
@@ -148,8 +148,8 @@ def set_document_content_type(doc_id: str | UUID, content_type: str, session=Non
         )
     )
 
-    # Convert UUID to string format - keep hyphens to match pipeline behavior
-    doc_id_str = str(doc_id)
+    # Convert UUID to string format WITHOUT hyphens to match pipeline behavior
+    doc_id_str = str(doc_id).replace("-", "")
 
     # Insert or replace the clustering record
     session.execute(

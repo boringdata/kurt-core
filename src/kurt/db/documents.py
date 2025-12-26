@@ -1030,7 +1030,8 @@ def get_document_stats(
         all_docs = all_docs[:limit]
 
     # Get status counts using SQL for efficiency
-    doc_ids = [str(d.id) for d in all_docs]
+    # Staging tables store document_id WITHOUT hyphens (from pandas reading SQLite)
+    doc_ids = [str(d.id).replace("-", "") for d in all_docs]
     if not doc_ids:
         return {"total": 0, "not_fetched": 0, "fetched": 0, "indexed": 0, "error": 0}
 
@@ -1751,7 +1752,8 @@ def get_document_status(document_id: str | UUID) -> dict:
 
     # Resolve document ID
     doc = get_document(str(document_id))
-    doc_id_str = str(doc.id)
+    # Staging tables store document_id WITHOUT hyphens (from pandas reading SQLite)
+    doc_id_str = str(doc.id).replace("-", "")
 
     result = {
         "status": "NOT_FETCHED",
@@ -1894,7 +1896,8 @@ def get_document_with_metadata(document_id: str | UUID) -> dict:
 
     # Get base document
     doc = get_document(str(document_id))
-    doc_id_str = str(doc.id)
+    # Staging tables store document_id WITHOUT hyphens (from pandas reading SQLite)
+    doc_id_str = str(doc.id).replace("-", "")
 
     # Build result with core document fields
     result = {
