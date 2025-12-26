@@ -202,17 +202,6 @@ class TestBuildGroupRows:
 class TestEntityClusteringModel:
     """Test the entity_clustering model function."""
 
-    @pytest.fixture(autouse=True)
-    def mock_dspy_settings(self):
-        """Mock DSPy settings to prevent threading issues in tests.
-
-        This ensures DSPy's global settings don't conflict with other tests
-        that may configure DSPy in different threads during parallel execution.
-        """
-        with patch("dspy.settings") as mock_settings:
-            mock_settings.lm = MagicMock()
-            yield
-
     @pytest.fixture
     def mock_writer(self):
         """Create a mock TableWriter."""
@@ -269,6 +258,7 @@ class TestEntityClusteringModel:
 
         assert result["rows_written"] == 0
 
+    @patch("kurt.core.dspy_helpers.configure_dspy_model")
     @patch("kurt.models.staging.indexing.step_entity_clustering._validate_merge_decisions")
     @patch("kurt.models.staging.indexing.step_entity_clustering._resolve_groups_with_llm")
     @patch("kurt.models.staging.indexing.step_entity_clustering._fetch_similar_entities_for_groups")
@@ -281,6 +271,7 @@ class TestEntityClusteringModel:
         mock_fetch_similar,
         mock_resolve,
         mock_validate,
+        mock_configure_dspy,
         mock_writer,
         mock_ctx,
     ):
