@@ -118,7 +118,7 @@ class ClaimGroupRow(PipelineModelBase, LLMTelemetryMixin, table=True):
 
 
 @model(
-    name="staging.claim_clustering",
+    name="staging.indexing.claim_clustering",
     primary_key=["claim_hash", "workflow_id"],
     write_strategy="replace",
     description="Cluster claims across all sections and make resolution decisions",
@@ -127,7 +127,7 @@ class ClaimGroupRow(PipelineModelBase, LLMTelemetryMixin, table=True):
 @table(ClaimGroupRow)
 def claim_clustering(
     ctx: PipelineContext,
-    extractions=Reference("staging.section_extractions"),
+    extractions=Reference("staging.indexing.section_extractions"),
     writer: TableWriter = None,
     config: ClaimClusteringConfig = None,
 ):
@@ -242,6 +242,29 @@ def claim_clustering(
     result = writer.write(rows)
     result["claims"] = len(all_claims)
     result["clusters"] = len(clusters)
+
+    # Verbose output: show clustering decisions
+    verbose = ctx.metadata.get("verbose", False)
+    if verbose:
+        from kurt.core.display import print_info, print_inline_table
+
+        if rows:
+            print_info("Claim clustering decisions:")
+            cluster_data = [
+                {
+                    "statement": r.statement[:45] + "..." if len(r.statement) > 45 else r.statement,
+                    "type": r.claim_type.replace("ClaimType.", ""),
+                    "decision": r.decision[:20] if len(r.decision) > 20 else r.decision,
+                    "cluster": r.cluster_id,
+                }
+                for r in rows
+            ]
+            print_inline_table(
+                cluster_data,
+                columns=["statement", "type", "decision", "cluster"],
+                max_items=20,
+                column_widths={"statement": 45, "type": 12, "decision": 20, "cluster": 8},
+            )
 
     return result
 

@@ -26,7 +26,7 @@ from kurt.db.graph_entities import (
     find_existing_entity,
     find_or_create_document_entity_link,
 )
-from kurt.db.models import DocumentEntity, Entity, EntityRelationship
+from kurt.db.models import DocumentEntity, DocumentEntityRelationship, Entity, EntityRelationship
 
 logger = logging.getLogger(__name__)
 
@@ -155,24 +155,33 @@ def normalize_entities_for_clustering(entities: List[dict]) -> List[dict]:
 # ============================================================================
 
 
-def link_existing_entities(session, document_id: UUID, existing_entity_ids: list[str]) -> int:
+def link_existing_entities(session, document_id: UUID, existing_entities: list) -> int:
     """
     Stage 2: Create document-entity edges for EXISTING entities.
 
     Args:
         session: Database session
         document_id: Document UUID
-        existing_entity_ids: List of entity IDs that were matched during indexing
+        existing_entities: List of entity info dicts with 'entity_id' and optional 'section_id',
+                          or list of entity ID strings for backward compatibility
 
     Returns:
         Number of entities linked
     """
     linked_count = 0
 
-    for entity_id_str in existing_entity_ids:
+    for entity_info in existing_entities:
+        # Handle both new format (dict) and old format (string)
+        if isinstance(entity_info, dict):
+            entity_id_str = entity_info.get("entity_id", "")
+            section_id = entity_info.get("section_id")
+        else:
+            entity_id_str = entity_info
+            section_id = None
+
         # Parse UUID with validation
         try:
-            entity_id = UUID(entity_id_str.strip())
+            entity_id = UUID(str(entity_id_str).strip())
         except (ValueError, TypeError) as e:
             logger.error(
                 f"Invalid entity_id '{entity_id_str}' for document {document_id}: {e}. "
@@ -180,10 +189,11 @@ def link_existing_entities(session, document_id: UUID, existing_entity_ids: list
             )
             continue  # Skip and continue
 
-        # Check if edge already exists
+        # Check if edge already exists (considering section_id for uniqueness)
         stmt = select(DocumentEntity).where(
             DocumentEntity.document_id == document_id,
             DocumentEntity.entity_id == entity_id,
+            DocumentEntity.section_id == section_id,
         )
         existing_edge = session.exec(stmt).first()
 
@@ -197,6 +207,7 @@ def link_existing_entities(session, document_id: UUID, existing_entity_ids: list
                 id=uuid4(),
                 document_id=document_id,
                 entity_id=entity_id,
+                section_id=section_id,
                 mention_count=1,
                 confidence=0.9,  # High confidence since LLM matched it
                 created_at=datetime.utcnow(),
@@ -230,7 +241,7 @@ def build_entity_docs_mapping(doc_to_kg_data: dict) -> dict[str, list[dict]]:
         doc_to_kg_data: Dict mapping doc_id -> kg_data with 'new_entities'
 
     Returns:
-        Dict mapping entity_name -> list of {document_id, confidence, quote}
+        Dict mapping entity_name -> list of {document_id, section_id, confidence, quote}
     """
     entity_name_to_docs = {}
 
@@ -242,6 +253,7 @@ def build_entity_docs_mapping(doc_to_kg_data: dict) -> dict[str, list[dict]]:
             entity_name_to_docs[entity_name].append(
                 {
                     "document_id": doc_id,
+                    "section_id": new_entity.get("section_id"),
                     "confidence": new_entity["confidence"],
                     "quote": new_entity.get("quote"),
                 }
@@ -606,16 +618,19 @@ def create_entities(
                     entity_name_to_id[ent_name] = entity_id
 
                 # Create document-entity edges for all mentions
+                # Key by (doc_id, section_id) to allow same entity in multiple sections
                 docs_to_link = {}
                 for ent_name in all_entity_names:
                     for doc_info in entity_name_to_docs.get(ent_name, []):
                         doc_id = doc_info["document_id"]
-                        # Keep the highest confidence if doc mentions multiple variations
+                        section_id = doc_info.get("section_id")
+                        key = (doc_id, section_id)
+                        # Keep the highest confidence if same doc/section mentions multiple variations
                         if (
-                            doc_id not in docs_to_link
-                            or doc_info["confidence"] > docs_to_link[doc_id]["confidence"]
+                            key not in docs_to_link
+                            or doc_info["confidence"] > docs_to_link[key]["confidence"]
                         ):
-                            docs_to_link[doc_id] = doc_info
+                            docs_to_link[key] = doc_info
 
                 for doc_info in docs_to_link.values():
                     find_or_create_document_entity_link(
@@ -624,6 +639,7 @@ def create_entities(
                         entity_id=entity_id,
                         confidence=doc_info["confidence"],
                         context=doc_info.get("quote"),
+                        section_id=doc_info.get("section_id"),
                     )
 
     return entity_name_to_id
@@ -634,7 +650,7 @@ def create_relationships(
     doc_to_kg_data: dict,
     entity_name_to_id: dict[str, UUID],
 ) -> int:
-    """Create all entity relationships.
+    """Create all entity relationships and document-relationship links.
 
     Args:
         session: SQLModel session
@@ -666,6 +682,7 @@ def create_relationships(
                 # Update evidence count
                 existing_rel.evidence_count += 1
                 existing_rel.updated_at = datetime.utcnow()
+                relationship_id = existing_rel.id
             else:
                 # Create new relationship
                 relationship = EntityRelationship(
@@ -680,6 +697,28 @@ def create_relationships(
                     updated_at=datetime.utcnow(),
                 )
                 session.add(relationship)
+                session.flush()  # Get the ID
+                relationship_id = relationship.id
                 relationships_created += 1
+
+            # Create DocumentEntityRelationship to track which doc/section evidences this
+            section_id = rel.get("section_id")
+            stmt_doc_rel = select(DocumentEntityRelationship).where(
+                DocumentEntityRelationship.relationship_id == relationship_id,
+                DocumentEntityRelationship.document_id == doc_id,
+                DocumentEntityRelationship.section_id == section_id,
+            )
+            existing_doc_rel = session.exec(stmt_doc_rel).first()
+
+            if not existing_doc_rel:
+                doc_rel = DocumentEntityRelationship(
+                    id=uuid4(),
+                    relationship_id=relationship_id,
+                    document_id=doc_id,
+                    section_id=section_id,
+                    context=rel.get("context"),
+                    created_at=datetime.utcnow(),
+                )
+                session.add(doc_rel)
 
     return relationships_created

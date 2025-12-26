@@ -310,6 +310,7 @@ class DocumentEntity(SQLModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     document_id: UUID = Field(foreign_key="documents.id", index=True)
     entity_id: UUID = Field(foreign_key="entities.id", index=True)
+    section_id: Optional[str] = Field(default=None, index=True)  # Section where entity is mentioned
 
     mention_count: int = Field(default=1)  # How many times entity is mentioned
     confidence: float = Field(default=0.0)  # Mention confidence (0.0-1.0)
@@ -317,6 +318,25 @@ class DocumentEntity(SQLModel, table=True):
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class DocumentEntityRelationship(SQLModel, table=True):
+    """Junction table linking relationships to documents/sections that evidence them.
+
+    EntityRelationship is deduplicated (one row per unique source-target-type triple).
+    This table tracks all the documents and sections where that relationship was found.
+    """
+
+    __tablename__ = "document_entity_relationships"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    relationship_id: UUID = Field(foreign_key="entity_relationships.id", index=True)
+    document_id: UUID = Field(foreign_key="documents.id", index=True)
+    section_id: Optional[str] = Field(default=None, index=True)
+
+    context: Optional[str] = None  # Quote evidencing the relationship
+
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class MetadataSyncQueue(SQLModel, table=True):

@@ -217,7 +217,7 @@ class TopicClusteringRow(PipelineModelBase, table=True):
 
 
 @model(
-    name="staging.topic_clustering",
+    name="staging.clustering.topic_clustering",
     primary_key=["document_id", "workflow_id"],
     write_strategy="replace",
     description="Compute topic clusters and classify content types for documents",
@@ -245,13 +245,19 @@ def topic_clustering(
         config: Topic clustering configuration
     """
     import json
+    from uuid import UUID
 
     workflow_id = ctx.workflow_id
 
     # Filter documents by ctx.document_ids
     query = documents.query
     if ctx.document_ids:
-        query = query.filter(documents.model_class.id.in_(ctx.document_ids))
+        # Ensure doc_ids are UUID objects (ctx.document_ids may contain strings)
+        doc_ids = [
+            UUID(str(doc_id)) if not isinstance(doc_id, UUID) else doc_id
+            for doc_id in ctx.document_ids
+        ]
+        query = query.filter(documents.model_class.id.in_(doc_ids))
     docs_df = pd.read_sql(query.statement, documents.session.bind)
 
     if docs_df.empty:
@@ -302,6 +308,7 @@ def topic_clustering(
             "cluster_name": "cluster_name",
             "reasoning": "reasoning",
         },
+        tracking_fields=["id", "title"],
         max_concurrent=config.max_concurrent,
         llm_model=config.llm_model,
         progress=True,
@@ -353,9 +360,15 @@ def topic_clustering(
 
 def _fetch_existing_clusters(docs_df: pd.DataFrame, session) -> list[dict]:
     """Fetch existing clusters linked to the documents being processed."""
+    from uuid import UUID
+
     from kurt.db.models import DocumentClusterEdge, TopicCluster
 
-    doc_ids = docs_df["id"].tolist()
+    # Ensure doc_ids are UUID objects (pd.read_sql may return strings)
+    doc_ids = [
+        UUID(str(doc_id)) if not isinstance(doc_id, UUID) else doc_id
+        for doc_id in docs_df["id"].tolist()
+    ]
 
     existing_cluster_records = (
         session.query(TopicCluster)

@@ -39,10 +39,10 @@ class TestDocumentSectionsModel:
             workflow_id="test-single-section",
         )
 
-        result = execute_model_sync("staging.document_sections", ctx)
+        result = execute_model_sync("staging.indexing.document_sections", ctx)
 
         assert result["rows_written"] == 1
-        assert result["table_name"] == "staging_document_sections"
+        assert result["table_name"] == "staging_indexing_document_sections"
 
     def test_multiple_sections_with_overlap(self, tmp_project, add_test_documents):
         """Test document split into multiple sections with overlap."""
@@ -67,7 +67,7 @@ class TestDocumentSectionsModel:
             workflow_id="test-workflow",
         )
 
-        result = execute_model_sync("staging.document_sections", ctx)
+        result = execute_model_sync("staging.indexing.document_sections", ctx)
 
         # Should create multiple sections
         assert result["rows_written"] >= 2
@@ -84,7 +84,7 @@ class TestDocumentSectionsModel:
             workflow_id="test-workflow",
         )
 
-        result = execute_model_sync("staging.document_sections", ctx)
+        result = execute_model_sync("staging.indexing.document_sections", ctx)
 
         # Should not write any rows - document has no content
         assert result["rows_written"] == 0
@@ -106,7 +106,7 @@ class TestDocumentSectionsModel:
             workflow_id="test-workflow",
         )
 
-        result = execute_model_sync("staging.document_sections", ctx)
+        result = execute_model_sync("staging.indexing.document_sections", ctx)
 
         # Should not write any sections for empty content
         assert result["rows_written"] == 0
@@ -129,7 +129,7 @@ class TestDocumentSectionsModel:
             workflow_id="test-workflow",
         )
 
-        result = execute_model_sync("staging.document_sections", ctx)
+        result = execute_model_sync("staging.indexing.document_sections", ctx)
 
         # Should have written sections for all documents
         assert result["rows_written"] >= len(documents)
@@ -151,7 +151,7 @@ class TestDocumentSectionsModel:
             workflow_id="test-workflow",
         )
 
-        result = execute_model_sync("staging.document_sections", ctx)
+        result = execute_model_sync("staging.indexing.document_sections", ctx)
         assert result["rows_written"] == 1
 
         # Check the section has a hash
@@ -180,7 +180,7 @@ class TestDocumentSectionsModel:
             workflow_id="test-workflow",
         )
 
-        result = execute_model_sync("staging.document_sections", ctx)
+        result = execute_model_sync("staging.indexing.document_sections", ctx)
         assert result["rows_written"] == 1
 
         # Check the section has the document title
@@ -215,7 +215,7 @@ class TestDocumentSectionsModel:
             workflow_id="test-workflow",
         )
 
-        result = execute_model_sync("staging.document_sections", ctx)
+        result = execute_model_sync("staging.indexing.document_sections", ctx)
 
         # Should process both documents
         assert result["rows_written"] >= 2
@@ -241,10 +241,10 @@ class TestDocumentSectionsModel:
         """Test that DocumentSectionsConfig is properly configured."""
         config = DocumentSectionsConfig()
 
-        # Check default values
-        assert config.max_section_chars.default == 5000
-        assert config.overlap_chars.default == 200
-        assert config.min_section_size.default == 500
+        # Check default values (accessing attribute gives the actual value)
+        assert config.max_section_chars == 5000
+        assert config.overlap_chars == 200
+        assert config.min_section_size == 500
 
     def test_model_registered(self):
         """Test that the model is registered in ModelRegistry."""
@@ -252,9 +252,9 @@ class TestDocumentSectionsModel:
         import kurt.models.staging.indexing  # noqa: F401
         from kurt.core import ModelRegistry
 
-        model_info = ModelRegistry.get("staging.document_sections")
+        model_info = ModelRegistry.get("staging.indexing.document_sections")
         assert model_info is not None
-        assert model_info["name"] == "staging.document_sections"
+        assert model_info["name"] == "staging.indexing.document_sections"
 
     def test_section_row_schema(self):
         """Test DocumentSectionRow schema fields."""
@@ -279,4 +279,4 @@ class TestDocumentSectionsModel:
 
     def test_section_row_table_name(self):
         """Test DocumentSectionRow table name."""
-        assert DocumentSectionRow.__tablename__ == "staging_document_sections"
+        assert DocumentSectionRow.__tablename__ == "staging_indexing_document_sections"

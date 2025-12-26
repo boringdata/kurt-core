@@ -13,14 +13,14 @@ class TestFetchModel:
         assert FetchRow is not None
 
     def test_fetch_config_defaults(self):
-        """Test FetchConfig ConfigParam defaults."""
+        """Test FetchConfig default values."""
         from kurt.models.landing import FetchConfig
 
         config = FetchConfig()
 
-        # ConfigParam fields have default attribute
-        assert config.fetch_engine.default == "trafilatura"
-        assert config.embedding_max_chars.default == 1000
+        # When accessing config attributes, you get the actual value (not ConfigParam)
+        assert config.fetch_engine == "trafilatura"
+        assert config.embedding_max_chars == 1000
 
     def test_fetch_row_schema(self):
         """Test FetchRow schema fields."""

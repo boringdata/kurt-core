@@ -84,6 +84,8 @@ def documents(ctx, writer: TableWriter):
 References no longer prefetch data. Instead, they return a **lazy SQLAlchemy Query** that you filter and execute in your model code:
 
 ```python
+import pandas as pd
+
 @model(name="indexing.summaries", primary_key=["id"])
 @table(SummarySchema)
 def summaries(ctx, sections=Reference("indexing.sections"), writer: TableWriter):
@@ -91,10 +93,10 @@ def summaries(ctx, sections=Reference("indexing.sections"), writer: TableWriter)
     query = sections.query
 
     # Filter in your code (SQL pushdown)
-    filtered = query.filter(sections.model_class.document_id.in_(ctx.document_ids))
+    filtered = query.filter(sections.model_class.workflow_id == ctx.workflow_id)
 
     # Execute and get DataFrame
-    df = sections.df(filtered)
+    df = pd.read_sql(filtered.statement, sections.session.bind)
 
     # Or get list of model instances
     rows = filtered.all()
@@ -103,8 +105,19 @@ def summaries(ctx, sections=Reference("indexing.sections"), writer: TableWriter)
 **Reference API:**
 - `.query` - Returns SQLAlchemy Query (lazy)
 - `.model_class` - Returns SQLModel class for filter conditions
-- `.df(query)` - Execute query and return DataFrame
-- `.all(query)` - Execute query and return list
+- `.session` - Returns the bound SQLAlchemy session for query execution
+
+**Executing queries:**
+```python
+# Get DataFrame
+df = pd.read_sql(query.statement, ref.session.bind)
+
+# Get list of model instances
+rows = query.all()
+
+# Get single row
+row = query.first()
+```
 
 ### 2.3 apply_dspy_on_df - Explicit LLM Processing
 
@@ -286,11 +299,13 @@ def document_summaries(
     writer: TableWriter = None,
     config: SummaryConfig = None,
 ):
+    import pandas as pd
+
     # 4. Get query and filter explicitly
     query = sections.query.filter(
         sections.model_class.workflow_id == ctx.workflow_id
     )
-    df = sections.df(query)
+    df = pd.read_sql(query.statement, sections.session.bind)
 
     # 5. Process data
     rows = []

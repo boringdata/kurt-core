@@ -544,16 +544,12 @@ def make_progress_callback(prefix: str = "", show_items: bool = True) -> callabl
 
         # Log item status if enabled (skip if result is None - start event)
         if show_items and result is not None:
-            # Extract identifiers from result payload
+            # Extract identifiers from result payload (tracking_fields from step)
             payload = getattr(result, "payload", {}) or {}
 
-            # Build item_id as docid-sN format
-            doc_id = str(payload.get("document_id", ""))[:8]
+            # Build item_id: prefer document_id, fallback to id
+            doc_id = str(payload.get("document_id") or payload.get("id") or "")[:8]
             section_num = payload.get("section_number")
-
-            # Debug: log payload keys if section_number is missing
-            if section_num is None:
-                logger.debug(f"Payload keys: {list(payload.keys())}")
 
             if doc_id and section_num is not None:
                 item_id = f"{doc_id}-s{section_num}"
@@ -562,7 +558,7 @@ def make_progress_callback(prefix: str = "", show_items: bool = True) -> callabl
             else:
                 item_id = f"item-{completed}"
 
-            title = payload.get("document_title", payload.get("title", ""))
+            title = payload.get("document_title") or payload.get("title") or ""
 
             # Extract timing if available
             telemetry = getattr(result, "telemetry", {}) or {}

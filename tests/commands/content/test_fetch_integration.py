@@ -408,7 +408,7 @@ class TestFetchIntegrationRealPipeline:
 
     These tests:
     - Mock only external boundaries: HTTP (trafilatura), DSPy (LLM), embeddings
-    - Run real pipeline code: full landing.fetch → staging.document_sections → etc.
+    - Run real pipeline code: full landing.fetch → staging.indexing.document_sections → etc.
     - Use existing fixtures: mock_run_batch(), mock_embeddings() from kurt.core.testing
     - Call pipeline models directly (bypassing CLI/DBOS) to avoid session detachment issues
 
@@ -476,7 +476,7 @@ Learn the basics of Python syntax and data types.
             assert fetch_result.get("rows_written", 0) > 0
 
             # Run document_sections model
-            sections_result = execute_model_sync("staging.document_sections", ctx)
+            sections_result = execute_model_sync("staging.indexing.document_sections", ctx)
             assert sections_result.get("rows_written", 0) > 0
 
         # Step 3: Verify results
@@ -543,7 +543,7 @@ It follows the model-template-view architectural pattern.
             assert fetch_result.get("rows_written", 0) > 0
 
             # Run document_sections
-            sections_result = execute_model_sync("staging.document_sections", ctx)
+            sections_result = execute_model_sync("staging.indexing.document_sections", ctx)
             assert sections_result.get("rows_written", 0) > 0
 
         # Verify document is fetched

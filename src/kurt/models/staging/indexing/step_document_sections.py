@@ -117,7 +117,7 @@ class DocumentSectionRow(PipelineModelBase, table=True):
 
 
 @model(
-    name="staging.document_sections",
+    name="staging.indexing.document_sections",
     primary_key=["document_id", "section_id"],
     write_strategy="replace",
     description="Split documents into sections for parallel processing",
@@ -249,6 +249,37 @@ def document_sections(
     # Only show skipped if there were any
     if skipped_count > 0:
         result["skipped"] = skipped_count
+
+    # Verbose output: show sections per document
+    verbose = ctx.metadata.get("verbose", False)
+    if verbose:
+        from kurt.core.display import print_info, print_inline_table
+
+        # Group sections by document and show summary
+        sections_data = []
+        for doc_id in valid_df["document_id"].unique():
+            doc_rows = [r for r in rows if r.document_id == doc_id]
+            doc_title = valid_df[valid_df["document_id"] == doc_id]["title"].iloc[0]
+            sections_data.append(
+                {
+                    "doc": doc_id[:8],
+                    "title": (doc_title[:30] + "...")
+                    if doc_title and len(doc_title) > 30
+                    else (doc_title or "-"),
+                    "sections": len(doc_rows),
+                    "chars": sum(len(r.content) for r in doc_rows),
+                }
+            )
+
+        if sections_data:
+            print_info("Document sections:")
+            print_inline_table(
+                sections_data,
+                columns=["doc", "title", "sections", "chars"],
+                max_items=15,
+                column_widths={"doc": 10, "title": 35, "sections": 10, "chars": 10},
+            )
+
     return result
 
 

@@ -258,6 +258,7 @@ class TestEntityClusteringModel:
 
         assert result["rows_written"] == 0
 
+    @patch("kurt.core.dspy_helpers.configure_dspy_model")
     @patch("kurt.models.staging.indexing.step_entity_clustering._validate_merge_decisions")
     @patch("kurt.models.staging.indexing.step_entity_clustering._resolve_groups_with_llm")
     @patch("kurt.models.staging.indexing.step_entity_clustering._fetch_similar_entities_for_groups")
@@ -270,6 +271,7 @@ class TestEntityClusteringModel:
         mock_fetch_similar,
         mock_resolve,
         mock_validate,
+        mock_configure_dspy,
         mock_writer,
         mock_ctx,
     ):

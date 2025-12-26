@@ -257,6 +257,8 @@ def run_pipeline_simple(
     priority: int = 10,
     incremental_mode: str = "full",
     reprocess_unchanged: bool = False,
+    verbose: bool = False,
+    metadata: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Simplified helper to run a pipeline workflow.
@@ -272,6 +274,8 @@ def run_pipeline_simple(
         priority: Priority for background execution
         incremental_mode: Processing mode ("full" or "delta")
         reprocess_unchanged: If True, reprocess unchanged documents
+        verbose: If True, display detailed tables during step execution
+        metadata: Optional dict of metadata to pass to pipeline context (e.g., {"query": "..."})
 
     Returns:
         Workflow result dict (or workflow ID if background=True)
@@ -291,6 +295,11 @@ def run_pipeline_simple(
     if filters is None:
         filters = DocumentFilters()
 
+    # Build metadata dict with verbose flag and any custom metadata
+    ctx_metadata = {"verbose": verbose}
+    if metadata:
+        ctx_metadata.update(metadata)
+
     if background:
         console.print("[dim]Enqueueing workflow...[/dim]\n")
         return run_with_background_support(
@@ -301,6 +310,7 @@ def run_pipeline_simple(
                 "incremental_mode": incremental_mode,
                 "reprocess_unchanged": reprocess_unchanged,
                 "model_configs": model_configs,
+                "metadata": ctx_metadata,
             },
             background=True,
             workflow_id=None,
@@ -317,6 +327,7 @@ def run_pipeline_simple(
         incremental_mode=incremental_mode,
         reprocess_unchanged=reprocess_unchanged,
         model_configs=model_configs,
+        metadata=ctx_metadata,
     )
 
     return handle.get_result()

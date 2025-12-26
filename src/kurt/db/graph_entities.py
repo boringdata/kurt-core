@@ -149,23 +149,24 @@ def create_entity_with_document_edges(
     for ent_name in all_entity_names:
         entity_name_to_id[ent_name] = entity.id
 
-    # Create document-entity edges for ALL documents that mention any entity in this group
+    # Create document-entity edges for ALL documents/sections that mention any entity in this group
+    # Key by (doc_id, section_id) to allow same entity in multiple sections
     docs_to_link = {}
     for ent_name in all_entity_names:
         for doc_info in entity_name_to_docs.get(ent_name, []):
             doc_id = doc_info["document_id"]
-            # Keep the highest confidence if a doc mentions multiple variations
-            if (
-                doc_id not in docs_to_link
-                or doc_info["confidence"] > docs_to_link[doc_id]["confidence"]
-            ):
-                docs_to_link[doc_id] = doc_info
+            section_id = doc_info.get("section_id")
+            key = (doc_id, section_id)
+            # Keep the highest confidence if same doc/section mentions multiple variations
+            if key not in docs_to_link or doc_info["confidence"] > docs_to_link[key]["confidence"]:
+                docs_to_link[key] = doc_info
 
     for doc_info in docs_to_link.values():
         edge = DocumentEntity(
             id=uuid4(),
             document_id=doc_info["document_id"],
             entity_id=entity.id,
+            section_id=doc_info.get("section_id"),
             mention_count=1,
             confidence=doc_info["confidence"],
             context=doc_info.get("quote"),
@@ -202,7 +203,12 @@ def find_existing_entity(session, canonical_name: str, entity_type: str = None) 
 
 
 def find_or_create_document_entity_link(
-    session, document_id: UUID, entity_id: UUID, confidence: float, context: str | None = None
+    session,
+    document_id: UUID,
+    entity_id: UUID,
+    confidence: float,
+    context: str | None = None,
+    section_id: str | None = None,
 ) -> DocumentEntity:
     """Find existing document-entity link or create new one.
 
@@ -214,14 +220,16 @@ def find_or_create_document_entity_link(
         entity_id: Entity UUID
         confidence: Confidence score
         context: Optional context/quote
+        section_id: Optional section ID where entity is mentioned
 
     Returns:
         DocumentEntity (existing or newly created)
     """
-    # Check if link already exists
+    # Check if link already exists (considering section_id for uniqueness)
     stmt = select(DocumentEntity).where(
         DocumentEntity.document_id == document_id,
         DocumentEntity.entity_id == entity_id,
+        DocumentEntity.section_id == section_id,
     )
     existing_edge = session.exec(stmt).first()
 
@@ -237,6 +245,7 @@ def find_or_create_document_entity_link(
             id=uuid4(),
             document_id=document_id,
             entity_id=entity_id,
+            section_id=section_id,
             mention_count=1,
             confidence=confidence,
             context=context,

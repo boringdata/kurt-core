@@ -352,9 +352,14 @@ def mock_run_batch(response_factory: Optional[Any] = None):
 
         return results
 
-    with patch(
-        "kurt.core.dspy_helpers.run_batch_sync",
-        side_effect=mock_run_batch_sync,
+    with (
+        patch(
+            "kurt.core.dspy_helpers.run_batch_sync",
+            side_effect=mock_run_batch_sync,
+        ),
+        patch(
+            "kurt.core.dspy_helpers.configure_dspy_model",
+        ),
     ):
         yield
 
