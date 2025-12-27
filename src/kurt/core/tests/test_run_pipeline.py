@@ -143,7 +143,10 @@ class TestRunPipelineParallel:
             models=["test.model_a", "test.model_b", "test.model_c"],
         )
 
-        with patch("kurt.core.model_runner.DBOS") as mock_dbos:
+        with (
+            patch("kurt.core.model_runner.DBOS") as mock_dbos,
+            patch("kurt.db.database.get_session"),
+        ):
             # Make DBOS.step() return the function directly (no-op decorator)
             mock_dbos.step.return_value = lambda fn: fn
 
@@ -205,7 +208,10 @@ class TestRunPipelineParallel:
 
         start_time = time.time()
 
-        with patch("kurt.core.model_runner.DBOS") as mock_dbos:
+        with (
+            patch("kurt.core.model_runner.DBOS") as mock_dbos,
+            patch("kurt.db.database.get_session"),
+        ):
             mock_dbos.step.return_value = lambda fn: fn
 
             result = await run_pipeline(pipeline, mock_ctx)
@@ -277,7 +283,10 @@ class TestRunPipelineParallel:
 
         start_time = time.time()
 
-        with patch("kurt.core.model_runner.DBOS") as mock_dbos:
+        with (
+            patch("kurt.core.model_runner.DBOS") as mock_dbos,
+            patch("kurt.db.database.get_session"),
+        ):
             mock_dbos.step.return_value = lambda fn: fn
 
             result = await run_pipeline(pipeline, mock_ctx)
@@ -368,7 +377,10 @@ class TestRunPipelineParallel:
             stop_on_error=True,
         )
 
-        with patch("kurt.core.model_runner.DBOS") as mock_dbos:
+        with (
+            patch("kurt.core.model_runner.DBOS") as mock_dbos,
+            patch("kurt.db.database.get_session"),
+        ):
             mock_dbos.step.return_value = lambda fn: fn
 
             result = await run_pipeline(pipeline, mock_ctx)
@@ -415,7 +427,10 @@ class TestRunPipelineParallel:
             stop_on_error=False,
         )
 
-        with patch("kurt.core.model_runner.DBOS") as mock_dbos:
+        with (
+            patch("kurt.core.model_runner.DBOS") as mock_dbos,
+            patch("kurt.db.database.get_session"),
+        ):
             mock_dbos.step.return_value = lambda fn: fn
 
             result = await run_pipeline(pipeline, mock_ctx)

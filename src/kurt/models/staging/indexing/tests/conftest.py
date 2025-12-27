@@ -20,18 +20,12 @@ from uuid import uuid4
 
 import pytest
 
-# Re-export the core testing utilities for convenience
+# Fixtures tmp_project and reset_dbos_state are auto-discovered from src/kurt/conftest.py
 from kurt.core.dspy_helpers import DSPyResult
 from kurt.core.testing import (
     create_extraction_response_factory,
     mock_embeddings,
     mock_run_batch,
-)
-
-# Import fixtures from main test suite (re-export for this package's tests)
-from tests.conftest import (
-    reset_dbos_state,  # noqa: F401
-    tmp_project,  # noqa: F401, F811
 )
 
 

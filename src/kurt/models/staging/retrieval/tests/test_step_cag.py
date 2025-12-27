@@ -9,8 +9,8 @@ from uuid import uuid4
 import numpy as np
 import pytest
 
+# Fixtures tmp_project, reset_dbos_state, mock_retrieval_llm are auto-discovered from conftest
 from kurt.models.staging.retrieval.step_cag import CAGConfig
-from kurt.models.staging.retrieval.tests.conftest import mock_retrieval_llm  # noqa: F401
 from kurt.utils.retrieval import (
     cosine_similarity,
     get_topics_for_entities,
@@ -18,9 +18,6 @@ from kurt.utils.retrieval import (
     search_entities_by_embedding,
 )
 from kurt.utils.retrieval.formatting import format_markdown_legacy as format_markdown
-
-# Import fixtures
-from tests.conftest import reset_dbos_state, tmp_project  # noqa: F401
 
 # ============================================================================
 # Unit Tests
