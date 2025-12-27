@@ -5,7 +5,7 @@ from uuid import uuid4
 import pytest
 
 from kurt.db.database import get_session
-from kurt.db.models import Document, IngestionStatus, SourceType
+from kurt.db.models import Document, SourceType
 from kurt.utils.filtering import DocumentFilters, resolve_filters
 
 
@@ -52,7 +52,6 @@ class TestFilterResolution:
             name="Test Document",
             source_url="https://example.com/doc",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.NOT_FETCHED,
         )
         session.add(doc)
         session.commit()
@@ -78,7 +77,6 @@ class TestFilterResolution:
             name="Test Document",
             source_url="https://example.com/article",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.NOT_FETCHED,
         )
         session.add(doc)
         session.commit()
@@ -99,7 +97,6 @@ class TestFilterResolution:
             name="Test Document",
             content_path="example.com/article.md",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.NOT_FETCHED,
         )
         session.add(doc)
         session.commit()
@@ -120,7 +117,6 @@ class TestFilterResolution:
             name="Doc 1",
             source_url="https://example.com/doc1",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.NOT_FETCHED,
         )
         doc2_id = uuid4()
         doc2 = Document(
@@ -128,7 +124,6 @@ class TestFilterResolution:
             name="Doc 2",
             source_url="https://example.com/doc2",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.NOT_FETCHED,
         )
         session.add_all([doc1, doc2])
         session.commit()
@@ -159,7 +154,6 @@ class TestFilterResolution:
             name="Test Document",
             source_url="https://example.com/doc",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.NOT_FETCHED,
         )
         session.add(doc)
         session.commit()

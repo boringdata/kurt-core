@@ -6,8 +6,10 @@ Discovers content from CMS platforms (Sanity, Contentful, etc.).
 
 import logging
 
+from sqlalchemy import text
+
 from kurt.db.database import get_session
-from kurt.db.models import Document, IngestionStatus, SourceType
+from kurt.db.models import Document, SourceType
 
 logger = logging.getLogger(__name__)
 
@@ -53,11 +55,12 @@ def discover_cms_documents(
         logger.error(f"CMS discovery failed: {e}")
         raise ValueError(f"Failed to discover documents from {platform}/{instance}: {e}")
 
-    # Get content_type_mappings for auto-assigning content types
-    content_type_mappings = cms_config.get("content_type_mappings", {})
+    # Note: content_type is now tracked in staging tables, not on Document
+    # The inferred_content_type from CMS mappings will be stored in landing_discovery
 
     results = []
     session = get_session()
+    new_doc_ids = []
 
     for doc_meta in cms_documents:
         # Get schema/content_type name and slug
@@ -67,20 +70,6 @@ def discover_cms_documents(
 
         # Construct semantic source_url in format: platform/instance/schema/slug
         source_url = f"{platform}/{instance}/{schema}/{slug}"
-
-        # Get inferred content type from schema mapping
-        inferred_content_type = None
-        if schema in content_type_mappings:
-            inferred_content_type_str = content_type_mappings[schema].get("inferred_content_type")
-            if inferred_content_type_str:
-                try:
-                    from kurt.db.models import ContentType
-
-                    inferred_content_type = ContentType[inferred_content_type_str.upper()]
-                except (KeyError, AttributeError):
-                    logger.warning(
-                        f"Invalid content_type '{inferred_content_type_str}' for schema '{schema}'"
-                    )
 
         # Check if document already exists (by source_url)
         existing_doc = session.query(Document).filter(Document.source_url == source_url).first()
@@ -96,21 +85,22 @@ def discover_cms_documents(
             )
             continue
 
-        # Create new document with all metadata
+        # Create new document (status derived from staging tables)
         new_doc = Document(
             source_url=source_url,
             cms_document_id=cms_doc_id,
             cms_platform=platform,
             cms_instance=instance,
             source_type=SourceType.API,
-            ingestion_status=IngestionStatus.NOT_FETCHED,
             title=doc_meta.get("title", "Untitled"),
             description=doc_meta.get("description"),
-            content_type=inferred_content_type,
+            # Status and content_type now derived from staging tables
         )
 
         session.add(new_doc)
         session.commit()
+
+        new_doc_ids.append(str(new_doc.id))
 
         results.append(
             {
@@ -121,8 +111,47 @@ def discover_cms_documents(
             }
         )
 
-        logger.info(f"Created NOT_FETCHED document: {source_url} (CMS ID: {cms_doc_id})")
+        logger.info(f"Created document: {source_url} (CMS ID: {cms_doc_id})")
+
+    # Insert landing_discovery records for new documents
+    _insert_cms_discovery_records(session, new_doc_ids, platform, instance)
 
     session.close()
 
     return results
+
+
+def _insert_cms_discovery_records(
+    session,
+    doc_ids: list[str],
+    platform: str,
+    instance: str,
+) -> None:
+    """Insert landing_discovery records for CMS-discovered documents.
+
+    Args:
+        session: Database session
+        doc_ids: List of document UUIDs as strings
+        platform: CMS platform name
+        instance: CMS instance name
+    """
+    for doc_id in doc_ids:
+        try:
+            session.execute(
+                text("""
+                    INSERT OR IGNORE INTO landing_discovery
+                    (document_id, workflow_id, created_at, updated_at, model_name,
+                     discovery_method, discovery_url, status)
+                    VALUES (:doc_id, 'cms-discovery', datetime('now'), datetime('now'),
+                            'discovery.cms', 'cms', :source_url, 'DISCOVERED')
+                """),
+                {
+                    "doc_id": doc_id,
+                    "source_url": f"{platform}/{instance}",
+                },
+            )
+        except Exception as e:
+            # Table may not exist in some cases (tests without migrations)
+            logger.debug(f"Could not insert landing_discovery record: {e}")
+
+    session.commit()

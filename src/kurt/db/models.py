@@ -149,67 +149,63 @@ class RelationshipType(str, Enum):
 
 
 class Document(SQLModel, table=True):
-    """Document metadata."""
+    """Document identity and content location.
+
+    This is a minimal table storing only core document identity.
+    Status and metadata are derived on the fly from staging tables:
+
+    - Status: derived from landing_discovery, landing_fetch, staging_* tables
+      Use get_document_status(doc_id) to get current status
+
+    - Discovery metadata (discovery_method, discovery_url):
+      Query landing_discovery table
+
+    - Fetch metadata (content_hash, content_length, fetch_engine):
+      Query landing_fetch table
+
+    - Indexing metadata (content_type, has_code_examples, etc.):
+      Query staging_section_extractions table
+
+    Use get_document_with_metadata(doc_id) for a complete view.
+    """
 
     __tablename__ = "documents"
 
     model_config = ConfigDict(extra="allow")  # Allow dynamic attributes like analytics
 
+    # === Identity ===
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     title: Optional[str] = None
     source_type: SourceType
     source_url: Optional[str] = Field(default=None, unique=True, index=True)
-    content_path: Optional[str] = None  # Path to markdown file in local mode
-    cms_document_id: Optional[str] = Field(
-        default=None, index=True
-    )  # External CMS document ID (for fetching from CMS API)
+
+    # === Content location ===
+    content_path: Optional[str] = None  # Path to markdown file in sources/
+
+    # === CMS integration ===
+    cms_document_id: Optional[str] = Field(default=None, index=True)  # External CMS document ID
     cms_platform: Optional[str] = Field(
         default=None, index=True
-    )  # CMS platform name (sanity, contentful, wordpress)
+    )  # CMS platform (sanity, contentful, wordpress)
     cms_instance: Optional[str] = Field(
         default=None, index=True
-    )  # CMS instance name (prod, staging, default)
-    ingestion_status: IngestionStatus = Field(default=IngestionStatus.NOT_FETCHED)
+    )  # CMS instance (prod, staging, default)
 
-    content_hash: Optional[str] = None
+    # === Content metadata (set during fetch, used for change detection) ===
+    content_hash: Optional[str] = Field(default=None, index=True)
     description: Optional[str] = None
     author: Optional[list] = Field(default=None, sa_column=Column(JSON))
     published_date: Optional[datetime] = None
 
-    # Discovery metadata
-    is_chronological: Optional[bool] = Field(
-        default=None
-    )  # Whether content is time-sensitive (blog, release notes)
-    discovery_method: Optional[str] = Field(
-        default=None
-    )  # How document was discovered (sitemap, blogroll, manual)
-    discovery_url: Optional[str] = Field(
-        default=None
-    )  # Source URL where document was discovered (e.g., blogroll page)
-
-    # Indexing metadata (moved from DocumentMetadata table)
+    # === Indexing tracking ===
     indexed_with_hash: Optional[str] = Field(
         default=None, index=True
-    )  # Content hash when last indexed
-    indexed_with_git_commit: Optional[str] = Field(
-        default=None, index=True
-    )  # Git commit hash when last indexed
+    )  # Content hash when last indexed (for incremental indexing)
 
-    content_type: Optional[ContentType] = Field(
-        default=None, index=True
-    )  # Content type classification
-
-    # NOTE: primary_topics and tools_technologies have been removed (Issue #16)
-    # Topics and technologies now live in the knowledge graph as Entity records
-    # Use kurt.content.filtering.list_topics() and list_technologies() to query
-
-    has_code_examples: bool = Field(default=False)  # Contains code blocks
-    has_step_by_step_procedures: bool = Field(default=False)  # Step-by-step instructions
-    has_narrative_structure: bool = Field(default=False)  # Uses storytelling
-
-    # Knowledge graph - document embedding for similarity search
+    # === Knowledge graph ===
     embedding: Optional[bytes] = None  # 512-dim float32 vector (2048 bytes)
 
+    # === Timestamps ===
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 

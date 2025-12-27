@@ -477,3 +477,246 @@ def mock_all_llm_calls():
                 "lm": mock_lm_instance,
                 "configure": mock_configure,
             }
+
+
+def create_staging_tables(session=None):
+    """
+    Create staging tables used for status derivation.
+
+    Uses the model metadata to create tables properly.
+    """
+    from kurt.db.database import get_session
+    from kurt.models.landing.fetch import FetchRow
+    from kurt.models.staging.clustering.step_topic_clustering import TopicClusteringRow
+    from kurt.models.staging.indexing.step_extract_sections import SectionExtractionRow
+
+    if session is None:
+        session = get_session()
+
+    bind = session.get_bind()
+    FetchRow.metadata.create_all(bind)
+    SectionExtractionRow.metadata.create_all(bind)
+    TopicClusteringRow.metadata.create_all(bind)
+
+
+def mark_document_as_fetched(doc_id, session=None, workflow_id="test-workflow"):
+    """
+    Mark a document as FETCHED by inserting into landing_fetch table.
+
+    This is a test utility that simulates what the fetch pipeline does.
+    Status is now derived from staging tables, not stored on Document.
+
+    Args:
+        doc_id: Document UUID (string or UUID object)
+        session: Optional SQLModel session
+        workflow_id: Optional workflow ID for the landing_fetch record
+    """
+    from sqlalchemy import text
+
+    from kurt.db.database import get_session
+
+    if session is None:
+        session = get_session()
+
+    # Convert UUID to string format WITHOUT hyphens to match pipeline behavior
+    # The actual pipeline uses str(row["id"]) from pandas which reads SQLite without hyphens
+    doc_id_str = str(doc_id).replace("-", "")
+
+    # Ensure landing_fetch table exists
+    session.execute(
+        text("""
+            CREATE TABLE IF NOT EXISTS landing_fetch (
+                document_id TEXT PRIMARY KEY,
+                workflow_id TEXT,
+                status TEXT DEFAULT 'pending',
+                content_length INTEGER DEFAULT 0,
+                content_hash TEXT,
+                content_path TEXT,
+                embedding_dims INTEGER DEFAULT 0,
+                links_extracted INTEGER DEFAULT 0,
+                fetch_engine TEXT,
+                public_url TEXT,
+                metadata_json TEXT,
+                error TEXT,
+                model_name TEXT,
+                created_at TEXT,
+                updated_at TEXT
+            )
+        """)
+    )
+
+    # Insert into landing_fetch to mark as FETCHED
+    session.execute(
+        text("""
+            INSERT OR REPLACE INTO landing_fetch
+            (document_id, status, workflow_id, created_at, updated_at, model_name, content_length, links_extracted, embedding_dims)
+            VALUES (:doc_id, 'FETCHED', :workflow_id, datetime('now'), datetime('now'), 'landing.fetch', 100, 0, 512)
+        """),
+        {"doc_id": doc_id_str, "workflow_id": workflow_id},
+    )
+    session.commit()
+
+
+def mark_document_as_indexed(doc_id, session=None, workflow_id="test-workflow"):
+    """
+    Mark a document as INDEXED by creating staging_section_extractions record.
+
+    Status is derived from staging tables - INDEXED means there are records
+    in staging_section_extractions.
+
+    Args:
+        doc_id: Document UUID (string or UUID object)
+        session: Optional SQLModel session
+        workflow_id: Optional workflow ID for the record
+    """
+    from uuid import uuid4
+
+    from sqlalchemy import text
+
+    from kurt.db.database import get_session
+
+    if session is None:
+        session = get_session()
+
+    # Convert UUID to string format WITHOUT hyphens to match pipeline behavior
+    doc_id_str = str(doc_id).replace("-", "")
+
+    try:
+        session.execute(
+            text("""
+                INSERT OR REPLACE INTO staging_section_extractions
+                (id, document_id, section_index, section_header, section_content, workflow_id)
+                VALUES (:id, :doc_id, 0, 'Test Section', 'Test content', :workflow_id)
+            """),
+            {"id": str(uuid4()).replace("-", ""), "doc_id": doc_id_str, "workflow_id": workflow_id},
+        )
+        session.commit()
+    except Exception as e:
+        import logging
+
+        logging.debug(f"Could not mark document as indexed: {e}")
+
+
+def set_document_content_type(doc_id, content_type, session=None, workflow_id="test-workflow"):
+    """
+    Set document content_type in staging_topic_clustering table.
+
+    Content type is now stored in the staging_topic_clustering table,
+    not on the Document model directly.
+
+    Args:
+        doc_id: Document UUID (string or UUID object)
+        content_type: Content type string (e.g., 'tutorial', 'reference')
+        session: Optional SQLModel session
+        workflow_id: Optional workflow ID for the record
+    """
+    from sqlalchemy import text
+
+    from kurt.db.database import get_session
+
+    if session is None:
+        session = get_session()
+
+    # Convert UUID to string format WITHOUT hyphens to match pipeline behavior
+    doc_id_str = str(doc_id).replace("-", "")
+
+    try:
+        session.execute(
+            text("""
+                INSERT OR REPLACE INTO staging_topic_clustering
+                (document_id, workflow_id, content_type, created_at, updated_at)
+                VALUES (:doc_id, :workflow_id, :content_type, datetime('now'), datetime('now'))
+            """),
+            {
+                "doc_id": doc_id_str,
+                "content_type": content_type.lower(),
+                "workflow_id": workflow_id,
+            },
+        )
+        session.commit()
+    except Exception as e:
+        import logging
+
+        logging.debug(f"Could not set document content type: {e}")
+
+
+def get_doc_status(doc_id, session=None):
+    """
+    Get document status from staging tables.
+
+    Returns: 'INDEXED', 'FETCHED', 'DISCOVERED', 'NOT_FETCHED', or 'ERROR'
+
+    Status hierarchy: ERROR > INDEXED > FETCHED > NOT_FETCHED
+    - ERROR: Has records in landing_fetch with status='ERROR'
+    - INDEXED: Has records in staging_section_extractions
+    - FETCHED: Has records in landing_fetch with status='FETCHED'
+    - NOT_FETCHED: Default state
+
+    Note: Creates a fresh session to avoid stale cache issues with SQLite
+    when the status was set by a different process (e.g., CLI command).
+    """
+    from sqlalchemy import text
+
+    from kurt.db.database import get_session
+    from kurt.db.documents import _table_exists
+
+    if session is None:
+        session = get_session()
+
+    # The pipeline stores document_id WITH hyphens (from str(row["id"]) where
+    # row["id"] is a pandas string read from SQLite which preserves hyphens).
+    # Test helpers may store without hyphens.
+    # Query with both formats to handle mixed data.
+    doc_id_str = str(doc_id)
+    doc_id_no_hyphens = doc_id_str.replace("-", "")
+
+    # Check landing_fetch for ERROR status FIRST (highest priority)
+    if _table_exists(session, "landing_fetch"):
+        try:
+            # Query with both formats to handle mixed data
+            result = session.execute(
+                text("""
+                    SELECT status FROM landing_fetch
+                    WHERE document_id = :doc_id OR document_id = :doc_id_no_hyphens
+                    LIMIT 1
+                """),
+                {"doc_id": doc_id_str, "doc_id_no_hyphens": doc_id_no_hyphens},
+            ).fetchone()
+            if result and result.status == "ERROR":
+                return "ERROR"
+        except Exception:
+            pass
+
+    # Check staging_section_extractions for INDEXED status
+    if _table_exists(session, "staging_section_extractions"):
+        try:
+            result = session.execute(
+                text("""
+                    SELECT COUNT(*) as count FROM staging_section_extractions
+                    WHERE document_id = :doc_id OR document_id = :doc_id_no_hyphens
+                """),
+                {"doc_id": doc_id_str, "doc_id_no_hyphens": doc_id_no_hyphens},
+            ).fetchone()
+            if result and result.count > 0:
+                return "INDEXED"
+        except Exception:
+            pass
+
+    # Check landing_fetch for FETCHED status
+    if _table_exists(session, "landing_fetch"):
+        try:
+            # Query with both formats to handle mixed data
+            result = session.execute(
+                text("""
+                    SELECT status FROM landing_fetch
+                    WHERE document_id = :doc_id OR document_id = :doc_id_no_hyphens
+                    LIMIT 1
+                """),
+                {"doc_id": doc_id_str, "doc_id_no_hyphens": doc_id_no_hyphens},
+            ).fetchone()
+            if result and result.status == "FETCHED":
+                return "FETCHED"
+        except Exception:
+            pass
+
+    return "NOT_FETCHED"

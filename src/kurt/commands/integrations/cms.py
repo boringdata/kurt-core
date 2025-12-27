@@ -1097,7 +1097,7 @@ def status_cmd(check_health: bool):
     from sqlmodel import func, select
 
     from kurt.db.database import get_session
-    from kurt.db.models import Document, IngestionStatus
+    from kurt.db.models import Document
 
     try:
         config = load_cms_config()
@@ -1123,13 +1123,22 @@ def status_cmd(check_health: bool):
                 )
                 total = session.exec(total_stmt).one()
 
-                fetched_stmt = (
-                    select(func.count(Document.id))
-                    .where(Document.cms_platform == platform)
-                    .where(Document.cms_instance == instance_name)
-                    .where(Document.ingestion_status == IngestionStatus.FETCHED)
-                )
-                fetched = session.exec(fetched_stmt).one()
+                # Count fetched documents using staging table
+                # Status is now derived from landing_fetch table
+                from sqlalchemy import text
+
+                fetched_sql = text("""
+                    SELECT COUNT(DISTINCT d.id)
+                    FROM documents d
+                    INNER JOIN landing_fetch lf ON CAST(d.id AS TEXT) = lf.document_id
+                    WHERE d.cms_platform = :platform
+                    AND d.cms_instance = :instance_name
+                    AND lf.status = 'FETCHED'
+                """)
+                fetched_result = session.execute(
+                    fetched_sql, {"platform": platform, "instance_name": instance_name}
+                ).scalar()
+                fetched = fetched_result or 0
 
                 # Show config
                 console.print(f"[green]✓[/green] {platform.capitalize()} ({instance_name})")

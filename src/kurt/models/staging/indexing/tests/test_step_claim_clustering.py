@@ -429,6 +429,15 @@ class TestClaimClusteringModel:
     """Test the claim_clustering model function."""
 
     @pytest.fixture(autouse=True)
+    def setup(self, tmp_project):
+        """Set up test database before each test.
+
+        Requires tmp_project fixture to ensure database is set up properly
+        before model calls get_session() internally.
+        """
+        pass
+
+    @pytest.fixture(autouse=True)
     def mock_embeddings(self):
         """Mock embedding generation for deterministic tests."""
         # Patch at the source module since it's imported inside the function

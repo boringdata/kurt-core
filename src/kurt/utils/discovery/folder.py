@@ -10,11 +10,12 @@ from fnmatch import fnmatch
 from pathlib import Path
 from uuid import uuid4
 
+from sqlalchemy import text
 from sqlmodel import select
 
 from kurt.config import load_config
 from kurt.db.database import get_session
-from kurt.db.models import Document, IngestionStatus, SourceType
+from kurt.db.models import Document, SourceType
 from kurt.utils.file_utils import compute_file_hash
 from kurt.utils.source_detection import discover_markdown_files, validate_file_extension
 
@@ -138,7 +139,7 @@ def _add_file_to_db(file_path: Path) -> dict:
         source_type=SourceType.FILE_UPLOAD,
         source_url=f"file://{file_path.absolute()}",
         content_path=relative_content_path,
-        ingestion_status=IngestionStatus.FETCHED,  # Already have content
+        # Status now derived from staging tables, not stored on Document
         content_hash=content_hash,
     )
 
@@ -146,8 +147,49 @@ def _add_file_to_db(file_path: Path) -> dict:
     session.commit()
     session.refresh(doc)
 
+    # Mark as fetched in landing_fetch (file content already available)
+    _mark_file_as_fetched(session, str(doc.id), len(content), content_hash)
+
     return {
         "doc_id": str(doc.id),
         "created": True,
         "title": title,
     }
+
+
+def _mark_file_as_fetched(
+    session,
+    doc_id: str,
+    content_length: int,
+    content_hash: str,
+) -> None:
+    """Mark a file-based document as fetched in landing_fetch table.
+
+    Since file-based documents already have their content available,
+    we mark them as FETCHED immediately during discovery.
+
+    Args:
+        session: Database session
+        doc_id: Document UUID as string
+        content_length: Length of content in chars
+        content_hash: Hash of content for deduplication
+    """
+    try:
+        session.execute(
+            text("""
+                INSERT OR REPLACE INTO landing_fetch
+                (document_id, workflow_id, created_at, updated_at, model_name,
+                 status, content_length, content_hash, fetch_engine)
+                VALUES (:doc_id, 'file-discovery', datetime('now'), datetime('now'),
+                        'discovery.folder', 'FETCHED', :content_length, :content_hash, 'file')
+            """),
+            {
+                "doc_id": doc_id,
+                "content_length": content_length,
+                "content_hash": content_hash,
+            },
+        )
+        session.commit()
+    except Exception as e:
+        # Table may not exist in some cases (tests without migrations)
+        logger.debug(f"Could not insert landing_fetch record: {e}")

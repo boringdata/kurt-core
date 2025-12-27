@@ -271,17 +271,10 @@ def _fetch_document(doc: pd.Series, config: FetchConfig) -> dict:
 
 
 def _mark_document_as_error(doc_id: Any, error_message: str) -> None:
-    """Mark document as ERROR in database."""
-    from kurt.db.database import get_session
-    from kurt.db.models import Document, IngestionStatus
+    """Log document error (errors are now tracked in landing_fetch table).
 
-    try:
-        session = get_session()
-        doc = session.get(Document, UUID(str(doc_id)))
-        if doc:
-            doc.ingestion_status = IngestionStatus.ERROR
-            session.add(doc)
-            session.commit()
-            logger.debug(f"Marked document {doc_id} as ERROR")
-    except Exception as e:
-        logger.warning(f"Could not mark document {doc_id} as error: {e}")
+    Note: Status is now derived from staging tables. The error is stored
+    in the FetchRow.error field which is written by the main fetch function.
+    This function just logs the error for debugging purposes.
+    """
+    logger.debug(f"Document {doc_id} marked as error: {error_message}")

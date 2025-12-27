@@ -225,30 +225,25 @@ def resolve_pipeline(target: str) -> PipelineConfig:
         namespace = _import_models_from_path(path)
         return get_pipeline(namespace)
 
-    # Check if it's a specific model name
+    # Check if it's a specific model name (already registered)
     if ModelRegistry.get(target):
         logger.info(f"Running single model: {target}")
         return PipelineConfig(name=target, models=[target])
 
-    # Try importing known model packages for the namespace
+    # dbt-style folder resolution: namespace maps to kurt/models/<namespace>/
+    # e.g., "staging.indexing" -> kurt.models.staging.indexing
     namespace = target
+    module_path = f"kurt.models.{namespace}"
     try:
-        # Import models from kurt.models package (new location)
-        # Map namespace aliases to model packages
-        namespace_to_package = {
-            "landing": "kurt.models.landing",
-            "staging": "kurt.models.staging",
-            "indexing": "kurt.models.staging",  # Alias: indexing -> staging
-        }
+        importlib.import_module(module_path)
+        logger.debug(f"Imported {module_path}")
+    except ImportError as e:
+        logger.debug(f"Could not import {module_path}: {e}")
 
-        if namespace in namespace_to_package:
-            try:
-                importlib.import_module(namespace_to_package[namespace])
-                logger.debug(f"Imported {namespace_to_package[namespace]}")
-            except ImportError as e:
-                logger.debug(f"Could not import {namespace_to_package[namespace]}: {e}")
-    except Exception as e:
-        logger.debug(f"Could not auto-import models for namespace {namespace}: {e}")
+    # Check again after import - model may now be registered
+    if ModelRegistry.get(target):
+        logger.info(f"Running single model: {target}")
+        return PipelineConfig(name=target, models=[target])
 
     # Discover pipeline from namespace
     pipeline = get_pipeline(namespace)

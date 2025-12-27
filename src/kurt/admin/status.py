@@ -5,35 +5,67 @@ from typing import Dict, List
 
 from kurt.config import load_config
 from kurt.db.database import get_session
-from kurt.db.models import Document, IngestionStatus
+from kurt.db.models import Document
 
 
 def get_document_counts() -> Dict[str, int]:
-    """Get document counts by status."""
+    """Get document counts by status.
+
+    Status is now derived from staging tables:
+    - INDEXED: Has records in staging_section_extractions
+    - FETCHED: Has records in landing_fetch with status=FETCHED
+    - NOT_FETCHED: No records in landing_fetch with status=FETCHED
+    - ERROR: Has error in any staging table
+    """
     try:
+        from sqlalchemy import text
+
         session = get_session()
 
         total = session.query(Document).count()
-        not_fetched = (
-            session.query(Document)
-            .filter(Document.ingestion_status == IngestionStatus.NOT_FETCHED)
-            .count()
-        )
-        fetched = (
-            session.query(Document)
-            .filter(Document.ingestion_status == IngestionStatus.FETCHED)
-            .count()
-        )
-        error = (
-            session.query(Document)
-            .filter(Document.ingestion_status == IngestionStatus.ERROR)
-            .count()
-        )
+
+        # Count fetched (has landing_fetch with FETCHED status)
+        try:
+            fetched_sql = text("""
+                SELECT COUNT(DISTINCT document_id) as count
+                FROM landing_fetch
+                WHERE status = 'FETCHED'
+            """)
+            fetched = session.execute(fetched_sql).scalar() or 0
+        except Exception:
+            fetched = 0
+
+        # Count indexed (has section extractions)
+        try:
+            indexed_sql = text("""
+                SELECT COUNT(DISTINCT document_id) as count
+                FROM staging_section_extractions
+            """)
+            indexed = session.execute(indexed_sql).scalar() or 0
+        except Exception:
+            indexed = 0
+
+        # Count errors
+        try:
+            error_sql = text("""
+                SELECT COUNT(DISTINCT document_id) as count
+                FROM (
+                    SELECT document_id FROM landing_fetch WHERE error IS NOT NULL
+                    UNION
+                    SELECT document_id FROM landing_discovery WHERE error IS NOT NULL
+                )
+            """)
+            error = session.execute(error_sql).scalar() or 0
+        except Exception:
+            error = 0
+
+        not_fetched = total - fetched
 
         return {
             "total": total,
             "not_fetched": not_fetched,
             "fetched": fetched,
+            "indexed": indexed,
             "error": error,
         }
     except RuntimeError:
@@ -48,6 +80,7 @@ def get_document_counts() -> Dict[str, int]:
             "total": 0,
             "not_fetched": 0,
             "fetched": 0,
+            "indexed": 0,
             "error": 0,
         }
 

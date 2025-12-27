@@ -174,7 +174,6 @@ class TestContentListCommand:
         from kurt.db.models import (
             Document,
             DocumentClusterEdge,
-            IngestionStatus,
             SourceType,
             TopicCluster,
         )
@@ -190,13 +189,11 @@ class TestContentListCommand:
             id=uuid4(),
             source_url="https://example.com/tutorial",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
         )
         doc_not_in_cluster = Document(
             id=uuid4(),
             source_url="https://example.com/other",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
         )
         session.add(doc_in_cluster)
         session.add(doc_not_in_cluster)
@@ -212,8 +209,8 @@ class TestContentListCommand:
         assert result.exit_code == 0
         # Check that only one document is shown (the one in cluster)
         assert "Documents (1 shown)" in result.output or "documents (1 shown)" in result.output
-        # Should show the tutorial URL (might be truncated)
-        assert "tuto" in result.output.lower()
+        # Should show the document ID (URLs may be truncated)
+        assert str(doc_in_cluster.id)[:8] in result.output
 
     def test_content_list_with_content_type_filter(self, isolated_cli_runner):
         """Test --with-content-type filter."""
@@ -222,37 +219,41 @@ class TestContentListCommand:
         # Create test documents with different content types
         from uuid import uuid4
 
+        from kurt.conftest import create_staging_tables, set_document_content_type
         from kurt.db.database import get_session
-        from kurt.db.models import ContentType, Document, IngestionStatus, SourceType
+        from kurt.db.models import Document, SourceType
 
         session = get_session()
 
-        # Create documents with different content types
+        # Create staging tables first
+        create_staging_tables(session)
+
+        # Create documents (content_type now stored in staging_topic_clustering)
         doc_tutorial = Document(
             id=uuid4(),
             source_url="https://example.com/tutorial",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
-            content_type=ContentType.TUTORIAL,
         )
         doc_guide = Document(
             id=uuid4(),
             source_url="https://example.com/guide",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
-            content_type=ContentType.GUIDE,
         )
         session.add(doc_tutorial)
         session.add(doc_guide)
         session.commit()
+
+        # Set content types in staging table
+        set_document_content_type(doc_tutorial.id, "tutorial", session)
+        set_document_content_type(doc_guide.id, "guide", session)
 
         # Test filtering by content type
         result = runner.invoke(main, ["content", "list", "--with-content-type", "tutorial"])
         assert result.exit_code == 0, f"Command failed: {result.output}"
         # Should only show tutorial (check for 1 document shown)
         assert "Documents (1 shown)" in result.output or "documents (1 shown)" in result.output
-        # Should show the tutorial URL (might be truncated)
-        assert "tuto" in result.output.lower()
+        # Should show the document ID (URLs may be truncated)
+        assert str(doc_tutorial.id)[:8] in result.output
 
     def test_content_list_with_limit(self, isolated_cli_runner):
         """Test --limit parameter."""
@@ -270,7 +271,7 @@ class TestContentListCommand:
         from uuid import uuid4
 
         from kurt.db.database import get_session
-        from kurt.db.models import Document, IngestionStatus, SourceType
+        from kurt.db.models import Document, SourceType
 
         session = get_session()
 
@@ -280,7 +281,6 @@ class TestContentListCommand:
             id=uuid4(),
             source_url="https://example.com",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             title="Root Page",
         )
         # Depth 1: https://example.com/docs
@@ -288,7 +288,6 @@ class TestContentListCommand:
             id=uuid4(),
             source_url="https://example.com/docs",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             title="Docs Index",
         )
         # Depth 2: https://example.com/docs/guide
@@ -296,7 +295,6 @@ class TestContentListCommand:
             id=uuid4(),
             source_url="https://example.com/docs/guide",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             title="Guide",
         )
         # Depth 3: https://example.com/docs/guide/intro
@@ -304,7 +302,6 @@ class TestContentListCommand:
             id=uuid4(),
             source_url="https://example.com/docs/guide/intro",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             title="Introduction",
         )
         session.add_all([doc_depth_0, doc_depth_1, doc_depth_2, doc_depth_3])
@@ -330,7 +327,7 @@ class TestContentListCommand:
         from uuid import uuid4
 
         from kurt.db.database import get_session
-        from kurt.db.models import Document, IngestionStatus, SourceType
+        from kurt.db.models import Document, SourceType
 
         session = get_session()
 
@@ -339,14 +336,12 @@ class TestContentListCommand:
             id=uuid4(),
             source_url="https://example.com",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             title="Root",
         )
         doc2 = Document(
             id=uuid4(),
             source_url="https://example.com/docs/guide",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             title="Guide",
         )
         session.add_all([doc1, doc2])
@@ -651,7 +646,7 @@ class TestContentGetCommand:
         from uuid import uuid4
 
         from kurt.db.database import get_session
-        from kurt.db.models import Document, IngestionStatus, SourceType
+        from kurt.db.models import Document, SourceType
 
         session = get_session()
         doc_id = uuid4()
@@ -659,7 +654,6 @@ class TestContentGetCommand:
             id=doc_id,
             source_url="https://example.com/test-doc",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             title="Test Document",
             description="A test document for testing",
         )
@@ -681,7 +675,7 @@ class TestContentGetCommand:
         from uuid import uuid4
 
         from kurt.db.database import get_session
-        from kurt.db.models import Document, IngestionStatus, SourceType
+        from kurt.db.models import Document, SourceType
 
         session = get_session()
         doc_id = uuid4()
@@ -689,7 +683,6 @@ class TestContentGetCommand:
             id=doc_id,
             source_url="https://example.com/partial-test",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             title="Partial UUID Test",
         )
         session.add(doc)
@@ -710,7 +703,7 @@ class TestContentGetCommand:
         from uuid import uuid4
 
         from kurt.db.database import get_session
-        from kurt.db.models import Document, IngestionStatus, SourceType
+        from kurt.db.models import Document, SourceType
 
         session = get_session()
         doc_id = uuid4()
@@ -718,7 +711,6 @@ class TestContentGetCommand:
             id=doc_id,
             source_url="https://example.com/json-test",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             title="JSON Format Test",
             description="Testing JSON output",
         )
@@ -753,7 +745,7 @@ class TestContentDeleteCommandExpanded:
         from uuid import uuid4
 
         from kurt.db.database import get_session
-        from kurt.db.models import Document, IngestionStatus, SourceType
+        from kurt.db.models import Document, SourceType
 
         session = get_session()
         doc_id = uuid4()
@@ -761,7 +753,6 @@ class TestContentDeleteCommandExpanded:
             id=doc_id,
             source_url="https://example.com/delete-test",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             title="Document to Delete",
         )
         session.add(doc)
@@ -790,7 +781,7 @@ class TestContentDeleteCommandExpanded:
         from uuid import uuid4
 
         from kurt.db.database import get_session
-        from kurt.db.models import Document, IngestionStatus, SourceType
+        from kurt.db.models import Document, SourceType
 
         session = get_session()
         doc_id = uuid4()
@@ -798,7 +789,6 @@ class TestContentDeleteCommandExpanded:
             id=doc_id,
             source_url="https://example.com/cancel-test",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             title="Document Not Deleted",
         )
         session.add(doc)
@@ -823,7 +813,7 @@ class TestContentDeleteCommandExpanded:
         from uuid import uuid4
 
         from kurt.db.database import get_session
-        from kurt.db.models import Document, IngestionStatus, SourceType
+        from kurt.db.models import Document, SourceType
 
         session = get_session()
         doc_id = uuid4()
@@ -831,7 +821,6 @@ class TestContentDeleteCommandExpanded:
             id=doc_id,
             source_url="https://example.com/force-delete",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             title="Force Delete Test",
         )
         session.add(doc)
@@ -860,7 +849,7 @@ class TestContentDeleteCommandExpanded:
         from uuid import uuid4
 
         from kurt.db.database import get_session
-        from kurt.db.models import Document, IngestionStatus, SourceType
+        from kurt.db.models import Document, SourceType
 
         session = get_session()
         doc_id = uuid4()
@@ -874,7 +863,6 @@ class TestContentDeleteCommandExpanded:
             id=doc_id,
             source_url="https://example.com/with-content",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             title="Document with Content",
             content_path="test-content.md",
         )
@@ -903,7 +891,7 @@ class TestContentDeleteCommandExpanded:
         from uuid import uuid4
 
         from kurt.db.database import get_session
-        from kurt.db.models import Document, IngestionStatus, SourceType
+        from kurt.db.models import Document, SourceType
 
         session = get_session()
         doc_id = uuid4()
@@ -917,7 +905,6 @@ class TestContentDeleteCommandExpanded:
             id=doc_id,
             source_url="https://example.com/keep-content",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
             title="Document Keep Content",
             content_path="keep-content.md",
         )
@@ -949,7 +936,7 @@ class TestContentStatsCommandExpanded:
         from uuid import uuid4
 
         from kurt.db.database import get_session
-        from kurt.db.models import Document, IngestionStatus, SourceType
+        from kurt.db.models import Document, SourceType
 
         session = get_session()
 
@@ -958,19 +945,16 @@ class TestContentStatsCommandExpanded:
             id=uuid4(),
             source_url="https://docs.example.com/guide",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
         )
         doc2 = Document(
             id=uuid4(),
             source_url="https://docs.example.com/tutorial",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
         )
         doc3 = Document(
             id=uuid4(),
             source_url="https://blog.example.com/post",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.NOT_FETCHED,
         )
         session.add_all([doc1, doc2, doc3])
         session.commit()
@@ -992,24 +976,30 @@ class TestContentStatsCommandExpanded:
         # Create some test documents
         from uuid import uuid4
 
+        from kurt.conftest import create_staging_tables, mark_document_as_fetched
         from kurt.db.database import get_session
-        from kurt.db.models import Document, IngestionStatus, SourceType
+        from kurt.db.models import Document, SourceType
 
         session = get_session()
+
+        # Create staging tables for status derivation
+        create_staging_tables(session)
+
         doc1 = Document(
             id=uuid4(),
             source_url="https://example.com/doc1",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.FETCHED,
         )
         doc2 = Document(
             id=uuid4(),
             source_url="https://example.com/doc2",
             source_type=SourceType.URL,
-            ingestion_status=IngestionStatus.NOT_FETCHED,
         )
         session.add_all([doc1, doc2])
         session.commit()
+
+        # Mark doc1 as fetched (status is derived from staging tables)
+        mark_document_as_fetched(doc1.id, session)
 
         # Test JSON output
         result = runner.invoke(main, ["content", "stats", "--format", "json"])
