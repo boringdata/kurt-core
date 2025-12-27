@@ -976,10 +976,15 @@ class TestContentStatsCommandExpanded:
         # Create some test documents
         from uuid import uuid4
 
+        from kurt.conftest import create_staging_tables, mark_document_as_fetched
         from kurt.db.database import get_session
         from kurt.db.models import Document, SourceType
 
         session = get_session()
+
+        # Create staging tables for status derivation
+        create_staging_tables(session)
+
         doc1 = Document(
             id=uuid4(),
             source_url="https://example.com/doc1",
@@ -992,6 +997,9 @@ class TestContentStatsCommandExpanded:
         )
         session.add_all([doc1, doc2])
         session.commit()
+
+        # Mark doc1 as fetched (status is derived from staging tables)
+        mark_document_as_fetched(doc1.id, session)
 
         # Test JSON output
         result = runner.invoke(main, ["content", "stats", "--format", "json"])

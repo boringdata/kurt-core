@@ -257,6 +257,46 @@ def add_documents_for_files(
         for doc in created_docs:
             session.refresh(doc)
 
+        # Mark local file documents as FETCHED in landing_fetch table
+        # (status is now derived from staging tables)
+        from sqlalchemy import text
+
+        # Create landing_fetch table if it doesn't exist
+        session.execute(
+            text("""
+                CREATE TABLE IF NOT EXISTS landing_fetch (
+                    document_id TEXT PRIMARY KEY,
+                    workflow_id TEXT,
+                    status TEXT DEFAULT 'pending',
+                    content_length INTEGER DEFAULT 0,
+                    content_hash TEXT,
+                    content_path TEXT,
+                    embedding_dims INTEGER DEFAULT 0,
+                    links_extracted INTEGER DEFAULT 0,
+                    fetch_engine TEXT,
+                    public_url TEXT,
+                    metadata_json TEXT,
+                    error TEXT,
+                    model_name TEXT,
+                    created_at TEXT,
+                    updated_at TEXT
+                )
+            """)
+        )
+
+        for doc in created_docs:
+            if doc.id:
+                doc_id_str = str(doc.id).replace("-", "")
+                session.execute(
+                    text("""
+                        INSERT OR REPLACE INTO landing_fetch
+                        (document_id, workflow_id, status, content_path, fetch_engine, created_at, updated_at)
+                        VALUES (:doc_id, 'local-file', 'FETCHED', :content_path, 'local', datetime('now'), datetime('now'))
+                    """),
+                    {"doc_id": doc_id_str, "content_path": doc.content_path},
+                )
+        session.commit()
+
     # Count newly created docs (local files have content, so count all with IDs)
     new_count = len([d for d in created_docs if d.id])
 

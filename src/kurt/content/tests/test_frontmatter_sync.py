@@ -11,8 +11,9 @@ from uuid import uuid4
 
 import pytest
 
+from kurt.conftest import create_staging_tables, mark_document_as_fetched, set_document_content_type
 from kurt.db.metadata_sync import write_frontmatter_to_file
-from kurt.db.models import ContentType, Document, SourceType
+from kurt.db.models import Document, SourceType
 
 
 @pytest.fixture
@@ -60,6 +61,10 @@ def test_db_with_triggers(temp_project_dir, monkeypatch):
     # Create all tables
     SQLModel.metadata.create_all(engine)
 
+    # Create staging tables for status derivation
+    with Session(engine) as tmp_session:
+        create_staging_tables(tmp_session)
+
     # Setup trigger manually (same as in migration)
     conn = sqlite3.connect(str(db_path))
     cursor = conn.cursor()
@@ -67,7 +72,6 @@ def test_db_with_triggers(temp_project_dir, monkeypatch):
         CREATE TRIGGER IF NOT EXISTS documents_metadata_sync_trigger
         AFTER UPDATE ON documents
         WHEN (
-            NEW.content_type != OLD.content_type OR
             NEW.title != OLD.title OR
             NEW.description != OLD.description OR
             NEW.author != OLD.author OR
@@ -134,9 +138,12 @@ def test_frontmatter_sync_on_index(test_db_with_triggers):
         assert content_after_create == original_content
         assert not content_after_create.startswith("---")
 
+        # Mark document as fetched (status is derived from staging tables)
+        mark_document_as_fetched(doc.id, session)
+
         # Now update the document with metadata (simulating indexing)
-        doc.content_type = ContentType.TUTORIAL
-        doc.has_code_examples = True
+        # content_type is now stored in staging_topic_clustering table
+        set_document_content_type(doc.id, "tutorial", session)
         doc.indexed_with_hash = "abc123"
 
         session.add(doc)
@@ -179,7 +186,6 @@ def test_frontmatter_sync_on_index(test_db_with_triggers):
         assert "- SQLite" in content_after_update
         assert "technologies:" in content_after_update
         assert "- pytest" in content_after_update
-        assert "has_code_examples: true" in content_after_update
 
         # Original content should still be there after the frontmatter
         assert "# Test Page" in content_after_update
@@ -224,8 +230,11 @@ def test_frontmatter_sync_updates_existing_frontmatter(test_db_with_triggers):
         session.commit()
         session.refresh(doc)
 
+        # Mark document as fetched (status is derived from staging tables)
+        mark_document_as_fetched(doc.id, session)
+
         # First update: add initial metadata
-        doc.content_type = ContentType.GUIDE
+        set_document_content_type(doc.id, "guide", session)
         doc.indexed_with_hash = "hash1"
 
         session.add(doc)
@@ -257,7 +266,7 @@ def test_frontmatter_sync_updates_existing_frontmatter(test_db_with_triggers):
         assert "- Initial" in content_after_first_update
 
         # Second update: change metadata
-        doc.content_type = ContentType.TUTORIAL
+        set_document_content_type(doc.id, "tutorial", session)
         doc.indexed_with_hash = "hash2"
 
         session.add(doc)
@@ -349,7 +358,10 @@ def test_frontmatter_sync_skip_when_no_metadata(test_db_with_triggers):
         session.commit()
         session.refresh(doc)
 
-        # Update something, but still no metadata
+        # Mark document as fetched (status is derived from staging tables)
+        mark_document_as_fetched(doc.id, session)
+
+        # Update something, but still no metadata (no content_type set in staging table)
         doc.title = "Updated Title"
 
         session.add(doc)

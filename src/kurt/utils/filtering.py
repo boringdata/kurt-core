@@ -713,9 +713,10 @@ def select_documents_for_fetch(
     excluded_fetched_count = 0
     if not with_status and not refetch and docs_before_status_filter:
         # Query landing_fetch to find which docs are fetched
+        # Note: landing_fetch stores document_id WITHOUT hyphens
         from sqlalchemy import text
 
-        doc_ids_str = ",".join(f"'{str(d.id)}'" for d in docs_before_status_filter)
+        doc_ids_str = ",".join(f"'{str(d.id).replace('-', '')}'" for d in docs_before_status_filter)
         try:
             fetched_sql = text(f"""
                 SELECT COUNT(DISTINCT document_id) as count

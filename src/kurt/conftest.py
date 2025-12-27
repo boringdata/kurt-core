@@ -522,22 +522,39 @@ def mark_document_as_fetched(doc_id, session=None, workflow_id="test-workflow"):
     # The actual pipeline uses str(row["id"]) from pandas which reads SQLite without hyphens
     doc_id_str = str(doc_id).replace("-", "")
 
-    try:
-        # Insert into landing_fetch to mark as FETCHED
-        session.execute(
-            text("""
-                INSERT OR REPLACE INTO landing_fetch
-                (document_id, status, workflow_id, created_at, updated_at, model_name, content_length, links_extracted, embedding_dims)
-                VALUES (:doc_id, 'FETCHED', :workflow_id, datetime('now'), datetime('now'), 'landing.fetch', 100, 0, 512)
-            """),
-            {"doc_id": doc_id_str, "workflow_id": workflow_id},
-        )
-        session.commit()
-    except Exception as e:
-        # Table may not exist in all test setups
-        import logging
+    # Ensure landing_fetch table exists
+    session.execute(
+        text("""
+            CREATE TABLE IF NOT EXISTS landing_fetch (
+                document_id TEXT PRIMARY KEY,
+                workflow_id TEXT,
+                status TEXT DEFAULT 'pending',
+                content_length INTEGER DEFAULT 0,
+                content_hash TEXT,
+                content_path TEXT,
+                embedding_dims INTEGER DEFAULT 0,
+                links_extracted INTEGER DEFAULT 0,
+                fetch_engine TEXT,
+                public_url TEXT,
+                metadata_json TEXT,
+                error TEXT,
+                model_name TEXT,
+                created_at TEXT,
+                updated_at TEXT
+            )
+        """)
+    )
 
-        logging.debug(f"Could not mark document as fetched: {e}")
+    # Insert into landing_fetch to mark as FETCHED
+    session.execute(
+        text("""
+            INSERT OR REPLACE INTO landing_fetch
+            (document_id, status, workflow_id, created_at, updated_at, model_name, content_length, links_extracted, embedding_dims)
+            VALUES (:doc_id, 'FETCHED', :workflow_id, datetime('now'), datetime('now'), 'landing.fetch', 100, 0, 512)
+        """),
+        {"doc_id": doc_id_str, "workflow_id": workflow_id},
+    )
+    session.commit()
 
 
 def mark_document_as_indexed(doc_id, session=None, workflow_id="test-workflow"):
@@ -623,12 +640,83 @@ def set_document_content_type(doc_id, content_type, session=None, workflow_id="t
         logging.debug(f"Could not set document content type: {e}")
 
 
-def get_doc_status(doc_id):
+def get_doc_status(doc_id, session=None):
     """
     Get document status from staging tables.
 
     Returns: 'INDEXED', 'FETCHED', 'DISCOVERED', 'NOT_FETCHED', or 'ERROR'
-    """
-    from kurt.db.documents import get_document_status
 
-    return get_document_status(str(doc_id))["status"]
+    Status hierarchy: ERROR > INDEXED > FETCHED > NOT_FETCHED
+    - ERROR: Has records in landing_fetch with status='ERROR'
+    - INDEXED: Has records in staging_section_extractions
+    - FETCHED: Has records in landing_fetch with status='FETCHED'
+    - NOT_FETCHED: Default state
+
+    Note: Creates a fresh session to avoid stale cache issues with SQLite
+    when the status was set by a different process (e.g., CLI command).
+    """
+    from sqlalchemy import text
+
+    from kurt.db.database import get_session
+    from kurt.db.documents import _table_exists
+
+    if session is None:
+        session = get_session()
+
+    # The pipeline stores document_id WITH hyphens (from str(row["id"]) where
+    # row["id"] is a pandas string read from SQLite which preserves hyphens).
+    # Test helpers may store without hyphens.
+    # Query with both formats to handle mixed data.
+    doc_id_str = str(doc_id)
+    doc_id_no_hyphens = doc_id_str.replace("-", "")
+
+    # Check landing_fetch for ERROR status FIRST (highest priority)
+    if _table_exists(session, "landing_fetch"):
+        try:
+            # Query with both formats to handle mixed data
+            result = session.execute(
+                text("""
+                    SELECT status FROM landing_fetch
+                    WHERE document_id = :doc_id OR document_id = :doc_id_no_hyphens
+                    LIMIT 1
+                """),
+                {"doc_id": doc_id_str, "doc_id_no_hyphens": doc_id_no_hyphens},
+            ).fetchone()
+            if result and result.status == "ERROR":
+                return "ERROR"
+        except Exception:
+            pass
+
+    # Check staging_section_extractions for INDEXED status
+    if _table_exists(session, "staging_section_extractions"):
+        try:
+            result = session.execute(
+                text("""
+                    SELECT COUNT(*) as count FROM staging_section_extractions
+                    WHERE document_id = :doc_id OR document_id = :doc_id_no_hyphens
+                """),
+                {"doc_id": doc_id_str, "doc_id_no_hyphens": doc_id_no_hyphens},
+            ).fetchone()
+            if result and result.count > 0:
+                return "INDEXED"
+        except Exception:
+            pass
+
+    # Check landing_fetch for FETCHED status
+    if _table_exists(session, "landing_fetch"):
+        try:
+            # Query with both formats to handle mixed data
+            result = session.execute(
+                text("""
+                    SELECT status FROM landing_fetch
+                    WHERE document_id = :doc_id OR document_id = :doc_id_no_hyphens
+                    LIMIT 1
+                """),
+                {"doc_id": doc_id_str, "doc_id_no_hyphens": doc_id_no_hyphens},
+            ).fetchone()
+            if result and result.status == "FETCHED":
+                return "FETCHED"
+        except Exception:
+            pass
+
+    return "NOT_FETCHED"
