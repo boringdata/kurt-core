@@ -267,9 +267,9 @@ More content here with multiple words to count.
         """Test that incremental mode correctly skips unchanged documents."""
         import hashlib
 
+        from kurt.conftest import mark_document_as_fetched
         from kurt.db.database import get_session
         from kurt.db.documents import add_document
-        from tests.conftest import mark_document_as_fetched
 
         session = get_session()
 
@@ -353,9 +353,9 @@ class TestWorkflowExecution:
         workflow_ids, each run only processes its own data - not data from
         previous runs.
         """
+        from kurt.conftest import mark_document_as_fetched
         from kurt.db.database import get_session
         from kurt.db.documents import add_document
-        from tests.conftest import mark_document_as_fetched
 
         session = get_session()
 
@@ -798,9 +798,9 @@ class TestWorkflowIntegration:
         This test runs a simple pipeline and verifies the result dictionary
         contains the expected keys for document counts and model stats.
         """
+        from kurt.conftest import mark_document_as_fetched
         from kurt.db.database import get_session
         from kurt.db.documents import add_document
-        from tests.conftest import mark_document_as_fetched
 
         session = get_session()
 

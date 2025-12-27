@@ -19,14 +19,10 @@ from uuid import uuid4
 import pytest
 
 from kurt.cli import main
+from kurt.conftest import get_doc_status as _get_doc_status
+from kurt.conftest import mark_document_as_fetched as _mark_document_as_fetched
 from kurt.db.database import get_session
 from kurt.db.models import Document, SourceType
-from tests.helpers.status_helpers import (
-    get_doc_status as _get_doc_status,
-)
-from tests.helpers.status_helpers import (
-    mark_document_as_fetched as _mark_document_as_fetched,
-)
 
 
 @pytest.fixture
@@ -56,6 +52,8 @@ def mock_pipeline_with_document_update():
     """
     from fnmatch import fnmatch
 
+    from kurt.conftest import create_staging_tables
+
     def pipeline_side_effect(*args, **kwargs):
         from sqlmodel import select
 
@@ -65,6 +63,10 @@ def mock_pipeline_with_document_update():
         # Get filters from kwargs
         filters = kwargs.get("filters")
         session = get_session()
+
+        # Ensure staging tables exist before marking documents
+        create_staging_tables(session)
+
         doc_count = 0
 
         if not filters:

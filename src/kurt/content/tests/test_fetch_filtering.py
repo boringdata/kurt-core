@@ -6,9 +6,9 @@ These tests use the status_helpers module to set up document status correctly.
 
 from uuid import uuid4
 
+from kurt.conftest import create_staging_tables, mark_document_as_fetched
 from kurt.db.models import Document, SourceType
 from kurt.utils.filtering import build_document_query
-from tests.helpers.status_helpers import create_staging_tables, mark_document_as_fetched
 
 
 def test_fetch_excludes_fetched_by_default(session):

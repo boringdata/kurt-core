@@ -327,12 +327,15 @@ def build_document_query(
     # Filter by cluster (uses staging_topic_clustering table)
     if in_cluster:
         if _table_exists(session, "staging_topic_clustering"):
-            from kurt.models.staging.clustering.step_topic_clustering import TopicClusteringRow
-
-            stmt = stmt.join(
-                TopicClusteringRow,
-                Document.id == TopicClusteringRow.document_id,
-            ).where(TopicClusteringRow.cluster_name == in_cluster)
+            # Use REPLACE to strip hyphens from UUID for comparison
+            # (staging tables store UUIDs without hyphens)
+            stmt = stmt.where(
+                text(
+                    f"REPLACE(CAST(id AS TEXT), '-', '') IN ("
+                    f"SELECT document_id FROM staging_topic_clustering "
+                    f"WHERE cluster_name = '{in_cluster}')"
+                )
+            )
         else:
             # No documents can match if table doesn't exist
             stmt = stmt.where(text("1=0"))
@@ -340,9 +343,11 @@ def build_document_query(
     # Filter by content type (uses staging_topic_clustering table)
     if with_content_type:
         if _table_exists(session, "staging_topic_clustering"):
+            # Use REPLACE to strip hyphens from UUID for comparison
+            # (staging tables store UUIDs without hyphens)
             stmt = stmt.where(
                 text(
-                    f"CAST(id AS TEXT) IN ("
+                    f"REPLACE(CAST(id AS TEXT), '-', '') IN ("
                     f"SELECT document_id FROM staging_topic_clustering "
                     f"WHERE content_type = '{with_content_type.lower()}')"
                 )

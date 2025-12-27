@@ -41,10 +41,10 @@ def add_test_documents(tmp_project):  # noqa: F811
             # doc_ids is a list of created document IDs
     """
     from kurt.config import load_config
+    from kurt.conftest import mark_document_as_fetched
     from kurt.db.database import get_session
     from kurt.db.documents import add_document
     from kurt.db.models import Document
-    from tests.conftest import mark_document_as_fetched
 
     def _add_documents(documents: List[Dict[str, Any]]) -> List[str]:
         config = load_config()

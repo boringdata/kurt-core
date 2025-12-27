@@ -219,11 +219,14 @@ class TestContentListCommand:
         # Create test documents with different content types
         from uuid import uuid4
 
+        from kurt.conftest import create_staging_tables, set_document_content_type
         from kurt.db.database import get_session
         from kurt.db.models import Document, SourceType
-        from tests.helpers.status_helpers import set_document_content_type
 
         session = get_session()
+
+        # Create staging tables first
+        create_staging_tables(session)
 
         # Create documents (content_type now stored in staging_topic_clustering)
         doc_tutorial = Document(

@@ -56,39 +56,45 @@ def _get_status_subquery(session, status_upper: str) -> str | None:
     (e.g., filtering for FETCHED when landing_fetch table doesn't exist).
 
     Status hierarchy: INDEXED > FETCHED > DISCOVERED > NOT_FETCHED
+
+    Note: Staging tables store UUIDs WITHOUT hyphens (from pandas reading SQLite),
+    so we use REPLACE(CAST(id AS TEXT), '-', '') to compare.
     """
     has_landing_fetch = _table_exists(session, "landing_fetch")
     has_landing_discovery = _table_exists(session, "landing_discovery")
     has_section_extractions = _table_exists(session, "staging_section_extractions")
 
+    # Helper: converts Document.id to format matching staging tables (no hyphens)
+    doc_id_expr = "REPLACE(CAST(id AS TEXT), '-', '')"
+
     if status_upper == "INDEXED":
         if not has_section_extractions:
             return "1=0"  # No documents can be INDEXED if table doesn't exist
-        return "CAST(id AS TEXT) IN (SELECT document_id FROM staging_section_extractions)"
+        return f"{doc_id_expr} IN (SELECT document_id FROM staging_section_extractions)"
 
     elif status_upper == "FETCHED":
         if not has_landing_fetch:
             return "1=0"  # No documents can be FETCHED if table doesn't exist
         # Has records in landing_fetch with status=FETCHED, but NOT indexed
-        base = (
-            "CAST(id AS TEXT) IN (SELECT document_id FROM landing_fetch WHERE status = 'FETCHED')"
-        )
+        base = f"{doc_id_expr} IN (SELECT document_id FROM landing_fetch WHERE status = 'FETCHED')"
         if has_section_extractions:
-            return f"{base} AND CAST(id AS TEXT) NOT IN (SELECT document_id FROM staging_section_extractions)"
+            return f"{base} AND {doc_id_expr} NOT IN (SELECT document_id FROM staging_section_extractions)"
         return base
 
     elif status_upper == "DISCOVERED":
         if not has_landing_discovery:
             return "1=0"  # No documents can be DISCOVERED if table doesn't exist
-        base = "CAST(id AS TEXT) IN (SELECT document_id FROM landing_discovery)"
+        base = f"{doc_id_expr} IN (SELECT document_id FROM landing_discovery)"
         if has_landing_fetch:
-            return f"{base} AND CAST(id AS TEXT) NOT IN (SELECT document_id FROM landing_fetch WHERE status = 'FETCHED')"
+            return f"{base} AND {doc_id_expr} NOT IN (SELECT document_id FROM landing_fetch WHERE status = 'FETCHED')"
         return base
 
     elif status_upper == "NOT_FETCHED":
         if not has_landing_fetch:
             return "1=1"  # All documents are NOT_FETCHED if no landing_fetch table
-        return "CAST(id AS TEXT) NOT IN (SELECT document_id FROM landing_fetch WHERE status = 'FETCHED')"
+        return (
+            f"{doc_id_expr} NOT IN (SELECT document_id FROM landing_fetch WHERE status = 'FETCHED')"
+        )
 
     elif status_upper == "ERROR":
         parts = []
@@ -98,7 +104,7 @@ def _get_status_subquery(session, status_upper: str) -> str | None:
             parts.append("SELECT document_id FROM landing_discovery WHERE error IS NOT NULL")
         if not parts:
             return "1=0"  # No error records possible if no staging tables
-        return f"CAST(id AS TEXT) IN ({' UNION '.join(parts)})"
+        return f"{doc_id_expr} IN ({' UNION '.join(parts)})"
 
     return None  # Unknown status
 

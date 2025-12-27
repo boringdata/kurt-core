@@ -481,9 +481,12 @@ class TestFetchCommandFilters:
         runner, project_dir = isolated_cli_runner
 
         # Create test documents with different statuses
+        from kurt.conftest import create_staging_tables, mark_document_as_fetched
         from kurt.db.database import get_session
 
         session = get_session()
+        create_staging_tables(session)
+
         doc_not_fetched = Document(
             id=uuid4(),
             source_url="https://example.com/not-fetched",
@@ -496,6 +499,9 @@ class TestFetchCommandFilters:
         )
         session.add_all([doc_not_fetched, doc_fetched])
         session.commit()
+
+        # Mark doc_fetched as FETCHED in staging table
+        mark_document_as_fetched(doc_fetched.id, session)
 
         # Test fetch with status filter (dry-run)
         result = runner.invoke(
@@ -510,24 +516,28 @@ class TestFetchCommandFilters:
         runner, project_dir = isolated_cli_runner
 
         # Create test documents with different content types
+        from kurt.conftest import create_staging_tables, set_document_content_type
         from kurt.db.database import get_session
-        from kurt.db.models import ContentType
 
         session = get_session()
+        create_staging_tables(session)
+
         doc_tutorial = Document(
             id=uuid4(),
             source_url="https://example.com/tutorial",
             source_type=SourceType.URL,
-            content_type=ContentType.TUTORIAL,
         )
         doc_guide = Document(
             id=uuid4(),
             source_url="https://example.com/guide",
             source_type=SourceType.URL,
-            content_type=ContentType.GUIDE,
         )
         session.add_all([doc_tutorial, doc_guide])
         session.commit()
+
+        # Set content types in staging table
+        set_document_content_type(doc_tutorial.id, "tutorial", session)
+        set_document_content_type(doc_guide.id, "guide", session)
 
         # Test fetch with content type filter (dry-run)
         result = runner.invoke(

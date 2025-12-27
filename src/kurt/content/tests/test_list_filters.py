@@ -207,6 +207,13 @@ def test_documents(tmp_project):
 
     session.commit()
 
+    # Mark docs as FETCHED for status filtering tests
+    from kurt.conftest import create_staging_tables, mark_document_as_fetched
+
+    create_staging_tables(session)
+    mark_document_as_fetched(doc1.id, session)  # python_fastapi
+    mark_document_as_fetched(doc5.id, session)  # no_metadata
+
     return {
         "python_fastapi": doc1,
         "ml_tensorflow": doc2,

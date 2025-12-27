@@ -479,7 +479,27 @@ def mock_all_llm_calls():
             }
 
 
-def mark_document_as_fetched(doc_id, session=None, workflow_id="test"):
+def create_staging_tables(session=None):
+    """
+    Create staging tables used for status derivation.
+
+    Uses the model metadata to create tables properly.
+    """
+    from kurt.db.database import get_session
+    from kurt.models.landing.fetch import FetchRow
+    from kurt.models.staging.clustering.step_topic_clustering import TopicClusteringRow
+    from kurt.models.staging.indexing.step_extract_sections import SectionExtractionRow
+
+    if session is None:
+        session = get_session()
+
+    bind = session.get_bind()
+    FetchRow.metadata.create_all(bind)
+    SectionExtractionRow.metadata.create_all(bind)
+    TopicClusteringRow.metadata.create_all(bind)
+
+
+def mark_document_as_fetched(doc_id, session=None, workflow_id="test-workflow"):
     """
     Mark a document as FETCHED by inserting into landing_fetch table.
 
@@ -498,7 +518,9 @@ def mark_document_as_fetched(doc_id, session=None, workflow_id="test"):
     if session is None:
         session = get_session()
 
-    doc_id_str = str(doc_id)
+    # Convert UUID to string format WITHOUT hyphens to match pipeline behavior
+    # The actual pipeline uses str(row["id"]) from pandas which reads SQLite without hyphens
+    doc_id_str = str(doc_id).replace("-", "")
 
     try:
         # Insert into landing_fetch to mark as FETCHED
@@ -506,7 +528,7 @@ def mark_document_as_fetched(doc_id, session=None, workflow_id="test"):
             text("""
                 INSERT OR REPLACE INTO landing_fetch
                 (document_id, status, workflow_id, created_at, updated_at, model_name, content_length, links_extracted, embedding_dims)
-                VALUES (:doc_id, 'FETCHED', :workflow_id, datetime('now'), datetime('now'), 'landing.fetch', 0, 0, 512)
+                VALUES (:doc_id, 'FETCHED', :workflow_id, datetime('now'), datetime('now'), 'landing.fetch', 100, 0, 512)
             """),
             {"doc_id": doc_id_str, "workflow_id": workflow_id},
         )
@@ -516,3 +538,96 @@ def mark_document_as_fetched(doc_id, session=None, workflow_id="test"):
         import logging
 
         logging.debug(f"Could not mark document as fetched: {e}")
+
+
+def mark_document_as_indexed(doc_id, session=None, workflow_id="test-workflow"):
+    """
+    Mark a document as INDEXED by creating staging_section_extractions record.
+
+    Status is derived from staging tables - INDEXED means there are records
+    in staging_section_extractions.
+
+    Args:
+        doc_id: Document UUID (string or UUID object)
+        session: Optional SQLModel session
+        workflow_id: Optional workflow ID for the record
+    """
+    from uuid import uuid4
+
+    from sqlalchemy import text
+
+    from kurt.db.database import get_session
+
+    if session is None:
+        session = get_session()
+
+    # Convert UUID to string format WITHOUT hyphens to match pipeline behavior
+    doc_id_str = str(doc_id).replace("-", "")
+
+    try:
+        session.execute(
+            text("""
+                INSERT OR REPLACE INTO staging_section_extractions
+                (id, document_id, section_index, section_header, section_content, workflow_id)
+                VALUES (:id, :doc_id, 0, 'Test Section', 'Test content', :workflow_id)
+            """),
+            {"id": str(uuid4()).replace("-", ""), "doc_id": doc_id_str, "workflow_id": workflow_id},
+        )
+        session.commit()
+    except Exception as e:
+        import logging
+
+        logging.debug(f"Could not mark document as indexed: {e}")
+
+
+def set_document_content_type(doc_id, content_type, session=None, workflow_id="test-workflow"):
+    """
+    Set document content_type in staging_topic_clustering table.
+
+    Content type is now stored in the staging_topic_clustering table,
+    not on the Document model directly.
+
+    Args:
+        doc_id: Document UUID (string or UUID object)
+        content_type: Content type string (e.g., 'tutorial', 'reference')
+        session: Optional SQLModel session
+        workflow_id: Optional workflow ID for the record
+    """
+    from sqlalchemy import text
+
+    from kurt.db.database import get_session
+
+    if session is None:
+        session = get_session()
+
+    # Convert UUID to string format WITHOUT hyphens to match pipeline behavior
+    doc_id_str = str(doc_id).replace("-", "")
+
+    try:
+        session.execute(
+            text("""
+                INSERT OR REPLACE INTO staging_topic_clustering (document_id, content_type, workflow_id)
+                VALUES (:doc_id, :content_type, :workflow_id)
+            """),
+            {
+                "doc_id": doc_id_str,
+                "content_type": content_type.lower(),
+                "workflow_id": workflow_id,
+            },
+        )
+        session.commit()
+    except Exception as e:
+        import logging
+
+        logging.debug(f"Could not set document content type: {e}")
+
+
+def get_doc_status(doc_id):
+    """
+    Get document status from staging tables.
+
+    Returns: 'INDEXED', 'FETCHED', 'DISCOVERED', 'NOT_FETCHED', or 'ERROR'
+    """
+    from kurt.db.documents import get_document_status
+
+    return get_document_status(str(doc_id))["status"]

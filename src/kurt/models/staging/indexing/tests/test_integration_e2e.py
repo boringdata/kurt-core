@@ -16,6 +16,8 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from kurt.conftest import mark_document_as_fetched
+
 # Fixtures tmp_project and reset_dbos_state are auto-discovered from conftest
 from kurt.core import (
     PipelineContext,
@@ -37,7 +39,6 @@ from kurt.models.staging.indexing.step_entity_resolution import EntityResolution
 from kurt.models.staging.indexing.step_extract_sections import SectionExtractionRow
 from kurt.utils.filtering import DocumentFilters
 
-from tests.helpers.status_helpers import mark_document_as_fetched
 
 def create_bound_reference(model_class, session, ctx):
     """Create a Reference object bound to a real session and model class.
