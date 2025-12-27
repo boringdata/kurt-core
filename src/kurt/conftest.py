@@ -606,8 +606,9 @@ def set_document_content_type(doc_id, content_type, session=None, workflow_id="t
     try:
         session.execute(
             text("""
-                INSERT OR REPLACE INTO staging_topic_clustering (document_id, content_type, workflow_id)
-                VALUES (:doc_id, :content_type, :workflow_id)
+                INSERT OR REPLACE INTO staging_topic_clustering
+                (document_id, workflow_id, content_type, created_at, updated_at)
+                VALUES (:doc_id, :workflow_id, :content_type, datetime('now'), datetime('now'))
             """),
             {
                 "doc_id": doc_id_str,
