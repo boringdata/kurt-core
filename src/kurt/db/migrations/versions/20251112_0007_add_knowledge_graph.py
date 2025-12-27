@@ -30,16 +30,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Add knowledge graph schema."""
-    conn = op.get_bind()
 
-    # 1. Add embedding column to documents table (if not exists)
+    # 1. Add embedding column to documents table
     # Store as BLOB (bytes) - will be 512 float32 values = 2048 bytes
-    # Note: Column may already exist if initial schema was updated
-    result = conn.execute(sa.text("PRAGMA table_info(documents)"))
-    doc_columns = {row[1] for row in result}
-
-    if "embedding" not in doc_columns:
-        op.add_column("documents", sa.Column("embedding", sa.LargeBinary(), nullable=True))
+    op.add_column("documents", sa.Column("embedding", sa.LargeBinary(), nullable=True))
 
     # 2. Enhance entities table with new fields
     # canonical_name: The resolved/canonical name for this entity

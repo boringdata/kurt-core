@@ -73,6 +73,12 @@ def upgrade() -> None:
         END;
     """)
 
+    # Step 1b: Drop indexes on columns we're about to drop
+    # SQLite batch mode can fail if indexes reference dropped columns
+    print("  Dropping indexes on deprecated columns...")
+    op.execute("DROP INDEX IF EXISTS ix_documents_indexed_with_git_commit")
+    op.execute("DROP INDEX IF EXISTS ix_documents_content_type")
+
     # Step 2: Check which columns actually exist
     if dialect == "sqlite":
         result = conn.execute(sa.text("PRAGMA table_info(documents)"))

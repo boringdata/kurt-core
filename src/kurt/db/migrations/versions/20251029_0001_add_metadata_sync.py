@@ -40,12 +40,13 @@ def upgrade() -> None:
     )
 
     # Create trigger to populate queue when document metadata changes
-    # Note: content_type, primary_topics, tools_technologies columns removed
-    # as part of document table refactoring - now stored in staging tables
     op.execute("""
         CREATE TRIGGER IF NOT EXISTS documents_metadata_sync_trigger
         AFTER UPDATE ON documents
         WHEN (
+            NEW.content_type != OLD.content_type OR
+            NEW.primary_topics != OLD.primary_topics OR
+            NEW.tools_technologies != OLD.tools_technologies OR
             NEW.title != OLD.title OR
             NEW.description != OLD.description OR
             NEW.author != OLD.author OR
