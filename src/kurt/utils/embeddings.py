@@ -5,6 +5,7 @@ used throughout the Kurt indexing and knowledge graph systems.
 """
 
 import struct
+import time
 
 import dspy
 import numpy as np
@@ -88,7 +89,21 @@ def generate_embeddings(
         # Cloud provider
         embedder = dspy.Embedder(model=model)
 
-    return embedder(texts)
+    # Track embedding call for rate monitoring
+    from kurt.core.llm_tracker import track_embedding_call
+
+    start = time.time()
+    result = embedder(texts)
+    duration_ms = (time.time() - start) * 1000
+
+    track_embedding_call(
+        model=model,
+        count=len(texts),
+        step_name=step_name,
+        duration_ms=duration_ms,
+    )
+
+    return result
 
 
 def embedding_to_bytes(embedding: list[float]) -> bytes:

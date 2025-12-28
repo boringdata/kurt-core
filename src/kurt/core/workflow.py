@@ -74,6 +74,11 @@ async def run_workflow(
     """
     workflow_id = workflow_id or DBOS.workflow_id
 
+    # Configure LLM tracker for this workflow
+    from kurt.core.llm_tracker import llm_tracker
+
+    llm_tracker.configure(workflow_id=workflow_id)
+
     logger.info(
         "Workflow '%s' started (mode=%s, reprocess_unchanged=%s, workflow_id=%s)",
         pipeline.name,
@@ -122,6 +127,10 @@ async def run_workflow(
             "pipeline": pipeline.name,
         }
     )
+
+    # Print LLM usage summary if verbose
+    if metadata and metadata.get("verbose"):
+        llm_tracker.print_summary()
 
     return {
         "workflow_id": workflow_id,
