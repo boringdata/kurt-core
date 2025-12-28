@@ -1299,10 +1299,9 @@ def list_content(
             .where(TopicCluster.name.ilike(f"%{in_cluster}%"))
         )
 
-    # Apply status filter
-    if with_status:
-        status_enum = IngestionStatus(with_status)
-        stmt = stmt.where(Document.ingestion_status == status_enum)
+    # NOTE: Status filtering is done POST-QUERY using derived status from pipeline tables
+    # This is part of the model-based architecture refactor where status is derived
+    # from landing_fetch and staging_section_extractions tables
 
     # Apply content_type filter
     if with_content_type:
@@ -1318,6 +1317,16 @@ def list_content(
 
     # Execute base query
     documents = list(session.exec(stmt).all())
+
+    # Apply derived status filtering (model-based architecture)
+    if with_status and documents:
+        doc_ids = [doc.id for doc in documents]
+        derived_statuses = get_document_status_batch(doc_ids, session)
+        documents = [
+            doc
+            for doc in documents
+            if derived_statuses.get(str(doc.id), "NOT_FETCHED") == with_status
+        ]
 
     # If analytics needed, fetch and merge via URL
     if with_analytics and documents:
