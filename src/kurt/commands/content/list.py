@@ -108,7 +108,7 @@ def list_documents_cmd(
         kurt content list --with-analytics --trend decreasing --min-pageviews 1000
         kurt content list --with-analytics --max-pageviews 0
     """
-    from kurt.db.documents import list_content
+    from kurt.db.documents import get_document_status_batch, list_content
 
     try:
         # Validate analytics flags
@@ -209,6 +209,10 @@ def list_documents_cmd(
                     )
                     child_counts[doc.source_url] = count
 
+            # Get derived status for all documents in batch (efficient)
+            doc_ids = [doc.id for doc in docs]
+            derived_statuses = get_document_status_batch(doc_ids)
+
             for doc in docs:
                 # Truncate title and URL for display
                 title = (
@@ -228,9 +232,11 @@ def list_documents_cmd(
                 # Get child count
                 child_count = child_counts.get(doc.source_url, 0)
 
-                # Color status
-                status_str = doc.ingestion_status.value
-                if status_str == "FETCHED":
+                # Get derived status from pipeline tables
+                status_str = derived_statuses.get(str(doc.id), "NOT_FETCHED")
+                if status_str == "INDEXED":
+                    status_display = f"[blue]{status_str}[/blue]"
+                elif status_str == "FETCHED":
                     status_display = f"[green]{status_str}[/green]"
                 elif status_str == "ERROR":
                     status_display = f"[red]{status_str}[/red]"

@@ -29,7 +29,7 @@ def get_document_cmd(identifier: str, format: str):
         kurt content get https://example.com/article
         kurt content get ./docs/article.md
     """
-    from kurt.db.documents import get_document
+    from kurt.db.documents import get_document, get_document_status
     from kurt.utils.filtering import resolve_identifier_to_doc_id
 
     try:
@@ -37,6 +37,9 @@ def get_document_cmd(identifier: str, format: str):
         doc_id = resolve_identifier_to_doc_id(identifier)
 
         doc = get_document(doc_id)
+
+        # Get derived status from pipeline tables
+        derived_status = get_document_status(doc.id)
 
         # Get knowledge graph (always included)
         kg = None
@@ -53,6 +56,8 @@ def get_document_cmd(identifier: str, format: str):
 
             # Convert SQLModel to dict
             output = doc.model_dump() if hasattr(doc, "model_dump") else dict(doc)
+            # Override with derived status
+            output["derived_status"] = derived_status
             if kg:
                 output["knowledge_graph"] = kg
             print(json.dumps(output, indent=2, default=str))
@@ -63,7 +68,7 @@ def get_document_cmd(identifier: str, format: str):
 
             console.print(f"[bold]ID:[/bold] {doc.id}")
             console.print(f"[bold]Title:[/bold] {doc.title or 'Untitled'}")
-            console.print(f"[bold]Status:[/bold] {doc.ingestion_status.value}")
+            console.print(f"[bold]Status:[/bold] {derived_status}")
             console.print(f"[bold]Source Type:[/bold] {doc.source_type.value}")
             console.print(f"[bold]Source URL:[/bold] {doc.source_url or 'N/A'}")
 
