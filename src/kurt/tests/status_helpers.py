@@ -31,6 +31,75 @@ from kurt.db.database import get_session
 from kurt.db.tables import TableNames
 
 
+def _ensure_pipeline_tables_exist(session) -> None:
+    """Ensure landing_fetch and staging_section_extractions tables exist.
+
+    This is needed for tests that use status helpers before the pipeline
+    has been run (which would normally create these tables).
+
+    Args:
+        session: Database session (required - must be provided by caller)
+    """
+    from sqlalchemy import text
+
+    # Import models to register them with SQLModel (needed for table definitions)
+
+    # Use raw SQL to create tables to avoid connection pool issues
+    # Check if tables exist first using SQLite-specific query
+    result = session.execute(
+        text("SELECT name FROM sqlite_master WHERE type='table' AND name=:name"),
+        {"name": TableNames.LANDING_FETCH},
+    )
+    if result.fetchone() is None:
+        # Create landing_fetch table matching FetchRow model schema
+        # Includes PipelineModelBase fields: workflow_id, created_at, updated_at, model_name, error
+        session.execute(
+            text(f"""
+            CREATE TABLE IF NOT EXISTS {TableNames.LANDING_FETCH} (
+                document_id TEXT PRIMARY KEY,
+                workflow_id TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                model_name TEXT,
+                error TEXT,
+                status TEXT,
+                content_length INTEGER DEFAULT 0,
+                content_hash TEXT,
+                content_path TEXT,
+                embedding_dims INTEGER DEFAULT 0,
+                links_extracted INTEGER DEFAULT 0,
+                fetch_engine TEXT,
+                public_url TEXT,
+                metadata_json TEXT
+            )
+        """)
+        )
+
+    result = session.execute(
+        text("SELECT name FROM sqlite_master WHERE type='table' AND name=:name"),
+        {"name": TableNames.STAGING_SECTION_EXTRACTIONS},
+    )
+    if result.fetchone() is None:
+        # Create staging_section_extractions table
+        session.execute(
+            text(f"""
+            CREATE TABLE IF NOT EXISTS {TableNames.STAGING_SECTION_EXTRACTIONS} (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                document_id TEXT NOT NULL,
+                section_id TEXT NOT NULL,
+                section_number INTEGER DEFAULT 1,
+                workflow_id TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                model_name TEXT,
+                error TEXT
+            )
+        """)
+        )
+
+    session.commit()
+
+
 def mark_document_as_fetched(
     document_id: UUID,
     content_path: str = None,
@@ -57,6 +126,9 @@ def mark_document_as_fetched(
 
     if session is None:
         session = get_session()
+
+    # Ensure table exists
+    _ensure_pipeline_tables_exist(session)
 
     # Check if row already exists (upsert behavior)
     doc_id_str = str(document_id)
@@ -108,6 +180,9 @@ def mark_document_as_error(
     if session is None:
         session = get_session()
 
+    # Ensure table exists
+    _ensure_pipeline_tables_exist(session)
+
     doc_id_str = str(document_id)
     existing = session.query(FetchRow).filter(FetchRow.document_id == doc_id_str).first()
 
@@ -158,6 +233,9 @@ def mark_document_as_indexed(
 
     if session is None:
         session = get_session()
+
+    # Ensure table exists
+    _ensure_pipeline_tables_exist(session)
 
     doc_id_str = str(document_id)
 
