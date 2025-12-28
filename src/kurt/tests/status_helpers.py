@@ -80,19 +80,30 @@ def _ensure_pipeline_tables_exist(session) -> None:
         {"name": TableNames.STAGING_SECTION_EXTRACTIONS},
     )
     if result.fetchone() is None:
-        # Create staging_section_extractions table
+        # Create staging_section_extractions table matching SectionExtractionRow schema
+        # Includes: PipelineModelBase + LLMTelemetryMixin + model-specific fields
         session.execute(
             text(f"""
             CREATE TABLE IF NOT EXISTS {TableNames.STAGING_SECTION_EXTRACTIONS} (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 document_id TEXT NOT NULL,
                 section_id TEXT NOT NULL,
                 section_number INTEGER DEFAULT 1,
+                section_heading TEXT,
                 workflow_id TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 model_name TEXT,
-                error TEXT
+                error TEXT,
+                tokens_prompt INTEGER DEFAULT 0,
+                tokens_completion INTEGER DEFAULT 0,
+                extraction_time_ms INTEGER DEFAULT 0,
+                llm_model_name TEXT,
+                metadata_json TEXT,
+                entities_json TEXT,
+                relationships_json TEXT,
+                claims_json TEXT,
+                existing_entities_context_json TEXT,
+                PRIMARY KEY (document_id, section_id)
             )
         """)
         )

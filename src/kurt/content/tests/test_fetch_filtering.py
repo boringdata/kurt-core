@@ -11,6 +11,7 @@ from kurt.db.models import Document, SourceType
 from kurt.tests.status_helpers import (
     mark_document_as_error,
     mark_document_as_fetched,
+    mark_document_as_indexed,
 )
 from kurt.utils.filtering import build_document_query, filter_documents_by_derived_status
 
@@ -257,3 +258,107 @@ def test_fetch_with_explicit_status_filter(session):
     # Should only include FETCHED documents
     assert doc1.id not in result_ids, "Should exclude NOT_FETCHED when filtering for FETCHED"
     assert doc2.id in result_ids, "Should include FETCHED document with explicit filter"
+
+
+def test_fetch_excludes_indexed_by_default(session):
+    """Test that fetch excludes INDEXED documents by default."""
+    # Create test documents
+    doc1 = Document(
+        id=uuid4(),
+        source_type=SourceType.URL,
+        source_url="https://example.com/not-fetched",
+    )
+    doc2 = Document(
+        id=uuid4(),
+        source_type=SourceType.URL,
+        source_url="https://example.com/indexed",
+    )
+
+    session.add(doc1)
+    session.add(doc2)
+    session.commit()
+
+    # Mark doc2 as INDEXED using pipeline tables
+    mark_document_as_fetched(doc2.id, session=session)
+    mark_document_as_indexed(doc2.id, session=session)
+
+    # Query all documents
+    stmt = build_document_query(
+        id_uuids=None,
+        with_status=None,
+        refetch=True,  # Get all first
+        in_cluster=None,
+        with_content_type=None,
+        limit=None,
+    )
+
+    all_docs = list(session.exec(stmt).all())
+
+    # Apply derived status filtering (excludes INDEXED by default, same as FETCHED)
+    results = filter_documents_by_derived_status(
+        all_docs,
+        with_status=None,
+        refetch=False,
+        session=session,
+    )
+    result_ids = [doc.id for doc in results]
+
+    # Should include NOT_FETCHED but NOT INDEXED
+    assert doc1.id in result_ids, "Should include NOT_FETCHED document"
+    assert doc2.id not in result_ids, "Should exclude INDEXED document"
+
+
+def test_filter_for_indexed_status(session):
+    """Test filtering explicitly for INDEXED status."""
+    # Create test documents
+    doc1 = Document(
+        id=uuid4(),
+        source_type=SourceType.URL,
+        source_url="https://example.com/fetched",
+    )
+    doc2 = Document(
+        id=uuid4(),
+        source_type=SourceType.URL,
+        source_url="https://example.com/indexed",
+    )
+    doc3 = Document(
+        id=uuid4(),
+        source_type=SourceType.URL,
+        source_url="https://example.com/not-fetched",
+    )
+
+    session.add(doc1)
+    session.add(doc2)
+    session.add(doc3)
+    session.commit()
+
+    # Mark doc1 as FETCHED only, doc2 as INDEXED
+    mark_document_as_fetched(doc1.id, session=session)
+    mark_document_as_fetched(doc2.id, session=session)
+    mark_document_as_indexed(doc2.id, session=session)
+
+    # Query all documents
+    stmt = build_document_query(
+        id_uuids=None,
+        with_status=None,
+        refetch=True,  # Get all first
+        in_cluster=None,
+        with_content_type=None,
+        limit=None,
+    )
+
+    all_docs = list(session.exec(stmt).all())
+
+    # Apply derived status filtering for explicit INDEXED status
+    results = filter_documents_by_derived_status(
+        all_docs,
+        with_status="INDEXED",
+        refetch=False,
+        session=session,
+    )
+    result_ids = [doc.id for doc in results]
+
+    # Should only include INDEXED document
+    assert doc1.id not in result_ids, "Should exclude FETCHED when filtering for INDEXED"
+    assert doc2.id in result_ids, "Should include INDEXED document with explicit filter"
+    assert doc3.id not in result_ids, "Should exclude NOT_FETCHED when filtering for INDEXED"
