@@ -5,35 +5,51 @@ from typing import Dict, List
 
 from kurt.config import load_config
 from kurt.db.database import get_session
-from kurt.db.models import Document, IngestionStatus
+from kurt.db.models import Document
 
 
 def get_document_counts() -> Dict[str, int]:
-    """Get document counts by status."""
+    """Get document counts by derived status from pipeline tables.
+
+    Status is derived from:
+    - INDEXED: Has row in staging_section_extractions
+    - ERROR: landing_fetch.status = 'ERROR'
+    - FETCHED: landing_fetch.status = 'FETCHED'
+    - NOT_FETCHED: default (no pipeline data)
+    """
     try:
+        from kurt.db.documents import get_document_status_batch
+
         session = get_session()
 
-        total = session.query(Document).count()
-        not_fetched = (
-            session.query(Document)
-            .filter(Document.ingestion_status == IngestionStatus.NOT_FETCHED)
-            .count()
-        )
-        fetched = (
-            session.query(Document)
-            .filter(Document.ingestion_status == IngestionStatus.FETCHED)
-            .count()
-        )
-        error = (
-            session.query(Document)
-            .filter(Document.ingestion_status == IngestionStatus.ERROR)
-            .count()
-        )
+        # Get all documents
+        docs = session.query(Document).all()
+        total = len(docs)
+
+        if total == 0:
+            return {
+                "total": 0,
+                "not_fetched": 0,
+                "fetched": 0,
+                "indexed": 0,
+                "error": 0,
+            }
+
+        # Get derived status for all documents
+        doc_ids = [doc.id for doc in docs]
+        derived_statuses = get_document_status_batch(doc_ids)
+
+        # Count by derived status
+        not_fetched = sum(1 for s in derived_statuses.values() if s == "NOT_FETCHED")
+        fetched = sum(1 for s in derived_statuses.values() if s == "FETCHED")
+        indexed = sum(1 for s in derived_statuses.values() if s == "INDEXED")
+        error = sum(1 for s in derived_statuses.values() if s == "ERROR")
 
         return {
             "total": total,
             "not_fetched": not_fetched,
             "fetched": fetched,
+            "indexed": indexed,
             "error": error,
         }
     except RuntimeError:
@@ -48,6 +64,7 @@ def get_document_counts() -> Dict[str, int]:
             "total": 0,
             "not_fetched": 0,
             "fetched": 0,
+            "indexed": 0,
             "error": 0,
         }
 
