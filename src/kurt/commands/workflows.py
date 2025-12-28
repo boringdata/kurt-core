@@ -812,4 +812,116 @@ def cancel_workflow(workflow_id):
         console.print(f"[red]Error cancelling workflow: {e}[/red]")
 
 
+@workflows_group.command(name="stats")
+@click.option("--json", "output_json", is_flag=True, help="Output as JSON")
+def workflow_stats(output_json):
+    """
+    Show LLM usage statistics for the current/last workflow.
+
+    Displays:
+    - Total API calls and items processed
+    - Token usage (prompt and completion) per step and model
+    - Call rates per second
+
+    Example:
+        kurt workflows stats
+        kurt workflows stats --json
+    """
+    from kurt.core.llm_tracker import llm_tracker
+
+    stats = llm_tracker.get_stats()
+
+    if output_json:
+        import json as json_module
+
+        console.print(json_module.dumps(stats, indent=2, default=str))
+        return
+
+    # Human-readable output
+    console.print("\n[bold]LLM Call Tracker Statistics[/bold]")
+    console.print("=" * 60)
+
+    if stats["workflow_id"]:
+        console.print(f"Workflow ID: {stats['workflow_id']}")
+
+    duration = stats["duration_seconds"]
+    if duration > 0:
+        console.print(f"Duration: {duration:.1f}s")
+
+    console.print("\n[bold]Totals:[/bold]")
+    console.print(f"  Total Calls: {stats['total_calls']}")
+    console.print(f"  Total Items: {stats['total_items']}")
+
+    if stats["total_tokens"] > 0:
+        console.print(
+            f"  Total Tokens: {stats['total_tokens']:,} "
+            f"(prompt: {stats['total_tokens_prompt']:,}, "
+            f"completion: {stats['total_tokens_completion']:,})"
+        )
+
+    console.print(
+        f"  Current Rate: {stats['calls_per_second']:.2f} calls/sec, "
+        f"{stats['items_per_second']:.2f} items/sec"
+    )
+
+    if stats["by_type"]:
+        console.print("\n[bold]By Type:[/bold]")
+        for call_type, data in stats["by_type"].items():
+            console.print(f"  {call_type}: {data['calls']} calls, {data['items']} items")
+
+    if stats["by_step"]:
+        console.print("\n[bold]By Step:[/bold]")
+
+        # Create a table for step stats
+        table = Table(box=None, show_edge=False, pad_edge=False)
+        table.add_column("Step", style="cyan")
+        table.add_column("Calls", justify="right")
+        table.add_column("Items", justify="right")
+        table.add_column("Tokens", justify="right")
+        table.add_column("Rate", justify="right", style="dim")
+
+        for step, data in stats["by_step"].items():
+            rate = stats["rate_by_step"].get(step, {})
+            tokens_total = data.get("tokens_total", 0)
+            tokens_str = f"{tokens_total:,}" if tokens_total > 0 else "-"
+
+            table.add_row(
+                step,
+                str(data["calls"]),
+                str(data["items"]),
+                tokens_str,
+                f"{rate.get('calls_per_sec', 0):.2f}/s",
+            )
+
+        console.print(table)
+
+    if stats["by_model"]:
+        console.print("\n[bold]By Model:[/bold]")
+
+        # Create a table for model stats
+        table = Table(box=None, show_edge=False, pad_edge=False)
+        table.add_column("Model", style="magenta")
+        table.add_column("Calls", justify="right")
+        table.add_column("Items", justify="right")
+        table.add_column("Tokens", justify="right")
+        table.add_column("Rate", justify="right", style="dim")
+
+        for model, data in stats["by_model"].items():
+            rate = stats["rate_by_model"].get(model, {})
+            tokens_total = data.get("tokens_total", 0)
+            tokens_str = f"{tokens_total:,}" if tokens_total > 0 else "-"
+
+            table.add_row(
+                model,
+                str(data["calls"]),
+                str(data["items"]),
+                tokens_str,
+                f"{rate.get('calls_per_sec', 0):.2f}/s",
+            )
+
+        console.print(table)
+
+    console.print("=" * 60 + "\n")
+
+
 __all__ = ["workflows_group"]
