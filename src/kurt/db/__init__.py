@@ -32,6 +32,10 @@ from kurt.db.database import (
     init_database,
     managed_session,
 )
+from kurt.db.documents import (
+    get_document_status,
+    get_document_status_batch,
+)
 from kurt.db.models import (
     ContentType,
     Document,
@@ -40,6 +44,7 @@ from kurt.db.models import (
     SourceType,
     TopicCluster,
 )
+from kurt.db.tables import TableNames
 
 __all__ = [
     "DatabaseClient",
@@ -56,6 +61,10 @@ __all__ = [
     "IngestionStatus",
     "SourceType",
     "TopicCluster",
+    # Derived status functions (model-based architecture)
+    "get_document_status",
+    "get_document_status_batch",
+    "TableNames",
     # Claim models
     "Claim",
     "ClaimEntity",

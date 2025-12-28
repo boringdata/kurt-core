@@ -5,6 +5,7 @@ These functions provide CRUD operations for documents:
 - add_document: Create new document record (NOT_FETCHED status)
 - resolve_or_create_document: Find or create document by ID/URL
 - get_document: Get document by ID
+- get_document_status: Get derived status from pipeline tables
 - list_documents: List all documents with filtering
 - load_document_content: Load document content from filesystem
 - save_document_content_and_metadata: Update document content and metadata
@@ -17,12 +18,213 @@ These can be used directly by agents or wrapped by CLI commands.
 from typing import Optional
 from uuid import UUID
 
+from sqlalchemy import text
 from sqlmodel import select
 
 from kurt.config import load_config
 from kurt.db.database import get_session
 from kurt.db.models import Document, IngestionStatus, PageAnalytics, SourceType
+from kurt.db.tables import TableNames
 from kurt.integrations.analytics.utils import normalize_url_for_analytics
+
+# ============================================================================
+# Derived Status (Phase 0 - Model-Based Architecture)
+# ============================================================================
+
+
+def _table_exists(table_name: str, session=None) -> bool:
+    """Check if a table exists in the database.
+
+    Args:
+        table_name: Name of the table to check
+        session: Optional database session (uses get_session() if not provided)
+
+    Returns:
+        True if table exists, False otherwise
+    """
+    if session is None:
+        session = get_session()
+
+    # SQLite-specific query to check table existence
+    result = session.execute(
+        text("SELECT name FROM sqlite_master WHERE type='table' AND name=:name"),
+        {"name": table_name},
+    )
+    return result.fetchone() is not None
+
+
+def get_document_status(document_id: UUID, session=None) -> str:
+    """
+    Get derived ingestion status from pipeline tables.
+
+    This function derives the document status from the actual pipeline state
+    rather than reading the stored ingestion_status column. This is the core
+    of the model-based architecture refactor.
+
+    Status priority (highest to lowest):
+    - INDEXED: staging_section_extractions row exists for this document
+    - ERROR: landing_fetch.status = 'ERROR'
+    - FETCHED: landing_fetch.status = 'FETCHED'
+    - NOT_FETCHED: default (no landing_fetch row or no matching status)
+
+    Args:
+        document_id: Document UUID
+        session: Optional database session (uses get_session() if not provided)
+
+    Returns:
+        Status string: 'NOT_FETCHED', 'FETCHED', 'INDEXED', or 'ERROR'
+
+    Example:
+        >>> status = get_document_status(UUID('550e8400-e29b-41d4-a716-446655440000'))
+        >>> print(status)  # 'FETCHED', 'INDEXED', 'ERROR', or 'NOT_FETCHED'
+    """
+    if session is None:
+        session = get_session()
+
+    # Convert UUID to string for query (handle both with and without hyphens)
+    doc_id_str = str(document_id)
+    doc_id_no_hyphens = doc_id_str.replace("-", "")
+
+    # Check for INDEXED status first (highest priority after ERROR)
+    # If staging_section_extractions has a row, document is indexed
+    if _table_exists(TableNames.STAGING_SECTION_EXTRACTIONS, session):
+        result = session.execute(
+            text(
+                f"""
+                SELECT 1 FROM {TableNames.STAGING_SECTION_EXTRACTIONS}
+                WHERE document_id = :doc_id OR document_id = :doc_id_no_hyphens
+                LIMIT 1
+                """
+            ),
+            {"doc_id": doc_id_str, "doc_id_no_hyphens": doc_id_no_hyphens},
+        )
+        if result.fetchone():
+            return "INDEXED"
+
+    # Check landing_fetch for FETCHED or ERROR status
+    if _table_exists(TableNames.LANDING_FETCH, session):
+        result = session.execute(
+            text(
+                f"""
+                SELECT status FROM {TableNames.LANDING_FETCH}
+                WHERE document_id = :doc_id OR document_id = :doc_id_no_hyphens
+                LIMIT 1
+                """
+            ),
+            {"doc_id": doc_id_str, "doc_id_no_hyphens": doc_id_no_hyphens},
+        )
+        row = result.fetchone()
+        if row:
+            fetch_status = row[0]
+            if fetch_status == "ERROR":
+                return "ERROR"
+            elif fetch_status == "FETCHED":
+                return "FETCHED"
+
+    # Default: NOT_FETCHED
+    return "NOT_FETCHED"
+
+
+def get_document_status_batch(document_ids: list[UUID], session=None) -> dict[str, str]:
+    """
+    Get derived ingestion status for multiple documents efficiently.
+
+    This is a batch version of get_document_status() for better performance
+    when querying status for multiple documents at once.
+
+    Args:
+        document_ids: List of document UUIDs
+        session: Optional database session (uses get_session() if not provided)
+
+    Returns:
+        Dictionary mapping document_id (as string) -> status string
+
+    Example:
+        >>> statuses = get_document_status_batch([uuid1, uuid2, uuid3])
+        >>> print(statuses)  # {'uuid1': 'FETCHED', 'uuid2': 'INDEXED', 'uuid3': 'NOT_FETCHED'}
+    """
+    if session is None:
+        session = get_session()
+
+    if not document_ids:
+        return {}
+
+    # Initialize all as NOT_FETCHED
+    result = {str(doc_id): "NOT_FETCHED" for doc_id in document_ids}
+
+    # Build ID lists for query (both with and without hyphens)
+    id_strs = [str(doc_id) for doc_id in document_ids]
+    id_no_hyphens = [s.replace("-", "") for s in id_strs]
+    all_ids = list(set(id_strs + id_no_hyphens))
+
+    # Check landing_fetch for FETCHED/ERROR status
+    if _table_exists(TableNames.LANDING_FETCH, session):
+        # Use parameterized query with IN clause
+        placeholders = ", ".join([f":id_{i}" for i in range(len(all_ids))])
+        params = {f"id_{i}": id_val for i, id_val in enumerate(all_ids)}
+
+        fetch_result = session.execute(
+            text(
+                f"""
+                SELECT document_id, status FROM {TableNames.LANDING_FETCH}
+                WHERE document_id IN ({placeholders})
+                """
+            ),
+            params,
+        )
+
+        for row in fetch_result:
+            doc_id = row[0]
+            status = row[1]
+            # Normalize document_id to hyphenated form for result dict
+            normalized_id = doc_id if "-" in doc_id else _add_hyphens_to_uuid(doc_id)
+            if normalized_id in result:
+                if status == "ERROR":
+                    result[normalized_id] = "ERROR"
+                elif status == "FETCHED":
+                    result[normalized_id] = "FETCHED"
+
+    # Check staging_section_extractions for INDEXED status (overrides FETCHED)
+    if _table_exists(TableNames.STAGING_SECTION_EXTRACTIONS, session):
+        placeholders = ", ".join([f":id_{i}" for i in range(len(all_ids))])
+        params = {f"id_{i}": id_val for i, id_val in enumerate(all_ids)}
+
+        indexed_result = session.execute(
+            text(
+                f"""
+                SELECT DISTINCT document_id FROM {TableNames.STAGING_SECTION_EXTRACTIONS}
+                WHERE document_id IN ({placeholders})
+                """
+            ),
+            params,
+        )
+
+        for row in indexed_result:
+            doc_id = row[0]
+            normalized_id = doc_id if "-" in doc_id else _add_hyphens_to_uuid(doc_id)
+            if normalized_id in result:
+                result[normalized_id] = "INDEXED"
+
+    return result
+
+
+def _add_hyphens_to_uuid(uuid_no_hyphens: str) -> str:
+    """Add hyphens to a UUID string without hyphens.
+
+    Args:
+        uuid_no_hyphens: UUID string without hyphens (32 chars)
+
+    Returns:
+        UUID string with hyphens in standard format
+    """
+    if len(uuid_no_hyphens) != 32:
+        return uuid_no_hyphens  # Return as-is if not a valid UUID without hyphens
+
+    return (
+        f"{uuid_no_hyphens[:8]}-{uuid_no_hyphens[8:12]}-"
+        f"{uuid_no_hyphens[12:16]}-{uuid_no_hyphens[16:20]}-{uuid_no_hyphens[20:]}"
+    )
+
 
 # ============================================================================
 # Document Creation (CRUD - Create)
