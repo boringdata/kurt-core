@@ -812,11 +812,163 @@ def cancel_workflow(workflow_id):
         console.print(f"[red]Error cancelling workflow: {e}[/red]")
 
 
-@workflows_group.command(name="stats")
-@click.option("--json", "output_json", is_flag=True, help="Output as JSON")
-def workflow_stats(output_json):
+def _get_workflow_stats_from_dbos(workflow_id: str) -> dict | None:
     """
-    Show LLM usage statistics for the current/last workflow.
+    Retrieve LLM usage stats from DBOS stream for a completed workflow.
+
+    Args:
+        workflow_id: Full or partial workflow UUID
+
+    Returns:
+        Stats dict or None if not found
+    """
+    _check_dbos_available()
+
+    from sqlalchemy import text
+
+    from kurt.db.database import get_session
+
+    # First, find the full workflow ID
+    with get_session() as session:
+        sql = text("""
+            SELECT workflow_uuid, created_at, updated_at
+            FROM workflow_status
+            WHERE workflow_uuid LIKE :workflow_id || '%'
+            LIMIT 1
+        """)
+        result = session.execute(sql, {"workflow_id": workflow_id})
+        wf = result.fetchone()
+
+    if not wf:
+        console.print(f"[red]Workflow {workflow_id} not found[/red]")
+        return None
+
+    full_workflow_id, created_at, updated_at = wf
+    stream_name = f"llm_calls_{full_workflow_id}"
+
+    # Query the workflow_outputs table for stream data
+    # DBOS stores streams in workflow_outputs with the stream name as the key
+    with get_session() as session:
+        sql = text("""
+            SELECT output
+            FROM workflow_outputs
+            WHERE workflow_uuid = :workflow_id AND key = :stream_name
+        """)
+        result = session.execute(sql, {"workflow_id": full_workflow_id, "stream_name": stream_name})
+        rows = result.fetchall()
+
+    if not rows:
+        console.print(f"[yellow]No LLM call data found for workflow {full_workflow_id}[/yellow]")
+        console.print("[dim]The workflow may not have recorded LLM calls to DBOS stream.[/dim]")
+        return None
+
+    # Parse and aggregate the stream events
+    total_calls = 0
+    total_items = 0
+    total_tokens_prompt = 0
+    total_tokens_completion = 0
+    by_type: dict = {}
+    by_step: dict = {}
+    by_model: dict = {}
+
+    import base64
+    import pickle
+
+    for row in rows:
+        try:
+            # DBOS stores values as pickled base64-encoded data
+            decoded = base64.b64decode(row[0])
+            event_str = pickle.loads(decoded)
+            event = json.loads(event_str)
+
+            call_type = event.get("call_type", "unknown")
+            model = event.get("model", "unknown")
+            step_name = event.get("step_name")
+            count = event.get("count", 1)
+            tokens_prompt = event.get("tokens_prompt") or 0
+            tokens_completion = event.get("tokens_completion") or 0
+
+            total_calls += 1
+            total_items += count
+            total_tokens_prompt += tokens_prompt
+            total_tokens_completion += tokens_completion
+
+            # By type
+            if call_type not in by_type:
+                by_type[call_type] = {"calls": 0, "items": 0}
+            by_type[call_type]["calls"] += 1
+            by_type[call_type]["items"] += count
+
+            # By step
+            if step_name:
+                if step_name not in by_step:
+                    by_step[step_name] = {
+                        "calls": 0,
+                        "items": 0,
+                        "tokens_prompt": 0,
+                        "tokens_completion": 0,
+                        "tokens_total": 0,
+                    }
+                by_step[step_name]["calls"] += 1
+                by_step[step_name]["items"] += count
+                by_step[step_name]["tokens_prompt"] += tokens_prompt
+                by_step[step_name]["tokens_completion"] += tokens_completion
+                by_step[step_name]["tokens_total"] += tokens_prompt + tokens_completion
+
+            # By model
+            if model not in by_model:
+                by_model[model] = {
+                    "calls": 0,
+                    "items": 0,
+                    "tokens_prompt": 0,
+                    "tokens_completion": 0,
+                    "tokens_total": 0,
+                }
+            by_model[model]["calls"] += 1
+            by_model[model]["items"] += count
+            by_model[model]["tokens_prompt"] += tokens_prompt
+            by_model[model]["tokens_completion"] += tokens_completion
+            by_model[model]["tokens_total"] += tokens_prompt + tokens_completion
+
+        except Exception as e:
+            console.print(f"[dim]Warning: Failed to parse stream event: {e}[/dim]")
+            continue
+
+    # Calculate duration from workflow timestamps
+    duration_seconds = 0.0
+    if created_at and updated_at:
+        try:
+            duration_seconds = (updated_at - created_at).total_seconds()
+        except Exception:
+            pass
+
+    return {
+        "workflow_id": full_workflow_id,
+        "total_calls": total_calls,
+        "total_items": total_items,
+        "total_tokens_prompt": total_tokens_prompt,
+        "total_tokens_completion": total_tokens_completion,
+        "total_tokens": total_tokens_prompt + total_tokens_completion,
+        "calls_per_second": total_calls / duration_seconds if duration_seconds > 0 else 0,
+        "items_per_second": total_items / duration_seconds if duration_seconds > 0 else 0,
+        "by_type": by_type,
+        "by_step": by_step,
+        "by_model": by_model,
+        "rate_by_step": {},  # Not available for historical data
+        "rate_by_model": {},  # Not available for historical data
+        "duration_seconds": duration_seconds,
+    }
+
+
+@workflows_group.command(name="stats")
+@click.option("--workflow-id", help="Workflow ID to retrieve stats from DBOS (partial match)")
+@click.option("--json", "output_json", is_flag=True, help="Output as JSON")
+def workflow_stats(workflow_id, output_json):
+    """
+    Show LLM usage statistics for a workflow.
+
+    Without --workflow-id: Shows stats from the current in-memory tracker.
+    With --workflow-id: Retrieves historical stats from DBOS stream.
 
     Displays:
     - Total API calls and items processed
@@ -825,11 +977,17 @@ def workflow_stats(output_json):
 
     Example:
         kurt workflows stats
-        kurt workflows stats --json
+        kurt workflows stats --workflow-id abc123
+        kurt workflows stats --workflow-id abc123 --json
     """
-    from kurt.core.llm_tracker import llm_tracker
+    if workflow_id:
+        stats = _get_workflow_stats_from_dbos(workflow_id)
+        if stats is None:
+            return
+    else:
+        from kurt.core.llm_tracker import llm_tracker
 
-    stats = llm_tracker.get_stats()
+        stats = llm_tracker.get_stats()
 
     if output_json:
         import json as json_module
