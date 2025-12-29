@@ -98,6 +98,7 @@ class ScenarioRunner:
         max_tokens: Optional[int] = None,
         max_conversation_turns: Optional[int] = None,
         llm_provider: Optional[str] = None,
+        question_filter: Optional[set] = None,
     ):
         """Initialize runner.
 
@@ -111,6 +112,7 @@ class ScenarioRunner:
             max_tokens: Maximum tokens to use per scenario (overrides config)
             max_conversation_turns: Maximum conversation turns for multi-turn scenarios (overrides config)
             llm_provider: LLM provider for user agent - "openai" or "anthropic" (overrides config)
+            question_filter: Optional set of question numbers to run (1-indexed). If None, run all.
         """
         # Load config (global if not provided)
         if config is None:
@@ -139,6 +141,7 @@ class ScenarioRunner:
             else config.max_conversation_turns
         )
         self.llm_provider = llm_provider if llm_provider is not None else config.llm_provider
+        self.question_filter = question_filter  # Set of question numbers to run (1-indexed)
         self.config = config  # Store config for workspace setup
         self.raw_transcript = []  # Captures all printed output
 
@@ -426,22 +429,36 @@ class ScenarioRunner:
             return
 
         total_questions = len(config.questions)
+
+        # Filter questions if filter is set
+        if self.question_filter:
+            questions_to_run = [
+                (idx, q)
+                for idx, q in enumerate(config.questions, start=1)
+                if idx in self.question_filter
+            ]
+            self._log(f"\n🔍 Filtering to questions: {sorted(self.question_filter)}")
+        else:
+            questions_to_run = [(idx, q) for idx, q in enumerate(config.questions, start=1)]
+
         scenario.result_file_prefix = None
         single_question_id = None
-        if total_questions == 1 and config.questions:
+        if len(questions_to_run) == 1:
             # Handle both dict and string formats
-            first_question = config.questions[0]
+            first_question = questions_to_run[0][1]
             if isinstance(first_question, dict):
-                single_question_id = first_question.get("id") or "q1"
+                single_question_id = first_question.get("id") or f"q{questions_to_run[0][0]}"
             else:
-                single_question_id = "q1"
+                single_question_id = f"q{questions_to_run[0][0]}"
         file_name = Path(config.file).name if config.file else "inline questions"
-        self._log(f"\n🧪 Running {total_questions} question(s) defined in {file_name}\n")
+        self._log(
+            f"\n🧪 Running {len(questions_to_run)} of {total_questions} question(s) defined in {file_name}\n"
+        )
 
         total_usage_tokens = 0.0
         any_cached = False
 
-        for idx, question in enumerate(config.questions, start=1):
+        for idx, question in questions_to_run:
             context = self._build_question_context(scenario, workspace, config, question, idx)
             header = f"❓ Question {idx}/{total_questions}"
             self._log(f"\n{'='*70}")
@@ -1418,6 +1435,7 @@ def run_scenario_by_name(
     max_tokens: int = 100000,
     preserve_workspace: bool = False,
     llm_provider: str = "openai",
+    question_filter: Optional[set] = None,
 ) -> Dict[str, Any]:
     """Load and run a scenario by name.
 
@@ -1431,6 +1449,7 @@ def run_scenario_by_name(
         max_tokens: Maximum tokens to use
         preserve_workspace: If True, do not cleanup workspace after completion
         llm_provider: LLM provider for user agent - "openai" or "anthropic" (default: "openai")
+        question_filter: Optional set of question numbers to run (1-indexed). If None, run all.
 
     Returns:
         Results dictionary
@@ -1502,5 +1521,6 @@ def run_scenario_by_name(
         preserve_on_error=True,  # Always preserve on error
         preserve_on_success=preserve_workspace,  # Preserve on success if requested
         llm_provider=llm_provider,
+        question_filter=question_filter,
     )
     return runner.run(scenario)

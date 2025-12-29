@@ -27,7 +27,6 @@ from .registry import ModelRegistry
 logger = logging.getLogger(__name__)
 
 
-@DBOS.workflow()
 async def run_workflow(
     pipeline: PipelineConfig,
     filters: DocumentFilters,
@@ -73,6 +72,11 @@ async def run_workflow(
         )
     """
     workflow_id = workflow_id or DBOS.workflow_id
+
+    # Display workflow ID at start
+    from kurt.core.display import print_dim
+
+    print_dim(f"Workflow: {workflow_id}")
 
     logger.info(
         "Workflow '%s' started (mode=%s, reprocess_unchanged=%s, workflow_id=%s)",
@@ -205,9 +209,9 @@ def _import_models_from_path(path: Path) -> str:
 def resolve_pipeline(target: str) -> PipelineConfig:
     """Resolve a target string to a PipelineConfig.
 
-    Accepts:
-    - Namespace (e.g., "indexing") - discovers all models with that prefix
-    - Model name (e.g., "indexing.document_sections") - runs single model
+    Accepts (dbt-style resolution):
+    - Namespace path (e.g., "staging.indexing") - maps to kurt/models/staging/indexing/
+    - Model name (e.g., "staging.indexing.document_sections") - runs single model
     - File path (e.g., "./models/step_extract.py") - imports and discovers
     - Directory path (e.g., "./models/") - imports all and discovers
 
@@ -217,45 +221,46 @@ def resolve_pipeline(target: str) -> PipelineConfig:
     Returns:
         PipelineConfig ready for execution
     """
-    # Check if it's a file/directory path
-    path = Path(target)
-    if path.exists() or target.endswith(".py") or "/" in target or "\\" in target:
+    # Check if it's an explicit file/directory path (contains / or \ or ends with .py)
+    if "/" in target or "\\" in target or target.endswith(".py"):
+        path = Path(target)
         if not path.exists():
             raise ValueError(f"Path does not exist: {target}")
         namespace = _import_models_from_path(path)
         return get_pipeline(namespace)
 
-    # Check if it's a specific model name
+    # Try to import the parent package to register models
+    # e.g., for "landing.fetch", import "kurt.models.landing"
+    if "." in target:
+        parent_namespace = target.rsplit(".", 1)[0]
+        parent_module = f"kurt.models.{parent_namespace}"
+        try:
+            importlib.import_module(parent_module)
+            logger.debug(f"Imported {parent_module}")
+        except ImportError as e:
+            logger.debug(f"Could not import {parent_module}: {e}")
+
+    # Check if it's a specific model name already registered
     if ModelRegistry.get(target):
         logger.info(f"Running single model: {target}")
         return PipelineConfig(name=target, models=[target])
 
-    # Try importing known model packages for the namespace
+    # dbt-style folder resolution: namespace maps to kurt/models/<namespace>/
+    # e.g., "staging.indexing" -> kurt.models.staging.indexing
     namespace = target
+    module_path = f"kurt.models.{namespace}"
     try:
-        # Import models from kurt.models package (new location)
-        # Map namespace aliases to model packages
-        namespace_to_package = {
-            "landing": "kurt.models.landing",
-            "staging": "kurt.models.staging",
-            "indexing": "kurt.models.staging",  # Alias: indexing -> staging
-        }
-
-        if namespace in namespace_to_package:
-            try:
-                importlib.import_module(namespace_to_package[namespace])
-                logger.debug(f"Imported {namespace_to_package[namespace]}")
-            except ImportError as e:
-                logger.debug(f"Could not import {namespace_to_package[namespace]}: {e}")
-    except Exception as e:
-        logger.debug(f"Could not auto-import models for namespace {namespace}: {e}")
+        importlib.import_module(module_path)
+        logger.debug(f"Imported {module_path}")
+    except ImportError as e:
+        logger.debug(f"Could not import {module_path}: {e}")
 
     # Discover pipeline from namespace
     pipeline = get_pipeline(namespace)
     if not pipeline.models:
         raise ValueError(
             f"No models found for '{target}'. "
-            f"Provide a namespace (e.g., 'indexing'), model name (e.g., 'indexing.document_sections'), "
+            f"Provide a namespace (e.g., 'staging.indexing'), model name, "
             f"or path to model files."
         )
 

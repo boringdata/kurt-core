@@ -332,9 +332,14 @@ def resolve_merge_chains(resolutions: list[dict]) -> dict[str, str]:
                     break
                 current = merge_map[current]
 
+            # Build entity ID mapping for better debugging
+            entity_to_id = {}
+            for res in resolutions:
+                if "entity_details" in res and "id" in res.get("entity_details", {}):
+                    entity_to_id[res["entity_name"]] = res["entity_details"]["id"]
             logger.warning(
-                f"Cycle detected in merge chain: {' -> '.join(cycle_entities)} -> {current}. "
-                f"Breaking cycle by choosing '{cycle_entities[0]}' as canonical entity."
+                f"Cycle detected: {' -> '.join(cycle_entities)} -> {current}. "
+                f"Breaking cycle by choosing '{cycle_entities[0]}' as canonical."
             )
 
             # Break cycle: first entity becomes canonical
@@ -432,6 +437,17 @@ def cleanup_old_entities(session, doc_to_kg_data: dict) -> int:
     all_document_ids = list(doc_to_kg_data.keys())
     all_old_entity_ids = set()
 
+    # Build GLOBAL set of all new entity names across ALL documents
+    # This prevents deleting an entity that appears in doc B when processing doc A
+    # Include both entity_name and canonical_name since DB entities use canonical_name
+    all_new_entity_names = set()
+    for kg_data in doc_to_kg_data.values():
+        for e in kg_data.get("new_entities", []):
+            all_new_entity_names.add(e["name"])
+            # Also add canonical_name if it differs from name
+            if e.get("canonical_name") and e["canonical_name"] != e["name"]:
+                all_new_entity_names.add(e["canonical_name"])
+
     for document_id in all_document_ids:
         kg_data = doc_to_kg_data[document_id]
 
@@ -442,9 +458,6 @@ def cleanup_old_entities(session, doc_to_kg_data: dict) -> int:
                 existing_entity_ids_to_keep.add(UUID(entity_id_str.strip()))
             except (ValueError, AttributeError):
                 pass
-
-        # Get entity names being created (from Stage 4)
-        new_entity_names = {e["name"] for e in kg_data.get("new_entities", [])}
 
         # Get all entities linked to this document
         stmt = select(DocumentEntity).where(DocumentEntity.document_id == document_id)
@@ -457,9 +470,13 @@ def cleanup_old_entities(session, doc_to_kg_data: dict) -> int:
             if de.entity_id in existing_entity_ids_to_keep:
                 continue
 
-            # Keep if it's being recreated in Stage 4
+            # Keep if it's being recreated in Stage 4 (check GLOBAL set)
+            # Check both name and canonical_name since groups use entity_name which could match either
             entity = session.get(Entity, de.entity_id)
-            if entity and entity.name in new_entity_names:
+            if entity and (
+                entity.name in all_new_entity_names
+                or (entity.canonical_name and entity.canonical_name in all_new_entity_names)
+            ):
                 continue
             else:
                 old_entity_ids_to_clean.add(de.entity_id)
@@ -519,7 +536,7 @@ def create_entities(
     session,
     canonical_groups: dict[str, list[dict]],
     entity_name_to_docs: dict[str, list[dict]],
-) -> dict[str, UUID]:
+) -> Tuple[dict[str, UUID], set[str]]:
     """Create or link all entities.
 
     Args:
@@ -528,9 +545,12 @@ def create_entities(
         entity_name_to_docs: Dict mapping entity_name -> list of doc mentions
 
     Returns:
-        Dict mapping entity_name -> entity_id
+        Tuple of:
+        - Dict mapping entity_name -> entity_id
+        - Set of entity names that were actually created (not linked to existing)
     """
     entity_name_to_id = {}
+    actually_created = set()  # Track which entities were truly created
 
     for canonical_name, group_resolutions in canonical_groups.items():
         # Find the primary resolution (the one that's not a MERGE_WITH)
@@ -572,6 +592,9 @@ def create_entities(
                 entity_name_to_id=entity_name_to_id,
                 entity_data=entity_data,
             )
+            # Track all entity names in this group as actually created
+            for r in group_resolutions:
+                actually_created.add(r["entity_name"])
 
         else:
             # Link to existing entity
@@ -642,7 +665,7 @@ def create_entities(
                         section_id=doc_info.get("section_id"),
                     )
 
-    return entity_name_to_id
+    return entity_name_to_id, actually_created
 
 
 def create_relationships(

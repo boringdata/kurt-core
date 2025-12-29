@@ -222,6 +222,14 @@ def print_info(message: str) -> None:
     _console.print(text)
 
 
+def print_dim(message: str) -> None:
+    """Print a dim/muted message."""
+    text = Text()
+    text.append("         ", style="dim")  # Indent to align with timestamps
+    text.append(message, style="dim")
+    _console.print(text)
+
+
 def print_inline_table(
     items: list[dict],
     columns: list[str],
@@ -315,12 +323,181 @@ def print_progress(current: int, total: int, prefix: str = "") -> None:
         _console.print(text)
 
 
+class ConcurrentProgressManager:
+    """
+    Singleton manager for coordinating multiple concurrent progress trackers.
+
+    Provides a single shared Rich Live display with:
+    - Multiple progress bars (one per tracker) at the top
+    - A shared scrolling log box below for all events
+    """
+
+    _instance = None
+    _lock = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            import threading
+
+            cls._instance = super().__new__(cls)
+            cls._lock = threading.RLock()  # Use RLock to allow nested locking
+            cls._instance._initialized = False
+        return cls._instance
+
+    def __init__(self):
+        if self._initialized:
+            return
+
+        from collections import deque
+
+        from rich.console import Console
+        from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn
+
+        self.console = Console()
+        self._trackers: Dict[
+            str, Dict[str, Any]
+        ] = {}  # tracker_id -> {task_id, description, total}
+        self._log_buffer: deque = deque(maxlen=5)  # Shared log buffer
+        self._live = None
+        self._started = False
+
+        # Shared progress display for all trackers
+        self._progress = Progress(
+            TextColumn("  {task.description}"),
+            BarColumn(bar_width=30),
+            MofNCompleteColumn(),
+            console=self.console,
+        )
+
+        self._initialized = True
+
+    def _render(self):
+        """Render all progress bars + shared log lines."""
+        from rich.console import Group
+
+        parts = [self._progress]
+
+        # Add shared log lines below progress bars
+        for line in self._log_buffer:
+            parts.append(line)
+
+        return Group(*parts)
+
+    def _ensure_live_started(self):
+        """Start the shared live display if not already started."""
+        from rich.live import Live
+
+        if not self._started:
+            self._live = Live(
+                self._render(),
+                console=self.console,
+                refresh_per_second=4,
+                transient=True,
+            )
+            self._live.start()
+            self._started = True
+
+    def _maybe_stop_live(self):
+        """Stop live display if no active trackers remain."""
+        if self._started and not self._trackers:
+            if self._live:
+                self._live.stop()
+            self._started = False
+            self._live = None
+            # Clear the log buffer for next use
+            self._log_buffer.clear()
+
+    def register_tracker(self, tracker_id: str, description: str, total: int) -> int:
+        """Register a new progress tracker and return its task_id."""
+        with self._lock:
+            self._ensure_live_started()
+
+            task_id = self._progress.add_task(description, total=total)
+            self._trackers[tracker_id] = {
+                "task_id": task_id,
+                "description": description,
+                "total": total,
+            }
+
+            if self._live:
+                self._live.update(self._render())
+
+            return task_id
+
+    def update_tracker(self, tracker_id: str, completed: int) -> None:
+        """Update progress for a tracker."""
+        with self._lock:
+            if tracker_id not in self._trackers:
+                return
+
+            task_id = self._trackers[tracker_id]["task_id"]
+            self._progress.update(task_id, completed=completed)
+
+            if self._live:
+                self._live.update(self._render())
+
+    def add_log(self, tracker_id: str, message: str, style: str = "dim") -> None:
+        """Add a log message to the shared buffer with step name prefix."""
+        from rich.text import Text
+
+        with self._lock:
+            # Get the step name from the tracker
+            step_name = ""
+            if tracker_id in self._trackers:
+                desc = self._trackers[tracker_id]["description"]
+                # Use short name (last part after colon or the whole thing)
+                step_name = desc.split(":")[-1].strip() if ":" in desc else desc
+
+            # Format: "    [step_name] message"
+            if step_name:
+                log_text = Text()
+                log_text.append(f"    [{step_name}] ", style="dim cyan")
+                log_text.append(message, style=style)
+                self._log_buffer.append(log_text)
+            else:
+                self._log_buffer.append(Text(f"    {message}", style=style))
+
+            if self._live:
+                self._live.update(self._render())
+
+    def unregister_tracker(self, tracker_id: str) -> None:
+        """Unregister a tracker when it's done."""
+        with self._lock:
+            if tracker_id in self._trackers:
+                task_id = self._trackers[tracker_id]["task_id"]
+                # Hide the completed task
+                self._progress.update(task_id, visible=False)
+                del self._trackers[tracker_id]
+
+            self._maybe_stop_live()
+
+    def is_active(self) -> bool:
+        """Check if any tracker is active."""
+        with self._lock:
+            return len(self._trackers) > 0
+
+
+# Global concurrent progress manager
+_concurrent_manager = None
+
+
+def get_concurrent_manager() -> ConcurrentProgressManager:
+    """Get or create the global concurrent progress manager."""
+    global _concurrent_manager
+    if _concurrent_manager is None:
+        _concurrent_manager = ConcurrentProgressManager()
+    return _concurrent_manager
+
+
 class LiveProgressTracker:
     """
     Live progress tracker with Rich Live display.
 
     Shows a progress bar and scrolling log of completed items with
     specialized methods for success/skip/error messages.
+
+    When multiple trackers are active concurrently, they coordinate through
+    ConcurrentProgressManager to share a single Live display.
     """
 
     def __init__(self, description: str = "Processing", total: int = 0, max_log_lines: int = 5):
@@ -332,6 +509,7 @@ class LiveProgressTracker:
             total: Total number of items
             max_log_lines: Maximum log lines to show
         """
+        import uuid
         from collections import deque
 
         from rich.console import Console
@@ -343,6 +521,9 @@ class LiveProgressTracker:
         self.log_buffer = deque(maxlen=max_log_lines)
         self.console = Console()
 
+        # Unique ID for this tracker
+        self._tracker_id = str(uuid.uuid4())
+
         self._progress = Progress(
             TextColumn("  {task.description}"),
             BarColumn(bar_width=30),
@@ -352,6 +533,10 @@ class LiveProgressTracker:
         self._task_id = None
         self._live = None
         self._started = False
+
+        # Check if we should use concurrent mode
+        self._use_concurrent = False
+        self._manager = None
 
     def _render(self):
         """Render progress bar + log lines."""
@@ -367,27 +552,25 @@ class LiveProgressTracker:
 
     def start(self) -> None:
         """Start the live display."""
-        from rich.live import Live
+        if self._started:
+            return
 
-        if not self._started:
-            self._task_id = self._progress.add_task(self.description, total=self.total)
-            self._live = Live(
-                self._render(),
-                console=self.console,
-                refresh_per_second=4,
-                transient=True,  # Clear when done to avoid conflicts with other output
-            )
-            self._live.start()
-            self._started = True
+        # Always use the shared concurrent manager for consistent display
+        self._manager = get_concurrent_manager()
+        self._use_concurrent = True
+        self._task_id = self._manager.register_tracker(
+            self._tracker_id, self.description, self.total
+        )
+        self._started = True
 
     def update(self, completed: int, message: str = None) -> None:
         """Update progress and optionally add a log message."""
-        if self._started and self._task_id is not None:
-            self._progress.update(self._task_id, completed=completed)
-            if message:
-                self._add_log(message)
-            if self._live:
-                self._live.update(self._render())
+        if not self._started:
+            return
+
+        self._manager.update_tracker(self._tracker_id, completed)
+        if message:
+            self._manager.add_log(self._tracker_id, message)
 
     def _add_log(self, message: str, style: str = "dim") -> None:
         """Add a formatted log message to the buffer."""
@@ -397,10 +580,10 @@ class LiveProgressTracker:
 
     def log(self, message: str, style: str = "dim") -> None:
         """Add a log message without updating progress."""
-        if self._started:
-            self._add_log(message, style)
-            if self._live:
-                self._live.update(self._render())
+        if not self._started:
+            return
+
+        self._manager.add_log(self._tracker_id, message, style)
 
     def log_success(
         self,
@@ -488,9 +671,14 @@ class LiveProgressTracker:
 
     def stop(self) -> None:
         """Stop the live display."""
-        if self._started and self._live:
-            self._live.stop()
-            self._started = False
+        if not self._started:
+            return
+
+        # Unregister from manager (this will stop live display if last tracker)
+        if self._manager:
+            self._manager.unregister_tracker(self._tracker_id)
+
+        self._started = False
 
     def __enter__(self):
         self.start()
@@ -504,26 +692,82 @@ def make_progress_callback(prefix: str = "", show_items: bool = True) -> callabl
     """
     Create a progress callback for run_batch_sync with live display.
 
-    Shows a live progress bar and per-item status as items complete.
+    Shows a live progress bar with per-item status. Items are shown during
+    execution and cleared when complete, leaving just a summary line with elapsed time.
 
     Args:
         prefix: Description text for the progress bar
-        show_items: Whether to show per-item status messages
+        show_items: Whether to show per-item status messages (default: True)
 
     Returns:
         Callback function(completed, total, result)
     """
+    import time
+
     tracker = None
     success_count = 0
     error_count = 0
     skip_count = 0
-    started = False
+    start_time = None
+    last_item_time = None
+
+    def _get_item_id(payload: dict, fallback_index: int) -> str:
+        """Extract a meaningful item identifier from payload."""
+        # Try entity name first (for entity resolution/clustering)
+        if payload.get("entity_name"):
+            name = payload["entity_name"]
+            return name[:20] + "..." if len(name) > 20 else name
+
+        # Try group_entities (for similarity search results)
+        if payload.get("group_entities") and len(payload["group_entities"]) > 0:
+            name = payload["group_entities"][0].get("name", "")
+            if name:
+                return name[:20] + "..." if len(name) > 20 else name
+
+        # Try claim statement (for claim clustering)
+        if payload.get("statement"):
+            stmt = payload["statement"]
+            return stmt[:25] + "..." if len(stmt) > 25 else stmt
+
+        # Try cluster_claims (for claim similarity search)
+        if payload.get("cluster_claims") and len(payload["cluster_claims"]) > 0:
+            stmt = payload["cluster_claims"][0].get("statement", "")
+            if stmt:
+                return stmt[:25] + "..." if len(stmt) > 25 else stmt
+
+        # Try section extraction format: doc_id:section N/total
+        if payload.get("section_number") is not None and payload.get("document_id"):
+            doc_id = str(payload["document_id"])[:6]
+            section_num = payload["section_number"]
+            total = payload.get("total_sections", "?")
+            return f"{doc_id}:§{section_num}/{total}"
+
+        # Try section_id with doc prefix (for section-based operations)
+        if payload.get("section_id"):
+            section_id = str(payload["section_id"])[:8]
+            doc_id = str(payload.get("document_id", ""))[:6]
+            if doc_id:
+                return f"{doc_id}:{section_id}"
+            return section_id
+
+        # Try document_id (for document-based operations)
+        if payload.get("document_id"):
+            return str(payload["document_id"])[:8]
+
+        # Try generic id
+        if payload.get("id"):
+            return str(payload["id"])[:8]
+
+        # Fallback to index
+        return f"#{fallback_index}"
 
     def callback(completed: int, total: int, result: Any) -> None:
-        nonlocal tracker, success_count, error_count, skip_count, started
+        nonlocal tracker, success_count, error_count, skip_count, start_time, last_item_time
 
         # Create tracker on first call (including start event with completed=0)
         if tracker is None:
+            start_time = time.time()
+            last_item_time = start_time
             tracker = LiveProgressTracker(
                 description=prefix.strip(": ") or "Processing",
                 total=total,
@@ -531,73 +775,47 @@ def make_progress_callback(prefix: str = "", show_items: bool = True) -> callabl
             )
             tracker.start()
 
-        # Show start message on first call (completed=0 means start event)
-        if not started:
-            started = True
-            tracker.log_info(f"Processing {total} items...")
-            # Force display update for start message
-            if tracker._live:
-                tracker._live.update(tracker._render())
-
         # Update progress bar
-        tracker._progress.update(tracker._task_id, completed=completed)
+        tracker.update(completed)
 
-        # Log item status if enabled (skip if result is None - start event)
-        if show_items and result is not None:
-            # Extract identifiers from result payload (tracking_fields from step)
+        # Log item status (skip if result is None - start event)
+        if result is not None:
             payload = getattr(result, "payload", {}) or {}
 
-            # Build item_id: prefer document_id, fallback to id
-            doc_id = str(payload.get("document_id") or payload.get("id") or "")[:8]
-            section_num = payload.get("section_number")
+            # Calculate time since last item
+            now = time.time()
+            item_elapsed = now - last_item_time
+            last_item_time = now
+            time_suffix = f" ({item_elapsed:.1f}s)" if item_elapsed >= 0.1 else ""
 
-            if doc_id and section_num is not None:
-                item_id = f"{doc_id}-s{section_num}"
-            elif doc_id:
-                item_id = doc_id
-            else:
-                item_id = f"item-{completed}"
+            # Build meaningful item identifier
+            item_id = _get_item_id(payload, completed)
 
-            title = payload.get("document_title") or payload.get("title") or ""
-
-            # Extract timing if available
-            telemetry = getattr(result, "telemetry", {}) or {}
-            elapsed = telemetry.get("execution_time")
-
-            # Check for skip
             if payload.get("skip"):
                 skip_count += 1
-                tracker.log_skip(
-                    item_id=item_id,
-                    title=title,
-                    reason=payload.get("skip_reason", "unchanged"),
-                    counter=(completed, total),
-                )
+                if show_items:
+                    tracker.log(f"{completed}/{total} ○ {item_id}{time_suffix}", style="dim yellow")
             elif getattr(result, "error", None):
                 error_count += 1
-                error_msg = str(getattr(result, "error", "Unknown error"))
-                tracker.log_error(
-                    item_id=item_id,
-                    error=error_msg,
-                    counter=(completed, total),
+                error_msg = str(getattr(result, "error", "Unknown error"))[:40]
+                tracker.log(
+                    f"{completed}/{total} ✗ {item_id}: {error_msg}{time_suffix}", style="dim red"
                 )
             else:
                 success_count += 1
-                tracker.log_success(
-                    item_id=item_id,
-                    title=title,
-                    elapsed=elapsed,
-                    counter=(completed, total),
-                )
+                if show_items:
+                    tracker.log(f"{completed}/{total} ✓ {item_id}{time_suffix}", style="dim green")
 
-        # Update display
-        if tracker._live:
-            tracker._live.update(tracker._render())
-
-        # Stop when complete and print summary
+        # Stop when complete - live display clears, then print summary
         if completed >= total:
-            tracker.stop()
-            # Print a summary line after the live display clears
+            # Calculate elapsed time before stopping (need tracker for console)
+            elapsed = time.time() - start_time if start_time else 0
+            if elapsed >= 60:
+                time_str = f"{elapsed / 60:.1f}m"
+            else:
+                time_str = f"{elapsed:.1f}s"
+
+            # Build summary line
             desc = prefix.strip(": ") or "Processing"
             parts = []
             if success_count > 0:
@@ -608,9 +826,23 @@ def make_progress_callback(prefix: str = "", show_items: bool = True) -> callabl
                 parts.append(f"{error_count} failed")
 
             if parts:
-                print(f"  {desc}: {', '.join(parts)}")
+                summary = f"  {desc}: {', '.join(parts)} ({time_str})"
             else:
-                print(f"  {desc}: {total}/{total} completed")
+                summary = f"  {desc}: {total}/{total} completed ({time_str})"
+
+            # Get manager reference before stopping
+            manager = tracker._manager
+
+            # Stop this tracker (unregisters from manager)
+            tracker.stop()
+
+            # Print summary using Rich console to coordinate with any remaining live displays
+            if manager and manager.is_active():
+                # Other trackers still running - use manager's console
+                manager.console.print(summary)
+            else:
+                # No other trackers - safe to print directly
+                print(summary)
 
     return callback
 

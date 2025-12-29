@@ -23,6 +23,25 @@ except ImportError:
     from framework.runner import run_scenario_by_name  # Direct execution
 
 
+def _parse_question_filter(questions_str: str) -> set:
+    """Parse question filter string into a set of question numbers.
+
+    Examples:
+        "1,3,5" -> {1, 3, 5}
+        "2-4" -> {2, 3, 4}
+        "1,3-5,7" -> {1, 3, 4, 5, 7}
+    """
+    result = set()
+    for part in questions_str.split(","):
+        part = part.strip()
+        if "-" in part:
+            start, end = part.split("-", 1)
+            result.update(range(int(start), int(end) + 1))
+        else:
+            result.add(int(part))
+    return result
+
+
 @click.group()
 def main():
     """Kurt Evaluation Framework - Test agent behavior with automated scenarios."""
@@ -53,7 +72,14 @@ def main():
     default="openai",
     help="LLM provider for user agent",
 )
-def run(scenario, no_cleanup, max_tool_calls, max_duration, max_tokens, llm_provider):
+@click.option(
+    "--questions",
+    "-q",
+    type=str,
+    default=None,
+    help="Run only specific questions (e.g., '1,3,5' or '2-4' or '1,3-5,7')",
+)
+def run(scenario, no_cleanup, max_tool_calls, max_duration, max_tokens, llm_provider, questions):
     """Run a single evaluation scenario.
 
     SCENARIO can be:
@@ -66,6 +92,8 @@ def run(scenario, no_cleanup, max_tool_calls, max_duration, max_tokens, llm_prov
       kurt-eval run 03_interactive_project
       kurt-eval run 3 --no-cleanup
       kurt-eval run 3 --llm-provider anthropic
+      kurt-eval run answer_with_retrieval --questions 1,3,5
+      kurt-eval run answer_with_retrieval -q 2-4
     """
     config = get_config()
     scenarios_dir = eval_dir / config.scenarios_dir
@@ -88,6 +116,12 @@ def run(scenario, no_cleanup, max_tool_calls, max_duration, max_tokens, llm_prov
 
     click.echo(f"Running scenario [{scenario}]: {scenario}\n")
 
+    # Parse question filter if provided
+    question_filter = None
+    if questions:
+        question_filter = _parse_question_filter(questions)
+        click.echo(f"Filtering to questions: {sorted(question_filter)}\n")
+
     try:
         results = run_scenario_by_name(
             scenario_name=scenario,
@@ -97,6 +131,7 @@ def run(scenario, no_cleanup, max_tool_calls, max_duration, max_tokens, llm_prov
             max_tokens=max_tokens,
             preserve_workspace=no_cleanup,
             llm_provider=llm_provider,
+            question_filter=question_filter,
         )
 
         if results["passed"]:

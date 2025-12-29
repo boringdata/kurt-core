@@ -523,12 +523,16 @@ class TableWriter:
         from sqlalchemy import inspect, text
 
         table_name = model.__tablename__
+
+        # Clear inspector cache to get fresh table info
         inspector = inspect(self.session.bind)
+        inspector.clear_cache()
 
         # Check if table exists
         if table_name not in inspector.get_table_names():
-            # Table doesn't exist, create it
-            model.metadata.create_all(self.session.bind)
+            # Table doesn't exist, create it using the model's current table definition
+            # (not metadata.create_all which may use a cached/stale version)
+            model.__table__.create(self.session.bind, checkfirst=True)
             return
 
         # Get existing columns with their info
