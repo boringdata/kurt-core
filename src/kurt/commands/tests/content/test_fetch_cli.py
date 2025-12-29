@@ -435,6 +435,8 @@ class TestFetchRefetch:
 
     def test_fetch_skips_fetched_by_default(self, isolated_cli_runner, mock_pipeline):
         """Test that already FETCHED documents are skipped by default."""
+        from kurt.tests.status_helpers import mark_document_as_fetched
+
         runner, project_dir = isolated_cli_runner
 
         session = get_session()
@@ -447,6 +449,9 @@ class TestFetchRefetch:
         )
         session.add(doc_fetched)
         session.commit()
+
+        # Mark as fetched using status helper (creates landing_fetch entry)
+        mark_document_as_fetched(doc_fetched.id, session=session)
 
         # Run fetch without --refetch
         result = runner.invoke(
@@ -461,8 +466,12 @@ class TestFetchRefetch:
             ],
         )
 
-        # Should show message about documents being already fetched
-        assert "FETCHED" in result.output or "refetch" in result.output.lower()
+        # Should show message about documents being already fetched or 0 documents
+        assert (
+            "FETCHED" in result.output
+            or "refetch" in result.output.lower()
+            or "0 document" in result.output.lower()
+        )
 
         # Pipeline should not be called (no documents to fetch)
         assert not mock_pipeline.called
@@ -471,6 +480,8 @@ class TestFetchRefetch:
         self, isolated_cli_runner, mock_pipeline_with_document_update
     ):
         """Test --refetch includes already FETCHED documents."""
+        from kurt.tests.status_helpers import mark_document_as_fetched
+
         runner, project_dir = isolated_cli_runner
 
         session = get_session()
@@ -483,6 +494,9 @@ class TestFetchRefetch:
         )
         session.add(doc_fetched)
         session.commit()
+
+        # Mark as fetched using status helper (creates landing_fetch entry)
+        mark_document_as_fetched(doc_fetched.id, session=session)
 
         # Run fetch with --refetch
         result = runner.invoke(
@@ -568,7 +582,7 @@ class TestFetchOutputFormat:
 class TestFetchLocalFiles:
     """Tests for fetch command with local file ingestion."""
 
-    def test_fetch_with_file_option(self, isolated_cli_runner):
+    def test_fetch_with_file_option(self, isolated_cli_runner, mock_pipeline_with_document_update):
         """Test fetch with local file path."""
         runner, project_dir = isolated_cli_runner
 
@@ -599,7 +613,7 @@ class TestFetchLocalFiles:
         assert doc.source_type == SourceType.FILE_UPLOAD
         assert doc.ingestion_status == IngestionStatus.FETCHED
 
-    def test_fetch_with_files_option(self, isolated_cli_runner):
+    def test_fetch_with_files_option(self, isolated_cli_runner, mock_pipeline_with_document_update):
         """Test fetch with --files option for multiple local files."""
         runner, project_dir = isolated_cli_runner
 
@@ -638,7 +652,9 @@ class TestFetchLocalFiles:
         assert doc1.title == "First Article"
         assert doc2.title == "Second Article"
 
-    def test_fetch_file_outside_sources_directory(self, isolated_cli_runner):
+    def test_fetch_file_outside_sources_directory(
+        self, isolated_cli_runner, mock_pipeline_with_document_update
+    ):
         """Test fetch copies files outside sources/ to sources/local/."""
         runner, project_dir = isolated_cli_runner
 
@@ -693,7 +709,9 @@ class TestFetchLocalFiles:
 
         assert "not found" in result.output.lower() or "error" in result.output.lower()
 
-    def test_fetch_file_title_from_filename(self, isolated_cli_runner):
+    def test_fetch_file_title_from_filename(
+        self, isolated_cli_runner, mock_pipeline_with_document_update
+    ):
         """Test fetch extracts title from filename when no markdown heading."""
         runner, project_dir = isolated_cli_runner
 

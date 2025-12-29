@@ -496,6 +496,8 @@ class TestFetchCommandFilters:
 
     def test_fetch_with_status_filter(self, isolated_cli_runner):
         """Test 'kurt content fetch --with-status <status>' works."""
+        from kurt.tests.status_helpers import mark_document_as_fetched
+
         runner, project_dir = isolated_cli_runner
 
         # Create test documents with different statuses
@@ -516,6 +518,9 @@ class TestFetchCommandFilters:
         )
         session.add_all([doc_not_fetched, doc_fetched])
         session.commit()
+
+        # Mark one document as fetched (creates landing_fetch entry for derived status)
+        mark_document_as_fetched(doc_fetched.id, session=session)
 
         # Test fetch with status filter (dry-run)
         result = runner.invoke(

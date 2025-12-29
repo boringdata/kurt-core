@@ -266,6 +266,7 @@ def build_document_query(
     in_cluster: str = None,
     with_content_type: str = None,
     limit: int = None,
+    use_derived_status: bool = True,
 ):
     """
     Build SQLModel query for document selection.
@@ -275,14 +276,17 @@ def build_document_query(
 
     Args:
         id_uuids: List of UUIDs to filter by
-        with_status: Status filter (NOT_FETCHED | FETCHED | ERROR)
+        with_status: Status filter (NOT_FETCHED | FETCHED | INDEXED | ERROR)
         refetch: If True, include FETCHED documents
         in_cluster: Cluster name filter
         with_content_type: Content type filter
         limit: Maximum documents to return
+        use_derived_status: If True, filter by derived status from pipeline tables
+                           (default True for model-based architecture)
 
     Returns:
-        SQLModel Select statement
+        SQLModel Select statement (if use_derived_status=False or no status filter)
+        OR tuple of (statement, post_filter_fn) if derived status filtering needed
 
     Example:
         >>> stmt = build_document_query(
@@ -294,21 +298,13 @@ def build_document_query(
     """
     from sqlmodel import select
 
-    from kurt.db.models import Document, IngestionStatus
+    from kurt.db.models import Document
 
     stmt = select(Document)
 
     # Filter by IDs
     if id_uuids:
         stmt = stmt.where(Document.id.in_(id_uuids))
-
-    # Filter by status
-    if with_status:
-        status_enum = IngestionStatus[with_status]
-        stmt = stmt.where(Document.ingestion_status == status_enum)
-    elif not refetch:
-        # Default: exclude FETCHED documents unless refetch=True
-        stmt = stmt.where(Document.ingestion_status != IngestionStatus.FETCHED)
 
     # Filter by cluster (uses staging_topic_clustering table)
     if in_cluster:
@@ -328,6 +324,58 @@ def build_document_query(
         stmt = stmt.limit(limit)
 
     return stmt
+
+
+def filter_documents_by_derived_status(
+    docs: list,
+    with_status: str = None,
+    refetch: bool = False,
+    session=None,
+) -> list:
+    """
+    Filter documents by derived status from pipeline tables.
+
+    This implements status filtering for the model-based architecture,
+    where status is derived from landing_fetch and staging_section_extractions
+    tables rather than stored in a column.
+
+    Args:
+        docs: List of Document objects to filter
+        with_status: Status filter (NOT_FETCHED | FETCHED | INDEXED | ERROR)
+        refetch: If True, include documents that are already FETCHED/INDEXED
+        session: Optional database session
+
+    Returns:
+        Filtered list of Document objects
+
+    Example:
+        >>> docs = session.exec(select(Document)).all()
+        >>> fetched_docs = filter_documents_by_derived_status(docs, with_status="FETCHED")
+    """
+    if not docs:
+        return docs
+
+    from kurt.db.documents import get_document_status_batch
+
+    # Get derived status for all documents
+    doc_ids = [doc.id for doc in docs]
+    derived_statuses = get_document_status_batch(doc_ids, session)
+
+    # Filter by status
+    if with_status:
+        # Explicit status filter
+        return [
+            doc for doc in docs if derived_statuses.get(str(doc.id), "NOT_FETCHED") == with_status
+        ]
+    elif not refetch:
+        # Default: exclude FETCHED and INDEXED documents unless refetch=True
+        return [
+            doc
+            for doc in docs
+            if derived_statuses.get(str(doc.id), "NOT_FETCHED") not in ("FETCHED", "INDEXED")
+        ]
+
+    return docs
 
 
 def should_include_document(doc_url: str, doc_path: str, include_pattern: str) -> bool:
@@ -556,17 +604,13 @@ def select_documents_for_fetch(
     """
     Select documents to fetch based on filters.
     Leverages filtering.py helpers for query building and document.py for CRUD.
+
+    Uses derived status from pipeline tables (model-based architecture).
     """
     from uuid import UUID
 
     from kurt.db.database import get_session
     from kurt.db.documents import add_documents_for_files, add_documents_for_urls
-    from kurt.db.models import IngestionStatus
-    from kurt.utils.filtering import (
-        apply_glob_filters,
-        build_document_query,
-        resolve_ids_to_uuids,
-    )
 
     # Validate: at least one filter required
     if not (
@@ -624,46 +668,28 @@ def select_documents_for_fetch(
         url_docs = list(session.exec(stmt).all())
         id_uuids = [doc.id for doc in url_docs]
 
-    # Step 4: Build query (calls filtering.py helper - NO logic here!)
+    # Step 4: Build query without status filter (status filtered post-query with derived status)
     stmt = build_document_query(
         id_uuids=id_uuids if id_uuids else None,
-        with_status=with_status,
-        refetch=refetch,
+        with_status=None,  # Status filtering done post-query
+        refetch=True,  # Get all, filter later
         in_cluster=in_cluster,
         with_content_type=with_content_type,
-        limit=limit,
+        limit=None,  # Don't apply limit yet - apply after all filtering
     )
 
-    # Execute query without status filter to check for FETCHED documents
-    if not with_status and not refetch and id_uuids:
-        # For ID-based queries, query without status filter to find FETCHED docs
-        stmt_no_filter = build_document_query(
-            id_uuids=id_uuids,
-            with_status=None,
-            refetch=True,  # Include all statuses
-            in_cluster=in_cluster,
-            with_content_type=with_content_type,
-            limit=None,
-        )
-        docs_before_status_filter = list(session.exec(stmt_no_filter).all())
-    elif not with_status and not refetch:
-        # For pattern-based queries
-        docs_before_status_filter = list(session.exec(stmt).all())
-    else:
-        docs_before_status_filter = []
+    # Execute query to get all matching documents
+    all_docs = list(session.exec(stmt).all())
 
-    # Re-build query with status filter for final results
-    stmt = build_document_query(
-        id_uuids=id_uuids if id_uuids else None,
+    # Step 5: Apply derived status filtering
+    docs = filter_documents_by_derived_status(
+        all_docs,
         with_status=with_status,
         refetch=refetch,
-        in_cluster=in_cluster,
-        with_content_type=with_content_type,
-        limit=None,  # Don't apply limit yet - apply after glob filtering
+        session=session,
     )
-    docs = list(session.exec(stmt).all())
 
-    # Step 5: Apply glob filters (calls filtering.py helper)
+    # Step 6: Apply glob filters
     filtered_docs = apply_glob_filters(docs, include_pattern, exclude)
 
     # Apply limit after filtering
@@ -677,13 +703,15 @@ def select_documents_for_fetch(
     # Calculate estimated cost
     estimated_cost = estimate_fetch_cost(len(filtered_docs), skip_index)
 
-    # Count excluded FETCHED documents
+    # Count excluded FETCHED/INDEXED documents using derived status
     excluded_fetched_count = 0
-    if not with_status and not refetch and docs_before_status_filter:
-        fetched_docs = [
-            d for d in docs_before_status_filter if d.ingestion_status == IngestionStatus.FETCHED
-        ]
-        excluded_fetched_count = len(fetched_docs)
+    if not with_status and not refetch and all_docs:
+        from kurt.db.documents import get_document_status_batch
+
+        all_statuses = get_document_status_batch([d.id for d in all_docs], session)
+        excluded_fetched_count = sum(
+            1 for s in all_statuses.values() if s in ("FETCHED", "INDEXED")
+        )
 
     return {
         "docs": filtered_docs,
@@ -701,14 +729,10 @@ def select_documents_to_fetch(filters: DocumentFetchFilters) -> list[dict]:
     Select documents to fetch based on filters (for workflow steps).
 
     Returns lightweight dicts suitable for checkpointing.
+    Uses derived status from pipeline tables (model-based architecture).
     """
     from kurt.db.database import get_session
     from kurt.db.documents import add_documents_for_files, add_documents_for_urls
-    from kurt.utils.filtering import (
-        apply_glob_filters,
-        build_document_query,
-        resolve_ids_to_uuids,
-    )
 
     session = get_session()
 
@@ -725,23 +749,35 @@ def select_documents_to_fetch(filters: DocumentFetchFilters) -> list[dict]:
     if filters.id_list:
         id_uuids = resolve_ids_to_uuids(filters.id_list)
 
-    # Step 4: Build and execute query
+    # Step 4: Build and execute query (without status filter)
     stmt = build_document_query(
         id_uuids=id_uuids,
-        with_status=filters.with_status,
-        refetch=filters.refetch,
+        with_status=None,  # Status filtering done post-query
+        refetch=True,  # Get all, filter later
         in_cluster=filters.in_cluster,
         with_content_type=filters.with_content_type,
-        limit=filters.limit,
+        limit=None,  # Apply after filtering
     )
-    docs = list(session.exec(stmt).all())
+    all_docs = list(session.exec(stmt).all())
 
-    # Step 5: Apply glob filters
+    # Step 5: Apply derived status filtering
+    docs = filter_documents_by_derived_status(
+        all_docs,
+        with_status=filters.with_status,
+        refetch=filters.refetch,
+        session=session,
+    )
+
+    # Step 6: Apply glob filters
     filtered_docs = apply_glob_filters(
         docs,
         include_pattern=filters.include_pattern,
         exclude_pattern=filters.exclude_pattern,
     )
+
+    # Apply limit after filtering
+    if filters.limit:
+        filtered_docs = filtered_docs[: filters.limit]
 
     # Convert to lightweight dicts for checkpoint
     return [
@@ -759,8 +795,17 @@ def select_documents_to_fetch(filters: DocumentFetchFilters) -> list[dict]:
 
 __all__ = [
     "DocumentFetchFilters",
+    "DocumentFilters",
     "build_document_filters",
+    "build_document_query",
     "estimate_fetch_cost",
+    "filter_documents_by_derived_status",
+    "resolve_filters",
+    "resolve_identifier_to_doc_id",
+    "resolve_ids_to_uuids",
     "select_documents_for_fetch",
     "select_documents_to_fetch",
+    "apply_glob_filters",
+    "should_include_document",
+    "should_exclude_document",
 ]
