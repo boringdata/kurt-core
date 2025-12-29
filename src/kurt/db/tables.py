@@ -35,28 +35,17 @@ class TableNames:
     STAGING_TOPIC_CLUSTERING = "staging_topic_clustering"
 
     # =========================================================================
-    # Graph Layer - Knowledge graph
-    # Legacy tables (still used by existing models, will be migrated)
+    # Graph Layer - Knowledge graph (model-based)
     # =========================================================================
-    GRAPH_ENTITIES = "entities"  # Legacy: use GRAPH_ENTITIES_NEW for new models
-    GRAPH_DOCUMENT_ENTITIES = "document_entities"  # Legacy
-    GRAPH_ENTITY_RELATIONSHIPS = "entity_relationships"  # Legacy
-    GRAPH_DOCUMENT_ENTITY_RELATIONSHIPS = "document_entity_relationships"  # Legacy
-    GRAPH_CLAIMS = "claims"  # Legacy: use GRAPH_CLAIMS_NEW for new models
-    GRAPH_CLAIM_ENTITIES = "claim_entities"  # Legacy
-    GRAPH_CLAIM_RELATIONSHIPS = "claim_relationships"  # Legacy
-    GRAPH_TOPIC_CLUSTERS = "topic_clusters"  # Legacy: use GRAPH_TOPIC_CLUSTERS_NEW
-    GRAPH_DOCUMENT_CLUSTER_EDGES = "document_cluster_edges"  # Legacy
-
-    # =========================================================================
-    # Graph Layer - New model-based tables (will replace legacy tables)
-    # =========================================================================
-    GRAPH_ENTITIES_NEW = "graph_entities_new"
-    GRAPH_DOCUMENT_ENTITIES_NEW = "graph_document_entities_new"
-    GRAPH_CLAIMS_NEW = "graph_claims_new"
-    GRAPH_CLAIM_ENTITIES_NEW = "graph_claim_entities_new"
-    GRAPH_TOPIC_CLUSTERS_NEW = "graph_topic_clusters_new"
-    GRAPH_DOCUMENT_TOPICS_NEW = "graph_document_topics_new"
+    GRAPH_ENTITIES = "graph_entities"
+    GRAPH_DOCUMENT_ENTITIES = "graph_document_entities"
+    GRAPH_ENTITY_RELATIONSHIPS = "graph_entity_relationships"
+    GRAPH_DOCUMENT_ENTITY_RELATIONSHIPS = "graph_document_entity_relationships"
+    GRAPH_CLAIMS = "graph_claims"
+    GRAPH_CLAIM_ENTITIES = "graph_claim_entities"
+    GRAPH_CLAIM_RELATIONSHIPS = "graph_claim_relationships"
+    GRAPH_TOPIC_CLUSTERS = "graph_topic_clusters"
+    GRAPH_DOCUMENT_TOPICS = "graph_document_topics"
 
     # =========================================================================
     # Retrieval Layer - Query-time computed data

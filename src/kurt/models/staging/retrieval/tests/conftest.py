@@ -442,19 +442,20 @@ def motherduck_project(tmp_project):
     if not dump_dir.exists():
         pytest.skip(f"MotherDuck dump not found at {dump_dir}")
 
-    # Tables to load in dependency order
-    tables = [
-        "documents",
-        "entities",
-        "document_entities",
-        "entity_relationships",
+    # Tables to load: (file_name, db_table_name)
+    # File names use old names, DB tables use new names after migration
+    table_mappings = [
+        ("documents", "documents"),
+        ("entities", "graph_entities"),
+        ("document_entities", "graph_document_entities"),
+        ("entity_relationships", "graph_entity_relationships"),
     ]
 
     session = get_session()
 
     try:
-        for table_name in tables:
-            input_file = dump_dir / f"{table_name}.jsonl"
+        for file_name, table_name in table_mappings:
+            input_file = dump_dir / f"{file_name}.jsonl"
 
             if not input_file.exists():
                 continue

@@ -38,7 +38,7 @@ class GraphDocumentTopicRow(PipelineModelBase, table=True):
     Inherits: workflow_id, created_at, updated_at, model_name, error
     """
 
-    __tablename__ = TableNames.GRAPH_DOCUMENT_TOPICS_NEW
+    __tablename__ = TableNames.GRAPH_DOCUMENT_TOPICS
 
     # Primary key
     id: UUID = Field(default_factory=uuid4, primary_key=True)

@@ -39,7 +39,7 @@ class GraphEntityRow(PipelineModelBase, table=True):
     Inherits: workflow_id, created_at, updated_at, model_name, error
     """
 
-    __tablename__ = TableNames.GRAPH_ENTITIES_NEW
+    __tablename__ = TableNames.GRAPH_ENTITIES
 
     # Primary key
     id: UUID = Field(default_factory=uuid4, primary_key=True)

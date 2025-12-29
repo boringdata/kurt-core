@@ -7,6 +7,8 @@ from uuid import UUID, uuid4
 
 from sqlmodel import Field, SQLModel
 
+from kurt.db.tables import TableNames
+
 
 class ClaimType(str, Enum):
     """Types of claims that can be extracted from documents.
@@ -160,7 +162,7 @@ class Claim(SQLModel, table=True):
     - Tracked to its exact source location
     """
 
-    __tablename__ = "claims"
+    __tablename__ = TableNames.GRAPH_CLAIMS
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
 
@@ -169,7 +171,7 @@ class Claim(SQLModel, table=True):
     claim_type: ClaimType = Field(index=True)  # Type of claim
 
     # Entity linkage (every claim must be about at least one entity)
-    subject_entity_id: UUID = Field(foreign_key="entities.id", index=True)  # Primary entity
+    subject_entity_id: UUID = Field(foreign_key="graph_entities.id", index=True)  # Primary entity
 
     # Source tracking
     source_document_id: UUID = Field(foreign_key="documents.id", index=True)
@@ -194,7 +196,7 @@ class Claim(SQLModel, table=True):
     # Resolution status
     is_verified: bool = Field(default=False)  # Manually verified by user
     is_superseded: bool = Field(default=False)  # Replaced by newer claim
-    superseded_by_id: Optional[UUID] = Field(default=None, foreign_key="claims.id")
+    superseded_by_id: Optional[UUID] = Field(default=None, foreign_key="graph_claims.id")
 
     # Vector embedding for similarity search
     embedding: Optional[bytes] = None  # 512-dim float32 vector (2048 bytes)
@@ -212,11 +214,11 @@ class ClaimEntity(SQLModel, table=True):
     multiple entities. This table captures those additional relationships.
     """
 
-    __tablename__ = "claim_entities"
+    __tablename__ = TableNames.GRAPH_CLAIM_ENTITIES
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
-    claim_id: UUID = Field(foreign_key="claims.id", index=True)
-    entity_id: UUID = Field(foreign_key="entities.id", index=True)
+    claim_id: UUID = Field(foreign_key="graph_claims.id", index=True)
+    entity_id: UUID = Field(foreign_key="graph_entities.id", index=True)
 
     # Role of entity in the claim
     entity_role: str = Field(default="referenced")  # subject, object, referenced, compared_to
@@ -234,11 +236,11 @@ class ClaimRelationship(SQLModel, table=True):
     - Temporal succession (newer version of claim)
     """
 
-    __tablename__ = "claim_relationships"
+    __tablename__ = TableNames.GRAPH_CLAIM_RELATIONSHIPS
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
-    source_claim_id: UUID = Field(foreign_key="claims.id", index=True)
-    target_claim_id: UUID = Field(foreign_key="claims.id", index=True)
+    source_claim_id: UUID = Field(foreign_key="graph_claims.id", index=True)
+    target_claim_id: UUID = Field(foreign_key="graph_claims.id", index=True)
 
     relationship_type: str = Field(index=True)  # in_conflict, supports, contradicts, supersedes
 

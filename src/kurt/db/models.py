@@ -10,6 +10,8 @@ from pydantic import ConfigDict
 from sqlalchemy import JSON, Column
 from sqlmodel import Field, SQLModel
 
+from kurt.db.tables import TableNames
+
 logger = logging.getLogger(__name__)
 
 
@@ -217,7 +219,7 @@ class Document(SQLModel, table=True):
 class TopicCluster(SQLModel, table=True):
     """Topic cluster extracted from documents."""
 
-    __tablename__ = "topic_clusters"
+    __tablename__ = TableNames.GRAPH_TOPIC_CLUSTERS
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     name: str = Field(index=True)  # Topic name
@@ -230,11 +232,11 @@ class TopicCluster(SQLModel, table=True):
 class DocumentClusterEdge(SQLModel, table=True):
     """Junction table linking documents to topic clusters."""
 
-    __tablename__ = "document_cluster_edges"
+    __tablename__ = TableNames.GRAPH_DOCUMENT_TOPICS
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     document_id: UUID = Field(foreign_key="documents.id", index=True)
-    cluster_id: UUID = Field(foreign_key="topic_clusters.id", index=True)
+    cluster_id: UUID = Field(foreign_key="graph_topic_clusters.id", index=True)
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -260,7 +262,7 @@ class DocumentLink(SQLModel, table=True):
 class Entity(SQLModel, table=True):
     """Entity extracted from documents (knowledge graph nodes)."""
 
-    __tablename__ = "entities"
+    __tablename__ = TableNames.GRAPH_ENTITIES
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     name: str = Field(index=True)  # Entity name (as mentioned in documents)
@@ -287,11 +289,11 @@ class Entity(SQLModel, table=True):
 class EntityRelationship(SQLModel, table=True):
     """Relationship between entities (knowledge graph edges)."""
 
-    __tablename__ = "entity_relationships"
+    __tablename__ = TableNames.GRAPH_ENTITY_RELATIONSHIPS
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
-    source_entity_id: UUID = Field(foreign_key="entities.id", index=True)
-    target_entity_id: UUID = Field(foreign_key="entities.id", index=True)
+    source_entity_id: UUID = Field(foreign_key="graph_entities.id", index=True)
+    target_entity_id: UUID = Field(foreign_key="graph_entities.id", index=True)
     relationship_type: str = Field(index=True)  # mentions, part_of, integrates_with, etc.
 
     confidence: float = Field(default=0.0)  # Relationship confidence (0.0-1.0)
@@ -305,11 +307,11 @@ class EntityRelationship(SQLModel, table=True):
 class DocumentEntity(SQLModel, table=True):
     """Junction table linking documents to entities they mention."""
 
-    __tablename__ = "document_entities"
+    __tablename__ = TableNames.GRAPH_DOCUMENT_ENTITIES
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     document_id: UUID = Field(foreign_key="documents.id", index=True)
-    entity_id: UUID = Field(foreign_key="entities.id", index=True)
+    entity_id: UUID = Field(foreign_key="graph_entities.id", index=True)
     section_id: Optional[str] = Field(default=None, index=True)  # Section where entity is mentioned
 
     mention_count: int = Field(default=1)  # How many times entity is mentioned
@@ -327,10 +329,10 @@ class DocumentEntityRelationship(SQLModel, table=True):
     This table tracks all the documents and sections where that relationship was found.
     """
 
-    __tablename__ = "document_entity_relationships"
+    __tablename__ = TableNames.GRAPH_DOCUMENT_ENTITY_RELATIONSHIPS
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
-    relationship_id: UUID = Field(foreign_key="entity_relationships.id", index=True)
+    relationship_id: UUID = Field(foreign_key="graph_entity_relationships.id", index=True)
     document_id: UUID = Field(foreign_key="documents.id", index=True)
     section_id: Optional[str] = Field(default=None, index=True)
 

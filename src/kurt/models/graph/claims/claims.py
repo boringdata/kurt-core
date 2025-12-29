@@ -38,7 +38,7 @@ class GraphClaimRow(PipelineModelBase, table=True):
     Inherits: workflow_id, created_at, updated_at, model_name, error
     """
 
-    __tablename__ = TableNames.GRAPH_CLAIMS_NEW
+    __tablename__ = TableNames.GRAPH_CLAIMS
 
     # Primary key
     id: UUID = Field(default_factory=uuid4, primary_key=True)
