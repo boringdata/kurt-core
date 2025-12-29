@@ -1,11 +1,9 @@
 """
 Generic DBOS workflow runner for dbt-like pipelines.
 
-Any pipeline can use this - just define a PipelineConfig and call run_workflow().
-
-For CLI integration, use run_pipeline_workflow() which accepts:
-- Namespace string (e.g., "indexing") - auto-discovers models
-- Model name (e.g., "indexing.document_sections") - runs single model
+Use run_pipeline_workflow() which accepts:
+- Namespace string (e.g., "staging.indexing") - auto-discovers models
+- Model name (e.g., "staging.indexing.document_sections") - runs single model
 - Python file/folder path - imports and discovers models
 """
 
@@ -27,56 +25,25 @@ from .registry import ModelRegistry
 logger = logging.getLogger(__name__)
 
 
-async def run_workflow(
+async def _run_pipeline(
     pipeline: PipelineConfig,
     filters: DocumentFilters,
-    incremental_mode: str = "full",
-    reprocess_unchanged: bool = False,
-    workflow_id: Optional[str] = None,
-    model_configs: Optional[Dict[str, Any]] = None,
-    metadata: Optional[Dict[str, Any]] = None,
+    incremental_mode: str,
+    reprocess_unchanged: bool,
+    workflow_id: str,
+    model_configs: Optional[Dict[str, Any]],
+    metadata: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
-    """
-    Generic DBOS workflow for any dbt-like pipeline.
-
-    dbt-like execution:
-    1. Store workflow context (filters, mode)
-    2. Run pipeline models in sequence (each reads from upstream tables)
-    3. Emit status events for monitoring
-
-    Args:
-        pipeline: PipelineConfig defining which models to run
-        filters: Document filters to apply
-        incremental_mode: Processing mode ("full" or "delta")
-        reprocess_unchanged: If True, reprocess docs even if content unchanged.
-                            Default False means unchanged docs are skipped.
-        workflow_id: Optional workflow ID (defaults to DBOS.workflow_id)
-        metadata: Optional dict with additional context (e.g., {"verbose": True})
-
-    Returns:
-        Dict containing model results and workflow metadata
-
-    Example:
-        from kurt.core import run_workflow, PipelineConfig
-
-        MY_PIPELINE = PipelineConfig(
-            name="my_pipeline",
-            models=["my.first_model", "my.second_model"],
-        )
-
-        result = await run_workflow(
-            pipeline=MY_PIPELINE,
-            filters=DocumentFilters(ids="doc1,doc2"),
-            incremental_mode="full",
-            reprocess_unchanged=True,  # Force reprocess all docs
-        )
-    """
-    workflow_id = workflow_id or DBOS.workflow_id
-
+    """Internal: Execute pipeline after resolution."""
     # Display workflow ID at start
     from kurt.core.display import print_dim
 
     print_dim(f"Workflow: {workflow_id}")
+
+    # Configure LLM tracker for this workflow
+    from kurt.core.llm_tracker import llm_tracker
+
+    llm_tracker.configure(workflow_id=workflow_id)
 
     logger.info(
         "Workflow '%s' started (mode=%s, reprocess_unchanged=%s, workflow_id=%s)",
@@ -126,6 +93,10 @@ async def run_workflow(
             "pipeline": pipeline.name,
         }
     )
+
+    # Print LLM usage summary if verbose
+    if metadata and metadata.get("verbose"):
+        llm_tracker.print_summary()
 
     return {
         "workflow_id": workflow_id,
@@ -277,43 +248,52 @@ async def run_pipeline_workflow(
     model_configs: Optional[Dict[str, Any]] = None,
     metadata: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Generic workflow that resolves target and runs pipeline.
+    """Run a pipeline workflow with dbt-style target resolution.
 
-    This is the main entry point for CLI integration. It accepts flexible
-    target specifications and auto-discovers models.
+    This is the single entry point for running pipelines. It resolves the target
+    string to a pipeline config and executes the models.
 
     Args:
         target: One of:
-            - Namespace (e.g., "indexing") - discovers all models
-            - Model name (e.g., "indexing.document_sections") - single model
+            - Namespace (e.g., "staging.indexing") - discovers all models
+            - Model name (e.g., "staging.indexing.document_sections") - single model
             - File path (e.g., "./my_models.py") - imports and runs
             - Directory path (e.g., "./models/") - imports all and runs
         filters: Document filters to apply
         incremental_mode: Processing mode ("full" or "delta")
         reprocess_unchanged: If True, reprocess unchanged documents
         workflow_id: Optional workflow ID
+        model_configs: Optional model-specific configurations
         metadata: Optional dict with additional context (e.g., {"verbose": True})
 
     Returns:
-        Dict with workflow results
+        Dict with workflow results including:
+        - workflow_id: The workflow identifier
+        - pipeline: Pipeline name that was run
+        - total_documents: Total docs processed + skipped
+        - documents_processed: Number of docs actually processed
+        - skipped_docs: Number of docs skipped (unchanged)
+        - models_executed: List of models that ran
+        - errors: Any errors encountered
 
-    Example CLI usage:
-        # Run all indexing models
-        kurt index --pipeline indexing
+    Example:
+        from kurt.core import run_pipeline_workflow
 
-        # Run single model
-        kurt index --pipeline indexing.document_sections
-
-        # Run models from custom path
-        kurt index --pipeline ./my_pipeline/models/
+        result = await run_pipeline_workflow(
+            target="staging.indexing",
+            filters=DocumentFilters(ids="doc1,doc2"),
+            incremental_mode="full",
+            reprocess_unchanged=True,
+        )
     """
     pipeline = resolve_pipeline(target)
-    return await run_workflow(
+    wf_id = workflow_id or DBOS.workflow_id
+    return await _run_pipeline(
         pipeline=pipeline,
         filters=filters,
         incremental_mode=incremental_mode,
         reprocess_unchanged=reprocess_unchanged,
-        workflow_id=workflow_id,
+        workflow_id=wf_id,
         model_configs=model_configs,
         metadata=metadata,
     )

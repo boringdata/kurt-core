@@ -427,6 +427,17 @@ async def run_batch(
                     "tokens_completion": getattr(result, "completion_tokens", None),
                 }
 
+                # Track LLM call for rate monitoring
+                from kurt.core.llm_tracker import track_llm_call
+
+                track_llm_call(
+                    model=str(lm.model) if hasattr(lm, "model") else "unknown",
+                    step_name=None,
+                    duration_ms=execution_time * 1000,
+                    tokens_prompt=telemetry.get("tokens_prompt"),
+                    tokens_completion=telemetry.get("tokens_completion"),
+                )
+
                 return DSPyResult(
                     payload=payload,
                     result=result,
@@ -556,6 +567,17 @@ def run_batch_sync(
                 "tokens_prompt": getattr(result, "prompt_tokens", None),
                 "tokens_completion": getattr(result, "completion_tokens", None),
             }
+
+            # Track LLM call for rate monitoring
+            from kurt.core.llm_tracker import track_llm_call
+
+            track_llm_call(
+                model=str(lm.model) if hasattr(lm, "model") else "unknown",
+                step_name=None,
+                duration_ms=execution_time * 1000,
+                tokens_prompt=telemetry.get("tokens_prompt"),
+                tokens_completion=telemetry.get("tokens_completion"),
+            )
 
             dspy_result = DSPyResult(
                 payload=payload,
