@@ -263,15 +263,27 @@ def claim_resolution(
     result["created"] = claims_created
     result["deduplicated"] = claims_deduplicated
 
-    # Print claims table (verbose mode shows all, normal shows created only)
+    # Print claims summary and details
+    from kurt.core.display import print_info
+
     verbose = ctx.metadata.get("verbose", False)
+
+    # Always show summary line with counts by action
+    if rows:
+        skipped_count = sum(1 for r in rows if r.resolution_action == "skipped")
+        summary_parts = []
+        if claims_created > 0:
+            summary_parts.append(f"{claims_created} created")
+        if claims_deduplicated > 0:
+            summary_parts.append(f"{claims_deduplicated} deduplicated")
+        if skipped_count > 0:
+            summary_parts.append(f"{skipped_count} skipped")
+        if summary_parts:
+            print_info(f"Claims: {', '.join(summary_parts)}")
 
     if verbose:
         # Verbose mode: show all claim operations
-        from kurt.core.display import print_info
-
         if rows:
-            print_info("Claim operations:")
             all_claims = [
                 {
                     "statement": r.statement[:50] + "..." if len(r.statement) > 50 else r.statement,
@@ -289,18 +301,22 @@ def claim_resolution(
                 cli_command="kurt kg claims" if len(all_claims) > 25 else None,
             )
     else:
-        # Normal mode: only show created claims
+        # Normal mode: show created claims in a table
         created_claims = [
-            {"statement": r.statement, "type": r.claim_type, "action": r.resolution_action}
+            {
+                "statement": r.statement[:60] + "..." if len(r.statement) > 60 else r.statement,
+                "type": r.claim_type.replace("ClaimType.", ""),
+            }
             for r in rows
             if r.resolution_action == "created"
         ]
         if created_claims:
             print_inline_table(
                 created_claims,
-                columns=["statement", "type", "action"],
-                max_items=10,
-                cli_command="kurt kg claims" if len(created_claims) > 10 else None,
+                columns=["statement", "type"],
+                max_items=20,
+                column_widths={"statement": 60, "type": 15},
+                cli_command="kurt kg claims" if len(created_claims) > 20 else None,
             )
 
     return result

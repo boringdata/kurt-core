@@ -59,6 +59,9 @@ class EntityResolutionRow(PipelineModelBase, table=True):
     entity_name: str = Field(primary_key=True)
     workflow_id: str = Field(primary_key=True)
 
+    # Entity info (from clustering step)
+    entity_type: Optional[str] = Field(default=None)
+
     # Resolution info (from clustering step)
     decision: str = Field(default="")  # CREATE_NEW, MERGE_WITH:X, or existing UUID
     canonical_name: Optional[str] = Field(default=None)
@@ -161,7 +164,9 @@ def entity_resolution(
         cleanup_old_entities(session, doc_to_kg_data)
 
         # Step 5: Create entities
-        entity_name_to_id = create_entities(session, canonical_groups, entity_name_to_docs)
+        entity_name_to_id, actually_created = create_entities(
+            session, canonical_groups, entity_name_to_docs
+        )
 
         # Step 6: Create relationships
         relationships_created = create_relationships(session, doc_to_kg_data, entity_name_to_id)
@@ -172,6 +177,7 @@ def entity_resolution(
             entity_name_to_id,
             entity_name_to_docs,
             merge_map,
+            actually_created,
             relationships_created,
             ctx.workflow_id,
         )
@@ -196,18 +202,30 @@ def entity_resolution(
     result["entities_merged"] = merged_count
     result["relationships_created"] = relationships_created
 
-    # Print entity operations table (verbose mode shows all, normal shows created only)
+    # Print entity operations summary and details
+    from kurt.core.display import print_info
+
     verbose = ctx.metadata.get("verbose", False)
+
+    # Always show summary line with counts by operation
+    if rows:
+        summary_parts = []
+        if created_count > 0:
+            summary_parts.append(f"{created_count} created")
+        if linked_count > 0:
+            summary_parts.append(f"{linked_count} linked")
+        if merged_count > 0:
+            summary_parts.append(f"{merged_count} merged")
+        if summary_parts:
+            print_info(f"Entities: {', '.join(summary_parts)}")
 
     if verbose:
         # Verbose mode: show all entity operations with full details
-        from kurt.core.display import print_info
-
         if rows:
-            print_info("Entity operations:")
             entity_ops = [
                 {
                     "name": r.entity_name,
+                    "type": r.entity_type or "-",
                     "operation": r.operation,
                     "canonical": r.canonical_name or "-",
                 }
@@ -215,23 +233,24 @@ def entity_resolution(
             ]
             print_inline_table(
                 entity_ops,
-                columns=["name", "operation", "canonical"],
+                columns=["name", "type", "operation", "canonical"],
                 max_items=30,
                 cli_command="kurt kg entities" if len(entity_ops) > 30 else None,
             )
     else:
-        # Normal mode: only show created entities
+        # Normal mode: show created entities in a table
         created_entities = [
-            {"name": r.entity_name, "type": r.canonical_name, "operation": r.operation}
+            {"name": r.entity_name, "type": r.entity_type or "-"}
             for r in rows
             if r.operation == "CREATED"
         ]
         if created_entities:
             print_inline_table(
                 created_entities,
-                columns=["name", "operation"],
-                max_items=10,
-                cli_command="kurt kg entities" if len(created_entities) > 10 else None,
+                columns=["name", "type"],
+                max_items=20,
+                column_widths={"name": 40, "type": 15},
+                cli_command="kurt kg entities" if len(created_entities) > 20 else None,
             )
 
     return result
@@ -407,9 +426,12 @@ def _build_doc_to_kg_data_from_extractions(extractions_df, groups: List[dict]) -
             section_ids = entity_section_lookup.get((doc_id, entity_name), [None])
 
             for section_id in section_ids:
+                # Include both entity_name and canonical_name for proper cleanup matching
+                canonical_name = group.get("canonical_name") or entity_name
                 doc_to_kg_data[doc_id]["new_entities"].append(
                     {
                         "name": entity_name,
+                        "canonical_name": canonical_name,
                         "type": group.get("entity_type"),
                         "confidence": group.get("confidence", 0.8),
                         "section_id": section_id,
@@ -428,11 +450,24 @@ def _build_doc_to_kg_data_from_extractions(extractions_df, groups: List[dict]) -
     return dict(doc_to_kg_data)
 
 
-def _get_operation(entity_name: str, decision: str, merge_map: Dict[str, str]) -> str:
-    """Determine the operation type for an entity resolution."""
+def _get_operation(
+    entity_name: str, decision: str, merge_map: Dict[str, str], actually_created: set[str]
+) -> str:
+    """Determine the operation type for an entity resolution.
+
+    Args:
+        entity_name: Name of the entity
+        decision: Decision from LLM (CREATE_NEW, LINK_EXISTING, MERGE_WITH:...)
+        merge_map: Mapping of merged entity names to canonical names
+        actually_created: Set of entity names that were actually created (not linked to existing)
+
+    Returns:
+        Operation type: CREATED, LINKED, or MERGED
+    """
     if entity_name in merge_map:
         return "MERGED"
-    elif decision == "CREATE_NEW":
+    elif entity_name in actually_created:
+        # Only mark as CREATED if actually created (not linked to existing during re-index)
         return "CREATED"
     return "LINKED"
 
@@ -442,6 +477,7 @@ def _build_upsert_rows(
     entity_name_to_id: Dict[str, UUID],
     entity_name_to_docs: Dict[str, List[dict]],
     merge_map: Dict[str, str],
+    actually_created: set[str],
     total_relationships: int,
     workflow_id: str,
 ) -> List[EntityResolutionRow]:
@@ -452,6 +488,7 @@ def _build_upsert_rows(
         entity_name_to_id: Mapping of entity name to created/linked UUID
         entity_name_to_docs: Mapping of entity name to documents
         merge_map: Mapping of merged entity names to canonical names
+        actually_created: Set of entity names that were actually created
         total_relationships: Total number of relationships created
         workflow_id: Workflow ID for batch tracking
 
@@ -462,13 +499,17 @@ def _build_upsert_rows(
         EntityResolutionRow(
             entity_name=resolution.get("entity_name", ""),
             workflow_id=workflow_id,
+            entity_type=resolution.get("entity_details", {}).get("type"),
             decision=resolution.get("decision", ""),
             canonical_name=resolution.get("canonical_name"),
             resolved_entity_id=str(entity_name_to_id.get(resolution.get("entity_name", "")))
             if entity_name_to_id.get(resolution.get("entity_name", ""))
             else None,
             operation=_get_operation(
-                resolution.get("entity_name", ""), resolution.get("decision", ""), merge_map
+                resolution.get("entity_name", ""),
+                resolution.get("decision", ""),
+                merge_map,
+                actually_created,
             ),
             document_ids_json=[
                 str(d["document_id"])

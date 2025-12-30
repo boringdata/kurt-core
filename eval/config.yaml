@@ -12,7 +12,7 @@ guardrails:
   max_tool_calls: 50
 
   # Maximum execution time in seconds per scenario
-  max_duration_seconds: 500
+  max_duration_seconds: 1000
 
   # Maximum tokens to use per scenario (input + output)
   max_tokens: 100000

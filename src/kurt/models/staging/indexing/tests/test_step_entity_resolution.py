@@ -311,9 +311,16 @@ class TestBuildUpsertRows:
         entity_name_to_id = {"Python": entity_id}
         entity_name_to_docs = {"Python": [{"document_id": doc_id, "confidence": 0.9}]}
         merge_map = {}
+        actually_created = {"Python"}  # Entity was actually created
 
         rows = _build_upsert_rows(
-            resolutions, entity_name_to_id, entity_name_to_docs, merge_map, 5, "workflow-123"
+            resolutions,
+            entity_name_to_id,
+            entity_name_to_docs,
+            merge_map,
+            actually_created,
+            5,
+            "workflow-123",
         )
 
         assert len(rows) == 1
@@ -338,9 +345,16 @@ class TestBuildUpsertRows:
         entity_name_to_id = {"Python Language": entity_id}
         entity_name_to_docs = {"Python Language": []}
         merge_map = {"Python Language": "Python"}
+        actually_created = set()  # Merged entities aren't created
 
         rows = _build_upsert_rows(
-            resolutions, entity_name_to_id, entity_name_to_docs, merge_map, 0, "workflow-123"
+            resolutions,
+            entity_name_to_id,
+            entity_name_to_docs,
+            merge_map,
+            actually_created,
+            0,
+            "workflow-123",
         )
 
         assert len(rows) == 1
@@ -362,9 +376,16 @@ class TestBuildUpsertRows:
         entity_name_to_id = {"Python": entity_id}
         entity_name_to_docs = {"Python": []}
         merge_map = {}
+        actually_created = set()  # Linked entities aren't created
 
         rows = _build_upsert_rows(
-            resolutions, entity_name_to_id, entity_name_to_docs, merge_map, 0, "workflow-123"
+            resolutions,
+            entity_name_to_id,
+            entity_name_to_docs,
+            merge_map,
+            actually_created,
+            0,
+            "workflow-123",
         )
 
         assert len(rows) == 1
@@ -446,7 +467,7 @@ class TestEntityResolutionModel:
         mock_cleanup.return_value = 0
 
         entity_id = uuid4()
-        mock_create_entities.return_value = {"Python": entity_id}
+        mock_create_entities.return_value = ({"Python": entity_id}, {"Python"})
         mock_create_rels.return_value = 2
 
         doc_id = str(uuid4())
@@ -581,7 +602,7 @@ class TestEntityResolutionModel:
         mock_cleanup.return_value = 0
 
         entity_id = uuid4()
-        mock_create_entities.return_value = {"Python": entity_id}
+        mock_create_entities.return_value = ({"Python": entity_id}, {"Python"})
         mock_create_rels.return_value = 0
 
         doc_id = str(uuid4())
@@ -664,11 +685,14 @@ class TestMergeChainHandling:
         mock_cleanup.return_value = 0
 
         entity_id = uuid4()
-        mock_create_entities.return_value = {
-            "Python": entity_id,
-            "Python Language": entity_id,
-            "Python3": entity_id,
-        }
+        mock_create_entities.return_value = (
+            {
+                "Python": entity_id,
+                "Python Language": entity_id,
+                "Python3": entity_id,
+            },
+            {"Python"},  # Only Python was actually created, others merged
+        )
         mock_create_rels.return_value = 0
 
         writer = MagicMock(spec=TableWriter)
@@ -769,7 +793,7 @@ class TestExistingEntityLinking:
         mock_cleanup.return_value = 0
 
         entity_id = uuid4()
-        mock_create_entities.return_value = {"NewEntity": entity_id}
+        mock_create_entities.return_value = ({"NewEntity": entity_id}, {"NewEntity"})
         mock_create_rels.return_value = 0
 
         writer = MagicMock(spec=TableWriter)
@@ -1022,9 +1046,16 @@ class TestEntityResolutionEdgeCases:
         entity_name_to_id = {"蟒蛇": uuid4()}
         entity_name_to_docs = {"蟒蛇": []}
         merge_map = {}
+        actually_created = {"蟒蛇"}
 
         rows = _build_upsert_rows(
-            resolutions, entity_name_to_id, entity_name_to_docs, merge_map, 0, "workflow-123"
+            resolutions,
+            entity_name_to_id,
+            entity_name_to_docs,
+            merge_map,
+            actually_created,
+            0,
+            "workflow-123",
         )
 
         assert len(rows) == 1
@@ -1046,9 +1077,16 @@ class TestEntityResolutionEdgeCases:
         entity_name_to_id = {"C++ & C#": uuid4()}
         entity_name_to_docs = {"C++ & C#": []}
         merge_map = {}
+        actually_created = {"C++ & C#"}
 
         rows = _build_upsert_rows(
-            resolutions, entity_name_to_id, entity_name_to_docs, merge_map, 0, "workflow-123"
+            resolutions,
+            entity_name_to_id,
+            entity_name_to_docs,
+            merge_map,
+            actually_created,
+            0,
+            "workflow-123",
         )
 
         assert len(rows) == 1
@@ -1072,9 +1110,16 @@ class TestEntityResolutionEdgeCases:
         entity_name_to_id = {long_name: uuid4()}
         entity_name_to_docs = {long_name: []}
         merge_map = {}
+        actually_created = {long_name}
 
         rows = _build_upsert_rows(
-            resolutions, entity_name_to_id, entity_name_to_docs, merge_map, 0, "workflow-123"
+            resolutions,
+            entity_name_to_id,
+            entity_name_to_docs,
+            merge_map,
+            actually_created,
+            0,
+            "workflow-123",
         )
 
         assert len(rows) == 1
@@ -1096,9 +1141,16 @@ class TestEntityResolutionEdgeCases:
         entity_name_to_id = {"": uuid4()}
         entity_name_to_docs = {"": []}
         merge_map = {}
+        actually_created = {""}
 
         rows = _build_upsert_rows(
-            resolutions, entity_name_to_id, entity_name_to_docs, merge_map, 0, "workflow-123"
+            resolutions,
+            entity_name_to_id,
+            entity_name_to_docs,
+            merge_map,
+            actually_created,
+            0,
+            "workflow-123",
         )
 
         # Should still create a row (validation happens elsewhere)
@@ -1122,9 +1174,16 @@ class TestEntityResolutionEdgeCases:
         entity_name_to_id = {"Python": uuid4()}
         entity_name_to_docs = {"Python": [{"document_id": doc_id} for doc_id in doc_ids]}
         merge_map = {}
+        actually_created = {"Python"}
 
         rows = _build_upsert_rows(
-            resolutions, entity_name_to_id, entity_name_to_docs, merge_map, 0, "workflow-123"
+            resolutions,
+            entity_name_to_id,
+            entity_name_to_docs,
+            merge_map,
+            actually_created,
+            0,
+            "workflow-123",
         )
 
         assert len(rows) == 1

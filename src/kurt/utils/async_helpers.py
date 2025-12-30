@@ -11,7 +11,7 @@ async def gather_with_semaphore(
     tasks: list,
     max_concurrent: int,
     task_description: str = "task",
-    on_progress: Optional[Callable[[int, int], None]] = None,
+    on_progress: Optional[Callable[[int, int, Any], None]] = None,
 ) -> list:
     """
     Execute async tasks with controlled concurrency and exception handling.
@@ -26,7 +26,7 @@ async def gather_with_semaphore(
         tasks: List of coroutines/tasks to execute
         max_concurrent: Maximum number of concurrent tasks
         task_description: Description for logging (e.g., "similarity search")
-        on_progress: Optional callback(completed, total) called after each task completes
+        on_progress: Optional callback(completed, total, result) called after each task completes
 
     Returns:
         List of successful results (exceptions are filtered out and logged)
@@ -44,6 +44,13 @@ async def gather_with_semaphore(
     completed_count = 0
     progress_lock = asyncio.Lock()
 
+    # Send initial progress event (0/total with None result)
+    if on_progress:
+        try:
+            on_progress(0, total_count, None)
+        except Exception as e:
+            logger.warning(f"Progress callback error: {e}")
+
     async def bounded_task(task_index: int, task: Any):
         """Wrap task with semaphore to limit concurrency."""
         nonlocal completed_count
@@ -55,7 +62,15 @@ async def gather_with_semaphore(
                 async with progress_lock:
                     completed_count += 1
                     try:
-                        on_progress(completed_count, total_count)
+                        # Create a simple result wrapper for progress display
+                        from types import SimpleNamespace
+
+                        progress_result = SimpleNamespace(
+                            error=None,
+                            result=result,
+                            payload=result if isinstance(result, dict) else {},
+                        )
+                        on_progress(completed_count, total_count, progress_result)
                     except Exception as e:
                         logger.warning(f"Progress callback error: {e}")
 
@@ -71,7 +86,14 @@ async def gather_with_semaphore(
     valid_results = []
     for i, result in enumerate(results):
         if isinstance(result, Exception):
-            logger.error(f"Failed to execute {task_description} {i}: {result}")
+            # Log with full traceback at debug level for better debugging
+            import traceback
+
+            tb_str = "".join(traceback.format_exception(type(result), result, result.__traceback__))
+            logger.error(
+                f"Failed to execute {task_description} {i}: {type(result).__name__}: {result}"
+            )
+            logger.debug(f"Full traceback for {task_description} {i}:\n{tb_str}")
         else:
             valid_results.append(result)
 

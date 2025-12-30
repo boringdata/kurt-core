@@ -5,6 +5,7 @@ Usage:
     python load_dump.py dump_name
 """
 
+import base64
 import json
 import shutil
 import sys
@@ -54,11 +55,15 @@ def load_dump(dump_name: str, skip_entities: bool = False):
         tables = ["documents"]
     else:
         # Load all tables including knowledge graph
+        # Order matters for foreign key constraints
         tables = [
             "documents",
             "entities",
+            "claims",
+            "claim_entities",
             "document_entities",
             "entity_relationships",
+            "claim_relationships",
         ]
 
     session = get_session()
@@ -76,6 +81,9 @@ def load_dump(dump_name: str, skip_entities: bool = False):
             table_columns_info = session.execute(pragma_query).fetchall()
             valid_columns = {col[1] for col in table_columns_info}  # col[1] is column name
 
+            # Track which columns are BLOB type (for base64 decoding)
+            blob_columns = {col[1] for col in table_columns_info if col[2].upper() == "BLOB"}
+
             # Build a map of required columns (NOT NULL without default)
             # col = (cid, name, type, notnull, dflt_value, pk)
             required_columns = {
@@ -91,7 +99,15 @@ def load_dump(dump_name: str, skip_entities: bool = False):
                     record = json.loads(line)
 
                     # Only use columns that exist in the target table
-                    filtered_record = {k: v for k, v in record.items() if k in valid_columns}
+                    filtered_record = {}
+                    for k, v in record.items():
+                        if k not in valid_columns:
+                            continue
+                        # Decode base64-encoded BLOB columns
+                        if k in blob_columns and v is not None and isinstance(v, str):
+                            filtered_record[k] = base64.b64decode(v)
+                        else:
+                            filtered_record[k] = v
 
                     # Add default values for missing required columns
                     for col_name, col_type in required_columns.items():

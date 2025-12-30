@@ -50,7 +50,7 @@ class TestRetrievalPipelineIntegration:
         mock_embeddings.return_value = [[0.9, 0.1, 0.0] + [0.0] * 1533]
 
         config = CAGConfig(
-            top_k_entities=5,
+            top_k_per_term=5,
             min_similarity=0.3,
         )
 
@@ -135,7 +135,7 @@ class TestRetrievalConfig:
         config = CAGConfig()
 
         # Access default values
-        assert config.top_k_entities == 5
+        assert config.top_k_per_term == 3
         assert config.min_similarity == 0.3
         assert config.max_claims == 50
 
@@ -154,12 +154,12 @@ class TestRetrievalConfig:
         from kurt.models.staging.retrieval.step_cag import CAGConfig
 
         config = CAGConfig(
-            top_k_entities=10,
+            top_k_per_term=5,
             min_similarity=0.5,
             max_claims=100,
         )
 
-        assert config.top_k_entities == 10
+        assert config.top_k_per_term == 5
         assert config.min_similarity == 0.5
         assert config.max_claims == 100
 

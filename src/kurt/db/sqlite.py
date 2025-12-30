@@ -189,29 +189,11 @@ class SQLiteClient(DatabaseClient):
         Creates vec0 virtual table for entity embeddings if sqlite-vec is available.
         This must be called after migrations are run.
 
-        Note: Document embeddings are stored directly in the documents table,
-        not in a separate vec0 table for simplicity.
+        Note: Embeddings are stored directly in the entities and documents tables.
+        Vector similarity search is done in Python using cosine similarity.
         """
-        session = self.get_session()
-        try:
-            # Entity embeddings
-            session.exec(
-                """
-                CREATE VIRTUAL TABLE IF NOT EXISTS entity_embeddings
-                USING vec0(
-                    entity_id TEXT PRIMARY KEY,
-                    embedding float[512]
-                )
-                """
-            )
-
-            session.commit()
-            logger.info("Created entity_embeddings vector table")
-        except Exception as e:
-            logger.warning(f"Could not create vector table (sqlite-vec not available): {e}")
-            # This is OK - vector search features just won't work
-        finally:
-            session.close()
+        # No-op: embeddings are stored in the entities/documents tables directly
+        pass
 
     def search_similar_entities(
         self, query_embedding: bytes, limit: int = 50, min_similarity: float = 0.75
@@ -219,42 +201,55 @@ class SQLiteClient(DatabaseClient):
         """
         Search for entities similar to the query embedding.
 
+        Uses cosine similarity on entity embeddings stored directly in the entities table.
+
         Args:
-            query_embedding: Query embedding as bytes (512 float32 values)
+            query_embedding: Query embedding as bytes (float32 values)
             limit: Maximum number of results to return
             min_similarity: Minimum cosine similarity threshold (0.0-1.0)
 
         Returns:
             List of (entity_id, similarity_score) tuples
         """
+        import struct
+
+        import numpy as np
+        from sqlalchemy import text
+
         session = self.get_session()
         try:
-            # Convert bytes to list of floats for vec_search
-            import struct
+            # Convert query embedding bytes to numpy array
+            query_floats = struct.unpack(f"{len(query_embedding)//4}f", query_embedding)
+            query_vec = np.array(query_floats)
+            query_norm = np.linalg.norm(query_vec)
 
-            from sqlalchemy import text
+            if query_norm == 0:
+                return []
 
-            floats = struct.unpack(f"{len(query_embedding)//4}f", query_embedding)
-            query_vector = "[" + ",".join(str(f) for f in floats) + "]"
-
-            # Use vec_search to find similar entities
-            # Note: vec_search returns distance, we convert to similarity (1 - distance)
+            # Fetch all entities with embeddings and compute similarity in Python
             result = session.exec(
-                text(
-                    """
-                SELECT entity_id, 1.0 - distance as similarity
-                FROM entity_embeddings
-                WHERE embedding MATCH :query_vector
-                  AND 1.0 - distance >= :min_similarity
-                ORDER BY distance
-                LIMIT :limit
-                """
-                ),
-                {"query_vector": query_vector, "min_similarity": min_similarity, "limit": limit},
+                text("SELECT id, embedding FROM entities WHERE embedding IS NOT NULL")
             )
-            return [(row[0], row[1]) for row in result]
+
+            similarities = []
+            for row in result:
+                entity_id, emb_bytes = row
+                if emb_bytes:
+                    entity_floats = struct.unpack(f"{len(emb_bytes)//4}f", emb_bytes)
+                    entity_vec = np.array(entity_floats)
+                    entity_norm = np.linalg.norm(entity_vec)
+                    if entity_norm > 0:
+                        similarity = float(
+                            np.dot(query_vec, entity_vec) / (query_norm * entity_norm)
+                        )
+                        if similarity >= min_similarity:
+                            similarities.append((str(entity_id), similarity))
+
+            # Sort by similarity descending and limit
+            similarities.sort(key=lambda x: x[1], reverse=True)
+            return similarities[:limit]
         except Exception as e:
-            logger.debug(f"Vector search not available (will use fallback): {e}")
+            logger.warning(f"Entity similarity search failed: {e}")
             return []
         finally:
             session.close()

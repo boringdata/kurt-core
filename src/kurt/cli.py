@@ -145,8 +145,8 @@ def main(ctx):
 @main.command()
 @click.option(
     "--db-path",
-    default=".kurt/data/db.sqlite",
-    help="Path to database file relative to current directory (default: .kurt/data/db.sqlite)",
+    default=".kurt/kurt.sqlite",
+    help="Path to database file relative to current directory (default: .kurt/kurt.sqlite)",
 )
 @click.option(
     "--sources-path",

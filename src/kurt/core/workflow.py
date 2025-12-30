@@ -1,11 +1,9 @@
 """
 Generic DBOS workflow runner for dbt-like pipelines.
 
-Any pipeline can use this - just define a PipelineConfig and call run_workflow().
-
-For CLI integration, use run_pipeline_workflow() which accepts:
-- Namespace string (e.g., "indexing") - auto-discovers models
-- Model name (e.g., "indexing.document_sections") - runs single model
+Use run_pipeline_workflow() which accepts:
+- Namespace string (e.g., "staging.indexing") - auto-discovers models
+- Model name (e.g., "staging.indexing.document_sections") - runs single model
 - Python file/folder path - imports and discovers models
 """
 
@@ -27,52 +25,20 @@ from .registry import ModelRegistry
 logger = logging.getLogger(__name__)
 
 
-@DBOS.workflow()
-async def run_workflow(
+async def _run_pipeline(
     pipeline: PipelineConfig,
     filters: DocumentFilters,
-    incremental_mode: str = "full",
-    reprocess_unchanged: bool = False,
-    workflow_id: Optional[str] = None,
-    model_configs: Optional[Dict[str, Any]] = None,
-    metadata: Optional[Dict[str, Any]] = None,
+    incremental_mode: str,
+    reprocess_unchanged: bool,
+    workflow_id: str,
+    model_configs: Optional[Dict[str, Any]],
+    metadata: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
-    """
-    Generic DBOS workflow for any dbt-like pipeline.
+    """Internal: Execute pipeline after resolution."""
+    # Display workflow ID at start
+    from kurt.core.display import print_dim
 
-    dbt-like execution:
-    1. Store workflow context (filters, mode)
-    2. Run pipeline models in sequence (each reads from upstream tables)
-    3. Emit status events for monitoring
-
-    Args:
-        pipeline: PipelineConfig defining which models to run
-        filters: Document filters to apply
-        incremental_mode: Processing mode ("full" or "delta")
-        reprocess_unchanged: If True, reprocess docs even if content unchanged.
-                            Default False means unchanged docs are skipped.
-        workflow_id: Optional workflow ID (defaults to DBOS.workflow_id)
-        metadata: Optional dict with additional context (e.g., {"verbose": True})
-
-    Returns:
-        Dict containing model results and workflow metadata
-
-    Example:
-        from kurt.core import run_workflow, PipelineConfig
-
-        MY_PIPELINE = PipelineConfig(
-            name="my_pipeline",
-            models=["my.first_model", "my.second_model"],
-        )
-
-        result = await run_workflow(
-            pipeline=MY_PIPELINE,
-            filters=DocumentFilters(ids="doc1,doc2"),
-            incremental_mode="full",
-            reprocess_unchanged=True,  # Force reprocess all docs
-        )
-    """
-    workflow_id = workflow_id or DBOS.workflow_id
+    print_dim(f"Workflow: {workflow_id}")
 
     # Configure LLM tracker for this workflow
     from kurt.core.llm_tracker import llm_tracker
@@ -214,9 +180,9 @@ def _import_models_from_path(path: Path) -> str:
 def resolve_pipeline(target: str) -> PipelineConfig:
     """Resolve a target string to a PipelineConfig.
 
-    Accepts:
-    - Namespace (e.g., "indexing") - discovers all models with that prefix
-    - Model name (e.g., "indexing.document_sections") - runs single model
+    Accepts (dbt-style resolution):
+    - Namespace path (e.g., "staging.indexing") - maps to kurt/models/staging/indexing/
+    - Model name (e.g., "staging.indexing.document_sections") - runs single model
     - File path (e.g., "./models/step_extract.py") - imports and discovers
     - Directory path (e.g., "./models/") - imports all and discovers
 
@@ -226,45 +192,46 @@ def resolve_pipeline(target: str) -> PipelineConfig:
     Returns:
         PipelineConfig ready for execution
     """
-    # Check if it's a file/directory path
-    path = Path(target)
-    if path.exists() or target.endswith(".py") or "/" in target or "\\" in target:
+    # Check if it's an explicit file/directory path (contains / or \ or ends with .py)
+    if "/" in target or "\\" in target or target.endswith(".py"):
+        path = Path(target)
         if not path.exists():
             raise ValueError(f"Path does not exist: {target}")
         namespace = _import_models_from_path(path)
         return get_pipeline(namespace)
 
-    # Check if it's a specific model name
+    # Try to import the parent package to register models
+    # e.g., for "landing.fetch", import "kurt.models.landing"
+    if "." in target:
+        parent_namespace = target.rsplit(".", 1)[0]
+        parent_module = f"kurt.models.{parent_namespace}"
+        try:
+            importlib.import_module(parent_module)
+            logger.debug(f"Imported {parent_module}")
+        except ImportError as e:
+            logger.debug(f"Could not import {parent_module}: {e}")
+
+    # Check if it's a specific model name already registered
     if ModelRegistry.get(target):
         logger.info(f"Running single model: {target}")
         return PipelineConfig(name=target, models=[target])
 
-    # Try importing known model packages for the namespace
+    # dbt-style folder resolution: namespace maps to kurt/models/<namespace>/
+    # e.g., "staging.indexing" -> kurt.models.staging.indexing
     namespace = target
+    module_path = f"kurt.models.{namespace}"
     try:
-        # Import models from kurt.models package (new location)
-        # Map namespace aliases to model packages
-        namespace_to_package = {
-            "landing": "kurt.models.landing",
-            "staging": "kurt.models.staging",
-            "indexing": "kurt.models.staging",  # Alias: indexing -> staging
-        }
-
-        if namespace in namespace_to_package:
-            try:
-                importlib.import_module(namespace_to_package[namespace])
-                logger.debug(f"Imported {namespace_to_package[namespace]}")
-            except ImportError as e:
-                logger.debug(f"Could not import {namespace_to_package[namespace]}: {e}")
-    except Exception as e:
-        logger.debug(f"Could not auto-import models for namespace {namespace}: {e}")
+        importlib.import_module(module_path)
+        logger.debug(f"Imported {module_path}")
+    except ImportError as e:
+        logger.debug(f"Could not import {module_path}: {e}")
 
     # Discover pipeline from namespace
     pipeline = get_pipeline(namespace)
     if not pipeline.models:
         raise ValueError(
             f"No models found for '{target}'. "
-            f"Provide a namespace (e.g., 'indexing'), model name (e.g., 'indexing.document_sections'), "
+            f"Provide a namespace (e.g., 'staging.indexing'), model name, "
             f"or path to model files."
         )
 
@@ -281,43 +248,52 @@ async def run_pipeline_workflow(
     model_configs: Optional[Dict[str, Any]] = None,
     metadata: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Generic workflow that resolves target and runs pipeline.
+    """Run a pipeline workflow with dbt-style target resolution.
 
-    This is the main entry point for CLI integration. It accepts flexible
-    target specifications and auto-discovers models.
+    This is the single entry point for running pipelines. It resolves the target
+    string to a pipeline config and executes the models.
 
     Args:
         target: One of:
-            - Namespace (e.g., "indexing") - discovers all models
-            - Model name (e.g., "indexing.document_sections") - single model
+            - Namespace (e.g., "staging.indexing") - discovers all models
+            - Model name (e.g., "staging.indexing.document_sections") - single model
             - File path (e.g., "./my_models.py") - imports and runs
             - Directory path (e.g., "./models/") - imports all and runs
         filters: Document filters to apply
         incremental_mode: Processing mode ("full" or "delta")
         reprocess_unchanged: If True, reprocess unchanged documents
         workflow_id: Optional workflow ID
+        model_configs: Optional model-specific configurations
         metadata: Optional dict with additional context (e.g., {"verbose": True})
 
     Returns:
-        Dict with workflow results
+        Dict with workflow results including:
+        - workflow_id: The workflow identifier
+        - pipeline: Pipeline name that was run
+        - total_documents: Total docs processed + skipped
+        - documents_processed: Number of docs actually processed
+        - skipped_docs: Number of docs skipped (unchanged)
+        - models_executed: List of models that ran
+        - errors: Any errors encountered
 
-    Example CLI usage:
-        # Run all indexing models
-        kurt index --pipeline indexing
+    Example:
+        from kurt.core import run_pipeline_workflow
 
-        # Run single model
-        kurt index --pipeline indexing.document_sections
-
-        # Run models from custom path
-        kurt index --pipeline ./my_pipeline/models/
+        result = await run_pipeline_workflow(
+            target="staging.indexing",
+            filters=DocumentFilters(ids="doc1,doc2"),
+            incremental_mode="full",
+            reprocess_unchanged=True,
+        )
     """
     pipeline = resolve_pipeline(target)
-    return await run_workflow(
+    wf_id = workflow_id or DBOS.workflow_id
+    return await _run_pipeline(
         pipeline=pipeline,
         filters=filters,
         incremental_mode=incremental_mode,
         reprocess_unchanged=reprocess_unchanged,
-        workflow_id=workflow_id,
+        workflow_id=wf_id,
         model_configs=model_configs,
         metadata=metadata,
     )

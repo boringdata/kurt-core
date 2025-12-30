@@ -66,6 +66,53 @@ def cluster_entities_by_similarity(
     return groups
 
 
+def split_large_groups(
+    groups: dict[int, list[dict]], max_group_size: int = 20
+) -> dict[int, list[dict]]:
+    """Split groups that exceed max_group_size into smaller sub-groups.
+
+    Large groups can cause LLM token limits to be exceeded. This function
+    splits them into smaller chunks while preserving the clustering intent.
+
+    Args:
+        groups: Dict mapping cluster_id -> list of entities
+        max_group_size: Maximum entities per group (default 20)
+
+    Returns:
+        New dict with large groups split into sub-groups with new IDs
+    """
+    if max_group_size <= 0:
+        return groups
+
+    result = {}
+    next_id = max(groups.keys()) + 1 if groups else 0
+    split_count = 0
+
+    for group_id, entities in groups.items():
+        if len(entities) <= max_group_size:
+            # Group is small enough, keep as-is
+            result[group_id] = entities
+        else:
+            # Split into chunks
+            split_count += 1
+            for i in range(0, len(entities), max_group_size):
+                chunk = entities[i : i + max_group_size]
+                if i == 0:
+                    # First chunk keeps original ID
+                    result[group_id] = chunk
+                else:
+                    # Subsequent chunks get new IDs
+                    result[next_id] = chunk
+                    next_id += 1
+
+    if split_count > 0:
+        logger.info(
+            f"Split {split_count} large groups (>{max_group_size} entities) into {len(result)} total groups"
+        )
+
+    return result
+
+
 # ============================================================================
 # Entity Creation
 # ============================================================================

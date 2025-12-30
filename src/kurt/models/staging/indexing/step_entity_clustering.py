@@ -34,7 +34,7 @@ from kurt.core import (
     parse_json_columns,
     table,
 )
-from kurt.db.graph_entities import cluster_entities_by_similarity
+from kurt.db.graph_entities import cluster_entities_by_similarity, split_large_groups
 from kurt.db.graph_resolution import (
     collect_entities_from_extractions,
     normalize_entities_for_clustering,
@@ -61,6 +61,11 @@ class EntityClusteringConfig(ModelConfig):
         default=1,
         ge=1,
         description="DBSCAN min_samples parameter",
+    )
+    max_group_size: int = ConfigParam(
+        default=20,
+        ge=1,
+        description="Maximum entities per group. Large groups are split to avoid LLM token limits.",
     )
     max_concurrent: int = ConfigParam(
         default=10,
@@ -292,12 +297,15 @@ def entity_clustering(
         entities_for_clustering, eps=config.eps, min_samples=config.min_samples
     )
 
+    # Split large groups to avoid LLM token limits
+    groups = split_large_groups(groups, max_group_size=config.max_group_size)
+
     logger.info(f"Clustered {len(entities_for_clustering)} entities into {len(groups)} groups")
 
-    # Configure DSPy with the step's LLM model
-    from kurt.core.dspy_helpers import configure_dspy_model
+    # Get DSPy LM instance (thread-safe, doesn't use dspy.configure)
+    from kurt.core.dspy_helpers import get_dspy_lm
 
-    configure_dspy_model(config.llm_model)
+    lm = get_dspy_lm(config.llm_model)
 
     # Step 3: Fetch similar existing entities for each cluster
     # Use nest_asyncio to allow running async code in sync context within DBOS
@@ -305,11 +313,25 @@ def entity_clustering(
 
     nest_asyncio.apply()
 
-    # Step 3: Fetch similar entities for each cluster (async)
-    group_tasks = asyncio.run(_fetch_similar_entities_for_groups(groups, config.max_concurrent))
+    # Create progress callbacks for live display
+    from kurt.core.display import make_progress_callback
 
-    # Step 4: Resolve with LLM (async)
-    resolutions = asyncio.run(_resolve_groups_with_llm(group_tasks, config.max_concurrent))
+    similarity_progress = make_progress_callback(prefix="Fetching similar entities")
+    resolution_progress = make_progress_callback(prefix="Resolving entity groups")
+
+    # Step 3: Fetch similar entities for each cluster (async)
+    group_tasks = asyncio.run(
+        _fetch_similar_entities_for_groups(
+            groups, config.max_concurrent, on_progress=similarity_progress
+        )
+    )
+
+    # Step 4: Resolve with LLM (async) - pass LM for thread-safe context
+    resolutions = asyncio.run(
+        _resolve_groups_with_llm(
+            group_tasks, config.max_concurrent, on_progress=resolution_progress, lm=lm
+        )
+    )
 
     # Step 5: Validate merge decisions
     validated_resolutions = _validate_merge_decisions(resolutions)
@@ -371,6 +393,7 @@ def _convert_decision_to_string(
     resolution: EntityResolution,
     group_entities: list[dict],
     existing_candidates: list[dict],
+    lm=None,
 ) -> str:
     """Convert index-based decision to string format for downstream compatibility.
 
@@ -378,6 +401,7 @@ def _convert_decision_to_string(
         resolution: EntityResolution with decision_type and target_index
         group_entities: List of entities in the group
         existing_candidates: List of existing entities
+        lm: DSPy LM instance for logging context
 
     Returns:
         String decision: 'CREATE_NEW', 'MERGE_WITH:<name>', or '<uuid>'
@@ -385,12 +409,20 @@ def _convert_decision_to_string(
     decision_type = resolution.decision_type
     target_index = resolution.target_index
 
+    # Helper for logging context
+    def _log_context() -> str:
+        model_name = getattr(lm, "model_name", "unknown") if lm else "unknown"
+        entity_names = [e.get("name", "?") for e in group_entities]
+        return f"model={model_name}, entities={entity_names}"
+
     if decision_type == "CREATE_NEW":
         return "CREATE_NEW"
 
     elif decision_type == "MERGE_WITH_PEER":
         if target_index is None:
-            logger.warning("MERGE_WITH_PEER missing target_index, defaulting to CREATE_NEW")
+            logger.warning(
+                f"MERGE_WITH_PEER missing target_index, defaulting to CREATE_NEW. {_log_context()}"
+            )
             return "CREATE_NEW"
         # Try to fix 1-based indexing from LLM
         if not (0 <= target_index < len(group_entities)):
@@ -398,13 +430,13 @@ def _convert_decision_to_string(
             if 0 <= adjusted < len(group_entities):
                 logger.warning(
                     f"MERGE_WITH_PEER target_index {target_index} out of range, "
-                    f"adjusting to {adjusted} (assuming 1-based indexing)"
+                    f"adjusting to {adjusted} (assuming 1-based indexing). {_log_context()}"
                 )
                 target_index = adjusted
             else:
                 logger.warning(
                     f"Invalid MERGE_WITH_PEER target_index {target_index}, "
-                    f"group has {len(group_entities)} entities. Defaulting to CREATE_NEW."
+                    f"group has {len(group_entities)} entities. Defaulting to CREATE_NEW. {_log_context()}"
                 )
                 return "CREATE_NEW"
         target_name = group_entities[target_index]["name"]
@@ -427,28 +459,35 @@ def _convert_decision_to_string(
 
     elif decision_type == "LINK_TO_EXISTING":
         if target_index is None:
-            logger.warning("LINK_TO_EXISTING missing target_index, defaulting to CREATE_NEW")
+            logger.warning(
+                f"LINK_TO_EXISTING missing target_index, defaulting to CREATE_NEW. {_log_context()}"
+            )
             return "CREATE_NEW"
         # Try to fix 1-based indexing from LLM
         if not (0 <= target_index < len(existing_candidates)):
             adjusted = target_index - 1
+            existing_names = [e.get("name", "?") for e in existing_candidates]
             if 0 <= adjusted < len(existing_candidates):
                 logger.warning(
                     f"LINK_TO_EXISTING target_index {target_index} out of range, "
-                    f"adjusting to {adjusted} (assuming 1-based indexing)"
+                    f"adjusting to {adjusted} (assuming 1-based indexing). "
+                    f"{_log_context()}, existing_candidates={existing_names}"
                 )
                 target_index = adjusted
             else:
                 logger.warning(
                     f"Invalid LINK_TO_EXISTING target_index {target_index}, "
-                    f"existing_candidates has {len(existing_candidates)} entities. Defaulting to CREATE_NEW."
+                    f"existing_candidates has {len(existing_candidates)} entities. Defaulting to CREATE_NEW. "
+                    f"{_log_context()}, existing_candidates={existing_names}"
                 )
                 return "CREATE_NEW"
         # Return the UUID of the existing entity
         return existing_candidates[target_index]["id"]
 
     else:
-        logger.warning(f"Unknown decision_type '{decision_type}', defaulting to CREATE_NEW")
+        logger.warning(
+            f"Unknown decision_type '{decision_type}', defaulting to CREATE_NEW. {_log_context()}"
+        )
         return "CREATE_NEW"
 
 
@@ -533,18 +572,34 @@ async def _resolve_groups_with_llm(
     group_tasks: List[dict],
     max_concurrent: int = 50,
     on_progress: Optional[callable] = None,
+    lm=None,
 ) -> List[dict]:
     """Resolve all groups with LLM."""
     from kurt.utils.async_helpers import gather_with_semaphore
 
     async def resolve_group_task(task_data):
         """Resolve a single group using LLM."""
-        return await _resolve_single_group(
-            group_entities=task_data["group_entities"],
-            existing_candidates=task_data["similar_existing"],
-        )
+        entity_names = [e.get("name", "?") for e in task_data["group_entities"]]
+        try:
+            resolutions = await _resolve_single_group(
+                group_entities=task_data["group_entities"],
+                existing_candidates=task_data["similar_existing"],
+                lm=lm,
+            )
+        except Exception as e:
+            # Re-raise with context for better error messages
+            model_name = getattr(lm, "model_name", "unknown") if lm else "unknown"
+            raise RuntimeError(
+                f"{type(e).__name__}: {e} (model={model_name}, entities={entity_names})"
+            ) from e
+        # Return dict with entity name for progress display
+        entity_name = task_data["group_entities"][0]["name"] if task_data["group_entities"] else ""
+        return {
+            "entity_name": entity_name,
+            "resolutions": resolutions,
+        }
 
-    all_group_resolutions = await gather_with_semaphore(
+    all_group_results = await gather_with_semaphore(
         tasks=[resolve_group_task(task) for task in group_tasks],
         max_concurrent=max_concurrent,
         task_description="group resolution",
@@ -552,33 +607,169 @@ async def _resolve_groups_with_llm(
     )
 
     # Flatten list of lists into single list
-    return [
-        resolution
-        for group_resolutions in all_group_resolutions
-        for resolution in group_resolutions
-    ]
+    return [resolution for result in all_group_results for resolution in result["resolutions"]]
+
+
+def _slim_entity_for_llm(entity: dict, max_desc_len: int = 150) -> dict:
+    """Create a slimmed-down version of an entity for LLM input.
+
+    Reduces token usage by truncating descriptions and removing unnecessary fields.
+    """
+    slim = {
+        "name": entity.get("name", ""),
+        "type": entity.get("type", entity.get("entity_type", "")),
+    }
+
+    # Truncate description to save tokens
+    desc = entity.get("description", "")
+    if desc and len(desc) > max_desc_len:
+        slim["description"] = desc[:max_desc_len] + "..."
+    elif desc:
+        slim["description"] = desc
+
+    # Include aliases if present (usually short)
+    aliases = entity.get("aliases", [])
+    if aliases:
+        slim["aliases"] = aliases[:5]  # Limit to 5 aliases
+
+    # For existing entities, include id
+    if "id" in entity:
+        slim["id"] = entity["id"]
+
+    return slim
+
+
+def _validate_entity_indices(
+    resolutions: list, group_entities: list[dict], existing_candidates: list[dict]
+) -> list[str]:
+    """Validate all entity indices in resolutions.
+
+    Returns:
+        List of validation error messages (empty if all valid)
+    """
+    errors = []
+    max_group_idx = len(group_entities) - 1
+    max_existing_idx = len(existing_candidates) - 1 if existing_candidates else -1
+
+    for i, resolution in enumerate(resolutions):
+        entity_idx = resolution.entity_index
+        if not (0 <= entity_idx <= max_group_idx):
+            errors.append(
+                f"Resolution {i}: entity_index={entity_idx} is out of range. "
+                f"Valid range is 0-{max_group_idx} (got {len(group_entities)} entities)."
+            )
+
+        # Also validate target_index if present
+        if resolution.target_index is not None:
+            if resolution.decision_type == "MERGE_WITH_PEER":
+                if not (0 <= resolution.target_index <= max_group_idx):
+                    errors.append(
+                        f"Resolution {i}: target_index={resolution.target_index} for MERGE_WITH_PEER "
+                        f"is out of range. Valid range is 0-{max_group_idx}."
+                    )
+            elif resolution.decision_type == "LINK_TO_EXISTING":
+                if max_existing_idx < 0:
+                    errors.append(
+                        f"Resolution {i}: LINK_TO_EXISTING used but no existing_candidates available."
+                    )
+                elif not (0 <= resolution.target_index <= max_existing_idx):
+                    errors.append(
+                        f"Resolution {i}: target_index={resolution.target_index} for LINK_TO_EXISTING "
+                        f"is out of range. Valid range is 0-{max_existing_idx}."
+                    )
+
+    return errors
 
 
 async def _resolve_single_group(
-    group_entities: list[dict], existing_candidates: list[dict]
+    group_entities: list[dict], existing_candidates: list[dict], lm=None, max_retries: int = 1
 ) -> list[dict]:
     """Resolve a single group of entities using LLM.
 
     This is PURE LLM logic - no DB calls, no clustering, no orchestration.
+    Includes retry logic for invalid index responses from LLM.
+
+    Note: Large groups should be split at clustering time using split_large_groups()
+    with max_group_size config parameter.
 
     Args:
         group_entities: List of similar entities in this group
         existing_candidates: List of similar existing entities from DB
+        lm: DSPy LM instance for thread-safe execution
+        max_retries: Maximum number of retries for index out-of-range errors
 
     Returns:
         List of resolution dicts with: entity_name, entity_details, decision, canonical_name, aliases, reasoning
     """
     resolution_module = dspy.ChainOfThought(ResolveEntityGroup)
+    index_error_hint = ""
 
-    result = await resolution_module.acall(
-        group_entities=group_entities,
-        existing_candidates=existing_candidates,
+    # Slim down entities to reduce token usage
+    slim_group = [_slim_entity_for_llm(e) for e in group_entities]
+    slim_existing = [_slim_entity_for_llm(e) for e in existing_candidates]
+
+    # Debug: log payload size
+    import json
+
+    payload_size = len(json.dumps(slim_group)) + len(json.dumps(slim_existing))
+    logger.debug(
+        f"LLM call: {len(slim_group)} entities, {len(slim_existing)} existing candidates, "
+        f"~{payload_size} chars payload"
     )
+    if len(group_entities) > 20:
+        logger.warning(
+            f"Large group with {len(group_entities)} entities - consider reducing max_group_size config"
+        )
+
+    for attempt in range(max_retries + 1):
+        # Use dspy.context for thread-safe LM configuration
+        with dspy.context(lm=lm):
+            # If retrying due to index errors, prepend the error as a hint
+            if index_error_hint:
+                # Add error context to help LLM correct the indices
+                slim_group_with_hint = (
+                    [
+                        {**slim_group[0], "_index_error": index_error_hint},
+                        *slim_group[1:],
+                    ]
+                    if slim_group
+                    else slim_group
+                )
+                result = await resolution_module.acall(
+                    group_entities=slim_group_with_hint,
+                    existing_candidates=slim_existing,
+                )
+            else:
+                result = await resolution_module.acall(
+                    group_entities=slim_group,
+                    existing_candidates=slim_existing,
+                )
+
+        # Validate indices before processing
+        validation_errors = _validate_entity_indices(
+            result.resolutions.resolutions, group_entities, existing_candidates
+        )
+
+        if not validation_errors:
+            # All indices valid, proceed with processing
+            break
+
+        # Only retry for index out-of-range errors
+        if attempt < max_retries:
+            index_error_hint = (
+                f"PREVIOUS ATTEMPT HAD INDEX ERRORS - PLEASE FIX: {'; '.join(validation_errors)}. "
+                f"REMINDER: group_entities has {len(group_entities)} items (valid indices: 0-{len(group_entities)-1}), "
+                f"existing_candidates has {len(existing_candidates)} items (valid indices: 0-{len(existing_candidates)-1 if existing_candidates else 'N/A'})."
+            )
+            logger.warning(
+                f"LLM returned invalid indices (attempt {attempt + 1}/{max_retries + 1}), retrying with error hint. "
+                f"Errors: {'; '.join(validation_errors)}"
+            )
+        else:
+            logger.error(
+                f"LLM returned invalid indices after {max_retries + 1} attempts. "
+                f"Errors: {'; '.join(validation_errors)}. Falling back to safe defaults."
+            )
 
     # Convert GroupResolution output to individual resolution dicts
     group_resolutions = []
@@ -588,24 +779,28 @@ async def _resolve_single_group(
         if 0 <= entity_idx < len(group_entities):
             entity_details = group_entities[entity_idx]
         else:
-            # LLM likely used 1-based indexing - try adjusting
+            # Fallback for still-invalid indices after retries
             adjusted_idx = entity_idx - 1
+            model_name = getattr(lm, "model_name", "unknown") if lm else "unknown"
+            entity_names = [e.get("name", "?") for e in group_entities]
             if 0 <= adjusted_idx < len(group_entities):
                 logger.warning(
                     f"entity_index {entity_idx} out of range (0-{len(group_entities)-1}), "
-                    f"adjusting to {adjusted_idx} (assuming 1-based indexing from LLM)"
+                    f"adjusting to {adjusted_idx} (assuming 1-based indexing from LLM). "
+                    f"model={model_name}, entities={entity_names}"
                 )
                 entity_details = group_entities[adjusted_idx]
             else:
                 logger.warning(
                     f"Invalid entity_index {entity_idx}, using first entity. "
-                    f"Group has {len(group_entities)} entities (valid: 0-{len(group_entities)-1})."
+                    f"Group has {len(group_entities)} entities (valid: 0-{len(group_entities)-1}). "
+                    f"model={model_name}, entities={entity_names}"
                 )
                 entity_details = group_entities[0]
 
         # Convert index-based decision to string-based format for downstream compatibility
         decision = _convert_decision_to_string(
-            entity_resolution, group_entities, existing_candidates
+            entity_resolution, group_entities, existing_candidates, lm=lm
         )
 
         group_resolutions.append(

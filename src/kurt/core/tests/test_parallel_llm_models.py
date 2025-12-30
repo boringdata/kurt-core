@@ -286,7 +286,7 @@ class TestGetDspyLm:
             result = get_dspy_lm(config=mock_config)
 
             assert result == mock_lm
-            mock_lm_class.assert_called_once_with("openai/gpt-4", max_tokens=8000)
+            mock_lm_class.assert_called_once_with("openai/gpt-4", max_tokens=8000, temperature=0.0)
 
     def test_get_dspy_lm_haiku_uses_smaller_max_tokens(self):
         """Test that haiku models get smaller max_tokens."""
@@ -302,4 +302,5 @@ class TestGetDspyLm:
             mock_lm_class.assert_called_once_with(
                 "anthropic/claude-3-haiku-20240307",
                 max_tokens=4000,
+                temperature=0.0,
             )

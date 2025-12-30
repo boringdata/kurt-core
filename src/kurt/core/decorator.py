@@ -270,7 +270,9 @@ def apply_dspy_on_df(
     post_hook: Callable = None,
     max_concurrent: int = 5,
     progress: bool = True,
+    progress_prefix: str = None,
     config: "ModelConfig | None" = None,
+    predictor: str = "chain_of_thought",
 ) -> "pd.DataFrame":
     """Apply a DSPy signature to DataFrame rows in parallel.
 
@@ -291,8 +293,10 @@ def apply_dspy_on_df(
         post_hook: Optional function (row_dict, result) -> row_dict to postprocess
         max_concurrent: Number of parallel LLM calls (default: 5)
         progress: Show progress bar (default: True)
+        progress_prefix: Label for the progress bar (default: signature class name)
         config: Step's ModelConfig instance with llm_model attribute.
                 If None, model is inferred from caller's module path.
+        predictor: DSPy predictor type: "chain_of_thought" (default), "typed", or "predict"
 
     Returns:
         DataFrame with new columns from DSPy output
@@ -352,7 +356,9 @@ def apply_dspy_on_df(
     # Create progress callback if needed
     on_progress = None
     if progress:
-        on_progress = make_progress_callback(prefix="Processing with DSPy")
+        # Use provided prefix, or derive from signature class name
+        prefix = progress_prefix or signature.__name__
+        on_progress = make_progress_callback(prefix=prefix)
 
     # Build batch items: include input fields + tracking fields (exclude __original_row__)
     batch_items = []
@@ -367,6 +373,7 @@ def apply_dspy_on_df(
         max_concurrent=max_concurrent,
         on_progress=on_progress,
         config=config,
+        predictor=predictor,
     )
 
     # Merge results back into rows
@@ -596,6 +603,14 @@ def model(
                             config_instance = config_schema(**defaults)
 
                     kwargs["config"] = config_instance
+
+                    # Print resolved config parameters to console
+                    from .display import print_dim
+
+                    config_dict = config_instance.model_dump()
+                    if config_dict:
+                        params_str = ", ".join(f"{k}={v!r}" for k, v in config_dict.items())
+                        print_dim(f"Config: {params_str}")
 
                 # Filter kwargs to only include parameters the function accepts
                 filtered_kwargs = {k: v for k, v in kwargs.items() if k in params}

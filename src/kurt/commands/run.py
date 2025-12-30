@@ -49,6 +49,10 @@ logger = logging.getLogger(__name__)
     is_flag=True,
     help="Show what would be executed without running",
 )
+@click.option(
+    "--workflow-id",
+    help="Reuse an existing workflow's context (to rerun a step with existing data)",
+)
 @track_command
 def run(
     target: str,
@@ -64,6 +68,7 @@ def run(
     source_url: Optional[str],
     source_folder: Optional[str],
     dry_run: bool,
+    workflow_id: Optional[str],
 ):
     """
     Run pipeline models (dbt-style).
@@ -89,6 +94,10 @@ def run(
 
         # Run with document pattern filtering
         kurt run landing.fetch --include-pattern '*/docs/*'
+
+        # Rerun a step using data from an existing workflow
+        # (useful to retry after fixing code or config)
+        kurt run staging.indexing.entity_clustering --workflow-id e9208e1e-910a-47a1-b2e1-a357bb5dbfd6
 
     \b
     Model names follow the convention:
@@ -122,25 +131,29 @@ def run(
         _show_dry_run(target, filters, config, mode, reprocess)
         return
 
-    # Run the pipeline
-    try:
-        result = asyncio.run(
-            _run_pipeline(
-                target=target,
-                filters=filters,
-                config=config,
-                mode=mode,
-                reprocess=reprocess,
+    # Run the pipeline with DBOS context
+    from kurt.workflows.cli_helpers import dbos_cleanup_context
+
+    with dbos_cleanup_context():
+        try:
+            result = asyncio.run(
+                _run_pipeline(
+                    target=target,
+                    filters=filters,
+                    config=config,
+                    mode=mode,
+                    reprocess=reprocess,
+                    workflow_id=workflow_id,
+                )
             )
-        )
-        _show_result(result)
-    except ValueError as e:
-        console.print(f"[red]Error:[/red] {e}")
-        raise click.Abort()
-    except Exception as e:
-        console.print(f"[red]Error:[/red] {e}")
-        logger.exception("Pipeline execution failed")
-        raise click.Abort()
+            _show_result(result)
+        except ValueError as e:
+            console.print(f"[red]Error:[/red] {e}")
+            raise click.Abort()
+        except Exception as e:
+            console.print(f"[red]Error:[/red] {e}")
+            logger.exception("Pipeline execution failed")
+            raise click.Abort()
 
 
 def _import_models(target: str) -> None:
@@ -165,6 +178,7 @@ async def _run_pipeline(
     config: dict,
     mode: str,
     reprocess: bool,
+    workflow_id: Optional[str] = None,
 ) -> dict:
     """Run the pipeline workflow."""
     from kurt.core import run_pipeline_workflow
@@ -176,6 +190,7 @@ async def _run_pipeline(
         target=target,
         filters=filters,
         incremental_mode=mode,
+        workflow_id=workflow_id,
         reprocess_unchanged=reprocess,
     )
     return result

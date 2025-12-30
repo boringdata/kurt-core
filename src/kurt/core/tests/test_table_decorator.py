@@ -170,7 +170,9 @@ class TestApplyDspyOnDf:
         df = pd.DataFrame({"content": ["hello", "world", "test"]})
 
         # Mock run_batch_sync to return results for each row
-        def mock_run_batch_sync(*, signature, items, max_concurrent, on_progress, config=None):
+        def mock_run_batch_sync(
+            *, signature, items, max_concurrent, on_progress, config=None, predictor=None
+        ):
             results = []
             for item in items:
                 mock_result = MagicMock()
@@ -244,7 +246,9 @@ class TestApplyDspyOnDf:
         df = pd.DataFrame({"content": ["hello", "world"]})
         captured_items = []
 
-        def mock_run_batch_sync(*, signature, items, max_concurrent, on_progress, config=None):
+        def mock_run_batch_sync(
+            *, signature, items, max_concurrent, on_progress, config=None, predictor=None
+        ):
             captured_items.extend(items)
             results = []
             for item in items:
@@ -288,7 +292,9 @@ class TestApplyDspyOnDf:
 
         df = pd.DataFrame({"content": ["hello world"]})
 
-        def mock_run_batch_sync(*, signature, items, max_concurrent, on_progress, config=None):
+        def mock_run_batch_sync(
+            *, signature, items, max_concurrent, on_progress, config=None, predictor=None
+        ):
             mock_result = MagicMock()
             mock_result.summary = "This is a test summary"
             return [DSPyResult(payload=items[0], result=mock_result, error=None, telemetry={})]
@@ -316,7 +322,9 @@ class TestApplyDspyOnDf:
 
         df = pd.DataFrame({"content": ["good", "bad", "good2"]})
 
-        def mock_run_batch_sync(*, signature, items, max_concurrent, on_progress, config=None):
+        def mock_run_batch_sync(
+            *, signature, items, max_concurrent, on_progress, config=None, predictor=None
+        ):
             results = []
             for item in items:
                 if item.get("text") == "bad":
@@ -370,7 +378,9 @@ class TestApplyDspyOnDf:
 
         df = pd.DataFrame({"title": ["Doc 1", "Doc 2"], "body": ["Content 1", "Content 2"]})
 
-        def mock_run_batch_sync(*, signature, items, max_concurrent, on_progress, config=None):
+        def mock_run_batch_sync(
+            *, signature, items, max_concurrent, on_progress, config=None, predictor=None
+        ):
             results = []
             for item in items:
                 mock_result = MagicMock()
@@ -411,7 +421,9 @@ class TestApplyDspyOnDf:
 
         call_count = [0]
 
-        def mock_run_batch_sync(*, signature, items, max_concurrent, on_progress, config=None):
+        def mock_run_batch_sync(
+            *, signature, items, max_concurrent, on_progress, config=None, predictor=None
+        ):
             call_count[0] += 1
             # Verify all items are passed in a single batch
             assert len(items) == 10
@@ -462,7 +474,9 @@ class TestApplyDspyOnDf:
             }
         )
 
-        def mock_run_batch_sync(*, signature, items, max_concurrent, on_progress, config=None):
+        def mock_run_batch_sync(
+            *, signature, items, max_concurrent, on_progress, config=None, predictor=None
+        ):
             results = []
             for item in items:
                 mock_result = MagicMock()

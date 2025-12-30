@@ -5,6 +5,7 @@ Usage:
     python create_dump.py /path/to/kurt/project dump_name
 """
 
+import base64
 import json
 import shutil
 import sys
@@ -38,7 +39,16 @@ def create_dump(project_path: Path, dump_name: str):
     print(f"Output directory: {project_dir}")
 
     # Tables to export (we'll get columns dynamically from the schema)
-    tables = ["documents", "entities", "document_entities", "entity_relationships"]
+    # Order matters: documents first, then entities, then claims (depends on entities), then relationships
+    tables = [
+        "documents",
+        "entities",
+        "claims",
+        "claim_entities",
+        "document_entities",
+        "entity_relationships",
+        "claim_relationships",
+    ]
 
     # Create direct connection to the project's database
     engine = create_engine(f"sqlite:///{db_path}")
@@ -53,12 +63,9 @@ def create_dump(project_path: Path, dump_name: str):
             pragma_query = text(f"PRAGMA table_info({table_name})")
             columns_info = session.execute(pragma_query).fetchall()
 
-            # Skip binary/blob columns (like embedding)
-            columns = [
-                col[1]
-                for col in columns_info
-                if col[2].upper() not in ["BLOB"]  # col[1] is name, col[2] is type
-            ]
+            # Get all columns including BLOBs, track which are BLOB type
+            columns = [col[1] for col in columns_info]
+            blob_columns = {col[1] for col in columns_info if col[2].upper() == "BLOB"}
 
             # Query all rows
             cols_str = ", ".join(columns)
@@ -69,7 +76,13 @@ def create_dump(project_path: Path, dump_name: str):
             count = 0
             with open(output_file, "w") as f:
                 for row in result:
-                    record = dict(zip(columns, row))
+                    record = {}
+                    for col_name, value in zip(columns, row):
+                        if col_name in blob_columns and value is not None:
+                            # Encode BLOB as base64 string
+                            record[col_name] = base64.b64encode(value).decode("ascii")
+                        else:
+                            record[col_name] = value
                     f.write(json.dumps(record, default=str) + "\n")
                     count += 1
 
@@ -118,8 +131,11 @@ def main():
         print("    ├── database/")
         print("    │   ├── documents.jsonl")
         print("    │   ├── entities.jsonl")
+        print("    │   ├── claims.jsonl")
+        print("    │   ├── claim_entities.jsonl")
         print("    │   ├── document_entities.jsonl")
-        print("    │   └── entity_relationships.jsonl")
+        print("    │   ├── entity_relationships.jsonl")
+        print("    │   └── claim_relationships.jsonl")
         print("    └── sources/  (content files)")
         sys.exit(1)
 

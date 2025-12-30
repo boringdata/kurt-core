@@ -104,7 +104,10 @@ async def search_similar_entities(
         for entity_id, similarity in search_results:
             entity = await s.get(Entity, UUID(entity_id))
             if entity and entity.entity_type == entity_type:
-                entity_dict = entity.model_dump(exclude={"embedding"}, mode="python")
+                # Exclude non-JSON-serializable fields
+                entity_dict = entity.model_dump(
+                    exclude={"embedding", "created_at", "updated_at"}, mode="python"
+                )
                 entity_dict["id"] = str(entity_dict["id"])
                 entity_dict["type"] = entity_dict.pop("entity_type")
                 entity_dict["similarity"] = similarity

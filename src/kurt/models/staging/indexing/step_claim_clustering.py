@@ -185,7 +185,16 @@ def claim_clustering(
     import nest_asyncio
 
     nest_asyncio.apply()
-    cluster_tasks = asyncio.run(_fetch_similar_claims_for_clusters(clusters))
+
+    # Create progress callback for live display
+    from kurt.core.display import make_progress_callback
+
+    similarity_progress = make_progress_callback(prefix="Searching similar claims")
+    cluster_tasks = asyncio.run(
+        _fetch_similar_claims_for_clusters(
+            clusters, on_progress=similarity_progress, max_concurrent=config.max_concurrent
+        )
+    )
 
     # Step 4: Resolve clusters
     resolutions = _resolve_claim_clusters(cluster_tasks)
@@ -416,6 +425,8 @@ async def _fetch_similar_claims_for_clusters(
     clusters: Dict[int, List[Dict[str, Any]]],
     similarity_threshold: float = 0.75,
     max_similar_per_cluster: int = 5,
+    on_progress: Optional[callable] = None,
+    max_concurrent: int = 10,
 ) -> List[Dict[str, Any]]:
     """Fetch similar existing claims for each cluster.
 
@@ -425,14 +436,15 @@ async def _fetch_similar_claims_for_clusters(
         clusters: Dict mapping cluster_id to list of claims
         similarity_threshold: Minimum similarity for matching (default: 0.75)
         max_similar_per_cluster: Max similar claims to return per cluster
+        on_progress: Optional progress callback
+        max_concurrent: Maximum concurrent searches
 
     Returns:
         List of dicts with cluster_id, cluster_claims, and similar_existing
     """
     from kurt.db.claim_queries import search_claims_by_text
     from kurt.db.database import get_session
-
-    results = []
+    from kurt.utils.async_helpers import gather_with_semaphore
 
     # Get representative statement for each cluster (highest confidence claim)
     cluster_representatives = []
@@ -442,14 +454,15 @@ async def _fetch_similar_claims_for_clusters(
         cluster_representatives.append((cluster_id, representative, cluster_claims))
 
     if not cluster_representatives:
-        return results
+        return []
 
-    # Search for similar existing claims for each cluster
-    session = get_session()
-    try:
-        for cluster_id, representative_statement, cluster_claims in cluster_representatives:
-            similar_existing = []
+    async def search_single_cluster(item):
+        """Search similar claims for a single cluster."""
+        cluster_id, representative_statement, cluster_claims = item
+        similar_existing = []
 
+        try:
+            session = get_session()
             try:
                 # Use existing search_claims_by_text from db/claim_queries.py
                 similar_results = search_claims_by_text(
@@ -474,22 +487,24 @@ async def _fetch_similar_claims_for_clusters(
                                 "similarity": similarity,
                             }
                         )
-            except Exception as e:
-                # Log but don't fail - just return empty similar list for this cluster
-                logger.debug(f"Error searching similar claims for cluster {cluster_id}: {e}")
+            finally:
+                session.close()
+        except Exception as e:
+            # Log but don't fail - just return empty similar list for this cluster
+            logger.debug(f"Error searching similar claims for cluster {cluster_id}: {e}")
 
-            results.append(
-                {
-                    "cluster_id": cluster_id,
-                    "cluster_claims": cluster_claims,
-                    "similar_existing": similar_existing,
-                }
-            )
+        return {
+            "cluster_id": cluster_id,
+            "cluster_claims": cluster_claims,
+            "similar_existing": similar_existing,
+        }
 
-    finally:
-        session.close()
-
-    return results
+    return await gather_with_semaphore(
+        tasks=[search_single_cluster(item) for item in cluster_representatives],
+        max_concurrent=max_concurrent,
+        task_description="claim similarity search",
+        on_progress=on_progress,
+    )
 
 
 def _resolve_claim_clusters(
