@@ -26,6 +26,7 @@ import pytest
 from click.testing import CliRunner
 
 from kurt.cli import main
+from kurt.conftest import get_doc_status as _get_doc_status
 from kurt.core.dspy_helpers import DSPyResult
 from kurt.core.testing import (
     create_extraction_response_factory,
@@ -33,7 +34,7 @@ from kurt.core.testing import (
     mock_run_batch,
 )
 from kurt.db.database import get_session
-from kurt.db.models import Document, IngestionStatus, SourceType
+from kurt.db.models import Document, SourceType
 
 
 def content_aware_response_factory(items: List[Dict[str, Any]]) -> List[DSPyResult]:
@@ -212,7 +213,6 @@ Docker is useful for deploying both.
             source_url=f"file://{test_file}",
             source_path=str(test_file),
             content_path=str(content_file),
-            ingestion_status=IngestionStatus.FETCHED,
             title="Test Document",
             raw_content=test_file.read_text(),
         )
@@ -226,14 +226,17 @@ Docker is useful for deploying both.
         # Verify command succeeded
         assert result.exit_code == 0, f"Command failed: {result.output}"
 
-        # Verify document still exists
+        # Verify document still exists and is indexed
         session.expire_all()
         doc = session.get(Document, doc_id)
         assert doc is not None
-        assert doc.ingestion_status == IngestionStatus.FETCHED
+        # After indexing, status should be INDEXED (has section extractions)
+        assert _get_doc_status(doc.id) == "INDEXED"
 
     def test_index_batch_documents(self, tmp_project, mock_llm_boundary):
         """Test indexing multiple documents using the batch workflow."""
+        from kurt.conftest import mark_document_as_fetched
+
         runner = CliRunner()
         session = get_session()
 
@@ -255,7 +258,6 @@ Docker is useful for deploying both.
                 source_url=f"file://{test_file}",
                 source_path=str(test_file),
                 content_path=str(content_file),
-                ingestion_status=IngestionStatus.FETCHED,
                 title=f"Document {i}",
                 raw_content=test_file.read_text(),
             )
@@ -263,6 +265,10 @@ Docker is useful for deploying both.
             doc_ids.append(doc_id)
 
         session.commit()
+
+        # Mark all documents as FETCHED (status now derived from staging tables)
+        for doc_id in doc_ids:
+            mark_document_as_fetched(doc_id, session)
 
         # Index all documents
         result = runner.invoke(main, ["content", "index", "--all", "--force"])
@@ -272,10 +278,13 @@ Docker is useful for deploying both.
         for doc_id in doc_ids:
             doc = session.get(Document, doc_id)
             assert doc is not None
-            assert doc.ingestion_status == IngestionStatus.FETCHED
+            # After indexing, status should be INDEXED (has section extractions)
+            assert _get_doc_status(doc.id) == "INDEXED"
 
     def test_index_error_handling(self, tmp_project):
         """Test that indexing handles errors gracefully (no content file)."""
+        from kurt.conftest import mark_document_as_fetched
+
         runner = CliRunner()
         session = get_session()
 
@@ -286,11 +295,13 @@ Docker is useful for deploying both.
             source_url="file:///nonexistent.md",
             source_path="/nonexistent.md",
             content_path="/nonexistent/content.md",
-            ingestion_status=IngestionStatus.FETCHED,
             title="Missing Content",
         )
         session.add(doc)
         session.commit()
+
+        # Mark as FETCHED (status now derived from staging tables)
+        mark_document_as_fetched(doc.id, session)
 
         # Try to index - should handle the error gracefully
         result = runner.invoke(main, ["content", "index", str(doc.id)[:8], "--force"])
@@ -298,10 +309,10 @@ Docker is useful for deploying both.
         # Should complete without crashing
         assert result.exit_code in [0, 1]
 
-        # Document should remain in FETCHED status
+        # Document should remain in FETCHED status (indexing failed due to missing content)
         session.expire_all()
         doc = session.get(Document, doc.id)
-        assert doc.ingestion_status == IngestionStatus.FETCHED
+        assert _get_doc_status(doc.id) == "FETCHED"
 
     def test_index_no_documents_found(self, tmp_project):
         """Test indexing when no documents match the criteria."""
@@ -347,7 +358,6 @@ class TestIndexCommandWithSimpleFactory:
             source_url=f"file://{test_file}",
             source_path=str(test_file),
             content_path=str(content_file),
-            ingestion_status=IngestionStatus.FETCHED,
             title="Factory Test",
             raw_content=test_file.read_text(),
         )

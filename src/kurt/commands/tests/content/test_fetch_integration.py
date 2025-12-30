@@ -28,9 +28,10 @@ from uuid import uuid4
 import pytest
 
 from kurt.cli import main
+from kurt.conftest import get_doc_status as _get_doc_status
 from kurt.core.testing import mock_embeddings, mock_run_batch
 from kurt.db.database import get_session
-from kurt.db.models import Document, Entity, IngestionStatus
+from kurt.db.models import Document, Entity
 
 # Mock path for trafilatura functions
 TRAFILATURA_FETCH_URL = "kurt.integrations.fetch_engines.trafilatura.trafilatura.fetch_url"
@@ -169,7 +170,7 @@ class TestFetchIntegrationE2E:
         session = get_session()
         docs = session.query(Document).filter(Document.source_url == test_url).all()
         assert len(docs) == 1
-        assert docs[0].ingestion_status == IngestionStatus.FETCHED
+        assert _get_doc_status(docs[0].id) == "FETCHED"
 
     def test_fetch_with_skip_index_no_entities(self, isolated_cli_runner, mock_pipeline_boundaries):
         """Test --skip-index doesn't create entities."""
@@ -228,7 +229,7 @@ class TestFetchIntegrationE2E:
         assert len(docs) == 3
 
         for doc in docs:
-            assert doc.ingestion_status == IngestionStatus.FETCHED
+            assert _get_doc_status(doc.id) == "FETCHED"
 
 
 class TestFetchDataTransformation:
@@ -373,7 +374,7 @@ class TestFetchIntegrationErrorCases:
         session = get_session()
         docs = session.query(Document).filter(Document.source_url == test_url).all()
         assert len(docs) == 1
-        assert docs[0].ingestion_status == IngestionStatus.ERROR
+        assert _get_doc_status(docs[0].id) == "ERROR"
 
         # No entities should be created
         entities = session.query(Entity).all()
@@ -482,7 +483,7 @@ Learn the basics of Python syntax and data types.
         # Step 3: Verify results
         session = get_session()
         doc = session.get(Document, doc_id)
-        assert doc.ingestion_status == IngestionStatus.FETCHED
+        assert _get_doc_status(doc.id) == "FETCHED"
         session.close()
 
     def test_fetch_real_pipeline_with_document_sections(self, tmp_project, mock_trafilatura):
@@ -549,5 +550,5 @@ It follows the model-template-view architectural pattern.
         # Verify document is fetched
         session = get_session()
         doc = session.get(Document, doc_id)
-        assert doc.ingestion_status == IngestionStatus.FETCHED
+        assert _get_doc_status(doc.id) == "FETCHED"
         session.close()

@@ -13,7 +13,6 @@ from kurt.db.models import (
     DocumentEntity,
     Entity,
     EntityType,
-    IngestionStatus,
     SourceType,
 )
 
@@ -77,7 +76,6 @@ def test_get_document_entities_names_only_true(tmp_project):
         title="Test Doc",
         source_type=SourceType.URL,
         source_url="https://example.com/test-names-only",
-        ingestion_status=IngestionStatus.FETCHED,
     )
     session.add(doc)
 
@@ -122,7 +120,6 @@ def test_get_document_entities_names_only_false(tmp_project):
         title="Test Doc",
         source_type=SourceType.URL,
         source_url="https://example.com/test-tuples",
-        ingestion_status=IngestionStatus.FETCHED,
     )
     session.add(doc)
 
@@ -163,7 +160,6 @@ def test_get_document_entities_with_entity_type_filter(tmp_project):
         title="Test Doc",
         source_type=SourceType.URL,
         source_url="https://example.com/test-filter",
-        ingestion_status=IngestionStatus.FETCHED,
     )
     session.add(doc)
 
@@ -215,14 +211,12 @@ def test_find_documents_with_entity_returns_set_of_uuids(tmp_project):
         title="Python Tutorial",
         source_type=SourceType.URL,
         source_url="https://example.com/python",
-        ingestion_status=IngestionStatus.FETCHED,
     )
     doc2 = Document(
         id=uuid4(),
         title="FastAPI Guide",
         source_type=SourceType.URL,
         source_url="https://example.com/fastapi",
-        ingestion_status=IngestionStatus.FETCHED,
     )
     session.add_all([doc1, doc2])
 
@@ -260,7 +254,6 @@ def test_find_documents_with_entity_with_type_filter(tmp_project):
         title="Test Doc",
         source_type=SourceType.URL,
         source_url="https://example.com/test-entity-type",
-        ingestion_status=IngestionStatus.FETCHED,
     )
     session.add(doc)
 
@@ -307,7 +300,6 @@ def test_find_documents_with_entity_partial_match(tmp_project):
         title="Test Doc",
         source_type=SourceType.URL,
         source_url="https://example.com/test-partial",
-        ingestion_status=IngestionStatus.FETCHED,
     )
     session.add(doc)
 

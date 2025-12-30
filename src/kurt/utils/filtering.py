@@ -266,6 +266,7 @@ def build_document_query(
     in_cluster: str = None,
     with_content_type: str = None,
     limit: int = None,
+    session=None,
 ):
     """
     Build SQLModel query for document selection.
@@ -280,6 +281,7 @@ def build_document_query(
         in_cluster: Cluster name filter
         with_content_type: Content type filter
         limit: Maximum documents to return
+        session: Optional SQLModel session (for testing with isolated sessions)
 
     Returns:
         SQLModel Select statement
@@ -292,9 +294,17 @@ def build_document_query(
         ... )
         >>> # Then execute: docs = session.exec(stmt).all()
     """
+    from sqlalchemy import text
     from sqlmodel import select
 
-    from kurt.db.models import Document, IngestionStatus
+    from kurt.db.documents import _get_status_subquery, _table_exists
+    from kurt.db.models import Document
+
+    # Get session for table existence checks
+    if session is None:
+        from kurt.db.database import get_session
+
+        session = get_session()
 
     stmt = select(Document)
 
@@ -302,26 +312,49 @@ def build_document_query(
     if id_uuids:
         stmt = stmt.where(Document.id.in_(id_uuids))
 
-    # Filter by status
+    # Filter by status using helper that handles missing staging tables
     if with_status:
-        status_enum = IngestionStatus[with_status]
-        stmt = stmt.where(Document.ingestion_status == status_enum)
+        status_upper = with_status.upper()
+        status_subquery = _get_status_subquery(session, status_upper)
+        if status_subquery:
+            stmt = stmt.where(text(status_subquery))
     elif not refetch:
         # Default: exclude FETCHED documents unless refetch=True
-        stmt = stmt.where(Document.ingestion_status != IngestionStatus.FETCHED)
+        status_subquery = _get_status_subquery(session, "NOT_FETCHED")
+        if status_subquery:
+            stmt = stmt.where(text(status_subquery))
 
     # Filter by cluster (uses staging_topic_clustering table)
     if in_cluster:
-        from kurt.models.staging.clustering.step_topic_clustering import TopicClusteringRow
+        if _table_exists(session, "staging_topic_clustering"):
+            # Use REPLACE to strip hyphens from UUID for comparison
+            # (staging tables store UUIDs without hyphens)
+            stmt = stmt.where(
+                text(
+                    f"REPLACE(CAST(id AS TEXT), '-', '') IN ("
+                    f"SELECT document_id FROM staging_topic_clustering "
+                    f"WHERE cluster_name = '{in_cluster}')"
+                )
+            )
+        else:
+            # No documents can match if table doesn't exist
+            stmt = stmt.where(text("1=0"))
 
-        stmt = stmt.join(
-            TopicClusteringRow,
-            Document.id == TopicClusteringRow.document_id,
-        ).where(TopicClusteringRow.cluster_name == in_cluster)
-
-    # Filter by content type
+    # Filter by content type (uses staging_topic_clustering table)
     if with_content_type:
-        stmt = stmt.where(Document.content_type == with_content_type)
+        if _table_exists(session, "staging_topic_clustering"):
+            # Use REPLACE to strip hyphens from UUID for comparison
+            # (staging tables store UUIDs without hyphens)
+            stmt = stmt.where(
+                text(
+                    f"REPLACE(CAST(id AS TEXT), '-', '') IN ("
+                    f"SELECT document_id FROM staging_topic_clustering "
+                    f"WHERE content_type = '{with_content_type.lower()}')"
+                )
+            )
+        else:
+            # No documents can match if table doesn't exist
+            stmt = stmt.where(text("1=0"))
 
     # Apply limit
     if limit:
@@ -561,7 +594,6 @@ def select_documents_for_fetch(
 
     from kurt.db.database import get_session
     from kurt.db.documents import add_documents_for_files, add_documents_for_urls
-    from kurt.db.models import IngestionStatus
     from kurt.utils.filtering import (
         apply_glob_filters,
         build_document_query,
@@ -677,13 +709,24 @@ def select_documents_for_fetch(
     # Calculate estimated cost
     estimated_cost = estimate_fetch_cost(len(filtered_docs), skip_index)
 
-    # Count excluded FETCHED documents
+    # Count excluded FETCHED documents (uses staging tables)
     excluded_fetched_count = 0
     if not with_status and not refetch and docs_before_status_filter:
-        fetched_docs = [
-            d for d in docs_before_status_filter if d.ingestion_status == IngestionStatus.FETCHED
-        ]
-        excluded_fetched_count = len(fetched_docs)
+        # Query landing_fetch to find which docs are fetched
+        # Note: landing_fetch stores document_id WITHOUT hyphens
+        from sqlalchemy import text
+
+        doc_ids_str = ",".join(f"'{str(d.id).replace('-', '')}'" for d in docs_before_status_filter)
+        try:
+            fetched_sql = text(f"""
+                SELECT COUNT(DISTINCT document_id) as count
+                FROM landing_fetch
+                WHERE document_id IN ({doc_ids_str})
+                AND status = 'FETCHED'
+            """)
+            excluded_fetched_count = session.execute(fetched_sql).scalar() or 0
+        except Exception:
+            excluded_fetched_count = 0
 
     return {
         "docs": filtered_docs,
@@ -744,6 +787,7 @@ def select_documents_to_fetch(filters: DocumentFetchFilters) -> list[dict]:
     )
 
     # Convert to lightweight dicts for checkpoint
+    # Note: discovery_url removed from Document model - now in landing_discovery table
     return [
         {
             "id": str(doc.id),
@@ -751,7 +795,6 @@ def select_documents_to_fetch(filters: DocumentFetchFilters) -> list[dict]:
             "cms_platform": doc.cms_platform,
             "cms_instance": doc.cms_instance,
             "cms_document_id": doc.cms_document_id,
-            "discovery_url": doc.discovery_url,
         }
         for doc in filtered_docs
     ]

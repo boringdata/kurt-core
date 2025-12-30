@@ -38,6 +38,12 @@ def get_document_cmd(identifier: str, format: str):
 
         doc = get_document(doc_id)
 
+        # Get document status and metadata from staging tables
+        from kurt.db.documents import get_document_status, get_document_with_metadata
+
+        doc_status = get_document_status(doc_id)
+        doc_metadata = get_document_with_metadata(doc_id)
+
         # Get knowledge graph (always included)
         kg = None
         from kurt.db.graph_queries import get_document_knowledge_graph
@@ -51,8 +57,11 @@ def get_document_cmd(identifier: str, format: str):
         if format == "json":
             import json
 
-            # Convert SQLModel to dict
+            # Convert SQLModel to dict and add derived metadata
             output = doc.model_dump() if hasattr(doc, "model_dump") else dict(doc)
+            output["status"] = doc_status["status"]
+            output["content_type"] = doc_metadata.get("content_type")
+            output["discovery_method"] = doc_metadata.get("discovery_method")
             if kg:
                 output["knowledge_graph"] = kg
             print(json.dumps(output, indent=2, default=str))
@@ -63,7 +72,7 @@ def get_document_cmd(identifier: str, format: str):
 
             console.print(f"[bold]ID:[/bold] {doc.id}")
             console.print(f"[bold]Title:[/bold] {doc.title or 'Untitled'}")
-            console.print(f"[bold]Status:[/bold] {doc.ingestion_status.value}")
+            console.print(f"[bold]Status:[/bold] {doc_status['status']}")
             console.print(f"[bold]Source Type:[/bold] {doc.source_type.value}")
             console.print(f"[bold]Source URL:[/bold] {doc.source_url or 'N/A'}")
 

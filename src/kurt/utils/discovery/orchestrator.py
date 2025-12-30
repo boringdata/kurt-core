@@ -8,10 +8,11 @@ import logging
 from fnmatch import fnmatch
 from typing import Optional
 
+from sqlalchemy import text
 from sqlmodel import select
 
 from kurt.db.database import get_session
-from kurt.db.models import Document, IngestionStatus, SourceType
+from kurt.db.models import Document, SourceType
 
 logger = logging.getLogger(__name__)
 
@@ -91,14 +92,24 @@ def discover_from_url(
     )
 
     # Convert to result format
+    # Note: "created" now determined by whether doc is in landing_fetch table
+    from kurt.db.documents import get_document_status
+
     results = []
     for doc in docs:
+        # New documents won't have landing_fetch records yet
+        try:
+            status = get_document_status(doc.id)["status"]
+            is_new = status == "NOT_FETCHED"
+        except Exception:
+            is_new = True
+
         results.append(
             {
                 "doc_id": str(doc.id),
                 "url": doc.source_url,
                 "title": doc.title,
-                "created": doc.ingestion_status == IngestionStatus.NOT_FETCHED,
+                "created": is_new,
             }
         )
 
@@ -217,9 +228,8 @@ def batch_create_documents(
                 title=title,
                 source_type=SourceType.URL,
                 source_url=url,
-                ingestion_status=IngestionStatus.NOT_FETCHED,
-                discovery_method=discovery_method,
-                discovery_url=discovery_url,
+                # Status is now derived from staging tables, not stored on Document
+                # discovery_method and discovery_url are tracked in landing_discovery
             )
 
             session.add(doc)
@@ -234,6 +244,14 @@ def batch_create_documents(
         if docs_to_add:
             session.commit()
 
+        # Insert landing_discovery records for new documents
+        _insert_landing_discovery_records(
+            session=session,
+            urls=new_urls,
+            discovery_method=discovery_method,
+            discovery_url=discovery_url,
+        )
+
         new_count = len(new_urls)
 
     # Return all documents
@@ -241,3 +259,54 @@ def batch_create_documents(
     all_docs = list(session.exec(all_docs_stmt).all())
 
     return all_docs, new_count
+
+
+def _insert_landing_discovery_records(
+    session,
+    urls: list[str],
+    discovery_method: str,
+    discovery_url: str = None,
+) -> None:
+    """Insert landing_discovery records for discovered URLs.
+
+    This tracks discovery metadata (method, source URL) separately from
+    the Document table, following the staging tables pattern.
+
+    Args:
+        session: Database session
+        urls: List of discovered URLs
+        discovery_method: How URLs were discovered (sitemap, crawl, etc.)
+        discovery_url: Source URL where these URLs were discovered
+    """
+    if not urls:
+        return
+
+    # Get document IDs for the URLs
+    stmt = select(Document).where(Document.source_url.in_(urls))
+    docs = list(session.exec(stmt).all())
+
+    if not docs:
+        return
+
+    # Insert landing_discovery records
+    for doc in docs:
+        try:
+            session.execute(
+                text("""
+                    INSERT OR IGNORE INTO landing_discovery
+                    (document_id, workflow_id, created_at, updated_at, model_name,
+                     discovery_method, discovery_url, status)
+                    VALUES (:doc_id, 'discovery', datetime('now'), datetime('now'),
+                            'discovery.orchestrator', :method, :source_url, 'DISCOVERED')
+                """),
+                {
+                    "doc_id": str(doc.id),
+                    "method": discovery_method,
+                    "source_url": discovery_url,
+                },
+            )
+        except Exception as e:
+            # Table may not exist in some cases (tests without migrations)
+            logger.debug(f"Could not insert landing_discovery record: {e}")
+
+    session.commit()

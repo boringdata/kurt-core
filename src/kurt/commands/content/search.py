@@ -127,7 +127,7 @@ def search_cmd(
                     "title": doc.title or "Untitled",
                     "source_url": doc.source_url or "N/A",
                     "content_path": doc.content_path or "N/A",
-                    "content_type": doc.content_type or "N/A",
+                    "content_type": "N/A",  # content_type now in staging_topic_clustering
                     "similarity": similarity,
                 }
                 for doc, similarity in filtered_results
@@ -154,7 +154,7 @@ def search_cmd(
             table.add_row(
                 f"{similarity:.1%}",
                 doc.title[:60] + "..." if len(doc.title) > 60 else doc.title,
-                doc.content_type or "N/A",
+                "N/A",  # content_type now in staging_topic_clustering
                 str(doc.id)[:8] + "...",
             )
 
