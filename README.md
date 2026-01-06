@@ -1,8 +1,8 @@
 # Kurt
 
-**AI-powered writing assistant for B2B marketing and technical contentss ss s alskdjlaksjda kkk**
+**AI-powered writing assistant for B2B marketing and technical content**
 
-Kurt helps B2B marketers and content teams create accurate, grounded content using AI. It works with [Claude Code](https://code.claude.com) or [Cursor](https://cursor.com) to produce blog posts, product pages, documentation, positioning docs, and more—all backed by your source material and guided by customizable templates.
+Kurt helps B2B marketers and content teams create accurate, grounded content using AI. It works with [Claude Code](https://code.claude.com) or [Cursor](https://cursor.com) to produce blog posts, product pages, documentation, positioning docs, and more—all[README.md](http://README.md) backed by your source uv.lockmaterial and guided by customizable templates.
 
 ## Table of Contents
 
@@ -22,8 +22,8 @@ Kurt helps B2B marketers and content teams create accurate, grounded content usi
         
     -   [Content Discovery & Gap Analysis](#-content-discovery--gap-analysis)
         
-    -   [Research Integration](#-research-integration)
-        
+-   [Research Integration](#-research-integration)
+    
     -   [Publishing](#-publishing)
         
 -   [How It Works](#how-it-works)

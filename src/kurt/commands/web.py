@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 import sys
 import time
@@ -18,117 +17,103 @@ from kurt.admin.telemetry.decorators import track_command
 console = Console()
 
 
-def _find_repo_root(start: Path) -> Path:
-    for candidate in [start] + list(start.parents):
-        if (candidate / "web" / "package.json").exists() and (candidate / "src" / "kurt").exists():
-            return candidate
-    return start
-
-
 def _start_process(label: str, cmd: list[str], cwd: Path, env: dict[str, str]):
     console.print(f"[dim]Starting {label}:[/dim] {' '.join(cmd)}")
     return subprocess.Popen(cmd, cwd=str(cwd), env=env)
 
 
 @click.command()
-@click.option("--host", default="127.0.0.1", help="Host for the web UI and API")
-@click.option("--api-port", default=8765, type=int, help="Port for the FastAPI backend")
-@click.option("--web-port", default=5173, type=int, help="Port for the Vite dev server")
-@click.option("--pty-port", default=8767, type=int, help="Port for the Claude CLI bridge")
+@click.option("--host", default="127.0.0.1", help="Host for the web UI")
+@click.option("--port", default=8765, type=int, help="Port for the web server")
 @click.option("--no-browser", is_flag=True, help="Do not open the browser automatically")
-@click.option("--no-bridge", is_flag=True, help="Skip starting the Claude CLI bridge")
-@click.option("--reload/--no-reload", default=True, help="Enable FastAPI auto-reload")
+@click.option("--reload", is_flag=True, help="Enable auto-reload (for development)")
 @click.option(
     "--claude-cmd",
     default="claude",
     help="Command to run Claude Code CLI (default: claude)",
 )
+@click.option(
+    "--codex-cmd",
+    default="codex",
+    help="Command to run Codex CLI (default: codex)",
+)
 @track_command
 def serve(
     host: str,
-    api_port: int,
-    web_port: int,
-    pty_port: int,
+    port: int,
     no_browser: bool,
-    no_bridge: bool,
     reload: bool,
     claude_cmd: str,
+    codex_cmd: str,
 ):
-    """Serve the local web UI with API and Claude CLI bridge."""
-    root = _find_repo_root(Path.cwd())
-    web_dir = root / "web"
-    bridge_entry = web_dir / "bridge" / "server.js"
+    """Serve the Kurt web UI (production mode).
 
-    if not web_dir.exists():
-        console.print("[red]Web UI directory not found (expected ./web).[/red]")
-        raise click.Abort()
+    This starts the FastAPI server which serves both the API and the
+    pre-built frontend static files. For development, run the API server
+    and Vite dev server separately:
 
-    if not shutil.which("npm"):
-        console.print("[red]npm is required to run the web UI.[/red]")
-        raise click.Abort()
+    \b
+    # Terminal 1: API server with reload
+    uvicorn kurt.web.api.server:app --reload --port 8765
 
-    if not no_bridge and not shutil.which("node"):
-        console.print("[red]node is required to run the Claude CLI bridge.[/red]")
-        raise click.Abort()
-
-    if not no_bridge and not bridge_entry.exists():
-        console.print("[red]Claude CLI bridge entrypoint not found (web/bridge/server.js).[/red]")
-        raise click.Abort()
-
-    if not no_bridge and not shutil.which(claude_cmd):
+    \b
+    # Terminal 2: Vite dev server (from src/kurt/web/client/)
+    npm run dev
+    """
+    # Check if built frontend exists
+    client_dist = Path(__file__).parent.parent / "web" / "client" / "dist"
+    if not client_dist.exists() or not (client_dist / "index.html").exists():
         console.print(
-            f"[yellow]Claude CLI not found on PATH: {claude_cmd}. The bridge may fail to start.[/yellow]"
+            "[yellow]Warning: Built frontend not found at src/kurt/web/client/dist/[/yellow]"
         )
+        console.print(
+            "[yellow]Run 'npm run build' in src/kurt/web/client/ first, or use dev mode.[/yellow]"
+        )
+        console.print()
 
     env = os.environ.copy()
-    env["KURT_WEB_ORIGIN"] = f"http://{host}:{web_port}"
-    env["KURT_WEB_API_URL"] = f"http://{host}:{api_port}"
-    env["VITE_API_URL"] = f"http://{host}:{api_port}"
-    env["VITE_PTY_HOST"] = host
-    env["VITE_PTY_PORT"] = str(pty_port)
-    env["KURT_PTY_PORT"] = str(pty_port)
-    env["KURT_PTY_CWD"] = str(Path.cwd())
+    env["KURT_WEB_ORIGIN"] = f"http://{host}:{port}"
+    project_root = Path(os.environ.get("KURT_PROJECT_ROOT", Path.cwd())).expanduser().resolve()
+    env["KURT_PROJECT_ROOT"] = str(project_root)
+    env["KURT_PTY_CWD"] = str(project_root)
     env["KURT_CLAUDE_CMD"] = claude_cmd
+    env["KURT_CODEX_CMD"] = codex_cmd
+    env["KURT_PTY_CMD"] = claude_cmd
 
     api_cmd = [
         sys.executable,
         "-m",
         "uvicorn",
-        "kurt.web_api.server:app",
+        "kurt.web.api.server:app",
         "--host",
         host,
         "--port",
-        str(api_port),
+        str(port),
     ]
     if reload:
         api_cmd.append("--reload")
 
-    web_cmd = ["npm", "run", "dev", "--", "--host", host, "--port", str(web_port)]
-    bridge_cmd = ["node", str(bridge_entry)]
+    console.print(f"[bold]Starting Kurt Web UI on http://{host}:{port}[/bold]")
+    console.print()
 
-    processes: list[tuple[str, subprocess.Popen | None]] = []
-    processes.append(("api", _start_process("API", api_cmd, root, env)))
-    if not no_bridge:
-        processes.append(("bridge", _start_process("Claude bridge", bridge_cmd, web_dir, env)))
-    processes.append(("web", _start_process("Web UI", web_cmd, web_dir, env)))
+    process = _start_process("API server", api_cmd, Path.cwd(), env)
 
     if not no_browser:
-        webbrowser.open(f"http://{host}:{web_port}")
+        # Give server a moment to start
+        time.sleep(1)
+        webbrowser.open(f"http://{host}:{port}")
 
     try:
         while True:
-            for label, proc in processes:
-                if proc and proc.poll() is not None:
-                    console.print(f"[yellow]{label} exited with code {proc.returncode}.[/yellow]")
-                    raise SystemExit(proc.returncode or 0)
+            if process.poll() is not None:
+                console.print(f"[yellow]Server exited with code {process.returncode}.[/yellow]")
+                raise SystemExit(process.returncode or 0)
             time.sleep(0.5)
     except KeyboardInterrupt:
-        console.print("\n[dim]Stopping servers...[/dim]")
+        console.print("\n[dim]Stopping server...[/dim]")
     finally:
-        for _, proc in processes:
-            if proc and proc.poll() is None:
-                proc.terminate()
+        if process.poll() is None:
+            process.terminate()
         time.sleep(0.5)
-        for _, proc in processes:
-            if proc and proc.poll() is None:
-                proc.kill()
+        if process.poll() is None:
+            process.kill()

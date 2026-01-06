@@ -21,16 +21,18 @@ DEFAULT_TIMEOUT_SECONDS = 600
 class ToolPayload:
     tool_name: str
     tool_input: dict[str, Any]
+    session_id: str
 
 
 def _read_stdin() -> ToolPayload:
     raw = sys.stdin.read()
     if not raw.strip():
-        return ToolPayload(tool_name="", tool_input={})
+        return ToolPayload(tool_name="", tool_input={}, session_id="")
     payload = json.loads(raw)
     tool_name = payload.get("tool_name") or payload.get("toolName") or ""
     tool_input = payload.get("tool_input") or payload.get("toolInput") or {}
-    return ToolPayload(tool_name=tool_name, tool_input=tool_input)
+    session_id = payload.get("session_id") or payload.get("sessionId") or ""
+    return ToolPayload(tool_name=tool_name, tool_input=tool_input, session_id=session_id)
 
 
 def _post_json(url: str, data: dict[str, Any]) -> dict[str, Any]:
@@ -148,9 +150,19 @@ def _print_decision(decision: str, reason: str):
     sys.stdout.flush()
 
 
+def _is_web_session() -> bool:
+    """Check if this Claude Code session is running from the web UI."""
+    return os.environ.get("CLAUDE_CODE_REMOTE") == "true"
+
+
 def main():
     api_url = os.environ.get("KURT_WEB_API_URL", DEFAULT_API_URL).rstrip("/")
     timeout_seconds = int(os.environ.get("KURT_APPROVAL_TIMEOUT", str(DEFAULT_TIMEOUT_SECONDS)))
+
+    # If not running from web UI, skip the web approval flow
+    if not _is_web_session():
+        _print_decision("ask", "Not a web session - using default approval flow.")
+        return
 
     tool_payload = _read_stdin()
     if not tool_payload.tool_name:
@@ -189,6 +201,9 @@ def main():
         "file_path": path_value or "",
         "diff": diff_text,
         "tool_input": tool_input,
+        "session_id": tool_payload.session_id,
+        "session_provider": os.environ.get("KURT_SESSION_PROVIDER", ""),
+        "session_name": os.environ.get("KURT_SESSION_NAME", ""),
         "requested_at": datetime.now(timezone.utc).isoformat(),
     }
 

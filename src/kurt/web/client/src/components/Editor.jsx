@@ -11,6 +11,7 @@ import Highlight from '@tiptap/extension-highlight'
 import MarkdownIt from 'markdown-it'
 import TurndownService from 'turndown'
 import { gfm } from 'turndown-plugin-gfm'
+import GitDiff from './GitDiff'
 
 function MenuBar({ editor }) {
   const setLink = useCallback(() => {
@@ -313,6 +314,11 @@ export default function Editor({
   onChange,
   onAutoSave,
   autoSaveDelay = 800,
+  showDiffToggle = false,
+  diffEnabled = false,
+  diffText = '',
+  diffError = '',
+  onToggleDiff,
 }) {
   const autoSaveTimer = useRef(null)
   const markdownParser = useMemo(
@@ -390,14 +396,56 @@ export default function Editor({
     }
   }, [])
 
+  // Prevent file drag-drop from inserting text into editor
+  const handleDrop = useCallback((event) => {
+    if (event.dataTransfer.types.includes('application/x-kurt-file')) {
+      event.preventDefault()
+      event.stopPropagation()
+    }
+  }, [])
+
+  const handleDragOver = useCallback((event) => {
+    if (event.dataTransfer.types.includes('application/x-kurt-file')) {
+      event.preventDefault()
+      event.stopPropagation()
+    }
+  }, [])
+
   return (
     <div className="editor-wrapper">
       <div className="editor-toolbar">
-        <MenuBar editor={editor} />
-        <SaveStatus isDirty={isDirty} isSaving={isSaving} />
+        {!diffEnabled && <MenuBar editor={editor} />}
+        <div className="editor-toolbar-right">
+          {!diffEnabled && <SaveStatus isDirty={isDirty} isSaving={isSaving} />}
+          {showDiffToggle && (
+            <div className="diff-toggle-wrapper">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={diffEnabled}
+                className={`switch${diffEnabled ? ' switch-on' : ''}`}
+                onClick={onToggleDiff}
+              >
+                <span className="switch-thumb" />
+              </button>
+              <span className="diff-toggle-label">Git diff</span>
+            </div>
+          )}
+        </div>
       </div>
-      <div className="editor-content">
-        <EditorContent editor={editor} />
+      <div
+        className="editor-content"
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+      >
+        {diffEnabled ? (
+          <>
+            {diffError && <div className="diff-error">{diffError}</div>}
+            <GitDiff diff={diffText} showFileHeader={false} />
+          </>
+        ) : (
+          <EditorContent editor={editor} />
+        )}
       </div>
     </div>
   )

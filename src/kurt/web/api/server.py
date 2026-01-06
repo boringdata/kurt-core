@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import subprocess
 from datetime import datetime, timezone
@@ -9,18 +10,32 @@ from threading import Lock
 from typing import Optional
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from kurt.storage import LocalStorage, S3Storage
+from kurt.web.api.pty_bridge import handle_pty_websocket
+from kurt.web.api.storage import LocalStorage, S3Storage
 
 # Ensure working directory is project root (when running from worktree)
-os.chdir(Path.cwd())
+project_root = Path(os.environ.get("KURT_PROJECT_ROOT", Path.cwd())).expanduser().resolve()
+os.chdir(project_root)
 
 
 class FilePayload(BaseModel):
     content: str
+
+
+class RenamePayload(BaseModel):
+    old_path: str
+    new_path: str
+
+
+class MovePayload(BaseModel):
+    src_path: str
+    dest_dir: str
 
 
 class ApprovalRequestPayload(BaseModel):
@@ -28,6 +43,9 @@ class ApprovalRequestPayload(BaseModel):
     file_path: str
     diff: str | None = None
     tool_input: dict | None = None
+    session_id: str | None = None
+    session_provider: str | None = None
+    session_name: str | None = None
     requested_at: str | None = None
 
 
@@ -67,6 +85,22 @@ app.add_middleware(
 )
 
 
+# --- Production static file serving ---
+# Detect if built frontend assets exist
+CLIENT_DIST = Path(__file__).parent.parent / "client" / "dist"
+
+if CLIENT_DIST.exists() and (CLIENT_DIST / "index.html").exists():
+    # Mount assets directory for JS/CSS bundles
+    assets_dir = CLIENT_DIST / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+
+
+@app.get("/api/project")
+def api_project():
+    return {"root": str(Path.cwd().resolve())}
+
+
 @app.get("/api/tree")
 def api_tree(path: Optional[str] = Query(".")):
     try:
@@ -101,6 +135,54 @@ def api_put_file(path: str = Query(...), payload: FilePayload = None):
             raise HTTPException(status_code=400, detail="No payload provided")
         storage.write_file(Path(path), payload.content)
         return {"path": path, "status": "ok"}
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid path")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/file")
+def api_delete_file(path: str = Query(...)):
+    try:
+        storage = get_storage()
+        storage.delete(Path(path))
+        return {"path": path, "status": "deleted"}
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="File not found")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid path")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/file/rename")
+def api_rename_file(payload: RenamePayload):
+    try:
+        storage = get_storage()
+        storage.rename(Path(payload.old_path), Path(payload.new_path))
+        return {"old_path": payload.old_path, "new_path": payload.new_path, "status": "renamed"}
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="File not found")
+    except FileExistsError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid path")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/file/move")
+def api_move_file(payload: MovePayload):
+    try:
+        storage = get_storage()
+        new_path = storage.move(Path(payload.src_path), Path(payload.dest_dir))
+        return {"src_path": payload.src_path, "dest_path": str(new_path), "status": "moved"}
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Source not found")
+    except NotADirectoryError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except FileExistsError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid path")
     except Exception as e:
@@ -186,6 +268,7 @@ def api_approval_request(payload: ApprovalRequestPayload):
     request_id = str(uuid4())
     now = datetime.now(timezone.utc).isoformat()
     project_path = ""
+    file_hash = ""
     if payload.file_path:
         try:
             root = Path.cwd().resolve()
@@ -194,6 +277,13 @@ def api_approval_request(payload: ApprovalRequestPayload):
                 project_path = str(target.relative_to(root))
         except Exception:
             project_path = ""
+    if project_path:
+        try:
+            storage = get_storage()
+            content = storage.read_file(Path(project_path))
+            file_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        except Exception:
+            file_hash = ""
     record = {
         "id": request_id,
         "tool_name": payload.tool_name,
@@ -201,10 +291,14 @@ def api_approval_request(payload: ApprovalRequestPayload):
         "project_path": project_path,
         "diff": payload.diff or "",
         "tool_input": payload.tool_input or {},
+        "session_id": payload.session_id or "",
+        "session_provider": payload.session_provider or "",
+        "session_name": payload.session_name or "",
         "requested_at": payload.requested_at or now,
         "status": "pending",
         "created_at": now,
         "updated_at": now,
+        "file_hash": file_hash,
     }
     with APPROVAL_LOCK:
         APPROVALS[request_id] = record
@@ -213,8 +307,27 @@ def api_approval_request(payload: ApprovalRequestPayload):
 
 @app.get("/api/approval/pending")
 def api_approval_pending():
+    now = datetime.now(timezone.utc).isoformat()
     with APPROVAL_LOCK:
-        pending = [req for req in APPROVALS.values() if req["status"] == "pending"]
+        pending = []
+        for req in APPROVALS.values():
+            if req["status"] != "pending":
+                continue
+            project_path = req.get("project_path") or ""
+            file_hash = req.get("file_hash") or ""
+            if project_path and file_hash:
+                try:
+                    storage = get_storage()
+                    content = storage.read_file(Path(project_path))
+                    current_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+                except Exception:
+                    current_hash = ""
+                if not current_hash or current_hash != file_hash:
+                    req["status"] = "stale"
+                    req["updated_at"] = now
+                    APPROVALS[req["id"]] = req
+                    continue
+            pending.append(req)
     return {"requests": pending}
 
 
@@ -362,3 +475,33 @@ def api_git_status():
         return {"available": True, "files": status}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# PTY WebSocket endpoint for terminal sessions
+PTY_CMD = os.environ.get("KURT_PTY_CMD", "claude")
+PTY_ARGS = os.environ.get("KURT_PTY_ARGS", "").split()
+
+
+@app.websocket("/ws/pty")
+async def websocket_pty(websocket: WebSocket):
+    """WebSocket endpoint for PTY terminal sessions."""
+    await handle_pty_websocket(
+        websocket,
+        cmd=PTY_CMD,
+        base_args=[a for a in PTY_ARGS if a],
+        cwd=str(Path.cwd()),
+    )
+
+
+# --- SPA catch-all route for production ---
+# This must be registered LAST to not interfere with API routes
+if CLIENT_DIST.exists() and (CLIENT_DIST / "index.html").exists():
+
+    @app.get("/{path:path}")
+    async def serve_spa(path: str = ""):
+        """Serve the SPA for all non-API routes."""
+        # Don't serve SPA for API or WebSocket routes
+        if path.startswith("api/") or path.startswith("ws/"):
+            raise HTTPException(status_code=404, detail="Not found")
+        # Serve index.html for client-side routing
+        return FileResponse(str(CLIENT_DIST / "index.html"))

@@ -1,56 +1,63 @@
 # Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
+
+**pycache**/  
+\*.py\[cod\]  
+\*$py.class  
+\*.so  
+.Python  
+build/  
+develop-eggs/  
+dist/  
+downloads/  
+eggs/  
+.eggs/  
+lib/  
+lib64/  
+parts/  
+sdist/  
+var/  
+wheels/  
+\*.egg-info/  
+.installed.cfg  
+\*.egg
 
 # Virtual environments
-.venv/
-venv/
-ENV/
+
+.venv/  
+venv/  
+ENV/  
 env/
 
 # IDEs
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
+
+.vscode/  
+.idea/  
+\*.swp  
+\*.swo  
+\*~
 
 # Testing
-.pytest_cache/
-.coverage
-htmlcov/
+
+.pytest\_cache/  
+.coverage  
+htmlcov/  
 .tox/
 
 # Kurt specific
-.kurt/
-*.sqlite
-*.db
+
+.kurt/  
+\*.sqlite  
+\*.db  
 kurt.config
 
 # OS
-.DS_Store
+
+.DS\_Store  
 Thumbs.db
 
 # Node
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+
+node\_modules/  
+npm-debug.log\*  
+yarn-debug.log\*  
+yarn-error.log\*

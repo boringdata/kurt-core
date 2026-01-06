@@ -2,7 +2,7 @@ import React from 'react'
 import { Diff, Hunk, parseDiff } from 'react-diff-view'
 import 'react-diff-view/style/index.css'
 
-export default function GitDiff({ diff }) {
+export default function GitDiff({ diff, showFileHeader = true }) {
   if (!diff) {
     return <div className="diff-empty">No git changes for this file.</div>
   }
@@ -21,7 +21,7 @@ export default function GitDiff({ diff }) {
     <div className="diff-content">
       {files.map((file) => (
         <div key={`${file.oldPath}-${file.newPath}`} className="diff-file">
-          <div className="diff-file-header">{file.newPath}</div>
+          {showFileHeader && <div className="diff-file-header">{file.newPath}</div>}
           <Diff viewType="split" diffType={file.type} hunks={file.hunks}>
             {(hunks) => hunks.map((hunk) => <Hunk key={hunk.content} hunk={hunk} />)}
           </Diff>
