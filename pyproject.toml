@@ -43,6 +43,13 @@ eval = [
     "responses>=0.25.0",
     "pytest-httpx>=0.30.0",
 ]
+web = [
+    "fastapi>=0.95",
+    "uvicorn>=0.22",
+    "s3fs>=2023.11.1",
+    "ptyprocess>=0.7",
+    "websockets>=12.0",
+]
 
 [project.scripts]
 kurt = "kurt.cli:main"

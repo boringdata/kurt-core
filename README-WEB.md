@@ -51,7 +51,11 @@ This module provides the web UI implementation for Kurt:
 ### 1. Install Python Dependencies
 
 ```bash
-pip install -r requirements-web.txt
+# Using uv (recommended)
+uv pip install -e ".[web]"
+
+# Or using pip
+pip install -e ".[web]"
 ```
 
 ### 2. Production Mode (Recommended)
@@ -181,9 +185,9 @@ This server is for local development:
 
 **Error**: `No module named uvicorn`
 
-**Solution**: Install web requirements:
+**Solution**: Install web dependencies:
 ```bash
-pip install -r requirements-web.txt
+uv pip install -e ".[web]"
 ```
 
 ### CORS errors in browser console
