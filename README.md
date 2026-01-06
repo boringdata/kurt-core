@@ -1,123 +1,189 @@
 # Kurt
 
-**AI-powered writing assistant for B2B marketing and technical content**
+**AI-powered writing assistant for B2B marketing and technical contentss ss s alskdjlaksjda kkk**
 
 Kurt helps B2B marketers and content teams create accurate, grounded content using AI. It works with [Claude Code](https://code.claude.com) or [Cursor](https://cursor.com) to produce blog posts, product pages, documentation, positioning docs, and more—all backed by your source material and guided by customizable templates.
 
 ## Table of Contents
 
-- [What Kurt Does](#what-kurt-does)
-- [Who It's For](#who-its-for)
-- [Prerequisites](#prerequisites)
-- [Quick Start](#quick-start)
-- [Key Features](#key-features)
-  - [Content Templates](#-content-templates)
-  - [Content Ingestion](#-content-ingestion)
-  - [Content Discovery & Gap Analysis](#-content-discovery--gap-analysis)
-  - [Research Integration](#-research-integration)
-  - [Publishing](#-publishing)
-- [How It Works](#how-it-works)
-- [CLI Reference](#cli-reference)
-- [Documentation](#documentation)
-- [For Developers](#for-developers)
-- [Telemetry](#telemetry)
-- [License](#license)
-- [Support](#support)
+-   [What Kurt Does](#what-kurt-does)
+    
+-   [Who It's For](#who-its-for)
+    
+-   [Prerequisites](#prerequisites)
+    
+-   [Quick Start](#quick-start)
+    
+-   [Key Features](#key-features)
+    
+    -   [Content Templates](#-content-templates)
+        
+    -   [Content Ingestion](#-content-ingestion)
+        
+    -   [Content Discovery & Gap Analysis](#-content-discovery--gap-analysis)
+        
+    -   [Research Integration](#-research-integration)
+        
+    -   [Publishing](#-publishing)
+        
+-   [How It Works](#how-it-works)
+    
+-   [CLI Reference](#cli-reference)
+    
+-   [Documentation](#documentation)
+    
+-   [For Developers](#for-developers)
+    
+-   [Telemetry](#telemetry)
+    
+-   [License](#license)
+    
+-   [Support](#support)
+    
 
 ## What Kurt Does
 
-- 📝 **Template-Driven Writing**: 22 built-in templates for common B2B content (blog posts, product pages, docs, positioning, campaign briefs, etc.)
-- 🔍 **Source-Grounded**: Fetches content from your website, docs, or CMS to use as factual grounding
-- 🎯 **Content Discovery**: Analyzes your content to find topics, technologies, and coverage gaps
-- 🔬 **Research Integration**: Search Reddit, HackerNews, or query Perplexity for competitive intelligence
-- 📤 **CMS Publishing**: Publish directly to Sanity (more CMSes coming soon)
+-   📝 **Template-Driven Writing**: 22 built-in templates for common B2B content (blog posts, product pages, docs, positioning, campaign briefs, etc.)
+    
+-   🔍 **Source-Grounded**: Fetches content from your website, docs, or CMS to use as factual grounding
+    
+-   🎯 **Content Discovery**: Analyzes your content to find topics, technologies, and coverage gaps
+    
+-   🔬 **Research Integration**: Search Reddit, HackerNews, or query Perplexity for competitive intelligence
+    
+-   📤 **CMS Publishing**: Publish directly to Sanity (more CMSes coming soon)
+    
 
 ## Who It's For
 
-- **B2B Marketers** creating product pages, blog posts, and campaign materials
-- **Content Teams** managing documentation, tutorials, and guides
-- **Product Marketers** writing positioning docs, launch plans, and messaging frameworks
-- **Developer Advocates** creating technical content and integration guides
+-   **B2B Marketers** creating product pages, blog posts, and campaign materials
+    
+-   **Content Teams** managing documentation, tutorials, and guides
+    
+-   **Product Marketers** writing positioning docs, launch plans, and messaging frameworks
+    
+-   **Developer Advocates** creating technical content and integration guides
+    
 
 ## Prerequisites
 
 Before getting started, you'll need:
 
 ### Required
-- **OpenAI API Key** - Used for:
-  - Content indexing and metadata extraction
-  - Topic/technology discovery
-  - Gap analysis features
-  - Get your API key from: https://platform.openai.com/api-keys
+
+-   **OpenAI API Key** - Used for:
+    
+    -   Content indexing and metadata extraction
+        
+    -   Topic/technology discovery
+        
+    -   Gap analysis features
+        
+    -   Get your API key from: [https://platform.openai.com/api-keys](https://platform.openai.com/api-keys)
+        
 
 ### Optional
-- **Firecrawl API Key** - For advanced web scraping:
-  - Handles JavaScript and dynamic content
-  - Best for modern SPAs and interactive sites
-  - Get your API key from: https://firecrawl.dev
-  - **Alternative**: Kurt falls back to Trafilatura (free, fast, but no JS rendering)
+
+-   **Firecrawl API Key** - For advanced web scraping:
+    
+    -   Handles JavaScript and dynamic content
+        
+    -   Best for modern SPAs and interactive sites
+        
+    -   Get your API key from: [https://firecrawl.dev](https://firecrawl.dev)
+        
+    -   **Alternative**: Kurt falls back to Trafilatura (free, fast, but no JS rendering)
+        
 
 ## Quick Start
 
 ### Install Kurt
 
-1. **Install Kurt CLI:**
-   ```bash
-   # Using uv (recommended)
-   uv tool install kurt-core
-
-   # Or using pip
-   pip install kurt-core
-   ```
-
-2. **Initialize your project:**
-   ```bash
-   cd your-project-directory
-   kurt init  # Installs both Claude Code and Cursor support by default
-   ```
-
-   This creates:
-   - `.kurt/` directory with SQLite database
-   - `.claude/` directory with Claude Code instructions
-   - `.cursor/` directory with Cursor rules
-   - `kurt/` directory with all 22 content templates (shared by both IDEs)
-   - `.env.example` with API key placeholders
-
-   **Note:** You can also install for a specific IDE only:
-   - `kurt init --ide claude` - Claude Code only
-   - `kurt init --ide cursor` - Cursor only
-
-3. **Configure API keys:**
-   ```bash
-   cp .env.example .env
-   # Edit .env and add your API keys
-   ```
-
-   **Required:**
-   - `OPENAI_API_KEY` - For content indexing and metadata extraction
-
-   **Optional:**
-   - `FIRECRAWL_API_KEY` - For web scraping with JavaScript support (falls back to Trafilatura)
+1.  **Install Kurt CLI:**
+    
+    ```bash
+    # Using uv (recommended)
+    uv tool install kurt-core
+    
+    # Or using pip
+    pip install kurt-core
+    ```
+    
+2.  **Initialize your project:**
+    
+    ```bash
+    cd your-project-directory
+    kurt init  # Installs both Claude Code and Cursor support by default
+    ```
+    
+    This creates:
+    
+    -   `.kurt/` directory with SQLite database
+        
+    -   `.claude/` directory with Claude Code instructions
+        
+    -   `.cursor/` directory with Cursor rules
+        
+    -   `kurt/` directory with all 22 content templates (shared by both IDEs)
+        
+    -   `.env.example` with API key placeholders
+        
+    
+    **Note:** You can also install for a specific IDE only:
+    
+    -   `kurt init --ide claude` - Claude Code only
+        
+    -   `kurt init --ide cursor` - Cursor only
+        
+3.  **Configure API keys:**
+    
+    ```bash
+    cp .env.example .env
+    # Edit .env and add your API keys
+    ```
+    
+    **Required:**
+    
+    -   `OPENAI_API_KEY` - For content indexing and metadata extraction
+        
+    
+    **Optional:**
+    
+    -   `FIRECRAWL_API_KEY` - For web scraping with JavaScript support (falls back to Trafilatura)
+        
 
 ### Use with Your IDE
 
-4. **Start creating content:**
-
-   **With Claude Code:**
-   - Open your project in [Claude Code](https://code.claude.com)
-   - Claude automatically loads Kurt's instructions from `.claude/`
-   - Ask Claude: *"Create a blog post project about [topic]"*
-   - Claude will guide you through template selection, source gathering, and writing
-   - See `.claude/CLAUDE.md` for full workflow details
-
-   **With Cursor:**
-   - Open your project in [Cursor](https://cursor.com)
-   - Cursor automatically loads Kurt's rules from `.cursor/rules/`
-   - Mention `@add-profile` to create your content profile
-   - Mention `@add-project` to start a new writing project
-   - See `.cursor/rules/kurt-main.mdc` for full workflow details
-
-   **Switch between IDEs anytime** - both share the same database and templates!
+4.  **Start creating content:**
+    
+    **With Claude Code:**
+    
+    -   Open your project in [Claude Code](https://code.claude.com)
+        
+    -   Claude automatically loads Kurt's instructions from `.claude/`
+        
+    -   Ask Claude: _"Create a blog post project about \[topic\]"_
+        
+    -   Claude will guide you through template selection, source gathering, and writing
+        
+    -   See `.claude/CLAUDE.md` for full workflow details
+        
+    
+    **With Cursor:**
+    
+    -   Open your project in [Cursor](https://cursor.com)
+        
+    -   Cursor automatically loads Kurt's rules from `.cursor/rules/`
+        
+    -   Mention `@add-profile` to create your content profile
+        
+    -   Mention `@add-project` to start a new writing project
+        
+    -   See `.cursor/rules/kurt-main.mdc` for full workflow details
+        
+    
+    **Switch between IDEs anytime** - both share the same database and templates!
+    
 
 ### Use Kurt CLI Standalone
 
@@ -147,7 +213,7 @@ See [CLI Reference](#cli-reference) below for full command documentation.
 
 </details>
 
----
+* * *
 
 ## Key Features
 
@@ -156,41 +222,70 @@ See [CLI Reference](#cli-reference) below for full command documentation.
 Kurt includes 22 templates for common B2B content types:
 
 **Internal Strategy:**
-- Positioning + Messaging
-- ICP Segmentation
-- Persona Segmentation
-- Campaign Brief
-- Launch Plan
+
+-   Positioning + Messaging
+    
+-   ICP Segmentation
+    
+-   Persona Segmentation
+    
+-   Campaign Brief
+    
+-   Launch Plan
+    
 
 **Public Marketing Content:**
-- Blog Posts (Thought Leadership)
-- Product Pages
-- Solution Pages
-- Homepage
-- Integration Pages
+
+-   Blog Posts (Thought Leadership)
+    
+-   Product Pages
+    
+-   Solution Pages
+    
+-   Homepage
+    
+-   Integration Pages
+    
 
 **Documentation:**
-- Tutorials & Guides
-- API Documentation
-- Technical Documentation
+
+-   Tutorials & Guides
+    
+-   API Documentation
+    
+-   Technical Documentation
+    
 
 **Email & Social:**
-- Marketing Emails
-- Drip Email Sequences
-- Product Update Newsletters
-- Social Media Posts
+
+-   Marketing Emails
+    
+-   Drip Email Sequences
+    
+-   Product Update Newsletters
+    
+-   Social Media Posts
+    
 
 **Specialized:**
-- Video Scripts
-- Podcast Interview Plans
+
+-   Video Scripts
+    
+-   Podcast Interview Plans
+    
 
 All templates are customizable and include:
-- Style guidelines (tone, voice, examples)
-- Source requirements (what content to gather)
-- Structure templates (format and organization)
-- Research workflows (how to find information)
 
-See templates in [`src/kurt/claude_plugin/kurt/templates/`](src/kurt/claude_plugin/kurt/templates/)
+-   Style guidelines (tone, voice, examples)
+    
+-   Source requirements (what content to gather)
+    
+-   Structure templates (format and organization)
+    
+-   Research workflows (how to find information)
+    
+
+See templates in `src/kurt/claude_plugin/kurt/templates/`
 
 ### 🌐 Content Ingestion
 
@@ -213,6 +308,7 @@ EMBEDDING_MODEL="openai/text-embedding-3-small"      # For embeddings
 ```
 
 **API Keys** (add to `.env` file):
+
 ```bash
 OPENAI_API_KEY=your_key_here           # Required for OpenAI models
 FIRECRAWL_API_KEY=your_key_here        # Optional, for Firecrawl scraping
@@ -235,7 +331,6 @@ kurt content fetch --all
 ```
 
 Content is stored as markdown in `sources/{domain}/{path}/` with metadata in SQLite.
-
 
 ### 🔍 Content Discovery & Gap Analysis
 
@@ -263,10 +358,15 @@ kurt content list --with-content-type tutorial
 ```
 
 This powers **gap analysis** workflows where you can:
-- Compare your content vs competitors' coverage
-- Identify topics with low documentation
-- Find technologies that need more examples
-- Plan tutorial topics based on what's missing
+
+-   Compare your content vs competitors' coverage
+    
+-   Identify topics with low documentation
+    
+-   Find technologies that need more examples
+    
+-   Plan tutorial topics based on what's missing
+    
 
 ### 🔬 Research Integration
 
@@ -277,7 +377,7 @@ Built-in research capabilities for competitive intelligence and market research:
 kurt integrations research search "B2B SaaS pricing trends 2024"
 ```
 
-Requires API keys (configured in `.env`). See [CLAUDE.md](src/kurt/claude_plugin/CLAUDE.md) for setup.
+Requires API keys (configured in `.env`). See [CLAUDE.md](http://CLAUDE.md) for setup.
 
 ### 📤 Publishing
 
@@ -293,32 +393,46 @@ kurt integrations cms publish --file content.md --content-type blog-post
 
 Currently supports Sanity. More CMSes coming soon.
 
----
+* * *
 
 ## How It Works
 
 Kurt follows a **3-step content creation process**:
 
-### 1. Project Planning
-- Create a project for your content initiative
-- Select format templates (blog post, product page, etc.)
-- Gather sources (fetch web content, research competitors, collect docs)
-- Optional: Conduct research using integrated tools
+### 1\. Project Planning
 
-### 2. Writing
-- AI (Claude) drafts content using your templates and sources
-- All claims are grounded in source material (no hallucinations)
-- Content follows your company's style guidelines
-- Outline → Draft → Edit workflow
+-   Create a project for your content initiative
+    
+-   Select format templates (blog post, product page, etc.)
+    
+-   Gather sources (fetch web content, research competitors, collect docs)
+    
+-   Optional: Conduct research using integrated tools
+    
 
-### 3. Publishing
-- Review and refine content
-- Publish to CMS or export as markdown
-- Track sources and maintain traceability
+### 2\. Writing
+
+-   AI (Claude) drafts content using your templates and sources
+    
+-   All claims are grounded in source material (no hallucinations)
+    
+-   Content follows your company's style guidelines
+    
+-   Outline → Draft → Edit workflow
+    
+
+### 3\. Publishing
+
+-   Review and refine content
+    
+-   Publish to CMS or export as markdown
+    
+-   Track sources and maintain traceability
+    
 
 All work is organized in `/projects/{project-name}/` directories with a `plan.md` tracking progress.
 
----
+* * *
 
 ## CLI Reference
 
@@ -455,6 +569,7 @@ kurt content list --with-analytics
 ### Advanced Features
 
 **Content Clustering:**
+
 ```bash
 # Organize documents into topic clusters
 kurt content cluster
@@ -464,18 +579,21 @@ kurt content list-clusters
 ```
 
 **Document Links:**
+
 ```bash
 # Show links from/to a document
 kurt content links <document-id>
 ```
 
 **Metadata Sync:**
+
 ```bash
 # Update file frontmatter from database
 kurt content sync-metadata
 ```
 
 **Delete Content:**
+
 ```bash
 # Delete documents
 kurt content delete <document-id>
@@ -514,16 +632,20 @@ kurt admin migrate upgrade
 kurt admin migrate downgrade
 ```
 
----
+* * *
 
 ## Documentation
 
-- **[CLAUDE.md](src/kurt/claude_plugin/CLAUDE.md)**: Complete guide to using Kurt with Claude Code
-- **[INDEXING-AND-SEARCH.md](INDEXING-AND-SEARCH.md)**: Content indexing and discovery features
-- **[Template Documentation](src/kurt/claude_plugin/kurt/templates/)**: All 22 content templates
-- **[CLI Reference](src/kurt/README.md)**: Detailed CLI command documentation
+-   [**CLAUDE.md**](http://CLAUDE.md): Complete guide to using Kurt with Claude Code
+    
+-   [**INDEXING-AND-SEARCH.md**](INDEXING-AND-SEARCH.md): Content indexing and discovery features
+    
+-   **Template Documentation**: All 22 content templates
+    
+-   **CLI Reference**: Detailed CLI command documentation
+    
 
----
+* * *
 
 ## For Developers
 
@@ -576,21 +698,31 @@ cat eval/results/01_basic_init_*.json
 ```
 
 Available test scenarios:
-- `01_basic_init` - Initialize a Kurt project
-- `02_add_url` - Initialize and add content from a URL
-- `03_interactive_project` - Multi-turn conversation with user agent
-- `04_with_claude_plugin` - Test with Claude plugin integration
 
-See [eval/scenarios/](eval/scenarios/) for scenario definitions.
+-   `01_basic_init` - Initialize a Kurt project
+    
+-   `02_add_url` - Initialize and add content from a URL
+    
+-   `03_interactive_project` - Multi-turn conversation with user agent
+    
+-   `04_with_claude_plugin` - Test with Claude plugin integration
+    
+
+See eval/scenarios/ for scenario definitions.
 
 ### Architecture
 
 **Content Storage:**
-- Metadata stored in SQLite (`Document` table)
-- Content stored as markdown files in `sources/{domain}/{path}/`
-- Metadata extracted with Trafilatura and LLM-based indexing
+
+-   Metadata stored in SQLite (`Document` table)
+    
+-   Content stored as markdown files in `sources/{domain}/{path}/`
+    
+-   Metadata extracted with Trafilatura and LLM-based indexing
+    
 
 **Database Schema:**
+
 ```sql
 CREATE TABLE documents (
     id TEXT PRIMARY KEY,              -- UUID
@@ -622,35 +754,54 @@ CREATE TABLE documents (
 ```
 
 **Batch Fetching:**
-- Uses `httpx` with async/await for parallel downloads
-- Semaphore-based concurrency control (default: 5 concurrent)
-- Graceful error handling (continues on individual failures)
+
+-   Uses `httpx` with async/await for parallel downloads
+    
+-   Semaphore-based concurrency control (default: 5 concurrent)
+    
+-   Graceful error handling (continues on individual failures)
+    
 
 ### Contributing
 
 Contributions welcome! Please:
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new features
-4. Submit a pull request
 
----
+1.  Fork the repository
+    
+2.  Create a feature branch
+    
+3.  Add tests for new features
+    
+4.  Submit a pull request
+    
+
+* * *
 
 ## Telemetry
 
 Kurt collects anonymous usage analytics to help us improve the tool. We take privacy seriously.
 
 ### What We Collect
-- Command usage (e.g., `kurt content list`)
-- Execution metrics (timing, success/failure rates)
-- Environment (OS, Python version, Kurt version)
-- Anonymous machine ID (UUID, not tied to personal info)
+
+-   Command usage (e.g., `kurt content list`)
+    
+-   Execution metrics (timing, success/failure rates)
+    
+-   Environment (OS, Python version, Kurt version)
+    
+-   Anonymous machine ID (UUID, not tied to personal info)
+    
 
 ### What We DON'T Collect
-- Personal information (names, emails)
-- File paths or URLs
-- Command arguments or user data
-- Any sensitive information
+
+-   Personal information (names, emails)
+    
+-   File paths or URLs
+    
+-   Command arguments or user data
+    
+-   Any sensitive information
+    
 
 ### How to Opt-Out
 
@@ -667,22 +818,30 @@ kurt admin telemetry status
 ```
 
 All telemetry is:
-- **Anonymous**: No personal information collected
-- **Transparent**: Clearly documented what we collect
-- **Optional**: Easy to opt-out
-- **Non-blocking**: Never slows down CLI commands
-- **Secure**: Uses PostHog cloud (SOC 2 compliant)
 
----
+-   **Anonymous**: No personal information collected
+    
+-   **Transparent**: Clearly documented what we collect
+    
+-   **Optional**: Easy to opt-out
+    
+-   **Non-blocking**: Never slows down CLI commands
+    
+-   **Secure**: Uses PostHog cloud (SOC 2 compliant)
+    
+
+* * *
 
 ## License
 
 MIT
 
----
+* * *
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/kurt-core/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/kurt-core/discussions)
-- **Documentation**: See [CLAUDE.md](src/kurt/claude_plugin/CLAUDE.md) for full usage guide
+1.  **Issues**: [GitHub Issues](https://github.com/yourusername/kurt-core/issues)
+    
+2.  **Discussions**: [GitHub Discussions](https://github.com/yourusername/kurt-core/discussions)
+    
+    1.  **Documentation**: See [CLAUDE.md](http://CLAUDE.md) for full usage guidevbv
