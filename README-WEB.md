@@ -2,6 +2,17 @@
 
 A web-based IDE interface for Kurt, featuring a rich text editor powered by Tiptap and a FastAPI backend.
 
+## Quick Start
+
+```bash
+git clone https://github.com/boringdata/kurt-core.git
+cd kurt-core
+git checkout feat/web-ui
+uv run --extra web kurt serve
+```
+
+That's it! `uv` handles all dependencies automatically. Opens at **http://127.0.0.1:8765**
+
 ## Overview
 
 This module provides the web UI implementation for Kurt:
