@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useCallback } from 'react'
+import React, { useEffect, useMemo, useRef, useCallback, useState } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Underline from '@tiptap/extension-underline'
@@ -8,14 +8,13 @@ import TaskList from '@tiptap/extension-task-list'
 import TaskItem from '@tiptap/extension-task-item'
 import TextAlign from '@tiptap/extension-text-align'
 import Highlight from '@tiptap/extension-highlight'
+import { Markdown } from '@tiptap/markdown'
 import { Extension } from '@tiptap/core'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { diffLines, diffWords } from 'diff'
-import MarkdownIt from 'markdown-it'
-import TurndownService from 'turndown'
-import { gfm } from 'turndown-plugin-gfm'
 import GitDiff from './GitDiff'
+import FrontmatterEditor, { parseFrontmatter, reconstructContent } from './FrontmatterEditor'
 
 // Build a map of line changes with word-level diff info
 function buildDiffMap(originalContent, currentContent) {
@@ -115,7 +114,9 @@ function buildDiffMap(originalContent, currentContent) {
 
 // Create Tiptap extension for diff decorations
 // Uses a ref to access the current diff state reactively
-function createDiffExtension(diffStateRef, markdownParser) {
+// Compares: originalContent (git HEAD) vs editor.getMarkdown() (current editor state)
+// Both go through Tiptap's markdown serializer for consistent comparison
+function createDiffExtension(diffStateRef) {
   return Extension.create({
     name: 'diffDecorations',
 
@@ -126,152 +127,158 @@ function createDiffExtension(diffStateRef, markdownParser) {
           props: {
             decorations(state) {
               // Check if diff mode is enabled
-              const { enabled, originalContent } = diffStateRef.current || {}
+              const { enabled, originalContent, getEditorMarkdown } = diffStateRef.current || {}
               if (!enabled) {
                 return DecorationSet.empty
               }
 
               const doc = state.doc
 
-              // Extract text content from document for comparison
-              let currentLines = []
-              doc.descendants((node) => {
-                if (node.isBlock && node.isTextblock) {
-                  currentLines.push(node.textContent)
-                }
-                return false
-              })
-              const currentContent = currentLines.join('\n')
+              // Get current editor content as markdown
+              const currentMarkdown = getEditorMarkdown ? getEditorMarkdown() : ''
 
-              // Convert original markdown to plain text the same way
-              let originalPlainText = ''
-              if (originalContent) {
-                const html = markdownParser.render(originalContent)
-                const div = document.createElement('div')
-                div.innerHTML = html
-                const lines = []
-                div.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li').forEach(el => {
-                  lines.push(el.textContent || '')
-                })
-                originalPlainText = lines.join('\n')
-              }
-
-              const diffMap = buildDiffMap(originalPlainText, currentContent)
+              // Compare: git HEAD vs current editor markdown
+              const diffMap = buildDiffMap(originalContent || '', currentMarkdown)
               const { deletedLines, addedLineNumbers, wordDiffs } = diffMap
 
               const decorations = []
-              let lineNum = 0
+
+              // Build a mapping from markdown lines to document nodes
+              // Each block node in Tiptap corresponds to one or more markdown lines
+              const currentLines = currentMarkdown.split('\n')
+              let mdLineIndex = 0 // Current position in markdown lines
 
               doc.descendants((node, nodePos) => {
-                if (node.isBlock) {
-                  lineNum++
+                if (!node.isBlock) return false
 
-                  // Green background for added/modified lines
+                // Skip nodes that don't produce markdown content
+                if (node.type.name === 'doc') return true
+
+                // Each block node typically produces 1 markdown line
+                // Lists are an exception but we handle them by iterating child nodes
+                let linesForNode = 1
+
+                // Try to match node content to markdown lines
+                // Skip empty lines in markdown that might be separators
+                while (mdLineIndex < currentLines.length && currentLines[mdLineIndex] === '') {
+                  mdLineIndex++
+                }
+
+                // Check if any of the lines for this node are marked as changed
+                let nodeIsChanged = false
+                const nodeWordDiffs = []
+
+                for (let i = 0; i < linesForNode && (mdLineIndex + i) < currentLines.length; i++) {
+                  const lineNum = mdLineIndex + i + 1 // 1-indexed
                   if (addedLineNumbers.has(lineNum)) {
-                    decorations.push(
-                      Decoration.node(nodePos, nodePos + node.nodeSize, {
-                        class: 'diff-line-added'
-                      })
-                    )
-
-                    // Word-level highlights
-                    const lineWordDiffs = wordDiffs.get(lineNum)
-                    if (lineWordDiffs && node.isTextblock) {
-                      let textOffset = 0
-                      const textStart = nodePos + 1
-
-                      lineWordDiffs.forEach(part => {
-                        if (part.added) {
-                          const from = textStart + textOffset
-                          const to = from + part.value.length
-                          if (to <= nodePos + node.nodeSize - 1) {
-                            decorations.push(
-                              Decoration.inline(from, to, {
-                                class: 'diff-word-added'
-                              })
-                            )
-                          }
-                          textOffset += part.value.length
-                        } else if (!part.removed) {
-                          textOffset += part.value.length
-                        }
-                      })
-                    }
-                  }
-
-                  // Deleted lines widget
-                  const deletedBefore = deletedLines.find(d => d.beforeLine === lineNum)
-                  if (deletedBefore) {
-                    const widget = document.createElement('div')
-                    widget.className = 'diff-deleted-block'
-                    widget.contentEditable = 'false'
-
-                    const deletedTexts = []
-
-                    if (deletedBefore.wordDiffs) {
-                      deletedBefore.wordDiffs.forEach(({ text, wordChanges }) => {
-                        const lineDiv = document.createElement('div')
-                        lineDiv.className = 'diff-deleted-line'
-                        deletedTexts.push(text)
-
-                        if (wordChanges) {
-                          wordChanges.forEach(part => {
-                            const span = document.createElement('span')
-                            if (part.removed) {
-                              span.className = 'diff-word-removed'
-                              span.textContent = part.value
-                              lineDiv.appendChild(span)
-                            } else if (!part.added) {
-                              span.textContent = part.value
-                              lineDiv.appendChild(span)
-                            }
-                          })
-                        } else {
-                          lineDiv.textContent = text || '\u00A0'
-                        }
-
-                        widget.appendChild(lineDiv)
-                      })
-                    } else {
-                      deletedBefore.texts.forEach(text => {
-                        const lineDiv = document.createElement('div')
-                        lineDiv.className = 'diff-deleted-line'
-                        lineDiv.textContent = text || '\u00A0'
-                        deletedTexts.push(text)
-                        widget.appendChild(lineDiv)
-                      })
-                    }
-
-                    // Copy button
-                    const copyBtn = document.createElement('button')
-                    copyBtn.className = 'diff-copy-btn'
-                    copyBtn.textContent = '📋'
-                    copyBtn.title = 'Copy deleted text'
-                    copyBtn.onclick = (e) => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      navigator.clipboard.writeText(deletedTexts.join('\n'))
-                      copyBtn.textContent = '✓'
-                      setTimeout(() => { copyBtn.textContent = '📋' }, 1500)
-                    }
-                    widget.addEventListener('mouseenter', () => {
-                      copyBtn.style.opacity = '1'
-                    })
-                    widget.addEventListener('mouseleave', () => {
-                      copyBtn.style.opacity = '0.3'
-                    })
-                    widget.appendChild(copyBtn)
-
-                    decorations.push(
-                      Decoration.widget(nodePos, widget, { side: -1 })
-                    )
+                    nodeIsChanged = true
+                    const wd = wordDiffs.get(lineNum)
+                    if (wd) nodeWordDiffs.push(...wd)
                   }
                 }
+
+                // Apply decorations
+                if (nodeIsChanged) {
+                  decorations.push(
+                    Decoration.node(nodePos, nodePos + node.nodeSize, {
+                      class: 'diff-line-added'
+                    })
+                  )
+
+                  // Word-level highlights
+                  if (nodeWordDiffs.length > 0 && node.isTextblock) {
+                    let textOffset = 0
+                    const textStart = nodePos + 1
+
+                    nodeWordDiffs.forEach(part => {
+                      if (part.added) {
+                        const from = textStart + textOffset
+                        const to = from + part.value.length
+                        if (to <= nodePos + node.nodeSize - 1) {
+                          decorations.push(
+                            Decoration.inline(from, to, {
+                              class: 'diff-word-added'
+                            })
+                          )
+                        }
+                        textOffset += part.value.length
+                      } else if (!part.removed) {
+                        textOffset += part.value.length
+                      }
+                    })
+                  }
+                }
+
+                // Check for deleted lines before this node
+                const lineNum = mdLineIndex + 1
+                const deletedBefore = deletedLines.find(d => d.beforeLine === lineNum)
+                if (deletedBefore) {
+                  const widget = document.createElement('div')
+                  widget.className = 'diff-deleted-block'
+                  widget.contentEditable = 'false'
+
+                  const deletedTexts = []
+
+                  if (deletedBefore.wordDiffs) {
+                    deletedBefore.wordDiffs.forEach(({ text, wordChanges }) => {
+                      const lineDiv = document.createElement('div')
+                      lineDiv.className = 'diff-deleted-line'
+                      deletedTexts.push(text)
+
+                      if (wordChanges) {
+                        wordChanges.forEach(part => {
+                          const span = document.createElement('span')
+                          if (part.removed) {
+                            span.className = 'diff-word-removed'
+                            span.textContent = part.value
+                            lineDiv.appendChild(span)
+                          } else if (!part.added) {
+                            span.textContent = part.value
+                            lineDiv.appendChild(span)
+                          }
+                        })
+                      } else {
+                        lineDiv.textContent = text || '\u00A0'
+                      }
+
+                      widget.appendChild(lineDiv)
+                    })
+                  } else {
+                    deletedBefore.texts.forEach(text => {
+                      const lineDiv = document.createElement('div')
+                      lineDiv.className = 'diff-deleted-line'
+                      lineDiv.textContent = text || '\u00A0'
+                      deletedTexts.push(text)
+                      widget.appendChild(lineDiv)
+                    })
+                  }
+
+                  // Copy button
+                  const copyBtn = document.createElement('button')
+                  copyBtn.className = 'diff-copy-btn'
+                  copyBtn.textContent = 'Copy'
+                  copyBtn.title = 'Copy deleted text'
+                  copyBtn.onclick = (e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    navigator.clipboard.writeText(deletedTexts.join('\n'))
+                    copyBtn.textContent = 'Copied!'
+                    setTimeout(() => { copyBtn.textContent = 'Copy' }, 1500)
+                  }
+                  widget.appendChild(copyBtn)
+
+                  decorations.push(
+                    Decoration.widget(nodePos, widget, { side: -1 })
+                  )
+                }
+
+                mdLineIndex += linesForNode
                 return false
               })
 
-              // Trailing deletions
-              const trailingDeleted = deletedLines.find(d => d.beforeLine === lineNum + 1)
+              // Trailing deletions (at end of document)
+              const lastLineNum = currentLines.length + 1
+              const trailingDeleted = deletedLines.find(d => d.beforeLine >= lastLineNum)
               if (trailingDeleted) {
                 const widget = document.createElement('div')
                 widget.className = 'diff-deleted-block'
@@ -556,32 +563,38 @@ export default function Editor({
   const autoSaveTimer = useRef(null)
   const diffStateRef = useRef({ enabled: false, originalContent: null })
 
-  const markdownParser = useMemo(
-    () =>
-      new MarkdownIt({
-        html: false,
-        linkify: true,
-        breaks: true,
-      }),
-    [],
+  // Frontmatter state - separate from body content
+  // Parse initial values from content prop
+  const initialParsed = useMemo(() => parseFrontmatter(content || ''), [])
+  const [frontmatterCollapsed, setFrontmatterCollapsed] = useState(
+    !initialParsed.frontmatter || initialParsed.frontmatter.trim() === ''
   )
-  const turndown = useMemo(() => {
-    const service = new TurndownService({
-      codeBlockStyle: 'fenced',
-      headingStyle: 'atx',
-      bulletListMarker: '-',
-    })
-    service.use(gfm)
-    return service
-  }, [])
+  const [currentFrontmatter, setCurrentFrontmatter] = useState(initialParsed.frontmatter)
+  const [currentBody, setCurrentBody] = useState(initialParsed.body)
+  const lastContentVersionRef = useRef(contentVersion)
 
-  // Create diff extension once, it uses the ref to check state
-  const DiffExtension = useMemo(() => {
-    return createDiffExtension(diffStateRef, markdownParser)
-  }, [markdownParser])
+  // Ref to access latest frontmatter in callbacks without stale closures
+  const currentFrontmatterRef = useRef(initialParsed.frontmatter)
+  currentFrontmatterRef.current = currentFrontmatter
 
-  const editor = useEditor({
-    extensions: [
+  // Re-parse content only when contentVersion changes (external file reload)
+  // NOT when content changes from typing (that would cause loops)
+  useEffect(() => {
+    // Skip if contentVersion hasn't changed
+    if (contentVersion === lastContentVersionRef.current) return
+    lastContentVersionRef.current = contentVersion
+
+    const { frontmatter, body } = parseFrontmatter(content || '')
+    setCurrentFrontmatter(frontmatter)
+    setCurrentBody(body)
+    // Auto-expand if there's frontmatter, collapse if not
+    setFrontmatterCollapsed(!frontmatter || frontmatter.trim() === '')
+  }, [content, contentVersion])
+
+  // Base extensions used for both the editor and for normalizing original content
+  // This ensures both sides go through the exact same Tiptap schema
+  const baseExtensions = useMemo(
+    () => [
       StarterKit,
       Underline,
       Link.configure({
@@ -601,47 +614,108 @@ export default function Editor({
         types: ['heading', 'paragraph'],
       }),
       Highlight,
-      DiffExtension,
+      // Official Tiptap Markdown extension for bidirectional markdown support
+      Markdown.configure({
+        // Preserve line breaks as <br> tags
+        markedOptions: {
+          breaks: true,
+          gfm: true,
+        },
+      }),
     ],
-    content: content ? markdownParser.render(content) : '',
-    onUpdate: ({ editor }) => {
-      const html = editor.getHTML()
-      const markdown = turndown.turndown(html)
+    []
+  )
+
+  // Create diff extension once, it uses the ref to check state
+  const DiffExtension = useMemo(() => {
+    return createDiffExtension(diffStateRef)
+  }, [])
+
+  // Handle frontmatter changes
+  const handleFrontmatterChange = useCallback((newFrontmatter) => {
+    setCurrentFrontmatter(newFrontmatter)
+    const fullContent = reconstructContent(newFrontmatter, currentBody)
+
+    if (onChange) {
+      onChange(fullContent)
+    }
+
+    if (onAutoSave) {
+      if (autoSaveTimer.current) {
+        clearTimeout(autoSaveTimer.current)
+      }
+      autoSaveTimer.current = setTimeout(() => {
+        const latestFullContent = reconstructContent(newFrontmatter, currentBody)
+        onAutoSave(latestFullContent)
+      }, autoSaveDelay)
+    }
+  }, [currentBody, onChange, onAutoSave, autoSaveDelay])
+
+  const editor = useEditor({
+    extensions: [...baseExtensions, DiffExtension],
+    // Use contentType: 'markdown' to parse initial content as markdown
+    // Start with body only (frontmatter handled separately)
+    // Use initialParsed.body which is computed once on mount
+    content: initialParsed.body || '',
+    contentType: 'markdown',
+    onUpdate: ({ editor: editorInstance }) => {
+      // Use editor.getMarkdown() from @tiptap/markdown
+      const bodyMarkdown = editorInstance.getMarkdown()
+      setCurrentBody(bodyMarkdown)
+      // Use ref to get latest frontmatter (avoids stale closure)
+      const fullContent = reconstructContent(currentFrontmatterRef.current, bodyMarkdown)
+
       if (onChange) {
-        onChange(markdown)
+        onChange(fullContent)
       }
 
       if (onAutoSave) {
         if (autoSaveTimer.current) {
           clearTimeout(autoSaveTimer.current)
         }
+        // Use a callback to get the latest content when the timer fires
         autoSaveTimer.current = setTimeout(() => {
-          onAutoSave(markdown)
+          // Get fresh markdown at save time, not when update was triggered
+          const latestBodyMarkdown = editorInstance.getMarkdown()
+          const latestFullContent = reconstructContent(currentFrontmatterRef.current, latestBodyMarkdown)
+          onAutoSave(latestFullContent)
         }, autoSaveDelay)
       }
     },
   })
 
   // Update diff state when mode or original content changes
+  // For diff comparison, we use editor.getMarkdown() to get normalized output
+  // This ensures both sides go through the same Tiptap markdown serializer
   useEffect(() => {
     const wasEnabled = diffStateRef.current.enabled
+    const isEnabled = editorMode === 'diff' && originalContent !== null
+
     diffStateRef.current = {
-      enabled: editorMode === 'diff' && originalContent !== null,
+      enabled: isEnabled,
       originalContent: originalContent,
+      // getCurrentMarkdown will be called by the plugin to get fresh editor content
+      getEditorMarkdown: () => editor?.getMarkdown() || '',
     }
+
     // Force editor to re-render decorations
-    if (editor && (wasEnabled !== diffStateRef.current.enabled || diffStateRef.current.enabled)) {
+    if (editor && (wasEnabled !== isEnabled || isEnabled)) {
       // Trigger a view update to recalculate decorations
       editor.view.dispatch(editor.state.tr)
     }
   }, [editorMode, originalContent, editor])
 
+  // Only reset editor content when contentVersion changes (external file reload)
+  // NOT when currentBody changes (which happens during typing/autosave)
+  // Parse directly from content prop to avoid race conditions with state updates
   useEffect(() => {
     if (!editor) return
     if (contentVersion === undefined) return
-    const html = content ? markdownParser.render(content) : ''
-    editor.commands.setContent(html)
-  }, [contentVersion, editor, content])
+    // Parse body directly from content prop (not state) to ensure we have latest value
+    const { body } = parseFrontmatter(content || '')
+    editor.commands.setContent(body || '', { contentType: 'markdown' })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contentVersion, editor])
 
   useEffect(() => {
     return () => {
@@ -740,6 +814,17 @@ export default function Editor({
           {renderModeSelector()}
         </div>
       </div>
+
+      {/* Frontmatter editor - only show in edit modes, not git-diff */}
+      {editorMode !== 'git-diff' && (
+        <FrontmatterEditor
+          frontmatter={currentFrontmatter}
+          onChange={handleFrontmatterChange}
+          isCollapsed={frontmatterCollapsed}
+          onToggleCollapse={() => setFrontmatterCollapsed(!frontmatterCollapsed)}
+        />
+      )}
+
       <div
         className="editor-content"
         onDrop={handleDrop}

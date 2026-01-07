@@ -809,9 +809,18 @@ def api_git_show(path: str = Query(..., description="File path relative to repo 
 
         if result.returncode != 0:
             # File doesn't exist in HEAD (new file)
-            if "does not exist" in result.stderr or "exists on disk" in result.stderr:
+            # Various error patterns for untracked/new files:
+            # - "does not exist" - file not in git at all
+            # - "exists on disk" - file exists but not tracked
+            # - "exists, but not" - path mismatch hint from git
+            stderr = result.stderr
+            if (
+                "does not exist" in stderr
+                or "exists on disk" in stderr
+                or "exists, but not" in stderr
+            ):
                 return {"content": None, "is_new": True}
-            raise HTTPException(status_code=404, detail=f"File not in git: {result.stderr}")
+            raise HTTPException(status_code=404, detail=f"File not in git: {stderr}")
 
         return {"content": result.stdout, "is_new": False}
     except HTTPException:

@@ -35,14 +35,27 @@ const getFileName = (path) => {
   return parts[parts.length - 1]
 }
 
-const STORAGE_KEY = 'kurt-web-open-tabs'
-const LAYOUT_STORAGE_KEY = 'kurt-web-layout'
-const LAYOUT_VERSION = 13 // Increment to force layout reset
+const LAYOUT_VERSION = 16 // Increment to force layout reset
+
+// Generate a short hash from the project root path for localStorage keys
+const hashProjectRoot = (root) => {
+  if (!root) return 'default'
+  let hash = 0
+  for (let i = 0; i < root.length; i++) {
+    const char = root.charCodeAt(i)
+    hash = ((hash << 5) - hash) + char
+    hash = hash & hash // Convert to 32bit integer
+  }
+  return Math.abs(hash).toString(36)
+}
+
+// Storage key generators (project-specific)
+const getStorageKey = (projectRoot, suffix) => `kurt-web-${hashProjectRoot(projectRoot)}-${suffix}`
 
 // Load saved tabs from localStorage
-const loadSavedTabs = () => {
+const loadSavedTabs = (projectRoot) => {
   try {
-    const saved = localStorage.getItem(STORAGE_KEY)
+    const saved = localStorage.getItem(getStorageKey(projectRoot, 'tabs'))
     if (saved) {
       return JSON.parse(saved)
     }
@@ -53,23 +66,23 @@ const loadSavedTabs = () => {
 }
 
 // Save open tabs to localStorage
-const saveTabs = (paths) => {
+const saveTabs = (projectRoot, paths) => {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(paths))
+    localStorage.setItem(getStorageKey(projectRoot, 'tabs'), JSON.stringify(paths))
   } catch (e) {
     // Ignore storage errors
   }
 }
 
-const loadLayout = () => {
+const loadLayout = (projectRoot) => {
   try {
-    const raw = localStorage.getItem(LAYOUT_STORAGE_KEY)
+    const raw = localStorage.getItem(getStorageKey(projectRoot, 'layout'))
     if (!raw) return null
     const parsed = JSON.parse(raw)
 
     // Check layout version - force reset if outdated
     if (!parsed?.version || parsed.version < LAYOUT_VERSION) {
-      localStorage.removeItem(LAYOUT_STORAGE_KEY)
+      localStorage.removeItem(getStorageKey(projectRoot, 'layout'))
       return null
     }
 
@@ -81,7 +94,7 @@ const loadLayout = () => {
           !KNOWN_COMPONENTS.has(panel.contentComponent),
       )
       if (hasUnknown) {
-        localStorage.removeItem(LAYOUT_STORAGE_KEY)
+        localStorage.removeItem(getStorageKey(projectRoot, 'layout'))
         return null
       }
       // Check if workflows panel exists in saved layout
@@ -90,7 +103,7 @@ const loadLayout = () => {
         (panel) => panel?.id === 'workflows' || panel?.contentComponent === 'workflows',
       )
       if (!hasWorkflows) {
-        localStorage.removeItem(LAYOUT_STORAGE_KEY)
+        localStorage.removeItem(getStorageKey(projectRoot, 'layout'))
         return null
       }
     }
@@ -124,15 +137,16 @@ const pruneEmptyGroups = (api) => {
   return removed
 }
 
-const saveLayout = (layout) => {
+const saveLayout = (projectRoot, layout) => {
   try {
     const layoutWithVersion = { ...layout, version: LAYOUT_VERSION }
-    localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(layoutWithVersion))
+    localStorage.setItem(getStorageKey(projectRoot, 'layout'), JSON.stringify(layoutWithVersion))
   } catch (e) {
     // Ignore storage errors
   }
 }
 
+// Collapsed state and panel sizes are shared across projects (UI preference)
 const SIDEBAR_COLLAPSED_KEY = 'kurt-web-sidebar-collapsed'
 const PANEL_SIZES_KEY = 'kurt-web-panel-sizes'
 
@@ -186,11 +200,13 @@ export default function App() {
   const [activeDiffFile, setActiveDiffFile] = useState(null)
   const [collapsed, setCollapsed] = useState(loadCollapsedState)
   const panelSizesRef = useRef(loadPanelSizes())
+  const collapsedEffectRan = useRef(false)
   const dismissedApprovalsRef = useRef(new Set())
   const centerGroupRef = useRef(null)
   const isInitialized = useRef(false)
   const layoutRestored = useRef(false)
-  const [projectRoot, setProjectRoot] = useState('')
+  const [projectRoot, setProjectRoot] = useState(null) // null = not loaded yet, '' = loaded but empty
+  const projectRootRef = useRef(null) // Stable ref for callbacks
 
   // Toggle sidebar collapse - capture size before collapsing
   const toggleFiletree = useCallback(() => {
@@ -257,6 +273,13 @@ export default function App() {
   useEffect(() => {
     if (!dockApi) return
 
+    // On first run, only apply constraints and collapsed sizes, not expanded sizes
+    // (layout restore already set the correct expanded sizes)
+    const isFirstRun = !collapsedEffectRan.current
+    if (isFirstRun) {
+      collapsedEffectRan.current = true
+    }
+
     const filetreePanel = dockApi.getPanel('filetree')
     const terminalPanel = dockApi.getPanel('terminal')
 
@@ -273,8 +296,10 @@ export default function App() {
           minimumWidth: 180,
           maximumWidth: undefined,
         })
-        // Restore to saved width
-        filetreeGroup.api.setSize({ width: panelSizesRef.current.filetree })
+        // Only set size on subsequent runs (user toggled), not on initial load
+        if (!isFirstRun) {
+          filetreeGroup.api.setSize({ width: panelSizesRef.current.filetree })
+        }
       }
     }
 
@@ -291,8 +316,9 @@ export default function App() {
           minimumWidth: 250,
           maximumWidth: undefined,
         })
-        // Restore to saved width
-        terminalGroup.api.setSize({ width: panelSizesRef.current.terminal })
+        if (!isFirstRun) {
+          terminalGroup.api.setSize({ width: panelSizesRef.current.terminal })
+        }
       }
     }
 
@@ -303,15 +329,20 @@ export default function App() {
         workflowsGroup.api.setConstraints({
           minimumHeight: 36,
           maximumHeight: 36,
+          minimumWidth: undefined,
+          maximumWidth: undefined,
         })
         workflowsGroup.api.setSize({ height: 36 })
       } else {
         workflowsGroup.api.setConstraints({
-          minimumHeight: 150,
+          minimumHeight: 100,
           maximumHeight: undefined,
+          minimumWidth: undefined,
+          maximumWidth: undefined,
         })
-        // Restore to saved height
-        workflowsGroup.api.setSize({ height: panelSizesRef.current.workflows })
+        if (!isFirstRun) {
+          workflowsGroup.api.setSize({ height: panelSizesRef.current.workflows })
+        }
       }
     }
   }, [dockApi, collapsed])
@@ -484,6 +515,11 @@ export default function App() {
         if (panel?.group) {
           panel.group.header.hidden = false
           centerGroupRef.current = panel.group
+          // Apply minimum height constraint to center group
+          panel.group.api.setConstraints({
+            minimumHeight: 200,
+            maximumHeight: undefined,
+          })
         }
       }
 
@@ -675,6 +711,11 @@ export default function App() {
       if (panel?.group) {
         panel.group.header.hidden = false
         centerGroupRef.current = panel.group
+        // Apply minimum height constraint to center group
+        panel.group.api.setConstraints({
+          minimumHeight: 200,
+          maximumHeight: undefined,
+        })
       }
     })
   }, [
@@ -721,8 +762,10 @@ export default function App() {
         workflowsGroup.locked = true
         workflowsGroup.header.hidden = true
         workflowsGroup.api.setConstraints({
-          minimumHeight: 150,
+          minimumHeight: 100,
           maximumHeight: undefined,
+          minimumWidth: undefined,
+          maximumWidth: undefined,
         })
       }
     }
@@ -771,6 +814,11 @@ export default function App() {
       if (emptyPanel?.group) {
         emptyPanel.group.header.hidden = true
         centerGroupRef.current = emptyPanel.group
+        // Set minimum height for the center group so workflows doesn't take all space
+        emptyPanel.group.api.setConstraints({
+          minimumHeight: 200,
+          maximumHeight: undefined,
+        })
       }
 
       // Add workflows panel BELOW the center group - splits only center column
@@ -806,60 +854,26 @@ export default function App() {
       applyLockedPanels()
     }
 
-    const savedLayout = loadLayout()
-    if (savedLayout && typeof api.fromJSON === 'function') {
-      try {
-        api.fromJSON(savedLayout)
-        layoutRestored.current = true
-      } catch (error) {
-        layoutRestored.current = false
-      }
-    }
-
+    // Layout restoration is deferred until projectRoot is loaded (see useEffect below)
+    // For now, just ensure core panels exist
     ensureCorePanels()
 
-    // If layout was restored and has editor panels, close empty-center to avoid duplicates
-    if (layoutRestored.current) {
-      const panels = Array.isArray(api.panels)
-        ? api.panels
-        : typeof api.getPanels === 'function'
-          ? api.getPanels()
-          : []
-      const hasEditors = panels.some((p) => p.id.startsWith('editor-'))
-      const hasReviews = panels.some((p) => p.id.startsWith('review-'))
-      if (hasEditors || hasReviews) {
-        const emptyPanel = api.getPanel('empty-center')
-        if (emptyPanel) {
-          // Set centerGroupRef before closing, in case empty is in the center column
-          const editorPanel = panels.find((p) => p.id.startsWith('editor-') || p.id.startsWith('review-'))
-          if (editorPanel?.group) {
-            centerGroupRef.current = editorPanel.group
-          }
-          emptyPanel.api.close()
-        }
-      }
-    }
-
-    if (!layoutRestored.current) {
-      // Set initial sizes
+    // Apply initial panel sizes for fresh layout
+    // (Restored layouts will have sizes reapplied in the layout restoration effect)
+    requestAnimationFrame(() => {
       const filetreeGroup = api.getPanel('filetree')?.group
       const terminalGroup = api.getPanel('terminal')?.group
       const workflowsGroup = api.getPanel('workflows')?.group
       if (filetreeGroup) {
-        api.getGroup(filetreeGroup.id)?.api.setSize({ width: 280 })
+        api.getGroup(filetreeGroup.id)?.api.setSize({ width: panelSizesRef.current.filetree })
       }
       if (terminalGroup) {
-        api.getGroup(terminalGroup.id)?.api.setSize({ width: 400 })
+        api.getGroup(terminalGroup.id)?.api.setSize({ width: panelSizesRef.current.terminal })
       }
       if (workflowsGroup) {
-        api.getGroup(workflowsGroup.id)?.api.setSize({ height: 250 })
+        api.getGroup(workflowsGroup.id)?.api.setSize({ height: panelSizesRef.current.workflows })
       }
-    } else {
-      const pruned = pruneEmptyGroups(api)
-      if (pruned && typeof api.toJSON === 'function') {
-        saveLayout(api.toJSON())
-      }
-    }
+    })
 
     // Handle panel close to clean up tabs state
     api.onDidRemovePanel((e) => {
@@ -876,35 +890,113 @@ export default function App() {
 
     // When all editors are closed, show the empty panel again
     api.onDidRemovePanel(() => {
-      // Check if center group has any content panels left
-      const centerGroup = centerGroupRef.current
-      if (!centerGroup) return
+      // Check if empty panel already exists
+      const existingEmpty = api.getPanel('empty-center')
+      if (existingEmpty) return
 
-      const hasEditors = centerGroup.panels.some(p => p.id.startsWith('editor-'))
-      const hasReviews = centerGroup.panels.some(p => p.id.startsWith('review-'))
-      const hasEmpty = centerGroup.panels.some(p => p.id === 'empty-center')
+      // Check if there are any editor or review panels left anywhere
+      const allPanels = Array.isArray(api.panels) ? api.panels : []
+      const hasEditors = allPanels.some(p => p.id.startsWith('editor-'))
+      const hasReviews = allPanels.some(p => p.id.startsWith('review-'))
 
-      // Only re-add empty panel if there are no editors, reviews, or empty panel
-      if (!hasEditors && !hasReviews && !hasEmpty) {
-        // Re-add empty panel
-        api.addPanel({
+      // If there are still editors or reviews, don't add empty panel
+      if (hasEditors || hasReviews) return
+
+      // Need to add empty panel - find the right position
+      // Try to use centerGroupRef if it still exists and has panels
+      let centerGroup = centerGroupRef.current
+      const groupStillExists = centerGroup && api.groups?.includes(centerGroup)
+
+      // Get workflows panel to position relative to it
+      const workflowsPanel = api.getPanel('workflows')
+
+      let emptyPanel
+      if (groupStillExists && centerGroup.panels?.length > 0) {
+        // Group still exists with panels, add to it
+        emptyPanel = api.addPanel({
           id: 'empty-center',
           component: 'empty',
           title: '',
           position: { referenceGroup: centerGroup },
         })
-        centerGroup.header.hidden = true
+      } else if (workflowsPanel?.group) {
+        // Center group is gone, add above workflows panel
+        emptyPanel = api.addPanel({
+          id: 'empty-center',
+          component: 'empty',
+          title: '',
+          position: { direction: 'above', referenceGroup: workflowsPanel.group },
+        })
+      } else {
+        // Fallback: add to the right of filetree
+        emptyPanel = api.addPanel({
+          id: 'empty-center',
+          component: 'empty',
+          title: '',
+          position: { direction: 'right', referencePanel: 'filetree' },
+        })
+      }
+
+      // Update centerGroupRef and apply constraints
+      if (emptyPanel?.group) {
+        centerGroupRef.current = emptyPanel.group
+        emptyPanel.group.header.hidden = true
+        emptyPanel.group.api.setConstraints({
+          minimumHeight: 200,
+          maximumHeight: undefined,
+        })
       }
     })
 
     const saveLayoutNow = () => {
       if (typeof api.toJSON !== 'function') return
-      saveLayout(api.toJSON())
+      // Use ref for stable access to projectRoot in event handlers
+      saveLayout(projectRootRef.current, api.toJSON())
+    }
+
+    // Save panel sizes when layout changes (user resizes via drag)
+    const savePanelSizesNow = () => {
+      const filetreePanel = api.getPanel('filetree')
+      const terminalPanel = api.getPanel('terminal')
+      const workflowsPanel = api.getPanel('workflows')
+
+      const filetreeGroup = filetreePanel?.group
+      const terminalGroup = terminalPanel?.group
+      const workflowsGroup = workflowsPanel?.group
+
+      const newSizes = { ...panelSizesRef.current }
+      let changed = false
+
+      // Only save if not collapsed (width > 48 for sidebars, height > 36 for workflows)
+      if (filetreeGroup && filetreeGroup.api.width > 48) {
+        if (newSizes.filetree !== filetreeGroup.api.width) {
+          newSizes.filetree = filetreeGroup.api.width
+          changed = true
+        }
+      }
+      if (terminalGroup && terminalGroup.api.width > 48) {
+        if (newSizes.terminal !== terminalGroup.api.width) {
+          newSizes.terminal = terminalGroup.api.width
+          changed = true
+        }
+      }
+      if (workflowsGroup && workflowsGroup.api.height > 36) {
+        if (newSizes.workflows !== workflowsGroup.api.height) {
+          newSizes.workflows = workflowsGroup.api.height
+          changed = true
+        }
+      }
+
+      if (changed) {
+        panelSizesRef.current = newSizes
+        savePanelSizes(newSizes)
+      }
     }
 
     if (typeof api.onDidLayoutChange === 'function') {
       api.onDidLayoutChange(() => {
         saveLayoutNow()
+        savePanelSizesNow()
       })
     }
 
@@ -914,13 +1006,127 @@ export default function App() {
     isInitialized.current = true
   }
 
-  // Fetch project root for copy path feature
+  // Fetch project root for copy path feature and project-specific storage
   useEffect(() => {
     fetch(apiUrl('/api/project'))
       .then((r) => r.json())
-      .then((data) => setProjectRoot(data.root || ''))
-      .catch(() => {})
+      .then((data) => {
+        const root = data.root || ''
+        projectRootRef.current = root
+        setProjectRoot(root)
+      })
+      .catch(() => {
+        projectRootRef.current = ''
+        setProjectRoot('')
+      })
   }, [])
+
+  // Restore layout once projectRoot is loaded and dockApi is available
+  const layoutRestorationRan = useRef(false)
+  useEffect(() => {
+    // Wait for both dockApi and projectRoot to be available
+    // projectRoot === null means not loaded yet
+    if (!dockApi || projectRoot === null || layoutRestorationRan.current) return
+    layoutRestorationRan.current = true
+
+    const savedLayout = loadLayout(projectRoot)
+    if (savedLayout && typeof dockApi.fromJSON === 'function') {
+      try {
+        // Clear existing layout before restoring
+        // This prevents duplicate panels when fromJSON adds the saved panels
+        dockApi.clear()
+
+        dockApi.fromJSON(savedLayout)
+        layoutRestored.current = true
+
+        // After restoring, apply locked panels and cleanup
+        const filetreePanel = dockApi.getPanel('filetree')
+        const terminalPanel = dockApi.getPanel('terminal')
+        const workflowsPanel = dockApi.getPanel('workflows')
+
+        const filetreeGroup = filetreePanel?.group
+        if (filetreeGroup) {
+          filetreeGroup.locked = true
+          filetreeGroup.header.hidden = true
+        }
+
+        const terminalGroup = terminalPanel?.group
+        if (terminalGroup) {
+          terminalGroup.locked = true
+          terminalGroup.header.hidden = true
+        }
+
+        const workflowsGroup = workflowsPanel?.group
+        if (workflowsGroup) {
+          workflowsGroup.locked = true
+          workflowsGroup.header.hidden = true
+          workflowsGroup.api.setConstraints({
+            minimumHeight: 100,
+            maximumHeight: undefined,
+            minimumWidth: undefined,
+            maximumWidth: undefined,
+          })
+        }
+
+        // If layout has editor panels, close empty-center
+        const panels = Array.isArray(dockApi.panels)
+          ? dockApi.panels
+          : typeof dockApi.getPanels === 'function'
+            ? dockApi.getPanels()
+            : []
+        const hasEditors = panels.some((p) => p.id.startsWith('editor-'))
+        const hasReviews = panels.some((p) => p.id.startsWith('review-'))
+        if (hasEditors || hasReviews) {
+          const emptyPanel = dockApi.getPanel('empty-center')
+          if (emptyPanel) {
+            const editorPanel = panels.find((p) => p.id.startsWith('editor-') || p.id.startsWith('review-'))
+            if (editorPanel?.group) {
+              centerGroupRef.current = editorPanel.group
+            }
+            emptyPanel.api.close()
+          }
+        }
+
+        // Update centerGroupRef if there's an empty-center panel
+        const emptyPanel = dockApi.getPanel('empty-center')
+        if (emptyPanel?.group) {
+          centerGroupRef.current = emptyPanel.group
+          // Set minimum height for the center group so workflows doesn't take all space
+          emptyPanel.group.api.setConstraints({
+            minimumHeight: 200,
+            maximumHeight: undefined,
+          })
+        }
+
+        // Prune empty groups
+        const pruned = pruneEmptyGroups(dockApi)
+        if (pruned && typeof dockApi.toJSON === 'function') {
+          saveLayout(projectRoot, dockApi.toJSON())
+        }
+
+        // Apply saved panel sizes and reset collapsed effect flag
+        requestAnimationFrame(() => {
+          const ftGroup = dockApi.getPanel('filetree')?.group
+          const tGroup = dockApi.getPanel('terminal')?.group
+          const wGroup = dockApi.getPanel('workflows')?.group
+          if (ftGroup) {
+            dockApi.getGroup(ftGroup.id)?.api.setSize({ width: panelSizesRef.current.filetree })
+          }
+          if (tGroup) {
+            dockApi.getGroup(tGroup.id)?.api.setSize({ width: panelSizesRef.current.terminal })
+          }
+          if (wGroup) {
+            dockApi.getGroup(wGroup.id)?.api.setSize({ height: panelSizesRef.current.workflows })
+          }
+
+          // Reset the collapsed effect flag so constraints get reapplied
+          collapsedEffectRan.current = false
+        })
+      } catch (error) {
+        layoutRestored.current = false
+      }
+    }
+  }, [dockApi, projectRoot])
 
   // Track active panel to highlight in file tree
   useEffect(() => {
@@ -1034,17 +1240,18 @@ export default function App() {
     }
   }, [dockApi, collapsed.workflows, toggleWorkflows, openWorkflowTerminal])
 
-  // Restore saved tabs when dockApi becomes available
+  // Restore saved tabs when dockApi and projectRoot become available
   const hasRestoredTabs = useRef(false)
   useEffect(() => {
-    if (!dockApi || hasRestoredTabs.current) return
+    // Wait for projectRoot to be loaded (null = not loaded yet)
+    if (!dockApi || projectRoot === null || hasRestoredTabs.current) return
     hasRestoredTabs.current = true
 
     if (layoutRestored.current) {
       return
     }
 
-    const savedPaths = loadSavedTabs()
+    const savedPaths = loadSavedTabs(projectRoot)
     if (savedPaths.length > 0) {
       // Small delay to ensure layout is ready
       setTimeout(() => {
@@ -1053,14 +1260,15 @@ export default function App() {
         })
       }, 50)
     }
-  }, [dockApi, openFile])
+  }, [dockApi, projectRoot, openFile])
 
   // Save open tabs to localStorage whenever tabs change (but not on initial empty state)
   useEffect(() => {
-    if (!isInitialized.current) return
+    // Wait for projectRoot to be loaded
+    if (!isInitialized.current || projectRoot === null) return
     const paths = Object.keys(tabs)
-    saveTabs(paths)
-  }, [tabs])
+    saveTabs(projectRoot, paths)
+  }, [tabs, projectRoot])
 
   // Handle external drag events (files from FileTree)
   const showDndOverlay = (event) => {

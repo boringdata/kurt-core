@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import Editor from '../components/Editor'
 import CodeEditor from '../components/CodeEditor'
+import GitDiff from '../components/GitDiff'
 
 const apiBase = import.meta.env.VITE_API_URL || ''
 const apiUrl = (path) => `${apiBase}${path}`
@@ -73,19 +74,15 @@ export default function EditorPanel({ params: initialParams, api }) {
     let isActive = true
 
     const interval = setInterval(() => {
-      if (!isActive) return
+      // Don't poll while saving or if dirty - prevents race conditions
+      if (!isActive || isSaving || isDirty) return
 
       fetch(apiUrl(`/api/file?path=${encodeURIComponent(path)}`))
         .then((r) => r.json())
         .then((data) => {
-          if (!isActive) return
+          if (!isActive || isSaving || isDirty) return
           const nextContent = data.content || ''
           if (nextContent === content) return
-
-          if (isDirty) {
-            setExternalChange(true)
-            return
-          }
 
           setContent(nextContent)
           setContentVersion((v) => v + 1)
@@ -98,11 +95,14 @@ export default function EditorPanel({ params: initialParams, api }) {
       isActive = false
       clearInterval(interval)
     }
-  }, [path, content, isDirty])
+  }, [path, content, isDirty, isSaving])
 
   const save = async (newContent) => {
     if (!path) return
 
+    // Update content state BEFORE the API call to prevent race condition with polling
+    // This ensures the poll comparison uses the new content
+    setContent(newContent)
     setIsSaving(true)
     try {
       await fetch(apiUrl(`/api/file?path=${encodeURIComponent(path)}`), {
@@ -111,7 +111,6 @@ export default function EditorPanel({ params: initialParams, api }) {
         body: JSON.stringify({ content: newContent }),
       })
 
-      setContent(newContent)
       setIsDirty(false)
       onContentChange?.(path, newContent)
       onDirtyChange?.(path, false)
@@ -270,12 +269,7 @@ export default function EditorPanel({ params: initialParams, api }) {
           {editorMode === 'git-diff' ? (
             <div className="code-diff-view">
               {diffError && <div className="diff-error">{diffError}</div>}
-              {!diffError && !diffText && <div className="diff-empty">No git changes for this file.</div>}
-              {!diffError && diffText && (
-                <div className="diff-raw">
-                  <pre className="diff-raw-content">{diffText}</pre>
-                </div>
-              )}
+              <GitDiff diff={diffText} showFileHeader={false} />
             </div>
           ) : (
             <CodeEditor

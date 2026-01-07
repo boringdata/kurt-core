@@ -1296,22 +1296,32 @@ html, body, #root {
 /* Copy button for deleted content */
 .diff-copy-btn {
   position: absolute;
-  right: 8px;
+  right: 4px;
   top: 4px;
-  padding: 4px 8px;
-  font-size: 14px;
-  background: rgba(248, 81, 73, 0.3);
-  border: 1px solid #f85149;
-  border-radius: 4px;
+  padding: 2px;
+  width: 20px;
+  height: 20px;
+  font-size: 11px;
+  line-height: 1;
+  background: rgba(248, 81, 73, 0.2);
+  border: 1px solid rgba(248, 81, 73, 0.4);
+  border-radius: 3px;
   color: #ffa198;
   cursor: pointer;
-  opacity: 0.3;
+  opacity: 0;
   transition: opacity 0.15s, background 0.15s;
   z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.diff-deleted-block:hover .diff-copy-btn {
+  opacity: 0.6;
 }
 
 .diff-copy-btn:hover {
-  background: rgba(248, 81, 73, 0.6);
+  background: rgba(248, 81, 73, 0.5);
   opacity: 1 !important;
 }
 
@@ -2496,4 +2506,141 @@ html, body, #root {
   flex: 1;
   min-height: 0;
   overflow: auto;
+}
+
+/* ========== Frontmatter Editor ========== */
+
+.frontmatter-editor {
+  border-bottom: 1px solid #e5e7eb;
+  background: #f8fafc;
+  flex-shrink: 0;
+}
+
+.frontmatter-editor.has-error {
+  border-bottom-color: #fca5a5;
+}
+
+.frontmatter-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s;
+}
+
+.frontmatter-header:hover {
+  background: #f1f5f9;
+}
+
+.frontmatter-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #6b7280;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.frontmatter-toggle:hover {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.frontmatter-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7280;
+}
+
+.frontmatter-badge {
+  font-size: 9px;
+  font-weight: 600;
+  padding: 2px 5px;
+  border-radius: 3px;
+  background: rgba(99, 102, 241, 0.15);
+  color: #6366f1;
+  text-transform: uppercase;
+}
+
+.frontmatter-error-badge {
+  font-size: 9px;
+  font-weight: 600;
+  padding: 2px 5px;
+  border-radius: 3px;
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  text-transform: uppercase;
+}
+
+.frontmatter-hint {
+  font-size: 11px;
+  color: #9ca3af;
+  font-style: italic;
+}
+
+.frontmatter-content {
+  border-top: 1px solid #e5e7eb;
+}
+
+.frontmatter-editor-wrapper {
+  position: relative;
+}
+
+.frontmatter-placeholder {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  color: #6b7280;
+  font-family: 'IBM Plex Mono', Monaco, 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+.frontmatter-input {
+  min-height: 60px;
+  max-height: 200px;
+  overflow: auto !important;
+}
+
+.frontmatter-textarea {
+  outline: none !important;
+  caret-color: #fff;
+  resize: none;
+}
+
+.frontmatter-line-number {
+  display: table-cell;
+  text-align: right;
+  padding-right: 1rem;
+  user-select: none;
+  opacity: 0.5;
+  width: 1%;
+  white-space: nowrap;
+  color: #6e7681;
+}
+
+/* Collapsed state */
+.frontmatter-editor.collapsed .frontmatter-content {
+  display: none;
+}
+
+.frontmatter-editor.collapsed {
+  background: #fafbfc;
+}
+
+.frontmatter-editor.collapsed .frontmatter-header {
+  padding: 4px 12px;
 }
