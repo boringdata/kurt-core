@@ -69,14 +69,19 @@ export default function Terminal({
   useEffect(() => {
     isActiveRef.current = isActive
     if (!isActive) return
-    if (fitAddonRef.current && termRef.current && openedRef.current) {
+    if (fitAddonRef.current && termRef.current && openedRef.current && rendererReadyRef.current) {
+      // Double requestAnimationFrame to ensure renderer is stable
       requestAnimationFrame(() => {
-        try {
-          fitAddonRef.current.fit()
-          termRef.current.focus()
-        } catch {
-          // Ignore fit errors while the terminal is initializing.
-        }
+        requestAnimationFrame(() => {
+          try {
+            // Extra guard: check if terminal element is still in DOM
+            if (!containerRef.current?.isConnected) return
+            fitAddonRef.current.fit()
+            termRef.current.focus()
+          } catch {
+            // Ignore fit errors while the terminal is initializing.
+          }
+        })
       })
     }
     if (!openedRef.current && openAttemptRef.current) {
@@ -116,7 +121,8 @@ export default function Terminal({
     let reconnectTimer = null
     let connectionStarted = false
     let retryCount = 0
-    const MAX_RETRIES = 2
+    const MAX_RETRIES = 10
+    const INITIAL_RETRY_DELAY = 500
 
     const connect = () => {
       if (connectionStarted) return
@@ -192,7 +198,10 @@ export default function Terminal({
       })
 
       socket.addEventListener('error', () => {
-        term.writeln(`\r\n[bridge] Unable to connect. Is the API server running?\r\n`)
+        // Only show error message after a few retries to avoid spam during startup
+        if (retryCount >= 3) {
+          term.writeln(`\r\n[bridge] Unable to connect. Retrying...\r\n`)
+        }
       })
 
       socket.addEventListener('close', () => {
@@ -205,7 +214,7 @@ export default function Terminal({
         reconnectTimer = window.setTimeout(() => {
           connectionStarted = false
           connect()
-        }, 1000)
+        }, INITIAL_RETRY_DELAY)
       })
     }
 
@@ -303,49 +312,36 @@ export default function Terminal({
         return
       }
 
-      // Suppress xterm.js Viewport race condition errors during initialization.
-      const suppressRendererError = (event) => {
-        if (
-          event.message?.includes('_renderer.value is undefined') ||
-          event.message?.includes("can't access property")
-        ) {
-          event.preventDefault()
-          return true
-        }
-      }
-      window.addEventListener('error', suppressRendererError)
-
       try {
         term.open(containerRef.current)
         openedRef.current = true
       } catch {
-        window.removeEventListener('error', suppressRendererError)
         openRetryRef.current = window.setTimeout(attemptOpen, 60)
         return
       }
 
+      // Wait for renderer to be fully ready before marking as ready
+      // Use multiple frames to ensure xterm's internal state is settled
       const renderSubscription = term.onRender(() => {
-        rendererReadyRef.current = true
         renderSubscription.dispose()
-        window.removeEventListener('error', suppressRendererError)
+        // Double requestAnimationFrame to ensure renderer is fully initialized
         requestAnimationFrame(() => {
-          try {
-            fitAddon.fit()
-            if (isActiveRef.current) {
-              term.focus()
+          requestAnimationFrame(() => {
+            rendererReadyRef.current = true
+            try {
+              fitAddon.fit()
+              if (isActiveRef.current) {
+                term.focus()
+              }
+            } catch {
+              // Ignore fit errors while the renderer is initializing.
             }
-          } catch {
-            // Ignore fit errors while the renderer is initializing.
-          }
-          if (isActiveRef.current) {
-            sendResize()
-          }
+            if (isActiveRef.current) {
+              sendResize()
+            }
+          })
         })
       })
-
-      setTimeout(() => {
-        window.removeEventListener('error', suppressRendererError)
-      }, 1000)
 
       if (bannerMessage) {
         term.writeln(`\r\n[bridge] ${bannerMessage}\r\n`)

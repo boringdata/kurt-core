@@ -100,9 +100,30 @@ def serve(
     process = _start_process("API server", api_cmd, Path.cwd(), env)
 
     if not no_browser:
-        # Give server a moment to start
-        time.sleep(1)
-        webbrowser.open(f"http://{host}:{port}")
+        # Wait for server to be ready before opening browser
+        import urllib.error
+        import urllib.request
+
+        url = f"http://{host}:{port}/api/project"
+        max_wait = 10  # seconds
+        start = time.time()
+        ready = False
+
+        while time.time() - start < max_wait:
+            try:
+                with urllib.request.urlopen(url, timeout=1) as resp:
+                    if resp.status == 200:
+                        ready = True
+                        break
+            except (urllib.error.URLError, TimeoutError, OSError):
+                pass
+            time.sleep(0.2)
+
+        if ready:
+            webbrowser.open(f"http://{host}:{port}")
+        else:
+            console.print("[yellow]Server not responding, opening browser anyway...[/yellow]")
+            webbrowser.open(f"http://{host}:{port}")
 
     try:
         while True:

@@ -854,9 +854,34 @@ export default function App() {
       applyLockedPanels()
     }
 
-    // Layout restoration is deferred until projectRoot is loaded (see useEffect below)
-    // For now, just ensure core panels exist
-    ensureCorePanels()
+    // Check if there's a saved layout - if so, DON'T create panels here
+    // Let the layout restoration effect handle it to avoid creating->destroying->recreating
+    // We check localStorage directly since projectRoot isn't available yet
+    // Look for any layout key that might match
+    let hasSavedLayout = false
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i)
+        if (key && key.startsWith('kurt-web-') && key.endsWith('-layout')) {
+          const raw = localStorage.getItem(key)
+          if (raw) {
+            const parsed = JSON.parse(raw)
+            if (parsed?.version >= LAYOUT_VERSION && parsed?.panels) {
+              hasSavedLayout = true
+              break
+            }
+          }
+        }
+      }
+    } catch {
+      // Ignore errors checking localStorage
+    }
+
+    // Only create fresh panels if no saved layout exists
+    // Otherwise, layout restoration will handle panel creation
+    if (!hasSavedLayout) {
+      ensureCorePanels()
+    }
 
     // Apply initial panel sizes for fresh layout
     // (Restored layouts will have sizes reapplied in the layout restoration effect)
@@ -1008,17 +1033,20 @@ export default function App() {
 
   // Fetch project root for copy path feature and project-specific storage
   useEffect(() => {
-    fetch(apiUrl('/api/project'))
-      .then((r) => r.json())
-      .then((data) => {
-        const root = data.root || ''
-        projectRootRef.current = root
-        setProjectRoot(root)
-      })
-      .catch(() => {
-        projectRootRef.current = ''
-        setProjectRoot('')
-      })
+    const fetchProjectRoot = () => {
+      fetch(apiUrl('/api/project'))
+        .then((r) => r.json())
+        .then((data) => {
+          const root = data.root || ''
+          projectRootRef.current = root
+          setProjectRoot(root)
+        })
+        .catch(() => {
+          // Retry on failure - server might not be ready yet
+          setTimeout(fetchProjectRoot, 500)
+        })
+    }
+    fetchProjectRoot()
   }, [])
 
   // Restore layout once projectRoot is loaded and dockApi is available
@@ -1031,11 +1059,10 @@ export default function App() {
 
     const savedLayout = loadLayout(projectRoot)
     if (savedLayout && typeof dockApi.fromJSON === 'function') {
+      // Since onReady skips panel creation when a saved layout exists,
+      // we can directly call fromJSON without clearing first
+      // This avoids the create->destroy->recreate race condition
       try {
-        // Clear existing layout before restoring
-        // This prevents duplicate panels when fromJSON adds the saved panels
-        dockApi.clear()
-
         dockApi.fromJSON(savedLayout)
         layoutRestored.current = true
 

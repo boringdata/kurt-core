@@ -51,7 +51,22 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
   }
 
   useEffect(() => {
-    fetchDir('.').then(setEntries)
+    let retryCount = 0
+    const maxRetries = 10
+
+    const initialFetch = () => {
+      fetchDir('.').then((result) => {
+        if (result.length > 0 || retryCount >= maxRetries) {
+          setEntries(result)
+        } else {
+          // Retry if empty (server might not be ready)
+          retryCount++
+          setTimeout(initialFetch, 300)
+        }
+      })
+    }
+
+    initialFetch()
     fetchGitStatus()
 
     // Poll for git status changes
