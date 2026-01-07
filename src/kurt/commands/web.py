@@ -73,6 +73,7 @@ def serve(
 
     env = os.environ.copy()
     env["KURT_WEB_ORIGIN"] = f"http://{host}:{port}"
+    env["KURT_WEB_API_URL"] = f"http://{host}:{port}"
     project_root = Path(os.environ.get("KURT_PROJECT_ROOT", Path.cwd())).expanduser().resolve()
     env["KURT_PROJECT_ROOT"] = str(project_root)
     env["KURT_PTY_CWD"] = str(project_root)

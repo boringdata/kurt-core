@@ -63,7 +63,14 @@ const getProviderLabel = (provider) => {
   return `${provider.charAt(0).toUpperCase()}${provider.slice(1)}`
 }
 
-export default function TerminalPanel() {
+const getFileName = (path) => {
+  if (!path) return ''
+  const parts = path.split('/')
+  return parts[parts.length - 1]
+}
+
+export default function TerminalPanel({ params }) {
+  const { collapsed, onToggleCollapse, approvals, onFocusReview, onDecision, normalizeApprovalPath } = params || {}
   const terminalCounter = useRef(1)
   const [sessions, setSessions] = useState(() => {
     const saved = loadSessions()
@@ -191,9 +198,39 @@ export default function TerminalPanel() {
     }
   }, [sessions, activeId])
 
+  if (collapsed) {
+    return (
+      <div className="panel-content terminal-panel-content terminal-collapsed">
+        <button
+          type="button"
+          className="sidebar-toggle-btn"
+          onClick={onToggleCollapse}
+          title="Expand agent panel"
+          aria-label="Expand agent panel"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M10 3.5L5.5 8L10 12.5V3.5Z" />
+          </svg>
+        </button>
+        <div className="sidebar-collapsed-label">Agent</div>
+      </div>
+    )
+  }
+
   return (
     <div className="panel-content terminal-panel-content">
       <div className="terminal-header">
+        <button
+          type="button"
+          className="sidebar-toggle-btn"
+          onClick={onToggleCollapse}
+          title="Collapse agent panel"
+          aria-label="Collapse agent panel"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M6 3.5L10.5 8L6 12.5V3.5Z" />
+          </svg>
+        </button>
         <div className="terminal-title">
           <span className="status-dot" />
           Agent Sessions
@@ -276,6 +313,63 @@ export default function TerminalPanel() {
             ))}
           </div>
         </>
+      )}
+      {Array.isArray(approvals) && approvals.length > 0 && (
+        <div className="review-list">
+          <div className="review-list-header">
+            <span className="review-list-badge">{approvals.length}</span>
+            Pending Reviews
+          </div>
+          <div className="review-list-items">
+            {approvals.map((approval) => {
+              const filePath = normalizeApprovalPath?.(approval) || approval.project_path || approval.file_path || ''
+              const fileName = getFileName(filePath) || approval.tool_name || 'Review'
+              return (
+                <div
+                  key={approval.id}
+                  className="review-list-item"
+                  onClick={() => onFocusReview?.(approval.id)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      onFocusReview?.(approval.id)
+                    }
+                  }}
+                >
+                  <div className="review-list-item-info">
+                    <span className="review-list-item-name">{fileName}</span>
+                    {filePath && <span className="review-list-item-path">{filePath}</span>}
+                  </div>
+                  <div className="review-list-item-actions">
+                    <button
+                      type="button"
+                      className="review-list-deny"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onDecision?.(approval.id, 'deny')
+                      }}
+                      title="Deny"
+                    >
+                      ✕
+                    </button>
+                    <button
+                      type="button"
+                      className="review-list-allow"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onDecision?.(approval.id, 'allow')
+                      }}
+                      title="Allow"
+                    >
+                      ✓
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
       )}
     </div>
   )

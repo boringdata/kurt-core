@@ -13,11 +13,22 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Edit|Write",
+        "matcher": "Edit|Write|Update",
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ./scripts/claude_pretool_hook.py"
+            "command": "curl -sS -H \"Content-Type: application/json\" -H \"X-Kurt-Session-Provider: $KURT_SESSION_PROVIDER\" -H \"X-Kurt-Session-Name: $KURT_SESSION_NAME\" -X POST \"${KURT_WEB_API_URL:-http://127.0.0.1:8765}/api/approval/pretool\" --data-binary @- || printf '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"Approval service unavailable.\"}}'"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|Update",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -sS -H \"Content-Type: application/json\" -H \"X-Kurt-Session-Provider: $KURT_SESSION_PROVIDER\" -H \"X-Kurt-Session-Name: $KURT_SESSION_NAME\" -X POST \"${KURT_WEB_API_URL:-http://127.0.0.1:8765}/api/approval/posttool\" --data-binary @- >/dev/null || true"
           }
         ]
       }

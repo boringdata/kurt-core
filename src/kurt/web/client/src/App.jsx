@@ -6,6 +6,7 @@ import FileTreePanel from './panels/FileTreePanel'
 import EditorPanel from './panels/EditorPanel'
 import TerminalPanel from './panels/TerminalPanel'
 import EmptyPanel from './panels/EmptyPanel'
+import ReviewPanel from './panels/ReviewPanel'
 
 const apiBase = import.meta.env.VITE_API_URL || ''
 const apiUrl = (path) => `${apiBase}${path}`
@@ -15,6 +16,7 @@ const components = {
   editor: EditorPanel,
   terminal: TerminalPanel,
   empty: EmptyPanel,
+  review: ReviewPanel,
 }
 
 const KNOWN_COMPONENTS = new Set(Object.keys(components))
@@ -104,21 +106,98 @@ const saveLayout = (layout) => {
   }
 }
 
+const SIDEBAR_COLLAPSED_KEY = 'kurt-web-sidebar-collapsed'
+
+const loadCollapsedState = () => {
+  try {
+    const saved = localStorage.getItem(SIDEBAR_COLLAPSED_KEY)
+    if (saved) {
+      return JSON.parse(saved)
+    }
+  } catch (e) {
+    // Ignore parse errors
+  }
+  return { filetree: false, terminal: false }
+}
+
+const saveCollapsedState = (state) => {
+  try {
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, JSON.stringify(state))
+  } catch (e) {
+    // Ignore storage errors
+  }
+}
+
 export default function App() {
   const [dockApi, setDockApi] = useState(null)
   const [tabs, setTabs] = useState({}) // path -> { content, isDirty }
-  const [approvalQueue, setApprovalQueue] = useState([])
+  const [approvals, setApprovals] = useState([])
+  const [approvalsLoaded, setApprovalsLoaded] = useState(false)
   const [gitStatus, setGitStatus] = useState({})
   const [activeFile, setActiveFile] = useState(null)
-  const lastApprovalId = useRef(null)
+  const [collapsed, setCollapsed] = useState(loadCollapsedState)
   const dismissedApprovalsRef = useRef(new Set())
   const centerGroupRef = useRef(null)
   const isInitialized = useRef(false)
-  const openFileRef = useRef(null)
   const layoutRestored = useRef(false)
   const [projectRoot, setProjectRoot] = useState('')
 
-  const activeApproval = approvalQueue[0] || null
+  // Toggle sidebar collapse
+  const toggleFiletree = useCallback(() => {
+    setCollapsed((prev) => {
+      const next = { ...prev, filetree: !prev.filetree }
+      saveCollapsedState(next)
+      return next
+    })
+  }, [])
+
+  const toggleTerminal = useCallback(() => {
+    setCollapsed((prev) => {
+      const next = { ...prev, terminal: !prev.terminal }
+      saveCollapsedState(next)
+      return next
+    })
+  }, [])
+
+  // Apply collapsed state to dockview groups
+  useEffect(() => {
+    if (!dockApi) return
+
+    const filetreePanel = dockApi.getPanel('filetree')
+    const terminalPanel = dockApi.getPanel('terminal')
+
+    const filetreeGroup = filetreePanel?.group
+    if (filetreeGroup) {
+      if (collapsed.filetree) {
+        filetreeGroup.api.setConstraints({
+          minimumWidth: 48,
+          maximumWidth: 48,
+        })
+        filetreeGroup.api.setSize({ width: 48 })
+      } else {
+        filetreeGroup.api.setConstraints({
+          minimumWidth: 180,
+          maximumWidth: undefined,
+        })
+      }
+    }
+
+    const terminalGroup = terminalPanel?.group
+    if (terminalGroup) {
+      if (collapsed.terminal) {
+        terminalGroup.api.setConstraints({
+          minimumWidth: 48,
+          maximumWidth: 48,
+        })
+        terminalGroup.api.setSize({ width: 48 })
+      } else {
+        terminalGroup.api.setConstraints({
+          minimumWidth: 250,
+          maximumWidth: undefined,
+        })
+      }
+    }
+  }, [dockApi, collapsed])
 
   // Fetch git status
   const fetchGitStatus = useCallback(() => {
@@ -151,7 +230,8 @@ export default function App() {
           const filtered = requests.filter(
             (req) => !dismissedApprovalsRef.current.has(req.id),
           )
-          setApprovalQueue(filtered)
+          setApprovals(filtered)
+          setApprovalsLoaded(true)
         })
         .catch(() => {})
     }
@@ -165,23 +245,32 @@ export default function App() {
     }
   }, [])
 
-  const handleDecision = async (requestId, decision, reason) => {
-    if (requestId) {
-      dismissedApprovalsRef.current.add(requestId)
-      setApprovalQueue((prev) => prev.filter((req) => req.id !== requestId))
-    } else {
-      setApprovalQueue([])
-    }
-    try {
-      await fetch(apiUrl('/api/approval/decision'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ request_id: requestId, decision, reason }),
-      })
-    } catch {
-      // Ignore decision errors; UI already dismissed.
-    }
-  }
+  const handleDecision = useCallback(
+    async (requestId, decision, reason) => {
+      if (requestId) {
+        dismissedApprovalsRef.current.add(requestId)
+        setApprovals((prev) => prev.filter((req) => req.id !== requestId))
+        if (dockApi) {
+          const panel = dockApi.getPanel(`review-${requestId}`)
+          if (panel) {
+            panel.api.close()
+          }
+        }
+      } else {
+        setApprovals([])
+      }
+      try {
+        await fetch(apiUrl('/api/approval/decision'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ request_id: requestId, decision, reason }),
+        })
+      } catch {
+        // Ignore decision errors; UI already dismissed.
+      }
+    },
+    [dockApi]
+  )
 
   const normalizeApprovalPath = useCallback(
     (approval) => {
@@ -200,17 +289,18 @@ export default function App() {
     [projectRoot],
   )
 
-  const shouldShowApprovalForPath = useCallback(
-    (path) => {
-      if (!activeApproval) return false
-      const approvalPath = normalizeApprovalPath(activeApproval)
-      return (
-        (approvalPath && approvalPath === path) ||
-        activeApproval.project_path === path ||
-        activeApproval.file_path === path
-      )
+  const getReviewTitle = useCallback(
+    (approval) => {
+      const approvalPath = normalizeApprovalPath(approval)
+      if (approvalPath) {
+        return `Review: ${getFileName(approvalPath)}`
+      }
+      if (approval?.tool_name) {
+        return `Review: ${approval.tool_name}`
+      }
+      return 'Review'
     },
-    [activeApproval, normalizeApprovalPath],
+    [normalizeApprovalPath],
   )
 
   // Open file in a specific position (used for drag-drop)
@@ -263,9 +353,6 @@ export default function App() {
                 panel.api.setTitle(getFileName(p) + (dirty ? ' *' : ''))
               }
             },
-            activeApproval: shouldShowApprovalForPath(path) ? activeApproval : null,
-            onDecision: handleDecision,
-            onOpenFile: (p) => openFileRef.current?.(p),
           },
         })
 
@@ -287,7 +374,7 @@ export default function App() {
           addEditorPanel('')
         })
     },
-    [dockApi, handleDecision, activeApproval, shouldShowApprovalForPath]
+    [dockApi]
   )
 
   const openFile = useCallback(
@@ -346,36 +433,70 @@ export default function App() {
     [dockApi, openFileAtPosition]
   )
 
-  // Keep ref updated for use in callbacks
-  openFileRef.current = openFile
-
-  // Auto-open file when approval comes in
   useEffect(() => {
-    if (!activeApproval || !activeApproval.id) return
-    if (lastApprovalId.current === activeApproval.id) return
-    const targetPath = normalizeApprovalPath(activeApproval)
-    if (!targetPath) return
-    const didOpen = openFile(targetPath)
-    if (didOpen) {
-      lastApprovalId.current = activeApproval.id
-    }
-  }, [activeApproval, openFile, normalizeApprovalPath])
+    if (!dockApi || !approvalsLoaded) return
+    const pendingIds = new Set(approvals.map((req) => req.id))
+    const panels = Array.isArray(dockApi.panels)
+      ? dockApi.panels
+      : typeof dockApi.getPanels === 'function'
+        ? dockApi.getPanels()
+        : []
 
-  useEffect(() => {
-    if (!dockApi) return
-    // Update all editor panels, not just those tracked in tabs state
-    // This handles panels restored from saved layout
-    const allPanels = dockApi.panels || []
-    allPanels.forEach((panel) => {
-      if (!panel.id.startsWith('editor-')) return
-      const path = panel.id.replace('editor-', '')
-      panel.api.updateParameters({
-        activeApproval: shouldShowApprovalForPath(path) ? activeApproval : null,
+    panels.forEach((panel) => {
+      if (!panel?.id?.startsWith('review-')) return
+      const requestId = panel.id.replace('review-', '')
+      if (!pendingIds.has(requestId)) {
+        panel.api.close()
+      }
+    })
+
+    approvals.forEach((approval) => {
+      const panelId = `review-${approval.id}`
+      const approvalPath = normalizeApprovalPath(approval)
+      const existingPanel = dockApi.getPanel(panelId)
+      const params = {
+        request: approval,
+        filePath: approvalPath,
         onDecision: handleDecision,
         onOpenFile: openFile,
+      }
+
+      if (existingPanel) {
+        existingPanel.api.updateParameters(params)
+        existingPanel.api.setTitle(getReviewTitle(approval))
+        return
+      }
+
+      const emptyPanel = dockApi.getPanel('empty-center')
+      if (emptyPanel) {
+        emptyPanel.api.close()
+      }
+
+      const position = centerGroupRef.current
+        ? { referenceGroup: centerGroupRef.current }
+        : { direction: 'right', referencePanel: 'filetree' }
+
+      const panel = dockApi.addPanel({
+        id: panelId,
+        component: 'review',
+        title: getReviewTitle(approval),
+        position,
+        params,
       })
+      if (panel?.group) {
+        panel.group.header.hidden = false
+        centerGroupRef.current = panel.group
+      }
     })
-  }, [dockApi, tabs, activeApproval, handleDecision, openFile, shouldShowApprovalForPath])
+  }, [
+    approvals,
+    approvalsLoaded,
+    dockApi,
+    getReviewTitle,
+    handleDecision,
+    normalizeApprovalPath,
+    openFile,
+  ])
 
   const onReady = (event) => {
     const api = event.api
@@ -390,8 +511,8 @@ export default function App() {
         filetreeGroup.locked = true
         filetreeGroup.header.hidden = true
         filetreeGroup.api.setConstraints({
-          minimumWidth: 280,
-          maximumWidth: 280,
+          minimumWidth: 180,
+          maximumWidth: undefined,
         })
       }
 
@@ -400,8 +521,8 @@ export default function App() {
         terminalGroup.locked = true
         terminalGroup.header.hidden = true
         terminalGroup.api.setConstraints({
-          minimumWidth: 400,
-          maximumWidth: 400,
+          minimumWidth: 250,
+          maximumWidth: undefined,
         })
       }
     }
@@ -567,9 +688,39 @@ export default function App() {
         onOpenFileToSide: openFileToSide,
         projectRoot,
         activeFile,
+        collapsed: collapsed.filetree,
+        onToggleCollapse: toggleFiletree,
       })
     }
-  }, [dockApi, openFile, openFileToSide, projectRoot, activeFile])
+  }, [dockApi, openFile, openFileToSide, projectRoot, activeFile, collapsed.filetree, toggleFiletree])
+
+  // Helper to focus a review panel
+  const focusReviewPanel = useCallback(
+    (requestId) => {
+      if (!dockApi) return
+      const panel = dockApi.getPanel(`review-${requestId}`)
+      if (panel) {
+        panel.api.setActive()
+      }
+    },
+    [dockApi]
+  )
+
+  // Update terminal panel params
+  useEffect(() => {
+    if (!dockApi) return
+    const terminalPanel = dockApi.getPanel('terminal')
+    if (terminalPanel) {
+      terminalPanel.api.updateParameters({
+        collapsed: collapsed.terminal,
+        onToggleCollapse: toggleTerminal,
+        approvals,
+        onFocusReview: focusReviewPanel,
+        onDecision: handleDecision,
+        normalizeApprovalPath,
+      })
+    }
+  }, [dockApi, collapsed.terminal, toggleTerminal, approvals, focusReviewPanel, handleDecision, normalizeApprovalPath])
 
   // Restore saved tabs when dockApi becomes available
   const hasRestoredTabs = useRef(false)

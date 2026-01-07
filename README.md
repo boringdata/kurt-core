@@ -4,6 +4,8 @@
 
 Kurt helps B2B marketers and content teams create accurate, grounded content using AI. It works with [Claude Code](https://code.claude.com) or [Cursor](https://cursor.com) to produce blog posts, product pages, documentation, positioning docs, and more—all[README.md](http://README.md) backed by your source uv.lockmaterial and guided by customizable templates.
 
+test
+
 ## Table of Contents
 
 -   [What Kurt Does](#what-kurt-does)

@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect } from 'react'
 import Editor from '../components/Editor'
-import ApprovalPanel from '../components/ApprovalPanel'
 
 const apiBase = import.meta.env.VITE_API_URL || ''
 const apiUrl = (path) => `${apiBase}${path}`
@@ -25,9 +24,6 @@ export default function EditorPanel({ params: initialParams, api }) {
     contentVersion: initialVersion,
     onContentChange,
     onDirtyChange,
-    activeApproval,
-    onDecision,
-    onOpenFile,
   } = params || {}
 
   const [content, setContent] = useState(initialContent || '')
@@ -38,7 +34,6 @@ export default function EditorPanel({ params: initialParams, api }) {
   const [showDiff, setShowDiff] = useState(false)
   const [diffText, setDiffText] = useState('')
   const [diffError, setDiffError] = useState('')
-  const [approvalFeedback, setApprovalFeedback] = useState('')
 
   // Sync content from parent when it changes
   useEffect(() => {
@@ -185,68 +180,19 @@ export default function EditorPanel({ params: initialParams, api }) {
         </div>
       )}
 
-      {activeApproval && (
-        <div className="editor-approval-banner">
-          <span className="approval-badge">{activeApproval.tool_name}</span>
-          <span className="approval-info">
-            {activeApproval.session_provider && (
-              <span className="approval-provider">{activeApproval.session_provider}</span>
-            )}
-            {activeApproval.session_name && (
-              <span className="approval-session-name">{activeApproval.session_name}</span>
-            )}
-            {activeApproval.session_id && (
-              <span className="approval-session-id">{activeApproval.session_id.slice(0, 8)}</span>
-            )}
-            {!activeApproval.session_provider && !activeApproval.session_name && !activeApproval.session_id && (
-              'Approval Required'
-            )}
-          </span>
-          <div className="approval-banner-actions">
-            <button
-              type="button"
-              className="approval-deny"
-              onClick={() => {
-                console.log('Deny clicked', { id: activeApproval.id, onDecision, approvalFeedback })
-                onDecision?.(activeApproval.id, 'deny', approvalFeedback)
-              }}
-            >
-              Deny
-            </button>
-            <button
-              type="button"
-              className="approval-allow"
-              onClick={() => {
-                console.log('Allow clicked', { id: activeApproval.id, onDecision, approvalFeedback })
-                onDecision?.(activeApproval.id, 'allow', approvalFeedback)
-              }}
-            >
-              Allow
-            </button>
-          </div>
-        </div>
-      )}
-
-      {activeApproval ? (
-        <ApprovalPanel
-          request={activeApproval}
-          onFeedbackChange={setApprovalFeedback}
-        />
-      ) : (
-        <Editor
-          content={content}
-          contentVersion={contentVersion}
-          isDirty={isDirty}
-          isSaving={isSaving}
-          onChange={handleChange}
-          onAutoSave={handleAutoSave}
-          showDiffToggle={Boolean(path)}
-          diffEnabled={showDiff}
-          diffText={diffText}
-          diffError={diffError}
-          onToggleDiff={toggleDiff}
-        />
-      )}
+      <Editor
+        content={content}
+        contentVersion={contentVersion}
+        isDirty={isDirty}
+        isSaving={isSaving}
+        onChange={handleChange}
+        onAutoSave={handleAutoSave}
+        showDiffToggle={Boolean(path)}
+        diffEnabled={showDiff}
+        diffText={diffText}
+        diffError={diffError}
+        onToggleDiff={toggleDiff}
+      />
     </div>
   )
 }

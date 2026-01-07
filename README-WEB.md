@@ -1,4 +1,4 @@
-# Kurt Web UI
+# Kurt Studio
 
 A web-based IDE interface for Kurt, featuring a rich text editor powered by Tiptap and a FastAPI backend.
 
@@ -46,6 +46,8 @@ This module provides the web UI implementation for Kurt:
 -   `POST /api/approval/request` - Create approval request
 -   `GET /api/approval/pending` - Get pending approvals
 -   `POST /api/approval/decision` - Approve/deny request
+-   `POST /api/approval/pretool` - PreToolUse hook endpoint (blocks until decision)
+-   `POST /api/approval/posttool` - PostToolUse cleanup hook
 -   `WebSocket /ws/pty` - Terminal PTY session
 
 ### Frontend (React/Vite/Tiptap)
@@ -126,20 +128,31 @@ export KURT_S3_BUCKET=my-bucket
 export KURT_S3_PREFIX=projects/kurt/  # optional
 ```
 
-### Claude PreToolUse Hook (edit approval)
+### Claude Hooks (edit approval)
 
-To intercept Claude edits and show approvals in the web UI, enable the hook:
+To intercept Claude edits and show approvals in the web UI, enable the hooks:
 
 ```json
 {
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Edit|Write",
+        "matcher": "Edit|Write|Update",
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ./scripts/claude_pretool_hook.py"
+            "command": "curl -sS -H \"Content-Type: application/json\" -H \"X-Kurt-Session-Provider: $KURT_SESSION_PROVIDER\" -H \"X-Kurt-Session-Name: $KURT_SESSION_NAME\" -X POST \"${KURT_WEB_API_URL:-http://127.0.0.1:8765}/api/approval/pretool\" --data-binary @- || printf '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"Approval service unavailable.\"}}'"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|Update",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -sS -H \"Content-Type: application/json\" -H \"X-Kurt-Session-Provider: $KURT_SESSION_PROVIDER\" -H \"X-Kurt-Session-Name: $KURT_SESSION_NAME\" -X POST \"${KURT_WEB_API_URL:-http://127.0.0.1:8765}/api/approval/posttool\" --data-binary @- >/dev/null || true"
           }
         ]
       }
@@ -147,6 +160,8 @@ To intercept Claude edits and show approvals in the web UI, enable the hook:
   }
 }
 ```
+
+`KURT_WEB_API_URL` defaults to `http://127.0.0.1:8765`; override it if the API runs on a different host/port.
 
 ## Project Structure
 
