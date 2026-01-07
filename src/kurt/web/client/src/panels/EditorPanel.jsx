@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import Editor from '../components/Editor'
 import CodeViewer from '../components/CodeViewer'
+import GitDiff from '../components/GitDiff'
 
 const apiBase = import.meta.env.VITE_API_URL || ''
 const apiUrl = (path) => `${apiBase}${path}`
@@ -32,6 +33,7 @@ export default function EditorPanel({ params: initialParams, api }) {
     contentVersion: initialVersion,
     onContentChange,
     onDirtyChange,
+    initialMode,
   } = params || {}
 
   const [content, setContent] = useState(initialContent || '')
@@ -39,10 +41,24 @@ export default function EditorPanel({ params: initialParams, api }) {
   const [isDirty, setIsDirty] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [externalChange, setExternalChange] = useState(false)
-  const [editorMode, setEditorMode] = useState('rendered') // 'rendered' | 'diff' | 'git-diff'
+  const [editorMode, setEditorMode] = useState(initialMode || 'rendered') // 'rendered' | 'diff' | 'git-diff'
   const [diffText, setDiffText] = useState('')
   const [diffError, setDiffError] = useState('')
   const [originalContent, setOriginalContent] = useState(null)
+  const [initialModeApplied, setInitialModeApplied] = useState(false)
+
+  // Apply initial mode when params change (e.g., opening from git changes)
+  useEffect(() => {
+    if (initialMode && !initialModeApplied) {
+      setEditorMode(initialMode)
+      setInitialModeApplied(true)
+      if (initialMode === 'git-diff') {
+        loadDiff()
+      } else if (initialMode === 'diff') {
+        loadOriginalContent()
+      }
+    }
+  }, [initialMode, initialModeApplied])
 
   // Sync content from parent when it changes
   useEffect(() => {
@@ -232,7 +248,40 @@ export default function EditorPanel({ params: initialParams, api }) {
           onModeChange={handleModeChange}
         />
       ) : (
-        <CodeViewer content={content} filename={filename} className="editor-code-viewer" />
+        <div className="code-viewer-container">
+          {/* Mode selector for non-markdown files */}
+          <div className="code-viewer-toolbar">
+            <div className="editor-mode-selector">
+              <button
+                type="button"
+                className={`mode-btn ${editorMode === 'rendered' ? 'active' : ''}`}
+                onClick={() => handleModeChange('rendered')}
+              >
+                Code
+              </button>
+              <button
+                type="button"
+                className={`mode-btn ${editorMode === 'git-diff' ? 'active' : ''}`}
+                onClick={() => handleModeChange('git-diff')}
+              >
+                Diff
+              </button>
+            </div>
+          </div>
+          {editorMode === 'git-diff' ? (
+            <div className="code-diff-view">
+              {diffError && <div className="diff-error">{diffError}</div>}
+              {!diffError && !diffText && <div className="diff-empty">No git changes for this file.</div>}
+              {!diffError && diffText && (
+                <div className="diff-raw">
+                  <pre className="diff-raw-content">{diffText}</pre>
+                </div>
+              )}
+            </div>
+          ) : (
+            <CodeViewer content={content} filename={filename} className="editor-code-viewer" />
+          )}
+        </div>
       )}
     </div>
   )
