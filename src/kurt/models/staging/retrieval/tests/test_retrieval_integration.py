@@ -20,7 +20,7 @@ class TestRetrievalPipelineIntegration:
 
         # Verify motherduck data is loaded
         session = get_session()
-        entity_count = session.execute(text("SELECT COUNT(*) FROM entities")).scalar()
+        entity_count = session.execute(text("SELECT COUNT(*) FROM graph_entities")).scalar()
         assert entity_count > 0, "Entities should be loaded"
 
         # Search for DuckDB entity
@@ -78,19 +78,19 @@ class TestRetrievalPipelineIntegration:
         # Query for key entities
         result = session.execute(
             text(
-                "SELECT name, entity_type FROM entities WHERE name IN ('DuckDB', 'MotherDuck', 'SQLite')"
+                "SELECT name, entity_type FROM graph_entities WHERE name IN ('DuckDB', 'MotherDuck', 'SQLite')"
             )
         ).fetchall()
 
         entity_names = [r[0] for r in result]
-        assert "DuckDB" in entity_names, "DuckDB should be in entities"
+        assert "DuckDB" in entity_names, "DuckDB should be in graph_entities"
 
     def test_document_entity_relationships(self, motherduck_project):
         """Verify document-entity relationships are loaded."""
         session = get_session()
 
         # Count relationships
-        count = session.execute(text("SELECT COUNT(*) FROM document_entities")).scalar()
+        count = session.execute(text("SELECT COUNT(*) FROM graph_document_entities")).scalar()
         assert count > 0, "Document-entity relationships should be loaded"
 
         # Verify we can join documents to entities
@@ -98,8 +98,8 @@ class TestRetrievalPipelineIntegration:
             text("""
                 SELECT d.title, e.name
                 FROM documents d
-                JOIN document_entities de ON d.id = de.document_id
-                JOIN entities e ON e.id = de.entity_id
+                JOIN graph_document_entities de ON d.id = de.document_id
+                JOIN graph_entities e ON e.id = de.entity_id
                 LIMIT 5
             """)
         ).fetchall()
