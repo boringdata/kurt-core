@@ -28,10 +28,15 @@ export default function FrontmatterEditor({
   onChange,
   isCollapsed,
   onToggleCollapse,
+  isDiffMode = false,
+  originalFrontmatter = null,
 }) {
   const [localValue, setLocalValue] = useState(frontmatter || '')
   const [hasError, setHasError] = useState(false)
   const debounceRef = useRef(null)
+
+  // Check if frontmatter has changed from original
+  const hasChanges = isDiffMode && originalFrontmatter !== null && originalFrontmatter !== frontmatter
 
   // Sync from parent when frontmatter changes externally
   useEffect(() => {
@@ -101,7 +106,28 @@ export default function FrontmatterEditor({
     []
   )
 
+  // Render highlighted YAML for read-only display (original side in diff)
+  const renderHighlightedYaml = useCallback((code) => (
+    <Highlight theme={themes.vsDark} code={code || ''} language="yaml">
+      {({ tokens, getLineProps, getTokenProps }) => (
+        <pre className="frontmatter-diff-pre">
+          {tokens.map((line, i) => (
+            <div key={i} {...getLineProps({ line })} style={{ display: 'table-row' }}>
+              <span className="frontmatter-line-number">{i + 1}</span>
+              <span style={{ display: 'table-cell' }}>
+                {line.map((token, key) => (
+                  <span key={key} {...getTokenProps({ token })} />
+                ))}
+              </span>
+            </div>
+          ))}
+        </pre>
+      )}
+    </Highlight>
+  ), [])
+
   const hasFrontmatter = frontmatter && frontmatter.trim() !== ''
+  const hasOriginalFrontmatter = originalFrontmatter && originalFrontmatter.trim() !== ''
 
   return (
     <div className={`frontmatter-editor ${isCollapsed ? 'collapsed' : ''} ${hasError ? 'has-error' : ''}`}>
@@ -123,6 +149,9 @@ export default function FrontmatterEditor({
         {hasFrontmatter && (
           <span className="frontmatter-badge">YAML</span>
         )}
+        {hasChanges && (
+          <span className="frontmatter-changed-badge">Changed</span>
+        )}
         {hasError && (
           <span className="frontmatter-error-badge">Invalid</span>
         )}
@@ -133,31 +162,78 @@ export default function FrontmatterEditor({
 
       {!isCollapsed && (
         <div className="frontmatter-content">
-          <div className="frontmatter-editor-wrapper">
-            {!localValue && (
-              <div className="frontmatter-placeholder">
-                title: My Document{'\n'}
-                date: 2024-01-01{'\n'}
-                tags: [tag1, tag2]
+          {/* Side-by-side diff view when in diff mode with changes */}
+          {hasChanges ? (
+            <div className="frontmatter-diff-container">
+              <div className="frontmatter-diff-side frontmatter-diff-original">
+                <div className="frontmatter-diff-label">Original</div>
+                <div className="frontmatter-diff-content">
+                  {hasOriginalFrontmatter ? (
+                    renderHighlightedYaml(originalFrontmatter)
+                  ) : (
+                    <div className="frontmatter-diff-empty">No metadata</div>
+                  )}
+                </div>
               </div>
-            )}
-            <Editor
-              value={localValue}
-              onValueChange={handleChange}
-              highlight={highlightCode}
-              padding={12}
-              className="frontmatter-input"
-              textareaClassName="frontmatter-textarea"
-              style={{
-                fontFamily: "'IBM Plex Mono', Monaco, 'Courier New', monospace",
-                fontSize: 12,
-                lineHeight: 1.5,
-                backgroundColor: '#1e1e1e',
-                color: '#d4d4d4',
-                minHeight: '60px',
-              }}
-            />
-          </div>
+              <div className="frontmatter-diff-side frontmatter-diff-current">
+                <div className="frontmatter-diff-label">Current</div>
+                <div className="frontmatter-diff-content">
+                  <div className="frontmatter-editor-wrapper">
+                    {!localValue && (
+                      <div className="frontmatter-placeholder">
+                        title: My Document{'\n'}
+                        date: 2024-01-01{'\n'}
+                        tags: [tag1, tag2]
+                      </div>
+                    )}
+                    <Editor
+                      value={localValue}
+                      onValueChange={handleChange}
+                      highlight={highlightCode}
+                      padding={12}
+                      className="frontmatter-input"
+                      textareaClassName="frontmatter-textarea"
+                      style={{
+                        fontFamily: "'IBM Plex Mono', Monaco, 'Courier New', monospace",
+                        fontSize: 12,
+                        lineHeight: 1.5,
+                        backgroundColor: '#1e1e1e',
+                        color: '#d4d4d4',
+                        minHeight: '60px',
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* Normal single editor view */
+            <div className="frontmatter-editor-wrapper">
+              {!localValue && (
+                <div className="frontmatter-placeholder">
+                  title: My Document{'\n'}
+                  date: 2024-01-01{'\n'}
+                  tags: [tag1, tag2]
+                </div>
+              )}
+              <Editor
+                value={localValue}
+                onValueChange={handleChange}
+                highlight={highlightCode}
+                padding={12}
+                className="frontmatter-input"
+                textareaClassName="frontmatter-textarea"
+                style={{
+                  fontFamily: "'IBM Plex Mono', Monaco, 'Courier New', monospace",
+                  fontSize: 12,
+                  lineHeight: 1.5,
+                  backgroundColor: '#1e1e1e',
+                  color: '#d4d4d4',
+                  minHeight: '60px',
+                }}
+              />
+            </div>
+          )}
         </div>
       )}
     </div>

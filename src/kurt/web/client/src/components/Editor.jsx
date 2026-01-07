@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useCallback, useState } from 'react'
+import { useEffect, useMemo, useRef, useCallback, useState } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Underline from '@tiptap/extension-underline'
@@ -822,6 +822,8 @@ export default function Editor({
           onChange={handleFrontmatterChange}
           isCollapsed={frontmatterCollapsed}
           onToggleCollapse={() => setFrontmatterCollapsed(!frontmatterCollapsed)}
+          isDiffMode={editorMode === 'diff'}
+          originalFrontmatter={originalContent ? parseFrontmatter(originalContent).frontmatter : null}
         />
       )}
 
