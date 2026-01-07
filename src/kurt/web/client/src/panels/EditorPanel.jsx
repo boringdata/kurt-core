@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import Editor from '../components/Editor'
-import CodeViewer from '../components/CodeViewer'
+import CodeEditor from '../components/CodeEditor'
 
 const apiBase = import.meta.env.VITE_API_URL || ''
 const apiUrl = (path) => `${apiBase}${path}`
@@ -232,7 +232,16 @@ export default function EditorPanel({ params: initialParams, api }) {
           onModeChange={handleModeChange}
         />
       ) : (
-        <CodeViewer content={content} filename={filename} className="editor-code-viewer" />
+        <CodeEditor
+          content={content}
+          contentVersion={contentVersion}
+          filename={filename}
+          isDirty={isDirty}
+          isSaving={isSaving}
+          onChange={handleChange}
+          onAutoSave={handleAutoSave}
+          className="editor-code-editor"
+        />
       )}
     </div>
   )
