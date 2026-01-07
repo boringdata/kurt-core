@@ -2228,3 +2228,256 @@ html, body, #root {
 .editor-panel-content .code-viewer {
   margin: 0;
 }
+
+/* ========== Sidebar View Toggle ========== */
+
+.sidebar-view-toggle {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: #e5e7eb;
+  border-radius: 4px;
+  padding: 2px;
+}
+
+.view-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  color: #6b7280;
+  transition: all 0.15s;
+}
+
+.view-toggle-btn:hover {
+  color: #374151;
+}
+
+.view-toggle-btn.active {
+  background: #fff;
+  color: #111827;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+}
+
+/* ========== Git Changes View ========== */
+
+.git-changes-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+  font-size: 12px;
+}
+
+.git-changes-loading,
+.git-changes-error {
+  padding: 16px;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 12px;
+}
+
+.git-changes-error {
+  color: #ef4444;
+}
+
+.git-changes-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  color: #9ca3af;
+}
+
+.git-changes-empty-icon {
+  font-size: 20px;
+  color: #16a34a;
+}
+
+.git-changes-summary {
+  padding: 6px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #6b7280;
+  background: #f3f4f6;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.git-changes-list {
+  flex: 1;
+  overflow: auto;
+}
+
+.git-changes-group {
+  margin-bottom: 4px;
+}
+
+.git-changes-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #6b7280;
+  background: #f9fafb;
+}
+
+.git-changes-group-label {
+  flex: 1;
+}
+
+.git-change-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 5px 8px 5px 16px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.git-change-item:hover {
+  background: #f3f4f6;
+}
+
+.git-change-item-active {
+  background: #e0e7ff;
+}
+
+.git-change-item-active:hover {
+  background: #c7d2fe;
+}
+
+.git-change-icon {
+  font-size: 11px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.git-change-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.git-change-name {
+  font-size: 12px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-change-path {
+  font-size: 10px;
+  color: #9ca3af;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ========== Diff Viewer Panel ========== */
+
+.diff-viewer-panel {
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+}
+
+.diff-viewer-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid #e5e7eb;
+  background: #f9fafb;
+  flex-shrink: 0;
+}
+
+.diff-viewer-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.diff-viewer-filename {
+  font-size: 13px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.diff-viewer-mode-selector {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: #e5e7eb;
+  border-radius: 4px;
+  padding: 2px;
+}
+
+.diff-viewer-mode-selector .mode-btn {
+  padding: 4px 10px;
+  border: none;
+  background: transparent;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #6b7280;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.diff-viewer-mode-selector .mode-btn:hover {
+  color: #374151;
+}
+
+.diff-viewer-mode-selector .mode-btn.active {
+  background: #fff;
+  color: #111827;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+}
+
+.diff-viewer-raw-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: #6b7280;
+  padding: 4px 8px;
+}
+
+.diff-viewer-content {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
+
+.diff-styled {
+  height: 100%;
+}
+
+.diff-raw {
+  height: 100%;
+  overflow: auto;
+  background: #1f2937;
+}
+
+.diff-raw-content {
+  margin: 0;
+  padding: 12px 16px;
+  font-family: 'IBM Plex Mono', Monaco, 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #e5e7eb;
+  white-space: pre;
+  overflow-x: auto;
+}

@@ -9,6 +9,7 @@ import EmptyPanel from './panels/EmptyPanel'
 import ReviewPanel from './panels/ReviewPanel'
 import WorkflowsPanel from './panels/WorkflowsPanel'
 import WorkflowTerminalPanel from './panels/WorkflowTerminalPanel'
+import DiffViewerPanel from './panels/DiffViewerPanel'
 import DiffHighlightPOC from './components/DiffHighlightPOC'
 import TiptapDiffPOC from './components/TiptapDiffPOC'
 
@@ -26,6 +27,7 @@ const components = {
   review: ReviewPanel,
   workflows: WorkflowsPanel,
   workflowTerminal: WorkflowTerminalPanel,
+  diffViewer: DiffViewerPanel,
 }
 
 const KNOWN_COMPONENTS = new Set(Object.keys(components))
@@ -183,6 +185,7 @@ export default function App() {
   const [approvalsLoaded, setApprovalsLoaded] = useState(false)
   const [gitStatus, setGitStatus] = useState({})
   const [activeFile, setActiveFile] = useState(null)
+  const [activeDiffFile, setActiveDiffFile] = useState(null)
   const [collapsed, setCollapsed] = useState(loadCollapsedState)
   const panelSizesRef = useRef(loadPanelSizes())
   const dismissedApprovalsRef = useRef(new Set())
@@ -560,6 +563,60 @@ export default function App() {
     [dockApi, openFileAtPosition]
   )
 
+  const openDiff = useCallback(
+    (path, status) => {
+      if (!dockApi) return
+
+      const panelId = `diff-${path}`
+      const existingPanel = dockApi.getPanel(panelId)
+
+      if (existingPanel) {
+        existingPanel.api.setActive()
+        setActiveDiffFile(path)
+        return
+      }
+
+      // Close empty panel and add diff viewer
+      const emptyPanel = dockApi.getPanel('empty-center')
+      const workflowsPanel = dockApi.getPanel('workflows')
+      const centerGroup = centerGroupRef.current
+
+      let position
+      if (emptyPanel?.group) {
+        position = { referenceGroup: emptyPanel.group }
+      } else if (centerGroup) {
+        position = { referenceGroup: centerGroup }
+      } else if (workflowsPanel?.group) {
+        position = { direction: 'above', referenceGroup: workflowsPanel.group }
+      } else {
+        position = { direction: 'right', referencePanel: 'filetree' }
+      }
+
+      const panel = dockApi.addPanel({
+        id: panelId,
+        component: 'diffViewer',
+        title: `Diff: ${getFileName(path)}`,
+        position,
+        params: {
+          path,
+          status,
+        },
+      })
+
+      if (emptyPanel) {
+        emptyPanel.api.close()
+      }
+
+      if (panel?.group) {
+        panel.group.header.hidden = false
+        centerGroupRef.current = panel.group
+      }
+
+      setActiveDiffFile(path)
+    },
+    [dockApi]
+  )
+
   useEffect(() => {
     if (!dockApi || !approvalsLoaded) return
     const pendingIds = new Set(approvals.map((req) => req.id))
@@ -885,8 +942,14 @@ export default function App() {
       if (panel && panel.id && panel.id.startsWith('editor-')) {
         const path = panel.id.replace('editor-', '')
         setActiveFile(path)
+        setActiveDiffFile(null)
+      } else if (panel && panel.id && panel.id.startsWith('diff-')) {
+        const path = panel.id.replace('diff-', '')
+        setActiveDiffFile(path)
+        setActiveFile(null)
       } else {
         setActiveFile(null)
+        setActiveDiffFile(null)
       }
     })
     return () => disposable.dispose()
@@ -900,13 +963,15 @@ export default function App() {
       filetreePanel.api.updateParameters({
         onOpenFile: openFile,
         onOpenFileToSide: openFileToSide,
+        onOpenDiff: openDiff,
         projectRoot,
         activeFile,
+        activeDiffFile,
         collapsed: collapsed.filetree,
         onToggleCollapse: toggleFiletree,
       })
     }
-  }, [dockApi, openFile, openFileToSide, projectRoot, activeFile, collapsed.filetree, toggleFiletree])
+  }, [dockApi, openFile, openFileToSide, openDiff, projectRoot, activeFile, activeDiffFile, collapsed.filetree, toggleFiletree])
 
   // Helper to focus a review panel
   const focusReviewPanel = useCallback(
