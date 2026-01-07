@@ -3,7 +3,7 @@ import React, { useEffect, useState, useRef } from 'react'
 const apiBase = import.meta.env.VITE_API_URL || ''
 const apiUrl = (path) => `${apiBase}${path}`
 
-export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRenamed, onFileMoved, projectRoot, activeFile }) {
+export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRenamed, onFileMoved, projectRoot, activeFile, creatingFile, onFileCreated, onCancelCreate }) {
   const [entries, setEntries] = useState([])
   const [expandedDirs, setExpandedDirs] = useState({})
   const [searchQuery, setSearchQuery] = useState('')
@@ -13,7 +13,9 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
   const [contextMenu, setContextMenu] = useState(null)
   const [renaming, setRenaming] = useState(null)
   const [dragOver, setDragOver] = useState(null)
+  const [newFileInput, setNewFileInput] = useState(null) // { parentDir: string, name: string }
   const renameInputRef = useRef(null)
+  const newFileInputRef = useRef(null)
 
   const fetchDir = (dirPath) => {
     return fetch(apiUrl(`/api/tree?path=${encodeURIComponent(dirPath)}`))
@@ -52,8 +54,17 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
     fetchDir('.').then(setEntries)
     fetchGitStatus()
 
-    const interval = setInterval(fetchGitStatus, 5000)
-    return () => clearInterval(interval)
+    // Poll for git status changes
+    const gitInterval = setInterval(fetchGitStatus, 5000)
+    // Poll for file tree changes (new/deleted files)
+    const treeInterval = setInterval(() => {
+      fetchDir('.').then(setEntries)
+    }, 3000)
+
+    return () => {
+      clearInterval(gitInterval)
+      clearInterval(treeInterval)
+    }
   }, [])
 
   useEffect(() => {
@@ -86,6 +97,19 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
       renameInputRef.current.select()
     }
   }, [renaming])
+
+  useEffect(() => {
+    if (newFileInput && newFileInputRef.current) {
+      newFileInputRef.current.focus()
+    }
+  }, [newFileInput])
+
+  // Handle creatingFile prop from parent (header button)
+  useEffect(() => {
+    if (creatingFile) {
+      setNewFileInput({ parentDir: '', name: '' })
+    }
+  }, [creatingFile])
 
   // Close context menu on click outside
   useEffect(() => {
@@ -223,6 +247,61 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
     }
   }
 
+  const handleNewFile = (parentDir = '') => {
+    setContextMenu(null)
+    // If parentDir is specified and it's a folder, expand it
+    if (parentDir && !expandedDirs[parentDir]) {
+      fetchDir(parentDir).then((children) => {
+        setExpandedDirs((prev) => ({
+          ...prev,
+          [parentDir]: children,
+        }))
+      })
+    }
+    setNewFileInput({ parentDir, name: '' })
+  }
+
+  const handleNewFileSubmit = async () => {
+    if (!newFileInput || !newFileInput.name.trim()) {
+      setNewFileInput(null)
+      onCancelCreate?.()
+      return
+    }
+
+    const fileName = newFileInput.name.trim()
+    const filePath = newFileInput.parentDir
+      ? `${newFileInput.parentDir}/${fileName}`
+      : fileName
+
+    try {
+      const res = await fetch(apiUrl(`/api/file?path=${encodeURIComponent(filePath)}`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: '' }),
+      })
+      if (res.ok) {
+        setNewFileInput(null)
+        await refreshTree()
+        onFileCreated?.(filePath)
+      } else {
+        const data = await res.json()
+        alert(`Failed to create file: ${data.detail || 'Unknown error'}`)
+      }
+    } catch (err) {
+      alert(`Failed to create file: ${err.message}`)
+    }
+  }
+
+  const handleNewFileKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      handleNewFileSubmit()
+    } else if (e.key === 'Escape') {
+      setNewFileInput(null)
+      onCancelCreate?.()
+    }
+  }
+
   const handleSearchResultClick = (result) => {
     onOpen(result.path)
     setSearchQuery('')
@@ -247,7 +326,7 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
 
     const statusConfig = {
       M: { label: 'M', className: 'git-status-modified', title: 'Modified' },
-      U: { label: 'U', className: 'git-status-untracked', title: 'Untracked' },
+      U: { label: 'N', className: 'git-status-new', title: 'New' },
       A: { label: 'A', className: 'git-status-added', title: 'Added' },
       D: { label: 'D', className: 'git-status-deleted', title: 'Deleted' },
     }
@@ -346,7 +425,30 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
     }
   }
 
-  const renderEntries = (items, depth = 0) => {
+  const renderNewFileInput = (depth, parentDir) => {
+    if (!newFileInput || newFileInput.parentDir !== parentDir) return null
+    return (
+      <div
+        className="file-item file-item-new"
+        style={{ paddingLeft: `${depth * 16 + 8}px` }}
+      >
+        <span className="file-item-icon">📄</span>
+        <input
+          ref={newFileInputRef}
+          type="text"
+          className="rename-input"
+          placeholder="filename"
+          value={newFileInput.name}
+          onChange={(ev) => setNewFileInput({ ...newFileInput, name: ev.target.value })}
+          onKeyDown={handleNewFileKeyDown}
+          onBlur={handleNewFileSubmit}
+          onClick={(ev) => ev.stopPropagation()}
+        />
+      </div>
+    )
+  }
+
+  const renderEntries = (items, depth = 0, parentDir = '') => {
     return items.map((e) => {
       const fileStatus = e.is_dir ? null : getFileStatus(e.path)
       const dirHasChanges = e.is_dir && getDirStatus(e.path)
@@ -389,7 +491,12 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
             {renderStatusBadge(fileStatus)}
             {dirHasChanges && <span className="dir-changes-dot" title="Contains changes" />}
           </div>
-          {e.is_dir && expandedDirs[e.path] && renderEntries(expandedDirs[e.path], depth + 1)}
+          {e.is_dir && expandedDirs[e.path] && (
+            <>
+              {renderNewFileInput(depth + 1, e.path)}
+              {renderEntries(expandedDirs[e.path], depth + 1, e.path)}
+            </>
+          )}
         </React.Fragment>
       )
     })
@@ -408,8 +515,22 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
     )
   }
 
+  const handleRootContextMenu = (event) => {
+    // Only trigger if clicking on the tree container itself, not on file items
+    if (event.target.closest('.file-item') || event.target.closest('.search-box')) {
+      return
+    }
+    event.preventDefault()
+    event.stopPropagation()
+    setContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      entry: null, // null indicates root-level context menu
+    })
+  }
+
   return (
-    <div className="file-tree">
+    <div className="file-tree" onContextMenu={handleRootContextMenu}>
       <div className="search-box">
         <svg className="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <circle cx="11" cy="11" r="8"/>
@@ -468,7 +589,10 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
           >
             Project {dragOver === 'root' && <span className="drop-hint">(drop here)</span>}
           </h3>
-          <div>{renderEntries(entries)}</div>
+          <div>
+            {renderNewFileInput(0, '')}
+            {renderEntries(entries)}
+          </div>
         </>
       )}
 
@@ -478,27 +602,46 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
           style={{ top: contextMenu.y, left: contextMenu.x }}
           onClick={(e) => e.stopPropagation()}
         >
-          {!contextMenu.entry.is_dir && (
+          {/* Root-level context menu (no entry) */}
+          {!contextMenu.entry ? (
+            <div className="context-menu-item" onClick={() => handleNewFile('')}>
+              New File
+            </div>
+          ) : (
             <>
-              <div className="context-menu-item" onClick={() => { onOpenToSide?.(contextMenu.entry.path); setContextMenu(null) }}>
-                Open to the Side
+              {!contextMenu.entry.is_dir && (
+                <>
+                  <div className="context-menu-item" onClick={() => { onOpenToSide?.(contextMenu.entry.path); setContextMenu(null) }}>
+                    Open to the Side
+                  </div>
+                  <div className="context-menu-separator" />
+                </>
+              )}
+              <div className="context-menu-item" onClick={() => {
+                // For folders: create inside folder. For files: create in same directory
+                const parentDir = contextMenu.entry.is_dir
+                  ? contextMenu.entry.path
+                  : (contextMenu.entry.path.includes('/') ? contextMenu.entry.path.substring(0, contextMenu.entry.path.lastIndexOf('/')) : '')
+                handleNewFile(parentDir)
+              }}>
+                New File
               </div>
               <div className="context-menu-separator" />
+              <div className="context-menu-item" onClick={() => handleCopyPath(false)}>
+                Copy Relative Path
+              </div>
+              <div className="context-menu-item" onClick={() => handleCopyPath(true)}>
+                Copy Path
+              </div>
+              <div className="context-menu-separator" />
+              <div className="context-menu-item" onClick={handleRename}>
+                Rename
+              </div>
+              <div className="context-menu-item context-menu-danger" onClick={handleDelete}>
+                Delete
+              </div>
             </>
           )}
-          <div className="context-menu-item" onClick={() => handleCopyPath(false)}>
-            Copy Relative Path
-          </div>
-          <div className="context-menu-item" onClick={() => handleCopyPath(true)}>
-            Copy Path
-          </div>
-          <div className="context-menu-separator" />
-          <div className="context-menu-item" onClick={handleRename}>
-            Rename
-          </div>
-          <div className="context-menu-item context-menu-danger" onClick={handleDelete}>
-            Delete
-          </div>
         </div>
       )}
     </div>

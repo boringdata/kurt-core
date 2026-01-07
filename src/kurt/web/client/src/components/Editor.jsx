@@ -8,10 +8,292 @@ import TaskList from '@tiptap/extension-task-list'
 import TaskItem from '@tiptap/extension-task-item'
 import TextAlign from '@tiptap/extension-text-align'
 import Highlight from '@tiptap/extension-highlight'
+import { Extension } from '@tiptap/core'
+import { Decoration, DecorationSet } from '@tiptap/pm/view'
+import { Plugin, PluginKey } from '@tiptap/pm/state'
+import { diffLines, diffWords } from 'diff'
 import MarkdownIt from 'markdown-it'
 import TurndownService from 'turndown'
 import { gfm } from 'turndown-plugin-gfm'
 import GitDiff from './GitDiff'
+
+// Build a map of line changes with word-level diff info
+function buildDiffMap(originalContent, currentContent) {
+  // If content is identical, no changes
+  if (originalContent === currentContent) {
+    return { deletedLines: [], addedLineNumbers: new Set(), wordDiffs: new Map() }
+  }
+
+  // If no original content (new file), mark ALL lines as added
+  if (!originalContent) {
+    const lines = currentContent ? currentContent.split('\n') : []
+    const addedLineNumbers = new Set()
+    for (let i = 1; i <= lines.length; i++) {
+      addedLineNumbers.add(i)
+    }
+    return { deletedLines: [], addedLineNumbers, wordDiffs: new Map() }
+  }
+
+  const changes = diffLines(originalContent, currentContent)
+  const deletedLines = []
+  const addedLineNumbers = new Set()
+  const wordDiffs = new Map()
+
+  let originalLineNum = 0
+  let currentLineNum = 0
+  let pendingDeleted = []
+  let pendingDeletedTexts = []
+
+  changes.forEach(change => {
+    const lines = change.value.split('\n')
+    if (lines[lines.length - 1] === '') lines.pop()
+
+    if (change.removed) {
+      lines.forEach(text => {
+        pendingDeleted.push(text)
+        pendingDeletedTexts.push(text)
+        originalLineNum++
+      })
+    } else if (change.added) {
+      lines.forEach((text, idx) => {
+        currentLineNum++
+        addedLineNumbers.add(currentLineNum)
+
+        if (idx < pendingDeletedTexts.length) {
+          const oldText = pendingDeletedTexts[idx]
+          const wordChanges = diffWords(oldText, text)
+          wordDiffs.set(currentLineNum, wordChanges)
+        }
+
+        if (idx === 0 && pendingDeleted.length > 0) {
+          const deletedWithWordDiffs = pendingDeleted.map((delText, delIdx) => {
+            if (delIdx < lines.length) {
+              return {
+                text: delText,
+                wordChanges: diffWords(delText, lines[delIdx])
+              }
+            }
+            return { text: delText, wordChanges: null }
+          })
+
+          deletedLines.push({
+            beforeLine: currentLineNum,
+            texts: pendingDeleted,
+            wordDiffs: deletedWithWordDiffs
+          })
+          pendingDeleted = []
+          pendingDeletedTexts = []
+        }
+      })
+    } else {
+      if (pendingDeleted.length > 0) {
+        deletedLines.push({
+          beforeLine: currentLineNum + 1,
+          texts: [...pendingDeleted],
+          wordDiffs: pendingDeleted.map(t => ({ text: t, wordChanges: null }))
+        })
+        pendingDeleted = []
+        pendingDeletedTexts = []
+      }
+      lines.forEach(() => {
+        originalLineNum++
+        currentLineNum++
+      })
+    }
+  })
+
+  if (pendingDeleted.length > 0) {
+    deletedLines.push({
+      beforeLine: currentLineNum + 1,
+      texts: [...pendingDeleted],
+      wordDiffs: pendingDeleted.map(t => ({ text: t, wordChanges: null }))
+    })
+  }
+
+  return { deletedLines, addedLineNumbers, wordDiffs }
+}
+
+// Create Tiptap extension for diff decorations
+// Uses a ref to access the current diff state reactively
+function createDiffExtension(diffStateRef, markdownParser) {
+  return Extension.create({
+    name: 'diffDecorations',
+
+    addProseMirrorPlugins() {
+      return [
+        new Plugin({
+          key: new PluginKey('diffDecorations'),
+          props: {
+            decorations(state) {
+              // Check if diff mode is enabled
+              const { enabled, originalContent } = diffStateRef.current || {}
+              if (!enabled) {
+                return DecorationSet.empty
+              }
+
+              const doc = state.doc
+
+              // Extract text content from document for comparison
+              let currentLines = []
+              doc.descendants((node) => {
+                if (node.isBlock && node.isTextblock) {
+                  currentLines.push(node.textContent)
+                }
+                return false
+              })
+              const currentContent = currentLines.join('\n')
+
+              // Convert original markdown to plain text the same way
+              let originalPlainText = ''
+              if (originalContent) {
+                const html = markdownParser.render(originalContent)
+                const div = document.createElement('div')
+                div.innerHTML = html
+                const lines = []
+                div.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li').forEach(el => {
+                  lines.push(el.textContent || '')
+                })
+                originalPlainText = lines.join('\n')
+              }
+
+              const diffMap = buildDiffMap(originalPlainText, currentContent)
+              const { deletedLines, addedLineNumbers, wordDiffs } = diffMap
+
+              const decorations = []
+              let lineNum = 0
+
+              doc.descendants((node, nodePos) => {
+                if (node.isBlock) {
+                  lineNum++
+
+                  // Green background for added/modified lines
+                  if (addedLineNumbers.has(lineNum)) {
+                    decorations.push(
+                      Decoration.node(nodePos, nodePos + node.nodeSize, {
+                        class: 'diff-line-added'
+                      })
+                    )
+
+                    // Word-level highlights
+                    const lineWordDiffs = wordDiffs.get(lineNum)
+                    if (lineWordDiffs && node.isTextblock) {
+                      let textOffset = 0
+                      const textStart = nodePos + 1
+
+                      lineWordDiffs.forEach(part => {
+                        if (part.added) {
+                          const from = textStart + textOffset
+                          const to = from + part.value.length
+                          if (to <= nodePos + node.nodeSize - 1) {
+                            decorations.push(
+                              Decoration.inline(from, to, {
+                                class: 'diff-word-added'
+                              })
+                            )
+                          }
+                          textOffset += part.value.length
+                        } else if (!part.removed) {
+                          textOffset += part.value.length
+                        }
+                      })
+                    }
+                  }
+
+                  // Deleted lines widget
+                  const deletedBefore = deletedLines.find(d => d.beforeLine === lineNum)
+                  if (deletedBefore) {
+                    const widget = document.createElement('div')
+                    widget.className = 'diff-deleted-block'
+                    widget.contentEditable = 'false'
+
+                    const deletedTexts = []
+
+                    if (deletedBefore.wordDiffs) {
+                      deletedBefore.wordDiffs.forEach(({ text, wordChanges }) => {
+                        const lineDiv = document.createElement('div')
+                        lineDiv.className = 'diff-deleted-line'
+                        deletedTexts.push(text)
+
+                        if (wordChanges) {
+                          wordChanges.forEach(part => {
+                            const span = document.createElement('span')
+                            if (part.removed) {
+                              span.className = 'diff-word-removed'
+                              span.textContent = part.value
+                              lineDiv.appendChild(span)
+                            } else if (!part.added) {
+                              span.textContent = part.value
+                              lineDiv.appendChild(span)
+                            }
+                          })
+                        } else {
+                          lineDiv.textContent = text || '\u00A0'
+                        }
+
+                        widget.appendChild(lineDiv)
+                      })
+                    } else {
+                      deletedBefore.texts.forEach(text => {
+                        const lineDiv = document.createElement('div')
+                        lineDiv.className = 'diff-deleted-line'
+                        lineDiv.textContent = text || '\u00A0'
+                        deletedTexts.push(text)
+                        widget.appendChild(lineDiv)
+                      })
+                    }
+
+                    // Copy button
+                    const copyBtn = document.createElement('button')
+                    copyBtn.className = 'diff-copy-btn'
+                    copyBtn.textContent = '📋'
+                    copyBtn.title = 'Copy deleted text'
+                    copyBtn.onclick = (e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      navigator.clipboard.writeText(deletedTexts.join('\n'))
+                      copyBtn.textContent = '✓'
+                      setTimeout(() => { copyBtn.textContent = '📋' }, 1500)
+                    }
+                    widget.addEventListener('mouseenter', () => {
+                      copyBtn.style.opacity = '1'
+                    })
+                    widget.addEventListener('mouseleave', () => {
+                      copyBtn.style.opacity = '0.3'
+                    })
+                    widget.appendChild(copyBtn)
+
+                    decorations.push(
+                      Decoration.widget(nodePos, widget, { side: -1 })
+                    )
+                  }
+                }
+                return false
+              })
+
+              // Trailing deletions
+              const trailingDeleted = deletedLines.find(d => d.beforeLine === lineNum + 1)
+              if (trailingDeleted) {
+                const widget = document.createElement('div')
+                widget.className = 'diff-deleted-block'
+                trailingDeleted.texts.forEach(text => {
+                  const lineDiv = document.createElement('div')
+                  lineDiv.className = 'diff-deleted-line'
+                  lineDiv.textContent = text || '\u00A0'
+                  widget.appendChild(lineDiv)
+                })
+                decorations.push(
+                  Decoration.widget(doc.content.size, widget, { side: 1 })
+                )
+              }
+
+              return DecorationSet.create(doc, decorations)
+            }
+          }
+        })
+      ]
+    }
+  })
+}
 
 function MenuBar({ editor }) {
   const setLink = useCallback(() => {
@@ -72,20 +354,9 @@ function MenuBar({ editor }) {
           title="Strikethrough"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M17.3 4.9c-2.3-.6-4.4-1-6.2-.9-2.7 0-5.3.7-5.3 3.6 0 1.5 1.1 2.4 3.6 3"/>
-            <path d="M4 12h16"/>
-            <path d="M17.9 15.1c0 2.8-2.4 4.9-6.3 4.9-2.4 0-4.3-.7-5.7-1.6"/>
-          </svg>
-        </button>
-        <button
-          type="button"
-          onClick={() => editor.chain().focus().toggleHighlight().run()}
-          className={editor.isActive('highlight') ? 'is-active' : ''}
-          title="Highlight"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="m9 11-6 6v3h9l3-3"/>
-            <path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/>
+            <line x1="4" y1="12" x2="20" y2="12"/>
+            <path d="M17.5 7.5c-.6-1.4-2.2-2.5-4.5-2.5-3 0-5 1.5-5 4 0 1.8 1 3 4 3.5"/>
+            <path d="M10 16.5c0 1.5 1.5 2.5 4 2.5 2.5 0 4-1.2 4-3"/>
           </svg>
         </button>
       </div>
@@ -99,7 +370,7 @@ function MenuBar({ editor }) {
           className={editor.isActive('heading', { level: 1 }) ? 'is-active' : ''}
           title="Heading 1"
         >
-          H1
+          <span className="text-btn">H1</span>
         </button>
         <button
           type="button"
@@ -107,7 +378,7 @@ function MenuBar({ editor }) {
           className={editor.isActive('heading', { level: 2 }) ? 'is-active' : ''}
           title="Heading 2"
         >
-          H2
+          <span className="text-btn">H2</span>
         </button>
         <button
           type="button"
@@ -115,7 +386,7 @@ function MenuBar({ editor }) {
           className={editor.isActive('heading', { level: 3 }) ? 'is-active' : ''}
           title="Heading 3"
         >
-          H3
+          <span className="text-btn">H3</span>
         </button>
       </div>
 
@@ -129,12 +400,12 @@ function MenuBar({ editor }) {
           title="Bullet List"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="8" y1="6" x2="21" y2="6"/>
-            <line x1="8" y1="12" x2="21" y2="12"/>
-            <line x1="8" y1="18" x2="21" y2="18"/>
-            <circle cx="4" cy="6" r="1" fill="currentColor"/>
-            <circle cx="4" cy="12" r="1" fill="currentColor"/>
-            <circle cx="4" cy="18" r="1" fill="currentColor"/>
+            <line x1="9" y1="6" x2="20" y2="6"/>
+            <line x1="9" y1="12" x2="20" y2="12"/>
+            <line x1="9" y1="18" x2="20" y2="18"/>
+            <circle cx="4" cy="6" r="1.5" fill="currentColor"/>
+            <circle cx="4" cy="12" r="1.5" fill="currentColor"/>
+            <circle cx="4" cy="18" r="1.5" fill="currentColor"/>
           </svg>
         </button>
         <button
@@ -147,9 +418,9 @@ function MenuBar({ editor }) {
             <line x1="10" y1="6" x2="21" y2="6"/>
             <line x1="10" y1="12" x2="21" y2="12"/>
             <line x1="10" y1="18" x2="21" y2="18"/>
-            <text x="2" y="7" fontSize="6" fill="currentColor" fontFamily="sans-serif">1</text>
-            <text x="2" y="13" fontSize="6" fill="currentColor" fontFamily="sans-serif">2</text>
-            <text x="2" y="19" fontSize="6" fill="currentColor" fontFamily="sans-serif">3</text>
+            <text x="3" y="8" fontSize="7" fill="currentColor" stroke="none">1</text>
+            <text x="3" y="14" fontSize="7" fill="currentColor" stroke="none">2</text>
+            <text x="3" y="20" fontSize="7" fill="currentColor" stroke="none">3</text>
           </svg>
         </button>
         <button
@@ -160,10 +431,10 @@ function MenuBar({ editor }) {
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <rect x="3" y="5" width="6" height="6" rx="1"/>
-            <path d="m5 8 1 1 2-2"/>
-            <line x1="13" y1="8" x2="21" y2="8"/>
-            <rect x="3" y="14" width="6" height="6" rx="1"/>
-            <line x1="13" y1="17" x2="21" y2="17"/>
+            <path d="M5 8l1.5 1.5 3-3"/>
+            <line x1="12" y1="8" x2="21" y2="8"/>
+            <rect x="3" y="13" width="6" height="6" rx="1"/>
+            <line x1="12" y1="16" x2="21" y2="16"/>
           </svg>
         </button>
       </div>
@@ -177,9 +448,8 @@ function MenuBar({ editor }) {
           className={editor.isActive('blockquote') ? 'is-active' : ''}
           title="Quote"
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V21z"/>
-            <path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3z"/>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M6 17h3l2-4V7H5v6h3l-2 4zm8 0h3l2-4V7h-6v6h3l-2 4z"/>
           </svg>
         </button>
         <button
@@ -197,52 +467,20 @@ function MenuBar({ editor }) {
           type="button"
           onClick={setLink}
           className={editor.isActive('link') ? 'is-active' : ''}
-          title="Link"
+          title="Add Link"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
             <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
           </svg>
         </button>
-      </div>
-
-      <div className="menu-separator" />
-
-      <div className="menu-group">
         <button
           type="button"
-          onClick={() => editor.chain().focus().setTextAlign('left').run()}
-          className={editor.isActive({ textAlign: 'left' }) ? 'is-active' : ''}
-          title="Align Left"
+          onClick={() => editor.chain().focus().setHorizontalRule().run()}
+          title="Horizontal Rule"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="3" y1="6" x2="21" y2="6"/>
-            <line x1="3" y1="12" x2="15" y2="12"/>
-            <line x1="3" y1="18" x2="18" y2="18"/>
-          </svg>
-        </button>
-        <button
-          type="button"
-          onClick={() => editor.chain().focus().setTextAlign('center').run()}
-          className={editor.isActive({ textAlign: 'center' }) ? 'is-active' : ''}
-          title="Align Center"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="3" y1="6" x2="21" y2="6"/>
-            <line x1="6" y1="12" x2="18" y2="12"/>
-            <line x1="4" y1="18" x2="20" y2="18"/>
-          </svg>
-        </button>
-        <button
-          type="button"
-          onClick={() => editor.chain().focus().setTextAlign('right').run()}
-          className={editor.isActive({ textAlign: 'right' }) ? 'is-active' : ''}
-          title="Align Right"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="3" y1="6" x2="21" y2="6"/>
-            <line x1="9" y1="12" x2="21" y2="12"/>
-            <line x1="6" y1="18" x2="21" y2="18"/>
+            <line x1="3" y1="12" x2="21" y2="12"/>
           </svg>
         </button>
       </div>
@@ -252,24 +490,13 @@ function MenuBar({ editor }) {
       <div className="menu-group">
         <button
           type="button"
-          onClick={() => editor.chain().focus().undo().run()}
-          disabled={!editor.can().undo()}
-          title="Undo (Ctrl+Z)"
+          onClick={() => editor.chain().focus().toggleHighlight().run()}
+          className={editor.isActive('highlight') ? 'is-active' : ''}
+          title="Highlight"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M3 7v6h6"/>
-            <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/>
-          </svg>
-        </button>
-        <button
-          type="button"
-          onClick={() => editor.chain().focus().redo().run()}
-          disabled={!editor.can().redo()}
-          title="Redo (Ctrl+Y)"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M21 7v6h-6"/>
-            <path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7"/>
+            <path d="M12 20h9"/>
+            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
           </svg>
         </button>
       </div>
@@ -281,9 +508,10 @@ function SaveStatus({ isDirty, isSaving }) {
   if (isSaving) {
     return (
       <div className="save-status save-status-saving" title="Saving...">
-        <svg className="save-spinner" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
-          <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="12" cy="12" r="10" strokeDasharray="31.4" strokeDashoffset="10">
+            <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite"/>
+          </circle>
         </svg>
       </div>
     )
@@ -292,7 +520,9 @@ function SaveStatus({ isDirty, isSaving }) {
   if (isDirty) {
     return (
       <div className="save-status save-status-dirty" title="Unsaved changes">
-        <span className="save-dot" />
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <circle cx="12" cy="12" r="5"/>
+        </svg>
       </div>
     )
   }
@@ -306,6 +536,7 @@ function SaveStatus({ isDirty, isSaving }) {
   )
 }
 
+// Editor modes: 'rendered' (default Tiptap), 'diff' (inline diff editing), 'git-diff' (legacy read-only diff)
 export default function Editor({
   content,
   contentVersion,
@@ -315,12 +546,16 @@ export default function Editor({
   onAutoSave,
   autoSaveDelay = 800,
   showDiffToggle = false,
-  diffEnabled = false,
   diffText = '',
   diffError = '',
-  onToggleDiff,
+  // Props for inline diff mode
+  editorMode = 'rendered', // 'rendered' | 'diff' | 'git-diff'
+  originalContent = null,
+  onModeChange,
 }) {
   const autoSaveTimer = useRef(null)
+  const diffStateRef = useRef({ enabled: false, originalContent: null })
+
   const markdownParser = useMemo(
     () =>
       new MarkdownIt({
@@ -339,6 +574,11 @@ export default function Editor({
     service.use(gfm)
     return service
   }, [])
+
+  // Create diff extension once, it uses the ref to check state
+  const DiffExtension = useMemo(() => {
+    return createDiffExtension(diffStateRef, markdownParser)
+  }, [markdownParser])
 
   const editor = useEditor({
     extensions: [
@@ -361,6 +601,7 @@ export default function Editor({
         types: ['heading', 'paragraph'],
       }),
       Highlight,
+      DiffExtension,
     ],
     content: content ? markdownParser.render(content) : '',
     onUpdate: ({ editor }) => {
@@ -381,6 +622,20 @@ export default function Editor({
     },
   })
 
+  // Update diff state when mode or original content changes
+  useEffect(() => {
+    const wasEnabled = diffStateRef.current.enabled
+    diffStateRef.current = {
+      enabled: editorMode === 'diff' && originalContent !== null,
+      originalContent: originalContent,
+    }
+    // Force editor to re-render decorations
+    if (editor && (wasEnabled !== diffStateRef.current.enabled || diffStateRef.current.enabled)) {
+      // Trigger a view update to recalculate decorations
+      editor.view.dispatch(editor.state.tr)
+    }
+  }, [editorMode, originalContent, editor])
+
   useEffect(() => {
     if (!editor) return
     if (contentVersion === undefined) return
@@ -396,13 +651,21 @@ export default function Editor({
     }
   }, [])
 
-  // Prevent file drag-drop from inserting text into editor
   const handleDrop = useCallback((event) => {
-    if (event.dataTransfer.types.includes('application/x-kurt-file')) {
+    const fileData = event.dataTransfer.getData('application/x-kurt-file')
+    if (fileData && editor) {
       event.preventDefault()
-      event.stopPropagation()
+      try {
+        const file = JSON.parse(fileData)
+        if (file.path) {
+          const linkText = file.name || file.path.split('/').pop()
+          editor.chain().focus().insertContent(`[${linkText}](${file.path})`).run()
+        }
+      } catch (e) {
+        // Ignore parse errors
+      }
     }
-  }, [])
+  }, [editor])
 
   const handleDragOver = useCallback((event) => {
     if (event.dataTransfer.types.includes('application/x-kurt-file')) {
@@ -411,26 +674,70 @@ export default function Editor({
     }
   }, [])
 
+  // Mode selector for when diff is available
+  const renderModeSelector = () => {
+    if (!showDiffToggle) return null
+
+    return (
+      <div className="editor-mode-selector">
+        <button
+          type="button"
+          className={`mode-btn${editorMode === 'rendered' ? ' active' : ''}`}
+          onClick={() => onModeChange?.('rendered')}
+          title="Edit rendered content"
+        >
+          Edit
+        </button>
+        <button
+          type="button"
+          className={`mode-btn${editorMode === 'diff' ? ' active' : ''}`}
+          onClick={() => onModeChange?.('diff')}
+          title="Edit with inline diff highlighting"
+        >
+          Diff
+        </button>
+        <button
+          type="button"
+          className={`mode-btn${editorMode === 'git-diff' ? ' active' : ''}`}
+          onClick={() => onModeChange?.('git-diff')}
+          title="View git diff (read-only)"
+        >
+          Raw
+        </button>
+      </div>
+    )
+  }
+
+  // Render the appropriate content based on mode
+  const renderContent = () => {
+    if (editorMode === 'git-diff') {
+      return (
+        <>
+          {diffError && <div className="diff-error">{diffError}</div>}
+          <GitDiff diff={diffText} showFileHeader={false} />
+        </>
+      )
+    }
+
+    // Both 'rendered' and 'diff' modes use the same editor
+    // The diff decorations are applied via the plugin when in diff mode
+    if (editorMode === 'diff' && diffError) {
+      return <div className="diff-error">{diffError}</div>
+    }
+    if (editorMode === 'diff' && originalContent === null) {
+      return <div className="diff-loading">Loading original content...</div>
+    }
+
+    return <EditorContent editor={editor} />
+  }
+
   return (
     <div className="editor-wrapper">
       <div className="editor-toolbar">
-        {!diffEnabled && <MenuBar editor={editor} />}
+        <MenuBar editor={editor} />
         <div className="editor-toolbar-right">
-          {!diffEnabled && <SaveStatus isDirty={isDirty} isSaving={isSaving} />}
-          {showDiffToggle && (
-            <div className="diff-toggle-wrapper">
-              <button
-                type="button"
-                role="switch"
-                aria-checked={diffEnabled}
-                className={`switch${diffEnabled ? ' switch-on' : ''}`}
-                onClick={onToggleDiff}
-              >
-                <span className="switch-thumb" />
-              </button>
-              <span className="diff-toggle-label">Git diff</span>
-            </div>
-          )}
+          {editorMode !== 'git-diff' && <SaveStatus isDirty={isDirty} isSaving={isSaving} />}
+          {renderModeSelector()}
         </div>
       </div>
       <div
@@ -438,14 +745,7 @@ export default function Editor({
         onDrop={handleDrop}
         onDragOver={handleDragOver}
       >
-        {diffEnabled ? (
-          <>
-            {diffError && <div className="diff-error">{diffError}</div>}
-            <GitDiff diff={diffText} showFileHeader={false} />
-          </>
-        ) : (
-          <EditorContent editor={editor} />
-        )}
+        {renderContent()}
       </div>
     </div>
   )

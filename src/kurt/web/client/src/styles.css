@@ -34,12 +34,12 @@ html, body, #root {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 4px 8px 4px;
-  margin-bottom: 4px;
+  padding: 2px 2px 4px 4px;
+  margin-bottom: 2px;
 }
 
 .sidebar-title {
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -50,17 +50,43 @@ html, body, #root {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 18px;
+  height: 18px;
   border: none;
   background: transparent;
-  border-radius: 4px;
+  border-radius: 3px;
   cursor: pointer;
   color: #6b7280;
   transition: background 0.15s, color 0.15s;
 }
 
 .sidebar-toggle-btn:hover {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+/* Sidebar header actions group */
+.sidebar-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.sidebar-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  color: #6b7280;
+  transition: background 0.15s, color 0.15s;
+}
+
+.sidebar-action-btn:hover {
   background: #e5e7eb;
   color: #374151;
 }
@@ -164,11 +190,12 @@ html, body, #root {
   display: flex;
   flex-direction: column;
   height: 100%;
+  font-size: 12px;
 }
 
 .file-tree-title {
-  margin: 8px 8px 4px;
-  font-size: 12px;
+  margin: 4px 4px 2px;
+  font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -178,12 +205,12 @@ html, body, #root {
 .search-box {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  margin-bottom: 8px;
+  gap: 6px;
+  padding: 4px 8px;
+  margin-bottom: 4px;
   background: #f3f4f6;
   border: 1px solid #e5e7eb;
-  border-radius: 6px;
+  border-radius: 4px;
 }
 
 .search-box:focus-within {
@@ -200,7 +227,7 @@ html, body, #root {
   flex: 1;
   border: none;
   background: transparent;
-  font-size: 13px;
+  font-size: 11px;
   font-family: inherit;
   color: #111827;
   outline: none;
@@ -214,8 +241,8 @@ html, body, #root {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
   border: none;
   background: #d1d5db;
   border-radius: 50%;
@@ -681,9 +708,11 @@ html, body, #root {
 .file-item {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
+  gap: 4px;
+  padding: 2px 4px;
   cursor: pointer;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .file-item:hover { background: #f3f4f6 }
@@ -697,8 +726,15 @@ html, body, #root {
   background: #c7d2fe;
 }
 
+.file-item-new {
+  background: #f0fdf4;
+}
+
 .file-item-icon {
   flex-shrink: 0;
+  font-size: 11px;
+  width: 14px;
+  text-align: center;
 }
 
 .file-item-name {
@@ -722,7 +758,8 @@ html, body, #root {
   color: #e2c08d;
 }
 
-.git-status-untracked {
+.git-status-untracked,
+.git-status-new {
   background: rgba(115, 201, 145, 0.2);
   color: #73c991;
 }
@@ -1169,11 +1206,142 @@ html, body, #root {
   cursor: default;
 }
 
+/* Editor mode selector (Edit / Diff / Raw) */
+.editor-mode-selector {
+  display: inline-flex;
+  background: #e5e7eb;
+  border-radius: 6px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.editor-mode-selector .mode-btn {
+  padding: 4px 10px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #6b7280;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.editor-mode-selector .mode-btn:hover {
+  color: #374151;
+}
+
+.editor-mode-selector .mode-btn.active {
+  background: #fff;
+  color: #111827;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+}
+
+.diff-mode-label {
+  font-size: 12px;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+/* Diff Editor wrapper */
+/* Diff editor inherits main editor styles */
+.diff-editor-wrapper {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px 20px;
+}
+
+.diff-editor-wrapper .ProseMirror {
+  outline: none;
+  min-height: 100%;
+}
+
+/* Added line - green background */
+.diff-editor-wrapper .ProseMirror .diff-line-added,
+.diff-line-added {
+  background-color: rgba(46, 160, 67, 0.15) !important;
+  border-left: 3px solid #3fb950;
+}
+
+.diff-editor-wrapper .ProseMirror .diff-line-added,
+.diff-editor-wrapper .ProseMirror p.diff-line-added,
+.diff-line-added p,
+.diff-line-added h1,
+.diff-line-added h2,
+.diff-line-added h3 {
+  background-color: rgba(46, 160, 67, 0.15) !important;
+  border-left: 3px solid #3fb950;
+  color: #7ee787 !important;
+}
+
+/* Deleted lines block - red */
+.diff-deleted-block {
+  background-color: rgba(248, 81, 73, 0.15);
+  border-left: 3px solid #f85149;
+  margin: 0;
+  padding: 0;
+  position: relative;
+}
+
+.diff-deleted-line {
+  padding: 4px 8px;
+  font-family: 'IBM Plex Mono', Monaco, 'Courier New', monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #ffa198;
+  opacity: 0.9;
+}
+
+/* Copy button for deleted content */
+.diff-copy-btn {
+  position: absolute;
+  right: 8px;
+  top: 4px;
+  padding: 4px 8px;
+  font-size: 14px;
+  background: rgba(248, 81, 73, 0.3);
+  border: 1px solid #f85149;
+  border-radius: 4px;
+  color: #ffa198;
+  cursor: pointer;
+  opacity: 0.3;
+  transition: opacity 0.15s, background 0.15s;
+  z-index: 10;
+}
+
+.diff-copy-btn:hover {
+  background: rgba(248, 81, 73, 0.6);
+  opacity: 1 !important;
+}
+
+/* Word-level highlight for removed text */
+.diff-word-removed {
+  background-color: rgba(248, 81, 73, 0.4);
+  text-decoration: line-through;
+  border-radius: 2px;
+  padding: 1px 2px;
+}
+
+/* Word-level highlight for added text */
+.diff-word-added {
+  background-color: rgba(46, 160, 67, 0.4);
+  border-radius: 2px;
+  padding: 1px 2px;
+}
+
 .diff-error {
   padding: 10px 12px;
   color: #b91c1c;
   background: #fee2e2;
   font-size: 13px;
+}
+
+.diff-loading {
+  padding: 20px;
+  color: #6b7280;
+  font-size: 13px;
+  text-align: center;
 }
 
 .diff-empty {
@@ -1618,4 +1786,445 @@ html, body, #root {
 
 .review-list-deny:hover {
   background: #dc2626;
+}
+
+/* ========== Workflows Panel ========== */
+
+.workflows-panel-content {
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.workflows-collapsed {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 8px 12px;
+  gap: 8px;
+  background: #fff;
+  border-top: 1px solid #e5e7eb;
+}
+
+.workflows-collapsed-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.workflows-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #fff;
+  border-bottom: 1px solid #e5e7eb;
+  flex-shrink: 0;
+}
+
+.workflows-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 13px;
+  color: #111827;
+}
+
+.workflows-content {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Workflow List */
+.workflow-list-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  background: #fff;
+}
+
+.workflow-list-filters {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  background: #f3f4f6;
+  border-bottom: 1px solid #e5e7eb;
+  flex-shrink: 0;
+}
+
+.workflow-select {
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #374151;
+}
+
+.workflow-search {
+  flex: 1;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #374151;
+  min-width: 80px;
+}
+
+.workflow-search::placeholder {
+  color: #9ca3af;
+}
+
+.workflow-refresh {
+  width: 28px;
+  height: 28px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.workflow-refresh:hover {
+  background: #f3f4f6;
+}
+
+.workflow-refresh:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.workflow-list {
+  flex: 1;
+  overflow: auto;
+}
+
+.workflow-list-empty,
+.workflow-list-error {
+  padding: 16px;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 12px;
+}
+
+.workflow-list-error {
+  color: #ef4444;
+}
+
+/* Workflow Row */
+.workflow-row {
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.workflow-row.expanded {
+  background: #f8fafc;
+}
+
+.workflow-row-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: background 0.15s;
+  font-size: 12px;
+}
+
+.workflow-row-header:hover {
+  background: #f3f4f6;
+}
+
+.workflow-expand-icon {
+  width: 12px;
+  font-size: 8px;
+  color: #9ca3af;
+  flex-shrink: 0;
+}
+
+.workflow-status-badge {
+  font-size: 9px;
+  font-weight: 600;
+  padding: 2px 5px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.workflow-status-success {
+  background: rgba(22, 163, 74, 0.15);
+  color: #16a34a;
+}
+
+.workflow-status-error {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.workflow-status-pending {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
+.workflow-status-enqueued {
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+}
+
+.workflow-status-cancelled {
+  background: rgba(107, 114, 128, 0.15);
+  color: #6b7280;
+}
+
+.workflow-name {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 500;
+  color: #111827;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 60px;
+}
+
+.workflow-id {
+  font-size: 10px;
+  font-family: 'IBM Plex Mono', monospace;
+  color: #6b7280;
+  flex-shrink: 0;
+}
+
+.workflow-time {
+  font-size: 10px;
+  color: #9ca3af;
+  flex-shrink: 0;
+}
+
+.workflow-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.workflow-action-btn {
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+
+.workflow-attach {
+  background: #3b82f6;
+  color: #fff;
+}
+
+.workflow-attach:hover {
+  background: #2563eb;
+}
+
+.workflow-cancel {
+  background: #ef4444;
+  color: #fff;
+}
+
+.workflow-cancel:hover {
+  background: #dc2626;
+}
+
+/* Workflow Row Details */
+.workflow-row-details {
+  padding: 10px;
+  border-top: 1px solid #e5e7eb;
+  background: #fff;
+}
+
+.workflow-detail-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 11px;
+}
+
+.workflow-detail-label {
+  color: #6b7280;
+  font-weight: 500;
+  min-width: 60px;
+  flex-shrink: 0;
+}
+
+.workflow-detail-value {
+  color: #111827;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workflow-id-copyable {
+  cursor: pointer;
+}
+
+.workflow-id-copyable:hover {
+  color: #3b82f6;
+}
+
+.workflow-logs {
+  margin-top: 10px;
+}
+
+.workflow-logs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.workflow-logs-live {
+  font-size: 8px;
+  padding: 2px 5px;
+  background: #16a34a;
+  color: #fff;
+  border-radius: 3px;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.workflow-logs-content {
+  background: #1f2937;
+  color: #e5e7eb;
+  padding: 10px;
+  border-radius: 4px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  max-height: 150px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+}
+
+/* Workflows Terminal (Right Pane) */
+.workflows-terminal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: #fff;
+  border-bottom: 1px solid #e5e7eb;
+  flex-shrink: 0;
+}
+
+.workflows-terminal-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.workflows-terminal-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.workflows-terminal-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.workflows-terminal-body .terminal-instance {
+  height: 100%;
+}
+
+.workflows-terminal-body .terminal-instance.active {
+  display: flex;
+}
+
+.workflows-terminal-body .terminal {
+  flex: 1;
+  padding: 8px;
+  box-sizing: border-box;
+}
+
+/* Workflow Terminal Panel (Attach) */
+.workflow-terminal-panel {
+  background: #0f172a;
+  display: flex;
+  flex-direction: column;
+}
+
+.workflow-terminal-empty {
+  color: #9ca3af;
+  padding: 20px;
+  text-align: center;
+}
+
+.workflow-terminal-panel .workflow-terminal {
+  flex: 1;
+  padding: 10px;
+  box-sizing: border-box;
+}
+
+.workflow-terminal-panel .workflow-terminal .xterm {
+  height: 100%;
+}
+
+/* ========== Code Viewer ========== */
+
+.code-viewer {
+  height: 100%;
+  overflow: auto;
+  font-family: 'IBM Plex Mono', Monaco, 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.code-viewer pre {
+  margin: 0;
+  border-radius: 0;
+}
+
+.code-viewer-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #9ca3af;
+}
+
+.code-empty-message {
+  font-size: 14px;
+}
+
+.editor-code-viewer {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Code viewer in editor panel - no padding since prism adds its own */
+.editor-panel-content .code-viewer {
+  margin: 0;
 }

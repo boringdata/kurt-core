@@ -710,9 +710,30 @@ def _git_status() -> dict[str, str]:
     if not _git_available() or not _is_git_repo():
         return {}
 
-    root = Path.cwd().resolve()
+    cwd = Path.cwd().resolve()
+
+    # Get git repo root to calculate relative paths
+    git_root_result = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=str(cwd),
+    )
+    if git_root_result.returncode != 0:
+        return {}
+    git_root = Path(git_root_result.stdout.strip()).resolve()
+
+    # Calculate prefix to strip from git paths to get paths relative to cwd
+    try:
+        cwd_relative_to_git = cwd.relative_to(git_root)
+        prefix = str(cwd_relative_to_git) + "/" if str(cwd_relative_to_git) != "." else ""
+    except ValueError:
+        # cwd is not under git root
+        prefix = ""
+
     result = subprocess.run(
-        ["git", "-C", str(root), "status", "--porcelain"],
+        ["git", "-C", str(cwd), "status", "--porcelain"],
         capture_output=True,
         text=True,
         check=False,
@@ -731,6 +752,13 @@ def _git_status() -> dict[str, str]:
         # Remove quotes if present
         if file_path.startswith('"') and file_path.endswith('"'):
             file_path = file_path[1:-1]
+
+        # Convert git-relative path to cwd-relative path
+        if prefix and file_path.startswith(prefix):
+            file_path = file_path[len(prefix) :]
+        elif prefix:
+            # File is outside cwd, skip it
+            continue
 
         # Map status codes to simple categories
         # M = modified, A = added, D = deleted, R = renamed, C = copied
@@ -756,6 +784,237 @@ def api_git_status():
             return {"available": False, "files": {}}
         status = _git_status()
         return {"available": True, "files": status}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/git/show")
+def api_git_show(path: str = Query(..., description="File path relative to repo root")):
+    """Get the original (HEAD) version of a file from git."""
+    try:
+        if not _git_available() or not _is_git_repo():
+            raise HTTPException(status_code=404, detail="Git not available")
+
+        # Sanitize path - remove leading slashes and ..
+        clean_path = path.lstrip("/")
+        if ".." in clean_path:
+            raise HTTPException(status_code=400, detail="Invalid path")
+
+        result = subprocess.run(
+            ["git", "show", f"HEAD:{clean_path}"],
+            capture_output=True,
+            text=True,
+            cwd=str(Path.cwd()),
+        )
+
+        if result.returncode != 0:
+            # File doesn't exist in HEAD (new file)
+            if "does not exist" in result.stderr or "exists on disk" in result.stderr:
+                return {"content": None, "is_new": True}
+            raise HTTPException(status_code=404, detail=f"File not in git: {result.stderr}")
+
+        return {"content": result.stdout, "is_new": False}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- Workflow API endpoints ---
+
+
+def _get_db_session():
+    """Get a database session for workflow queries."""
+    try:
+        from kurt.db.database import check_database_exists, get_session
+
+        if not check_database_exists():
+            return None
+        return get_session()
+    except ImportError:
+        return None
+    except Exception:
+        return None
+
+
+def _decode_workflow_output(raw_output: Any) -> Any:
+    """Decode base64/pickle encoded workflow output."""
+    if not raw_output:
+        return None
+    try:
+        import base64
+        import pickle
+
+        decoded = base64.b64decode(raw_output)
+        return pickle.loads(decoded)
+    except Exception:
+        # Try JSON if pickle fails
+        try:
+            import json
+
+            return json.loads(raw_output)
+        except Exception:
+            return raw_output
+
+
+@app.get("/api/workflows")
+def api_list_workflows(
+    status: Optional[str] = Query(None),
+    limit: int = Query(50, le=200),
+    offset: int = Query(0, ge=0),
+    search: Optional[str] = Query(None),
+):
+    """List workflows with optional filtering."""
+    session = _get_db_session()
+    if session is None:
+        return {"workflows": [], "total": 0, "error": "Database not available"}
+
+    try:
+        from sqlalchemy import text
+
+        sql = "SELECT workflow_uuid, name, status, created_at, updated_at FROM workflow_status"
+        params: dict[str, Any] = {}
+        conditions = []
+
+        if status:
+            conditions.append("status = :status")
+            params["status"] = status
+
+        if search:
+            conditions.append("workflow_uuid LIKE :search")
+            params["search"] = f"%{search}%"
+
+        if conditions:
+            sql += " WHERE " + " AND ".join(conditions)
+
+        sql += " ORDER BY created_at DESC LIMIT :limit OFFSET :offset"
+        params["limit"] = limit
+        params["offset"] = offset
+
+        result = session.execute(text(sql), params)
+        workflows = [
+            {
+                "workflow_uuid": row[0],
+                "name": row[1],
+                "status": row[2],
+                "created_at": str(row[3]) if row[3] else None,
+                "updated_at": str(row[4]) if row[4] else None,
+            }
+            for row in result.fetchall()
+        ]
+        session.close()
+
+        return {"workflows": workflows, "total": len(workflows)}
+    except Exception as e:
+        if session:
+            session.close()
+        # Return error in response body instead of 500, so frontend can display it
+        return {"workflows": [], "total": 0, "error": f"Database error: {e}"}
+
+
+@app.get("/api/workflows/{workflow_id}")
+def api_get_workflow(workflow_id: str):
+    """Get detailed workflow information."""
+    session = _get_db_session()
+    if session is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        from sqlalchemy import text
+
+        sql = """
+            SELECT workflow_uuid, name, status, created_at, updated_at,
+                   authenticated_user, output, error
+            FROM workflow_status
+            WHERE workflow_uuid LIKE :workflow_id || '%'
+            LIMIT 1
+        """
+        result = session.execute(text(sql), {"workflow_id": workflow_id})
+        row = result.fetchone()
+        session.close()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Workflow not found")
+
+        return {
+            "workflow_uuid": row[0],
+            "name": row[1],
+            "status": row[2],
+            "created_at": str(row[3]) if row[3] else None,
+            "updated_at": str(row[4]) if row[4] else None,
+            "authenticated_user": row[5],
+            "output": _decode_workflow_output(row[6]),
+            "error": row[7],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/workflows/{workflow_id}/cancel")
+def api_cancel_workflow(workflow_id: str):
+    """Cancel a workflow."""
+    try:
+        from kurt.workflows import DBOS_AVAILABLE, get_dbos
+
+        if not DBOS_AVAILABLE:
+            raise HTTPException(status_code=503, detail="DBOS not available")
+
+        dbos = get_dbos()
+        dbos.cancel_workflow(workflow_id)
+
+        return {"status": "cancelled", "workflow_id": workflow_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/workflows/{workflow_id}/logs")
+def api_get_workflow_logs(
+    workflow_id: str,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(500, le=5000),
+):
+    """Read workflow log file in chunks."""
+    # First, get the full workflow ID from the database
+    session = _get_db_session()
+    full_id = workflow_id
+
+    if session is not None:
+        try:
+            from sqlalchemy import text
+
+            sql = "SELECT workflow_uuid FROM workflow_status WHERE workflow_uuid LIKE :workflow_id || '%' LIMIT 1"
+            result = session.execute(text(sql), {"workflow_id": workflow_id})
+            row = result.fetchone()
+            if row:
+                full_id = row[0]
+            session.close()
+        except Exception:
+            pass
+
+    log_file = Path(".kurt") / "logs" / f"workflow-{full_id}.log"
+
+    if not log_file.exists():
+        return {"content": "", "total_lines": 0, "has_more": False, "offset": offset}
+
+    try:
+        with open(log_file, "r") as f:
+            lines = f.readlines()
+
+        total_lines = len(lines)
+        selected_lines = lines[offset : offset + limit]
+        has_more = offset + limit < total_lines
+
+        return {
+            "content": "".join(selected_lines),
+            "total_lines": total_lines,
+            "offset": offset,
+            "limit": limit,
+            "has_more": has_more,
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

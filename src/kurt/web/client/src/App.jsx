@@ -7,6 +7,13 @@ import EditorPanel from './panels/EditorPanel'
 import TerminalPanel from './panels/TerminalPanel'
 import EmptyPanel from './panels/EmptyPanel'
 import ReviewPanel from './panels/ReviewPanel'
+import WorkflowsPanel from './panels/WorkflowsPanel'
+import WorkflowTerminalPanel from './panels/WorkflowTerminalPanel'
+import DiffHighlightPOC from './components/DiffHighlightPOC'
+import TiptapDiffPOC from './components/TiptapDiffPOC'
+
+// POC mode - add ?poc=diff or ?poc=tiptap-diff to URL to test
+const POC_MODE = new URLSearchParams(window.location.search).get('poc')
 
 const apiBase = import.meta.env.VITE_API_URL || ''
 const apiUrl = (path) => `${apiBase}${path}`
@@ -17,6 +24,8 @@ const components = {
   terminal: TerminalPanel,
   empty: EmptyPanel,
   review: ReviewPanel,
+  workflows: WorkflowsPanel,
+  workflowTerminal: WorkflowTerminalPanel,
 }
 
 const KNOWN_COMPONENTS = new Set(Object.keys(components))
@@ -28,6 +37,7 @@ const getFileName = (path) => {
 
 const STORAGE_KEY = 'kurt-web-open-tabs'
 const LAYOUT_STORAGE_KEY = 'kurt-web-layout'
+const LAYOUT_VERSION = 13 // Increment to force layout reset
 
 // Load saved tabs from localStorage
 const loadSavedTabs = () => {
@@ -56,6 +66,13 @@ const loadLayout = () => {
     const raw = localStorage.getItem(LAYOUT_STORAGE_KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw)
+
+    // Check layout version - force reset if outdated
+    if (!parsed?.version || parsed.version < LAYOUT_VERSION) {
+      localStorage.removeItem(LAYOUT_STORAGE_KEY)
+      return null
+    }
+
     if (parsed?.panels && typeof parsed.panels === 'object') {
       const panels = Object.values(parsed.panels)
       const hasUnknown = panels.some(
@@ -64,6 +81,15 @@ const loadLayout = () => {
           !KNOWN_COMPONENTS.has(panel.contentComponent),
       )
       if (hasUnknown) {
+        localStorage.removeItem(LAYOUT_STORAGE_KEY)
+        return null
+      }
+      // Check if workflows panel exists in saved layout
+      // If not, invalidate the layout to ensure proper positioning
+      const hasWorkflows = panels.some(
+        (panel) => panel?.id === 'workflows' || panel?.contentComponent === 'workflows',
+      )
+      if (!hasWorkflows) {
         localStorage.removeItem(LAYOUT_STORAGE_KEY)
         return null
       }
@@ -100,13 +126,15 @@ const pruneEmptyGroups = (api) => {
 
 const saveLayout = (layout) => {
   try {
-    localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(layout))
+    const layoutWithVersion = { ...layout, version: LAYOUT_VERSION }
+    localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(layoutWithVersion))
   } catch (e) {
     // Ignore storage errors
   }
 }
 
 const SIDEBAR_COLLAPSED_KEY = 'kurt-web-sidebar-collapsed'
+const PANEL_SIZES_KEY = 'kurt-web-panel-sizes'
 
 const loadCollapsedState = () => {
   try {
@@ -117,12 +145,32 @@ const loadCollapsedState = () => {
   } catch (e) {
     // Ignore parse errors
   }
-  return { filetree: false, terminal: false }
+  return { filetree: false, terminal: false, workflows: false }
 }
 
 const saveCollapsedState = (state) => {
   try {
     localStorage.setItem(SIDEBAR_COLLAPSED_KEY, JSON.stringify(state))
+  } catch (e) {
+    // Ignore storage errors
+  }
+}
+
+const loadPanelSizes = () => {
+  try {
+    const saved = localStorage.getItem(PANEL_SIZES_KEY)
+    if (saved) {
+      return JSON.parse(saved)
+    }
+  } catch (e) {
+    // Ignore parse errors
+  }
+  return { filetree: 280, terminal: 400, workflows: 250 }
+}
+
+const savePanelSizes = (sizes) => {
+  try {
+    localStorage.setItem(PANEL_SIZES_KEY, JSON.stringify(sizes))
   } catch (e) {
     // Ignore storage errors
   }
@@ -136,28 +184,73 @@ export default function App() {
   const [gitStatus, setGitStatus] = useState({})
   const [activeFile, setActiveFile] = useState(null)
   const [collapsed, setCollapsed] = useState(loadCollapsedState)
+  const panelSizesRef = useRef(loadPanelSizes())
   const dismissedApprovalsRef = useRef(new Set())
   const centerGroupRef = useRef(null)
   const isInitialized = useRef(false)
   const layoutRestored = useRef(false)
   const [projectRoot, setProjectRoot] = useState('')
 
-  // Toggle sidebar collapse
+  // Toggle sidebar collapse - capture size before collapsing
   const toggleFiletree = useCallback(() => {
+    if (!collapsed.filetree && dockApi) {
+      // Capture current size before collapsing
+      const filetreePanel = dockApi.getPanel('filetree')
+      const filetreeGroup = filetreePanel?.group
+      if (filetreeGroup) {
+        const currentWidth = filetreeGroup.api.width
+        if (currentWidth > 48) {
+          panelSizesRef.current = { ...panelSizesRef.current, filetree: currentWidth }
+          savePanelSizes(panelSizesRef.current)
+        }
+      }
+    }
     setCollapsed((prev) => {
       const next = { ...prev, filetree: !prev.filetree }
       saveCollapsedState(next)
       return next
     })
-  }, [])
+  }, [collapsed.filetree, dockApi])
 
   const toggleTerminal = useCallback(() => {
+    if (!collapsed.terminal && dockApi) {
+      // Capture current size before collapsing
+      const terminalPanel = dockApi.getPanel('terminal')
+      const terminalGroup = terminalPanel?.group
+      if (terminalGroup) {
+        const currentWidth = terminalGroup.api.width
+        if (currentWidth > 48) {
+          panelSizesRef.current = { ...panelSizesRef.current, terminal: currentWidth }
+          savePanelSizes(panelSizesRef.current)
+        }
+      }
+    }
     setCollapsed((prev) => {
       const next = { ...prev, terminal: !prev.terminal }
       saveCollapsedState(next)
       return next
     })
-  }, [])
+  }, [collapsed.terminal, dockApi])
+
+  const toggleWorkflows = useCallback(() => {
+    if (!collapsed.workflows && dockApi) {
+      // Capture current size before collapsing
+      const workflowsPanel = dockApi.getPanel('workflows')
+      const workflowsGroup = workflowsPanel?.group
+      if (workflowsGroup) {
+        const currentHeight = workflowsGroup.api.height
+        if (currentHeight > 36) {
+          panelSizesRef.current = { ...panelSizesRef.current, workflows: currentHeight }
+          savePanelSizes(panelSizesRef.current)
+        }
+      }
+    }
+    setCollapsed((prev) => {
+      const next = { ...prev, workflows: !prev.workflows }
+      saveCollapsedState(next)
+      return next
+    })
+  }, [collapsed.workflows, dockApi])
 
   // Apply collapsed state to dockview groups
   useEffect(() => {
@@ -179,6 +272,8 @@ export default function App() {
           minimumWidth: 180,
           maximumWidth: undefined,
         })
+        // Restore to saved width
+        filetreeGroup.api.setSize({ width: panelSizesRef.current.filetree })
       }
     }
 
@@ -195,6 +290,27 @@ export default function App() {
           minimumWidth: 250,
           maximumWidth: undefined,
         })
+        // Restore to saved width
+        terminalGroup.api.setSize({ width: panelSizesRef.current.terminal })
+      }
+    }
+
+    const workflowsPanel = dockApi.getPanel('workflows')
+    const workflowsGroup = workflowsPanel?.group
+    if (workflowsGroup) {
+      if (collapsed.workflows) {
+        workflowsGroup.api.setConstraints({
+          minimumHeight: 36,
+          maximumHeight: 36,
+        })
+        workflowsGroup.api.setSize({ height: 36 })
+      } else {
+        workflowsGroup.api.setConstraints({
+          minimumHeight: 150,
+          maximumHeight: undefined,
+        })
+        // Restore to saved height
+        workflowsGroup.api.setSize({ height: panelSizesRef.current.workflows })
       }
     }
   }, [dockApi, collapsed])
@@ -389,11 +505,22 @@ export default function App() {
         return true
       }
 
-      // Default position is center group
+      // Use empty panel's group first to maintain layout hierarchy
+      const emptyPanel = dockApi.getPanel('empty-center')
+      const workflowsPanel = dockApi.getPanel('workflows')
       const centerGroup = centerGroupRef.current
-      const position = centerGroup
-        ? { referenceGroup: centerGroup }
-        : { direction: 'right', referencePanel: 'filetree' }
+
+      let position
+      if (emptyPanel?.group) {
+        position = { referenceGroup: emptyPanel.group }
+      } else if (centerGroup) {
+        position = { referenceGroup: centerGroup }
+      } else if (workflowsPanel?.group) {
+        // Add above workflows to maintain center column structure
+        position = { direction: 'above', referenceGroup: workflowsPanel.group }
+      } else {
+        position = { direction: 'right', referencePanel: 'filetree' }
+      }
 
       openFileAtPosition(path, position)
       return true
@@ -467,14 +594,26 @@ export default function App() {
         return
       }
 
+      // Get empty panel reference before determining position
       const emptyPanel = dockApi.getPanel('empty-center')
-      if (emptyPanel) {
-        emptyPanel.api.close()
-      }
+      const workflowsPanel = dockApi.getPanel('workflows')
 
-      const position = centerGroupRef.current
-        ? { referenceGroup: centerGroupRef.current }
-        : { direction: 'right', referencePanel: 'filetree' }
+      // Determine the correct position to maintain layout hierarchy:
+      // 1. If empty-center exists, add to its group (will be in center column)
+      // 2. Else if centerGroupRef exists, use it
+      // 3. Else if workflows panel exists, add ABOVE it (same column structure)
+      // 4. Last resort: right of filetree (but this may break layout)
+      let position
+      if (emptyPanel?.group) {
+        position = { referenceGroup: emptyPanel.group }
+      } else if (centerGroupRef.current) {
+        position = { referenceGroup: centerGroupRef.current }
+      } else if (workflowsPanel?.group) {
+        // Add above workflows to maintain center column structure
+        position = { direction: 'above', referenceGroup: workflowsPanel.group }
+      } else {
+        position = { direction: 'right', referencePanel: 'filetree' }
+      }
 
       const panel = dockApi.addPanel({
         id: panelId,
@@ -483,6 +622,12 @@ export default function App() {
         position,
         params,
       })
+
+      // Close empty panel AFTER adding review to its group
+      if (emptyPanel) {
+        emptyPanel.api.close()
+      }
+
       if (panel?.group) {
         panel.group.header.hidden = false
         centerGroupRef.current = panel.group
@@ -525,9 +670,28 @@ export default function App() {
           maximumWidth: undefined,
         })
       }
+
+      const workflowsPanel = api.getPanel('workflows')
+      const workflowsGroup = workflowsPanel?.group
+      if (workflowsGroup) {
+        workflowsGroup.locked = true
+        workflowsGroup.header.hidden = true
+        workflowsGroup.api.setConstraints({
+          minimumHeight: 150,
+          maximumHeight: undefined,
+        })
+      }
     }
 
     const ensureCorePanels = () => {
+      // Layout goal: [filetree | [editor / workflows] | terminal]
+      //
+      // Strategy: Create in order that establishes correct hierarchy
+      // 1. filetree (left)
+      // 2. terminal (right) - this establishes the rightmost column at root level
+      // 3. empty-center (left of terminal) - goes between filetree and terminal
+      // 4. workflows (below empty-center) - splits only the center column
+
       let filetreePanel = api.getPanel('filetree')
       if (!filetreePanel) {
         filetreePanel = api.addPanel({
@@ -538,6 +702,7 @@ export default function App() {
         })
       }
 
+      // Add terminal FIRST (right of filetree) - establishes rightmost column
       let terminalPanel = api.getPanel('terminal')
       if (!terminalPanel) {
         terminalPanel = api.addPanel({
@@ -548,6 +713,39 @@ export default function App() {
         })
       }
 
+      // Add empty panel LEFT of terminal - creates center column between filetree and terminal
+      let emptyPanel = api.getPanel('empty-center')
+      if (!emptyPanel) {
+        emptyPanel = api.addPanel({
+          id: 'empty-center',
+          component: 'empty',
+          title: '',
+          position: { direction: 'left', referencePanel: 'terminal' },
+        })
+      }
+      // Always set centerGroupRef from empty panel if it exists
+      if (emptyPanel?.group) {
+        emptyPanel.group.header.hidden = true
+        centerGroupRef.current = emptyPanel.group
+      }
+
+      // Add workflows panel BELOW the center group - splits only center column
+      let workflowsPanel = api.getPanel('workflows')
+      if (!workflowsPanel && emptyPanel?.group) {
+        workflowsPanel = api.addPanel({
+          id: 'workflows',
+          component: 'workflows',
+          title: 'Workflows',
+          position: { direction: 'below', referenceGroup: emptyPanel.group },
+          params: {
+            collapsed: false,
+            onToggleCollapse: () => {},
+            onAttachWorkflow: () => {},
+          },
+        })
+      }
+
+      // Set centerGroupRef from editor panels if any exist
       const panels = Array.isArray(api.panels)
         ? api.panels
         : typeof api.getPanels === 'function'
@@ -558,20 +756,8 @@ export default function App() {
       )
       if (editorPanels.length > 0) {
         centerGroupRef.current = editorPanels[0].group
-      } else {
-        const emptyPanel =
-          api.getPanel('empty-center') ||
-          api.addPanel({
-            id: 'empty-center',
-            component: 'empty',
-            title: '',
-            position: { direction: 'right', referencePanel: 'filetree' },
-          })
-        centerGroupRef.current = emptyPanel?.group
-        if (emptyPanel?.group) {
-          emptyPanel.group.header.hidden = true
-        }
       }
+      // centerGroupRef was already set above when creating empty-center if no editors
 
       applyLockedPanels()
     }
@@ -588,15 +774,41 @@ export default function App() {
 
     ensureCorePanels()
 
+    // If layout was restored and has editor panels, close empty-center to avoid duplicates
+    if (layoutRestored.current) {
+      const panels = Array.isArray(api.panels)
+        ? api.panels
+        : typeof api.getPanels === 'function'
+          ? api.getPanels()
+          : []
+      const hasEditors = panels.some((p) => p.id.startsWith('editor-'))
+      const hasReviews = panels.some((p) => p.id.startsWith('review-'))
+      if (hasEditors || hasReviews) {
+        const emptyPanel = api.getPanel('empty-center')
+        if (emptyPanel) {
+          // Set centerGroupRef before closing, in case empty is in the center column
+          const editorPanel = panels.find((p) => p.id.startsWith('editor-') || p.id.startsWith('review-'))
+          if (editorPanel?.group) {
+            centerGroupRef.current = editorPanel.group
+          }
+          emptyPanel.api.close()
+        }
+      }
+    }
+
     if (!layoutRestored.current) {
       // Set initial sizes
       const filetreeGroup = api.getPanel('filetree')?.group
       const terminalGroup = api.getPanel('terminal')?.group
+      const workflowsGroup = api.getPanel('workflows')?.group
       if (filetreeGroup) {
         api.getGroup(filetreeGroup.id)?.api.setSize({ width: 280 })
       }
       if (terminalGroup) {
         api.getGroup(terminalGroup.id)?.api.setSize({ width: 400 })
+      }
+      if (workflowsGroup) {
+        api.getGroup(workflowsGroup.id)?.api.setSize({ height: 250 })
       }
     } else {
       const pruned = pruneEmptyGroups(api)
@@ -620,14 +832,16 @@ export default function App() {
 
     // When all editors are closed, show the empty panel again
     api.onDidRemovePanel(() => {
-      // Check if center group has any editor panels left
+      // Check if center group has any content panels left
       const centerGroup = centerGroupRef.current
       if (!centerGroup) return
 
       const hasEditors = centerGroup.panels.some(p => p.id.startsWith('editor-'))
+      const hasReviews = centerGroup.panels.some(p => p.id.startsWith('review-'))
       const hasEmpty = centerGroup.panels.some(p => p.id === 'empty-center')
 
-      if (!hasEditors && !hasEmpty) {
+      // Only re-add empty panel if there are no editors, reviews, or empty panel
+      if (!hasEditors && !hasReviews && !hasEmpty) {
         // Re-add empty panel
         api.addPanel({
           id: 'empty-center',
@@ -722,6 +936,55 @@ export default function App() {
     }
   }, [dockApi, collapsed.terminal, toggleTerminal, approvals, focusReviewPanel, handleDecision, normalizeApprovalPath])
 
+  // Open a dedicated terminal panel for workflow attachment
+  const openWorkflowTerminal = useCallback(
+    (workflowId) => {
+      if (!dockApi) return
+
+      const panelId = `workflow-terminal-${workflowId}`
+      const existingPanel = dockApi.getPanel(panelId)
+
+      if (existingPanel) {
+        existingPanel.api.setActive()
+        return
+      }
+
+      // Add in center area
+      const position = centerGroupRef.current
+        ? { referenceGroup: centerGroupRef.current }
+        : { direction: 'right', referencePanel: 'filetree' }
+
+      const panel = dockApi.addPanel({
+        id: panelId,
+        component: 'workflowTerminal',
+        title: `Workflow: ${workflowId.slice(0, 8)}`,
+        position,
+        params: {
+          workflowId,
+        },
+      })
+
+      if (panel?.group) {
+        panel.group.header.hidden = false
+        centerGroupRef.current = panel.group
+      }
+    },
+    [dockApi]
+  )
+
+  // Update workflows panel params
+  useEffect(() => {
+    if (!dockApi) return
+    const workflowsPanel = dockApi.getPanel('workflows')
+    if (workflowsPanel) {
+      workflowsPanel.api.updateParameters({
+        collapsed: collapsed.workflows,
+        onToggleCollapse: toggleWorkflows,
+        onAttachWorkflow: openWorkflowTerminal,
+      })
+    }
+  }, [dockApi, collapsed.workflows, toggleWorkflows, openWorkflowTerminal])
+
   // Restore saved tabs when dockApi becomes available
   const hasRestoredTabs = useRef(false)
   useEffect(() => {
@@ -787,6 +1050,14 @@ export default function App() {
     } catch (e) {
       // Ignore parse errors
     }
+  }
+
+  // POC mode for testing diff highlighting
+  if (POC_MODE === 'diff') {
+    return <DiffHighlightPOC />
+  }
+  if (POC_MODE === 'tiptap-diff') {
+    return <TiptapDiffPOC />
   }
 
   return (

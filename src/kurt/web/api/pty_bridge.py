@@ -323,6 +323,36 @@ def build_codex_args(
     return args
 
 
+# Allowlist of permitted kurt subcommands for security
+KURT_ALLOWED_COMMANDS: dict[str, list[str]] = {
+    "workflows": ["follow", "list", "status", "cancel"],
+}
+
+
+def build_kurt_args(
+    subcommand: str,
+    subcommand_args: list[str],
+) -> list[str]:
+    """Build Kurt CLI arguments with security validation.
+
+    Only allows specific subcommands to prevent arbitrary command execution.
+    """
+    # Validate subcommand is in allowlist
+    if subcommand not in KURT_ALLOWED_COMMANDS:
+        raise ValueError(f"Kurt subcommand '{subcommand}' not allowed")
+
+    args = [subcommand]
+
+    # For workflows, validate the action is allowed
+    if subcommand == "workflows" and subcommand_args:
+        action = subcommand_args[0] if subcommand_args else None
+        if action and action not in KURT_ALLOWED_COMMANDS["workflows"]:
+            raise ValueError(f"Kurt workflows action '{action}' not allowed")
+        args.extend(subcommand_args)
+
+    return args
+
+
 async def handle_pty_websocket(
     websocket: WebSocket,
     cmd: str = "claude",
@@ -336,9 +366,11 @@ async def handle_pty_websocket(
     - session_id: Optional session ID for Claude CLI
     - resume: If "1", resume existing session
     - force_new: If "1", force new session
-    - provider: Provider name (e.g., "claude", "codex")
+    - provider: Provider name (e.g., "claude", "codex", "kurt")
     - session_name: Web UI session name/title
     - fork_session: Optional session ID to fork
+    - kurt_subcommand: For kurt provider, the subcommand (e.g., "workflows")
+    - kurt_args: For kurt provider, JSON-encoded args array
     """
     await websocket.accept()
 
@@ -350,8 +382,26 @@ async def handle_pty_websocket(
     session_name = params.get("session_name", "")
     fork_session = params.get("fork_session")
 
+    # Kurt provider specific params
+    kurt_subcommand = params.get("kurt_subcommand", "")
+    kurt_args_raw = params.get("kurt_args", "[]")
+
     # Select command and build args based on provider
-    if provider == "codex":
+    if provider == "kurt":
+        cmd = os.environ.get("KURT_CMD", "kurt")
+        try:
+            kurt_args = json.loads(kurt_args_raw) if kurt_args_raw else []
+            args = build_kurt_args(kurt_subcommand, kurt_args)
+        except (json.JSONDecodeError, ValueError) as e:
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "data": f"Invalid kurt command: {e}",
+                }
+            )
+            await websocket.close()
+            return
+    elif provider == "codex":
         cmd = os.environ.get("KURT_CODEX_CMD", "codex")
         args = build_codex_args(base_args or [], session_id, resume, force_new)
     else:
