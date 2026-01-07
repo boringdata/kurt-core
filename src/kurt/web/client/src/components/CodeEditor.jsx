@@ -105,17 +105,20 @@ export default function CodeEditor({
     }
   }, [])
 
-  // Highlight function for prism-react-renderer
+  // Highlight function for prism-react-renderer with line numbers
   const highlightCode = useCallback(
     (code) => (
       <Highlight theme={themes.vsDark} code={code} language={language}>
         {({ tokens, getLineProps, getTokenProps }) => (
           <>
             {tokens.map((line, i) => (
-              <div key={i} {...getLineProps({ line })}>
-                {line.map((token, key) => (
-                  <span key={key} {...getTokenProps({ token })} />
-                ))}
+              <div key={i} {...getLineProps({ line })} style={{ display: 'table-row' }}>
+                <span className="code-editor-line-number">{i + 1}</span>
+                <span style={{ display: 'table-cell' }}>
+                  {line.map((token, key) => (
+                    <span key={key} {...getTokenProps({ token })} />
+                  ))}
+                </span>
               </div>
             ))}
           </>

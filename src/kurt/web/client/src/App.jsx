@@ -9,7 +9,6 @@ import EmptyPanel from './panels/EmptyPanel'
 import ReviewPanel from './panels/ReviewPanel'
 import WorkflowsPanel from './panels/WorkflowsPanel'
 import WorkflowTerminalPanel from './panels/WorkflowTerminalPanel'
-import DiffViewerPanel from './panels/DiffViewerPanel'
 import DiffHighlightPOC from './components/DiffHighlightPOC'
 import TiptapDiffPOC from './components/TiptapDiffPOC'
 
@@ -27,7 +26,6 @@ const components = {
   review: ReviewPanel,
   workflows: WorkflowsPanel,
   workflowTerminal: WorkflowTerminalPanel,
-  diffViewer: DiffViewerPanel,
 }
 
 const KNOWN_COMPONENTS = new Set(Object.keys(components))
@@ -424,13 +422,17 @@ export default function App() {
 
   // Open file in a specific position (used for drag-drop)
   const openFileAtPosition = useCallback(
-    (path, position) => {
+    (path, position, extraParams = {}) => {
       if (!dockApi) return
 
       const panelId = `editor-${path}`
       const existingPanel = dockApi.getPanel(panelId)
 
       if (existingPanel) {
+        // If opening with initialMode, update the panel params
+        if (extraParams.initialMode) {
+          existingPanel.api.updateParameters({ initialMode: extraParams.initialMode })
+        }
         existingPanel.api.setActive()
         return
       }
@@ -456,6 +458,7 @@ export default function App() {
             path,
             initialContent: content,
             contentVersion: 1,
+            ...extraParams,
             onContentChange: (p, newContent) => {
               setTabs((prev) => ({
                 ...prev,
@@ -567,16 +570,18 @@ export default function App() {
     (path, status) => {
       if (!dockApi) return
 
-      const panelId = `diff-${path}`
+      const panelId = `editor-${path}`
       const existingPanel = dockApi.getPanel(panelId)
 
       if (existingPanel) {
+        // Update to diff mode and activate
+        existingPanel.api.updateParameters({ initialMode: 'git-diff' })
         existingPanel.api.setActive()
         setActiveDiffFile(path)
         return
       }
 
-      // Close empty panel and add diff viewer
+      // Use empty panel's group first to maintain layout hierarchy
       const emptyPanel = dockApi.getPanel('empty-center')
       const workflowsPanel = dockApi.getPanel('workflows')
       const centerGroup = centerGroupRef.current
@@ -592,29 +597,11 @@ export default function App() {
         position = { direction: 'right', referencePanel: 'filetree' }
       }
 
-      const panel = dockApi.addPanel({
-        id: panelId,
-        component: 'diffViewer',
-        title: `Diff: ${getFileName(path)}`,
-        position,
-        params: {
-          path,
-          status,
-        },
-      })
-
-      if (emptyPanel) {
-        emptyPanel.api.close()
-      }
-
-      if (panel?.group) {
-        panel.group.header.hidden = false
-        centerGroupRef.current = panel.group
-      }
-
+      // Open regular editor with diff mode enabled
+      openFileAtPosition(path, position, { initialMode: 'git-diff' })
       setActiveDiffFile(path)
     },
-    [dockApi]
+    [dockApi, openFileAtPosition]
   )
 
   useEffect(() => {
@@ -942,11 +929,8 @@ export default function App() {
       if (panel && panel.id && panel.id.startsWith('editor-')) {
         const path = panel.id.replace('editor-', '')
         setActiveFile(path)
-        setActiveDiffFile(null)
-      } else if (panel && panel.id && panel.id.startsWith('diff-')) {
-        const path = panel.id.replace('diff-', '')
+        // Also set activeDiffFile if this file is in git changes
         setActiveDiffFile(path)
-        setActiveFile(null)
       } else {
         setActiveFile(null)
         setActiveDiffFile(null)
