@@ -1,0 +1,64 @@
+---
+name: answer_with_yaml_metadata
+description: "Answer questions using pre-extracted metadata (entities → claims) for structured retrieval"
+project: motherduck
+conversational: true
+setup_commands:
+  - uv run --project /Users/julien/Documents/wik/wikumeo/projects/kurt-core python /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/framework/dumps/loader.py motherduck --skip-entities
+llm_judge:
+  enabled: true
+  provider: anthropic
+question_set:
+  file: questions_motherduck.yaml
+  answer_file_template: /tmp/answer_yaml_metadata_{question_num}.md
+  initial_prompt: |
+    {question}
+
+    ═══════════════════════════════════════════════════════════════════════
+    USE PRE-EXTRACTED METADATA: entities.txt → claims.txt → source docs
+    ═══════════════════════════════════════════════════════════════════════
+
+    📄 .kurt/sources/motherduck.com/.metadata/entities.txt - 2000+ entities
+    📄 .kurt/sources/motherduck.com/.metadata/claims.txt - 3000+ facts
+
+    ═══════════════════════════════════════════════════════════════════════
+    WORKFLOW: Entity-first retrieval
+    ═══════════════════════════════════════════════════════════════════════
+
+    STEP 1: Find relevant ENTITIES
+    ──────────────────────────────
+    Grep entities.txt for keywords from the question.
+
+    Example: Grep pattern="dbt|duckdb" path=".kurt/sources/motherduck.com/.metadata/entities.txt"
+
+    Format: `NAME | type | description | docs: doc1.md, doc2.md`
+
+    Extract the entity NAMES that are relevant to the question.
+
+    STEP 2: Get CLAIMS for those entities
+    ─────────────────────────────────────
+    Grep claims.txt using the exact entity names found in Step 1.
+
+    Example: Grep pattern="entity: DuckDB|entity: dbt" path=".kurt/sources/motherduck.com/.metadata/claims.txt"
+
+    Format: `STATEMENT | type | entity: NAME | doc: path.md | lines: N-M`
+
+    The claims contain the actual FACTS you need to answer the question.
+
+    STEP 3: (Optional) Read source for more context
+    ────────────────────────────────────────────────
+    If claims need more context, use the doc path and line numbers:
+
+    Example claim: "DuckDB supports...|doc: blog/foo.md | lines: 45-60"
+    → Read file_path=".kurt/sources/motherduck.com/blog/foo.md" offset=45 limit=15
+
+    STEP 4: Write answer to {answer_file}
+    ─────────────────────────────────────
+    Include the claims and entities you used as sources.
+
+    ═══════════════════════════════════════════════════════════════════════
+
+  assertions:
+    - type: FileExists
+      path: "{answer_file}"
+  results_dir: eval/results/answer_with_yaml_metadata
