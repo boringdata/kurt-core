@@ -47,7 +47,7 @@ from .pipeline import PipelineConfig, get_pipeline
 from .references import Reference
 from .registry import ModelRegistry
 from .table_io import TableReader, TableWriter
-from .workflow import resolve_pipeline, run_pipeline_workflow, run_workflow
+from .workflow import resolve_pipeline, run_pipeline_workflow
 
 __all__ = [
     # Core
@@ -69,7 +69,6 @@ __all__ = [
     "PipelineConfig",
     "get_pipeline",
     "run_pipeline",
-    "run_workflow",
     "run_pipeline_workflow",
     "resolve_pipeline",
     "run_model",

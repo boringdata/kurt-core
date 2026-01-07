@@ -548,15 +548,19 @@ def get_document_knowledge_graph(document_id: str) -> dict:
     doc_entity_stmt = select(DocumentEntity).where(DocumentEntity.document_id == doc.id)
     doc_entities = session.exec(doc_entity_stmt).all()
 
-    # Get full entity details
+    # Get full entity details (deduplicated by entity_id)
+    # An entity can appear in multiple sections, so we aggregate the mention counts
     entities = []
     entity_ids = set()
+    entity_data_by_id = {}  # Aggregate data across sections
+
     for de in doc_entities:
         entity = session.get(Entity, de.entity_id)
         if entity:
             entity_ids.add(entity.id)
-            entities.append(
-                {
+            if entity.id not in entity_data_by_id:
+                # First time seeing this entity
+                entity_data_by_id[entity.id] = {
                     "id": str(entity.id),
                     "name": entity.name,
                     "type": entity.entity_type,
@@ -568,7 +572,15 @@ def get_document_knowledge_graph(document_id: str) -> dict:
                     "mention_confidence": de.confidence,
                     "mention_context": de.context,
                 }
-            )
+            else:
+                # Aggregate mentions from additional sections
+                entity_data_by_id[entity.id]["mentions_in_doc"] += de.mention_count
+                # Keep the highest confidence
+                if de.confidence > entity_data_by_id[entity.id]["mention_confidence"]:
+                    entity_data_by_id[entity.id]["mention_confidence"] = de.confidence
+                    entity_data_by_id[entity.id]["mention_context"] = de.context
+
+    entities = list(entity_data_by_id.values())
 
     # Get relationships between these entities
     relationships = []

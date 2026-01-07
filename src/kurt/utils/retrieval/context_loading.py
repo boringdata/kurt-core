@@ -152,46 +152,173 @@ def load_context_for_documents(
     ]
 
     entity_ids = [e.id for e in entity_rows]
+    entity_id_to_name = {e.id: e.name for e in entity_rows}
 
-    # Load relationships between these entities
+    # Load relationships - prioritize cross-entity relationships (between matched entities)
     relationships = []
+    seen_rel_ids = set()
+
     if entity_ids:
-        rel_rows = (
-            session.query(EntityRelationship, Entity)
-            .join(Entity, EntityRelationship.target_entity_id == Entity.id)
-            .filter(
-                EntityRelationship.source_entity_id.in_(entity_ids),
-                EntityRelationship.target_entity_id.in_(entity_ids),
+        matched_entity_ids_set = {e.id for e in entity_rows if e.name in matched_entity_names}
+
+        # Step 1: Cross-entity relationships (both source AND target are matched entities)
+        if matched_entity_ids_set:
+            cross_rels = (
+                session.query(EntityRelationship, Entity)
+                .join(Entity, EntityRelationship.target_entity_id == Entity.id)
+                .filter(
+                    EntityRelationship.source_entity_id.in_(matched_entity_ids_set),
+                    EntityRelationship.target_entity_id.in_(matched_entity_ids_set),
+                )
+                .order_by(EntityRelationship.confidence.desc())
+                .limit(max_relationships // 2)  # Reserve half for cross-entity
+                .all()
             )
-            .order_by(EntityRelationship.confidence.desc())
-            .limit(max_relationships)
+            for rel, target_entity in cross_rels:
+                if rel.id not in seen_rel_ids:
+                    source_name = entity_id_to_name.get(rel.source_entity_id, "?")
+                    relationships.append(
+                        {
+                            "source": source_name,
+                            "type": rel.relationship_type,
+                            "target": target_entity.name,
+                            "confidence": rel.confidence,
+                            "evidence_count": rel.evidence_count,
+                            "context": rel.context,
+                        }
+                    )
+                    seen_rel_ids.add(rel.id)
+
+        # Step 2: Relationships from matched entities to similar entities
+        if len(relationships) < max_relationships and matched_entity_ids_set:
+            remaining = max_relationships - len(relationships)
+            matched_to_similar = (
+                session.query(EntityRelationship, Entity)
+                .join(Entity, EntityRelationship.target_entity_id == Entity.id)
+                .filter(
+                    EntityRelationship.source_entity_id.in_(matched_entity_ids_set),
+                    EntityRelationship.target_entity_id.in_(entity_ids),
+                )
+                .order_by(EntityRelationship.confidence.desc())
+                .limit(remaining + len(seen_rel_ids))
+                .all()
+            )
+            for rel, target_entity in matched_to_similar:
+                if rel.id not in seen_rel_ids and len(relationships) < max_relationships:
+                    source_name = entity_id_to_name.get(rel.source_entity_id, "?")
+                    relationships.append(
+                        {
+                            "source": source_name,
+                            "type": rel.relationship_type,
+                            "target": target_entity.name,
+                            "confidence": rel.confidence,
+                            "evidence_count": rel.evidence_count,
+                            "context": rel.context,
+                        }
+                    )
+                    seen_rel_ids.add(rel.id)
+
+        # Step 3: Any remaining relationships between loaded entities
+        if len(relationships) < max_relationships:
+            remaining = max_relationships - len(relationships)
+            other_rels = (
+                session.query(EntityRelationship, Entity)
+                .join(Entity, EntityRelationship.target_entity_id == Entity.id)
+                .filter(
+                    EntityRelationship.source_entity_id.in_(entity_ids),
+                    EntityRelationship.target_entity_id.in_(entity_ids),
+                )
+                .order_by(EntityRelationship.confidence.desc())
+                .limit(remaining + len(seen_rel_ids))
+                .all()
+            )
+            for rel, target_entity in other_rels:
+                if rel.id not in seen_rel_ids and len(relationships) < max_relationships:
+                    source_name = entity_id_to_name.get(rel.source_entity_id, "?")
+                    relationships.append(
+                        {
+                            "source": source_name,
+                            "type": rel.relationship_type,
+                            "target": target_entity.name,
+                            "confidence": rel.confidence,
+                            "evidence_count": rel.evidence_count,
+                            "context": rel.context,
+                        }
+                    )
+                    seen_rel_ids.add(rel.id)
+
+    # Load claims - prioritize claims that reference multiple matched entities
+    # First get entity IDs for matched entity names
+    matched_entity_ids = [e.id for e in entity_rows if e.name in matched_entity_names]
+
+    claim_rows = []
+    seen_claim_ids = set()
+
+    if matched_entity_ids:
+        # Step 1: Find claims that reference multiple matched entities (cross-entity claims)
+        # These are most valuable as they show relationships between concepts
+        from sqlalchemy import func
+
+        from kurt.db.claim_models import ClaimEntity
+
+        # Find claims that appear multiple times in ClaimEntity for our matched entities
+        cross_entity_claim_ids = (
+            session.query(ClaimEntity.claim_id)
+            .filter(ClaimEntity.entity_id.in_(matched_entity_ids))
+            .group_by(ClaimEntity.claim_id)
+            .having(func.count(ClaimEntity.entity_id) >= 2)
+            .limit(max_claims // 3)  # Reserve 1/3 for cross-entity claims
             .all()
         )
+        cross_claim_ids = [c.claim_id for c in cross_entity_claim_ids]
 
-        entity_id_to_name = {e.id: e.name for e in entity_rows}
-        for rel, target_entity in rel_rows:
-            source_name = entity_id_to_name.get(rel.source_entity_id, "?")
-            relationships.append(
-                {
-                    "source": source_name,
-                    "type": rel.relationship_type,
-                    "target": target_entity.name,
-                    "confidence": rel.confidence,
-                    "evidence_count": rel.evidence_count,
-                    "context": rel.context,
-                }
+        if cross_claim_ids:
+            cross_claims = (
+                session.query(Claim, Entity, Document)
+                .join(Entity, Claim.subject_entity_id == Entity.id)
+                .join(Document, Claim.source_document_id == Document.id)
+                .filter(Claim.id.in_(cross_claim_ids))
+                .order_by(Claim.overall_confidence.desc())
+                .all()
             )
+            for c, e, d in cross_claims:
+                if c.id not in seen_claim_ids:
+                    claim_rows.append((c, e, d))
+                    seen_claim_ids.add(c.id)
 
-    # Load claims from these documents
-    claim_rows = (
-        session.query(Claim, Entity, Document)
-        .join(Entity, Claim.subject_entity_id == Entity.id)
-        .join(Document, Claim.source_document_id == Document.id)
-        .filter(Claim.source_document_id.in_(doc_ids))
-        .order_by(Claim.overall_confidence.desc())
-        .limit(max_claims)
-        .all()
-    )
+        # Step 2: Add claims about matched entities (subject is a matched entity)
+        if len(claim_rows) < max_claims:
+            remaining = max_claims - len(claim_rows)
+            matched_claims = (
+                session.query(Claim, Entity, Document)
+                .join(Entity, Claim.subject_entity_id == Entity.id)
+                .join(Document, Claim.source_document_id == Document.id)
+                .filter(Claim.subject_entity_id.in_(matched_entity_ids))
+                .order_by(Claim.overall_confidence.desc())
+                .limit(remaining + len(seen_claim_ids))
+                .all()
+            )
+            for c, e, d in matched_claims:
+                if c.id not in seen_claim_ids and len(claim_rows) < max_claims:
+                    claim_rows.append((c, e, d))
+                    seen_claim_ids.add(c.id)
+
+    # Step 3: If we need more claims, get from documents (but avoid duplicates)
+    if len(claim_rows) < max_claims:
+        remaining = max_claims - len(claim_rows)
+        doc_claims = (
+            session.query(Claim, Entity, Document)
+            .join(Entity, Claim.subject_entity_id == Entity.id)
+            .join(Document, Claim.source_document_id == Document.id)
+            .filter(Claim.source_document_id.in_(doc_ids))
+            .order_by(Claim.overall_confidence.desc())
+            .limit(remaining + len(seen_claim_ids))  # Get extra to account for dupes
+            .all()
+        )
+        for c, e, d in doc_claims:
+            if c.id not in seen_claim_ids and len(claim_rows) < max_claims:
+                claim_rows.append((c, e, d))
+                seen_claim_ids.add(c.id)
 
     claims = [
         {

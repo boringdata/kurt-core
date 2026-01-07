@@ -152,6 +152,12 @@ class IndexDocument(dspy.Signature):
     - Include confidence score (0.0-1.0)
     - Prioritize claims revealing capabilities, architecture, or strategic advantages
 
+    **CRITICAL: LIMITATION claims are HIGH PRIORITY**
+    - ACTIVELY SEARCH for statements about what is NOT supported, not yet available, or doesn't work
+    - Phrases to look for: "not supported", "not yet", "does not work", "cannot", "limitation",
+      "unsupported", "disabled", "doesn't support", "not available", "won't work"
+    - If the document mentions something that doesn't work or isn't supported, ALWAYS extract it as a LIMITATION claim
+
     ## EXTRACTION PRINCIPLES
     - Maintain fidelity to source text
     - Balance comprehensiveness with precision
@@ -292,6 +298,10 @@ def section_extractions(
     # 2. Pre-process: Build content and existing entities context
     doc_entities = get_entities_by_document(df["document_id"].unique().tolist(), as_dicts=True)
 
+    # Calculate total sections per document for progress display
+    section_counts = df.groupby("document_id").size().to_dict()
+    df["total_sections"] = df["document_id"].map(section_counts)
+
     df["document_content"] = df.apply(
         lambda r: (f"[...{r['overlap_prefix']}]\n\n" if r.get("overlap_prefix") else "")
         + r.get("content", "")
@@ -313,9 +323,10 @@ def section_extractions(
             "document_content": "document_content",
             "existing_entities": "existing_entities",
         },
-        tracking_fields=["document_id", "section_number"],
+        tracking_fields=["document_id", "section_number", "total_sections"],
         max_concurrent=config.max_concurrent,
         config=config,
+        progress_prefix="Extraction",
     )
 
     # 4. Post-process: Create SectionExtractionRow objects
@@ -373,6 +384,7 @@ def section_extractions(
                 columns=["doc", "name", "type", "status"],
                 max_items=20,
                 column_widths={"doc": 10, "name": 30, "type": 15, "status": 10},
+                cli_command="kurt content show <doc_id> --kg" if len(all_entities) > 20 else None,
             )
 
         # Show claims table
@@ -395,6 +407,7 @@ def section_extractions(
                 columns=["doc", "statement", "type"],
                 max_items=15,
                 column_widths={"doc": 10, "statement": 60, "type": 15},
+                cli_command="kurt content show <doc_id> --kg" if len(all_claims) > 15 else None,
             )
 
     return result

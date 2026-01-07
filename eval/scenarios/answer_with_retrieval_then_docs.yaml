@@ -1,0 +1,68 @@
+---
+name: answer_with_retrieval_then_docs
+description: "Answer questions using kurt d"
+
+project: motherduck
+conversational: true
+setup_commands:
+  - uv run --project /Users/julien/Documents/wik/wikumeo/projects/kurt-core python /Users/julien/Documents/wik/wikumeo/projects/kurt-core/eval/framework/dumps/loader.py motherduck
+llm_judge:
+  enabled: true
+  provider: anthropic
+  weights:
+    accuracy: 0.4
+    completeness: 0.3
+    relevance: 0.2
+    clarity: 0.1
+question_set:
+  file: questions_motherduck.yaml
+  answer_file_template: /tmp/answer_retrieval_docs_{question_num}.md
+  initial_prompt: |
+    Answer this question about MotherDuck:
+
+    {question}
+
+    ## Instructions
+
+    **Be concise.** Answer the question directly without excessive detail. Focus on what was asked.
+
+    **IMPORTANT: Do NOT use WebFetch or WebSearch tools. All information is available locally via kurt retrieve commands.**
+
+    **Before each retrieval command**, briefly explain WHY you're running it (for audit).
+
+    ### Step 1: Search entities
+    ```bash
+    KURT_TELEMETRY_DISABLED=1 uv run kurt retrieve entities "term1, term2, MotherDuck"
+    ```
+
+    ### Step 2: Get claims about relevant entities
+    ```bash
+    KURT_TELEMETRY_DISABLED=1 uv run kurt retrieve claims "Entity1, Entity2, Entity3"
+    ```
+    Use exact entity names from Step 1.
+
+    ### Step 3: Write answer
+    Write a **focused, concise answer** to: {answer_file}
+
+    - Answer the specific question asked - don't add tangential information
+    - Use claims as your source of truth
+    - Only read source documents if claims are clearly insufficient
+    - Keep the answer short and actionable
+
+    Format:
+    ```markdown
+    # Answer
+
+    [Concise answer to the question]
+
+    ---
+    Sources: [list key claims/entities used]
+    ```
+
+  assertions:
+    - type: FileExists
+      path: "{answer_file}"
+    # Note: ConversationContains for "kurt retrieve" removed because the assertion
+    # checks agent text output only, not tool calls. The retrieve command is run
+    # via Bash tool which isn't captured in conversation text.
+  results_dir: eval/results/answer_with_retrieval_then_docs

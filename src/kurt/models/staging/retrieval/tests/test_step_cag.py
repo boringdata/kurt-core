@@ -59,16 +59,16 @@ class TestCAGConfig:
         """Config should have sensible defaults."""
         config = CAGConfig()
         # ConfigParam returns actual values when accessed on instance
-        assert config.top_k_entities == 5
+        assert config.top_k_per_term == 3
         assert config.min_similarity == 0.3
         assert config.max_claims == 50
         assert config.max_entities == 50
-        assert config.max_relationships == 30
+        assert config.max_relationships == 200
 
     def test_custom_values(self):
         """Config should accept custom values when instantiated properly."""
-        config = CAGConfig(top_k_entities=10, min_similarity=0.5)
-        assert config.top_k_entities == 10
+        config = CAGConfig(top_k_per_term=5, min_similarity=0.5)
+        assert config.top_k_per_term == 5
         assert config.min_similarity == 0.5
 
 

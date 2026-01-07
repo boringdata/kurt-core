@@ -268,8 +268,6 @@ class TestCAGPipelineStep:
     """Tests for the cag_retrieve pipeline step."""
 
     @patch("kurt.models.staging.retrieval.step_cag.search_entities_by_embedding")
-    @patch("kurt.models.staging.retrieval.step_cag.get_topics_for_entities")
-    @patch("kurt.models.staging.retrieval.step_cag.get_document_ids_from_topics")
     @patch("kurt.models.staging.retrieval.step_cag.get_document_ids_from_entities")
     @patch("kurt.models.staging.retrieval.step_cag.load_context_for_documents")
     @patch("kurt.models.staging.retrieval.step_cag.generate_embeddings")
@@ -278,8 +276,6 @@ class TestCAGPipelineStep:
         mock_embed,
         mock_load,
         mock_doc_ids_entities,
-        mock_doc_ids_topics,
-        mock_topics,
         mock_entities,
     ):
         """Test the cag_retrieve pipeline step."""
@@ -292,11 +288,7 @@ class TestCAGPipelineStep:
         mock_entity.name = "Entity 1"
         mock_entities.return_value = [(mock_entity, 0.9)]
 
-        # Mock topics
-        mock_topics.return_value = ["Topic A"]
-
         # Mock document ID lookups
-        mock_doc_ids_topics.return_value = {uuid4()}
         mock_doc_ids_entities.return_value = {uuid4()}
 
         # Mock context loading
@@ -333,7 +325,6 @@ class TestCAGPipelineStep:
 
         # Verify result
         assert result["rows_written"] == 1
-        assert result["topics_matched"] == 1
         assert result["entities_matched"] == 1
 
         # Verify writer was called
@@ -572,7 +563,7 @@ class TestCAGIntegration:
         mock_embeddings.return_value = [[0.85, 0.15, 0.0] + [0.0] * 1533]
 
         config = CAGConfig(
-            top_k_entities=5,
+            top_k_per_term=5,
             min_similarity=0.3,
         )
 
@@ -600,7 +591,7 @@ class TestCAGIntegration:
         mock_embeddings.return_value = [[0.0, 0.0, 1.0] + [0.0] * 1533]
 
         config = CAGConfig(
-            top_k_entities=5,
+            top_k_per_term=5,
             min_similarity=0.8,  # High threshold
         )
 

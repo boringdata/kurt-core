@@ -60,6 +60,17 @@ def format_agent_context(query: str, data: TopicContextData) -> str:
         "",
     ]
 
+    # Show related entities the agent might want to add to their search
+    # These are entities with claims but not directly matched
+    unmatched_with_claims = [
+        e["name"] for e in data.entities if not e.get("matched") and e["name"] in claims_by_entity
+    ]
+    if unmatched_with_claims:
+        # Show top 5 related entities as suggestions
+        suggestions = unmatched_with_claims[:5]
+        lines.append(f"**Related entities:** {', '.join(suggestions)}")
+        lines.append("")
+
     # Knowledge section - entities with their relationships and claims together
     if claims_by_entity:
         lines.append("## Knowledge")
@@ -91,8 +102,8 @@ def format_agent_context(query: str, data: TopicContextData) -> str:
 
             # Relationships for this entity (with types)
             if entity in rels_by_source:
-                rels = rels_by_source[entity][:6]  # Limit to 6
-                more = len(rels_by_source[entity]) - 6
+                rels = rels_by_source[entity][:10]  # Show more relationships
+                more = len(rels_by_source[entity]) - 10
                 rel_parts = [f"*{rel_type}* → {target}" for rel_type, target in rels]
                 if more > 0:
                     rel_parts.append(f"(+{more})")

@@ -267,7 +267,8 @@ def get_dspy_lm(config: "ModelConfig | None" = None) -> dspy.LM:
         max_tokens = 16000
     else:
         # Use config values or defaults
-        temperature = settings.temperature  # None means use DSPy default
+        # Default to temperature=0 for deterministic/reproducible outputs
+        temperature = settings.temperature if settings.temperature is not None else 0.0
         max_tokens = settings.max_tokens
         if max_tokens is None:
             max_tokens = 4000 if "haiku" in model_name.lower() else 8000
@@ -498,6 +499,7 @@ def run_batch_sync(
     timeout: Optional[float] = None,
     on_progress: Optional[Callable[[int, int, Optional[DSPyResult]], None]] = None,
     config: "ModelConfig | None" = None,
+    predictor: str = "chain_of_thought",
 ) -> List[DSPyResult]:
     """
     Synchronous version of run_batch using thread pool.
@@ -514,6 +516,7 @@ def run_batch_sync(
         on_progress: Optional callback(completed, total, result) called after each item completes
         config: Step's ModelConfig instance with llm_model attribute.
                 If None, model is inferred from caller's module path.
+        predictor: DSPy predictor type: "chain_of_thought" (default), "typed", or "predict"
 
     Returns:
         List of DSPyResult objects
@@ -539,9 +542,14 @@ def run_batch_sync(
             # Merge context
             merged_payload = {**context, **payload}
 
-            # Create executor
+            # Create executor based on predictor type
             if isinstance(signature, type) and issubclass(signature, dspy.Signature):
-                executor = dspy.ChainOfThought(signature)
+                if predictor == "typed":
+                    executor = dspy.TypedChainOfThought(signature)
+                elif predictor == "predict":
+                    executor = dspy.Predict(signature)
+                else:  # default: chain_of_thought
+                    executor = dspy.ChainOfThought(signature)
             elif isinstance(signature, dspy.Module):
                 executor = signature
             else:

@@ -95,13 +95,8 @@ def get_pipeline(namespace: str) -> PipelineConfig:
         PipelineConfig ready for execution
 
     Example:
-        # First, ensure models are imported
-        import kurt.models.staging  # noqa: F401
-
-        # Then get the pipeline
-        pipeline = get_pipeline("staging")
-
-        # Run it
-        result = await run_workflow(pipeline, filters)
+        # Use run_pipeline_workflow instead for full workflow execution
+        from kurt.core import run_pipeline_workflow
+        result = await run_pipeline_workflow("staging.indexing", filters)
     """
     return PipelineConfig.discover(namespace)
