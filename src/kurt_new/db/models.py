@@ -2,13 +2,35 @@
 Core database models for kurt_new.
 
 Infrastructure tables shared across all workflows.
-Workflow-specific output tables should be defined in workflows/<name>/models.py
+Workflow-specific output tables are defined in workflows/<name>/models.py
+and registered via register_all_models().
 """
 
 from datetime import datetime
 from typing import Optional
 
 from sqlmodel import Field, SQLModel
+
+
+def register_all_models():
+    """Import all models to register them with SQLModel.metadata.
+
+    Call this before creating tables to ensure all workflow models
+    are included in SQLModel.metadata.create_all().
+    """
+    # Infrastructure models (defined below)
+    from kurt_new.db.models import LLMTrace  # noqa: F401
+    from kurt_new.workflows.domain_analytics.models import (  # noqa: F401
+        AnalyticsDomain,
+        PageAnalytics,
+    )
+    from kurt_new.workflows.fetch.models import FetchDocument  # noqa: F401
+
+    # Workflow models
+    from kurt_new.workflows.map.models import MapDocument  # noqa: F401
+    from kurt_new.workflows.research.models import ResearchDocument  # noqa: F401
+    from kurt_new.workflows.signals.models import MonitoringSignal  # noqa: F401
+
 
 # ============================================================================
 # Mixins

@@ -193,6 +193,7 @@ def create_mock_embedding(dimensions: int = 1536) -> list[float]:
 def create_embedding_response(
     texts: list[str],
     dimensions: int = 1536,
+    tokens_per_text: int = 10,
 ) -> MagicMock:
     """
     Create a mock LiteLLM embedding response.
@@ -200,12 +201,18 @@ def create_embedding_response(
     Args:
         texts: List of input texts (determines number of embeddings)
         dimensions: Embedding dimensions
+        tokens_per_text: Approximate tokens per text for usage tracking
 
     Returns:
         MagicMock mimicking litellm.embedding() response
     """
     response = MagicMock()
     response.data = [{"embedding": create_mock_embedding(dimensions)} for _ in texts]
+    # Add usage data for cost tracking
+    total_tokens = len(texts) * tokens_per_text
+    response.usage = MagicMock()
+    response.usage.prompt_tokens = total_tokens
+    response.usage.total_tokens = total_tokens
     return response
 
 
