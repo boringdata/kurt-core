@@ -2,13 +2,13 @@
 
 import pytest
 
-from kurt_new.workflows.domain_analytics.config import (
-    DomainAnalyticsConfig,
+from kurt_new.integrations.domains_analytics.config import (
     add_platform_config,
     create_template_config,
     get_platform_config,
     platform_configured,
 )
+from kurt_new.workflows.domain_analytics.config import DomainAnalyticsConfig
 
 
 class TestDomainAnalyticsConfig:

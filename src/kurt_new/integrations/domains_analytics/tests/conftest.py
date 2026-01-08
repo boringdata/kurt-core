@@ -1,4 +1,4 @@
-"""Test fixtures for domain_analytics workflow tests."""
+"""Test fixtures for domains_analytics integration tests."""
 
 import os
 from pathlib import Path
@@ -40,6 +40,8 @@ def tmp_project_with_analytics_config(tmp_project: Path):
         f.write('ANALYTICS_POSTHOG_PROJECT_ID="12345"\n')
         f.write('ANALYTICS_POSTHOG_API_KEY="phx_test_key"\n')
         f.write('ANALYTICS_POSTHOG_HOST="https://app.posthog.com"\n')
+        f.write('ANALYTICS_GA4_PROPERTY_ID="UA-12345"\n')
+        f.write('ANALYTICS_GA4_CREDENTIALS_FILE="path/to/creds.json"\n')
 
     return tmp_project
 
@@ -97,57 +99,6 @@ def mock_posthog_adapter():
             period_start=now - timedelta(days=60),
             period_end=now,
         ),
-        "https://example.com/docs/guide": AnalyticsMetrics(
-            pageviews_60d=100,
-            pageviews_30d=50,
-            pageviews_previous_30d=50,
-            pageviews_trend="stable",
-            trend_percentage=0.0,
-            period_start=now - timedelta(days=60),
-            period_end=now,
-        ),
     }
 
     return adapter
-
-
-@pytest.fixture
-def mock_metrics_map():
-    """
-    Create a mock metrics map for testing sync_domain_metrics.
-    """
-    from datetime import datetime, timedelta
-
-    from kurt_new.integrations.domains_analytics import AnalyticsMetrics
-
-    now = datetime.utcnow()
-
-    return {
-        "https://example.com/page1": AnalyticsMetrics(
-            pageviews_60d=1000,
-            pageviews_30d=600,
-            pageviews_previous_30d=400,
-            pageviews_trend="increasing",
-            trend_percentage=50.0,
-            period_start=now - timedelta(days=60),
-            period_end=now,
-        ),
-        "https://example.com/page2": AnalyticsMetrics(
-            pageviews_60d=500,
-            pageviews_30d=200,
-            pageviews_previous_30d=300,
-            pageviews_trend="decreasing",
-            trend_percentage=-33.3,
-            period_start=now - timedelta(days=60),
-            period_end=now,
-        ),
-        "https://example.com/docs/guide": AnalyticsMetrics(
-            pageviews_60d=100,
-            pageviews_30d=50,
-            pageviews_previous_30d=50,
-            pageviews_trend="stable",
-            trend_percentage=0.0,
-            period_start=now - timedelta(days=60),
-            period_end=now,
-        ),
-    }

@@ -7,7 +7,7 @@ from typing import Any
 
 from dbos import DBOS
 
-from kurt_new.core import track_step
+from kurt_new.core import run_workflow, track_step
 
 from .config import DomainAnalyticsConfig
 from .steps import domain_analytics_sync_step, persist_domain_analytics
@@ -57,7 +57,12 @@ def domain_analytics_workflow(config_dict: dict[str, Any]) -> dict[str, Any]:
     return {"workflow_id": workflow_id, **result}
 
 
-def run_domain_analytics(config: DomainAnalyticsConfig | dict[str, Any]) -> dict[str, Any]:
+def run_domain_analytics(
+    config: DomainAnalyticsConfig | dict[str, Any],
+    *,
+    background: bool = False,
+    priority: int = 10,
+) -> dict[str, Any] | str | None:
     """
     Run the domain analytics workflow and return the result.
 
@@ -68,5 +73,9 @@ def run_domain_analytics(config: DomainAnalyticsConfig | dict[str, Any]) -> dict
         Workflow result dict
     """
     payload = config.model_dump() if isinstance(config, DomainAnalyticsConfig) else config
-    handle = DBOS.start_workflow(domain_analytics_workflow, payload)
-    return handle.get_result()
+    return run_workflow(
+        domain_analytics_workflow,
+        payload,
+        background=background,
+        priority=priority,
+    )

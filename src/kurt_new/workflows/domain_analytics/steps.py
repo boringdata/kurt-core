@@ -10,11 +10,11 @@ from uuid import uuid4
 from dbos import DBOS
 
 from kurt_new.db import ensure_tables, managed_session
+from kurt_new.integrations.domains_analytics import sync_domain_metrics
+from kurt_new.integrations.domains_analytics.utils import normalize_url_for_analytics
 
-from .adapters import get_adapter
-from .config import DomainAnalyticsConfig, get_platform_config
+from .config import DomainAnalyticsConfig
 from .models import AnalyticsDomain, AnalyticsStatus, PageAnalytics
-from .utils import normalize_url_for_analytics
 
 
 def build_analytics_rows(
@@ -99,14 +99,14 @@ def domain_analytics_sync_step(config_dict: dict[str, Any]) -> dict[str, Any]:
     """
     config = DomainAnalyticsConfig.model_validate(config_dict)
 
-    # Get platform credentials
-    platform_config = get_platform_config(config.platform)
-    adapter = get_adapter(config.platform, platform_config)
+    # Fetch metrics using integration
+    metrics_map = sync_domain_metrics(
+        platform=config.platform,
+        domain=config.domain,
+        period_days=config.period_days,
+    )
 
-    # Fetch URLs from analytics platform
-    urls = adapter.get_domain_urls(config.domain, period_days=config.period_days)
-
-    if not urls:
+    if not metrics_map:
         return {
             "domain": config.domain,
             "platform": config.platform,
@@ -115,9 +115,6 @@ def domain_analytics_sync_step(config_dict: dict[str, Any]) -> dict[str, Any]:
             "rows": [],
             "dry_run": config.dry_run,
         }
-
-    # Fetch metrics for all URLs
-    metrics_map = adapter.sync_metrics(urls, period_days=config.period_days)
 
     # Build rows for persistence
     rows = build_analytics_rows(config.domain, metrics_map)
@@ -146,7 +143,7 @@ def domain_analytics_sync_step(config_dict: dict[str, Any]) -> dict[str, Any]:
         "domain": config.domain,
         "platform": config.platform,
         "period_days": config.period_days,
-        "total_urls": len(urls),
+        "total_urls": len(metrics_map),
         "total_pageviews": total_pageviews,
         "rows": serialize_rows(rows),
         "dry_run": config.dry_run,

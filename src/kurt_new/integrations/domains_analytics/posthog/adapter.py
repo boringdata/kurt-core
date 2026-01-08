@@ -7,8 +7,8 @@ from typing import Optional
 
 import httpx
 
-from kurt_new.workflows.domain_analytics.adapters.base import AnalyticsAdapter, AnalyticsMetrics
-from kurt_new.workflows.domain_analytics.utils import normalize_url_for_analytics
+from kurt_new.integrations.domains_analytics.base import AnalyticsAdapter, AnalyticsMetrics
+from kurt_new.integrations.domains_analytics.utils import normalize_url_for_analytics
 
 logger = logging.getLogger(__name__)
 
@@ -16,26 +16,23 @@ logger = logging.getLogger(__name__)
 class PostHogAdapter(AnalyticsAdapter):
     """PostHog analytics platform adapter."""
 
-    def __init__(
-        self,
-        project_id: str,
-        api_key: str,
-        base_url: str = "https://app.posthog.com",
-    ):
+    def __init__(self, config: dict):
         """
         Initialize PostHog adapter.
 
-        Args:
-            project_id: PostHog project ID (numeric, e.g., "12345")
-            api_key: PostHog Personal API Key (requires project:read and query:read scopes)
-            base_url: PostHog instance URL (default: cloud)
+        Required config keys:
+        - project_id: PostHog project ID (numeric, e.g., "12345")
+        - api_key: PostHog Personal API Key (requires project:read and query:read scopes)
+
+        Optional config keys:
+        - host: PostHog instance URL (default: https://app.posthog.com)
         """
-        self.project_id = project_id
-        self.api_key = api_key
-        self.base_url = base_url.rstrip("/")
+        self.project_id = config["project_id"]
+        self.api_key = config["api_key"]
+        self.base_url = config.get("host", "https://app.posthog.com").rstrip("/")
         self.client = httpx.Client(
             base_url=self.base_url,
-            headers={"Authorization": f"Bearer {api_key}"},
+            headers={"Authorization": f"Bearer {self.api_key}"},
             timeout=30.0,
         )
 

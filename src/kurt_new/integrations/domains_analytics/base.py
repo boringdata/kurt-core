@@ -1,4 +1,9 @@
-"""Base analytics adapter interface."""
+"""
+Base adapter interface for analytics integrations.
+
+All analytics adapters must implement this interface to provide consistent
+operations across different analytics platforms.
+"""
 
 from abc import ABC, abstractmethod
 from datetime import datetime

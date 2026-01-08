@@ -137,7 +137,7 @@ class TestAdapterFactory:
             {"project_id": "123", "api_key": "test_key"},
         )
 
-        from kurt_new.workflows.domain_analytics.adapters.posthog import PostHogAdapter
+        from kurt_new.integrations.domains_analytics.posthog import PostHogAdapter
 
         assert isinstance(adapter, PostHogAdapter)
 
@@ -274,15 +274,15 @@ ANALYTICS_POSTHOG_HOST="https://app.posthog.com"
 class TestDomainAnalyticsE2E:
     """End-to-end tests for domain analytics workflow with real DBOS."""
 
-    def test_sync_workflow_with_mock_adapter(self, tmp_kurt_project: Path, mock_posthog_adapter):
+    def test_sync_workflow_with_mock_adapter(self, tmp_kurt_project: Path, mock_metrics_map):
         """Test full workflow execution with mocked adapter."""
         from kurt_new.db import managed_session
         from kurt_new.workflows.domain_analytics import run_domain_analytics
         from kurt_new.workflows.domain_analytics.models import AnalyticsDomain, PageAnalytics
 
         with patch(
-            "kurt_new.workflows.domain_analytics.steps.get_adapter",
-            return_value=mock_posthog_adapter,
+            "kurt_new.workflows.domain_analytics.steps.sync_domain_metrics",
+            return_value=mock_metrics_map,
         ):
             config = DomainAnalyticsConfig(domain="example.com", platform="posthog")
             result = run_domain_analytics(config)
@@ -313,15 +313,15 @@ class TestDomainAnalyticsE2E:
             assert page1.pageviews_60d == 1000
             assert page1.pageviews_trend == "increasing"
 
-    def test_sync_workflow_dry_run(self, tmp_kurt_project: Path, mock_posthog_adapter):
+    def test_sync_workflow_dry_run(self, tmp_kurt_project: Path, mock_metrics_map):
         """Test workflow in dry run mode doesn't persist."""
         from kurt_new.db import managed_session
         from kurt_new.workflows.domain_analytics import run_domain_analytics
         from kurt_new.workflows.domain_analytics.models import AnalyticsDomain, PageAnalytics
 
         with patch(
-            "kurt_new.workflows.domain_analytics.steps.get_adapter",
-            return_value=mock_posthog_adapter,
+            "kurt_new.workflows.domain_analytics.steps.sync_domain_metrics",
+            return_value=mock_metrics_map,
         ):
             config = DomainAnalyticsConfig(domain="example.com", platform="posthog", dry_run=True)
             result = run_domain_analytics(config)
@@ -339,15 +339,15 @@ class TestDomainAnalyticsE2E:
             pages = session.query(PageAnalytics).all()
             assert len(pages) == 0
 
-    def test_sync_workflow_updates_existing(self, tmp_kurt_project: Path, mock_posthog_adapter):
+    def test_sync_workflow_updates_existing(self, tmp_kurt_project: Path, mock_metrics_map):
         """Test re-running workflow updates existing records."""
         from kurt_new.db import managed_session
         from kurt_new.workflows.domain_analytics import run_domain_analytics
         from kurt_new.workflows.domain_analytics.models import PageAnalytics
 
         with patch(
-            "kurt_new.workflows.domain_analytics.steps.get_adapter",
-            return_value=mock_posthog_adapter,
+            "kurt_new.workflows.domain_analytics.steps.sync_domain_metrics",
+            return_value=mock_metrics_map,
         ):
             # First run - inserts
             config = DomainAnalyticsConfig(domain="example.com", platform="posthog")
@@ -357,8 +357,8 @@ class TestDomainAnalyticsE2E:
         assert result1["rows_updated"] == 0
 
         with patch(
-            "kurt_new.workflows.domain_analytics.steps.get_adapter",
-            return_value=mock_posthog_adapter,
+            "kurt_new.workflows.domain_analytics.steps.sync_domain_metrics",
+            return_value=mock_metrics_map,
         ):
             # Second run - updates
             result2 = run_domain_analytics(config)
@@ -371,18 +371,16 @@ class TestDomainAnalyticsE2E:
             pages = session.query(PageAnalytics).all()
             assert len(pages) == 3
 
-    def test_sync_workflow_empty_domain(self, tmp_kurt_project: Path, mock_posthog_adapter):
+    def test_sync_workflow_empty_domain(self, tmp_kurt_project: Path):
         """Test workflow with domain that has no analytics data."""
         from kurt_new.db import managed_session
         from kurt_new.workflows.domain_analytics import run_domain_analytics
         from kurt_new.workflows.domain_analytics.models import PageAnalytics
 
-        # Configure mock to return empty
-        mock_posthog_adapter.get_domain_urls.return_value = []
-
+        # Return empty metrics map
         with patch(
-            "kurt_new.workflows.domain_analytics.steps.get_adapter",
-            return_value=mock_posthog_adapter,
+            "kurt_new.workflows.domain_analytics.steps.sync_domain_metrics",
+            return_value={},
         ):
             config = DomainAnalyticsConfig(domain="empty.com", platform="posthog")
             result = run_domain_analytics(config)
