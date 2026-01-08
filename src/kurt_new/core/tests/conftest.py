@@ -14,9 +14,83 @@ from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
+from click.testing import CliRunner
 from pydantic import BaseModel
 
 from kurt_new.core.llm_step import LLMStep
+
+# ============================================================================
+# CLI Testing Fixtures
+# ============================================================================
+
+
+@pytest.fixture
+def cli_runner() -> CliRunner:
+    """Create a Click CLI runner for testing."""
+    return CliRunner()
+
+
+@pytest.fixture
+def cli_runner_isolated(cli_runner: CliRunner):
+    """Create a Click CLI runner with isolated filesystem."""
+    with cli_runner.isolated_filesystem():
+        yield cli_runner
+
+
+def invoke_cli(runner: CliRunner, cmd, args: list[str], **kwargs):
+    """
+    Helper to invoke CLI command.
+
+    Args:
+        runner: Click test runner
+        cmd: Click command or group
+        args: Command arguments
+        **kwargs: Additional arguments to runner.invoke()
+
+    Returns:
+        Click Result object
+    """
+    return runner.invoke(cmd, args, catch_exceptions=False, **kwargs)
+
+
+def assert_cli_success(result, msg: str = None):
+    """Assert CLI command succeeded (exit code 0)."""
+    if result.exit_code != 0:
+        error_msg = f"CLI failed (exit code {result.exit_code})"
+        if msg:
+            error_msg = f"{msg}: {error_msg}"
+        if result.output:
+            error_msg += f"\nOutput: {result.output}"
+        raise AssertionError(error_msg)
+
+
+def assert_cli_failure(result, expected_code: int = None, msg: str = None):
+    """Assert CLI command failed."""
+    if result.exit_code == 0:
+        error_msg = "CLI succeeded but expected failure"
+        if msg:
+            error_msg = f"{msg}: {error_msg}"
+        raise AssertionError(error_msg)
+
+    if expected_code is not None and result.exit_code != expected_code:
+        raise AssertionError(f"Expected exit code {expected_code}, got {result.exit_code}")
+
+
+def assert_output_contains(result, text: str):
+    """Assert CLI output contains text."""
+    if text not in result.output:
+        raise AssertionError(f"Expected '{text}' in output.\nActual: {result.output}")
+
+
+def assert_json_output(result) -> dict:
+    """Assert output is valid JSON and return parsed data."""
+    import json
+
+    try:
+        return json.loads(result.output)
+    except json.JSONDecodeError as e:
+        raise AssertionError(f"Output is not valid JSON: {e}\nOutput: {result.output}")
+
 
 # ============================================================================
 # DBOS State Management
@@ -491,14 +565,15 @@ class MockSetEnqueueOptions:
         pass
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def mock_dbos():
     """
-    Mock DBOS for tests that don't need real DBOS functionality.
+    Mock DBOS for tests that need synchronous execution without real DBOS.
 
     Patches DBOS decorators and Queue to execute synchronously.
-    This fixture runs automatically for all tests in this module.
+    Tests that need this must explicitly request it.
     """
+    import sys
 
     # Patch DBOS.step decorator to be a no-op
     def mock_step_decorator(**kwargs):
@@ -507,34 +582,44 @@ def mock_dbos():
 
         return decorator
 
-    # Patch at the module level BEFORE any LLMStep is created
-    # Use sys.modules to get the actual module (not the re-exported function)
-    import sys
-
-    # Force import of the actual module
-    from kurt_new.core import llm_step as _  # noqa: F401
-
-    llm_step_module = sys.modules["kurt_new.core.llm_step"]
-
-    original_queue = llm_step_module.Queue
-    original_set_enqueue = llm_step_module.SetEnqueueOptions
-    original_dbos = llm_step_module.DBOS
-
-    llm_step_module.Queue = MockQueue
-    llm_step_module.SetEnqueueOptions = MockSetEnqueueOptions
-
     mock_dbos_cls = MagicMock()
     mock_dbos_cls.step = mock_step_decorator
     mock_dbos_cls.workflow = mock_step_decorator
     mock_dbos_cls.workflow_id = "test-workflow-id"
+
+    # Force import of modules
+    from kurt_new.core import embedding_step as _e  # noqa: F401
+    from kurt_new.core import llm_step as _l  # noqa: F401
+
+    llm_step_module = sys.modules["kurt_new.core.llm_step"]
+    embedding_step_module = sys.modules["kurt_new.core.embedding_step"]
+
+    # Store originals
+    originals = {
+        "llm_queue": llm_step_module.Queue,
+        "llm_set_enqueue": llm_step_module.SetEnqueueOptions,
+        "llm_dbos": llm_step_module.DBOS,
+        "emb_queue": embedding_step_module.Queue,
+        "emb_dbos": embedding_step_module.DBOS,
+    }
+
+    # Patch llm_step
+    llm_step_module.Queue = MockQueue
+    llm_step_module.SetEnqueueOptions = MockSetEnqueueOptions
     llm_step_module.DBOS = mock_dbos_cls
+
+    # Patch embedding_step
+    embedding_step_module.Queue = MockQueue
+    embedding_step_module.DBOS = mock_dbos_cls
 
     try:
         yield mock_dbos_cls
     finally:
-        llm_step_module.Queue = original_queue
-        llm_step_module.SetEnqueueOptions = original_set_enqueue
-        llm_step_module.DBOS = original_dbos
+        llm_step_module.Queue = originals["llm_queue"]
+        llm_step_module.SetEnqueueOptions = originals["llm_set_enqueue"]
+        llm_step_module.DBOS = originals["llm_dbos"]
+        embedding_step_module.Queue = originals["emb_queue"]
+        embedding_step_module.DBOS = originals["emb_dbos"]
 
 
 @pytest.fixture
