@@ -29,11 +29,6 @@ class FetchConfig(StepConfig):
     Loaded from kurt.config with FETCH.* prefix.
     """
 
-    # Document selection
-    document_ids: list[str] = ConfigParam(
-        default=None, description="List of document IDs to fetch (None = all pending)"
-    )
-
     # Fetch settings
     fetch_engine: str = ConfigParam(
         default="trafilatura",
@@ -41,19 +36,25 @@ class FetchConfig(StepConfig):
         description="Fetch engine: trafilatura, httpx, firecrawl",
     )
 
-    # Processing settings
+    # Embedding settings
     embedding_max_chars: int = ConfigParam(
         default=1000,
         ge=100,
         le=5000,
         description="Maximum characters for embedding generation",
     )
+    embedding_batch_size: int = ConfigParam(
+        default=100,
+        ge=1,
+        le=500,
+        description="Batch size for embedding generation",
+    )
+    embedding_concurrency: int = ConfigParam(
+        default=3,
+        ge=1,
+        le=10,
+        description="Concurrent batches for embedding generation",
+    )
 
     # Behavior
     dry_run: bool = ConfigParam(default=False, description="Dry run mode")
-
-    def __init__(self, **data):
-        # Handle None document_ids -> empty list
-        if data.get("document_ids") is None:
-            data["document_ids"] = []
-        super().__init__(**data)

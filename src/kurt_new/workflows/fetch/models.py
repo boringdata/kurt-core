@@ -6,7 +6,7 @@ from typing import Optional
 from sqlalchemy import JSON, Column
 from sqlmodel import Field, SQLModel
 
-from kurt_new.db.models import TenantMixin, TimestampMixin
+from kurt_new.db.models import EmbeddingMixin, TenantMixin, TimestampMixin
 
 
 class FetchStatus(str, Enum):
@@ -17,7 +17,7 @@ class FetchStatus(str, Enum):
     ERROR = "ERROR"
 
 
-class FetchDocument(TimestampMixin, TenantMixin, SQLModel, table=True):
+class FetchDocument(EmbeddingMixin, TimestampMixin, TenantMixin, SQLModel, table=True):
     """Persisted fetch results for documents."""
 
     __tablename__ = "fetch_documents"
@@ -30,13 +30,6 @@ class FetchDocument(TimestampMixin, TenantMixin, SQLModel, table=True):
     # Content info
     content_length: int = Field(default=0)
     content_hash: Optional[str] = Field(default=None)
-    content_path: Optional[str] = Field(default=None)
-
-    # Embedding info
-    embedding_dims: int = Field(default=0)
-
-    # Links info
-    links_extracted: int = Field(default=0)
 
     # Fetch info
     fetch_engine: Optional[str] = Field(default=None)
