@@ -42,6 +42,9 @@ class MapConfig(StepConfig):
     discovery_method: str = ConfigParam(
         default="auto", description="Discovery method: auto, sitemap, crawl, folder, cms"
     )
+    sitemap_path: Optional[str] = ConfigParam(
+        default=None, description="Override sitemap location (e.g., /custom-sitemap.xml)"
+    )
     max_depth: Optional[int] = ConfigParam(default=None, ge=1, le=5, description="Max crawl depth")
     max_pages: int = ConfigParam(default=1000, ge=1, le=10000, description="Max pages to discover")
 

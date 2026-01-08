@@ -19,6 +19,7 @@ class TestMapConfig:
         assert config.cms_platform is None
         assert config.cms_instance is None
         assert config.discovery_method == "auto"
+        assert config.sitemap_path is None
         assert config.max_depth is None
         assert config.max_pages == 1000
         assert config.include_patterns is None
@@ -33,6 +34,16 @@ class TestMapConfig:
 
         assert config.source_url == "https://example.com"
         assert config.source_folder is None
+
+    def test_config_with_sitemap_path(self):
+        """Test MapConfig with sitemap_path override."""
+        config = MapConfig(
+            source_url="https://example.com",
+            sitemap_path="/custom-sitemap.xml",
+        )
+
+        assert config.source_url == "https://example.com"
+        assert config.sitemap_path == "/custom-sitemap.xml"
 
     def test_config_with_source_folder(self):
         """Test MapConfig with source_folder."""

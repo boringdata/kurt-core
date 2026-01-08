@@ -31,6 +31,7 @@ class TestMapCommand:
         assert_output_contains(result, "--cms")
         # Discovery options
         assert_output_contains(result, "--method")
+        assert_output_contains(result, "--sitemap-path")
         assert_output_contains(result, "--max-depth")
         # Filter options
         assert_output_contains(result, "--include")
@@ -81,6 +82,14 @@ class TestMapCommand:
         assert_output_contains(result, "crawl")
         assert_output_contains(result, "folder")
         assert_output_contains(result, "cms")
+
+    def test_map_with_sitemap_path(self, cli_runner: CliRunner, tmp_database):
+        """Test map --sitemap-path option."""
+        result = cli_runner.invoke(
+            map_cmd,
+            ["--url", "https://example.com", "--sitemap-path", "/custom-sitemap.xml", "--dry-run"],
+        )
+        assert "--help" not in result.output
 
     def test_map_with_max_depth(self, cli_runner: CliRunner, tmp_database):
         """Test map --max-depth option."""

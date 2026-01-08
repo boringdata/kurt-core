@@ -17,6 +17,7 @@ console = Console()
 @click.option("--url", help="URL to discover content from (sitemap or crawl)")
 @click.option("--folder", help="Local folder path to discover files from")
 @click.option("--cms", help="CMS platform to sync from (e.g., sanity:production)")
+@click.option("--sitemap-path", help="Override sitemap location (e.g., /custom-sitemap.xml)")
 @click.option(
     "--method",
     type=click.Choice(["auto", "sitemap", "crawl", "folder", "cms"], case_sensitive=False),
@@ -36,6 +37,7 @@ def map_cmd(
     url: str | None,
     folder: str | None,
     cms: str | None,
+    sitemap_path: str | None,
     method: str,
     max_depth: int | None,
     include_patterns: str | None,
@@ -93,6 +95,7 @@ def map_cmd(
         cms_platform=cms_platform,
         cms_instance=cms_instance,
         discovery_method=method,
+        sitemap_path=sitemap_path,
         max_depth=max_depth,
         max_pages=limit or 1000,
         include_patterns=include_patterns,
