@@ -36,6 +36,18 @@ class TestFetchCommand:
         # Other options
         assert_output_contains(result, "--dry-run")
         assert_output_contains(result, "--format")
+        # Advanced filter options
+        assert_output_contains(result, "--url-contains")
+        assert_output_contains(result, "--file-ext")
+        assert_output_contains(result, "--source-type")
+        assert_output_contains(result, "--exclude")
+        assert_output_contains(result, "--has-content")
+        assert_output_contains(result, "--min-content-length")
+        # Input options
+        assert_output_contains(result, "--urls")
+        assert_output_contains(result, "--files")
+        assert_output_contains(result, "--engine")
+        assert_output_contains(result, "--refetch")
 
     def test_fetch_no_docs_message(self, cli_runner: CliRunner, tmp_database):
         """Test fetch shows message when no documents found."""
@@ -96,6 +108,103 @@ class TestFetchCommand:
                 "--dry-run",
                 "--format",
                 "json",
+            ],
+        )
+        assert_cli_success(result)
+
+    # Advanced filter options tests
+    def test_fetch_with_url_contains(self, cli_runner: CliRunner, tmp_database):
+        """Test fetch --url-contains option."""
+        result = invoke_cli(cli_runner, fetch_cmd, ["--url-contains", "/docs/"])
+        assert_cli_success(result)
+
+    def test_fetch_with_file_ext(self, cli_runner: CliRunner, tmp_database):
+        """Test fetch --file-ext option."""
+        result = invoke_cli(cli_runner, fetch_cmd, ["--file-ext", "md"])
+        assert_cli_success(result)
+
+    def test_fetch_with_source_type(self, cli_runner: CliRunner, tmp_database):
+        """Test fetch --source-type option."""
+        result = invoke_cli(cli_runner, fetch_cmd, ["--source-type", "url"])
+        assert_cli_success(result)
+
+    def test_fetch_with_exclude(self, cli_runner: CliRunner, tmp_database):
+        """Test fetch --exclude option."""
+        result = invoke_cli(cli_runner, fetch_cmd, ["--exclude", "*internal*"])
+        assert_cli_success(result)
+
+    def test_fetch_with_has_content(self, cli_runner: CliRunner, tmp_database):
+        """Test fetch --has-content option."""
+        result = invoke_cli(cli_runner, fetch_cmd, ["--has-content"])
+        assert_cli_success(result)
+
+    def test_fetch_with_no_content(self, cli_runner: CliRunner, tmp_database):
+        """Test fetch --no-content option."""
+        result = invoke_cli(cli_runner, fetch_cmd, ["--no-content"])
+        assert_cli_success(result)
+
+    def test_fetch_with_min_content_length(self, cli_runner: CliRunner, tmp_database):
+        """Test fetch --min-content-length option."""
+        result = invoke_cli(cli_runner, fetch_cmd, ["--min-content-length", "100"])
+        assert_cli_success(result)
+
+    # Input options tests
+    def test_fetch_with_urls(self, cli_runner: CliRunner, tmp_database):
+        """Test fetch --urls option auto-creates documents."""
+        result = invoke_cli(
+            cli_runner,
+            fetch_cmd,
+            ["--urls", "https://example.com/article,https://example.com/other", "--dry-run"],
+        )
+        assert_cli_success(result)
+
+    def test_fetch_with_files(self, cli_runner: CliRunner, tmp_database, tmp_path):
+        """Test fetch --files option auto-creates documents."""
+        # Create temp files
+        file1 = tmp_path / "doc1.md"
+        file2 = tmp_path / "doc2.md"
+        file1.write_text("# Doc 1")
+        file2.write_text("# Doc 2")
+
+        result = invoke_cli(
+            cli_runner,
+            fetch_cmd,
+            ["--files", f"{file1},{file2}", "--dry-run"],
+        )
+        assert_cli_success(result)
+
+    def test_fetch_with_engine(self, cli_runner: CliRunner, tmp_database):
+        """Test fetch --engine option."""
+        result = invoke_cli(cli_runner, fetch_cmd, ["--engine", "trafilatura", "--dry-run"])
+        assert_cli_success(result)
+
+    def test_fetch_with_engine_firecrawl(self, cli_runner: CliRunner, tmp_database):
+        """Test fetch --engine firecrawl option."""
+        result = invoke_cli(cli_runner, fetch_cmd, ["--engine", "firecrawl", "--dry-run"])
+        assert_cli_success(result)
+
+    def test_fetch_with_refetch(self, cli_runner: CliRunner, tmp_database):
+        """Test fetch --refetch option."""
+        result = invoke_cli(cli_runner, fetch_cmd, ["--refetch", "--dry-run"])
+        assert_cli_success(result)
+
+    def test_fetch_combined_advanced_options(self, cli_runner: CliRunner, tmp_database):
+        """Test fetch with multiple advanced options combined."""
+        result = invoke_cli(
+            cli_runner,
+            fetch_cmd,
+            [
+                "--url-contains",
+                "/docs/",
+                "--file-ext",
+                "html",
+                "--source-type",
+                "url",
+                "--exclude",
+                "*internal*",
+                "--limit",
+                "10",
+                "--dry-run",
             ],
         )
         assert_cli_success(result)

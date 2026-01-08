@@ -20,6 +20,14 @@ console = Console()
 @click.command("fetch")
 @click.argument("identifier", required=False)
 @add_filter_options(advanced=True, exclude=True)
+@click.option("--urls", help="Comma-separated list of URLs (auto-creates if don't exist)")
+@click.option("--files", "files_paths", help="Comma-separated list of local file paths")
+@click.option(
+    "--engine",
+    type=click.Choice(["firecrawl", "trafilatura", "httpx"], case_sensitive=False),
+    help="Fetch engine (trafilatura=free, firecrawl=API, httpx=httpx+trafilatura)",
+)
+@click.option("--refetch", is_flag=True, help="Re-fetch already FETCHED documents")
 @add_background_options()
 @dry_run_option
 @format_option
@@ -39,6 +47,10 @@ def fetch_cmd(
     has_content: bool | None,
     min_content_length: int | None,
     fetch_engine: str | None,
+    urls: str | None,
+    files_paths: str | None,
+    engine: str | None,
+    refetch: bool,
     background: bool,
     priority: int,
     dry_run: bool,
@@ -53,6 +65,8 @@ def fetch_cmd(
         kurt content fetch --limit 10                # Fetch first 10 documents
         kurt content fetch --include "*.md"          # Fetch markdown files
         kurt content fetch --dry-run                 # Preview without fetching
+        kurt content fetch --urls "https://a.com,https://b.com"  # Fetch specific URLs
+        kurt content fetch --refetch --with-status FETCHED       # Re-fetch documents
 
     \b
     Advanced Filtering:
@@ -68,13 +82,79 @@ def fetch_cmd(
     from .config import FetchConfig
     from .workflow import run_fetch
 
+    # Handle --urls: auto-create documents if they don't exist
+    if urls:
+        import hashlib
+
+        from kurt_new.db import managed_session
+        from kurt_new.workflows.map.models import MapDocument, MapStatus
+
+        url_list = [u.strip() for u in urls.split(",") if u.strip()]
+        with managed_session() as session:
+            for url in url_list:
+                # Check if document exists
+                existing = session.query(MapDocument).filter(MapDocument.source_url == url).first()
+                if not existing:
+                    # Generate document_id from URL hash
+                    doc_id = hashlib.sha256(url.encode()).hexdigest()[:12]
+                    # Auto-create the document
+                    doc = MapDocument(
+                        document_id=doc_id,
+                        source_url=url,
+                        source_type="url",
+                        status=MapStatus.DISCOVERED,
+                        discovery_method="cli",
+                    )
+                    session.add(doc)
+            session.commit()
+
+    # Handle --files: auto-create documents for file paths
+    if files_paths:
+        import hashlib
+        from pathlib import Path
+
+        from kurt_new.db import managed_session
+        from kurt_new.workflows.map.models import MapDocument, MapStatus
+
+        file_list = [f.strip() for f in files_paths.split(",") if f.strip()]
+        with managed_session() as session:
+            for file_path in file_list:
+                # Resolve to absolute path
+                abs_path = str(Path(file_path).resolve())
+                # Check if document exists
+                existing = (
+                    session.query(MapDocument).filter(MapDocument.source_url == abs_path).first()
+                )
+                if not existing:
+                    # Generate document_id from path hash
+                    doc_id = hashlib.sha256(abs_path.encode()).hexdigest()[:12]
+                    # Auto-create the document
+                    doc = MapDocument(
+                        document_id=doc_id,
+                        source_url=abs_path,
+                        source_type="file",
+                        status=MapStatus.DISCOVERED,
+                        discovery_method="cli",
+                    )
+                    session.add(doc)
+            session.commit()
+
+    # Determine effective status filter
+    # --refetch allows re-fetching FETCHED documents
+    effective_status = with_status
+    if not effective_status:
+        if refetch:
+            effective_status = None  # No status filter, fetch all
+        else:
+            effective_status = "NOT_FETCHED"  # Default: only unfetched
+
     # Resolve documents to fetch
     docs = resolve_documents(
         identifier=identifier,
         include_pattern=include_pattern,
-        ids=ids,
+        ids=ids if not urls and not files_paths else None,  # Don't use ids if urls/files provided
         in_cluster=in_cluster,
-        with_status=with_status or "NOT_FETCHED",  # Default to NOT_FETCHED
+        with_status=effective_status,
         with_content_type=with_content_type,
         limit=limit,
         exclude_pattern=exclude_pattern,
@@ -84,6 +164,9 @@ def fetch_cmd(
         has_content=has_content,
         min_content_length=min_content_length,
         fetch_engine=fetch_engine,
+        # Pass urls/files for filtering if provided
+        urls=urls,
+        files=files_paths,
     )
 
     if not docs:
@@ -98,8 +181,11 @@ def fetch_cmd(
     if output_format != "json":
         console.print(f"[dim]Found {len(docs)} document(s) to fetch[/dim]")
 
-    # Build config
-    config = FetchConfig.from_config("fetch", dry_run=dry_run)
+    # Build config with CLI overrides
+    config_overrides = {"dry_run": dry_run}
+    if engine:
+        config_overrides["fetch_engine"] = engine.lower()
+    config = FetchConfig.from_config("fetch", **config_overrides)
 
     # Run workflow
     result = run_fetch(docs, config, background=background, priority=priority)

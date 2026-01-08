@@ -49,6 +49,44 @@ with_content_type_option = click.option(
 )
 
 # =============================================================================
+# Advanced Filter Options
+# =============================================================================
+
+url_contains_option = click.option(
+    "--url-contains",
+    help="Filter URLs containing this substring (e.g., '/docs/', 'api')",
+)
+
+file_extension_option = click.option(
+    "--file-ext",
+    help="Filter by file extension (e.g., 'md', 'html', 'pdf')",
+)
+
+source_type_option = click.option(
+    "--source-type",
+    type=click.Choice(["url", "file", "cms"], case_sensitive=False),
+    help="Filter by source type (url, file, or cms)",
+)
+
+has_content_option = click.option(
+    "--has-content/--no-content",
+    default=None,
+    help="Filter documents with/without content",
+)
+
+min_content_length_option = click.option(
+    "--min-content-length",
+    type=int,
+    help="Minimum content length in characters",
+)
+
+fetch_engine_option = click.option(
+    "--fetch-engine",
+    type=click.Choice(["trafilatura", "firecrawl", "httpx"], case_sensitive=False),
+    help="Filter by fetch engine used",
+)
+
+# =============================================================================
 # Output Format Options
 # =============================================================================
 
@@ -117,6 +155,7 @@ def add_filter_options(
     content_type: bool = True,
     limit: bool = True,
     exclude: bool = False,
+    advanced: bool = False,
 ):
     """
     Decorator to add standard filter options to a command.
@@ -126,9 +165,22 @@ def add_filter_options(
         @add_filter_options()
         def fetch(include_pattern, ids, in_cluster, with_status, with_content_type, limit):
             ...
+
+        @click.command("fetch")
+        @add_filter_options(advanced=True)
+        def fetch(..., url_contains, file_ext, source_type, has_content, min_content_length):
+            ...
     """
 
     def decorator(f):
+        # Advanced filters (applied first so they appear last in --help)
+        if advanced:
+            f = fetch_engine_option(f)
+            f = min_content_length_option(f)
+            f = has_content_option(f)
+            f = source_type_option(f)
+            f = file_extension_option(f)
+            f = url_contains_option(f)
         if exclude:
             f = exclude_option(f)
         if limit:
