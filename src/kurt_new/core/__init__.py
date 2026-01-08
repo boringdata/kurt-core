@@ -1,6 +1,24 @@
 from .core import LLMStep, llm_step
+from .dbos import destroy_dbos, init_dbos
+from .embedding_step import (
+    EmbeddingStep,
+    bytes_to_embedding,
+    embedding_step,
+    embedding_to_bytes,
+    generate_document_embedding,
+    generate_embeddings,
+)
 from .hooks import CompositeStepHooks, NoopStepHooks, StepHooks
-from .mocking import create_content_aware_factory, create_response_factory, mock_llm
+from .mocking import (
+    create_content_aware_factory,
+    create_embedding_response,
+    create_mock_embedding,
+    create_response_factory,
+    mock_embedding_step,
+    mock_embeddings,
+    mock_llm,
+)
+from .runner import run_workflow
 from .status import (
     format_live_status,
     format_step_logs,
@@ -24,6 +42,12 @@ from .tracking import (
 __all__ = [
     "LLMStep",
     "llm_step",
+    "EmbeddingStep",
+    "embedding_step",
+    "generate_embeddings",
+    "generate_document_embedding",
+    "embedding_to_bytes",
+    "bytes_to_embedding",
     "StepHooks",
     "NoopStepHooks",
     "CompositeStepHooks",
@@ -44,6 +68,13 @@ __all__ = [
     "read_workflow_events",
     "read_workflow_streams",
     "mock_llm",
+    "mock_embeddings",
+    "mock_embedding_step",
     "create_response_factory",
     "create_content_aware_factory",
+    "create_mock_embedding",
+    "create_embedding_response",
+    "init_dbos",
+    "destroy_dbos",
+    "run_workflow",
 ]

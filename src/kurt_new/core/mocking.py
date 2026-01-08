@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import Any, Callable, Iterable
+from typing import TYPE_CHECKING, Any, Callable, Iterable
+from unittest.mock import MagicMock
 
 from pydantic import BaseModel
 
 from .llm_step import LLMStep
+
+if TYPE_CHECKING:
+    from .embedding_step import EmbeddingStep
 
 
 @contextmanager
@@ -163,3 +167,104 @@ def create_content_aware_factory_with_metrics(
         return (result, scaled_metrics)
 
     return factory
+
+
+# ============================================================================
+# Embedding Mocking Utilities
+# ============================================================================
+
+
+def create_mock_embedding(dimensions: int = 1536) -> list[float]:
+    """
+    Create a mock embedding vector.
+
+    Args:
+        dimensions: Number of dimensions (default: 1536 for OpenAI)
+
+    Returns:
+        List of floats representing a mock embedding
+    """
+    import random
+
+    # Generate deterministic-ish values based on dimension index
+    return [random.random() * 0.1 for _ in range(dimensions)]
+
+
+def create_embedding_response(
+    texts: list[str],
+    dimensions: int = 1536,
+) -> MagicMock:
+    """
+    Create a mock LiteLLM embedding response.
+
+    Args:
+        texts: List of input texts (determines number of embeddings)
+        dimensions: Embedding dimensions
+
+    Returns:
+        MagicMock mimicking litellm.embedding() response
+    """
+    response = MagicMock()
+    response.data = [{"embedding": create_mock_embedding(dimensions)} for _ in texts]
+    return response
+
+
+@contextmanager
+def mock_embeddings(dimensions: int = 1536):
+    """
+    Context manager to mock all embedding calls via litellm.
+
+    Usage:
+        with mock_embeddings():
+            result = generate_embeddings(["hello", "world"])
+            # Returns mock embeddings without API calls
+
+    Args:
+        dimensions: Embedding dimensions (default: 1536)
+
+    Yields:
+        The mock litellm module for assertions
+    """
+    import litellm
+
+    original_embedding = litellm.embedding
+
+    mock_litellm = MagicMock()
+
+    def mock_embedding_fn(**kwargs):
+        texts = kwargs.get("input", [])
+        return create_embedding_response(texts, dimensions)
+
+    mock_litellm.embedding.side_effect = mock_embedding_fn
+    litellm.embedding = mock_litellm.embedding
+
+    try:
+        yield mock_litellm
+    finally:
+        litellm.embedding = original_embedding
+
+
+@contextmanager
+def mock_embedding_step(
+    steps: Iterable[EmbeddingStep],
+    dimensions: int = 1536,
+):
+    """
+    Context manager to mock EmbeddingStep litellm calls.
+
+    Similar to mock_llm() but for embedding steps.
+
+    Usage:
+        step = EmbeddingStep(name="embed", input_column="text", model="test")
+        with mock_embedding_step([step]):
+            result = step.run(df)
+
+    Args:
+        steps: EmbeddingStep instances to mock
+        dimensions: Embedding dimensions
+
+    Yields:
+        The mock litellm module
+    """
+    with mock_embeddings(dimensions) as mock_litellm:
+        yield mock_litellm
