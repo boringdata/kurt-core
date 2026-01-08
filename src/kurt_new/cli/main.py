@@ -40,6 +40,8 @@ class LazyGroup(click.Group):
         "content": ("kurt_new.documents.cli", "content_group"),
         "integrations": ("kurt_new.integrations.cli", "integrations_group"),
         "workflows": ("kurt_new.cli.workflows", "workflows_group"),
+        "research": ("kurt_new.workflows.research.cli", "research_group"),
+        "signals": ("kurt_new.workflows.signals.cli", "signals_group"),
         "admin": ("kurt_new.cli.admin", "admin"),
         "show": ("kurt_new.cli.show", "show_group"),
     },
