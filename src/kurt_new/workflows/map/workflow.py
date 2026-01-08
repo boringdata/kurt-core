@@ -5,7 +5,7 @@ from typing import Any
 
 from dbos import DBOS
 
-from kurt_new.core import track_step
+from kurt_new.core import run_workflow, track_step
 
 from .config import MapConfig
 from .steps import map_cms_step, map_folder_step, map_step, map_url_step
@@ -50,10 +50,19 @@ def map_workflow(config_dict: dict[str, Any]) -> dict[str, Any]:
     return {"workflow_id": workflow_id, **result}
 
 
-def run_map(config: MapConfig | dict[str, Any]) -> dict[str, Any]:
+def run_map(
+    config: MapConfig | dict[str, Any],
+    *,
+    background: bool = False,
+    priority: int = 10,
+) -> dict[str, Any] | str | None:
     """
     Run the map workflow and return the result.
     """
     payload = config.model_dump() if isinstance(config, MapConfig) else config
-    handle = DBOS.start_workflow(map_workflow, payload)
-    return handle.get_result()
+    return run_workflow(
+        map_workflow,
+        payload,
+        background=background,
+        priority=priority,
+    )

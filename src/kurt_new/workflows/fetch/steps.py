@@ -5,10 +5,9 @@ import time
 from datetime import datetime
 from typing import Any
 
-import pandas as pd
 from dbos import DBOS
 
-from kurt_new.core import EmbeddingStep
+from kurt_new.core import embedding_to_bytes, generate_embeddings
 from kurt_new.db import ensure_tables, managed_session
 from kurt_new.integrations.cms import fetch_from_cms
 
@@ -80,37 +79,32 @@ def _fetch_single_document(doc: dict[str, Any], config: FetchConfig) -> dict[str
         }
 
 
-def _generate_embeddings(rows: list[dict[str, Any]], config: FetchConfig) -> list[dict[str, Any]]:
-    """Generate embeddings for fetched documents using EmbeddingStep."""
+@DBOS.step(name="generate_embeddings")
+def embedding_step(rows: list[dict[str, Any]], config_dict: dict[str, Any]) -> list[dict[str, Any]]:
+    """Generate embeddings for fetched documents."""
+    config = FetchConfig.model_validate(config_dict)
+
     # Filter to only successfully fetched documents with content
     fetchable = [r for r in rows if r.get("status") == FetchStatus.FETCHED and r.get("content")]
 
     if not fetchable:
-        # No content to embed - add None embeddings
         for row in rows:
             row["embedding"] = None
         return rows
 
-    # Create DataFrame for EmbeddingStep
-    df = pd.DataFrame(fetchable)
+    # Truncate content and generate embeddings in batches
+    texts = [r["content"][: config.embedding_max_chars] for r in fetchable]
+    doc_ids = [r["document_id"] for r in fetchable]
 
-    # Create and run EmbeddingStep
-    embed_step = EmbeddingStep(
-        name="fetch_embed",
-        input_column="content",
-        output_column="embedding",
-        max_chars=config.embedding_max_chars,
-        batch_size=config.embedding_batch_size,
-        concurrency=config.embedding_concurrency,
-        module_name="FETCH",
-        as_bytes=True,
-    )
+    # Process in batches
+    all_embeddings: list[bytes] = []
+    for i in range(0, len(texts), config.embedding_batch_size):
+        batch_texts = texts[i : i + config.embedding_batch_size]
+        batch_embeddings = generate_embeddings(batch_texts, module_name="FETCH")
+        all_embeddings.extend([embedding_to_bytes(e) for e in batch_embeddings])
 
-    result_df = embed_step.run(df)
-
-    # Map embeddings back to rows by document_id
-    embedding_map = dict(zip(result_df["document_id"], result_df["embedding"]))
-
+    # Map embeddings back to rows
+    embedding_map = dict(zip(doc_ids, all_embeddings))
     for row in rows:
         row["embedding"] = embedding_map.get(row["document_id"])
 
@@ -173,25 +167,12 @@ def fetch_step(docs: list[dict[str, Any]], config_dict: dict[str, Any]) -> dict[
     fetched = sum(1 for row in rows if row["status"] == FetchStatus.FETCHED)
     failed = sum(1 for row in rows if row["status"] == FetchStatus.ERROR)
 
-    # Generate embeddings using EmbeddingStep (batched + concurrent)
-    rows = _generate_embeddings(rows, config)
-
-    if not config.dry_run:
-        persistence = persist_fetch_documents(rows)
-        inserted = persistence["rows_written"]
-        updated = persistence["rows_updated"]
-    else:
-        inserted = 0
-        updated = 0
-
     logger.info(f"Fetch complete: {fetched} successful, {failed} failed")
 
     return {
         "total": total,
         "documents_fetched": fetched,
         "documents_failed": failed,
-        "rows_written": inserted,
-        "rows_updated": updated,
         "rows": _serialize_rows(rows),
         "dry_run": config.dry_run,
     }

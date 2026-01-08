@@ -17,9 +17,10 @@ from kurt_new.workflows.map.models import MapDocument, MapStatus
 @pytest.fixture
 def tmp_project(tmp_path: Path, monkeypatch):
     """
-    Create a temporary project with initialized database.
+    Create a temporary project with initialized database and config.
 
     Sets up:
+    - kurt.config file
     - .kurt/ directory structure
     - Fresh SQLite database
     - Workflow tables (map_documents, fetch_documents)
@@ -34,6 +35,11 @@ def tmp_project(tmp_path: Path, monkeypatch):
     # Change to temp directory
     original_cwd = os.getcwd()
     os.chdir(tmp_path)
+
+    # Create config file
+    from kurt_new.config import create_config
+
+    create_config()
 
     # Initialize database
     init_database()
