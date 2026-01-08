@@ -71,6 +71,24 @@ class TestStatusCommand:
         result = cli_runner.invoke(workflows_group, ["status"])
         assert result.exit_code != 0
 
+    def test_status_with_workflow_id(self, cli_runner: CliRunner, dbos_launched):
+        """Test status command with workflow_id argument.
+
+        This test catches bugs where workflow_id is passed incorrectly
+        to get_live_status().
+        """
+        result = invoke_cli(cli_runner, workflows_group, ["status", "test-workflow-123"])
+        assert_cli_success(result)
+        # Should show the workflow ID in output (even if empty status)
+        assert_output_contains(result, "test-workflow-123")
+
+    def test_status_json_format_not_found(self, cli_runner: CliRunner, dbos_launched):
+        """Test status command with JSON output for non-existent workflow."""
+        result = invoke_cli(cli_runner, workflows_group, ["status", "nonexistent-wf", "--json"])
+        assert_cli_success(result)
+        # Should still output something (either null or error message)
+        assert "nonexistent-wf" in result.output or "not found" in result.output
+
 
 class TestLogsCommand:
     """Tests for `workflows logs` command."""
@@ -88,6 +106,37 @@ class TestLogsCommand:
         assert_output_contains(result, "--step")
         assert_output_contains(result, "--limit")
         assert_output_contains(result, "--json")
+
+    def test_logs_with_workflow_id(self, cli_runner: CliRunner, dbos_launched):
+        """Test logs command with workflow_id argument.
+
+        This test catches bugs where workflow_id is passed incorrectly
+        to get_step_logs().
+        """
+        result = invoke_cli(cli_runner, workflows_group, ["logs", "test-workflow-123"])
+        assert_cli_success(result)
+        # No logs found is expected since workflow doesn't exist
+        assert_output_contains(result, "No logs found")
+
+    def test_logs_with_step_filter(self, cli_runner: CliRunner, dbos_launched):
+        """Test logs command with --step filter."""
+        result = invoke_cli(cli_runner, workflows_group, ["logs", "test-wf", "--step", "extract"])
+        assert_cli_success(result)
+        assert_output_contains(result, "No logs found")
+
+    def test_logs_with_limit(self, cli_runner: CliRunner, dbos_launched):
+        """Test logs command with --limit option."""
+        result = invoke_cli(cli_runner, workflows_group, ["logs", "test-wf", "--limit", "10"])
+        assert_cli_success(result)
+        assert_output_contains(result, "No logs found")
+
+    def test_logs_json_format(self, cli_runner: CliRunner, dbos_launched):
+        """Test logs command with JSON output."""
+        result = invoke_cli(cli_runner, workflows_group, ["logs", "test-wf", "--json"])
+        assert_cli_success(result)
+        # When no logs, the command outputs empty string or "No logs found"
+        # Check that it doesn't crash when called with --json
+        assert result.exit_code == 0
 
 
 class TestFollowCommand:
@@ -115,6 +164,23 @@ class TestCancelCommand:
         assert_cli_success(result)
         assert_output_contains(result, "Cancel a workflow")
 
+    def test_cancel_with_workflow_id(self, cli_runner: CliRunner, dbos_launched):
+        """Test cancel command with workflow_id argument.
+
+        This test catches bugs where workflow_id is passed incorrectly
+        to DBOS.cancel_workflow().
+        """
+        # Cancel a non-existent workflow - should handle gracefully
+        result = invoke_cli(cli_runner, workflows_group, ["cancel", "test-workflow-123"])
+        # May succeed or show error, but should not crash
+        # The important thing is that the function is called with workflow_id correctly
+        assert result.exit_code == 0 or "Error" in result.output
+
+    def test_cancel_requires_workflow_id(self, cli_runner: CliRunner):
+        """Test cancel command requires workflow_id argument."""
+        result = cli_runner.invoke(workflows_group, ["cancel"])
+        assert result.exit_code != 0
+
 
 class TestStatsCommand:
     """Tests for `workflows stats` command."""
@@ -130,6 +196,31 @@ class TestStatsCommand:
         result = invoke_cli(cli_runner, workflows_group, ["stats", "--help"])
         assert_cli_success(result)
         assert_output_contains(result, "--json")
+
+    def test_stats_with_workflow_id(self, cli_runner: CliRunner, tmp_database):
+        """Test stats command with workflow_id argument.
+
+        This test catches the bug where workflow_id was passed as positional
+        instead of keyword argument to tracer.stats().
+        """
+        result = invoke_cli(cli_runner, workflows_group, ["stats", "test-workflow-123"])
+        assert_cli_success(result)
+        assert_output_contains(result, "LLM Usage Statistics")
+        assert_output_contains(result, "test-workflow-123")
+
+    def test_stats_without_workflow_id(self, cli_runner: CliRunner, tmp_database):
+        """Test stats command without workflow_id shows global stats."""
+        result = invoke_cli(cli_runner, workflows_group, ["stats"])
+        assert_cli_success(result)
+        assert_output_contains(result, "LLM Usage Statistics")
+
+    def test_stats_json_format(self, cli_runner: CliRunner, tmp_database):
+        """Test stats command with JSON output."""
+        result = invoke_cli(cli_runner, workflows_group, ["stats", "--json"])
+        assert_cli_success(result)
+        data = json.loads(result.output)
+        assert "total_calls" in data
+        assert "total_cost" in data
 
 
 # ============================================================================

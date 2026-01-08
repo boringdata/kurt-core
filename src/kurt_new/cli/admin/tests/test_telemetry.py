@@ -39,6 +39,28 @@ class TestEnableCommand:
         assert_cli_success(result)
         assert_output_contains(result, "Enable anonymous telemetry collection")
 
+    def test_enable_with_project(self, cli_runner: CliRunner, tmp_project):
+        """Test enable command actually enables telemetry.
+
+        This test catches bugs where telemetry functions are called incorrectly.
+        """
+        # First disable it
+        result = invoke_cli(cli_runner, admin, ["telemetry", "disable"])
+        assert_cli_success(result)
+
+        # Now enable it
+        result = invoke_cli(cli_runner, admin, ["telemetry", "enable"])
+        assert_cli_success(result)
+        assert "enabled" in result.output.lower()
+
+    def test_enable_already_enabled(self, cli_runner: CliRunner, tmp_project):
+        """Test enable command when telemetry is already enabled."""
+        # Enable twice - second time should say already enabled
+        invoke_cli(cli_runner, admin, ["telemetry", "enable"])
+        result = invoke_cli(cli_runner, admin, ["telemetry", "enable"])
+        assert_cli_success(result)
+        assert "already enabled" in result.output.lower()
+
 
 class TestDisableCommand:
     """Tests for `admin telemetry disable` command."""
@@ -48,6 +70,28 @@ class TestDisableCommand:
         result = invoke_cli(cli_runner, admin, ["telemetry", "disable", "--help"])
         assert_cli_success(result)
         assert_output_contains(result, "Disable telemetry collection")
+
+    def test_disable_with_project(self, cli_runner: CliRunner, tmp_project):
+        """Test disable command actually disables telemetry.
+
+        This test catches bugs where telemetry functions are called incorrectly.
+        """
+        # First enable it
+        result = invoke_cli(cli_runner, admin, ["telemetry", "enable"])
+        assert_cli_success(result)
+
+        # Now disable it
+        result = invoke_cli(cli_runner, admin, ["telemetry", "disable"])
+        assert_cli_success(result)
+        assert "disabled" in result.output.lower()
+
+    def test_disable_already_disabled(self, cli_runner: CliRunner, tmp_project):
+        """Test disable command when telemetry is already disabled."""
+        # Disable twice - second time should say already disabled
+        invoke_cli(cli_runner, admin, ["telemetry", "disable"])
+        result = invoke_cli(cli_runner, admin, ["telemetry", "disable"])
+        assert_cli_success(result)
+        assert "already disabled" in result.output.lower()
 
 
 class TestStatusCommand:
