@@ -7,6 +7,7 @@ import json
 import click
 from rich.console import Console
 
+from kurt_new.admin.telemetry.decorators import track_command
 from kurt_new.cli.options import format_option
 
 console = Console()
@@ -37,6 +38,7 @@ def research_group():
 @click.option("--background", is_flag=True, help="Run in background")
 @click.option("--dry-run", is_flag=True, help="Execute but don't persist to DB")
 @format_option
+@track_command
 def search_cmd(
     query: str,
     recency: str,

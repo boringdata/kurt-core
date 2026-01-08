@@ -5,6 +5,7 @@ from __future__ import annotations
 import click
 from rich.console import Console
 
+from kurt_new.admin.telemetry.decorators import track_command
 from kurt_new.cli.options import (
     add_background_options,
     add_filter_options,
@@ -18,10 +19,11 @@ console = Console()
 
 @click.command("fetch")
 @click.argument("identifier", required=False)
-@add_filter_options()
+@add_filter_options(advanced=True, exclude=True)
 @add_background_options()
 @dry_run_option
 @format_option
+@track_command
 def fetch_cmd(
     identifier: str | None,
     include_pattern: str | None,
@@ -30,6 +32,13 @@ def fetch_cmd(
     with_status: str | None,
     with_content_type: str | None,
     limit: int | None,
+    exclude_pattern: str | None,
+    url_contains: str | None,
+    file_ext: str | None,
+    source_type: str | None,
+    has_content: bool | None,
+    min_content_length: int | None,
+    fetch_engine: str | None,
     background: bool,
     priority: int,
     dry_run: bool,
@@ -40,10 +49,19 @@ def fetch_cmd(
 
     \b
     Examples:
-        kurt content fetch                     # Fetch all NOT_FETCHED documents
-        kurt content fetch --limit 10          # Fetch first 10 documents
-        kurt content fetch --include "*.md"    # Fetch markdown files
-        kurt content fetch --dry-run           # Preview without fetching
+        kurt content fetch                           # Fetch all NOT_FETCHED documents
+        kurt content fetch --limit 10                # Fetch first 10 documents
+        kurt content fetch --include "*.md"          # Fetch markdown files
+        kurt content fetch --dry-run                 # Preview without fetching
+
+    \b
+    Advanced Filtering:
+        kurt content fetch --url-contains "/docs/"   # URLs containing /docs/
+        kurt content fetch --file-ext md             # Only .md files
+        kurt content fetch --source-type url         # Only web URLs
+        kurt content fetch --exclude "*internal*"    # Exclude internal paths
+        kurt content fetch --has-content             # Only docs with content
+        kurt content fetch --min-content-length 100  # Min 100 chars
     """
     from kurt_new.documents import resolve_documents
 
@@ -59,6 +77,13 @@ def fetch_cmd(
         with_status=with_status or "NOT_FETCHED",  # Default to NOT_FETCHED
         with_content_type=with_content_type,
         limit=limit,
+        exclude_pattern=exclude_pattern,
+        url_contains=url_contains,
+        file_ext=file_ext,
+        source_type=source_type,
+        has_content=has_content,
+        min_content_length=min_content_length,
+        fetch_engine=fetch_engine,
     )
 
     if not docs:
@@ -77,13 +102,21 @@ def fetch_cmd(
     config = FetchConfig.from_config("fetch", dry_run=dry_run)
 
     # Run workflow
-    result = run_fetch(docs, config)
+    result = run_fetch(docs, config, background=background, priority=priority)
 
     # Output result
-    if output_format == "json":
+    # When background=True, result is a string (workflow_id) or None
+    # When background=False, result is a dict with workflow results
+    if isinstance(result, str):
+        # Background mode - result is workflow_id
+        if output_format == "json":
+            print_json({"workflow_id": result, "background": True})
+        else:
+            print_workflow_status(result)
+    elif output_format == "json":
         print_json(result)
     else:
-        workflow_id = result.get("workflow_id")
+        workflow_id = result.get("workflow_id") if result else None
         if workflow_id:
             print_workflow_status(workflow_id)
         else:

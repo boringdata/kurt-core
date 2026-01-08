@@ -2,8 +2,11 @@
 
 import click
 
+from kurt_new.admin.telemetry.decorators import track_command
+
 
 @click.command()
+@track_command
 def discovery_methods_cmd():
     """Show detailed methods for discovering and retrieving existing content."""
     content = """

@@ -2,8 +2,11 @@
 
 import click
 
+from kurt_new.admin.telemetry.decorators import track_command
+
 
 @click.command()
+@track_command
 def analytics_setup_cmd():
     """Show instructions for analytics integration setup."""
     content = """

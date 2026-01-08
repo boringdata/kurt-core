@@ -9,6 +9,8 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from kurt_new.admin.telemetry.decorators import track_command
+
 console = Console()
 
 
@@ -45,6 +47,7 @@ def workflows_group():
     default="table",
     help="Output format",
 )
+@track_command
 def list_workflows(status: Optional[str], limit: int, id_filter: Optional[str], output_format: str):
     """
     List background workflows.
@@ -135,6 +138,7 @@ def list_workflows(status: Optional[str], limit: int, id_filter: Optional[str], 
 @workflows_group.command(name="status")
 @click.argument("workflow_id")
 @click.option("--json", "output_json", is_flag=True, help="Output as JSON")
+@track_command
 def workflow_status(workflow_id: str, output_json: bool):
     """
     Show detailed workflow status.
@@ -162,14 +166,72 @@ def workflow_status(workflow_id: str, output_json: bool):
         console.print(formatted)
 
 
+def _format_timestamp(ts) -> str:
+    """Format a timestamp for display."""
+    if ts is None:
+        return "-"
+    try:
+        from datetime import datetime
+
+        return datetime.utcfromtimestamp(float(ts)).strftime("%H:%M:%S")
+    except Exception:
+        return str(ts)[:19]
+
+
+def _format_streams_table(streams: list[dict]) -> None:
+    """Format workflow streams as a table."""
+    table = Table(box=None, show_edge=False)
+    table.add_column("Time", style="dim", no_wrap=True)
+    table.add_column("Step", style="cyan")
+    table.add_column("Status", style="green")
+    table.add_column("Progress", justify="right")
+    table.add_column("Details", style="dim")
+
+    for entry in streams:
+        ts = _format_timestamp(entry.get("timestamp"))
+        step = entry.get("step", "-")
+        status = entry.get("status", "-")
+
+        # Color status
+        if status == "success":
+            status = f"[green]{status}[/green]"
+        elif status == "error":
+            status = f"[red]{status}[/red]"
+        elif status == "start":
+            status = f"[blue]{status}[/blue]"
+
+        # Progress info
+        idx = entry.get("idx")
+        total = entry.get("total")
+        if idx is not None and total:
+            progress = f"{idx + 1}/{total}"
+        elif total:
+            progress = f"0/{total}"
+        else:
+            progress = "-"
+
+        # Details
+        details = []
+        if entry.get("latency_ms"):
+            details.append(f"{entry['latency_ms']}ms")
+        if entry.get("error"):
+            details.append(f"err: {entry['error'][:30]}")
+        details_str = " ".join(details) if details else "-"
+
+        table.add_row(ts, step, status, progress, details_str)
+
+    console.print(table)
+
+
 @workflows_group.command(name="logs")
 @click.argument("workflow_id")
 @click.option("--step", help="Filter logs by step name")
 @click.option("--limit", default=200, help="Maximum number of log entries")
 @click.option("--json", "output_json", is_flag=True, help="Output as JSON")
+@track_command
 def workflow_logs(workflow_id: str, step: Optional[str], limit: int, output_json: bool):
     """
-    Show workflow logs.
+    Show workflow logs and progress streams.
 
     Example:
         kurt workflows logs abc123
@@ -177,24 +239,29 @@ def workflow_logs(workflow_id: str, step: Optional[str], limit: int, output_json
     """
     _check_dbos_available()
 
-    from kurt_new.core.status import format_step_logs, get_step_logs
+    from kurt_new.core.status import read_workflow_streams
 
-    logs = get_step_logs(workflow_id, step_name=step, limit=limit)
+    # Read all streams (progress events contain the execution log)
+    streams = read_workflow_streams(workflow_id, limit=limit)
 
-    if not logs:
+    # Filter by step if specified
+    if step:
+        streams = [s for s in streams if s.get("step") == step]
+
+    if not streams:
         console.print("[yellow]No logs found[/yellow]")
         return
 
     if output_json:
-        print(json.dumps(logs, indent=2, default=str))
+        print(json.dumps(streams, indent=2, default=str))
     else:
-        formatted = format_step_logs(logs)
-        console.print(formatted)
+        _format_streams_table(streams)
 
 
 @workflows_group.command(name="follow")
 @click.argument("workflow_id")
 @click.option("--wait", is_flag=True, help="Wait for workflow to complete")
+@track_command
 def follow_workflow(workflow_id: str, wait: bool):
     """
     Attach to a running workflow and show live progress.
@@ -237,6 +304,7 @@ def follow_workflow(workflow_id: str, wait: bool):
 
 @workflows_group.command(name="cancel")
 @click.argument("workflow_id")
+@track_command
 def cancel_workflow(workflow_id: str):
     """
     Cancel a workflow.
@@ -261,6 +329,7 @@ def cancel_workflow(workflow_id: str):
 @workflows_group.command(name="stats")
 @click.argument("workflow_id", required=False)
 @click.option("--json", "output_json", is_flag=True, help="Output as JSON")
+@track_command
 def workflow_stats(workflow_id: Optional[str], output_json: bool):
     """
     Show LLM usage statistics for a workflow.
@@ -274,7 +343,7 @@ def workflow_stats(workflow_id: Optional[str], output_json: bool):
     tracer = LLMTracer()
 
     if workflow_id:
-        stats = tracer.stats(workflow_id)
+        stats = tracer.stats(workflow_id=workflow_id)
     else:
         stats = tracer.stats()
 

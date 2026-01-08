@@ -8,6 +8,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from kurt_new.admin.telemetry.decorators import track_command
 from kurt_new.cli.options import format_option
 
 console = Console()
@@ -46,6 +47,7 @@ def signals_group():
 @click.option("--background", is_flag=True, help="Run in background")
 @click.option("--dry-run", is_flag=True, help="Execute but don't persist to DB")
 @format_option
+@track_command
 def reddit_cmd(
     subreddit: str,
     timeframe: str,
@@ -115,6 +117,7 @@ def reddit_cmd(
 @click.option("--background", is_flag=True, help="Run in background")
 @click.option("--dry-run", is_flag=True, help="Execute but don't persist to DB")
 @format_option
+@track_command
 def hackernews_cmd(
     timeframe: str,
     keywords: str,
@@ -173,6 +176,7 @@ def hackernews_cmd(
 @click.option("--background", is_flag=True, help="Run in background")
 @click.option("--dry-run", is_flag=True, help="Execute but don't persist to DB")
 @format_option
+@track_command
 def feeds_cmd(
     feed_url: str,
     keywords: str,

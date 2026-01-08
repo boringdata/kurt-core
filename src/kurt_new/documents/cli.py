@@ -11,6 +11,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from kurt_new.admin.telemetry.decorators import track_command
 from kurt_new.cli.options import (
     add_confirmation_options,
     add_filter_options,
@@ -46,6 +47,7 @@ def content_group():
 @content_group.command("list")
 @add_filter_options()
 @format_table_option
+@track_command
 def list_cmd(
     include_pattern: str | None,
     ids: str | None,
@@ -125,6 +127,7 @@ def list_cmd(
 @content_group.command("get")
 @click.argument("identifier")
 @format_option
+@track_command
 def get_cmd(identifier: str, output_format: str):
     """
     Get document details by ID or URL.
@@ -184,6 +187,7 @@ def get_cmd(identifier: str, output_format: str):
 @click.argument("identifier", required=False)
 @add_filter_options(cluster=False, status=False, content_type=False)
 @add_confirmation_options()
+@track_command
 def delete_cmd(
     identifier: str | None,
     include_pattern: str | None,

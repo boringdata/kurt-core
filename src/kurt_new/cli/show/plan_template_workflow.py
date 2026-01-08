@@ -2,8 +2,11 @@
 
 import click
 
+from kurt_new.admin.telemetry.decorators import track_command
+
 
 @click.command()
+@track_command
 def plan_template_workflow_cmd():
     """Show instructions for modifying the base plan template."""
     content = """

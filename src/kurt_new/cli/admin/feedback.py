@@ -5,6 +5,8 @@ from __future__ import annotations
 import click
 from rich.console import Console
 
+from kurt_new.admin.telemetry.decorators import track_command
+
 console = Console()
 
 
@@ -27,6 +29,7 @@ def feedback():
     help="Category of identified issue",
 )
 @click.option("--event-id", required=True, help="UUID of feedback event")
+@track_command
 def log_submission(
     rating: int,
     has_comment: bool,

@@ -5,6 +5,8 @@ from __future__ import annotations
 import click
 from rich.console import Console
 
+from kurt_new.admin.telemetry.decorators import track_command
+
 console = Console()
 
 
@@ -28,6 +30,7 @@ def research_group():
     type=click.Choice(["perplexity"]),
     help="Research source to configure",
 )
+@track_command
 def onboard_cmd(source: str):
     """
     Configure research API credentials.
@@ -102,6 +105,7 @@ def onboard_cmd(source: str):
 
 
 @research_group.command("status")
+@track_command
 def status_cmd():
     """
     Show configured research sources.

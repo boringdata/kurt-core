@@ -9,6 +9,8 @@ from pathlib import Path
 import click
 from rich.console import Console
 
+from kurt_new.admin.telemetry.decorators import track_command
+
 console = Console()
 
 
@@ -39,6 +41,7 @@ console = Console()
     default="both",
     help="IDE to configure for (claude, cursor, or both)",
 )
+@track_command
 def init(db_path: str, sources_path: str, projects_path: str, rules_path: str, ide: str):
     """
     Initialize a new Kurt project in the current directory.

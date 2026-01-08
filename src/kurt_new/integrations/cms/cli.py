@@ -10,6 +10,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from kurt_new.admin.telemetry.decorators import track_command
 from kurt_new.cli.options import format_option, limit_option
 
 console = Console()
@@ -39,6 +40,7 @@ def cms_group():
 @click.option("--dataset", help="Dataset name")
 @click.option("--token", help="Read API token")
 @click.option("--base-url", help="Base URL for your website")
+@track_command
 def onboard_cmd(
     platform: str,
     instance: str,
@@ -146,6 +148,7 @@ def onboard_cmd(
 
 @cms_group.command("status")
 @click.option("--check-health", is_flag=True, help="Test API connections")
+@track_command
 def status_cmd(check_health: bool):
     """
     Show configured CMS integrations.
@@ -210,6 +213,7 @@ def status_cmd(check_health: bool):
 @cms_group.command("types")
 @click.option("--platform", default="sanity", help="CMS platform")
 @click.option("--instance", default=None, help="Instance name")
+@track_command
 def types_cmd(platform: str, instance: Optional[str]):
     """
     List available content types in CMS.
@@ -260,6 +264,7 @@ def types_cmd(platform: str, instance: Optional[str]):
 @click.option("--content-type", "-t", help="Filter by content type")
 @limit_option
 @format_option
+@track_command
 def search_cmd(
     platform: str,
     instance: Optional[str],
@@ -330,6 +335,7 @@ def search_cmd(
 @click.option("--id", "document_id", required=True, help="Document ID to fetch")
 @click.option("--output-dir", type=click.Path(), help="Output directory for markdown")
 @click.option("--output-format", type=click.Choice(["markdown", "json"]), default="markdown")
+@track_command
 def fetch_cmd(
     platform: str,
     instance: Optional[str],
@@ -401,6 +407,7 @@ def fetch_cmd(
 )
 @click.option("--id", "document_id", help="CMS document ID to update")
 @click.option("--content-type", help="Content type for new documents")
+@track_command
 def publish_cmd(
     platform: str,
     instance: Optional[str],

@@ -8,6 +8,8 @@ from pathlib import Path
 import click
 from rich.console import Console
 
+from kurt_new.admin.telemetry.decorators import track_command
+
 console = Console()
 
 
@@ -17,6 +19,7 @@ console = Console()
     default=True,
     help="Create backup before updating (default: yes)",
 )
+@track_command
 def update(backup: bool):
     """
     Update agent instructions (.agents/AGENTS.md) to latest version.

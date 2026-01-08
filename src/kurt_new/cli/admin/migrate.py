@@ -5,6 +5,8 @@ from __future__ import annotations
 import click
 from rich.console import Console
 
+from kurt_new.admin.telemetry.decorators import track_command
+
 console = Console()
 
 
@@ -16,6 +18,7 @@ def migrate():
 
 @migrate.command()
 @click.option("--auto-confirm", "-y", is_flag=True, help="Skip confirmation prompt")
+@track_command
 def apply(auto_confirm: bool):
     """
     Apply pending database migrations.
@@ -41,6 +44,7 @@ def apply(auto_confirm: bool):
 
 
 @migrate.command()
+@track_command
 def status():
     """
     Show current database migration status.
@@ -56,6 +60,7 @@ def status():
 
 
 @migrate.command()
+@track_command
 def init():
     """
     Initialize Alembic for an existing database.

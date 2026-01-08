@@ -5,7 +5,8 @@ from __future__ import annotations
 import click
 from rich.console import Console
 
-from kurt_new.cli.options import dry_run_option, format_option, limit_option
+from kurt_new.admin.telemetry.decorators import track_command
+from kurt_new.cli.options import add_background_options, dry_run_option, format_option, limit_option
 from kurt_new.cli.output import print_json, print_workflow_status
 
 console = Console()
@@ -26,8 +27,10 @@ console = Console()
 @click.option("--include", "include_patterns", help="Glob patterns to include")
 @click.option("--exclude", "exclude_patterns", help="Glob patterns to exclude")
 @limit_option
+@add_background_options()
 @dry_run_option
 @format_option
+@track_command
 def map_cmd(
     source: str | None,
     url: str | None,
@@ -38,6 +41,8 @@ def map_cmd(
     include_patterns: str | None,
     exclude_patterns: str | None,
     limit: int | None,
+    background: bool,
+    priority: int,
     dry_run: bool,
     output_format: str,
 ):
@@ -100,7 +105,7 @@ def map_cmd(
         console.print(f"[dim]Mapping content from: {source_desc}[/dim]")
 
     # Run workflow
-    result = run_map(config)
+    result = run_map(config, background=background, priority=priority)
 
     # Output result
     if output_format == "json":

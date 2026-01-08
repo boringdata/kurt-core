@@ -10,6 +10,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from kurt_new.admin.telemetry.decorators import track_command
 from kurt_new.cli.options import format_option, limit_option
 
 console = Console()
@@ -34,6 +35,7 @@ def analytics_group():
 @click.argument("domain")
 @click.option("--platform", default="posthog", help="Analytics platform (posthog, ga4, plausible)")
 @click.option("--sync-now", is_flag=True, help="Run initial sync after onboarding")
+@track_command
 def onboard_cmd(domain: str, platform: str, sync_now: bool):
     """
     Configure analytics for a domain.
@@ -179,6 +181,7 @@ def _run_sync(domain: str, platform: str = None, period: int = 60):
 @click.argument("domain", required=False)
 @click.option("--all", "sync_all", is_flag=True, help="Sync all configured domains")
 @click.option("--period", type=int, default=60, help="Days to sync (default: 60)")
+@track_command
 def sync_cmd(domain: str, sync_all: bool, period: int):
     """
     Sync analytics data for a domain.
@@ -214,6 +217,7 @@ def sync_cmd(domain: str, sync_all: bool, period: int):
 
 @analytics_group.command("list")
 @format_option
+@track_command
 def list_cmd(output_format: str):
     """
     List analytics-enabled domains.
@@ -290,6 +294,7 @@ def list_cmd(output_format: str):
 )
 @limit_option
 @format_option
+@track_command
 def query_cmd(
     domain: str,
     url_contains: Optional[str],
