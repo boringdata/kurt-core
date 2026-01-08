@@ -105,35 +105,41 @@ def reset_dbos_state():
     This fixture ensures each test starts with a clean DBOS state,
     preventing test interference from leftover workflows or queues.
     """
-    try:
-        from dbos import DBOS
 
-        # Reset before test
-        if hasattr(DBOS, "_dbos_initialized"):
-            DBOS._dbos_initialized = False
-        if hasattr(DBOS, "_destroy"):
+    def _reset():
+        try:
+            from dbos import DBOS
+
+            if hasattr(DBOS, "_dbos_initialized"):
+                DBOS._dbos_initialized = False
+            if hasattr(DBOS, "_destroy"):
+                try:
+                    DBOS._destroy(workflow_completion_timeout_sec=0)
+                except Exception:
+                    pass
+
+            # Clear DBOS global instance to allow fresh initialization
             try:
-                DBOS._destroy(workflow_completion_timeout_sec=0)
+                import dbos._dbos as dbos_module
+
+                if hasattr(dbos_module, "_dbos_global_instance"):
+                    dbos_module._dbos_global_instance = None
             except Exception:
                 pass
-    except ImportError:
-        pass
+        except ImportError:
+            pass
 
+        # Also reset kurt_new's dbos module flag
+        try:
+            import kurt_new.core.dbos as kurt_dbos
+
+            kurt_dbos._dbos_initialized = False
+        except ImportError:
+            pass
+
+    _reset()
     yield
-
-    # Reset after test
-    try:
-        from dbos import DBOS
-
-        if hasattr(DBOS, "_dbos_initialized"):
-            DBOS._dbos_initialized = False
-        if hasattr(DBOS, "_destroy"):
-            try:
-                DBOS._destroy(workflow_completion_timeout_sec=0)
-            except Exception:
-                pass
-    except ImportError:
-        pass
+    _reset()
 
 
 # ============================================================================
@@ -628,11 +634,14 @@ def dbos_launched(tmp_database, reset_dbos_state):
     Fixture that initializes and launches DBOS for integration tests.
 
     Use this when testing actual DBOS queue behavior.
+    DBOS creates its own tables (workflow_events, streams, etc.) in the database.
     """
     from dbos import DBOS
 
-    # Initialize DBOS with test config
-    DBOS.launch()
+    from kurt_new.core.dbos import init_dbos
+
+    # Initialize DBOS with proper config (uses tmp_database path)
+    init_dbos()
 
     yield DBOS
 

@@ -39,7 +39,7 @@ def read_workflow_events(workflow_id: str) -> dict[str, Any]:
     Read DBOS workflow events into a dict.
     """
     with managed_session() as session:
-        rows = session.exec(
+        rows = session.execute(
             text("SELECT key, value FROM workflow_events WHERE workflow_uuid = :workflow_id"),
             {"workflow_id": workflow_id},
         ).all()
@@ -74,7 +74,7 @@ def read_workflow_streams(
         params["limit"] = limit
 
     with managed_session() as session:
-        rows = session.exec(text(query), params).all()
+        rows = session.execute(text(query), params).all()
 
     streams: list[dict[str, Any]] = []
     for row_key, value, offset in rows:

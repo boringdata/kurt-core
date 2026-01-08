@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import json
+
+import pytest
 from click.testing import CliRunner
+from sqlalchemy import text
 
 from kurt_new.cli.workflows import workflows_group
 from kurt_new.core.tests.conftest import (
@@ -10,6 +14,7 @@ from kurt_new.core.tests.conftest import (
     assert_output_contains,
     invoke_cli,
 )
+from kurt_new.db import managed_session
 
 
 class TestWorkflowsGroup:
@@ -125,3 +130,114 @@ class TestStatsCommand:
         result = invoke_cli(cli_runner, workflows_group, ["stats", "--help"])
         assert_cli_success(result)
         assert_output_contains(result, "--json")
+
+
+# ============================================================================
+# Database Integration Tests
+# ============================================================================
+
+
+def _insert_workflow(workflow_uuid: str, name: str, status: str) -> None:
+    """Insert a workflow into workflow_status table."""
+    with managed_session() as session:
+        session.execute(
+            text(
+                """
+                INSERT INTO workflow_status (workflow_uuid, name, status, created_at, updated_at)
+                VALUES (:uuid, :name, :status, datetime('now'), datetime('now'))
+                """
+            ),
+            {"uuid": workflow_uuid, "name": name, "status": status},
+        )
+        session.commit()
+
+
+class TestListWorkflowsDatabase:
+    """Database integration tests for `workflows list` command.
+
+    These tests use dbos_launched fixture to ensure DBOS tables exist
+    and test the actual raw SQL queries against workflow_status table.
+    """
+
+    @pytest.fixture
+    def dbos_tables(self, dbos_launched):
+        """Use dbos_launched fixture which creates all DBOS tables."""
+        yield dbos_launched
+
+    def test_list_empty_workflows(self, cli_runner: CliRunner, dbos_tables):
+        """Test listing workflows when none exist."""
+        result = invoke_cli(cli_runner, workflows_group, ["list"])
+        assert_cli_success(result)
+        assert_output_contains(result, "No workflows found")
+
+    def test_list_workflows_with_data(self, cli_runner: CliRunner, dbos_tables):
+        """Test listing workflows with data in database."""
+        _insert_workflow("wf-001-uuid", "test_workflow", "SUCCESS")
+        _insert_workflow("wf-002-uuid", "another_workflow", "PENDING")
+
+        result = invoke_cli(cli_runner, workflows_group, ["list"])
+        assert_cli_success(result)
+        assert_output_contains(result, "wf-001-uuid")
+        assert_output_contains(result, "wf-002-uuid")
+
+    def test_list_workflows_filter_by_status(self, cli_runner: CliRunner, dbos_tables):
+        """Test filtering workflows by status."""
+        _insert_workflow("wf-success-1", "success_wf", "SUCCESS")
+        _insert_workflow("wf-pending-1", "pending_wf", "PENDING")
+        _insert_workflow("wf-error-1", "error_wf", "ERROR")
+
+        result = invoke_cli(cli_runner, workflows_group, ["list", "--status", "SUCCESS"])
+        assert_cli_success(result)
+        assert "wf-success-1" in result.output
+        assert "wf-pending-1" not in result.output
+        assert "wf-error-1" not in result.output
+
+    def test_list_workflows_filter_by_id(self, cli_runner: CliRunner, dbos_tables):
+        """Test filtering workflows by ID substring."""
+        _insert_workflow("abc-workflow-123", "first_wf", "SUCCESS")
+        _insert_workflow("xyz-workflow-456", "second_wf", "SUCCESS")
+
+        result = invoke_cli(cli_runner, workflows_group, ["list", "--id", "abc"])
+        assert_cli_success(result)
+        assert "abc-workflow" in result.output
+        assert "xyz-workflow" not in result.output
+
+    def test_list_workflows_limit(self, cli_runner: CliRunner, dbos_tables):
+        """Test limiting number of workflows returned."""
+        for i in range(5):
+            _insert_workflow(f"wf-limit-{i}", f"workflow_{i}", "SUCCESS")
+
+        result = invoke_cli(cli_runner, workflows_group, ["list", "--limit", "2"])
+        assert_cli_success(result)
+        # Should only show 2 workflows
+        # Count occurrences of workflow IDs
+        count = sum(1 for i in range(5) if f"wf-limit-{i}" in result.output)
+        assert count == 2
+
+    def test_list_workflows_json_format(self, cli_runner: CliRunner, dbos_tables):
+        """Test JSON output format."""
+        _insert_workflow("wf-json-test", "json_workflow", "SUCCESS")
+
+        result = invoke_cli(cli_runner, workflows_group, ["list", "--format", "json"])
+        assert_cli_success(result)
+
+        data = json.loads(result.output)
+        assert isinstance(data, list)
+        assert len(data) >= 1
+        assert data[0]["workflow_id"] == "wf-json-test"
+        assert data[0]["name"] == "json_workflow"
+        assert data[0]["status"] == "SUCCESS"
+
+    def test_list_workflows_combined_filters(self, cli_runner: CliRunner, dbos_tables):
+        """Test combining status and ID filters."""
+        _insert_workflow("test-success-001", "wf1", "SUCCESS")
+        _insert_workflow("test-pending-001", "wf2", "PENDING")
+        _insert_workflow("other-success-002", "wf3", "SUCCESS")
+
+        result = invoke_cli(
+            cli_runner, workflows_group, ["list", "--status", "SUCCESS", "--id", "test"]
+        )
+        assert_cli_success(result)
+        assert "test-success" in result.output
+        assert "test-pending" not in result.output
+        assert "other-success" not in result.output
