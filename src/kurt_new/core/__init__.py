@@ -1,5 +1,12 @@
 from .core import LLMStep, llm_step
 from .dbos import destroy_dbos, init_dbos
+from .display import (
+    StepDisplay,
+    is_display_enabled,
+    print_info,
+    print_warning,
+    set_display_enabled,
+)
 from .embedding_step import (
     EmbeddingStep,
     bytes_to_embedding,
@@ -34,6 +41,7 @@ from .tracing import LLMTracer, TracingHooks
 from .tracking import (
     TrackingHooks,
     WorkflowTracker,
+    log_item,
     step_log,
     track_step,
     update_step_progress,
@@ -58,6 +66,7 @@ __all__ = [
     "track_step",
     "update_step_progress",
     "step_log",
+    "log_item",
     "get_live_status",
     "get_progress_page",
     "get_step_logs",
@@ -77,4 +86,9 @@ __all__ = [
     "init_dbos",
     "destroy_dbos",
     "run_workflow",
+    "StepDisplay",
+    "is_display_enabled",
+    "set_display_enabled",
+    "print_warning",
+    "print_info",
 ]

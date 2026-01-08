@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import time
 from contextlib import contextmanager
-from dataclasses import dataclass
-from typing import Any
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
 
 from .hooks import StepHooks
+
+if TYPE_CHECKING:
+    from .display import StepDisplay
 
 try:
     from dbos import DBOS
@@ -35,7 +38,10 @@ def _safe_write_stream(key: str, payload: dict[str, Any]) -> None:
 
 @dataclass
 class WorkflowTracker:
-    """DBOS-based tracking using events and streams only."""
+    """DBOS-based tracking with optional console display."""
+
+    _display: StepDisplay | None = field(default=None, init=False, repr=False)
+    _current_step: str | None = field(default=None, init=False, repr=False)
 
     def start_step(
         self,
@@ -44,6 +50,7 @@ class WorkflowTracker:
         step_type: str = "step",
         total: int = 0,
     ) -> None:
+        # DBOS tracking
         _safe_set_event("current_step", step_name)
         _safe_set_event("stage", step_name)
         _safe_set_event("stage_total", total)
@@ -59,7 +66,16 @@ class WorkflowTracker:
             },
         )
 
+        # Console display if enabled
+        self._current_step = step_name
+        from .display import StepDisplay, is_display_enabled
+
+        if is_display_enabled():
+            self._display = StepDisplay(step_name, total=total)
+            self._display.start()
+
     def update_progress(self, current: int, *, step_name: str | None = None) -> None:
+        # DBOS tracking
         _safe_set_event("stage_current", current)
         if step_name:
             _safe_write_stream(
@@ -72,9 +88,32 @@ class WorkflowTracker:
                 },
             )
 
+        # Console display
+        if self._display:
+            self._display.update(current)
+
+    def log_item(
+        self,
+        item_id: str,
+        *,
+        status: str,
+        message: str = "",
+        elapsed: float = 0,
+        counter: tuple[int, int] | None = None,
+    ) -> None:
+        """Log individual item progress (for batch operations)."""
+        if self._display:
+            if status == "success":
+                self._display.log_success(item_id, title=message, elapsed=elapsed, counter=counter)
+            elif status == "skip":
+                self._display.log_skip(item_id, reason=message, counter=counter)
+            elif status == "error":
+                self._display.log_error(item_id, error=message, counter=counter)
+
     def end_step(
         self, step_name: str, *, status: str = "success", error: str | None = None
     ) -> None:
+        # DBOS tracking
         _safe_set_event("stage_status", status)
         if error:
             _safe_set_event("stage_error", error)
@@ -87,6 +126,12 @@ class WorkflowTracker:
                 "timestamp": time.time(),
             },
         )
+
+        # Console display
+        if self._display:
+            self._display.stop()
+            self._display = None
+        self._current_step = None
 
     def log(
         self,
@@ -106,6 +151,11 @@ class WorkflowTracker:
                 "timestamp": time.time(),
             },
         )
+
+        # Also log to display if enabled
+        if self._display:
+            style = "dim red" if level == "error" else "dim"
+            self._display.log(message, style=style)
 
 
 class TrackingHooks(StepHooks):
@@ -264,3 +314,26 @@ def step_log(
 ):
     tracker = tracker or WorkflowTracker()
     tracker.log(message, level=level, step_name=step_name, metadata=metadata)
+
+
+def log_item(
+    item_id: str,
+    *,
+    status: str,
+    message: str = "",
+    elapsed: float = 0,
+    counter: tuple[int, int] | None = None,
+    tracker: WorkflowTracker | None = None,
+):
+    """Log individual item progress (for batch operations).
+
+    Args:
+        item_id: Unique identifier for the item
+        status: One of "success", "skip", or "error"
+        message: Additional message (title for success, reason for skip, error message for error)
+        elapsed: Elapsed time in seconds
+        counter: Tuple of (current, total) for progress counter
+        tracker: WorkflowTracker instance (creates new one if None)
+    """
+    tracker = tracker or WorkflowTracker()
+    tracker.log_item(item_id, status=status, message=message, elapsed=elapsed, counter=counter)
