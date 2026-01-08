@@ -61,14 +61,7 @@ def map_url_step(config_dict: dict[str, Any]) -> dict[str, Any]:
     existing = sum(1 for row in rows if row["status"] == MapStatus.EXISTING)
     errors = sum(1 for row in rows if row["status"] == MapStatus.ERROR)
 
-    if not config.dry_run:
-        persistence = persist_map_documents(rows)
-        inserted = persistence["rows_written"]
-        updated = persistence["rows_updated"]
-    else:
-        inserted = 0
-        updated = 0
-
+    # Note: persistence is handled by workflow calling persist_map_documents transaction
     return {
         "discovery_method": discovery_method,
         "discovery_url": discovery_url,
@@ -76,8 +69,8 @@ def map_url_step(config_dict: dict[str, Any]) -> dict[str, Any]:
         "documents_discovered": discovered,
         "documents_existing": existing,
         "documents_errors": errors,
-        "rows_written": inserted,
-        "rows_updated": updated,
+        "rows_written": 0,
+        "rows_updated": 0,
         "rows": serialize_rows(rows),
         "dry_run": config.dry_run,
     }
@@ -124,14 +117,7 @@ def map_folder_step(config_dict: dict[str, Any]) -> dict[str, Any]:
     existing = sum(1 for row in rows if row["status"] == MapStatus.EXISTING)
     errors = sum(1 for row in rows if row["status"] == MapStatus.ERROR)
 
-    if not config.dry_run:
-        persistence = persist_map_documents(rows)
-        inserted = persistence["rows_written"]
-        updated = persistence["rows_updated"]
-    else:
-        inserted = 0
-        updated = 0
-
+    # Note: persistence is handled by workflow calling persist_map_documents transaction
     return {
         "discovery_method": discovery_method,
         "discovery_url": discovery_url,
@@ -139,8 +125,8 @@ def map_folder_step(config_dict: dict[str, Any]) -> dict[str, Any]:
         "documents_discovered": discovered,
         "documents_existing": existing,
         "documents_errors": errors,
-        "rows_written": inserted,
-        "rows_updated": updated,
+        "rows_written": 0,
+        "rows_updated": 0,
         "rows": serialize_rows(rows),
         "dry_run": config.dry_run,
     }
@@ -184,14 +170,7 @@ def map_cms_step(config_dict: dict[str, Any]) -> dict[str, Any]:
     existing = sum(1 for row in rows if row["status"] == MapStatus.EXISTING)
     errors = sum(1 for row in rows if row["status"] == MapStatus.ERROR)
 
-    if not config.dry_run:
-        persistence = persist_map_documents(rows)
-        inserted = persistence["rows_written"]
-        updated = persistence["rows_updated"]
-    else:
-        inserted = 0
-        updated = 0
-
+    # Note: persistence is handled by workflow calling persist_map_documents transaction
     return {
         "discovery_method": discovery_method,
         "discovery_url": discovery_url,
@@ -199,8 +178,8 @@ def map_cms_step(config_dict: dict[str, Any]) -> dict[str, Any]:
         "documents_discovered": discovered,
         "documents_existing": existing,
         "documents_errors": errors,
-        "rows_written": inserted,
-        "rows_updated": updated,
+        "rows_written": 0,
+        "rows_updated": 0,
         "rows": serialize_rows(rows),
         "dry_run": config.dry_run,
     }

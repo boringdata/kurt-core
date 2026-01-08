@@ -16,8 +16,8 @@ def discover_from_cms(
     """
     Discover documents from a CMS platform without persisting them.
     """
-    from kurt.integrations.cms import get_adapter
-    from kurt.integrations.cms.config import get_platform_config
+    from kurt_new.integrations.cms import get_adapter
+    from kurt_new.integrations.cms.config import get_platform_config
 
     cms_config = get_platform_config(platform, instance)
     adapter = get_adapter(platform, cms_config)

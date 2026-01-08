@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import logging
 import xml.etree.ElementTree as ET
-from fnmatch import fnmatch
 from urllib.parse import urlparse
 
 import httpx
 from trafilatura.spider import focused_crawler
+
+from .utils import filter_items
 
 logger = logging.getLogger(__name__)
 
@@ -46,11 +47,11 @@ def discover_from_url(
             discovered_urls = [url]
             discovery_method = "single_page"
 
-    discovered_urls = _apply_filters(
+    discovered_urls = filter_items(
         discovered_urls,
         include_patterns=include_patterns,
         exclude_patterns=exclude_patterns,
-        max_pages=max_pages,
+        max_items=max_pages,
     )
 
     return {
@@ -58,22 +59,6 @@ def discover_from_url(
         "method": discovery_method,
         "total": len(discovered_urls),
     }
-
-
-def _apply_filters(
-    urls: list[str],
-    *,
-    include_patterns: tuple[str, ...],
-    exclude_patterns: tuple[str, ...],
-    max_pages: int,
-) -> list[str]:
-    if include_patterns:
-        urls = [u for u in urls if any(fnmatch(u, p) for p in include_patterns)]
-    if exclude_patterns:
-        urls = [u for u in urls if not any(fnmatch(u, p) for p in exclude_patterns)]
-    if max_pages and len(urls) > max_pages:
-        urls = urls[:max_pages]
-    return urls
 
 
 def discover_sitemap_urls(base_url: str) -> list[str]:
@@ -182,13 +167,11 @@ def crawl_website(
         homepage_domain = urlparse(homepage).netloc
         all_urls = [url for url in all_urls if urlparse(url).netloc == homepage_domain]
 
-    if include_patterns:
-        all_urls = [url for url in all_urls if any(fnmatch(url, p) for p in include_patterns)]
-
-    if exclude_patterns:
-        all_urls = [url for url in all_urls if not any(fnmatch(url, p) for p in exclude_patterns)]
-
-    if len(all_urls) > max_pages:
-        all_urls = all_urls[:max_pages]
+    all_urls = filter_items(
+        all_urls,
+        include_patterns=include_patterns,
+        exclude_patterns=exclude_patterns,
+        max_items=max_pages,
+    )
 
     return all_urls

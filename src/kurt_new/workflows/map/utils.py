@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import hashlib
-from typing import Any, Optional
+from fnmatch import fnmatch
+from typing import Any, Callable, Optional
 
 from sqlmodel import select
 
@@ -53,7 +54,8 @@ def resolve_existing(doc_ids: list[str]) -> set[str]:
         rows = session.exec(
             select(MapDocument.document_id).where(MapDocument.document_id.in_(doc_ids))
         ).all()
-    return {row[0] for row in rows}
+    # SQLModel returns raw values for single-column selects, not tuples
+    return set(rows)
 
 
 def build_rows(
@@ -99,3 +101,34 @@ def serialize_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             row_copy["status"] = status.value
         serialized.append(row_copy)
     return serialized
+
+
+def filter_items(
+    items: list[Any],
+    *,
+    include_patterns: tuple[str, ...] = (),
+    exclude_patterns: tuple[str, ...] = (),
+    max_items: int | None = None,
+    to_string: Callable[[Any], str] | None = None,
+) -> list[Any]:
+    """
+    Filter items by glob patterns and optional max limit.
+    """
+
+    def default_to_string(item: Any) -> str:
+        return str(item)
+
+    if to_string is None:
+        to_string = default_to_string
+
+    if include_patterns:
+        items = [
+            item for item in items if any(fnmatch(to_string(item), p) for p in include_patterns)
+        ]
+    if exclude_patterns:
+        items = [
+            item for item in items if not any(fnmatch(to_string(item), p) for p in exclude_patterns)
+        ]
+    if max_items is not None and len(items) > max_items:
+        items = items[:max_items]
+    return items

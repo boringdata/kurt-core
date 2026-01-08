@@ -1,10 +1,21 @@
 from __future__ import annotations
 
+import hashlib
 import logging
-from fnmatch import fnmatch
 from pathlib import Path
 
+from .utils import filter_items
+
 logger = logging.getLogger(__name__)
+
+
+def compute_file_hash(file_path: Path) -> str:
+    """Compute SHA256 hash of file content for deduplication."""
+    sha256 = hashlib.sha256()
+    with file_path.open("rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            sha256.update(chunk)
+    return sha256.hexdigest()
 
 
 def discover_from_folder(
@@ -19,28 +30,23 @@ def discover_from_folder(
     folder = Path(folder_path)
     files = discover_markdown_files(folder, recursive=True)
 
-    if include_patterns:
-        files = [
-            f
-            for f in files
-            if any(fnmatch(str(f.relative_to(folder)), p) for p in include_patterns)
-        ]
-
-    if exclude_patterns:
-        files = [
-            f
-            for f in files
-            if not any(fnmatch(str(f.relative_to(folder)), p) for p in exclude_patterns)
-        ]
+    files = filter_items(
+        files,
+        include_patterns=include_patterns,
+        exclude_patterns=exclude_patterns,
+        to_string=lambda f: str(f.relative_to(folder)),
+    )
 
     results = []
     for file_path in files:
         try:
             title = _extract_title(file_path)
+            content_hash = compute_file_hash(file_path)
             results.append(
                 {
                     "path": str(file_path),
                     "title": title,
+                    "content_hash": content_hash,
                     "created": True,
                 }
             )

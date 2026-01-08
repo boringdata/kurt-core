@@ -15,7 +15,13 @@ from .steps import map_cms_step, map_folder_step, map_step, map_url_step
 def map_workflow(config_dict: dict[str, Any]) -> dict[str, Any]:
     """
     Map/discover content sources and return discovered documents.
+
+    The workflow:
+    1. Runs discovery step (returns rows without persisting)
+    2. Persists rows via transaction (if not dry_run)
     """
+    from .steps import persist_map_documents
+
     config = MapConfig.model_validate(config_dict)
     workflow_id = DBOS.workflow_id
 
@@ -31,6 +37,12 @@ def map_workflow(config_dict: dict[str, Any]) -> dict[str, Any]:
             result = map_cms_step(config.model_dump())
         else:
             result = map_step(config.model_dump())
+
+    # Persist rows via transaction (called from workflow, not step)
+    if not result.get("dry_run") and result.get("rows"):
+        persistence = persist_map_documents(result["rows"])
+        result["rows_written"] = persistence["rows_written"]
+        result["rows_updated"] = persistence["rows_updated"]
 
     DBOS.set_event("status", "completed")
     DBOS.set_event("completed_at", time.time())

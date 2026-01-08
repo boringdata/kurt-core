@@ -30,5 +30,6 @@ class MapDocument(TimestampMixin, TenantMixin, SQLModel, table=True):
     status: MapStatus = Field(default=MapStatus.DISCOVERED)
     is_new: bool = Field(default=True)
     title: Optional[str] = Field(default=None)
+    content_hash: Optional[str] = Field(default=None, index=True)
     error: Optional[str] = Field(default=None)
     metadata_json: Optional[dict] = Field(sa_column=Column(JSON), default=None)
