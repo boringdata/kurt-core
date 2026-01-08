@@ -56,12 +56,15 @@ def main(ctx):
     """
     from kurt_new.config import config_file_exists
 
-    if ctx.invoked_subcommand == "init":
+    # Skip migration check for init and admin (which includes migrate)
+    if ctx.invoked_subcommand in ["init", "admin"]:
         return
 
+    # Skip migration check if running in hook mode
     if "--hook-cc" in sys.argv:
         return
 
+    # Check if project is initialized
     if not config_file_exists():
         return
 
@@ -89,6 +92,11 @@ def _check_migrations():
         console.print()
         console.print("[yellow]⚠ Database migrations are pending[/yellow]")
         console.print(f"[dim]{len(pending)} migration(s) need to be applied[/dim]")
+        console.print()
+        console.print(
+            "[dim]Run [cyan]kurt admin migrate apply[/cyan] to update your database[/dim]"
+        )
+        console.print("[dim]Or run [cyan]kurt admin migrate status[/cyan] to see details[/dim]")
         console.print()
 
         if is_interactive:

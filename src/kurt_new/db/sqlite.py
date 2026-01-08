@@ -77,9 +77,16 @@ class SQLiteClient(DatabaseClient):
         db_path.parent.mkdir(parents=True, exist_ok=True)
 
     def init_database(self) -> None:
-        """Initialize the SQLite database."""
-        # Import models to register them with SQLModel
-        from kurt_new.db import models  # noqa: F401
+        """Initialize the SQLite database using Alembic migrations + create_all.
+
+        Uses a hybrid approach:
+        1. Apply Alembic migrations (stamps alembic_version for infrastructure tables)
+        2. Use create_all for any workflow/model tables not yet in migrations
+        """
+        # Register all models with SQLModel.metadata
+        from kurt_new.db.models import register_all_models
+
+        register_all_models()
 
         self._ensure_directory()
         db_path = self.get_database_path()
@@ -89,23 +96,48 @@ class SQLiteClient(DatabaseClient):
             logger.info(f"Database already exists at: {db_path}")
             return
 
-        # Create engine and tables
-        db_url = self.get_database_url()
         logger.info(f"Creating database at: {db_path}")
 
-        engine = create_engine(
-            db_url,
-            echo=False,
-            connect_args=self._get_connect_args(),
-            **self._get_pool_config(),
-        )
-        self._engine = engine
+        # Step 1: Apply Alembic migrations (for infrastructure tables like llm_traces)
+        # This ensures alembic_version table is properly stamped
+        try:
+            from kurt_new.db.migrations.utils import apply_migrations
 
-        # Create all tables
-        SQLModel.metadata.create_all(engine)
+            result = apply_migrations(auto_confirm=True, silent=True)
+            if result["success"]:
+                logger.info(
+                    f"Applied {result['count']} migration(s), "
+                    f"schema version: {result['current_version']}"
+                )
+            else:
+                logger.warning(f"Migrations failed: {result.get('error')}")
+        except ImportError:
+            logger.info("Migrations module not available")
+
+        # Step 2: Use create_all to create any remaining tables (workflow models)
+        # This is safe because create_all only creates tables that don't exist
+        self._create_remaining_tables()
+
+    def _create_remaining_tables(self) -> None:
+        """Create any tables not created by migrations using create_all.
+
+        This is safe because create_all only creates tables that don't exist.
+        Used for workflow models that don't have migrations yet.
+        """
+        db_url = self.get_database_url()
+        if not self._engine:
+            self._engine = create_engine(
+                db_url,
+                echo=False,
+                connect_args=self._get_connect_args(),
+                **self._get_pool_config(),
+            )
+
+        # Create any missing tables (safe - skips existing tables)
+        SQLModel.metadata.create_all(self._engine)
 
         tables = list(SQLModel.metadata.tables.keys())
-        logger.info(f"Created {len(tables)} tables: {tables}")
+        logger.info(f"Ensured {len(tables)} tables exist")
 
     def get_session(self) -> Session:
         """Get a database session."""

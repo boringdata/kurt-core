@@ -96,3 +96,20 @@ class TestFetchDocument:
     def test_document_tablename(self):
         """Test FetchDocument table name."""
         assert FetchDocument.__tablename__ == "fetch_documents"
+
+    def test_document_with_content_path(self):
+        """Test FetchDocument with content_path field."""
+        doc = FetchDocument(
+            document_id="test-doc-6",
+            status=FetchStatus.FETCHED,
+            content_length=2000,
+            content_path="ab/cd/test-doc-6.md",
+        )
+
+        assert doc.content_path == "ab/cd/test-doc-6.md"
+
+    def test_document_content_path_default_none(self):
+        """Test FetchDocument content_path defaults to None."""
+        doc = FetchDocument(document_id="test-doc-7")
+
+        assert doc.content_path is None

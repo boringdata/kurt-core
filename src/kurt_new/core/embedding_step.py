@@ -362,6 +362,7 @@ def generate_embeddings(
     api_key: str | None = None,
     module_name: str | None = None,
     step_name: str | None = None,
+    record_trace: bool = True,
 ) -> list[list[float]]:
     """
     Generate embeddings for a list of texts using LiteLLM.
@@ -379,6 +380,7 @@ def generate_embeddings(
         api_key: API key (optional)
         module_name: Module name for config resolution
         step_name: Step name for config resolution
+        record_trace: Whether to record the embedding call in LLMTrace table
 
     Returns:
         List of embedding vectors
@@ -407,12 +409,68 @@ def generate_embeddings(
         kwargs["api_key"] = api_key
 
     response = litellm.embedding(**kwargs)
-    duration_ms = (time.time() - start) * 1000
+    duration_ms = int((time.time() - start) * 1000)
+
+    # Extract usage and cost
+    tokens_in, tokens_out = _extract_usage_tokens(response)
+    cost = _calculate_embedding_cost(response, model)
 
     result = [item["embedding"] for item in response.data]
-    logger.debug(f"Generated {len(texts)} embeddings in {duration_ms:.0f}ms (model={model})")
+    logger.debug(f"Generated {len(texts)} embeddings in {duration_ms}ms (model={model})")
+
+    # Record trace if enabled
+    if record_trace:
+        _record_embedding_trace(
+            model=model,
+            texts_count=len(texts),
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            cost=cost,
+            latency_ms=duration_ms,
+            step_name=step_name or "embedding",
+            module_name=module_name,
+        )
 
     return result
+
+
+def _record_embedding_trace(
+    *,
+    model: str,
+    texts_count: int,
+    tokens_in: int,
+    tokens_out: int,
+    cost: float,
+    latency_ms: int,
+    step_name: str,
+    module_name: str | None = None,
+    error: str | None = None,
+) -> None:
+    """Record embedding API call to LLMTrace table."""
+    try:
+        from .tracing import LLMTracer
+
+        tracer = LLMTracer(auto_init=False)
+
+        # Determine provider from model name
+        provider = "openai" if "text-embedding" in model else "unknown"
+        if "/" in model:
+            provider = model.split("/")[0]
+
+        tracer.record(
+            prompt=f"[embedding batch: {texts_count} texts]",
+            response=f"[{texts_count} embeddings generated]",
+            model=model,
+            provider=provider,
+            latency_ms=latency_ms,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            cost=cost,
+            step_name=f"{module_name}.{step_name}" if module_name else step_name,
+            error=error,
+        )
+    except Exception as e:
+        logger.warning(f"Failed to record embedding trace: {e}")
 
 
 def generate_document_embedding(
