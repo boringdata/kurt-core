@@ -73,7 +73,6 @@ testpaths = ["src/kurt"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-asyncio_mode = "auto"
 filterwarnings = [
     "ignore::DeprecationWarning",
     "ignore::UserWarning:rich.live",
@@ -82,6 +81,9 @@ markers = [
     "integration: marks tests as integration tests (require database and API access)",
     "slow: marks tests as slow running tests (E2E with real workflows)",
 ]
+
+[tool.pytest-asyncio]
+mode = "auto"
 
 [dependency-groups]
 dev = [

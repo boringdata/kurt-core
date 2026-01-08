@@ -469,8 +469,8 @@ class MockHandle:
 class MockQueue:
     """Mock queue that executes functions synchronously."""
 
-    def __init__(self, *args, **kwargs):
-        pass
+    def __init__(self, name: str = "", *args, **kwargs):
+        self.name = name
 
     def enqueue(self, fn, *args, **kwargs):
         # Execute the function synchronously and return a mock handle
