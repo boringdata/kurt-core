@@ -4,6 +4,56 @@ from unittest.mock import patch
 
 from click.testing import CliRunner
 
+from kurt_new.core.tests.conftest import (
+    assert_cli_success,
+    assert_output_contains,
+    invoke_cli,
+)
+
+
+class TestResearchGroupHelp:
+    """Tests for research group help and options."""
+
+    def test_research_group_help(self, cli_runner: CliRunner):
+        """Test research group shows help."""
+        from kurt_new.workflows.research.cli import research_group
+
+        result = invoke_cli(cli_runner, research_group, ["--help"])
+        assert_cli_success(result)
+        assert_output_contains(result, "Research commands")
+
+    def test_search_help(self, cli_runner: CliRunner):
+        """Test search command shows help."""
+        from kurt_new.workflows.research.cli import research_group
+
+        result = invoke_cli(cli_runner, research_group, ["search", "--help"])
+        assert_cli_success(result)
+        assert_output_contains(result, "Execute research query")
+
+    def test_search_shows_options(self, cli_runner: CliRunner):
+        """Test search command lists options in help."""
+        from kurt_new.workflows.research.cli import research_group
+
+        result = invoke_cli(cli_runner, research_group, ["search", "--help"])
+        assert_cli_success(result)
+        assert_output_contains(result, "--recency")
+        assert_output_contains(result, "--model")
+        assert_output_contains(result, "--save")
+        assert_output_contains(result, "--background")
+        assert_output_contains(result, "--dry-run")
+        assert_output_contains(result, "--format")
+
+    def test_search_recency_choices(self, cli_runner: CliRunner):
+        """Test search --recency shows valid choices."""
+        from kurt_new.workflows.research.cli import research_group
+
+        result = invoke_cli(cli_runner, research_group, ["search", "--help"])
+        assert_cli_success(result)
+        assert_output_contains(result, "hour")
+        assert_output_contains(result, "day")
+        assert_output_contains(result, "week")
+        assert_output_contains(result, "month")
+
 
 class TestSearchCommand:
     """Tests for search command."""

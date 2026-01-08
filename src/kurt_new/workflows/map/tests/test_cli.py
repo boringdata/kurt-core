@@ -36,6 +36,9 @@ class TestMapCommand:
         assert_output_contains(result, "--include")
         assert_output_contains(result, "--exclude")
         assert_output_contains(result, "--limit")
+        # Background options
+        assert_output_contains(result, "--background")
+        assert_output_contains(result, "--priority")
         # Other options
         assert_output_contains(result, "--dry-run")
         assert_output_contains(result, "--format")

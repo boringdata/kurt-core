@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from sqlalchemy import JSON
 from sqlmodel import Field, SQLModel
 
 from kurt_new.db.models import TimestampMixin
@@ -25,7 +26,7 @@ class MonitoringSignal(TimestampMixin, SQLModel, table=True):
     comment_count: int = Field(default=0)
     subreddit: str | None = Field(default=None)
     domain: str | None = Field(default=None)
-    keywords_json: list[str] = Field(default_factory=list, sa_type=None)
+    keywords_json: list[str] = Field(default_factory=list, sa_type=JSON)
     signal_timestamp: str | None = Field(default=None)
 
     def to_dict(self) -> dict[str, Any]:

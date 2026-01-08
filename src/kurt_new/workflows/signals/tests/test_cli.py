@@ -4,6 +4,119 @@ from unittest.mock import patch
 
 from click.testing import CliRunner
 
+from kurt_new.core.tests.conftest import (
+    assert_cli_success,
+    assert_output_contains,
+    invoke_cli,
+)
+
+
+class TestSignalsGroupHelp:
+    """Tests for signals group help and options."""
+
+    def test_signals_group_help(self, cli_runner: CliRunner):
+        """Test signals group shows help."""
+        from kurt_new.workflows.signals.cli import signals_group
+
+        result = invoke_cli(cli_runner, signals_group, ["--help"])
+        assert_cli_success(result)
+        assert_output_contains(result, "Signal monitoring commands")
+
+    def test_signals_list_commands(self, cli_runner: CliRunner):
+        """Test signals group lists all commands."""
+        from kurt_new.workflows.signals.cli import signals_group
+
+        result = invoke_cli(cli_runner, signals_group, ["--help"])
+        assert_cli_success(result)
+        assert_output_contains(result, "reddit")
+        assert_output_contains(result, "hackernews")
+        assert_output_contains(result, "feeds")
+
+
+class TestRedditCommandHelp:
+    """Tests for reddit command help and options."""
+
+    def test_reddit_help(self, cli_runner: CliRunner):
+        """Test reddit command shows help."""
+        from kurt_new.workflows.signals.cli import signals_group
+
+        result = invoke_cli(cli_runner, signals_group, ["reddit", "--help"])
+        assert_cli_success(result)
+        assert_output_contains(result, "Monitor Reddit")
+
+    def test_reddit_shows_options(self, cli_runner: CliRunner):
+        """Test reddit command lists options in help."""
+        from kurt_new.workflows.signals.cli import signals_group
+
+        result = invoke_cli(cli_runner, signals_group, ["reddit", "--help"])
+        assert_cli_success(result)
+        assert_output_contains(result, "--subreddit")
+        assert_output_contains(result, "--timeframe")
+        assert_output_contains(result, "--sort")
+        assert_output_contains(result, "--keywords")
+        assert_output_contains(result, "--min-score")
+        assert_output_contains(result, "--limit")
+        assert_output_contains(result, "--background")
+        assert_output_contains(result, "--dry-run")
+        assert_output_contains(result, "--format")
+
+    def test_reddit_requires_subreddit(self, cli_runner: CliRunner):
+        """Test reddit command requires --subreddit option."""
+        from kurt_new.workflows.signals.cli import signals_group
+
+        result = cli_runner.invoke(signals_group, ["reddit"])
+        assert result.exit_code != 0
+
+
+class TestHackernewsCommandHelp:
+    """Tests for hackernews command help and options."""
+
+    def test_hackernews_help(self, cli_runner: CliRunner):
+        """Test hackernews command shows help."""
+        from kurt_new.workflows.signals.cli import signals_group
+
+        result = invoke_cli(cli_runner, signals_group, ["hackernews", "--help"])
+        assert_cli_success(result)
+        assert_output_contains(result, "Monitor HackerNews")
+
+    def test_hackernews_shows_options(self, cli_runner: CliRunner):
+        """Test hackernews command lists options in help."""
+        from kurt_new.workflows.signals.cli import signals_group
+
+        result = invoke_cli(cli_runner, signals_group, ["hackernews", "--help"])
+        assert_cli_success(result)
+        assert_output_contains(result, "--timeframe")
+        assert_output_contains(result, "--keywords")
+        assert_output_contains(result, "--min-score")
+        assert_output_contains(result, "--limit")
+        assert_output_contains(result, "--background")
+        assert_output_contains(result, "--dry-run")
+        assert_output_contains(result, "--format")
+
+
+class TestFeedsCommandHelp:
+    """Tests for feeds command help and options."""
+
+    def test_feeds_help(self, cli_runner: CliRunner):
+        """Test feeds command shows help."""
+        from kurt_new.workflows.signals.cli import signals_group
+
+        result = invoke_cli(cli_runner, signals_group, ["feeds", "--help"])
+        assert_cli_success(result)
+        assert_output_contains(result, "Monitor RSS/Atom")
+
+    def test_feeds_shows_options(self, cli_runner: CliRunner):
+        """Test feeds command lists options in help."""
+        from kurt_new.workflows.signals.cli import signals_group
+
+        result = invoke_cli(cli_runner, signals_group, ["feeds", "--help"])
+        assert_cli_success(result)
+        assert_output_contains(result, "--keywords")
+        assert_output_contains(result, "--limit")
+        assert_output_contains(result, "--background")
+        assert_output_contains(result, "--dry-run")
+        assert_output_contains(result, "--format")
+
 
 class TestRedditCommand:
     """Tests for reddit command."""

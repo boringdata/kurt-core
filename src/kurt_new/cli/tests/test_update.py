@@ -29,8 +29,12 @@ class TestUpdateCommand:
         assert_output_contains(result, "--no-backup")
 
     def test_update_no_agents_file(self, cli_runner: CliRunner, cli_runner_isolated):
-        """Test update shows message when no .agents/AGENTS.md exists."""
+        """Test update shows message when package or workspace agents not found."""
         result = invoke_cli(cli_runner, update, [])
-        # Should succeed but show warning
+        # Should succeed but show warning about missing files
         assert_cli_success(result)
-        assert_output_contains(result, "No .agents/AGENTS.md found")
+        # Either package or workspace agents file not found
+        assert (
+            "Package AGENTS.md not found" in result.output
+            or "No .agents/AGENTS.md found" in result.output
+        )

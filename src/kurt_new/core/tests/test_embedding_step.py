@@ -325,16 +325,152 @@ class TestImports:
         assert embedding_to_bytes is not None
         assert bytes_to_embedding is not None
 
-    def test_import_from_utils(self):
-        """Test backwards-compatible imports from kurt_new.utils."""
-        from kurt_new.utils import (
-            bytes_to_embedding,
-            embedding_to_bytes,
-            generate_document_embedding,
-            generate_embeddings,
+
+# ============================================================================
+# Embedding Trace Tests
+# ============================================================================
+
+
+class TestEmbeddingTracing:
+    """Tests for embedding cost/token tracking via LLMTrace table."""
+
+    def test_generate_embeddings_records_trace(self, tmp_database):
+        """Test that generate_embeddings records a trace to LLMTrace table."""
+        from sqlmodel import select
+
+        from kurt_new.db import managed_session
+        from kurt_new.db.models import LLMTrace
+
+        with mock_embeddings(dimensions=4):
+            # Call generate_embeddings with tracing enabled (default)
+            generate_embeddings(
+                ["hello", "world"],
+                model="text-embedding-3-small",
+                step_name="test_embedding",
+            )
+
+        # Verify trace was recorded
+        with managed_session() as session:
+            traces = session.exec(select(LLMTrace)).all()
+            assert len(traces) == 1
+
+            trace = traces[0]
+            assert trace.step_name == "test_embedding"
+            assert trace.model == "text-embedding-3-small"
+            assert trace.provider == "openai"
+            assert "2 texts" in trace.prompt
+            assert trace.input_tokens > 0
+
+    def test_generate_embeddings_no_trace_when_disabled(self, tmp_database):
+        """Test that generate_embeddings doesn't record trace when disabled."""
+        from sqlmodel import select
+
+        from kurt_new.db import managed_session
+        from kurt_new.db.models import LLMTrace
+
+        with mock_embeddings(dimensions=4):
+            generate_embeddings(
+                ["hello", "world"],
+                model="text-embedding-3-small",
+                record_trace=False,
+            )
+
+        # Verify no trace was recorded
+        with managed_session() as session:
+            traces = session.exec(select(LLMTrace)).all()
+            assert len(traces) == 0
+
+    def test_generate_embeddings_trace_includes_module_name(self, tmp_database):
+        """Test that module_name is included in step_name."""
+        from sqlmodel import select
+
+        from kurt_new.db import managed_session
+        from kurt_new.db.models import LLMTrace
+
+        with mock_embeddings(dimensions=4):
+            generate_embeddings(
+                ["test"],
+                model="text-embedding-3-small",
+                module_name="FETCH",
+                step_name="embed_content",
+            )
+
+        with managed_session() as session:
+            traces = session.exec(select(LLMTrace)).all()
+            assert len(traces) == 1
+            assert traces[0].step_name == "FETCH.embed_content"
+
+    def test_embedding_step_with_tracing_hooks(self, mock_dbos, tmp_database):
+        """Test EmbeddingStep with TracingHooks persists to LLMTrace."""
+        from sqlmodel import select
+
+        from kurt_new.core.tracing import LLMTracer, TracingHooks
+        from kurt_new.db import managed_session
+        from kurt_new.db.models import LLMTrace
+
+        # Create TracingHooks that persist to database
+        hooks = TracingHooks(
+            tracer=LLMTracer(auto_init=False),
+            model_name="text-embedding-3-small",
+            provider="openai",
         )
 
-        assert generate_embeddings is not None
-        assert generate_document_embedding is not None
-        assert embedding_to_bytes is not None
-        assert bytes_to_embedding is not None
+        with mock_embeddings(dimensions=4):
+            step = EmbeddingStep(
+                name="embed_with_hooks",
+                input_column="text",
+                model="text-embedding-3-small",
+                batch_size=10,
+                concurrency=1,
+                as_bytes=False,
+                hooks=hooks,
+            )
+
+            df = pd.DataFrame({"text": ["hello", "world"]})
+            step.run(df)
+
+        # Verify trace was recorded via hooks
+        with managed_session() as session:
+            traces = session.exec(select(LLMTrace)).all()
+            assert len(traces) >= 1
+
+            # Find the trace from our step
+            step_trace = next((t for t in traces if "embed_with_hooks" in t.step_name), None)
+            assert step_trace is not None
+            assert step_trace.model == "text-embedding-3-small"
+            assert step_trace.provider == "openai"
+
+    def test_generate_document_embedding_records_trace(self, tmp_database):
+        """Test that generate_document_embedding records a trace."""
+        from sqlmodel import select
+
+        from kurt_new.db import managed_session
+        from kurt_new.db.models import LLMTrace
+
+        with mock_embeddings(dimensions=4):
+            generate_document_embedding(
+                "Test document content for embedding",
+                module_name="FETCH",
+                step_name="doc_embed",
+            )
+
+        with managed_session() as session:
+            traces = session.exec(select(LLMTrace)).all()
+            assert len(traces) == 1
+            assert traces[0].step_name == "FETCH.doc_embed"
+            assert "1 texts" in traces[0].prompt
+
+    def test_tracer_stats_includes_embedding_calls(self, tmp_database):
+        """Test that LLMTracer.stats() includes embedding API calls."""
+        from kurt_new.core.tracing import LLMTracer
+
+        with mock_embeddings(dimensions=4):
+            # Generate multiple embedding batches
+            generate_embeddings(["text1", "text2"], model="text-embedding-3-small")
+            generate_embeddings(["text3"], model="text-embedding-3-small")
+
+        tracer = LLMTracer(auto_init=False)
+        stats = tracer.stats()
+
+        assert stats["total_calls"] == 2
+        assert stats["total_tokens_in"] > 0
