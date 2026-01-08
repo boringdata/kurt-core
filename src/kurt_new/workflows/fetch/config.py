@@ -1,23 +1,59 @@
+"""
+Fetch workflow configuration.
+
+Config values can be set in kurt.config with FETCH.* prefix:
+
+    FETCH.FETCH_ENGINE=firecrawl
+    FETCH.EMBEDDING_MAX_CHARS=2000
+    FETCH.DRY_RUN=true
+
+Usage:
+    # Load from config file
+    config = FetchConfig.from_config("fetch")
+
+    # Or instantiate directly
+    config = FetchConfig(fetch_engine="firecrawl", dry_run=True)
+
+    # Or merge: config file + overrides
+    config = FetchConfig.from_config("fetch", dry_run=True)
+"""
+
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from kurt_new.config import ConfigParam, StepConfig
 
 
-class FetchConfig(BaseModel):
-    """Configuration for fetch step."""
+class FetchConfig(StepConfig):
+    """Configuration for fetch workflow.
 
-    document_ids: list[str] = Field(
-        default_factory=list,
-        description="List of document IDs to fetch",
+    Loaded from kurt.config with FETCH.* prefix.
+    """
+
+    # Document selection
+    document_ids: list[str] = ConfigParam(
+        default=None, description="List of document IDs to fetch (None = all pending)"
     )
-    fetch_engine: str = Field(
+
+    # Fetch settings
+    fetch_engine: str = ConfigParam(
         default="trafilatura",
+        fallback="INGESTION_FETCH_ENGINE",
         description="Fetch engine: trafilatura, httpx, firecrawl",
     )
-    embedding_max_chars: int = Field(
+
+    # Processing settings
+    embedding_max_chars: int = ConfigParam(
         default=1000,
         ge=100,
         le=5000,
         description="Maximum characters for embedding generation",
     )
-    dry_run: bool = Field(default=False)
+
+    # Behavior
+    dry_run: bool = ConfigParam(default=False, description="Dry run mode")
+
+    def __init__(self, **data):
+        # Handle None document_ids -> empty list
+        if data.get("document_ids") is None:
+            data["document_ids"] = []
+        super().__init__(**data)

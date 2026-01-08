@@ -1,29 +1,59 @@
+"""
+Map workflow configuration.
+
+Config values can be set in kurt.config with MAP.* prefix:
+
+    MAP.MAX_PAGES=500
+    MAP.MAX_DEPTH=3
+    MAP.DRY_RUN=true
+    MAP.DISCOVERY_METHOD=sitemap
+
+Usage:
+    # Load from config file
+    config = MapConfig.from_config("map")
+
+    # Or instantiate directly
+    config = MapConfig(max_pages=500, dry_run=True)
+
+    # Or merge: config file + overrides
+    config = MapConfig.from_config("map", max_pages=500)
+"""
+
 from __future__ import annotations
 
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from kurt_new.config import ConfigParam, StepConfig
 
 
-class MapConfig(BaseModel):
-    """Configuration for mapping/discovery step."""
+class MapConfig(StepConfig):
+    """Configuration for mapping/discovery workflow.
 
-    source_url: Optional[str] = Field(default=None, description="URL to discover from")
-    source_folder: Optional[str] = Field(default=None, description="Local folder path")
-    cms_platform: Optional[str] = Field(default=None, description="CMS platform name")
-    cms_instance: Optional[str] = Field(default=None, description="CMS instance name")
+    Loaded from kurt.config with MAP.* prefix.
+    """
 
-    discovery_method: str = Field(default="auto", description="auto, sitemap, crawl, folder, cms")
-    max_depth: Optional[int] = Field(default=None, ge=1, le=5)
-    max_pages: int = Field(default=1000, ge=1, le=10000)
+    # Source specification (one of these should be set)
+    source_url: Optional[str] = ConfigParam(default=None, description="URL to discover from")
+    source_folder: Optional[str] = ConfigParam(default=None, description="Local folder path")
+    cms_platform: Optional[str] = ConfigParam(default=None, description="CMS platform name")
+    cms_instance: Optional[str] = ConfigParam(default=None, description="CMS instance name")
 
-    include_patterns: Optional[str] = Field(
-        default=None, description="Comma-separated glob patterns"
+    # Discovery settings
+    discovery_method: str = ConfigParam(
+        default="auto", description="Discovery method: auto, sitemap, crawl, folder, cms"
     )
-    exclude_patterns: Optional[str] = Field(
-        default=None, description="Comma-separated glob patterns"
+    max_depth: Optional[int] = ConfigParam(default=None, ge=1, le=5, description="Max crawl depth")
+    max_pages: int = ConfigParam(default=1000, ge=1, le=10000, description="Max pages to discover")
+
+    # Filtering
+    include_patterns: Optional[str] = ConfigParam(
+        default=None, description="Comma-separated glob patterns to include"
+    )
+    exclude_patterns: Optional[str] = ConfigParam(
+        default=None, description="Comma-separated glob patterns to exclude"
     )
 
-    allow_external: bool = Field(default=False)
-    include_blogrolls: bool = Field(default=False)
-    dry_run: bool = Field(default=False)
+    # Behavior
+    allow_external: bool = ConfigParam(default=False, description="Allow external URLs")
+    include_blogrolls: bool = ConfigParam(default=False, description="Include blogroll links")
+    dry_run: bool = ConfigParam(default=False, description="Dry run mode")
