@@ -14,6 +14,7 @@ from kurt_new.integrations.cms import fetch_from_cms
 from .config import FetchConfig
 from .fetch_web import fetch_from_web
 from .models import FetchDocument, FetchStatus
+from .utils import load_document_content, save_content_file
 
 logger = logging.getLogger(__name__)
 
@@ -81,20 +82,35 @@ def _fetch_single_document(doc: dict[str, Any], config: FetchConfig) -> dict[str
 
 @DBOS.step(name="generate_embeddings")
 def embedding_step(rows: list[dict[str, Any]], config_dict: dict[str, Any]) -> list[dict[str, Any]]:
-    """Generate embeddings for fetched documents."""
+    """Generate embeddings for fetched documents.
+
+    This step runs AFTER save_content_step, so content is loaded from files.
+    """
     config = FetchConfig.model_validate(config_dict)
 
-    # Filter to only successfully fetched documents with content
-    fetchable = [r for r in rows if r.get("status") == FetchStatus.FETCHED and r.get("content")]
+    # Filter to only successfully fetched documents with content_path
+    fetchable = [
+        r for r in rows if r.get("status") == FetchStatus.FETCHED and r.get("content_path")
+    ]
 
     if not fetchable:
         for row in rows:
             row["embedding"] = None
         return rows
 
-    # Truncate content and generate embeddings in batches
-    texts = [r["content"][: config.embedding_max_chars] for r in fetchable]
-    doc_ids = [r["document_id"] for r in fetchable]
+    # Load content from files and truncate for embedding
+    texts = []
+    doc_ids = []
+    for r in fetchable:
+        content = load_document_content(r["content_path"])
+        if content:
+            texts.append(content[: config.embedding_max_chars])
+            doc_ids.append(r["document_id"])
+
+    if not texts:
+        for row in rows:
+            row["embedding"] = None
+        return rows
 
     # Process in batches
     all_embeddings: list[bytes] = []
@@ -107,6 +123,45 @@ def embedding_step(rows: list[dict[str, Any]], config_dict: dict[str, Any]) -> l
     embedding_map = dict(zip(doc_ids, all_embeddings))
     for row in rows:
         row["embedding"] = embedding_map.get(row["document_id"])
+
+    return rows
+
+
+@DBOS.step(name="save_content")
+def save_content_step(
+    rows: list[dict[str, Any]], config_dict: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Save fetched content to files and add content_path to rows.
+
+    Args:
+        rows: List of fetch result dicts with 'content' field
+        config_dict: FetchConfig as dict
+
+    Returns:
+        Same rows with 'content_path' added and 'content' removed
+    """
+    config = FetchConfig.model_validate(config_dict)
+
+    if config.dry_run:
+        # In dry run, don't save files but keep content for inspection
+        for row in rows:
+            row["content_path"] = None
+        return rows
+
+    for row in rows:
+        if row.get("status") == FetchStatus.FETCHED and row.get("content"):
+            try:
+                content_path = save_content_file(row["document_id"], row["content"])
+                row["content_path"] = content_path
+                logger.info(f"Saved content for {row['document_id']} to {content_path}")
+            except Exception as e:
+                logger.error(f"Failed to save content for {row['document_id']}: {e}")
+                row["content_path"] = None
+        else:
+            row["content_path"] = None
+
+        # Remove content from row to avoid storing in DB
+        row.pop("content", None)
 
     return rows
 

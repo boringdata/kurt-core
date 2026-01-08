@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 from typing import Any
 
@@ -8,7 +9,21 @@ from dbos import DBOS
 from kurt_new.core import run_workflow, track_step
 
 from .config import FetchConfig
-from .steps import embedding_step, fetch_step, persist_fetch_documents
+from .steps import embedding_step, fetch_step, persist_fetch_documents, save_content_step
+
+
+def _has_embedding_api_key() -> bool:
+    """Check if an embedding API key is available."""
+    # Check common embedding API keys
+    return any(
+        os.environ.get(key)
+        for key in [
+            "OPENAI_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "COHERE_API_KEY",
+            "VOYAGE_API_KEY",
+        ]
+    )
 
 
 @DBOS.workflow()
@@ -25,10 +40,20 @@ def fetch_workflow(docs: list[dict[str, Any]], config_dict: dict[str, Any]) -> d
     with track_step("fetch_documents"):
         result = fetch_step(docs, config.model_dump())
 
-    # Generate embeddings in a separate step (can't start workflows from within a step)
-    with track_step("generate_embeddings"):
-        rows_with_embeddings = embedding_step(result["rows"], config.model_dump())
-        result["rows"] = rows_with_embeddings
+    # Save content to files and get content_path
+    with track_step("save_content"):
+        rows_with_paths = save_content_step(result["rows"], config.model_dump())
+        result["rows"] = rows_with_paths
+
+    # Generate embeddings (skip if no API key available)
+    if _has_embedding_api_key():
+        with track_step("generate_embeddings"):
+            rows_with_embeddings = embedding_step(result["rows"], config.model_dump())
+            result["rows"] = rows_with_embeddings
+    else:
+        # Set embedding to None for all rows
+        for row in result["rows"]:
+            row["embedding"] = None
 
     # Persist rows via transaction (called from workflow, not step)
     if not result.get("dry_run") and result.get("rows"):

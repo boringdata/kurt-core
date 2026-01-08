@@ -30,6 +30,7 @@ class FetchDocument(EmbeddingMixin, TimestampMixin, TenantMixin, SQLModel, table
     # Content info
     content_length: int = Field(default=0)
     content_hash: Optional[str] = Field(default=None)
+    content_path: Optional[str] = Field(default=None)  # Relative path to markdown file
 
     # Fetch info
     fetch_engine: Optional[str] = Field(default=None)
