@@ -133,8 +133,8 @@ def save_prefixed_config(prefix: str, config_data: Dict[str, Any], levels: int =
         Recursively flatten nested dict and add to config.
 
         For levels=2: {"sanity": {"prod": {"project_id": "abc"}}}
-        - path=[], key=sanity → path=['SANITY'], len=1 < 2 → recurse into sanity
-        - path=['SANITY'], key=prod → path=['SANITY','PROD'], len=2 == 2 → at leaf level
+        - path=[], key=sanity -> path=['SANITY'], len=1 < 2 -> recurse into sanity
+        - path=['SANITY'], key=prod -> path=['SANITY','PROD'], len=2 == 2 -> at leaf level
           The value is a dict of config keys, so iterate and write each
         """
         for key, value in data.items():

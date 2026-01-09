@@ -1,165 +1,143 @@
-"""SQLite database client for local mode."""
+"""SQLite database client for local development."""
 
 import logging
-import os
 from pathlib import Path
+from typing import Optional
 
-from rich.console import Console
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlmodel import Session, SQLModel, create_engine
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from kurt.config import get_config_or_default
 from kurt.db.base import DatabaseClient
 
-console = Console()
 logger = logging.getLogger(__name__)
 
 
 @event.listens_for(Engine, "connect")
-def _load_sqlite_extensions(dbapi_conn, connection_record):
-    """Load SQLite extensions on connection.
-
-    Currently loads:
-    - sqlite-vec: Vector similarity search extension
-    """
-    try:
-        # Enable extension loading
-        dbapi_conn.enable_load_extension(True)
-
-        # Try to load sqlite-vec extension
-        # The extension file might be named vec0.so, vec0.dylib, or vec0.dll
-        # depending on the platform
-        try:
-            dbapi_conn.load_extension("vec0")
-            logger.debug("Loaded sqlite-vec extension")
-        except Exception as e:
-            # Extension not found - this is OK, vector search just won't work
-            logger.debug(f"sqlite-vec extension not available: {e}")
-
-        # Disable extension loading for security
-        dbapi_conn.enable_load_extension(False)
-    except Exception as e:
-        # Some SQLite builds don't support extensions
-        logger.debug(f"Extension loading not supported: {e}")
+def _set_sqlite_pragmas(dbapi_conn, connection_record):
+    """Configure SQLite for better performance."""
+    cursor = dbapi_conn.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA busy_timeout=30000")
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.close()
 
 
 class SQLiteClient(DatabaseClient):
-    """SQLite database client for local Kurt projects."""
+    """SQLite database client for local development."""
 
-    def __init__(self):
-        """Initialize SQLite client."""
+    def __init__(self, db_path: Optional[Path] = None):
+        """Initialize SQLite client.
+
+        Args:
+            db_path: Optional explicit path. If not provided, uses .kurt/kurt.sqlite
+        """
+        self._db_path = db_path
         self._engine = None
         self._async_engine = None
         self._async_session_maker = None
-        self._config = None
-
-    def get_config(self):
-        """Get Kurt configuration (not cached for test isolation)."""
-        # Always get fresh config to support test isolation
-        # Tests change working directory, so we need to re-read config
-        return get_config_or_default()
 
     def get_database_path(self) -> Path:
-        """Get the path to the SQLite database file from config."""
-        config = self.get_config()
-        return config.get_absolute_db_path()
+        """Get the path to the SQLite database file."""
+        if self._db_path:
+            return self._db_path
+
+        # Default to .kurt/kurt.sqlite in current directory
+        return Path.cwd() / ".kurt" / "kurt.sqlite"
 
     def get_database_url(self) -> str:
         """Get the SQLite database URL."""
         db_path = self.get_database_path()
         return f"sqlite:///{db_path}"
 
-    def _get_sqlite_connect_args(self) -> dict:
-        """Get standard SQLite connection arguments for better concurrency."""
+    def _get_connect_args(self) -> dict:
+        """Get SQLite connection arguments."""
         return {
             "check_same_thread": False,
-            "timeout": 30.0,  # 30 second busy timeout
+            "timeout": 30.0,
         }
 
     def _get_pool_config(self) -> dict:
-        """Get standard connection pool configuration for SQLite."""
+        """Get connection pool configuration."""
         return {
-            "pool_pre_ping": True,  # Check connections before using
-            "pool_size": 1,  # Limit pool size for SQLite
-            "max_overflow": 0,  # No overflow connections
+            "pool_pre_ping": True,
+            "pool_size": 1,
+            "max_overflow": 0,
         }
-
-    def _configure_sqlite_pragmas(self, conn) -> None:
-        """Configure SQLite PRAGMAs for better performance and concurrency."""
-        conn.exec_driver_sql("PRAGMA journal_mode=WAL")
-        conn.exec_driver_sql("PRAGMA busy_timeout=30000")  # 30 seconds in milliseconds
-        conn.exec_driver_sql("PRAGMA synchronous=NORMAL")  # Better performance
-
-    def ensure_kurt_directory(self) -> Path:
-        """Ensure .kurt database directory exists."""
-        config = self.get_config()
-        db_dir = config.get_db_directory()
-        db_dir.mkdir(parents=True, exist_ok=True)
-        return db_dir
 
     def get_mode_name(self) -> str:
         """Get the name of this database mode."""
-        return "local"
+        return "sqlite"
+
+    def _ensure_directory(self) -> None:
+        """Ensure the database directory exists."""
+        db_path = self.get_database_path()
+        db_path.parent.mkdir(parents=True, exist_ok=True)
 
     def init_database(self) -> None:
+        """Initialize the SQLite database using Alembic migrations + create_all.
+
+        Uses a hybrid approach:
+        1. Apply Alembic migrations (stamps alembic_version for infrastructure tables)
+        2. Use create_all for any workflow/model tables not yet in migrations
         """
-        Initialize the SQLite database.
+        # Register all models with SQLModel.metadata
+        from kurt.db.models import register_all_models
 
-        Creates .kurt directory and initializes database with all tables.
-        """
-        # Import models to register them with SQLModel
+        register_all_models()
 
-        # Ensure .kurt directory exists
-        kurt_dir = self.ensure_kurt_directory()
-        console.print(f"[dim]Creating directory: {kurt_dir}[/dim]")
-
-        # Get database path
+        self._ensure_directory()
         db_path = self.get_database_path()
 
         # Check if database already exists
         if db_path.exists():
-            console.print(f"[yellow]Database already exists at: {db_path}[/yellow]")
-            overwrite = console.input("Overwrite? (y/N): ")
-            if overwrite.lower() != "y":
-                console.print("[dim]Keeping existing database[/dim]")
-                return
-            os.remove(db_path)
-            console.print("[dim]Removed existing database[/dim]")
+            logger.info(f"Database already exists at: {db_path}")
+            return
 
-        # Create database engine
+        logger.info(f"Creating database at: {db_path}")
+
+        # Step 1: Apply Alembic migrations (for infrastructure tables like llm_traces)
+        # This ensures alembic_version table is properly stamped
+        try:
+            from kurt.db.migrations.utils import apply_migrations
+
+            result = apply_migrations(auto_confirm=True, silent=True)
+            if result["success"]:
+                logger.info(
+                    f"Applied {result['count']} migration(s), "
+                    f"schema version: {result['current_version']}"
+                )
+            else:
+                logger.warning(f"Migrations failed: {result.get('error')}")
+        except ImportError:
+            logger.info("Migrations module not available")
+
+        # Step 2: Use create_all to create any remaining tables (workflow models)
+        # This is safe because create_all only creates tables that don't exist
+        self._create_remaining_tables()
+
+    def _create_remaining_tables(self) -> None:
+        """Create any tables not created by migrations using create_all.
+
+        This is safe because create_all only creates tables that don't exist.
+        Used for workflow models that don't have migrations yet.
+        """
         db_url = self.get_database_url()
-        console.print(f"[dim]Creating database at: {db_path}[/dim]")
-        engine = create_engine(
-            db_url,
-            echo=False,
-            connect_args=self._get_sqlite_connect_args(),
-            **self._get_pool_config(),
-        )
-        self._engine = engine
+        if not self._engine:
+            self._engine = create_engine(
+                db_url,
+                echo=False,
+                connect_args=self._get_connect_args(),
+                **self._get_pool_config(),
+            )
 
-        # Enable WAL mode for better concurrency
-        with self._engine.begin() as conn:
-            self._configure_sqlite_pragmas(conn)
+        # Create any missing tables (safe - skips existing tables)
+        SQLModel.metadata.create_all(self._engine)
 
-        # Create all tables
-        console.print("[dim]Running migrations...[/dim]")
-        SQLModel.metadata.create_all(engine)
-
-        # Verify tables were created
-        tables_created = []
-        for table in SQLModel.metadata.tables.values():
-            tables_created.append(table.name)
-
-        console.print(f"[green]✓[/green] Created {len(tables_created)} tables:")
-        for table_name in sorted(tables_created):
-            console.print(f"  • {table_name}")
-
-        console.print("\n[green]✓[/green] Database initialized successfully")
-        console.print("[dim]Mode: local (SQLite)[/dim]")
-        console.print(f"[dim]Location: {db_path}[/dim]")
+        tables = list(SQLModel.metadata.tables.keys())
+        logger.info(f"Ensured {len(tables)} tables exist")
 
     def get_session(self) -> Session:
         """Get a database session."""
@@ -168,234 +146,47 @@ class SQLiteClient(DatabaseClient):
             self._engine = create_engine(
                 db_url,
                 echo=False,
-                connect_args=self._get_sqlite_connect_args(),
+                connect_args=self._get_connect_args(),
                 **self._get_pool_config(),
             )
-            # Enable WAL mode for better concurrency
-            with self._engine.begin() as conn:
-                self._configure_sqlite_pragmas(conn)
-
         return Session(self._engine)
 
     def check_database_exists(self) -> bool:
         """Check if the SQLite database file exists."""
-        db_path = self.get_database_path()
-        return db_path.exists()
-
-    def ensure_vector_tables(self) -> None:
-        """
-        Ensure vector search tables exist.
-
-        Creates vec0 virtual table for entity embeddings if sqlite-vec is available.
-        This must be called after migrations are run.
-
-        Note: Embeddings are stored directly in the entities and documents tables.
-        Vector similarity search is done in Python using cosine similarity.
-        """
-        # No-op: embeddings are stored in the entities/documents tables directly
-        pass
-
-    def search_similar_entities(
-        self, query_embedding: bytes, limit: int = 50, min_similarity: float = 0.75
-    ) -> list[tuple[str, float]]:
-        """
-        Search for entities similar to the query embedding.
-
-        Uses cosine similarity on entity embeddings stored directly in the entities table.
-
-        Args:
-            query_embedding: Query embedding as bytes (float32 values)
-            limit: Maximum number of results to return
-            min_similarity: Minimum cosine similarity threshold (0.0-1.0)
-
-        Returns:
-            List of (entity_id, similarity_score) tuples
-        """
-        import struct
-
-        import numpy as np
-        from sqlalchemy import text
-
-        session = self.get_session()
-        try:
-            # Convert query embedding bytes to numpy array
-            query_floats = struct.unpack(f"{len(query_embedding)//4}f", query_embedding)
-            query_vec = np.array(query_floats)
-            query_norm = np.linalg.norm(query_vec)
-
-            if query_norm == 0:
-                return []
-
-            # Fetch all entities with embeddings and compute similarity in Python
-            result = session.exec(
-                text("SELECT id, embedding FROM entities WHERE embedding IS NOT NULL")
-            )
-
-            similarities = []
-            for row in result:
-                entity_id, emb_bytes = row
-                if emb_bytes:
-                    entity_floats = struct.unpack(f"{len(emb_bytes)//4}f", emb_bytes)
-                    entity_vec = np.array(entity_floats)
-                    entity_norm = np.linalg.norm(entity_vec)
-                    if entity_norm > 0:
-                        similarity = float(
-                            np.dot(query_vec, entity_vec) / (query_norm * entity_norm)
-                        )
-                        if similarity >= min_similarity:
-                            similarities.append((str(entity_id), similarity))
-
-            # Sort by similarity descending and limit
-            similarities.sort(key=lambda x: x[1], reverse=True)
-            return similarities[:limit]
-        except Exception as e:
-            logger.warning(f"Entity similarity search failed: {e}")
-            return []
-        finally:
-            session.close()
-
-    def search_similar_documents(
-        self, query_embedding: bytes, limit: int = 20, min_similarity: float = 0.70
-    ) -> list[tuple[str, float]]:
-        """
-        Search for documents similar to the query embedding.
-
-        Uses cosine similarity on document embeddings stored in the documents table.
-        This is a pure Python implementation that doesn't require vec0 extension.
-
-        Args:
-            query_embedding: Query embedding as bytes (512 float32 values)
-            limit: Maximum number of results to return
-            min_similarity: Minimum cosine similarity threshold (0.0-1.0)
-
-        Returns:
-            List of (document_id, similarity_score) tuples sorted by similarity desc
-        """
-        import struct
-
-        import numpy as np
-        from sqlmodel import select
-
-        from kurt.db.models import Document
-
-        session = self.get_session()
-        try:
-            # Convert query embedding bytes to numpy array
-            # Determine embedding dimension from byte length (each float32 is 4 bytes)
-            embedding_dim = len(query_embedding) // 4
-            query_floats = struct.unpack(f"{embedding_dim}f", query_embedding)
-            query_vec = np.array(query_floats)
-            query_norm = np.linalg.norm(query_vec)
-
-            if query_norm == 0:
-                logger.warning("Query embedding has zero norm")
-                return []
-
-            # Get all documents with embeddings
-            stmt = select(Document).where(
-                (Document.embedding.is_not(None)) & (Document.embedding != b"")
-            )
-            documents = session.exec(stmt).all()
-
-            # Calculate cosine similarity for each document
-            similarities = []
-            for doc in documents:
-                if not doc.embedding or len(doc.embedding) == 0:
-                    continue
-
-                try:
-                    # Convert document embedding bytes to numpy array
-                    doc_embedding_dim = len(doc.embedding) // 4
-
-                    # Skip if dimensions don't match
-                    if doc_embedding_dim != embedding_dim:
-                        logger.debug(
-                            f"Skipping document {doc.id}: embedding dimension mismatch "
-                            f"(query: {embedding_dim}, doc: {doc_embedding_dim})"
-                        )
-                        continue
-
-                    doc_floats = struct.unpack(f"{doc_embedding_dim}f", doc.embedding)
-                    doc_vec = np.array(doc_floats)
-                    doc_norm = np.linalg.norm(doc_vec)
-
-                    # Calculate cosine similarity
-                    if doc_norm > 0:
-                        similarity = float(np.dot(query_vec, doc_vec) / (query_norm * doc_norm))
-
-                        # Only include if above threshold
-                        if similarity >= min_similarity:
-                            similarities.append((str(doc.id), similarity))
-                except Exception as e:
-                    logger.debug(f"Error calculating similarity for document {doc.id}: {e}")
-                    continue
-
-            # Sort by similarity descending and limit results
-            similarities.sort(key=lambda x: x[1], reverse=True)
-            return similarities[:limit]
-
-        except Exception as e:
-            logger.error(f"Error in document similarity search: {e}")
-            return []
-        finally:
-            session.close()
+        return self.get_database_path().exists()
 
     # ========== ASYNC METHODS ==========
 
     def get_async_database_url(self) -> str:
-        """Get async SQLite URL with aiosqlite driver.
-
-        Returns:
-            str: Database URL like "sqlite+aiosqlite:///path/to/db"
-        """
+        """Get async SQLite URL with aiosqlite driver."""
         db_path = self.get_database_path()
         return f"sqlite+aiosqlite:///{db_path}"
 
     def get_async_engine(self) -> AsyncEngine:
-        """Get or create async engine (singleton).
-
-        Returns:
-            AsyncEngine: SQLAlchemy async engine
-        """
+        """Get or create async engine (singleton)."""
         if not self._async_engine:
             db_url = self.get_async_database_url()
             self._async_engine = create_async_engine(
                 db_url,
                 echo=False,
-                connect_args=self._get_sqlite_connect_args(),
+                connect_args=self._get_connect_args(),
                 **self._get_pool_config(),
             )
         return self._async_engine
 
     def get_async_session_maker(self) -> async_sessionmaker:
-        """Get async session factory.
-
-        Returns:
-            async_sessionmaker: Factory for creating AsyncSession instances
-
-        Usage:
-            async_session = db.get_async_session_maker()
-
-            async with async_session() as session:
-                result = await session.exec(select(Entity))
-        """
+        """Get async session factory."""
         if not self._async_session_maker:
             engine = self.get_async_engine()
             self._async_session_maker = async_sessionmaker(
                 engine,
                 class_=AsyncSession,
-                expire_on_commit=False,  # Critical for async!
+                expire_on_commit=False,
             )
         return self._async_session_maker
 
     async def dispose_async_engine(self):
-        """Cleanup async resources (call on shutdown).
-
-        Example:
-            # At application shutdown
-            db = get_database_client()
-            await db.dispose_async_engine()
-        """
+        """Cleanup async resources."""
         if self._async_engine:
             await self._async_engine.dispose()
             self._async_engine = None

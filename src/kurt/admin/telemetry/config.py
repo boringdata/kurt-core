@@ -1,19 +1,18 @@
 """Telemetry configuration and opt-out management."""
 
+from __future__ import annotations
+
 import os
 import uuid
 from pathlib import Path
-from typing import Optional
 
-# PostHog configuration (hardcoded for CLI telemetry)
-# Note: This is different from analytics config in .kurt/analytics-config.json
-# which is for tracking user website analytics (e.g., docs site pageviews)
+# PostHog configuration
 POSTHOG_API_KEY = "phc_N5KayyK6mLeh4U2hrdAxbhyaLN31E2q41OKv9DbWEGf"
-POSTHOG_HOST = "https://us.i.posthog.com"  # US region
+POSTHOG_HOST = "https://us.i.posthog.com"
 
 
 def get_telemetry_dir() -> Path:
-    """Get the directory for telemetry-specific files (machine_id).
+    """Get the directory for telemetry-specific files.
 
     Returns:
         Path to ~/.kurt directory for machine ID storage
@@ -69,7 +68,7 @@ def is_telemetry_enabled() -> bool:
     Telemetry is disabled if:
     1. DO_NOT_TRACK environment variable is set
     2. KURT_TELEMETRY_DISABLED environment variable is set
-    3. User has explicitly disabled via kurt.config (TELEMETRY_ENABLED=False)
+    3. User has explicitly disabled via config (TELEMETRY_ENABLED=False)
 
     Returns:
         True if telemetry should be collected
@@ -82,40 +81,36 @@ def is_telemetry_enabled() -> bool:
     if os.getenv("KURT_TELEMETRY_DISABLED"):
         return False
 
-    # Check user config file (kurt.config)
+    # Check user config file
     try:
-        from kurt.config import get_config_or_default
+        from kurt.config import config_file_exists, load_config
 
-        config = get_config_or_default()
-        return config.TELEMETRY_ENABLED
+        if config_file_exists():
+            config = load_config()
+            return getattr(config, "TELEMETRY_ENABLED", True)
     except Exception:
-        # If config can't be loaded, default to enabled
-        return True
+        pass
+
+    # Default to enabled
+    return True
 
 
 def set_telemetry_enabled(enabled: bool) -> None:
-    """Enable or disable telemetry by updating kurt.config.
+    """Enable or disable telemetry by updating config.
 
     Args:
         enabled: Whether to enable telemetry
     """
-    from kurt.config import config_exists, get_config_or_default, update_config
+    from kurt.config import config_file_exists, load_config, update_config
 
-    # Get or create config
-    config = get_config_or_default()
-
-    # Update telemetry setting
-    config.TELEMETRY_ENABLED = enabled
-
-    # Save config
-    if config_exists():
-        update_config(config)
-    else:
-        # If no config exists, we can't save telemetry preference
-        # User should run 'kurt init' first
+    if not config_file_exists():
         raise RuntimeError(
             "No kurt.config found. Run 'kurt init' to initialize a Kurt project first."
         )
+
+    config = load_config()
+    config.TELEMETRY_ENABLED = enabled
+    update_config(config)
 
 
 def get_telemetry_status() -> dict:
@@ -127,10 +122,9 @@ def get_telemetry_status() -> dict:
     enabled = is_telemetry_enabled()
 
     # Determine why telemetry is disabled (if it is)
-    disabled_reason: Optional[str] = None
-    config_path: Optional[str] = None
+    disabled_reason: str | None = None
+    config_path: str | None = None
 
-    # Determine disabled reason (check env vars first, before trying to load config)
     if not enabled:
         if os.getenv("DO_NOT_TRACK"):
             disabled_reason = "DO_NOT_TRACK environment variable"
@@ -138,11 +132,10 @@ def get_telemetry_status() -> dict:
             disabled_reason = "KURT_TELEMETRY_DISABLED environment variable"
 
     try:
-        from kurt.config import config_exists, get_config_file_path
+        from kurt.config import config_file_exists, get_config_file_path
 
-        if config_exists():
+        if config_file_exists():
             config_path = str(get_config_file_path())
-            # If still no reason and config exists, check config file
             if not enabled and not disabled_reason:
                 disabled_reason = f"TELEMETRY_ENABLED=False in {config_path}"
     except Exception:

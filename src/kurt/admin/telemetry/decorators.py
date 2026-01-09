@@ -1,12 +1,14 @@
 """Decorators for tracking CLI command execution."""
 
+from __future__ import annotations
+
 import functools
 import time
 from typing import Callable
 
 import click
 
-from kurt.admin.telemetry.tracker import track_event
+from .tracker import track_event
 
 
 def track_command(func: Callable) -> Callable:
@@ -18,7 +20,7 @@ def track_command(func: Callable) -> Callable:
     - command_failed: When command raises an exception
 
     Properties tracked:
-    - command: Full command path (e.g., "kurt ingest fetch")
+    - command: Full command path (e.g., "kurt content fetch")
     - duration_ms: Execution time in milliseconds
     - exit_code: 0 for success, 1 for error
     - error_type: Exception class name (if failed)
@@ -81,7 +83,6 @@ def track_command(func: Callable) -> Callable:
                     "error_type": type(e).__name__,
                 },
             )
-            # Re-raise exception
             raise
 
     return wrapper
@@ -94,11 +95,10 @@ def _get_command_path(ctx: click.Context) -> str:
         ctx: Click context
 
     Returns:
-        Command path like "kurt ingest fetch"
+        Command path like "kurt content fetch"
     """
     parts = []
 
-    # Walk up context chain to get full command path
     while ctx:
         if ctx.info_name:
             parts.insert(0, ctx.info_name)

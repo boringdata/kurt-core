@@ -1,5 +1,18 @@
-"""Research integration package for Kurt."""
+"""
+Research integration module.
 
-from kurt.integrations.research.base import ResearchAdapter, ResearchResult
+Provides adapters for research synthesis (Perplexity) and monitoring
+(Reddit, HackerNews, RSS feeds).
+"""
 
-__all__ = ["ResearchAdapter", "ResearchResult"]
+from kurt.integrations.research.base import (
+    Citation,
+    ResearchAdapter,
+    ResearchResult,
+)
+
+__all__ = [
+    "Citation",
+    "ResearchResult",
+    "ResearchAdapter",
+]

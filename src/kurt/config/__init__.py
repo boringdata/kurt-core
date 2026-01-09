@@ -4,11 +4,13 @@ Kurt configuration module.
 This module manages all Kurt configuration including:
 - Base configuration (paths, LLM settings, telemetry)
 - Integration configs (CMS, Analytics, etc.) stored as prefixed extra fields
+- Workflow configs (MAP.*, FETCH.*, etc.) via dot notation
 """
 
 # Re-export base config API (backward compatibility)
 from kurt.config.base import (
     KurtConfig,
+    ModelSettings,
     config_exists,
     config_file_exists,
     create_config,
@@ -16,12 +18,13 @@ from kurt.config.base import (
     get_config_or_default,
     get_step_config,
     load_config,
+    resolve_model_settings,
     update_config,
     validate_config,
 )
 
-# Model configuration support for pipeline steps
-from kurt.config.model_config import ConfigParam, ModelConfig
+# Model configuration support for workflows and steps
+from kurt.config.model_config import ConfigParam, ModelConfig, StepConfig
 
 # Re-export config utilities for integrations
 from kurt.config.utils import (
@@ -38,6 +41,7 @@ from kurt.config.utils import (
 __all__ = [
     # Base config
     "KurtConfig",
+    "ModelSettings",
     "config_exists",  # deprecated, use config_file_exists
     "config_file_exists",
     "create_config",
@@ -45,11 +49,13 @@ __all__ = [
     "get_config_or_default",
     "get_step_config",
     "load_config",
+    "resolve_model_settings",
     "update_config",
     "validate_config",
     # Model configuration
     "ConfigParam",
-    "ModelConfig",
+    "ModelConfig",  # Alias for StepConfig
+    "StepConfig",
     # Config utilities
     "config_exists_for_prefix",
     "get_available_keys",

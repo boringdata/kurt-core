@@ -1,5 +1,17 @@
-"""Monitoring adapters for research signal detection."""
+"""
+Monitoring adapters for research signals.
 
+Provides adapters for Reddit, HackerNews, and RSS/Atom feeds.
+"""
+
+from kurt.integrations.research.monitoring.feeds import FeedAdapter
+from kurt.integrations.research.monitoring.hackernews import HackerNewsAdapter
 from kurt.integrations.research.monitoring.models import Signal
+from kurt.integrations.research.monitoring.reddit import RedditAdapter
 
-__all__ = ["Signal"]
+__all__ = [
+    "Signal",
+    "RedditAdapter",
+    "HackerNewsAdapter",
+    "FeedAdapter",
+]

@@ -1,12 +1,11 @@
-"""Feedback-specific telemetry tracking.
+"""Feedback-specific telemetry tracking."""
 
-Extends base telemetry infrastructure with feedback events.
-"""
+from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Literal
 
-from kurt.admin.telemetry.config import is_telemetry_enabled
-from kurt.admin.telemetry.tracker import track_event
+from .config import is_telemetry_enabled
+from .tracker import track_event
 
 IssueCategory = Literal["tone", "structure", "info", "comprehension", "length", "examples", "other"]
 
@@ -14,7 +13,7 @@ IssueCategory = Literal["tone", "structure", "info", "comprehension", "length", 
 def track_feedback_submitted(
     rating: int,
     has_comment: bool = False,
-    issue_category: Optional[IssueCategory] = None,
+    issue_category: IssueCategory | None = None,
 ) -> None:
     """Track user feedback submission.
 
