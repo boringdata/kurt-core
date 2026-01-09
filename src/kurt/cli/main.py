@@ -126,10 +126,12 @@ def _check_migrations():
 from kurt.cli.init import init  # noqa: E402
 from kurt.cli.status import status  # noqa: E402
 from kurt.cli.update import update  # noqa: E402
+from kurt.cli.web import serve  # noqa: E402
 
 main.add_command(init)
 main.add_command(status)
 main.add_command(update)
+main.add_command(serve)
 
 
 if __name__ == "__main__":
