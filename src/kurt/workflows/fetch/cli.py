@@ -199,8 +199,15 @@ def fetch_cmd(
         config_overrides["fetch_engine"] = engine.lower()
     config = FetchConfig.from_config("fetch", **config_overrides)
 
+    # Build CLI command string for replay
+    import sys
+
+    cli_command = "kurt " + " ".join(sys.argv[1:])
+
     # Run workflow
-    result = run_fetch(docs, config, background=background, priority=priority)
+    result = run_fetch(
+        docs, config, background=background, priority=priority, cli_command=cli_command
+    )
 
     # Output result
     # When background=True, result is a string (workflow_id) or None

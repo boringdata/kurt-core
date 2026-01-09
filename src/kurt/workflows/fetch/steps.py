@@ -218,16 +218,18 @@ def fetch_step(docs: list[dict[str, Any]], config_dict: dict[str, Any]) -> dict[
         rows.append(row)
 
         DBOS.set_event("stage_current", idx + 1)
-        DBOS.write_stream(
-            "progress",
-            {
-                "step": "fetch_documents",
-                "idx": idx,
-                "total": total,
-                "status": "success" if row["status"] == FetchStatus.SUCCESS else "error",
-                "timestamp": time.time(),
-            },
-        )
+        is_success = row["status"] == FetchStatus.SUCCESS
+        progress_event = {
+            "step": "fetch_documents",
+            "idx": idx,
+            "total": total,
+            "status": "success" if is_success else "error",
+            "timestamp": time.time(),
+        }
+        # Include error message for failed fetches
+        if not is_success and row.get("error"):
+            progress_event["error"] = row["error"]
+        DBOS.write_stream("progress", progress_event)
 
     fetched = sum(1 for row in rows if row["status"] == FetchStatus.SUCCESS)
     failed = sum(1 for row in rows if row["status"] == FetchStatus.ERROR)

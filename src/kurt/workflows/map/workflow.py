@@ -12,7 +12,7 @@ from .steps import map_step
 
 
 @DBOS.workflow()
-def map_workflow(config_dict: dict[str, Any]) -> dict[str, Any]:
+def map_workflow(config_dict: dict[str, Any], cli_command: str | None = None) -> dict[str, Any]:
     """
     Map/discover content sources and return discovered documents.
 
@@ -26,9 +26,13 @@ def map_workflow(config_dict: dict[str, Any]) -> dict[str, Any]:
     workflow_id = DBOS.workflow_id
 
     DBOS.set_event("status", "running")
+    DBOS.set_event("workflow_type", "map")
+    DBOS.set_event("stage", "discovering")
     DBOS.set_event("started_at", time.time())
+    if cli_command:
+        DBOS.set_event("cli_command", cli_command)
 
-    with track_step("map_sources"):
+    with track_step("map_url"):
         result = map_step(config.model_dump())
 
     # Persist rows via transaction (called from workflow, not step)
@@ -48,6 +52,7 @@ def run_map(
     *,
     background: bool = False,
     priority: int = 10,
+    cli_command: str | None = None,
 ) -> dict[str, Any] | str | None:
     """
     Run the map workflow and return the result.
@@ -56,6 +61,7 @@ def run_map(
     return run_workflow(
         map_workflow,
         payload,
+        cli_command,
         background=background,
         priority=priority,
     )

@@ -83,6 +83,8 @@ export default function WorkflowList({ onAttachWorkflow }) {
     switch (status) {
       case 'SUCCESS':
         return 'workflow-status-success'
+      case 'WARNING':
+        return 'workflow-status-warning'
       case 'ERROR':
       case 'RETRIES_EXCEEDED':
         return 'workflow-status-error'

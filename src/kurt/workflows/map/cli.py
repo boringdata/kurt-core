@@ -107,8 +107,13 @@ def map_cmd(
         source_desc = source_url or source_folder or f"{cms_platform}:{cms_instance}"
         console.print(f"[dim]Mapping content from: {source_desc}[/dim]")
 
+    # Build CLI command string for replay
+    import sys
+
+    cli_command = "kurt " + " ".join(sys.argv[1:])
+
     # Run workflow
-    result = run_map(config, background=background, priority=priority)
+    result = run_map(config, background=background, priority=priority, cli_command=cli_command)
 
     # Output result
     if output_format == "json":

@@ -204,11 +204,42 @@ def get_live_status(workflow_id: str) -> dict[str, Any]:
                 },
             ],
             "last_log": "...",
+            "inputs": {...},
+            "duration_ms": 1234,
         }
     """
     events = read_workflow_events(workflow_id)
     progress_events = read_workflow_streams(workflow_id, key="progress")
     logs = get_step_logs(workflow_id, limit=1)
+
+    # Fetch workflow metadata (inputs, timestamps) from workflow_status table
+    workflow_inputs = None
+    workflow_duration_ms = None
+    with managed_session() as session:
+        row = session.execute(
+            text(
+                "SELECT inputs, created_at, updated_at FROM workflow_status WHERE workflow_uuid = :id"
+            ),
+            {"id": workflow_id},
+        ).fetchone()
+        if row:
+            inputs_raw, created_at, updated_at = row
+            if inputs_raw:
+                decoded = _decode_dbos_value(inputs_raw)
+                if isinstance(decoded, dict):
+                    # DBOS stores inputs as {"args": [...], "kwargs": {...}}
+                    args = decoded.get("args")
+                    if isinstance(args, list) and len(args) > 0:
+                        # First positional arg is usually the config dict
+                        first_arg = args[0]
+                        if isinstance(first_arg, dict):
+                            workflow_inputs = first_arg
+                        else:
+                            workflow_inputs = {"args": args}
+                    elif args:
+                        workflow_inputs = args
+            if created_at and updated_at:
+                workflow_duration_ms = int(updated_at - created_at)
 
     step_state: dict[str, dict[str, Any]] = {}
     for event in progress_events:
@@ -223,8 +254,11 @@ def get_live_status(workflow_id: str) -> dict[str, Any]:
                 "total": 0,
                 "success": 0,
                 "error": 0,
+                "errors": [],  # List of error messages
                 "last_status": None,
                 "last_latency_ms": None,
+                "start_timestamp": None,
+                "end_timestamp": None,
                 "last_timestamp": None,
             },
         )
@@ -248,11 +282,21 @@ def get_live_status(workflow_id: str) -> dict[str, Any]:
             state["success"] += 1
         elif status == "error":
             state["error"] += 1
+            # Capture error message if present
+            error_msg = event.get("error")
+            if error_msg and len(state["errors"]) < 10:  # Limit to 10 errors
+                state["errors"].append(error_msg)
 
         if "latency_ms" in event:
             state["last_latency_ms"] = event.get("latency_ms")
         if "timestamp" in event:
-            state["last_timestamp"] = event.get("timestamp")
+            ts = event.get("timestamp")
+            state["last_timestamp"] = ts
+            # Track start and end timestamps for duration calculation
+            if status == "start" and state["start_timestamp"] is None:
+                state["start_timestamp"] = ts
+            # Update end timestamp on every event (last one wins)
+            state["end_timestamp"] = ts
 
     steps: list[dict[str, Any]] = []
     for step_name, state in step_state.items():
@@ -271,6 +315,11 @@ def get_live_status(workflow_id: str) -> dict[str, Any]:
             else:
                 status = "running"
 
+        # Calculate duration if we have both start and end timestamps
+        duration_ms = None
+        if state["start_timestamp"] and state["end_timestamp"]:
+            duration_ms = int((state["end_timestamp"] - state["start_timestamp"]) * 1000)
+
         steps.append(
             {
                 "name": step_name,
@@ -279,7 +328,9 @@ def get_live_status(workflow_id: str) -> dict[str, Any]:
                 "total": total,
                 "success": state["success"],
                 "error": state["error"],
+                "errors": state["errors"],  # Include error messages
                 "last_latency_ms": state["last_latency_ms"],
+                "duration_ms": duration_ms,
                 "last_timestamp": state["last_timestamp"],
             }
         )
@@ -297,6 +348,9 @@ def get_live_status(workflow_id: str) -> dict[str, Any]:
         },
         "steps": steps,
         "last_log": logs[0]["message"] if logs else None,
+        "inputs": workflow_inputs,
+        "cli_command": events.get("cli_command"),
+        "duration_ms": workflow_duration_ms,
     }
 
 

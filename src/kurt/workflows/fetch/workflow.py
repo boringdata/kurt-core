@@ -27,7 +27,9 @@ def _has_embedding_api_key() -> bool:
 
 
 @DBOS.workflow()
-def fetch_workflow(docs: list[dict[str, Any]], config_dict: dict[str, Any]) -> dict[str, Any]:
+def fetch_workflow(
+    docs: list[dict[str, Any]], config_dict: dict[str, Any], cli_command: str | None = None
+) -> dict[str, Any]:
     """
     Fetch content from discovered documents.
     """
@@ -35,18 +37,24 @@ def fetch_workflow(docs: list[dict[str, Any]], config_dict: dict[str, Any]) -> d
     workflow_id = DBOS.workflow_id
 
     DBOS.set_event("status", "running")
+    DBOS.set_event("workflow_type", "fetch")
+    DBOS.set_event("stage", "fetching")
     DBOS.set_event("started_at", time.time())
+    if cli_command:
+        DBOS.set_event("cli_command", cli_command)
 
     with track_step("fetch_documents"):
         result = fetch_step(docs, config.model_dump())
 
     # Save content to files and get content_path
+    DBOS.set_event("stage", "saving")
     with track_step("save_content"):
         rows_with_paths = save_content_step(result["rows"], config.model_dump())
         result["rows"] = rows_with_paths
 
     # Generate embeddings (skip if no API key available)
     if _has_embedding_api_key():
+        DBOS.set_event("stage", "embedding")
         with track_step("generate_embeddings"):
             rows_with_embeddings = embedding_step(result["rows"], config.model_dump())
             result["rows"] = rows_with_embeddings
@@ -56,6 +64,7 @@ def fetch_workflow(docs: list[dict[str, Any]], config_dict: dict[str, Any]) -> d
             row["embedding"] = None
 
     # Persist rows via transaction (called from workflow, not step)
+    DBOS.set_event("stage", "persisting")
     if not result.get("dry_run") and result.get("rows"):
         persistence = persist_fetch_documents(result["rows"])
         result["rows_written"] = persistence["rows_written"]
@@ -64,7 +73,12 @@ def fetch_workflow(docs: list[dict[str, Any]], config_dict: dict[str, Any]) -> d
         result["rows_written"] = 0
         result["rows_updated"] = 0
 
-    DBOS.set_event("status", "completed")
+    # Set final status based on results
+    failed_count = result.get("failed", 0)
+    if failed_count > 0:
+        DBOS.set_event("status", "completed_with_errors")
+    else:
+        DBOS.set_event("status", "completed")
     DBOS.set_event("completed_at", time.time())
 
     return {"workflow_id": workflow_id, **result}
@@ -76,6 +90,7 @@ def run_fetch(
     *,
     background: bool = False,
     priority: int = 10,
+    cli_command: str | None = None,
 ) -> dict[str, Any] | str | None:
     """
     Run the fetch workflow and return the result.
@@ -85,6 +100,7 @@ def run_fetch(
         fetch_workflow,
         docs,
         config_dict,
+        cli_command,
         background=background,
         priority=priority,
     )

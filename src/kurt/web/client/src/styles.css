@@ -2114,6 +2114,11 @@ html, body, #root {
   color: #16a34a;
 }
 
+.workflow-status-warning {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
 .workflow-status-error {
   background: rgba(239, 68, 68, 0.15);
   color: #ef4444;
@@ -2536,6 +2541,42 @@ html, body, #root {
   white-space: pre-wrap;
   max-height: 200px;
   overflow: auto;
+}
+
+.workflow-command-wrapper {
+  position: relative;
+}
+
+.workflow-inputs-content.workflow-command {
+  background: #1e293b;
+  color: #e2e8f0;
+  padding: 8px 12px;
+  padding-right: 36px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.workflow-command-copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  transition: background 0.15s, color 0.15s;
+}
+
+.workflow-command-copy:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #e2e8f0;
 }
 
 .workflow-duration {
