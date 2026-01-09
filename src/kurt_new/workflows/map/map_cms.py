@@ -47,7 +47,12 @@ def discover_from_cms(
                 "cms_id": cms_doc_id,
                 "schema": schema,
                 "slug": slug,
-                "metadata": doc_meta,
+                "metadata": {
+                    **doc_meta,
+                    "cms_platform": platform,
+                    "cms_instance": instance,
+                    "cms_id": cms_doc_id,
+                },
                 "created": True,
             }
         )

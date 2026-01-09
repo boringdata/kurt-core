@@ -1,7 +1,10 @@
 """Tests for map workflow utility functions."""
 
+from unittest.mock import patch
+
 from kurt_new.workflows.map.models import MapStatus
 from kurt_new.workflows.map.utils import (
+    build_rows,
     compute_status,
     filter_items,
     get_source_identifier,
@@ -265,3 +268,102 @@ class TestFilterItems:
         """Test with empty list."""
         result = filter_items([])
         assert result == []
+
+
+class TestBuildRows:
+    """Test suite for build_rows function."""
+
+    def test_preserves_content_hash_from_folder_sources(self):
+        """Test that content_hash is preserved for folder-discovered documents."""
+        discovered_docs = [
+            {
+                "path": "/docs/guide.md",
+                "title": "Guide",
+                "content_hash": "abc123def456" * 5 + "abcd",  # 64 char SHA256
+            }
+        ]
+
+        with patch("kurt_new.workflows.map.utils.resolve_existing", return_value=set()):
+            rows = build_rows(
+                discovered_docs,
+                discovery_method="folder",
+                discovery_url="/docs",
+                source_type="file",
+            )
+
+        assert len(rows) == 1
+        assert rows[0]["content_hash"] == "abc123def456" * 5 + "abcd"
+
+    def test_sets_source_url_from_path(self):
+        """Test that source_url is set from path for folder sources."""
+        discovered_docs = [{"path": "/docs/guide.md", "title": "Guide"}]
+
+        with patch("kurt_new.workflows.map.utils.resolve_existing", return_value=set()):
+            rows = build_rows(
+                discovered_docs,
+                discovery_method="folder",
+                discovery_url="/docs",
+                source_type="file",
+            )
+
+        assert rows[0]["source_url"] == "/docs/guide.md"
+
+    def test_sets_source_url_from_url(self):
+        """Test that source_url is set from url for web sources."""
+        discovered_docs = [{"url": "https://example.com/page", "title": "Page"}]
+
+        with patch("kurt_new.workflows.map.utils.resolve_existing", return_value=set()):
+            rows = build_rows(
+                discovered_docs,
+                discovery_method="sitemap",
+                discovery_url="https://example.com",
+                source_type="url",
+            )
+
+        assert rows[0]["source_url"] == "https://example.com/page"
+
+    def test_preserves_metadata_json(self):
+        """Test that metadata is preserved in metadata_json field."""
+        discovered_docs = [
+            {
+                "url": "https://example.com/page",
+                "title": "Page",
+                "metadata": {"cms_platform": "notion", "cms_instance": "workspace"},
+            }
+        ]
+
+        with patch("kurt_new.workflows.map.utils.resolve_existing", return_value=set()):
+            rows = build_rows(
+                discovered_docs,
+                discovery_method="cms",
+                discovery_url="notion/workspace",
+                source_type="cms",
+            )
+
+        assert rows[0]["metadata_json"]["cms_platform"] == "notion"
+        assert rows[0]["metadata_json"]["cms_instance"] == "workspace"
+
+    def test_marks_existing_documents(self):
+        """Test that existing documents are marked as not new."""
+        discovered_docs = [
+            {"url": "https://example.com/new", "title": "New"},
+            {"url": "https://example.com/existing", "title": "Existing"},
+        ]
+
+        # Simulate that second doc already exists
+        with patch("kurt_new.workflows.map.utils.resolve_existing") as mock_resolve:
+            mock_resolve.return_value = {"map_" + "x" * 40}  # Mock existing ID
+
+            # Need to also mock make_document_id to return predictable IDs
+            with patch("kurt_new.workflows.map.utils.make_document_id") as mock_make_id:
+                mock_make_id.side_effect = ["map_new123", "map_" + "x" * 40]
+
+                rows = build_rows(
+                    discovered_docs,
+                    discovery_method="sitemap",
+                    discovery_url="https://example.com",
+                    source_type="url",
+                )
+
+        assert rows[0]["is_new"] is True
+        assert rows[1]["is_new"] is False

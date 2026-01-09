@@ -210,3 +210,24 @@ class TestDiscoverFromCms:
         metadata = result["discovered"][0]["metadata"]
         assert metadata["extra_field"] == "extra_value"
         assert metadata["nested"]["key"] == "value"
+
+    def test_metadata_includes_cms_platform_instance_and_id(self):
+        """Test that metadata includes cms_platform, cms_instance, and cms_id for fetch."""
+        mock_adapter = MagicMock()
+        mock_adapter.list_all.return_value = [
+            {
+                "id": "doc-123",
+                "title": "Test Document",
+                "slug": "test-doc",
+                "content_type": "page",
+            }
+        ]
+
+        with patch("kurt_new.integrations.cms.config.get_platform_config", return_value={}):
+            with patch("kurt_new.integrations.cms.get_adapter", return_value=mock_adapter):
+                result = discover_from_cms("notion", "workspace-abc")
+
+        metadata = result["discovered"][0]["metadata"]
+        assert metadata["cms_platform"] == "notion"
+        assert metadata["cms_instance"] == "workspace-abc"
+        assert metadata["cms_id"] == "doc-123"
