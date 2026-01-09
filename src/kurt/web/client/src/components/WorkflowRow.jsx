@@ -128,6 +128,13 @@ export default function WorkflowRow({
     }
   }, [workflow?.workflow_uuid])
 
+  // Fetch status on mount for completed workflows to determine effective status
+  useEffect(() => {
+    if (workflow.status === 'SUCCESS' && !liveStatus) {
+      fetchStatus()
+    }
+  }, [workflow.status, workflow?.workflow_uuid, fetchStatus, liveStatus])
+
   // Fetch initial logs and status when expanded (SSE handles live updates)
   useEffect(() => {
     if (!isExpanded) return
