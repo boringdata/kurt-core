@@ -168,7 +168,8 @@ export default function WorkflowRow({
   }, [stepsExpanded, liveStatus?.steps, fetchStepLogs])
 
   const shortId = workflow.workflow_uuid?.slice(0, 8) || ''
-  const workflowName = workflow.name || 'Unknown'
+  // Use definition_name for agent workflows, otherwise use the workflow name
+  const workflowName = workflow.definition_name || workflow.name || 'Unknown'
 
   const formatStageName = (stage) => {
     const stageNames = {
@@ -302,11 +303,17 @@ export default function WorkflowRow({
       >
         <span className="workflow-expand-icon">{isExpanded ? '▼' : '▶'}</span>
         <span
+          className={`workflow-type-badge ${workflow.workflow_type === 'agent' ? 'workflow-type-agent' : 'workflow-type-tool'}`}
+          title={workflow.workflow_type === 'agent' ? 'Agent workflow' : 'Tool workflow'}
+        >
+          {workflow.workflow_type === 'agent' ? 'agent' : 'tool'}
+        </span>
+        <span
           className={`workflow-status-badge ${getStatusBadgeClass(effectiveStatus)}`}
         >
           {effectiveStatus}
         </span>
-        <span className="workflow-name" title={workflowName}>
+        <span className="workflow-name" title={workflow.definition_name || workflowName}>
           {workflowName.length > 20 ? `${workflowName.slice(0, 20)}...` : workflowName}
         </span>
         <span className="workflow-id" title={workflow.workflow_uuid}>

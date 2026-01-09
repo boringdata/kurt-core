@@ -2100,6 +2100,25 @@ html, body, #root {
   flex-shrink: 0;
 }
 
+.workflow-type-badge {
+  font-size: 9px;
+  font-weight: 500;
+  padding: 2px 5px;
+  border-radius: 3px;
+  text-transform: lowercase;
+  flex-shrink: 0;
+}
+
+.workflow-type-tool {
+  background: rgba(107, 114, 128, 0.15);
+  color: #9ca3af;
+}
+
+.workflow-type-agent {
+  background: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
+}
+
 .workflow-status-badge {
   font-size: 9px;
   font-weight: 600;

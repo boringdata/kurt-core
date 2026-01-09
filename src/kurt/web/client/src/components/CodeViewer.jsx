@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react'
+import { useMemo } from 'react'
 import { Highlight, themes } from 'prism-react-renderer'
 
 // Map file extensions to Prism language names
@@ -71,34 +71,56 @@ export default function CodeViewer({ content, filename, className = '' }) {
     )
   }
 
+  const lineCount = content.split('\n').length
+  const gutterChars = Math.max(2, String(lineCount).length)
+
   return (
     <div className={`code-viewer ${className}`}>
+      <style>{`
+        .code-line::before {
+          content: attr(data-line-number);
+          display: inline-block;
+          width: ${gutterChars}ch;
+          margin-right: 1em;
+          text-align: right;
+          opacity: 0.5;
+          user-select: none;
+          pointer-events: none;
+        }
+      `}</style>
       <Highlight theme={themes.vsDark} code={content} language={language}>
         {({ className: highlightClass, style, tokens, getLineProps, getTokenProps }) => (
-          <pre className={highlightClass} style={{ ...style, margin: 0, padding: '1rem', overflow: 'auto', height: '100%' }}>
-            {tokens.map((line, i) => (
-              <div key={i} {...getLineProps({ line })} style={{ display: 'table-row' }}>
-                <span
-                  className="code-line-number"
-                  style={{
-                    display: 'table-cell',
-                    textAlign: 'right',
-                    paddingRight: '1rem',
-                    userSelect: 'none',
-                    opacity: 0.5,
-                    width: '1%',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {i + 1}
-                </span>
-                <span style={{ display: 'table-cell' }}>
-                  {line.map((token, key) => (
-                    <span key={key} {...getTokenProps({ token })} />
-                  ))}
-                </span>
-              </div>
-            ))}
+          <pre
+            className={highlightClass}
+            style={{
+              ...style,
+              margin: 0,
+              padding: '1rem',
+              overflow: 'auto',
+              height: '100%',
+              lineHeight: '1.5',
+              tabSize: 4,
+            }}
+          >
+            <code>
+              {tokens.map((line, i) => {
+                const lineProps = getLineProps({ line })
+                const lineNum = String(i + 1).padStart(gutterChars, ' ')
+                return (
+                  <div
+                    key={i}
+                    {...lineProps}
+                    className="code-line"
+                    data-line-number={lineNum}
+                  >
+                    {line.map((token, key) => {
+                      const tokenProps = getTokenProps({ token })
+                      return <span key={key} {...tokenProps} />
+                    })}
+                  </div>
+                )
+              })}
+            </code>
           </pre>
         )}
       </Highlight>

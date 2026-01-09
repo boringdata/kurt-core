@@ -7,6 +7,7 @@ const apiUrl = (path) => `${apiBase}${path}`
 const SECTION_ICONS = {
   projects: '📁',
   sources: '📥',
+  workflows: '🔄',
 }
 
 // Capitalize first letter for display
@@ -72,19 +73,28 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
       .then(async (data) => {
         if (data.paths) {
           setKurtConfig(data.paths)
-          // Auto-expand section folders on initial load (only projects and sources)
-          const sectionPaths = ['projects', 'sources']
+          // Auto-expand section folders on initial load (projects, sources, workflows)
+          const sectionPaths = ['projects', 'sources', 'workflows']
           const toExpand = {}
+          const toCollapse = {}
           for (const key of sectionPaths) {
             const path = data.paths[key]
             if (path) {
               const children = await fetchDir(path)
               // Store even empty arrays so we know folder was loaded
               toExpand[path] = children
+              // Auto-collapse empty sections
+              if (children.length === 0) {
+                toCollapse[key] = true
+              }
             }
           }
           // Use functional update to merge with current state
           setExpandedDirs((prev) => ({ ...prev, ...toExpand }))
+          // Collapse empty sections
+          if (Object.keys(toCollapse).length > 0) {
+            setCollapsedSections((prev) => ({ ...prev, ...toCollapse }))
+          }
         }
       })
       .catch(() => {})
@@ -600,8 +610,8 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
     }
 
     // Build section mapping: configKey -> path
-    // Order: projects, sources (folders only)
-    const sectionOrder = ['projects', 'sources']
+    // Order: projects, workflows, sources (folders only)
+    const sectionOrder = ['projects', 'workflows', 'sources']
     const sections = {}
     const usedPaths = new Set()
 
@@ -785,8 +795,8 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
               {renderStatusBadge(getFileStatus(configFile.path))}
             </div>
           )}
-          {/* Main sections: projects, sources - always show if path exists */}
-          {['projects', 'sources'].map((key) =>
+          {/* Main sections: projects, workflows, sources - always show if path exists */}
+          {['projects', 'workflows', 'sources'].map((key) =>
             sections[key] && sections[key].path
               ? renderSection(key, sections[key])
               : null

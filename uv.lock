@@ -8,6 +8,12 @@ resolution-markers = [
     "python_full_version < '3.11'",
 ]
 
+[manifest]
+members = [
+    "kurt-core",
+    "kurt-demo",
+]
+
 [[package]]
 name = "aiobotocore"
 version = "2.26.0"
@@ -1701,6 +1707,17 @@ dev = [
     { name = "pytest-cov", specifier = ">=4.1.0" },
     { name = "ruff", specifier = ">=0.1.0" },
 ]
+
+[[package]]
+name = "kurt-demo"
+version = "0.1.0"
+source = { virtual = "kurt-demo" }
+dependencies = [
+    { name = "kurt-core" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "kurt-core", editable = "." }]
 
 [[package]]
 name = "litellm"

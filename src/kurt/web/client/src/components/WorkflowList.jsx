@@ -10,6 +10,12 @@ const STATUS_OPTIONS = [
   { value: 'ENQUEUED', label: 'Queued' },
 ]
 
+const TYPE_OPTIONS = [
+  { value: '', label: 'All types' },
+  { value: 'agent', label: 'Agent' },
+  { value: 'tool', label: 'Tool' },
+]
+
 const apiBase = import.meta.env.VITE_API_URL || ''
 const apiUrl = (path) => `${apiBase}${path}`
 
@@ -17,6 +23,7 @@ export default function WorkflowList({ onAttachWorkflow }) {
   const [workflows, setWorkflows] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [statusFilter, setStatusFilter] = useState('')
+  const [typeFilter, setTypeFilter] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [expandedId, setExpandedId] = useState(null)
   const [error, setError] = useState(null)
@@ -27,6 +34,7 @@ export default function WorkflowList({ onAttachWorkflow }) {
     try {
       const params = new URLSearchParams()
       if (statusFilter) params.set('status', statusFilter)
+      if (typeFilter) params.set('workflow_type', typeFilter)
       if (searchQuery) params.set('search', searchQuery)
       params.set('limit', '50')
 
@@ -47,7 +55,7 @@ export default function WorkflowList({ onAttachWorkflow }) {
     } finally {
       setIsLoading(false)
     }
-  }, [statusFilter, searchQuery])
+  }, [statusFilter, typeFilter, searchQuery])
 
   // Initial fetch and polling
   useEffect(() => {
@@ -102,6 +110,18 @@ export default function WorkflowList({ onAttachWorkflow }) {
   return (
     <div className="workflow-list-container">
       <div className="workflow-list-filters">
+        <select
+          className="workflow-select"
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value)}
+          aria-label="Filter by type"
+        >
+          {TYPE_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
         <select
           className="workflow-select"
           value={statusFilter}

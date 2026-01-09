@@ -117,6 +117,7 @@ def api_config():
                 "paths": {
                     "sources": "sources",
                     "projects": "projects",
+                    "workflows": "workflows",
                     "rules": "rules",
                     "kurt": ".kurt",
                 },
@@ -128,6 +129,7 @@ def api_config():
             "paths": {
                 "sources": config.PATH_SOURCES,
                 "projects": config.PATH_PROJECTS,
+                "workflows": config.PATH_WORKFLOWS,
                 "rules": config.PATH_RULES,
                 "kurt": str(Path(config.PATH_DB).parent),
             },
@@ -928,9 +930,12 @@ def api_list_workflows(
     limit: int = Query(50, le=200),
     offset: int = Query(0, ge=0),
     search: Optional[str] = Query(None),
+    workflow_type: Optional[str] = Query(None),
     parent_id: Optional[str] = Query(None, description="Filter by parent workflow ID"),
 ):
     """List workflows with optional filtering."""
+    from kurt.core.status import read_workflow_events
+
     session = _get_db_session()
     if session is None:
         return {"workflows": [], "total": 0, "error": "Database not available"}
@@ -977,20 +982,60 @@ def api_list_workflows(
         result = session.execute(text(sql), params)
         workflows = []
         for row in result.fetchall():
+            workflow_uuid = row[0]
             parent_workflow_id = _decode_dbos_event_value(row[5]) if row[5] else None
+
             # If filtering by parent_id, only include matching children
             if parent_id and parent_workflow_id != parent_id:
                 continue
-            workflows.append(
-                {
-                    "workflow_uuid": row[0],
-                    "name": row[1],
-                    "status": row[2],
-                    "created_at": str(row[3]) if row[3] else None,
-                    "updated_at": str(row[4]) if row[4] else None,
-                    "parent_workflow_id": parent_workflow_id,
-                }
-            )
+
+            workflow = {
+                "workflow_uuid": workflow_uuid,
+                "name": row[1],
+                "status": row[2],
+                "created_at": str(row[3]) if row[3] else None,
+                "updated_at": str(row[4]) if row[4] else None,
+                "parent_workflow_id": parent_workflow_id,
+            }
+
+            # Fetch workflow events for additional metadata
+            try:
+                events = read_workflow_events(workflow_uuid)
+                wf_type = events.get("workflow_type")
+                if wf_type:
+                    workflow["workflow_type"] = wf_type
+                # Agent workflow specific fields
+                if wf_type == "agent":
+                    workflow["definition_name"] = events.get("definition_name")
+                    workflow["trigger"] = events.get("trigger")
+                    workflow["agent_turns"] = events.get("agent_turns")
+                    workflow["tokens_in"] = events.get("tokens_in")
+                    workflow["tokens_out"] = events.get("tokens_out")
+                    workflow["cost_usd"] = events.get("cost_usd")
+                # Content workflow fields (map, fetch)
+                elif wf_type in ("map", "fetch"):
+                    workflow["cli_command"] = events.get("cli_command")
+            except Exception:
+                pass  # Skip events if not available
+
+            # Apply workflow_type filter if specified
+            if workflow_type:
+                wf_type = workflow.get("workflow_type")
+                if workflow_type == "agent":
+                    # Only show agent workflows
+                    if wf_type != "agent":
+                        continue
+                elif workflow_type == "tool":
+                    # Show all non-agent workflows (map, fetch, etc.)
+                    if wf_type == "agent":
+                        continue
+                else:
+                    # Exact type match
+                    if wf_type != workflow_type:
+                        continue
+
+            workflows.append(workflow)
+
         session.close()
 
         return {"workflows": workflows, "total": len(workflows)}

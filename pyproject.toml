@@ -100,6 +100,11 @@ markers = [
 [tool.pytest-asyncio]
 mode = "auto"
 
+[tool.uv.workspace]
+members = [
+    "kurt-demo",
+]
+
 [dependency-groups]
 dev = [
     "pre-commit>=4.3.0",
