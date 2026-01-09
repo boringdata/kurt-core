@@ -641,3 +641,261 @@ class TestBackgroundWorkflowLifecycle:
             assert status_data["workflow_id"] == workflow_id
             # Status should show completion state (SUCCESS/ERROR/PENDING)
             assert "status" in status_data or "name" in status_data
+
+
+# ============================================================================
+# File and CMS Fetch E2E Tests
+# ============================================================================
+
+
+class TestFileFetchE2E:
+    """End-to-end tests for fetching local files."""
+
+    def test_fetch_local_file(self, tmp_kurt_project: Path):
+        """Test fetching content from a local markdown file."""
+        # Create a test markdown file
+        test_file = tmp_kurt_project / "sources" / "test_doc.md"
+        test_file.write_text("# Test Document\n\nThis is test content for file fetching.")
+
+        docs = [
+            {
+                "document_id": "file-doc-1",
+                "source_url": str(test_file),
+                "source_type": "file",
+            },
+        ]
+        config = {"dry_run": False}
+
+        # Mock embedding generation (file fetch is real)
+        def mock_generate_embeddings(texts, **kwargs):
+            return [[0.1, 0.2, 0.3] for _ in texts]
+
+        with patch(
+            "kurt_new.workflows.fetch.steps.generate_embeddings",
+            side_effect=mock_generate_embeddings,
+        ):
+            result = run_fetch(docs, config)
+
+        assert result["total"] == 1
+        assert result["documents_fetched"] == 1
+        assert result["documents_failed"] == 0
+        assert result["rows_written"] == 1
+
+        # Verify document in database
+        with managed_session() as session:
+            doc = session.get(FetchDocument, "file-doc-1")
+            assert doc is not None
+            assert doc.status == FetchStatus.SUCCESS
+            assert doc.content_length > 0
+            assert "Test Document" in str(doc.content_length) or doc.content_length > 10
+
+    def test_fetch_nonexistent_file_marks_error(self, tmp_kurt_project: Path):
+        """Test that fetching a non-existent file results in ERROR status."""
+        docs = [
+            {
+                "document_id": "file-doc-missing",
+                "source_url": "/nonexistent/path/to/file.md",
+                "source_type": "file",
+            },
+        ]
+        config = {"dry_run": False}
+
+        result = run_fetch(docs, config)
+
+        assert result["total"] == 1
+        assert result["documents_fetched"] == 0
+        assert result["documents_failed"] == 1
+
+        # Verify error in database
+        with managed_session() as session:
+            doc = session.get(FetchDocument, "file-doc-missing")
+            assert doc is not None
+            assert doc.status == FetchStatus.ERROR
+            assert doc.error is not None
+            assert "not found" in doc.error.lower() or "No such file" in doc.error
+
+    def test_fetch_multiple_files(self, tmp_kurt_project: Path):
+        """Test fetching multiple local files in one workflow."""
+        # Create test files
+        for i in range(3):
+            test_file = tmp_kurt_project / "sources" / f"doc_{i}.md"
+            test_file.write_text(f"# Document {i}\n\nContent for document {i}.")
+
+        docs = [
+            {
+                "document_id": f"file-doc-{i}",
+                "source_url": str(tmp_kurt_project / "sources" / f"doc_{i}.md"),
+                "source_type": "file",
+            }
+            for i in range(3)
+        ]
+        config = {"dry_run": False}
+
+        def mock_generate_embeddings(texts, **kwargs):
+            return [[0.1] for _ in texts]
+
+        with patch(
+            "kurt_new.workflows.fetch.steps.generate_embeddings",
+            side_effect=mock_generate_embeddings,
+        ):
+            result = run_fetch(docs, config)
+
+        assert result["total"] == 3
+        assert result["documents_fetched"] == 3
+        assert result["documents_failed"] == 0
+
+        # Verify all documents in database
+        with managed_session() as session:
+            for i in range(3):
+                doc = session.get(FetchDocument, f"file-doc-{i}")
+                assert doc is not None
+                assert doc.status == FetchStatus.SUCCESS
+
+
+class TestCMSFetchE2E:
+    """End-to-end tests for fetching CMS content."""
+
+    def test_fetch_cms_document(self, tmp_kurt_project: Path):
+        """Test fetching content from a CMS source."""
+        docs = [
+            {
+                "document_id": "cms-doc-1",
+                "source_url": "notion://page/abc123",
+                "source_type": "cms",
+                "metadata_json": {
+                    "cms_platform": "notion",
+                    "cms_instance": "workspace1",
+                    "cms_id": "abc123",
+                },
+            },
+        ]
+        config = {"dry_run": False}
+
+        # Mock CMS fetch
+        def mock_fetch_from_cms(platform, instance, cms_document_id, discovery_url=None):
+            return (
+                "# CMS Content\n\nThis is content from Notion.",
+                {"fingerprint": "cms_hash_123"},
+                "https://notion.so/page/abc123",
+            )
+
+        def mock_generate_embeddings(texts, **kwargs):
+            return [[0.1, 0.2] for _ in texts]
+
+        with (
+            patch(
+                "kurt_new.workflows.fetch.steps.fetch_from_cms",
+                side_effect=mock_fetch_from_cms,
+            ),
+            patch(
+                "kurt_new.workflows.fetch.steps.generate_embeddings",
+                side_effect=mock_generate_embeddings,
+            ),
+        ):
+            result = run_fetch(docs, config)
+
+        assert result["total"] == 1
+        assert result["documents_fetched"] == 1
+        assert result["documents_failed"] == 0
+
+        # Verify document in database
+        with managed_session() as session:
+            doc = session.get(FetchDocument, "cms-doc-1")
+            assert doc is not None
+            assert doc.status == FetchStatus.SUCCESS
+            assert doc.public_url == "https://notion.so/page/abc123"
+
+    def test_fetch_cms_missing_metadata_marks_error(self, tmp_kurt_project: Path):
+        """Test that CMS fetch without required metadata results in ERROR."""
+        docs = [
+            {
+                "document_id": "cms-doc-missing",
+                "source_url": "notion://page/xyz",
+                "source_type": "cms",
+                "metadata_json": {},  # Missing cms_platform, cms_instance, cms_id
+            },
+        ]
+        config = {"dry_run": False}
+
+        result = run_fetch(docs, config)
+
+        assert result["total"] == 1
+        assert result["documents_fetched"] == 0
+        assert result["documents_failed"] == 1
+
+        # Verify error in database
+        with managed_session() as session:
+            doc = session.get(FetchDocument, "cms-doc-missing")
+            assert doc is not None
+            assert doc.status == FetchStatus.ERROR
+            assert "missing" in doc.error.lower() or "platform" in doc.error.lower()
+
+    def test_fetch_mixed_sources(self, tmp_kurt_project: Path):
+        """Test fetching a mix of URL, file, and CMS sources in one workflow."""
+        # Create a test file
+        test_file = tmp_kurt_project / "sources" / "mixed_test.md"
+        test_file.write_text("# Mixed Test\n\nLocal file content.")
+
+        docs = [
+            {
+                "document_id": "mixed-url",
+                "source_url": "https://example.com/page",
+                "source_type": "url",
+            },
+            {
+                "document_id": "mixed-file",
+                "source_url": str(test_file),
+                "source_type": "file",
+            },
+            {
+                "document_id": "mixed-cms",
+                "source_url": "notion://page/mixed",
+                "source_type": "cms",
+                "metadata_json": {
+                    "cms_platform": "notion",
+                    "cms_instance": "test",
+                    "cms_id": "mixed",
+                },
+            },
+        ]
+        config = {"dry_run": False}
+
+        def mock_fetch_from_web(source_url, fetch_engine):
+            return f"Web content from {source_url}", {"fingerprint": "web123"}
+
+        def mock_fetch_from_cms(platform, instance, cms_document_id, discovery_url=None):
+            return "CMS content", {"fingerprint": "cms123"}, "https://notion.so/mixed"
+
+        def mock_generate_embeddings(texts, **kwargs):
+            return [[0.1] for _ in texts]
+
+        with (
+            patch(
+                "kurt_new.workflows.fetch.steps.fetch_from_web",
+                side_effect=mock_fetch_from_web,
+            ),
+            patch(
+                "kurt_new.workflows.fetch.steps.fetch_from_cms",
+                side_effect=mock_fetch_from_cms,
+            ),
+            patch(
+                "kurt_new.workflows.fetch.steps.generate_embeddings",
+                side_effect=mock_generate_embeddings,
+            ),
+        ):
+            result = run_fetch(docs, config)
+
+        assert result["total"] == 3
+        assert result["documents_fetched"] == 3
+        assert result["documents_failed"] == 0
+
+        # Verify all documents in database with correct source types
+        with managed_session() as session:
+            url_doc = session.get(FetchDocument, "mixed-url")
+            file_doc = session.get(FetchDocument, "mixed-file")
+            cms_doc = session.get(FetchDocument, "mixed-cms")
+
+            assert url_doc.status == FetchStatus.SUCCESS
+            assert file_doc.status == FetchStatus.SUCCESS
+            assert cms_doc.status == FetchStatus.SUCCESS
+            assert cms_doc.public_url == "https://notion.so/mixed"
