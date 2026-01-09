@@ -1,58 +1,93 @@
 """
-Model configuration support for step-specific settings.
+Generic configuration support for workflows and steps.
 
-This module provides a declarative way for pipeline models (steps) to expose
-their configurable parameters with type hints, defaults, and fallback resolution.
+This module provides a declarative way to expose configurable parameters
+with type hints, defaults, and fallback resolution from kurt.config.
+
+Supports two naming patterns:
+1. Module-only: "map" -> MAP.MAX_PAGES, MAP.DRY_RUN (for workflow configs)
+2. Module.Step: "map.discovery" -> MAP.DISCOVERY.MAX_DEPTH (for step configs)
+
+Step configs can inherit from workflow configs with fallback chain:
+    MAP.DISCOVERY.MAX_DEPTH -> MAP.MAX_DEPTH -> default
 
 Example usage:
 
-    class EntityClusteringConfig(ModelConfig):
-        eps: float = ConfigParam(default=0.25, ge=0.0, le=1.0, description="DBSCAN epsilon")
-        min_samples: int = ConfigParam(default=2, ge=1, description="DBSCAN min_samples")
-        llm_model: str = ConfigParam(fallback="INDEXING_LLM_MODEL", description="LLM model")
+    # Workflow config (module-only)
+    class MapConfig(StepConfig):
+        max_pages: int = ConfigParam(default=1000, ge=1, le=10000)
+        max_depth: int = ConfigParam(default=3, ge=1, le=10)
+        dry_run: bool = ConfigParam(default=False)
 
-    @model(name="indexing.entity_clustering", config_schema=EntityClusteringConfig)
-    def entity_clustering(sources, writer, config: EntityClusteringConfig, **kwargs):
-        clustering = DBSCAN(eps=config.eps, min_samples=config.min_samples)
-        ...
+    config = MapConfig.from_config("map")
+    # Looks for MAP.MAX_PAGES, MAP.MAX_DEPTH, MAP.DRY_RUN
+
+    # Step config with workflow fallback
+    class DiscoveryStepConfig(StepConfig):
+        # Inherits from workflow: MAP.DISCOVERY.MAX_DEPTH -> MAP.MAX_DEPTH
+        max_depth: int = ConfigParam(default=3, workflow_fallback=True)
+        # Step-specific param
+        timeout: int = ConfigParam(default=30)
+        # Global fallback
+        llm_model: str = ConfigParam(fallback="INDEXING_LLM_MODEL")
+
+    config = DiscoveryStepConfig.from_config("map.discovery")
 """
 
 from typing import Any, ClassVar, get_type_hints
 
 from pydantic import BaseModel
 
-from kurt.config.base import get_step_config, load_config
+from kurt.config.base import config_file_exists, load_config
 
 
 class ConfigParam:
     """
-    Metadata for a model configuration parameter.
+    Metadata for a configuration parameter.
 
     Defines default value, fallback key, validation constraints, and description.
-    Used with ModelConfig to declare step-specific configurable parameters.
+    Used with StepConfig to declare configurable parameters.
 
     Args:
         default: Default value if not set in config and no fallback
         fallback: Global config key to fall back to (e.g., "INDEXING_LLM_MODEL")
+        workflow_fallback: If True, falls back to workflow-level param (e.g., MAP.MAX_DEPTH)
         description: Human-readable description of the parameter
         ge: Greater than or equal constraint (for numeric types)
         le: Less than or equal constraint (for numeric types)
 
+    Fallback resolution order:
+        1. Step-specific: MAP.DISCOVERY.MAX_DEPTH
+        2. Workflow-level (if workflow_fallback=True): MAP.MAX_DEPTH
+        3. Global fallback (if fallback set): INDEXING_LLM_MODEL
+        4. Default value
+
     Example:
-        eps: float = ConfigParam(default=0.25, ge=0.0, le=1.0, description="DBSCAN epsilon")
+        # Simple default
+        timeout: int = ConfigParam(default=30)
+
+        # Falls back to workflow config
+        max_depth: int = ConfigParam(default=3, workflow_fallback=True)
+
+        # Falls back to global config
         llm_model: str = ConfigParam(fallback="INDEXING_LLM_MODEL")
+
+        # Both workflow and global fallback
+        fetch_engine: str = ConfigParam(workflow_fallback=True, fallback="INGESTION_FETCH_ENGINE")
     """
 
     def __init__(
         self,
         default: Any = None,
         fallback: str | None = None,
+        workflow_fallback: bool = False,
         description: str = "",
         ge: float | None = None,
         le: float | None = None,
     ):
         self.default = default
         self.fallback = fallback
+        self.workflow_fallback = workflow_fallback
         self.description = description
         self.ge = ge
         self.le = le
@@ -63,6 +98,8 @@ class ConfigParam:
             parts.append(f"default={self.default!r}")
         if self.fallback:
             parts.append(f"fallback={self.fallback!r}")
+        if self.workflow_fallback:
+            parts.append("workflow_fallback=True")
         if self.ge is not None:
             parts.append(f"ge={self.ge}")
         if self.le is not None:
@@ -70,27 +107,40 @@ class ConfigParam:
         return f"ConfigParam({', '.join(parts)})"
 
 
-class ModelConfig(BaseModel):
+class StepConfig(BaseModel):
     """
-    Base class for model (step) configuration.
+    Base class for workflow and step configuration.
 
-    Subclass this to declare configurable parameters for a pipeline step.
-    Parameters are loaded from kurt.config using dot notation with fallback resolution.
+    Subclass this to declare configurable parameters. Parameters can be loaded
+    from kurt.config using dot notation with fallback resolution.
+
+    Supports two naming patterns:
+    - Module-only: "map" -> MAP.PARAM (for workflow configs)
+    - Module.Step: "map.discovery" -> MAP.DISCOVERY.PARAM (for step configs)
 
     Resolution order for each parameter:
-    1. Step-specific: MODULE.STEP.PARAM (e.g., INDEXING.ENTITY_CLUSTERING.EPS)
-    2. Global fallback: specified via ConfigParam.fallback (e.g., INDEXING_LLM_MODEL)
-    3. Default from ConfigParam
+    1. Step-specific: MODULE.STEP.PARAM (e.g., MAP.DISCOVERY.MAX_DEPTH)
+    2. Workflow-level (if workflow_fallback=True): MODULE.PARAM (e.g., MAP.MAX_DEPTH)
+    3. Global fallback: specified via ConfigParam.fallback (e.g., INDEXING_LLM_MODEL)
+    4. Default from ConfigParam
 
     Example:
-        class SectionExtractionsConfig(ModelConfig):
-            llm_model: str = ConfigParam(fallback="INDEXING_LLM_MODEL")
-            batch_size: int = ConfigParam(default=50, ge=1, le=200)
-            max_concurrent: int = ConfigParam(fallback="MAX_CONCURRENT_INDEXING")
+        class MapConfig(StepConfig):
+            max_pages: int = ConfigParam(default=1000)
+            max_depth: int = ConfigParam(default=3)
+            dry_run: bool = ConfigParam(default=False)
 
-        # Load config for a specific model
-        config = SectionExtractionsConfig.load("indexing.section_extractions")
-        print(config.batch_size)  # 50 (default) or value from config
+        class DiscoveryStepConfig(StepConfig):
+            # Inherits from workflow
+            max_depth: int = ConfigParam(default=3, workflow_fallback=True)
+            # Step-specific
+            timeout: int = ConfigParam(default=30)
+
+        # Workflow config
+        workflow_config = MapConfig.from_config("map")
+
+        # Step config with workflow fallback
+        step_config = DiscoveryStepConfig.from_config("map.discovery")
     """
 
     # Class variable to store ConfigParam metadata (not a Pydantic field)
@@ -108,36 +158,51 @@ class ModelConfig(BaseModel):
             if isinstance(value, ConfigParam):
                 cls._param_metadata[name] = value
                 # Replace ConfigParam with its default value so Pydantic uses it
-                # This allows direct instantiation: CAGConfig(top_k=10) to work
+                # This allows direct instantiation: MapConfig(max_pages=500) to work
                 setattr(cls, name, value.default)
 
     @classmethod
-    def load(cls, model_name: str) -> "ModelConfig":
+    def from_config(cls, config_name: str, **overrides) -> "StepConfig":
         """
-        Load configuration for this model from kurt.config.
+        Load configuration from kurt.config with optional overrides.
 
-        Converts model name to config key prefix and resolves each parameter
-        using the fallback chain: step-specific -> global fallback -> default.
+        Supports two naming patterns:
+        - Module-only: "map" -> looks for MAP.PARAM
+        - Module.Step: "map.discovery" -> looks for MAP.DISCOVERY.PARAM
+
+        For step configs, parameters with workflow_fallback=True will fall back
+        to the workflow-level config if not set at step level.
 
         Args:
-            model_name: Full model name (e.g., "indexing.section_extractions")
+            config_name: Config name - "map" or "map.discovery"
+            **overrides: Override specific parameters
 
         Returns:
-            ModelConfig instance with resolved values
+            StepConfig instance with resolved values
 
         Example:
-            config = EntityClusteringConfig.load("indexing.entity_clustering")
-            # Looks for INDEXING.ENTITY_CLUSTERING.EPS, etc.
-        """
-        kurt_config = load_config()
+            # Module-only (workflow config)
+            config = MapConfig.from_config("map")
+            # Looks for MAP.MAX_PAGES, MAP.DRY_RUN
 
-        # Convert model name to MODULE and STEP
-        # "indexing.section_extractions" -> ("INDEXING", "SECTION_EXTRACTIONS")
-        parts = model_name.upper().split(".")
-        if len(parts) < 2:
-            raise ValueError(f"Model name must be in format 'module.step', got: {model_name}")
+            # Module.Step (step config)
+            config = DiscoveryStepConfig.from_config("map.discovery")
+            # Looks for MAP.DISCOVERY.MAX_DEPTH -> MAP.MAX_DEPTH (if workflow_fallback)
+
+            # With overrides
+            config = MapConfig.from_config("map", max_pages=500)
+        """
+        # If no config file exists, just use defaults + overrides
+        if not config_file_exists():
+            return cls(**overrides)
+
+        kurt_config = load_config()
+        extra = getattr(kurt_config, "__pydantic_extra__", {})
+
+        # Parse config_name into module and optional step
+        parts = config_name.upper().split(".")
         module = parts[0]
-        step = "_".join(parts[1:])  # Handle multi-part step names
+        step = "_".join(parts[1:]) if len(parts) > 1 else None
 
         # Get type hints for the config class
         type_hints = get_type_hints(cls)
@@ -145,15 +210,42 @@ class ModelConfig(BaseModel):
         # Resolve each parameter
         values = {}
         for field_name, param in cls._param_metadata.items():
-            # Get raw value from config with fallback resolution
-            raw_value = get_step_config(
-                kurt_config,
-                module=module,
-                step=step,
-                param=field_name.upper(),
-                fallback_key=param.fallback,
-                default=param.default,
-            )
+            # Check if override provided
+            if field_name in overrides:
+                values[field_name] = overrides[field_name]
+                continue
+
+            param_upper = field_name.upper()
+            raw_value = None
+
+            # 1. Try step-specific: MODULE.STEP.PARAM
+            if step:
+                step_key = f"{module}.{step}.{param_upper}"
+                if step_key in extra:
+                    raw_value = extra[step_key]
+
+            # 2. Try workflow-level fallback: MODULE.PARAM (if workflow_fallback=True)
+            if raw_value is None and param.workflow_fallback:
+                workflow_key = f"{module}.{param_upper}"
+                if workflow_key in extra:
+                    raw_value = extra[workflow_key]
+
+            # 3. Try module-level (for module-only configs): MODULE.PARAM
+            if raw_value is None and step is None:
+                module_key = f"{module}.{param_upper}"
+                if module_key in extra:
+                    raw_value = extra[module_key]
+
+            # 4. Try global fallback
+            if raw_value is None and param.fallback:
+                if hasattr(kurt_config, param.fallback):
+                    raw_value = getattr(kurt_config, param.fallback)
+                elif param.fallback in extra:
+                    raw_value = extra[param.fallback]
+
+            # 5. Use default
+            if raw_value is None:
+                raw_value = param.default
 
             # Type coercion based on type hints
             if raw_value is not None and field_name in type_hints:
@@ -172,6 +264,18 @@ class ModelConfig(BaseModel):
         # Handle None
         if value is None:
             return None
+
+        # Handle Optional types
+        origin = getattr(target_type, "__origin__", None)
+        if origin is type(None):
+            return None
+
+        # For Union types (like Optional), get the first non-None type
+        if origin is not None:
+            args = getattr(target_type, "__args__", ())
+            non_none_args = [a for a in args if a is not type(None)]
+            if non_none_args:
+                target_type = non_none_args[0]
 
         # Already correct type
         if isinstance(value, target_type):
@@ -199,32 +303,44 @@ class ModelConfig(BaseModel):
         return value
 
     @classmethod
-    def get_config_keys(cls, model_name: str) -> dict[str, str]:
+    def get_config_keys(cls, config_name: str) -> dict[str, str]:
         """
-        Get the config keys that would be used for this model.
+        Get the config keys that would be used for this config.
 
         Useful for documentation and debugging.
 
         Args:
-            model_name: Full model name (e.g., "indexing.section_extractions")
+            config_name: Config name - "map" or "map.discovery"
 
         Returns:
             Dict mapping parameter names to their full config keys
 
         Example:
-            >>> EntityClusteringConfig.get_config_keys("indexing.entity_clustering")
-            {'eps': 'INDEXING.ENTITY_CLUSTERING.EPS', 'llm_model': 'INDEXING.ENTITY_CLUSTERING.LLM_MODEL'}
-        """
-        parts = model_name.upper().split(".")
-        if len(parts) < 2:
-            raise ValueError(f"Model name must be in format 'module.step', got: {model_name}")
-        module = parts[0]
-        step = "_".join(parts[1:])
+            >>> MapConfig.get_config_keys("map")
+            {'max_pages': 'MAP.MAX_PAGES', 'dry_run': 'MAP.DRY_RUN'}
 
-        return {
-            field_name: f"{module}.{step}.{field_name.upper()}"
-            for field_name in cls._param_metadata
-        }
+            >>> DiscoveryStepConfig.get_config_keys("map.discovery")
+            {'max_depth': 'MAP.DISCOVERY.MAX_DEPTH (-> MAP.MAX_DEPTH)', 'timeout': 'MAP.DISCOVERY.TIMEOUT'}
+        """
+        parts = config_name.upper().split(".")
+        module = parts[0]
+        step = "_".join(parts[1:]) if len(parts) > 1 else None
+
+        if step:
+            prefix = f"{module}.{step}"
+        else:
+            prefix = module
+
+        result = {}
+        for field_name, param in cls._param_metadata.items():
+            key = f"{prefix}.{field_name.upper()}"
+            if step and param.workflow_fallback:
+                key += f" (-> {module}.{field_name.upper()})"
+            if param.fallback:
+                key += f" (-> {param.fallback})"
+            result[field_name] = key
+
+        return result
 
     @classmethod
     def get_param_info(cls) -> dict[str, dict[str, Any]]:
@@ -235,16 +351,21 @@ class ModelConfig(BaseModel):
             Dict mapping parameter names to their metadata (default, fallback, description, etc.)
 
         Example:
-            >>> EntityClusteringConfig.get_param_info()
-            {'eps': {'default': 0.25, 'fallback': None, 'description': 'DBSCAN epsilon', ...}}
+            >>> MapConfig.get_param_info()
+            {'max_pages': {'default': 1000, 'fallback': None, 'description': '...', ...}}
         """
         return {
             name: {
                 "default": param.default,
                 "fallback": param.fallback,
+                "workflow_fallback": param.workflow_fallback,
                 "description": param.description,
                 "ge": param.ge,
                 "le": param.le,
             }
             for name, param in cls._param_metadata.items()
         }
+
+
+# Backwards compatibility alias
+ModelConfig = StepConfig

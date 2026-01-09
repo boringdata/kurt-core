@@ -2,15 +2,12 @@
 Database initialization and management.
 
 This module provides a unified interface for database operations.
-Currently uses SQLite (.kurt/kurt.sqlite) for local storage.
-
-The architecture supports future expansion to other databases (PostgreSQL, etc.)
-without changing application code.
+Supports both SQLite (local dev) and PostgreSQL (production via DBOS).
 
 Usage:
-    from kurt.db.database import get_database_client
+    from kurt.db import get_database_client, get_session
 
-    # Get the database client (currently SQLite)
+    # Get the database client
     db = get_database_client()
 
     # Initialize database
@@ -20,17 +17,20 @@ Usage:
     session = db.get_session()
 
 Or use convenience functions:
-    from kurt.db.database import init_database, get_session
+    from kurt.db import init_database, get_session, managed_session
 
     init_database()
-    session = get_session()
+
+    with managed_session() as session:
+        session.add(LLMTrace(...))
+        # Auto-commits on exit
 """
 
 from contextlib import asynccontextmanager, contextmanager
 from typing import Optional
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
-from sqlmodel import Session
+from sqlmodel import Session, SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from kurt.db.base import DatabaseClient, get_database_client
@@ -41,33 +41,18 @@ __all__ = [
     "Session",
     "init_database",
     "get_session",
-    "session_scope",
     "managed_session",
     "get_async_session_maker",
     "async_session_scope",
     "dispose_async_resources",
+    "ensure_tables",
 ]
 
 
-# Convenience functions
 def init_database() -> None:
-    """
-    Initialize the Kurt database.
-
-    Creates .kurt/kurt.sqlite and all necessary tables.
-    Also stamps the database with the current Alembic schema version.
-    """
+    """Initialize the kurt database."""
     db = get_database_client()
     db.init_database()
-
-    # Initialize Alembic version tracking
-    try:
-        from kurt.db.migrations.utils import initialize_alembic
-
-        initialize_alembic()
-    except Exception as e:
-        # Don't fail database initialization if Alembic setup fails
-        print(f"Warning: Could not initialize migration tracking: {e}")
 
 
 def get_session() -> Session:
@@ -82,41 +67,29 @@ def check_database_exists() -> bool:
     return db.check_database_exists()
 
 
-@contextmanager
-def session_scope(session: Optional[Session] = None):
-    """Context manager for database session lifecycle.
+def ensure_tables(models: list[type[SQLModel]], session: Optional[Session] = None) -> None:
+    """Create tables for the provided SQLModel classes."""
+    if not models:
+        return
 
-    If a session is provided, yields it without closing.
-    If no session is provided, creates a new one and closes it when done.
+    close_session = False
+    if session is None:
+        session = get_session()
+        close_session = True
 
-    Args:
-        session: Optional existing session to use
-
-    Yields:
-        Session: Database session
-
-    Example:
-        with session_scope() as s:
-            result = s.exec(select(Entity)).all()
-    """
-    if session is not None:
-        yield session
-    else:
-        _session = get_session()
-        try:
-            yield _session
-        finally:
-            _session.close()
+    try:
+        engine = session.get_bind()
+        if engine is None:
+            return
+        SQLModel.metadata.create_all(bind=engine, tables=[model.__table__ for model in models])
+    finally:
+        if close_session:
+            session.close()
 
 
 @contextmanager
 def managed_session(session: Optional[Session] = None):
     """Transactional context manager with automatic commit/rollback.
-
-    Unlike session_scope(), this manager:
-    - Commits on successful exit
-    - Rolls back on exception
-    - Always closes the session (if created)
 
     Args:
         session: Optional existing session to use (will NOT be closed/committed)
@@ -126,11 +99,10 @@ def managed_session(session: Optional[Session] = None):
 
     Example:
         with managed_session() as session:
-            session.add(Entity(name="test"))
+            session.add(LLMTrace(workflow_id="123", ...))
             # Auto-commits on exit, rolls back on exception
     """
     if session is not None:
-        # Existing session - don't manage lifecycle
         yield session
     else:
         _session = get_session()
@@ -150,17 +122,11 @@ def managed_session(session: Optional[Session] = None):
 def get_async_session_maker() -> async_sessionmaker:
     """Get async session factory.
 
-    Returns:
-        async_sessionmaker: Factory for creating AsyncSession instances
-
     Usage:
-        from kurt.db import get_async_session_maker
-
         async_session = get_async_session_maker()
 
         async with async_session() as session:
-            result = await session.exec(select(Entity).limit(10))
-            entities = result.all()
+            result = await session.exec(select(LLMTrace).limit(10))
     """
     db = get_database_client()
     return db.get_async_session_maker()
@@ -168,47 +134,21 @@ def get_async_session_maker() -> async_sessionmaker:
 
 @asynccontextmanager
 async def async_session_scope(session: Optional[AsyncSession] = None):
-    """Async session context manager (mirrors sync session_scope).
-
-    This follows the official SQLAlchemy async pattern:
-    - Each concurrent task should create its own AsyncSession
-    - Never share AsyncSession across concurrent tasks
+    """Async session context manager.
 
     Args:
-        session: Optional existing session (for nested calls that want to
-                 reuse the same session, e.g., multiple queries in one transaction)
+        session: Optional existing session (for nested calls)
 
     Yields:
         AsyncSession: Database session
 
     Usage:
-        # Create new session (most common)
-        async def fetch_entity(entity_id: str):
-            async with async_session_scope() as session:
-                result = await session.exec(
-                    select(Entity).where(Entity.id == entity_id)
-                )
-                return result.first()
-
-        # Reuse existing session (nested operations)
-        async def complex_operation():
-            async with async_session_scope() as session:
-                # Multiple queries in same transaction
-                entity = await fetch_entity_with_session(session)
-                await update_entity_with_session(entity, session)
-                await session.commit()
-
-        async def fetch_entity_with_session(session: AsyncSession):
-            async with async_session_scope(session) as s:
-                # Reuses provided session
-                result = await s.exec(select(Entity))
-                return result.first()
+        async with async_session_scope() as session:
+            result = await session.exec(select(LLMTrace))
     """
     if session is not None:
-        # Reuse provided session (nested call)
         yield session
     else:
-        # Create new session
         async_session_maker = get_async_session_maker()
         async with async_session_maker() as _session:
             yield _session
@@ -217,17 +157,7 @@ async def async_session_scope(session: Optional[AsyncSession] = None):
 async def dispose_async_resources():
     """Cleanup async database resources.
 
-    Call this at application shutdown to properly close async connections.
-
-    Example:
-        # In CLI shutdown handler
-        import asyncio
-        from kurt.db import dispose_async_resources
-
-        async def shutdown():
-            await dispose_async_resources()
-
-        asyncio.run(shutdown())
+    Call this at application shutdown.
     """
     db = get_database_client()
     if hasattr(db, "dispose_async_engine"):

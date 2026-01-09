@@ -1,20 +1,22 @@
-"""Telemetry module for Kurt CLI.
+"""Telemetry module for anonymous usage analytics."""
 
-This module provides anonymous usage analytics to help improve Kurt.
-All telemetry is:
-- Anonymous (no PII collected)
-- Transparent (clearly documented)
-- Optional (easy opt-out via DO_NOT_TRACK or config)
-- Non-blocking (never slows down CLI commands)
-"""
-
-from kurt.admin.telemetry.analytics import get_analytics_stats
-from kurt.admin.telemetry.config import is_telemetry_enabled, set_telemetry_enabled
-from kurt.admin.telemetry.tracker import track_event
+from .config import (
+    get_machine_id,
+    get_telemetry_status,
+    is_ci_environment,
+    is_telemetry_enabled,
+    set_telemetry_enabled,
+)
+from .decorators import track_command
+from .tracker import flush_events, track_event
 
 __all__ = [
+    "get_machine_id",
+    "get_telemetry_status",
+    "is_ci_environment",
     "is_telemetry_enabled",
     "set_telemetry_enabled",
+    "flush_events",
+    "track_command",
     "track_event",
-    "get_analytics_stats",
 ]

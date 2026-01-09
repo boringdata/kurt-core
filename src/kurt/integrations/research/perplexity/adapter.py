@@ -4,10 +4,13 @@ Perplexity API adapter implementation.
 Uses Perplexity's chat completions API for research queries.
 """
 
+from __future__ import annotations
+
 import time
 import uuid
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Optional
+from urllib.parse import urlparse
 
 import requests
 
@@ -19,22 +22,24 @@ class PerplexityAdapter(ResearchAdapter):
 
     API_URL = "https://api.perplexity.ai/chat/completions"
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """
         Initialize Perplexity client.
 
         Required config keys:
         - api_key: Perplexity API key
+
+        Optional config keys:
         - default_model: Model to use (default: sonar-reasoning)
         - default_recency: Time filter (default: day)
-        - max_tokens: Max response tokens
-        - temperature: Response temperature
+        - max_tokens: Max response tokens (default: 4000)
+        - temperature: Response temperature (default: 0.2)
         """
         self.api_key = config["api_key"]
         self.default_model = config.get("default_model", "sonar-reasoning")
         self.default_recency = config.get("default_recency", "day")
-        self.max_tokens = config.get("max_tokens", 4000)
-        self.temperature = config.get("temperature", 0.2)
+        self.max_tokens = int(config.get("max_tokens", 4000))
+        self.temperature = float(config.get("temperature", 0.2))
 
     def test_connection(self) -> bool:
         """Test if Perplexity API connection is working."""
@@ -47,7 +52,11 @@ class PerplexityAdapter(ResearchAdapter):
             return False
 
     def search(
-        self, query: str, recency: Optional[str] = None, model: Optional[str] = None, **kwargs
+        self,
+        query: str,
+        recency: Optional[str] = None,
+        model: Optional[str] = None,
+        **kwargs,
     ) -> ResearchResult:
         """
         Execute research query via Perplexity API.
@@ -56,7 +65,7 @@ class PerplexityAdapter(ResearchAdapter):
             query: Research question or topic
             recency: Time filter (hour, day, week, month)
             model: Override default model
-            **kwargs: Additional parameters
+            **kwargs: Additional parameters (e.g., domains for filtering)
 
         Returns:
             ResearchResult with synthesized answer and citations
@@ -105,10 +114,10 @@ class PerplexityAdapter(ResearchAdapter):
         citations = []
         if "citations" in data:
             for i, cite_url in enumerate(data["citations"], 1):
-                # Try to get title from the content if available
-                # Perplexity includes citation markers like [1], [2] in the text
                 citation = Citation(
-                    title=f"Source {i}", url=cite_url, domain=self._extract_domain(cite_url)
+                    title=f"Source {i}",
+                    url=cite_url,
+                    domain=self._extract_domain(cite_url),
                 )
                 citations.append(citation)
 
@@ -133,8 +142,6 @@ class PerplexityAdapter(ResearchAdapter):
     def _extract_domain(self, url: str) -> str:
         """Extract domain from URL."""
         try:
-            from urllib.parse import urlparse
-
             parsed = urlparse(url)
             return parsed.netloc
         except Exception:

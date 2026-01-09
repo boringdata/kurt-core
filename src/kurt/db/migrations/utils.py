@@ -3,7 +3,7 @@
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Optional
 
 from alembic import command
 from alembic.config import Config as AlembicConfig
@@ -15,9 +15,6 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 from rich.prompt import Confirm
 from rich.table import Table
 from sqlalchemy import create_engine
-
-from kurt import __version__
-from kurt.config import load_config
 
 console = Console()
 
@@ -36,11 +33,60 @@ def get_alembic_config() -> AlembicConfig:
     return config
 
 
+def get_database_url() -> str:
+    """Get database URL from environment or config."""
+    import os
+
+    # Check for DATABASE_URL (PostgreSQL for production/DBOS)
+    database_url = os.environ.get("DATABASE_URL")
+    if database_url:
+        # Handle Heroku-style postgres:// URLs
+        if database_url.startswith("postgres://"):
+            database_url = database_url.replace("postgres://", "postgresql://", 1)
+        return database_url
+
+    # Try to load from kurt config
+    try:
+        from kurt.config import config_file_exists, load_config
+
+        if config_file_exists():
+            kurt_config = load_config()
+            db_path = kurt_config.get_absolute_db_path()
+            return f"sqlite:///{db_path}"
+    except Exception:
+        pass
+
+    # Default to SQLite for local development
+    db_path = os.environ.get("KURT_DB_PATH", ".kurt/kurt.sqlite")
+    return f"sqlite:///{db_path}"
+
+
+def get_database_path() -> Path:
+    """Get the database file path (for SQLite only)."""
+    import os
+
+    # Check for DATABASE_URL (PostgreSQL) - no file path
+    database_url = os.environ.get("DATABASE_URL")
+    if database_url and database_url.startswith("postgres"):
+        raise ValueError("PostgreSQL database has no file path")
+
+    # Try to load from kurt config
+    try:
+        from kurt.config import config_file_exists, load_config
+
+        if config_file_exists():
+            kurt_config = load_config()
+            return kurt_config.get_absolute_db_path()
+    except Exception:
+        pass
+
+    # Default
+    return Path(os.environ.get("KURT_DB_PATH", ".kurt/kurt.sqlite"))
+
+
 def get_database_engine():
     """Get SQLAlchemy engine for the current project's database."""
-    kurt_config = load_config()
-    db_path = kurt_config.get_absolute_db_path()
-    db_url = f"sqlite:///{db_path}"
+    db_url = get_database_url()
     return create_engine(db_url)
 
 
@@ -61,7 +107,26 @@ def get_current_version() -> Optional[str]:
         return None
 
 
-def get_pending_migrations() -> List[Tuple[str, str]]:
+def is_known_revision(revision: str) -> bool:
+    """
+    Check if a revision ID exists in our migration scripts.
+
+    Used to detect databases created with a different migration chain (e.g., kurt/ vs kurt/).
+    """
+    try:
+        config = get_alembic_config()
+        script = ScriptDirectory.from_config(config)
+
+        # Get all known revisions
+        for rev in script.walk_revisions(base="base", head="heads"):
+            if rev.revision == revision:
+                return True
+        return False
+    except Exception:
+        return False
+
+
+def get_pending_migrations() -> list[tuple[str, str]]:
     """
     Get list of pending migrations.
 
@@ -97,7 +162,7 @@ def get_pending_migrations() -> List[Tuple[str, str]]:
     return list(reversed(pending))
 
 
-def get_migration_history() -> List[Tuple[str, str, Optional[str]]]:
+def get_migration_history() -> list[tuple[str, str, Optional[str]]]:
     """
     Get migration history from the database.
 
@@ -133,11 +198,19 @@ def backup_database(silent: bool = False) -> Optional[Path]:
         silent: If True, suppress console output
 
     Returns:
-        Path to backup file or None if backup failed
+        Path to backup file or None if backup failed or not applicable
     """
+    import os
+
+    # Skip backup for PostgreSQL
+    database_url = os.environ.get("DATABASE_URL")
+    if database_url and database_url.startswith("postgres"):
+        if not silent:
+            console.print("[dim]PostgreSQL database - backup managed externally[/dim]")
+        return None
+
     try:
-        kurt_config = load_config()
-        db_path = kurt_config.get_absolute_db_path()
+        db_path = get_database_path()
 
         if not db_path.exists():
             if not silent:
@@ -166,11 +239,18 @@ def check_migrations_needed() -> bool:
     Returns:
         True if migrations are pending, False otherwise
     """
+    # Check if database has an unknown revision (from different migration chain)
+    current = get_current_version()
+    if current and not is_known_revision(current):
+        # Database was created with different migrations (e.g., kurt/ not kurt/)
+        # Don't report as needing migrations - would fail anyway
+        return False
+
     pending = get_pending_migrations()
     return len(pending) > 0
 
 
-def display_migration_prompt(pending: List[Tuple[str, str]]) -> bool:
+def display_migration_prompt(pending: list[tuple[str, str]]) -> bool:
     """
     Display Rich UI for pending migrations and ask for confirmation.
 
@@ -181,15 +261,12 @@ def display_migration_prompt(pending: List[Tuple[str, str]]) -> bool:
         True if user confirms migration, False otherwise
     """
     console.print()
-    console.print(
-        Panel.fit("[yellow]⚠  Database Migration Required[/yellow]", border_style="yellow")
-    )
+    console.print(Panel.fit("[yellow]Database Migration Required[/yellow]", border_style="yellow"))
     console.print()
 
     # Show version info
     current_version = get_current_version() or "none"
     console.print(f"[dim]Current schema version:[/dim] {current_version}")
-    console.print(f"[dim]Kurt CLI version:[/dim] {__version__}")
     console.print()
 
     # Show pending migrations table
@@ -202,16 +279,16 @@ def display_migration_prompt(pending: List[Tuple[str, str]]) -> bool:
         # Truncate long descriptions
         if len(description) > 50:
             description = description[:47] + "..."
-        table.add_row(revision[:8], description, "⏳ Pending")
+        table.add_row(revision[:8], description, "Pending")
 
     console.print(table)
     console.print()
 
     # Show what will happen
     console.print("[dim]This migration will:[/dim]")
-    console.print("  • Create automatic backup: [cyan].kurt/kurt.sqlite.backup.TIMESTAMP[/cyan]")
-    console.print(f"  • Apply {len(pending)} schema change(s)")
-    console.print("  • Preserve all existing data")
+    console.print("  - Create automatic backup: [cyan].kurt/kurt.sqlite.backup.TIMESTAMP[/cyan]")
+    console.print(f"  - Apply {len(pending)} schema change(s)")
+    console.print("  - Preserve all existing data")
     console.print()
 
     # Ask for confirmation
@@ -243,11 +320,30 @@ def apply_migrations(auto_confirm: bool = False, silent: bool = False) -> dict:
 
         logging.getLogger("alembic").setLevel(logging.ERROR)
 
+    # Check for unknown revision (database from different migration chain)
+    current = get_current_version()
+    if current and not is_known_revision(current):
+        error_msg = (
+            f"Database has unknown revision '{current}' "
+            "(created with different migration chain). "
+            "Run: sqlite3 .kurt/kurt.sqlite \"UPDATE alembic_version SET version_num = '002_workflow_tables';\""
+        )
+        if not silent:
+            console.print(f"[red]{error_msg}[/red]")
+        return {
+            "success": False,
+            "applied": False,
+            "count": 0,
+            "current_version": current,
+            "backup_path": None,
+            "error": error_msg,
+        }
+
     pending = get_pending_migrations()
 
     if not pending:
         if not silent:
-            console.print("[green]✓ Database is up to date[/green]")
+            console.print("[green]Database is up to date[/green]")
         return {
             "success": True,
             "applied": False,
@@ -258,15 +354,12 @@ def apply_migrations(auto_confirm: bool = False, silent: bool = False) -> dict:
         }
 
     # Show prompt unless auto-confirm is enabled
-    if not auto_confirm:
+    if not auto_confirm and not silent:
         if not display_migration_prompt(pending):
-            if not silent:
-                console.print()
-                console.print("[yellow]⚠ Migration skipped[/yellow]")
-                console.print(
-                    "[dim]Note: Some features may not work without the latest schema[/dim]"
-                )
-                console.print()
+            console.print()
+            console.print("[yellow]Migration skipped[/yellow]")
+            console.print("[dim]Note: Some features may not work without the latest schema[/dim]")
+            console.print()
             return {
                 "success": False,
                 "applied": False,
@@ -279,6 +372,8 @@ def apply_migrations(auto_confirm: bool = False, silent: bool = False) -> dict:
     if not silent:
         console.print()
 
+    backup_path = None
+
     try:
         # Create backup
         if not silent:
@@ -288,7 +383,7 @@ def apply_migrations(auto_confirm: bool = False, silent: bool = False) -> dict:
                 console=console,
             ) as progress:
                 backup_task = progress.add_task("[cyan]Creating backup...", total=None)
-                backup_path = backup_database(silent=False)
+                backup_path = backup_database(silent=True)
                 progress.update(backup_task, completed=True)
         else:
             # Silent backup
@@ -335,7 +430,7 @@ def apply_migrations(auto_confirm: bool = False, silent: bool = False) -> dict:
             backup_info = f"[dim]Backup saved:[/dim] {backup_path.name}" if backup_path else ""
             console.print(
                 Panel.fit(
-                    f"[bold green]✅ Database migrated successfully![/bold green]\n"
+                    f"[bold green]Database migrated successfully![/bold green]\n"
                     f"[dim]Schema version:[/dim] {current_version or 'unknown'}\n"
                     f"{backup_info}",
                     border_style="green",
@@ -357,7 +452,7 @@ def apply_migrations(auto_confirm: bool = False, silent: bool = False) -> dict:
             console.print()
             console.print(
                 Panel.fit(
-                    f"[bold red]❌ Migration failed![/bold red]\n" f"[dim]Error:[/dim] {str(e)}",
+                    f"[bold red]Migration failed![/bold red]\n" f"[dim]Error:[/dim] {str(e)}",
                     border_style="red",
                 )
             )
@@ -379,24 +474,31 @@ def apply_migrations(auto_confirm: bool = False, silent: bool = False) -> dict:
 
 def show_migration_status() -> None:
     """Display current migration status with Rich UI."""
+    import os
+
     console.print()
     console.print("[bold]Migration Status[/bold]\n")
 
     # Database info
-    kurt_config = load_config()
-    db_path = kurt_config.get_absolute_db_path()
-    console.print(f"[dim]Database:[/dim] {db_path}")
+    database_url = os.environ.get("DATABASE_URL")
+    if database_url and database_url.startswith("postgres"):
+        console.print("[dim]Database:[/dim] PostgreSQL (via DATABASE_URL)")
+    else:
+        try:
+            db_path = get_database_path()
+            console.print(f"[dim]Database:[/dim] {db_path}")
+        except Exception:
+            console.print("[dim]Database:[/dim] SQLite (path unknown)")
 
     current_version = get_current_version()
     console.print(f"[dim]Schema version:[/dim] {current_version or 'not initialized'}")
-    console.print(f"[dim]Kurt CLI version:[/dim] {__version__}")
     console.print()
 
     # Check for pending migrations
     pending = get_pending_migrations()
 
     if pending:
-        console.print("[yellow]⚠ Pending migrations detected[/yellow]\n")
+        console.print("[yellow]Pending migrations detected[/yellow]\n")
 
         table = Table(title="Pending Migrations", show_header=True, header_style="bold yellow")
         table.add_column("Revision", style="cyan", width=12)
@@ -424,7 +526,7 @@ def show_migration_status() -> None:
             console.print(table)
             console.print()
 
-        console.print("[green]✓ Database is up to date[/green]")
+        console.print("[green]Database is up to date[/green]")
 
     console.print()
 
@@ -437,9 +539,7 @@ def initialize_alembic() -> None:
         command.stamp(config, "head")
 
         current_version = get_current_version()
-        console.print(
-            f"[green]✓ Database initialized with schema version: {current_version}[/green]"
-        )
+        console.print(f"[green]Database initialized with schema version: {current_version}[/green]")
 
     except Exception as e:
         console.print(f"[red]Failed to initialize migrations: {e}[/red]")
