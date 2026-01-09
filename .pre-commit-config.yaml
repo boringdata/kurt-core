@@ -7,3 +7,12 @@ repos:
         args: [--fix]
       # Run the formatter
       - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: eslint
+        name: eslint
+        entry: bash -c 'cd src/kurt/web/client && npm run lint'
+        language: system
+        files: ^src/kurt/web/client/src/.*\.(js|jsx)$
+        pass_filenames: false
