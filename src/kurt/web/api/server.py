@@ -983,10 +983,15 @@ def api_list_workflows(
         workflows = []
         for row in result.fetchall():
             workflow_uuid = row[0]
-            parent_workflow_id = _decode_dbos_event_value(row[5]) if row[5] else None
+            raw_parent = row[5]
+            parent_workflow_id = _decode_dbos_event_value(raw_parent) if raw_parent else None
 
             # If filtering by parent_id, only include matching children
             if parent_id and parent_workflow_id != parent_id:
+                continue
+
+            # If NOT filtering by parent_id, hide child workflows (they show nested under their parent)
+            if not parent_id and parent_workflow_id:
                 continue
 
             workflow = {

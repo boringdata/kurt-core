@@ -20,7 +20,6 @@ export default function WorkflowRow({
   const [inputExpanded, setInputExpanded] = useState(false)
   const [stepLogs, setStepLogs] = useState({}) // { stepName: logs[] }
   const [childWorkflows, setChildWorkflows] = useState([])
-  const [childrenExpanded, setChildrenExpanded] = useState(false)
   const [expandedChildId, setExpandedChildId] = useState(null)
 
   const isRunning = workflow.status === 'PENDING' || workflow.status === 'ENQUEUED'
@@ -187,12 +186,12 @@ export default function WorkflowRow({
     }
   }, [workflow?.workflow_uuid, workflow?.workflow_type])
 
-  // Fetch child workflows when children section is expanded
+  // Fetch child workflows when steps section is expanded (for agent workflows)
   useEffect(() => {
-    if (childrenExpanded && workflow.workflow_type === 'agent') {
+    if (stepsExpanded && workflow.workflow_type === 'agent') {
       fetchChildWorkflows()
     }
-  }, [childrenExpanded, fetchChildWorkflows, workflow.workflow_type])
+  }, [stepsExpanded, fetchChildWorkflows, workflow.workflow_type])
 
   const shortId = workflow.workflow_uuid?.slice(0, 8) || ''
   // Use definition_name for agent workflows, otherwise use the workflow name
@@ -446,7 +445,7 @@ export default function WorkflowRow({
             </div>
           )}
 
-          {/* Collapsible Steps section */}
+          {/* Collapsible Steps section (includes child workflows for agents) */}
           {workflow.status === 'SUCCESS' && liveStatus && (
             <div className="workflow-collapsible-section">
               {(() => {
@@ -454,8 +453,10 @@ export default function WorkflowRow({
                 const totalSuccess = steps.reduce((sum, s) => sum + (s.success || 0), 0)
                 const totalError = steps.reduce((sum, s) => sum + (s.error || 0), 0)
                 const total = totalSuccess + totalError
+                const isAgent = workflow.workflow_type === 'agent'
+                const stepCount = steps.length + (isAgent ? childWorkflows.length : 0)
 
-                if (steps.length === 0) return null
+                if (steps.length === 0 && !isAgent) return null
 
                 return (
                   <>
@@ -476,13 +477,15 @@ export default function WorkflowRow({
                       </span>
                       <span className="workflow-section-label">Steps</span>
                       <span className="workflow-section-preview">
-                        {total > 0 ? (
+                        {isAgent ? (
+                          `${steps.length} step${steps.length !== 1 ? 's' : ''}${childWorkflows.length > 0 ? ` + ${childWorkflows.length} workflow${childWorkflows.length !== 1 ? 's' : ''}` : ''}`
+                        ) : total > 0 ? (
                           <>
                             {totalSuccess} processed
                             {totalError > 0 && `, ${totalError} failed`}
                           </>
                         ) : (
-                          `${steps.length} steps`
+                          `${stepCount} steps`
                         )}
                       </span>
                     </div>
@@ -542,61 +545,32 @@ export default function WorkflowRow({
                             </div>
                           )
                         })}
+                        {/* Child workflows as nested steps for agent workflows */}
+                        {isAgent && depth < 2 && childWorkflows.map((child) => (
+                          <div key={child.workflow_uuid} className="workflow-step-item workflow-child-step">
+                            <WorkflowRow
+                              workflow={child}
+                              isExpanded={expandedChildId === child.workflow_uuid}
+                              onToggleExpand={() =>
+                                setExpandedChildId(
+                                  expandedChildId === child.workflow_uuid ? null : child.workflow_uuid
+                                )
+                              }
+                              onAttach={() => onAttach?.(child.workflow_uuid)}
+                              onCancel={() => onCancel?.(child.workflow_uuid)}
+                              getStatusBadgeClass={getStatusBadgeClass}
+                              depth={depth + 1}
+                            />
+                          </div>
+                        ))}
+                        {isAgent && childWorkflows.length === 0 && (
+                          <div className="workflow-no-children">No nested workflows triggered</div>
+                        )}
                       </div>
                     )}
                   </>
                 )
               })()}
-            </div>
-          )}
-
-          {/* Child Workflows section for agent workflows */}
-          {workflow.workflow_type === 'agent' && depth < 2 && (
-            <div className="workflow-collapsible-section">
-              <div
-                className="workflow-section-header"
-                onClick={() => setChildrenExpanded(!childrenExpanded)}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    setChildrenExpanded(!childrenExpanded)
-                  }
-                }}
-              >
-                <span className="workflow-section-toggle">
-                  {childrenExpanded ? '▼' : '▶'}
-                </span>
-                <span className="workflow-section-label">Child Workflows</span>
-                <span className="workflow-section-preview">
-                  {childWorkflows.length > 0 ? `${childWorkflows.length} workflow(s)` : 'Click to load'}
-                </span>
-              </div>
-              {childrenExpanded && (
-                <div className="workflow-section-content workflow-children">
-                  {childWorkflows.length === 0 ? (
-                    <div className="workflow-no-children">No child workflows</div>
-                  ) : (
-                    childWorkflows.map((child) => (
-                      <WorkflowRow
-                        key={child.workflow_uuid}
-                        workflow={child}
-                        isExpanded={expandedChildId === child.workflow_uuid}
-                        onToggleExpand={() =>
-                          setExpandedChildId(
-                            expandedChildId === child.workflow_uuid ? null : child.workflow_uuid
-                          )
-                        }
-                        onAttach={() => onAttach?.(child.workflow_uuid)}
-                        onCancel={() => onCancel?.(child.workflow_uuid)}
-                        getStatusBadgeClass={getStatusBadgeClass}
-                        depth={depth + 1}
-                      />
-                    ))
-                  )}
-                </div>
-              )}
             </div>
           )}
 
