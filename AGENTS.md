@@ -776,9 +776,13 @@ When an agent workflow runs `kurt` CLI commands (e.g., `kurt content map`, `kurt
 
 #### Supported Child Workflows
 
-These workflows automatically support parent linking:
+All workflows in `src/kurt/workflows/` support parent linking via the `@with_parent_workflow_id` decorator:
 - `execute_agent_workflow` - Agent workflows running other agents
 - `map_workflow` - Content mapping via `kurt content map`
+- `fetch_workflow` - Content fetching via `kurt content fetch`
+- `research_workflow` - Research queries via `kurt research`
+- `signals_workflow` - Signal monitoring via `kurt signals`
+- `domain_analytics_workflow` - Analytics sync via `kurt analytics`
 
 #### Environment Variable
 
@@ -790,33 +794,31 @@ This is automatically set by `agent_execution_step()` and inherited by all subpr
 
 #### Adding Nested Support to New Workflows
 
-**IMPORTANT**: DBOS events must be set from INSIDE the `@DBOS.workflow()` function, not from outside code.
-
-Add this helper and call it at the start of your workflow:
+Use the `@with_parent_workflow_id` decorator from `kurt.core`:
 
 ```python
-import os
 from dbos import DBOS
+from kurt.core import with_parent_workflow_id
 
-def _store_parent_workflow_id() -> None:
-    """Store parent workflow ID from environment if available."""
-    parent_id = os.environ.get("KURT_PARENT_WORKFLOW_ID")
-    if parent_id:
-        try:
-            DBOS.set_event("parent_workflow_id", parent_id)
-        except Exception:
-            pass  # Don't fail workflow if storage fails
+@DBOS.workflow()
+@with_parent_workflow_id
+def my_workflow(config_dict: dict) -> dict:
+    workflow_id = DBOS.workflow_id
+    DBOS.set_event("status", "running")
+    # ... rest of workflow
+```
 
+The decorator automatically reads `KURT_PARENT_WORKFLOW_ID` from the environment and stores it as a DBOS event. It must be placed AFTER `@DBOS.workflow()` (decorators apply bottom-up).
+
+Alternatively, call `store_parent_workflow_id()` manually inside the workflow:
+
+```python
+from kurt.core import store_parent_workflow_id
 
 @DBOS.workflow()
 def my_workflow(config_dict: dict) -> dict:
-    workflow_id = DBOS.workflow_id
-
-    # Store parent workflow ID for nested display - MUST be inside workflow function
-    _store_parent_workflow_id()
-
+    store_parent_workflow_id()  # Must be inside @DBOS.workflow function
     # ... rest of workflow
-    DBOS.set_event("status", "running")
 ```
 
 #### Querying Parent-Child Relationships

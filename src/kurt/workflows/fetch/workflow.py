@@ -6,7 +6,7 @@ from typing import Any
 
 from dbos import DBOS
 
-from kurt.core import run_workflow, track_step
+from kurt.core import run_workflow, track_step, with_parent_workflow_id
 
 from .config import FetchConfig
 from .steps import embedding_step, fetch_step, persist_fetch_documents, save_content_step
@@ -27,6 +27,7 @@ def _has_embedding_api_key() -> bool:
 
 
 @DBOS.workflow()
+@with_parent_workflow_id
 def fetch_workflow(docs: list[dict[str, Any]], config_dict: dict[str, Any]) -> dict[str, Any]:
     """
     Fetch content from discovered documents.

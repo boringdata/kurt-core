@@ -7,13 +7,14 @@ from typing import Any
 
 from dbos import DBOS
 
-from kurt.core import run_workflow, track_step
+from kurt.core import run_workflow, track_step, with_parent_workflow_id
 
 from .config import SignalsConfig
 from .steps import fetch_signals_step, persist_signals
 
 
 @DBOS.workflow()
+@with_parent_workflow_id
 def signals_workflow(config_dict: dict[str, Any]) -> dict[str, Any]:
     """
     Fetch signals from a source (Reddit, HN, RSS feeds).
