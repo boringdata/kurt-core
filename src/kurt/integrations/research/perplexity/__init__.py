@@ -1,4 +1,4 @@
-"""Perplexity research adapter for Kurt."""
+"""Perplexity AI research adapter."""
 
 from kurt.integrations.research.perplexity.adapter import PerplexityAdapter
 

@@ -1,99 +1,97 @@
-"""
-Framework utilities for model-based indexing pipeline.
-"""
-
-from .dbos_integration import configure_dbos_writer
-from .decorator import (
-    apply_dspy_on_df,
-    create_timestamp_triggers,
-    get_all_tables,
-    get_table,
-    model,
-    table,
-)
+from .core import LLMStep, llm_step
+from .dbos import destroy_dbos, init_dbos
 from .display import (
-    display,
-    make_progress_callback,
+    StepDisplay,
+    is_display_enabled,
     print_info,
-    print_inline_table,
-    print_progress,
     print_warning,
+    set_display_enabled,
 )
-from .dspy_helpers import (
-    LLMAPIError,
-    LLMAuthenticationError,
-    LLMRateLimitError,
-    get_dspy_lm,
-    parse_json_columns,
-    to_dict,
-    to_list,
+from .embedding_step import (
+    EmbeddingStep,
+    bytes_to_embedding,
+    embedding_step,
+    embedding_to_bytes,
+    generate_document_embedding,
+    generate_embeddings,
 )
-from .mixins import (
-    LLMTelemetryMixin,
-    PipelineModelBase,
-    _serialize,
-    apply_dspy_telemetry,
-    apply_field_renames,
+from .hooks import CompositeStepHooks, NoopStepHooks, StepHooks
+from .mocking import (
+    create_content_aware_factory,
+    create_embedding_response,
+    create_mock_embedding,
+    create_response_factory,
+    mock_embedding_step,
+    mock_embeddings,
+    mock_llm,
 )
-from .model_runner import (
-    ModelContext,
-    PipelineContext,
-    execute_model_sync,
-    run_model,
-    run_models,
-    run_pipeline,
+from .runner import run_workflow
+from .status import (
+    format_live_status,
+    format_step_logs,
+    get_live_status,
+    get_progress_page,
+    get_step_logs,
+    get_step_logs_page,
+    paginate_stream,
+    read_workflow_events,
+    read_workflow_streams,
 )
-from .pipeline import PipelineConfig, get_pipeline
-from .references import Reference
-from .registry import ModelRegistry
-from .table_io import TableReader, TableWriter
-from .workflow import resolve_pipeline, run_pipeline_workflow
+from .tracing import LLMTracer, TracingHooks
+from .tracking import (
+    TrackingHooks,
+    WorkflowTracker,
+    log_item,
+    step_log,
+    track_step,
+    update_step_progress,
+)
+from .workflow_utils import store_parent_workflow_id, with_parent_workflow_id
 
 __all__ = [
-    # Core
-    "model",
-    "Reference",
-    "TableReader",
-    "TableWriter",
-    "ModelRegistry",
-    "display",
-    "print_progress",
-    "print_info",
-    "print_inline_table",
+    "LLMStep",
+    "llm_step",
+    "EmbeddingStep",
+    "embedding_step",
+    "generate_embeddings",
+    "generate_document_embedding",
+    "embedding_to_bytes",
+    "bytes_to_embedding",
+    "StepHooks",
+    "NoopStepHooks",
+    "CompositeStepHooks",
+    "WorkflowTracker",
+    "TrackingHooks",
+    "LLMTracer",
+    "TracingHooks",
+    "track_step",
+    "update_step_progress",
+    "step_log",
+    "log_item",
+    "get_live_status",
+    "get_progress_page",
+    "get_step_logs",
+    "get_step_logs_page",
+    "paginate_stream",
+    "format_live_status",
+    "format_step_logs",
+    "read_workflow_events",
+    "read_workflow_streams",
+    "mock_llm",
+    "mock_embeddings",
+    "mock_embedding_step",
+    "create_response_factory",
+    "create_content_aware_factory",
+    "create_mock_embedding",
+    "create_embedding_response",
+    "init_dbos",
+    "destroy_dbos",
+    "run_workflow",
+    "StepDisplay",
+    "is_display_enabled",
+    "set_display_enabled",
     "print_warning",
-    "make_progress_callback",
-    "configure_dbos_writer",
-    # Pipeline execution
-    "ModelContext",
-    "PipelineContext",
-    "PipelineConfig",
-    "get_pipeline",
-    "run_pipeline",
-    "run_pipeline_workflow",
-    "resolve_pipeline",
-    "run_model",
-    "run_models",
-    "execute_model_sync",
-    # Mixins
-    "PipelineModelBase",
-    "LLMTelemetryMixin",
-    "_serialize",
-    "apply_dspy_telemetry",
-    "apply_field_renames",
-    # DSPy helpers
-    "get_dspy_lm",
-    "parse_json_columns",
-    "to_dict",
-    "to_list",
-    # LLM Errors
-    "LLMAuthenticationError",
-    "LLMRateLimitError",
-    "LLMAPIError",
-    # Table/Data Model decorators (NEW)
-    "table",
-    "get_table",
-    "get_all_tables",
-    "create_timestamp_triggers",
-    # DSPy DataFrame utility
-    "apply_dspy_on_df",
+    "print_info",
+    "store_parent_workflow_id",
+    "with_parent_workflow_id",
 ]

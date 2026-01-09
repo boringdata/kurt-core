@@ -1,0 +1,402 @@
+"""Tests for agent workflow executor."""
+
+from __future__ import annotations
+
+import json
+import os
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+
+class TestToolTrackingHelpers:
+    """Tests for tool tracking helper functions."""
+
+    def test_create_tool_tracking_settings(self, tmp_path):
+        """Test _create_tool_tracking_settings creates temp files."""
+        from kurt.workflows.agents.executor import _create_tool_tracking_settings
+
+        settings_path, tool_log_path = _create_tool_tracking_settings()
+
+        try:
+            # Verify settings file exists and has correct structure
+            assert os.path.exists(settings_path)
+            with open(settings_path) as f:
+                settings = json.load(f)
+            assert "hooks" in settings
+            assert "PostToolUse" in settings["hooks"]
+            assert settings["hooks"]["PostToolUse"][0]["matcher"] == "*"
+            assert (
+                "kurt agents track-tool"
+                in settings["hooks"]["PostToolUse"][0]["hooks"][0]["command"]
+            )
+
+            # Verify tool log file exists
+            assert os.path.exists(tool_log_path)
+        finally:
+            # Cleanup
+            try:
+                os.unlink(settings_path)
+            except Exception:
+                pass
+            try:
+                os.unlink(tool_log_path)
+            except Exception:
+                pass
+
+    def test_cleanup_tool_tracking_counts_lines(self, tmp_path):
+        """Test _cleanup_tool_tracking counts tool calls correctly."""
+        from kurt.workflows.agents.executor import _cleanup_tool_tracking
+
+        # Create temp files
+        settings_path = tmp_path / "settings.json"
+        tool_log_path = tmp_path / "tools.jsonl"
+
+        settings_path.write_text("{}")
+        tool_log_path.write_text(
+            '{"tool_name": "Bash", "tool_use_id": "1"}\n'
+            '{"tool_name": "Read", "tool_use_id": "2"}\n'
+            '{"tool_name": "Write", "tool_use_id": "3"}\n'
+        )
+
+        count = _cleanup_tool_tracking(str(settings_path), str(tool_log_path))
+
+        assert count == 3
+        # Verify files were deleted
+        assert not settings_path.exists()
+        assert not tool_log_path.exists()
+
+    def test_cleanup_tool_tracking_empty_file(self, tmp_path):
+        """Test _cleanup_tool_tracking handles empty log file."""
+        from kurt.workflows.agents.executor import _cleanup_tool_tracking
+
+        settings_path = tmp_path / "settings.json"
+        tool_log_path = tmp_path / "tools.jsonl"
+
+        settings_path.write_text("{}")
+        tool_log_path.write_text("")
+
+        count = _cleanup_tool_tracking(str(settings_path), str(tool_log_path))
+
+        assert count == 0
+
+    def test_cleanup_tool_tracking_missing_file(self, tmp_path):
+        """Test _cleanup_tool_tracking handles missing files gracefully."""
+        from kurt.workflows.agents.executor import _cleanup_tool_tracking
+
+        settings_path = tmp_path / "nonexistent_settings.json"
+        tool_log_path = tmp_path / "nonexistent_tools.jsonl"
+
+        # Should not raise, should return 0
+        count = _cleanup_tool_tracking(str(settings_path), str(tool_log_path))
+        assert count == 0
+
+
+class TestResolveTemplate:
+    """Tests for template resolution."""
+
+    def test_resolve_template_basic(self):
+        """Test basic template variable resolution."""
+        from kurt.workflows.agents.executor import resolve_template
+
+        body = "Hello {{name}}, today is {{date}}"
+        inputs = {"name": "World"}
+
+        result = resolve_template(body, inputs)
+
+        assert "World" in result
+        # date should be resolved to current date
+        import datetime
+
+        assert datetime.datetime.now().strftime("%Y-%m-%d") in result
+
+    def test_resolve_template_list_input(self):
+        """Test template resolution with list input."""
+        from kurt.workflows.agents.executor import resolve_template
+
+        body = "Topics: {{topics}}"
+        inputs = {"topics": ["AI", "ML", "NLP"]}
+
+        result = resolve_template(body, inputs)
+
+        assert "AI, ML, NLP" in result
+
+    def test_resolve_template_unset_variable(self):
+        """Test template resolution with unset variables."""
+        from kurt.workflows.agents.executor import resolve_template
+
+        body = "Hello {{name}}, your id is {{id}}"
+        inputs = {"name": "Test"}
+
+        result = resolve_template(body, inputs)
+
+        assert "Test" in result
+        assert "{{id}}" in result  # Unset variables remain unchanged
+
+    def test_resolve_template_builtin_vars(self):
+        """Test builtin template variables."""
+        from kurt.workflows.agents.executor import resolve_template
+
+        body = "Date: {{date}}, Time: {{time}}, Weekday: {{weekday}}"
+        inputs = {}
+
+        result = resolve_template(body, inputs)
+
+        # Builtins should be resolved
+        assert "{{date}}" not in result
+        assert "{{time}}" not in result
+        assert "{{weekday}}" not in result
+
+
+class TestAgentExecutionStep:
+    """Tests for agent_execution_step function."""
+
+    @patch("shutil.which")
+    def test_claude_not_found(self, mock_which):
+        """Test error when claude CLI not installed."""
+        from kurt.workflows.agents.executor import agent_execution_step
+
+        mock_which.return_value = None
+
+        # Mock DBOS
+        with patch("kurt.workflows.agents.executor.DBOS") as mock_dbos:
+            mock_dbos.workflow_id = "test-123"
+
+            with pytest.raises(RuntimeError, match="Claude Code CLI not found"):
+                agent_execution_step(
+                    prompt="Test",
+                    model="claude-sonnet-4-20250514",
+                    max_turns=5,
+                    allowed_tools=["Bash"],
+                )
+
+    @patch("shutil.which")
+    @patch("subprocess.run")
+    def test_successful_execution(self, mock_run, mock_which, tmp_path):
+        """Test successful agent execution."""
+        from kurt.workflows.agents.executor import agent_execution_step
+
+        mock_which.return_value = "/usr/bin/claude"
+
+        # Mock subprocess result
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = json.dumps(
+            {
+                "num_turns": 3,
+                "total_cost_usd": 0.05,
+                "usage": {
+                    "input_tokens": 1000,
+                    "output_tokens": 500,
+                    "cache_read_input_tokens": 100,
+                },
+                "result": "Task completed successfully",
+            }
+        )
+        mock_result.stderr = ""
+        mock_run.return_value = mock_result
+
+        # Mock DBOS
+        with patch("kurt.workflows.agents.executor.DBOS") as mock_dbos:
+            mock_dbos.workflow_id = "test-123"
+            mock_dbos.write_stream = MagicMock()
+            mock_dbos.set_event = MagicMock()
+
+            # Mock tool tracking
+            with patch(
+                "kurt.workflows.agents.executor._create_tool_tracking_settings"
+            ) as mock_create:
+                settings_file = tmp_path / "settings.json"
+                tool_log_file = tmp_path / "tools.jsonl"
+                settings_file.write_text("{}")
+                tool_log_file.write_text('{"tool_name": "Bash"}\n' '{"tool_name": "Read"}\n')
+                mock_create.return_value = (str(settings_file), str(tool_log_file))
+
+                with patch("kurt.workflows.agents.executor._get_project_root") as mock_root:
+                    mock_root.return_value = str(tmp_path)
+
+                    result = agent_execution_step(
+                        prompt="Test prompt",
+                        model="claude-sonnet-4-20250514",
+                        max_turns=5,
+                        allowed_tools=["Bash", "Read"],
+                        max_time=300,
+                    )
+
+        assert result["turns"] == 3
+        assert result["tool_calls"] == 2  # From our mock tool log
+        assert result["tokens_in"] == 1100  # 1000 + 100 cache_read
+        assert result["tokens_out"] == 500
+        assert result["cost_usd"] == 0.05
+        assert result["stop_reason"] == "completed"
+
+        # Verify subprocess was called with correct args
+        mock_run.assert_called_once()
+        call_args = mock_run.call_args
+        cmd = call_args[0][0]
+        assert "--settings" in cmd
+        assert "--print" in cmd
+        assert "--output-format" in cmd or "json" in cmd
+
+        # Verify env vars were set
+        env = call_args[1]["env"]
+        assert "KURT_TOOL_LOG_FILE" in env
+        assert "KURT_PARENT_WORKFLOW_ID" in env
+        assert env["KURT_PARENT_WORKFLOW_ID"] == "test-123"
+
+    @patch("shutil.which")
+    @patch("subprocess.run")
+    def test_timeout_handling(self, mock_run, mock_which, tmp_path):
+        """Test timeout handling during execution."""
+        import subprocess
+
+        from kurt.workflows.agents.executor import agent_execution_step
+
+        mock_which.return_value = "/usr/bin/claude"
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd="claude", timeout=10)
+
+        with patch("kurt.workflows.agents.executor.DBOS") as mock_dbos:
+            mock_dbos.workflow_id = "test-123"
+            mock_dbos.write_stream = MagicMock()
+
+            with patch(
+                "kurt.workflows.agents.executor._create_tool_tracking_settings"
+            ) as mock_create:
+                settings_file = tmp_path / "settings.json"
+                tool_log_file = tmp_path / "tools.jsonl"
+                settings_file.write_text("{}")
+                tool_log_file.write_text("")
+                mock_create.return_value = (str(settings_file), str(tool_log_file))
+
+                with patch("kurt.workflows.agents.executor._get_project_root") as mock_root:
+                    mock_root.return_value = str(tmp_path)
+
+                    result = agent_execution_step(
+                        prompt="Test",
+                        model="claude-sonnet-4-20250514",
+                        max_turns=5,
+                        allowed_tools=["Bash"],
+                        max_time=10,
+                    )
+
+        assert "max_time" in result["stop_reason"]
+        assert result["turns"] == 0
+        assert result["tokens_in"] == 0
+
+    @patch("shutil.which")
+    @patch("subprocess.run")
+    def test_error_cleanup(self, mock_run, mock_which, tmp_path):
+        """Test that cleanup happens even on error."""
+        from kurt.workflows.agents.executor import agent_execution_step
+
+        mock_which.return_value = "/usr/bin/claude"
+        mock_run.side_effect = Exception("Test error")
+
+        with patch("kurt.workflows.agents.executor.DBOS") as mock_dbos:
+            mock_dbos.workflow_id = "test-123"
+            mock_dbos.write_stream = MagicMock()
+
+            with patch(
+                "kurt.workflows.agents.executor._create_tool_tracking_settings"
+            ) as mock_create:
+                settings_file = tmp_path / "settings.json"
+                tool_log_file = tmp_path / "tools.jsonl"
+                settings_file.write_text("{}")
+                tool_log_file.write_text("")
+                mock_create.return_value = (str(settings_file), str(tool_log_file))
+
+                with patch("kurt.workflows.agents.executor._cleanup_tool_tracking") as mock_cleanup:
+                    mock_cleanup.return_value = 0
+
+                    with patch("kurt.workflows.agents.executor._get_project_root") as mock_root:
+                        mock_root.return_value = str(tmp_path)
+
+                        with pytest.raises(Exception, match="Test error"):
+                            agent_execution_step(
+                                prompt="Test",
+                                model="claude-sonnet-4-20250514",
+                                max_turns=5,
+                                allowed_tools=["Bash"],
+                            )
+
+                    # Verify cleanup was called
+                    mock_cleanup.assert_called_once()
+
+
+class TestRunDefinition:
+    """Tests for run_definition function."""
+
+    @patch("kurt.workflows.agents.registry.get_definition")
+    def test_definition_not_found(self, mock_get):
+        """Test error when workflow definition not found."""
+        from kurt.workflows.agents.executor import run_definition
+
+        mock_get.return_value = None
+
+        with pytest.raises(ValueError, match="Workflow definition not found"):
+            run_definition("nonexistent")
+
+    @patch("kurt.workflows.agents.registry.get_definition")
+    @patch("kurt.core.run_workflow")
+    def test_run_background(self, mock_run_workflow, mock_get_def):
+        """Test running definition in background."""
+        # Import run_definition fresh to pick up patched dependencies
+        import importlib
+
+        import kurt.workflows.agents.executor as executor_module
+
+        importlib.reload(executor_module)
+        from kurt.workflows.agents.executor import run_definition
+        from kurt.workflows.agents.parser import AgentConfig, GuardrailsConfig, ParsedWorkflow
+
+        mock_get_def.return_value = ParsedWorkflow(
+            name="test-workflow",
+            title="Test",
+            body="Test body",
+            agent=AgentConfig(model="claude-sonnet-4-20250514"),
+            guardrails=GuardrailsConfig(),
+            inputs={"default_key": "default_value"},
+        )
+        mock_run_workflow.return_value = "wf-123"
+
+        result = run_definition("test-workflow", inputs={"custom_key": "custom_value"})
+
+        assert result["workflow_id"] == "wf-123"
+        assert result["status"] == "started"
+
+        # Verify inputs were merged
+        call_args = mock_run_workflow.call_args
+        inputs_arg = call_args[0][2]  # Third positional arg is inputs
+        assert inputs_arg["default_key"] == "default_value"
+        assert inputs_arg["custom_key"] == "custom_value"
+
+    @patch("kurt.workflows.agents.registry.get_definition")
+    @patch("kurt.core.run_workflow")
+    def test_run_foreground(self, mock_run_workflow, mock_get_def):
+        """Test running definition in foreground."""
+        import importlib
+
+        import kurt.workflows.agents.executor as executor_module
+
+        importlib.reload(executor_module)
+        from kurt.workflows.agents.executor import run_definition
+        from kurt.workflows.agents.parser import AgentConfig, GuardrailsConfig, ParsedWorkflow
+
+        mock_get_def.return_value = ParsedWorkflow(
+            name="test-workflow",
+            title="Test",
+            body="Test body",
+            agent=AgentConfig(model="claude-sonnet-4-20250514"),
+            guardrails=GuardrailsConfig(),
+        )
+        mock_run_workflow.return_value = {
+            "workflow_id": "wf-123",
+            "status": "completed",
+            "turns": 2,
+        }
+
+        result = run_definition("test-workflow", background=False)
+
+        assert result["status"] == "completed"
+        mock_run_workflow.assert_called_once()
+        assert mock_run_workflow.call_args[1]["background"] is False

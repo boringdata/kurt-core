@@ -1,13 +1,13 @@
 """
 Base adapter interface for research integrations.
 
-All research adapters (Perplexity, Tavily, etc.) implement this interface.
+All research adapters (Perplexity, etc.) implement this interface.
 """
 
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 
 @dataclass
@@ -20,7 +20,7 @@ class Citation:
     published_date: Optional[str] = None
     domain: Optional[str] = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return asdict(self)
 
@@ -32,18 +32,21 @@ class ResearchResult:
     id: str
     query: str
     answer: str  # The synthesized research report
-    citations: List[Citation]
-    source: str  # "perplexity", "tavily", etc.
+    citations: list[Citation]
+    source: str  # "perplexity", etc.
     model: Optional[str] = None
     timestamp: Optional[datetime] = None
     response_time_seconds: Optional[float] = None
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: Optional[dict[str, Any]] = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         data = asdict(self)
         # Convert citations to list of dicts
         data["citations"] = [c.to_dict() for c in self.citations]
+        # Convert datetime to ISO string
+        if isinstance(data.get("timestamp"), datetime):
+            data["timestamp"] = data["timestamp"].isoformat()
         return data
 
     def to_markdown(self) -> str:
@@ -70,7 +73,7 @@ class ResearchResult:
         # Add citations to frontmatter
         if self.citations:
             frontmatter_lines.append("citations:")
-            for i, citation in enumerate(self.citations, 1):
+            for citation in self.citations:
                 frontmatter_lines.append(f'  - title: "{citation.title}"')
                 frontmatter_lines.append(f"    url: {citation.url}")
                 if citation.published_date:
@@ -95,7 +98,7 @@ class ResearchAdapter(ABC):
     """Base adapter interface for research sources."""
 
     @abstractmethod
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """
         Initialize with API credentials and settings.
 

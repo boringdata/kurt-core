@@ -2,9 +2,11 @@
 Data models for research monitoring signals.
 """
 
-from dataclasses import asdict, dataclass
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 
 @dataclass
@@ -21,35 +23,27 @@ class Signal:
     snippet: Optional[str] = None
 
     # Metadata
-    timestamp: datetime = None
+    timestamp: datetime = field(default_factory=datetime.now)
     author: Optional[str] = None
 
-    # Scoring (simple for now)
+    # Scoring
     score: int = 0  # Upvotes/points
     comment_count: int = 0
 
     # Context
-    keywords: List[str] = None  # Matched keywords
+    keywords: list[str] = field(default_factory=list)
     subreddit: Optional[str] = None  # For Reddit
     domain: Optional[str] = None  # For RSS feeds
 
     # Project association (optional)
     project: Optional[str] = None
 
-    def __post_init__(self):
-        """Initialize defaults."""
-        if self.keywords is None:
-            self.keywords = []
-        if self.timestamp is None:
-            self.timestamp = datetime.now()
-
     @property
     def relevance_score(self) -> float:
         """
         Calculate simple relevance score.
 
-        For now: normalized combination of score and comments.
-        Later: will incorporate keyword matching, topic similarity, etc.
+        Normalized combination of score and comments.
         """
         # Simple scoring: weighted sum
         # Score carries more weight than comments
@@ -58,7 +52,7 @@ class Signal:
 
         return (normalized_score * 0.7) + (normalized_comments * 0.3)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         data = asdict(self)
         # Convert datetime to ISO string
@@ -69,7 +63,7 @@ class Signal:
         return data
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Signal":
+    def from_dict(cls, data: dict[str, Any]) -> Signal:
         """Create Signal from dictionary."""
         # Parse timestamp if string
         if isinstance(data.get("timestamp"), str):
@@ -78,7 +72,7 @@ class Signal:
         data.pop("relevance_score", None)
         return cls(**data)
 
-    def matches_keywords(self, keywords: List[str]) -> bool:
+    def matches_keywords(self, keywords: list[str]) -> bool:
         """Check if signal matches any of the given keywords."""
         if not keywords:
             return True

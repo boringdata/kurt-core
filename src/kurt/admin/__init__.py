@@ -1,1 +1,1 @@
-"""Administrative services for Kurt."""
+"""Admin utilities for Kurt."""

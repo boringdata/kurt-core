@@ -4,8 +4,10 @@ Hacker News monitoring adapter.
 Uses HN's Algolia API for search and the official Firebase API for top stories.
 """
 
+from __future__ import annotations
+
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import Optional
 
 import requests
 
@@ -23,8 +25,11 @@ class HackerNewsAdapter:
         pass
 
     def get_top_stories(
-        self, limit: int = 30, keywords: Optional[List[str]] = None, min_score: int = 0
-    ) -> List[Signal]:
+        self,
+        limit: int = 30,
+        keywords: Optional[list[str]] = None,
+        min_score: int = 0,
+    ) -> list[Signal]:
         """
         Get current top stories from Hacker News front page.
 
@@ -96,7 +101,7 @@ class HackerNewsAdapter:
         sort: str = "relevance",
         limit: int = 30,
         min_score: int = 0,
-    ) -> List[Signal]:
+    ) -> list[Signal]:
         """
         Search Hacker News using Algolia API.
 
@@ -173,8 +178,11 @@ class HackerNewsAdapter:
             raise Exception(f"Failed to search Hacker News: {e}")
 
     def get_recent(
-        self, hours: int = 24, keywords: Optional[List[str]] = None, min_score: int = 10
-    ) -> List[Signal]:
+        self,
+        hours: int = 24,
+        keywords: Optional[list[str]] = None,
+        min_score: int = 10,
+    ) -> list[Signal]:
         """
         Get recent stories from the last N hours.
 

@@ -6,7 +6,7 @@ Research configs are stored with RESEARCH_<SOURCE>_<KEY> format.
 Example: RESEARCH_PERPLEXITY_API_KEY=pplx_abc123
 """
 
-from typing import Any, Dict
+from typing import Any
 
 from kurt.config import (
     config_exists_for_prefix,
@@ -22,7 +22,7 @@ _PREFIX = "RESEARCH"
 _LEVELS = 1
 
 
-def load_research_config() -> Dict[str, Any]:
+def load_research_config() -> dict[str, dict[str, Any]]:
     """
     Load research configuration from kurt.config.
 
@@ -34,34 +34,19 @@ def load_research_config() -> Dict[str, Any]:
         "default_recency": "day",
         "max_tokens": 4000,
         "temperature": 0.2
-      },
-      "tavily": {...},
-      "exa": {...}
+      }
     }
 
     Returns:
         Dictionary with research API configurations organized by source
 
     Raises:
-        FileNotFoundError: If no research config found
+        FileNotFoundError: If kurt.config doesn't exist
     """
-    config = load_prefixed_config(_PREFIX, _LEVELS)
-
-    if len(config) == 0:
-        # Provide helpful error message if no research config found
-        from kurt.config import get_config_file_path
-
-        config_path = get_config_file_path()
-        raise FileNotFoundError(
-            f"Research configuration file not found: {config_path}\n"
-            f"Create this file with your research API credentials.\n"
-            f"See .kurt/README.md for setup instructions."
-        )
-
-    return config
+    return load_prefixed_config(_PREFIX, _LEVELS)
 
 
-def save_research_config(research_config: Dict[str, Any]) -> None:
+def save_research_config(research_config: dict[str, dict[str, Any]]) -> None:
     """
     Save research configuration to kurt.config.
 
@@ -72,12 +57,12 @@ def save_research_config(research_config: Dict[str, Any]) -> None:
     save_prefixed_config(_PREFIX, research_config, _LEVELS)
 
 
-def get_source_config(source: str) -> Dict[str, Any]:
+def get_source_config(source: str) -> dict[str, Any]:
     """
     Get configuration for a specific research source.
 
     Args:
-        source: Research source name (e.g., 'perplexity', 'tavily')
+        source: Research source name (e.g., 'perplexity')
 
     Returns:
         Source-specific configuration dictionary
@@ -89,14 +74,11 @@ def get_source_config(source: str) -> Dict[str, Any]:
 
     if source not in config:
         available = ", ".join(config.keys()) if config else "none configured"
-        from kurt.config import get_config_file_path
-
-        config_file = get_config_file_path()
         raise ValueError(
             f"No configuration found for research source '{source}'.\n"
             f"Available sources: {available}\n"
             f"\n"
-            f"To configure {source}, add to {config_file}:\n"
+            f"To configure {source}, add to kurt.config:\n"
             f"  RESEARCH_{source.upper()}_API_KEY=your_api_key_here"
         )
 
@@ -104,17 +86,51 @@ def get_source_config(source: str) -> Dict[str, Any]:
     source_config = config[source]
     api_key = source_config.get("api_key", "")
     if "YOUR_" in api_key or "PLACEHOLDER" in api_key:
-        from kurt.config import get_config_file_path
-
-        config_file = get_config_file_path()
         raise ValueError(
             f"API key not configured for '{source}'.\n"
             f"\n"
-            f"Edit {config_file} and update:\n"
+            f"Edit kurt.config and update:\n"
             f"  RESEARCH_{source.upper()}_API_KEY=your_actual_api_key"
         )
 
     return source_config
+
+
+def add_source_config(source: str, source_config: dict[str, Any]) -> None:
+    """
+    Add or update configuration for a research source.
+
+    Args:
+        source: Research source name (e.g., 'perplexity')
+        source_config: Source-specific configuration dictionary
+    """
+    config = load_research_config()
+    config[source] = source_config
+    save_research_config(config)
+
+
+def create_template_config(source: str) -> dict[str, Any]:
+    """
+    Get template configuration structure for a research source.
+
+    Args:
+        source: Research source name
+
+    Returns:
+        Template configuration dictionary with placeholder values
+    """
+    if source == "perplexity":
+        return {
+            "api_key": "YOUR_PERPLEXITY_API_KEY",
+            "default_model": "sonar-reasoning",
+            "default_recency": "day",
+            "max_tokens": "4000",
+            "temperature": "0.2",
+        }
+    else:
+        return {
+            "api_key": "YOUR_API_KEY",
+        }
 
 
 def research_config_exists() -> bool:
@@ -149,5 +165,19 @@ def source_configured(source: str) -> bool:
             return False
 
         return True
-    except (FileNotFoundError, ValueError):
+    except Exception:
         return False
+
+
+def list_sources() -> list[str]:
+    """
+    List all configured research sources.
+
+    Returns:
+        List of source names
+    """
+    try:
+        config = load_research_config()
+        return list(config.keys())
+    except Exception:
+        return []

@@ -1,15 +1,16 @@
 """PostHog event tracking for Kurt CLI telemetry."""
 
+from __future__ import annotations
+
 import atexit
 import logging
 import os
 import platform
 import sys
 import threading
-from typing import Any, Optional
+from typing import Any
 
-from kurt import __version__
-from kurt.admin.telemetry.config import (
+from .config import (
     POSTHOG_API_KEY,
     POSTHOG_HOST,
     get_machine_id,
@@ -17,11 +18,10 @@ from kurt.admin.telemetry.config import (
     is_telemetry_enabled,
 )
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
 # Global PostHog client (lazy initialized)
-_posthog_client: Optional[Any] = None
+_posthog_client: Any | None = None
 _client_lock = threading.Lock()
 
 
@@ -40,14 +40,12 @@ def _get_posthog_client():
         return _posthog_client
 
     with _client_lock:
-        # Double-check after acquiring lock
         if _posthog_client is not None:
             return _posthog_client
 
         try:
             from posthog import Posthog
 
-            # Create PostHog client instance (not using module-level API)
             client = Posthog(
                 project_api_key=POSTHOG_API_KEY,
                 host=POSTHOG_HOST,
@@ -55,7 +53,6 @@ def _get_posthog_client():
                 sync_mode=False,
             )
 
-            # Register shutdown hook to flush events
             def _shutdown():
                 try:
                     client.shutdown()
@@ -68,9 +65,18 @@ def _get_posthog_client():
             return _posthog_client
 
         except Exception as e:
-            # Silently fail - telemetry should never break the CLI
             logger.debug(f"Failed to initialize PostHog: {e}")
             return None
+
+
+def _get_kurt_version() -> str:
+    """Get Kurt version string."""
+    try:
+        from kurt import __version__
+
+        return __version__
+    except Exception:
+        return "unknown"
 
 
 def _get_system_properties() -> dict:
@@ -83,14 +89,14 @@ def _get_system_properties() -> dict:
         "os": platform.system(),
         "os_version": platform.release(),
         "python_version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
-        "kurt_version": __version__,
+        "kurt_version": _get_kurt_version(),
         "is_ci": is_ci_environment(),
     }
 
 
 def track_event(
     event_name: str,
-    properties: Optional[dict] = None,
+    properties: dict | None = None,
     blocking: bool = False,
 ) -> None:
     """Track an analytics event.
@@ -111,15 +117,12 @@ def track_event(
         if client is None:
             return
 
-        # Merge user properties with system properties
         event_properties = _get_system_properties()
         if properties:
             event_properties.update(properties)
 
-        # Get distinct ID (machine ID)
         distinct_id = get_machine_id()
 
-        # Track event in background thread
         def _track():
             try:
                 client.capture(
@@ -133,20 +136,15 @@ def track_event(
         if blocking:
             _track()
         else:
-            # Run in background thread (non-blocking)
             thread = threading.Thread(target=_track, daemon=True)
             thread.start()
 
     except Exception as e:
-        # Silently fail - telemetry should never break the CLI
         logger.debug(f"Error in track_event: {e}")
 
 
 def flush_events(timeout: float = 2.0) -> None:
     """Flush pending telemetry events.
-
-    This is automatically called on exit via atexit handler,
-    but can be called manually if needed.
 
     Args:
         timeout: Maximum time to wait for flush (seconds)
@@ -154,7 +152,6 @@ def flush_events(timeout: float = 2.0) -> None:
     try:
         client = _get_posthog_client()
         if client is not None:
-            # PostHog's shutdown handles flushing
             client.shutdown()
     except Exception as e:
         logger.debug(f"Error flushing events: {e}")
