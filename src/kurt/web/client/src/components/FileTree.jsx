@@ -3,6 +3,19 @@ import React, { useEffect, useState, useRef } from 'react'
 const apiBase = import.meta.env.VITE_API_URL || ''
 const apiUrl = (path) => `${apiBase}${path}`
 
+// Section icons by config key (not path name)
+const SECTION_ICONS = {
+  projects: '📁',
+  sources: '📥',
+}
+
+// Capitalize first letter for display
+const formatSectionLabel = (path) => {
+  if (!path) return 'Other'
+  const name = path.replace(/^\./, '') // Remove leading dot
+  return name.charAt(0).toUpperCase() + name.slice(1)
+}
+
 export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRenamed, onFileMoved, projectRoot, activeFile, creatingFile, onFileCreated, onCancelCreate }) {
   const [entries, setEntries] = useState([])
   const [expandedDirs, setExpandedDirs] = useState({})
@@ -14,6 +27,8 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
   const [renaming, setRenaming] = useState(null)
   const [dragOver, setDragOver] = useState(null)
   const [newFileInput, setNewFileInput] = useState(null) // { parentDir: string, name: string }
+  const [kurtConfig, setKurtConfig] = useState(null)
+  const [collapsedSections, setCollapsedSections] = useState({ other: true }) // "Other" collapsed by default
   const renameInputRef = useRef(null)
   const newFileInputRef = useRef(null)
 
@@ -50,6 +65,31 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
     fetchGitStatus()
   }
 
+  // Fetch Kurt config for section organization
+  const fetchConfig = () => {
+    fetch(apiUrl('/api/config'))
+      .then((r) => r.json())
+      .then(async (data) => {
+        if (data.paths) {
+          setKurtConfig(data.paths)
+          // Auto-expand section folders on initial load (only projects and sources)
+          const sectionPaths = ['projects', 'sources']
+          const toExpand = {}
+          for (const key of sectionPaths) {
+            const path = data.paths[key]
+            if (path) {
+              const children = await fetchDir(path)
+              // Store even empty arrays so we know folder was loaded
+              toExpand[path] = children
+            }
+          }
+          // Use functional update to merge with current state
+          setExpandedDirs((prev) => ({ ...prev, ...toExpand }))
+        }
+      })
+      .catch(() => {})
+  }
+
   useEffect(() => {
     let retryCount = 0
     const maxRetries = 10
@@ -68,6 +108,7 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
 
     initialFetch()
     fetchGitStatus()
+    fetchConfig()
 
     // Poll for git status changes
     const gitInterval = setInterval(fetchGitStatus, 5000)
@@ -80,6 +121,7 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
       clearInterval(gitInterval)
       clearInterval(treeInterval)
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -463,7 +505,7 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
     )
   }
 
-  const renderEntries = (items, depth = 0, parentDir = '') => {
+  const renderEntries = (items, depth = 0, _parentDir = '') => {
     return items.map((e) => {
       const fileStatus = e.is_dir ? null : getFileStatus(e.path)
       const dirHasChanges = e.is_dir && getDirStatus(e.path)
@@ -544,6 +586,138 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
     })
   }
 
+  const toggleSection = (sectionKey) => {
+    setCollapsedSections((prev) => ({
+      ...prev,
+      [sectionKey]: !prev[sectionKey],
+    }))
+  }
+
+  // Organize entries into sections based on kurt config
+  const organizeEntriesIntoSections = () => {
+    if (!kurtConfig || entries.length === 0) {
+      return null // Return null to use flat rendering
+    }
+
+    // Build section mapping: configKey -> path
+    // Order: projects, sources (folders only)
+    const sectionOrder = ['projects', 'sources']
+    const sections = {}
+    const usedPaths = new Set()
+
+    for (const key of sectionOrder) {
+      const path = kurtConfig[key]
+      if (path) {
+        sections[key] = {
+          path,
+          label: formatSectionLabel(path),
+          icon: SECTION_ICONS[key] || '📁',
+          entries: [],
+        }
+        usedPaths.add(path)
+      }
+    }
+
+    // Categorize entries
+    const otherEntries = []
+    let configFile = null
+
+    for (const entry of entries) {
+      // Check if it's the kurt.config file
+      if (entry.name === 'kurt.config' && !entry.is_dir) {
+        configFile = entry
+        continue
+      }
+
+      let matched = false
+      for (const key of sectionOrder) {
+        const sectionPath = kurtConfig[key]
+        if (sectionPath && entry.path === sectionPath) {
+          sections[key].entries.push(entry)
+          matched = true
+          break
+        }
+      }
+      if (!matched) {
+        otherEntries.push(entry)
+      }
+    }
+
+    // Add "Other" section if there are unmatched entries
+    if (otherEntries.length > 0) {
+      sections.other = {
+        path: null,
+        label: 'Other',
+        icon: '···',
+        entries: otherEntries,
+      }
+    }
+
+    return { sections, configFile }
+  }
+
+  const renderSection = (sectionKey, section) => {
+    const isCollapsed = collapsedSections[sectionKey]
+    const hasChanges = section.entries.some((e) =>
+      e.is_dir ? getDirStatus(e.path) : getFileStatus(e.path)
+    )
+
+    return (
+      <div key={sectionKey} className="file-tree-section">
+        <div
+          className={`file-tree-section-header ${hasChanges ? 'has-changes' : ''}`}
+          onClick={() => toggleSection(sectionKey)}
+        >
+          <span className="section-collapse-icon">{isCollapsed ? '▶' : '▼'}</span>
+          <span className="section-icon">{section.icon}</span>
+          <span className="section-label">{section.label}</span>
+          {hasChanges && <span className="dir-changes-dot" title="Contains changes" />}
+        </div>
+        {!isCollapsed && (
+          <div className="file-tree-section-content">
+            {sectionKey !== 'other' && section.path ? (
+              // For main sections (projects, sources), render children directly from expandedDirs
+              <>
+                {renderNewFileInput(0, section.path)}
+                {expandedDirs[section.path] !== undefined ? (
+                  expandedDirs[section.path].length > 0 ? (
+                    renderEntries(expandedDirs[section.path], 0, section.path)
+                  ) : (
+                    <div className="file-item section-empty-placeholder">
+                      <span className="file-item-name">Empty</span>
+                    </div>
+                  )
+                ) : (
+                  <div
+                    className="file-item section-folder-placeholder"
+                    onClick={() => {
+                      const entry = entries.find(e => e.path === section.path)
+                      if (entry) handleClick(entry)
+                    }}
+                  >
+                    <span className="file-item-icon">📂</span>
+                    <span className="file-item-name">Loading...</span>
+                  </div>
+                )}
+              </>
+            ) : (
+              // For "Other" section, render entries normally
+              section.entries.map((entry) => (
+                <React.Fragment key={entry.path}>
+                  {renderEntries([entry], 0, '')}
+                </React.Fragment>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  const organized = organizeEntriesIntoSections()
+  const sections = organized?.sections
+  const configFile = organized?.configFile
+
   return (
     <div className="file-tree" onContextMenu={handleRootContextMenu}>
       <div className="search-box">
@@ -594,7 +768,36 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
             ))
           )}
         </div>
+      ) : sections ? (
+        // Sectioned view when kurt config is available
+        <div className="file-tree-sections">
+          {/* New file input at root level */}
+          {renderNewFileInput(0, '')}
+          {/* Config file at top */}
+          {configFile && (
+            <div
+              className={`file-item config-file-item ${activeFile === configFile.path ? 'file-item-active' : ''}`}
+              onClick={() => onOpen(configFile.path)}
+              onContextMenu={(event) => handleContextMenu(event, configFile)}
+            >
+              <span className="file-item-icon">⚙️</span>
+              <span className="file-item-name">{configFile.name}</span>
+              {renderStatusBadge(getFileStatus(configFile.path))}
+            </div>
+          )}
+          {/* Main sections: projects, sources - always show if path exists */}
+          {['projects', 'sources'].map((key) =>
+            sections[key] && sections[key].path
+              ? renderSection(key, sections[key])
+              : null
+          )}
+          {/* Other section (discrete) */}
+          {sections.other && sections.other.entries.length > 0 && (
+            renderSection('other', sections.other)
+          )}
+        </div>
       ) : (
+        // Fallback flat view
         <>
           <h3
             className="file-tree-title"

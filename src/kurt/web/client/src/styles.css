@@ -203,6 +203,100 @@ html, body, #root {
   color: #6b7280;
 }
 
+/* Sectioned file tree */
+.file-tree-sections {
+  flex: 1;
+  overflow: auto;
+}
+
+.file-tree-section {
+  margin-bottom: 2px;
+}
+
+.file-tree-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+  user-select: none;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #374151;
+  background: #f9fafb;
+  border: 1px solid transparent;
+}
+
+.file-tree-section-header:hover {
+  background: #f3f4f6;
+  border-color: #e5e7eb;
+}
+
+.file-tree-section-header.has-changes {
+  color: #1d4ed8;
+}
+
+.section-collapse-icon {
+  font-size: 8px;
+  color: #9ca3af;
+  width: 10px;
+  text-align: center;
+}
+
+.section-icon {
+  font-size: 12px;
+}
+
+.section-label {
+  flex: 1;
+}
+
+.file-tree-section-content {
+  padding-left: 4px;
+}
+
+.section-folder-placeholder {
+  color: #9ca3af;
+  font-style: italic;
+}
+
+.section-folder-placeholder:hover {
+  color: #6b7280;
+}
+
+.section-empty-placeholder {
+  color: #d1d5db;
+  font-style: italic;
+  cursor: default;
+}
+
+.section-empty-placeholder:hover {
+  background: transparent;
+}
+
+/* Config file at top */
+.config-file-item {
+  margin-bottom: 4px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+/* Other section - more discrete */
+.file-tree-section:last-child .file-tree-section-header {
+  background: transparent;
+  font-weight: 500;
+  font-size: 10px;
+  color: #9ca3af;
+  padding: 4px 8px;
+  margin-top: 8px;
+}
+
+.file-tree-section:last-child .file-tree-section-header:hover {
+  background: #f9fafb;
+  color: #6b7280;
+}
+
 .search-box {
   display: flex;
   align-items: center;
@@ -2298,10 +2392,39 @@ html, body, #root {
   color: #9ca3af;
 }
 
+.step-done {
+  color: #16a34a;
+  font-weight: 500;
+}
+
 .step-duration {
   color: #9ca3af;
   font-family: 'IBM Plex Mono', monospace;
   font-size: 10px;
+}
+
+.workflow-step-item {
+  margin-bottom: 4px;
+}
+
+.workflow-step-logs {
+  margin-top: 4px;
+  margin-left: 12px;
+  padding: 4px 8px;
+  background: #f9fafb;
+  border-radius: 4px;
+  border-left: 2px solid #e5e7eb;
+}
+
+.workflow-step-log {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: #6b7280;
+  padding: 2px 0;
+}
+
+.workflow-step-log.log-error {
+  color: #ef4444;
 }
 
 .result-success {
@@ -2327,20 +2450,56 @@ html, body, #root {
   font-weight: 500;
 }
 
-/* Workflow Inputs */
-.workflow-inputs {
-  padding: 8px 0;
+/* Collapsible Workflow Sections */
+.workflow-collapsible-section {
   margin-bottom: 8px;
-  border-bottom: 1px solid #e5e7eb;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  background: #fff;
 }
 
-.workflow-inputs-header {
-  font-size: 10px;
+.workflow-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+  user-select: none;
+  background: #f9fafb;
+  border-radius: 3px;
+}
+
+.workflow-section-header:hover {
+  background: #f3f4f6;
+}
+
+.workflow-section-toggle {
+  font-size: 9px;
+  color: #9ca3af;
+  width: 10px;
+  flex-shrink: 0;
+}
+
+.workflow-section-label {
+  font-size: 11px;
   font-weight: 600;
+  color: #374151;
+  flex-shrink: 0;
+}
+
+.workflow-section-preview {
+  font-size: 11px;
   color: #6b7280;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.workflow-section-content {
+  padding: 8px;
+  border-top: 1px solid #e5e7eb;
 }
 
 .workflow-inputs-content {
@@ -2353,6 +2512,8 @@ html, body, #root {
   border-radius: 4px;
   word-break: break-all;
   white-space: pre-wrap;
+  max-height: 200px;
+  overflow: auto;
 }
 
 .workflow-duration {

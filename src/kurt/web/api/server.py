@@ -105,6 +105,45 @@ def api_project():
     return {"root": str(Path.cwd().resolve())}
 
 
+@app.get("/api/config")
+def api_config():
+    """Get Kurt project configuration for frontend sections."""
+    try:
+        from kurt.config import config_file_exists, load_config
+
+        if not config_file_exists():
+            return {
+                "available": False,
+                "paths": {
+                    "sources": "sources",
+                    "projects": "projects",
+                    "rules": "rules",
+                    "kurt": ".kurt",
+                },
+            }
+
+        config = load_config()
+        return {
+            "available": True,
+            "paths": {
+                "sources": config.PATH_SOURCES,
+                "projects": config.PATH_PROJECTS,
+                "rules": config.PATH_RULES,
+                "kurt": str(Path(config.PATH_DB).parent),
+            },
+        }
+    except Exception:
+        return {
+            "available": False,
+            "paths": {
+                "sources": "sources",
+                "projects": "projects",
+                "rules": "rules",
+                "kurt": ".kurt",
+            },
+        }
+
+
 @app.get("/api/tree")
 def api_tree(path: Optional[str] = Query(".")):
     try:
@@ -917,6 +956,9 @@ def api_list_workflows(
     except Exception as e:
         if session:
             session.close()
+        # Handle missing table (no workflows run yet)
+        if "no such table" in str(e):
+            return {"workflows": [], "total": 0}
         # Return error in response body instead of 500, so frontend can display it
         return {"workflows": [], "total": 0, "error": f"Database error: {e}"}
 
@@ -1010,6 +1052,46 @@ def api_get_workflow_status(workflow_id: str):
 
         status = get_live_status(full_id)
         return status
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/workflows/{workflow_id}/step-logs")
+def api_get_step_logs(
+    workflow_id: str,
+    step: str | None = Query(None, description="Filter by step name"),
+    limit: int = Query(100, le=500),
+):
+    """Get workflow logs from DBOS streams, optionally filtered by step."""
+    session = _get_db_session()
+    if session is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        from sqlalchemy import text
+
+        # Get full workflow ID from prefix
+        sql = text("""
+            SELECT workflow_uuid FROM workflow_status
+            WHERE workflow_uuid LIKE :workflow_id || '%'
+            LIMIT 1
+        """)
+        result = session.execute(sql, {"workflow_id": workflow_id})
+        row = result.fetchone()
+        session.close()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Workflow not found")
+
+        full_id = row[0]
+
+        from kurt.core.status import get_step_logs
+
+        logs = get_step_logs(full_id, step_name=step, limit=limit)
+        return {"logs": logs, "step": step}
 
     except HTTPException:
         raise
