@@ -2921,6 +2921,7 @@ html, body, #root {
   border-bottom: 1px solid #e5e7eb;
   background: #f8fafc;
   flex-shrink: 0;
+  --frontmatter-line-gutter: 4ch;
 }
 
 .frontmatter-editor.has-error {
@@ -3006,7 +3007,7 @@ html, body, #root {
 .frontmatter-placeholder {
   position: absolute;
   top: 12px;
-  left: 12px;
+  left: calc(12px + var(--frontmatter-line-gutter));
   color: #6b7280;
   font-family: 'IBM Plex Mono', Monaco, 'Courier New', monospace;
   font-size: 12px;
@@ -3026,15 +3027,17 @@ html, body, #root {
   outline: none !important;
   caret-color: #fff;
   resize: none;
+  padding-left: calc(12px + var(--frontmatter-line-gutter)) !important;
 }
 
 .frontmatter-line-number {
   display: table-cell;
   text-align: right;
-  padding-right: 1rem;
+  padding-right: 1ch;
   user-select: none;
   opacity: 0.5;
-  width: 1%;
+  width: var(--frontmatter-line-gutter);
+  box-sizing: border-box;
   white-space: nowrap;
   color: #6e7681;
 }
