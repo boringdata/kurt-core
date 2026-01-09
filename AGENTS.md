@@ -767,3 +767,76 @@ print(result["workflow_id"])
 result = run_definition("my-workflow", background=False)
 print(result["status"], result["turns"], result["tokens_in"])
 ```
+
+---
+
+## Building Workflow Definitions
+
+### Quick Start
+
+1. Create `workflows/my-workflow.md`
+2. Add frontmatter (YAML) + prompt body (Markdown)
+3. Validate: `kurt agents validate workflows/my-workflow.md`
+4. Run: `kurt agents run my-workflow --foreground`
+
+### Frontmatter Reference
+
+```yaml
+---
+name: my-workflow                    # Required: unique ID (kebab-case)
+title: My Workflow Title             # Required: display name
+
+agent:
+  model: claude-sonnet-4-20250514    # Model to use
+  max_turns: 15                      # Conversation turns limit
+  allowed_tools: [Bash, Read, Write, Glob, Grep]
+
+guardrails:
+  max_tokens: 150000                 # Token budget
+  max_time: 600                      # Timeout (seconds)
+
+inputs:
+  topic: "default value"             # Runtime parameters
+
+schedule:                            # Optional: cron scheduling
+  cron: "0 9 * * 1-5"
+  enabled: true
+
+tags: [research, daily]              # For filtering
+---
+```
+
+### Template Variables
+
+| Variable | Example |
+|----------|---------|
+| `{{topic}}` | From inputs |
+| `{{date}}` | `2024-01-15` |
+| `{{datetime}}` | `2024-01-15T09:30:00` |
+| `{{project_root}}` | `/path/to/project` |
+
+### Prompt Structure
+
+```markdown
+# Workflow Title
+
+Context about the task.
+
+## Steps
+
+1. **Step One**: Use `command` to do X
+2. **Step Two**: Save to `reports/output-{{date}}.md`
+
+## Success Criteria
+
+- Output file created
+- No errors
+```
+
+### Guardrail Guidelines
+
+| Workflow Type | `max_turns` | `max_tokens` | `max_time` |
+|---------------|-------------|--------------|------------|
+| Quick task | 5-10 | 50,000 | 120 |
+| Standard | 15-25 | 150,000 | 600 |
+| Complex | 30-50 | 300,000 | 1800 |
