@@ -2152,6 +2152,85 @@ html, body, #root {
   margin: 0;
 }
 
+/* Workflow Progress Bar */
+.workflow-progress {
+  padding: 8px 0;
+  margin-bottom: 8px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.workflow-progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+  font-size: 11px;
+}
+
+.workflow-stage-name {
+  font-weight: 500;
+  color: #374151;
+}
+
+.workflow-progress-count {
+  color: #6b7280;
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+.workflow-progress-bar {
+  height: 6px;
+  background: #e5e7eb;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.workflow-progress-fill {
+  height: 100%;
+  background: #3b82f6;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+/* Workflow Results */
+.workflow-results {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 8px 0;
+  margin-bottom: 8px;
+  border-bottom: 1px solid #e5e7eb;
+  font-size: 11px;
+}
+
+.workflow-result-step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.result-step-name {
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.result-success {
+  color: #16a34a;
+  font-weight: 600;
+}
+
+.result-success::before {
+  content: '\\2713 ';
+}
+
+.result-failed {
+  color: #ef4444;
+  font-weight: 600;
+}
+
+.result-failed::before {
+  content: '\\2717 ';
+}
+
 /* Workflows Terminal (Right Pane) */
 .workflows-terminal-header {
   display: flex;

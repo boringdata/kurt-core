@@ -14,6 +14,81 @@ export default function WorkflowRow({
   const [logs, setLogs] = useState('')
   const [logsLoading, setLogsLoading] = useState(false)
   const [logsError, setLogsError] = useState(null)
+  const [liveStatus, setLiveStatus] = useState(null)
+
+  const isRunning = workflow.status === 'PENDING' || workflow.status === 'ENQUEUED'
+
+  const fetchStatus = useCallback(async () => {
+    if (!workflow?.workflow_uuid) return
+    try {
+      const response = await fetch(
+        apiUrl(`/api/workflows/${workflow.workflow_uuid}/status`)
+      )
+      if (response.ok) {
+        const data = await response.json()
+        setLiveStatus(data)
+      }
+    } catch (err) {
+      console.error('Failed to fetch status:', err)
+    }
+  }, [workflow?.workflow_uuid])
+
+  // SSE for real-time status updates
+  useEffect(() => {
+    if (!isExpanded || !isRunning || !workflow?.workflow_uuid) return
+
+    const eventSource = new EventSource(
+      apiUrl(`/api/workflows/${workflow.workflow_uuid}/status/stream`)
+    )
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        setLiveStatus(data)
+      } catch (err) {
+        console.error('Failed to parse SSE data:', err)
+      }
+    }
+
+    eventSource.onerror = () => {
+      eventSource.close()
+    }
+
+    return () => {
+      eventSource.close()
+    }
+  }, [isExpanded, isRunning, workflow?.workflow_uuid])
+
+  // SSE for real-time log streaming
+  useEffect(() => {
+    if (!isExpanded || !isRunning || !workflow?.workflow_uuid) return
+
+    const eventSource = new EventSource(
+      apiUrl(`/api/workflows/${workflow.workflow_uuid}/logs/stream`)
+    )
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        if (data.content) {
+          setLogs((prev) => prev + data.content)
+        }
+        if (data.done) {
+          eventSource.close()
+        }
+      } catch (err) {
+        console.error('Failed to parse SSE log data:', err)
+      }
+    }
+
+    eventSource.onerror = () => {
+      eventSource.close()
+    }
+
+    return () => {
+      eventSource.close()
+    }
+  }, [isExpanded, isRunning, workflow?.workflow_uuid])
 
   const fetchLogs = useCallback(async () => {
     if (!workflow?.workflow_uuid) return
@@ -38,22 +113,31 @@ export default function WorkflowRow({
     }
   }, [workflow?.workflow_uuid])
 
-  // Fetch logs when expanded
+  // Fetch initial logs and status when expanded (SSE handles live updates)
   useEffect(() => {
     if (!isExpanded) return
 
     fetchLogs()
+    fetchStatus()
+  }, [isExpanded, workflow?.workflow_uuid, fetchLogs, fetchStatus])
 
-    // Auto-refresh logs for running workflows
-    if (workflow.status === 'PENDING' || workflow.status === 'ENQUEUED') {
-      const interval = setInterval(fetchLogs, 2000)
-      return () => clearInterval(interval)
-    }
-  }, [isExpanded, workflow?.workflow_uuid, workflow?.status, fetchLogs])
-
-  const isRunning = workflow.status === 'PENDING' || workflow.status === 'ENQUEUED'
   const shortId = workflow.workflow_uuid?.slice(0, 8) || ''
   const workflowName = workflow.name || 'Unknown'
+
+  const formatStageName = (stage) => {
+    const stageNames = {
+      discovering: 'Discovering URLs',
+      fetching: 'Fetching Content',
+      saving: 'Saving Files',
+      embedding: 'Generating Embeddings',
+      persisting: 'Saving to Database',
+    }
+    return stageNames[stage] || stage
+  }
+
+  const progress = liveStatus?.progress || {}
+  const progressPct =
+    progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0
 
   const formatTime = (dateStr) => {
     if (!dateStr) return '-'
@@ -133,6 +217,41 @@ export default function WorkflowRow({
 
       {isExpanded && (
         <div className="workflow-row-details">
+          {/* Progress bar for running workflows */}
+          {isRunning && liveStatus?.stage && (
+            <div className="workflow-progress">
+              <div className="workflow-progress-header">
+                <span className="workflow-stage-name">
+                  {formatStageName(liveStatus.stage)}
+                </span>
+                <span className="workflow-progress-count">
+                  {progress.current || 0}/{progress.total || '?'}
+                </span>
+              </div>
+              <div className="workflow-progress-bar">
+                <div
+                  className="workflow-progress-fill"
+                  style={{ width: `${progressPct}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Results for completed workflows */}
+          {workflow.status === 'SUCCESS' && liveStatus?.steps?.length > 0 && (
+            <div className="workflow-results">
+              {liveStatus.steps.map((step) => (
+                <span key={step.name} className="workflow-result-step">
+                  <span className="result-step-name">{step.name}</span>
+                  <span className="result-success">{step.success || 0}</span>
+                  {step.error > 0 && (
+                    <span className="result-failed">{step.error}</span>
+                  )}
+                </span>
+              ))}
+            </div>
+          )}
+
           <div className="workflow-detail-row">
             <span className="workflow-detail-label">Full ID:</span>
             <code

@@ -340,9 +340,8 @@ export default function App() {
           minimumWidth: undefined,
           maximumWidth: undefined,
         })
-        if (!isFirstRun) {
-          workflowsGroup.api.setSize({ height: panelSizesRef.current.workflows })
-        }
+        // Always restore saved height for workflows (no isFirstRun check)
+        workflowsGroup.api.setSize({ height: panelSizesRef.current.workflows })
       }
     }
   }, [dockApi, collapsed])
@@ -1255,6 +1254,7 @@ export default function App() {
   )
 
   // Update workflows panel params
+  // projectRoot dependency ensures this runs after layout restoration
   useEffect(() => {
     if (!dockApi) return
     const workflowsPanel = dockApi.getPanel('workflows')
@@ -1265,7 +1265,7 @@ export default function App() {
         onAttachWorkflow: openWorkflowTerminal,
       })
     }
-  }, [dockApi, collapsed.workflows, toggleWorkflows, openWorkflowTerminal])
+  }, [dockApi, collapsed.workflows, toggleWorkflows, openWorkflowTerminal, projectRoot])
 
   // Restore saved tabs when dockApi and projectRoot become available
   const hasRestoredTabs = useRef(false)

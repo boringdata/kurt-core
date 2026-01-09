@@ -980,6 +980,198 @@ def api_cancel_workflow(workflow_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/workflows/{workflow_id}/status")
+def api_get_workflow_status(workflow_id: str):
+    """Get live workflow status with progress information."""
+    session = _get_db_session()
+    if session is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        from sqlalchemy import text
+
+        # Get full workflow ID from prefix
+        sql = text("""
+            SELECT workflow_uuid FROM workflow_status
+            WHERE workflow_uuid LIKE :workflow_id || '%'
+            LIMIT 1
+        """)
+        result = session.execute(sql, {"workflow_id": workflow_id})
+        row = result.fetchone()
+        session.close()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Workflow not found")
+
+        full_id = row[0]
+
+        # Use the existing get_live_status function
+        from kurt.core.status import get_live_status
+
+        status = get_live_status(full_id)
+        return status
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/workflows/{workflow_id}/status/stream")
+async def api_stream_workflow_status(workflow_id: str):
+    """Stream live workflow status via Server-Sent Events."""
+    import asyncio
+    import json
+
+    from fastapi.responses import StreamingResponse
+
+    session = _get_db_session()
+    if session is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        from sqlalchemy import text
+
+        # Get full workflow ID from prefix
+        sql = text("""
+            SELECT workflow_uuid, status FROM workflow_status
+            WHERE workflow_uuid LIKE :workflow_id || '%'
+            LIMIT 1
+        """)
+        result = session.execute(sql, {"workflow_id": workflow_id})
+        row = result.fetchone()
+        session.close()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Workflow not found")
+
+        full_id = row[0]
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    async def event_generator():
+        from kurt.core.status import get_live_status
+
+        last_status = None
+        while True:
+            try:
+                status = get_live_status(full_id)
+                status_json = json.dumps(status)
+
+                # Only send if changed
+                if status_json != last_status:
+                    yield f"data: {status_json}\n\n"
+                    last_status = status_json
+
+                # Stop streaming if workflow completed
+                if status.get("status") in ("completed", "error", "SUCCESS", "ERROR", "CANCELLED"):
+                    break
+
+                await asyncio.sleep(0.5)
+            except Exception:
+                break
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+@app.get("/api/workflows/{workflow_id}/logs/stream")
+async def api_stream_workflow_logs(workflow_id: str):
+    """Stream workflow logs via Server-Sent Events."""
+    import asyncio
+    import json
+
+    from fastapi.responses import StreamingResponse
+
+    session = _get_db_session()
+    if session is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        from sqlalchemy import text
+
+        # Get full workflow ID and status
+        sql = text("""
+            SELECT workflow_uuid, status FROM workflow_status
+            WHERE workflow_uuid LIKE :workflow_id || '%'
+            LIMIT 1
+        """)
+        result = session.execute(sql, {"workflow_id": workflow_id})
+        row = result.fetchone()
+        session.close()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Workflow not found")
+
+        full_id = row[0]
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    log_file = Path(".kurt") / "logs" / f"workflow-{full_id}.log"
+
+    async def event_generator():
+        last_size = 0
+        while True:
+            try:
+                if log_file.exists():
+                    current_size = log_file.stat().st_size
+                    if current_size > last_size:
+                        with open(log_file, "r") as f:
+                            f.seek(last_size)
+                            new_content = f.read()
+                            if new_content:
+                                yield f"data: {json.dumps({'content': new_content})}\n\n"
+                        last_size = current_size
+
+                # Check if workflow is done
+                check_session = _get_db_session()
+                if check_session:
+                    result = check_session.execute(
+                        text("SELECT status FROM workflow_status WHERE workflow_uuid = :id"),
+                        {"id": full_id},
+                    )
+                    status_row = result.fetchone()
+                    check_session.close()
+                    if status_row and status_row[0] in ("SUCCESS", "ERROR", "CANCELLED"):
+                        # Send final content and close
+                        await asyncio.sleep(0.5)
+                        if log_file.exists():
+                            current_size = log_file.stat().st_size
+                            if current_size > last_size:
+                                with open(log_file, "r") as f:
+                                    f.seek(last_size)
+                                    new_content = f.read()
+                                    if new_content:
+                                        yield f"data: {json.dumps({'content': new_content})}\n\n"
+                        yield f"data: {json.dumps({'done': True})}\n\n"
+                        break
+
+                await asyncio.sleep(0.5)
+            except Exception:
+                break
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
+    )
+
+
 @app.get("/api/workflows/{workflow_id}/logs")
 def api_get_workflow_logs(
     workflow_id: str,
