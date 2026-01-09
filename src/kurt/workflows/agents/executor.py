@@ -143,6 +143,11 @@ def execute_agent_workflow(
     DBOS.set_event("status", "running")
     DBOS.set_event("started_at", time.time())
 
+    # Store parent workflow ID for nested workflow display
+    parent_workflow_id = os.environ.get("KURT_PARENT_WORKFLOW_ID")
+    if parent_workflow_id:
+        DBOS.set_event("parent_workflow_id", parent_workflow_id)
+
     DBOS.write_stream(
         "progress",
         {

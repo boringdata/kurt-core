@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 from typing import Any
 
@@ -9,6 +10,16 @@ from kurt.core import run_workflow, track_step
 
 from .config import MapConfig
 from .steps import map_step
+
+
+def _store_parent_workflow_id() -> None:
+    """Store parent workflow ID from environment if available."""
+    parent_id = os.environ.get("KURT_PARENT_WORKFLOW_ID")
+    if parent_id:
+        try:
+            DBOS.set_event("parent_workflow_id", parent_id)
+        except Exception:
+            pass
 
 
 @DBOS.workflow()
@@ -24,6 +35,9 @@ def map_workflow(config_dict: dict[str, Any]) -> dict[str, Any]:
 
     config = MapConfig.model_validate(config_dict)
     workflow_id = DBOS.workflow_id
+
+    # Store parent workflow ID for nested workflow display
+    _store_parent_workflow_id()
 
     DBOS.set_event("status", "running")
     DBOS.set_event("started_at", time.time())

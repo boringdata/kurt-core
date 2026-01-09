@@ -741,14 +741,44 @@ This allows accurate tracking of ALL tool calls, not just web_search/web_fetch.
 
 ### Nested Workflow Display
 
-When an agent workflow runs `kurt` CLI commands (e.g., `kurt sources add`), the child workflows are linked to their parent agent workflow. This enables hierarchical display in the web UI.
+When an agent workflow runs `kurt` CLI commands (e.g., `kurt content map`, `kurt agents run`), child workflows are automatically linked to their parent. This enables hierarchical display in the web UI.
 
 #### How It Works
 
-1. **Parent ID Propagation**: The executor sets `KURT_PARENT_WORKFLOW_ID` environment variable before running Claude
-2. **Child Workflow Storage**: When `run_workflow()` or background workers start a workflow, they check for this env var and store it as a DBOS event (`parent_workflow_id`)
+```
+┌─────────────────────────────────────────────────────────────┐
+│  execute_agent_workflow (parent)                            │
+│  workflow_id: abc-123                                       │
+│                                                             │
+│  1. Set env: KURT_PARENT_WORKFLOW_ID=abc-123                │
+│  2. Run Claude CLI subprocess                               │
+│     │                                                       │
+│     │  ┌───────────────────────────────────────────┐        │
+│     └─▶│ Claude runs: kurt content map ...         │        │
+│        │                                           │        │
+│        │  ┌─────────────────────────────────────┐  │        │
+│        │  │ map_workflow (child)                │  │        │
+│        │  │ workflow_id: def-456                │  │        │
+│        │  │                                     │  │        │
+│        │  │ Reads KURT_PARENT_WORKFLOW_ID       │  │        │
+│        │  │ Stores: parent_workflow_id=abc-123  │  │        │
+│        │  └─────────────────────────────────────┘  │        │
+│        └───────────────────────────────────────────┘        │
+│                                                             │
+│  Result: def-456.parent_workflow_id → abc-123               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+1. **Parent ID Propagation**: The executor sets `KURT_PARENT_WORKFLOW_ID` env var before running Claude
+2. **Child Workflow Storage**: Each workflow function reads the env var and stores it as a DBOS event
 3. **API Response**: The web API includes `parent_workflow_id` in workflow listings
 4. **Frontend Display**: Child workflows can be grouped/nested under their parent
+
+#### Supported Child Workflows
+
+These workflows automatically support parent linking:
+- `execute_agent_workflow` - Agent workflows running other agents
+- `map_workflow` - Content mapping via `kurt content map`
 
 #### Environment Variable
 
@@ -756,9 +786,96 @@ When an agent workflow runs `kurt` CLI commands (e.g., `kurt sources add`), the 
 KURT_PARENT_WORKFLOW_ID=<parent-workflow-uuid>
 ```
 
-This is automatically set by `agent_execution_step()` and read by:
-- `kurt.core.runner.run_workflow()` (foreground)
-- `kurt.core._worker.run_workflow_worker()` (background)
+This is automatically set by `agent_execution_step()` and inherited by all subprocess commands.
+
+#### Adding Nested Support to New Workflows
+
+**IMPORTANT**: DBOS events must be set from INSIDE the `@DBOS.workflow()` function, not from outside code.
+
+Add this helper and call it at the start of your workflow:
+
+```python
+import os
+from dbos import DBOS
+
+def _store_parent_workflow_id() -> None:
+    """Store parent workflow ID from environment if available."""
+    parent_id = os.environ.get("KURT_PARENT_WORKFLOW_ID")
+    if parent_id:
+        try:
+            DBOS.set_event("parent_workflow_id", parent_id)
+        except Exception:
+            pass  # Don't fail workflow if storage fails
+
+
+@DBOS.workflow()
+def my_workflow(config_dict: dict) -> dict:
+    workflow_id = DBOS.workflow_id
+
+    # Store parent workflow ID for nested display - MUST be inside workflow function
+    _store_parent_workflow_id()
+
+    # ... rest of workflow
+    DBOS.set_event("status", "running")
+```
+
+#### Querying Parent-Child Relationships
+
+```python
+import sqlite3
+import base64
+import pickle
+
+# Find child workflows for a parent
+cursor.execute('''
+    SELECT ws.workflow_uuid, ws.name, we.value as parent_id
+    FROM workflow_status ws
+    JOIN workflow_events we ON ws.workflow_uuid = we.workflow_uuid
+    WHERE we.key = 'parent_workflow_id'
+''')
+
+for row in cursor.fetchall():
+    parent_id = pickle.loads(base64.b64decode(row[2]))
+    print(f"Child: {row[0]} → Parent: {parent_id}")
+```
+
+#### Testing Nested Workflows
+
+Create a test workflow that runs a kurt command:
+
+```markdown
+---
+name: nested-test
+title: Nested Workflow Test
+agent:
+  model: claude-sonnet-4-20250514
+  max_turns: 3
+  allowed_tools:
+    - Bash
+guardrails:
+  max_tokens: 50000
+  max_time: 120
+---
+
+# Task
+
+Run this command to create a child workflow:
+
+```bash
+kurt content map https://example.com --background
+```
+
+Report the workflow ID from the output.
+```
+
+Then verify in the database:
+```bash
+# Run the workflow
+kurt agents run nested-test --foreground
+
+# Check parent_workflow_id was stored
+kurt workflows list  # Shows both parent and child
+```
 
 ### Guardrails
 
