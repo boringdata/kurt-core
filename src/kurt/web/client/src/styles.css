@@ -1108,6 +1108,11 @@ html, body, #root {
 
 .terminal .xterm {
   height: 100%;
+  user-select: text;
+}
+
+.terminal .xterm-screen {
+  user-select: text;
 }
 
 .terminal .xterm-viewport {
@@ -2425,6 +2430,23 @@ html, body, #root {
 
 .workflow-step-log.log-error {
   color: #ef4444;
+}
+
+.workflow-step-errors {
+  margin-top: 4px;
+  margin-left: 12px;
+  padding: 4px 8px;
+  background: #fef2f2;
+  border-radius: 4px;
+  border-left: 2px solid #ef4444;
+}
+
+.workflow-step-error {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: #dc2626;
+  padding: 2px 0;
+  word-break: break-word;
 }
 
 .result-success {

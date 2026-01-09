@@ -101,7 +101,7 @@ export default function Terminal({
         background: '#f8fafc',
         foreground: '#111827',
         cursor: '#111827',
-        selection: '#e2e8f0',
+        selectionBackground: '#bfdbfe',
         black: '#0f172a',
         red: '#dc2626',
         green: '#16a34a',
