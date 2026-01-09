@@ -2119,6 +2119,40 @@ html, body, #root {
   color: #a78bfa;
 }
 
+/* Nested/child workflows */
+.workflow-children {
+  padding: 4px;
+  background: #f9fafb;
+}
+
+.workflow-children .workflow-row {
+  margin-bottom: 4px;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.workflow-children .workflow-row:last-child {
+  margin-bottom: 0;
+}
+
+.workflow-children .workflow-row-header {
+  padding: 6px 10px;
+  font-size: 11px;
+}
+
+.workflow-children .workflow-row-details {
+  padding: 8px 10px;
+  font-size: 11px;
+}
+
+.workflow-no-children {
+  padding: 8px;
+  color: #9ca3af;
+  font-size: 11px;
+  font-style: italic;
+}
+
 .workflow-status-badge {
   font-size: 9px;
   font-weight: 600;

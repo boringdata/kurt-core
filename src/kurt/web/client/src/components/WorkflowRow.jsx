@@ -10,6 +10,7 @@ export default function WorkflowRow({
   onAttach,
   onCancel,
   getStatusBadgeClass,
+  depth = 0, // For nested rendering
 }) {
   const [logs, setLogs] = useState('')
   const [logsLoading, setLogsLoading] = useState(false)
@@ -18,6 +19,9 @@ export default function WorkflowRow({
   const [stepsExpanded, setStepsExpanded] = useState(false)
   const [inputExpanded, setInputExpanded] = useState(false)
   const [stepLogs, setStepLogs] = useState({}) // { stepName: logs[] }
+  const [childWorkflows, setChildWorkflows] = useState([])
+  const [childrenExpanded, setChildrenExpanded] = useState(false)
+  const [expandedChildId, setExpandedChildId] = useState(null)
 
   const isRunning = workflow.status === 'PENDING' || workflow.status === 'ENQUEUED'
 
@@ -166,6 +170,29 @@ export default function WorkflowRow({
       fetchStepLogs(step.name)
     })
   }, [stepsExpanded, liveStatus?.steps, fetchStepLogs])
+
+  // Fetch child workflows for agent workflows
+  const fetchChildWorkflows = useCallback(async () => {
+    if (!workflow?.workflow_uuid || workflow.workflow_type !== 'agent') return
+    try {
+      const response = await fetch(
+        apiUrl(`/api/workflows?parent_id=${workflow.workflow_uuid}&limit=50`)
+      )
+      if (response.ok) {
+        const data = await response.json()
+        setChildWorkflows(data.workflows || [])
+      }
+    } catch (err) {
+      console.error('Failed to fetch child workflows:', err)
+    }
+  }, [workflow?.workflow_uuid, workflow?.workflow_type])
+
+  // Fetch child workflows when children section is expanded
+  useEffect(() => {
+    if (childrenExpanded && workflow.workflow_type === 'agent') {
+      fetchChildWorkflows()
+    }
+  }, [childrenExpanded, fetchChildWorkflows, workflow.workflow_type])
 
   const shortId = workflow.workflow_uuid?.slice(0, 8) || ''
   // Use definition_name for agent workflows, otherwise use the workflow name
@@ -520,6 +547,56 @@ export default function WorkflowRow({
                   </>
                 )
               })()}
+            </div>
+          )}
+
+          {/* Child Workflows section for agent workflows */}
+          {workflow.workflow_type === 'agent' && depth < 2 && (
+            <div className="workflow-collapsible-section">
+              <div
+                className="workflow-section-header"
+                onClick={() => setChildrenExpanded(!childrenExpanded)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    setChildrenExpanded(!childrenExpanded)
+                  }
+                }}
+              >
+                <span className="workflow-section-toggle">
+                  {childrenExpanded ? '▼' : '▶'}
+                </span>
+                <span className="workflow-section-label">Child Workflows</span>
+                <span className="workflow-section-preview">
+                  {childWorkflows.length > 0 ? `${childWorkflows.length} workflow(s)` : 'Click to load'}
+                </span>
+              </div>
+              {childrenExpanded && (
+                <div className="workflow-section-content workflow-children">
+                  {childWorkflows.length === 0 ? (
+                    <div className="workflow-no-children">No child workflows</div>
+                  ) : (
+                    childWorkflows.map((child) => (
+                      <WorkflowRow
+                        key={child.workflow_uuid}
+                        workflow={child}
+                        isExpanded={expandedChildId === child.workflow_uuid}
+                        onToggleExpand={() =>
+                          setExpandedChildId(
+                            expandedChildId === child.workflow_uuid ? null : child.workflow_uuid
+                          )
+                        }
+                        onAttach={() => onAttach?.(child.workflow_uuid)}
+                        onCancel={() => onCancel?.(child.workflow_uuid)}
+                        getStatusBadgeClass={getStatusBadgeClass}
+                        depth={depth + 1}
+                      />
+                    ))
+                  )}
+                </div>
+              )}
             </div>
           )}
 
