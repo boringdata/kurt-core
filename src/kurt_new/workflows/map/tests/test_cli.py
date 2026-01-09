@@ -74,14 +74,64 @@ class TestMapCommand:
         # May fail because CMS not configured, but should parse
         assert "--help" not in result.output
 
-    def test_map_method_sitemap(self, cli_runner: CliRunner, tmp_database):
-        """Test map --method sitemap option."""
+    def test_map_method_options_in_help(self, cli_runner: CliRunner, tmp_database):
+        """Test map --method options are documented in help."""
         result = invoke_cli(cli_runner, map_cmd, ["--help"])
         assert_cli_success(result)
         assert_output_contains(result, "sitemap")
         assert_output_contains(result, "crawl")
         assert_output_contains(result, "folder")
         assert_output_contains(result, "cms")
+
+    def test_map_method_crawl_forces_crawler(self, cli_runner: CliRunner, tmp_database):
+        """Test --method crawl skips sitemap and uses crawler directly."""
+        from unittest.mock import patch
+
+        with patch("kurt_new.workflows.map.map_url.focused_crawler") as mock_crawler:
+            mock_crawler.return_value = ([], {"https://example.com/page1"})
+
+            with patch("kurt_new.workflows.map.map_url.httpx.get") as mock_httpx:
+                # httpx should NOT be called when method=crawl
+                mock_httpx.side_effect = Exception("sitemap should not be tried")
+
+                result = cli_runner.invoke(
+                    map_cmd,
+                    ["https://example.com", "--method", "crawl", "--dry-run", "--format", "json"],
+                )
+
+                assert result.exit_code == 0, f"Failed: {result.output}"
+                assert mock_crawler.called, "Crawler should be called"
+                # httpx.get would raise if called, so if we got here, sitemap was skipped
+
+    def test_map_method_sitemap_does_not_fallback(self, cli_runner: CliRunner, tmp_database):
+        """Test --method sitemap raises error instead of falling back to crawl."""
+        from unittest.mock import MagicMock, patch
+
+        with patch("kurt_new.workflows.map.map_url.httpx.get") as mock_httpx:
+            # Sitemap returns 404
+            mock_response = MagicMock()
+            mock_response.status_code = 404
+            mock_response.text = ""
+            mock_httpx.return_value = mock_response
+
+            with patch("kurt_new.workflows.map.map_url.focused_crawler") as mock_crawler:
+                result = cli_runner.invoke(
+                    map_cmd,
+                    [
+                        "https://example.com",
+                        "--method",
+                        "sitemap",
+                        "--max-depth",
+                        "2",  # Would normally trigger fallback
+                        "--dry-run",
+                        "--format",
+                        "json",
+                    ],
+                )
+
+                # Should fail because sitemap not found and no fallback
+                assert "No sitemap found" in result.output or result.exit_code != 0
+                assert not mock_crawler.called, "Crawler should NOT be called when method=sitemap"
 
     def test_map_with_sitemap_path(self, cli_runner: CliRunner, tmp_database):
         """Test map --sitemap-path option."""

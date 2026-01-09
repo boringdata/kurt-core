@@ -63,7 +63,7 @@ def map_cmd(
     from .workflow import run_map
 
     # Determine source type
-    source_url = url or source if source and source.startswith(("http://", "https://")) else None
+    source_url = url or (source if source and source.startswith(("http://", "https://")) else None)
     source_folder = folder or (
         source if source and not source.startswith(("http://", "https://")) else None
     )
