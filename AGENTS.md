@@ -634,3 +634,136 @@ SQLModel doesn't auto-discover models. Call `register_all_models()` before `crea
 5. **Click Decorator Order**: Composed decorators apply in reverse order.
 
 6. **CLI Argument Passing**: Use keyword arguments when calling internal functions from CLI handlers to avoid silent failures.
+
+---
+
+## Agent Workflows (Claude Code)
+
+Agent workflows execute Claude Code CLI as a subprocess inside DBOS workflows. They're defined as Markdown files with YAML frontmatter in `workflows/` (configurable via `PATH_WORKFLOWS` in `kurt.config`).
+
+### Workflow Definition Format
+
+```markdown
+---
+name: my-workflow
+title: My Agent Workflow
+description: |
+  What this workflow does.
+
+agent:
+  model: claude-sonnet-4-20250514
+  max_turns: 10
+  allowed_tools:
+    - Bash
+    - Read
+    - Write
+    - Glob
+  permission_mode: bypassPermissions
+
+guardrails:
+  max_tokens: 100000
+  max_tool_calls: 50
+  max_time: 300
+
+schedule:
+  cron: "0 9 * * 1-5"
+  timezone: "UTC"
+  enabled: true
+
+inputs:
+  task: "default value"
+
+tags: [automation, daily]
+---
+
+# Workflow Body
+
+Your prompt goes here. Use template variables:
+- {{task}} - from inputs
+- {{date}} - current date (YYYY-MM-DD)
+- {{datetime}} - ISO timestamp
+- {{project_root}} - project directory
+```
+
+### CLI Commands
+
+```bash
+# List all workflow definitions
+kurt agents list
+kurt agents list --tag automation
+kurt agents list --scheduled
+
+# Show workflow details
+kurt agents show my-workflow
+
+# Validate workflow files
+kurt agents validate                    # Validate all
+kurt agents validate workflows/my.md    # Validate specific file
+
+# Run a workflow
+kurt agents run my-workflow             # Background (default)
+kurt agents run my-workflow --foreground
+kurt agents run my-workflow --input task="Custom task"
+
+# View run history
+kurt agents history my-workflow --limit 20
+
+# Initialize with example
+kurt agents init
+```
+
+### Execution Model
+
+1. **Parser** (`parser.py`): Parses Markdown frontmatter into Pydantic models
+2. **Registry** (`registry.py`): File-based discovery from `workflows/` directory
+3. **Executor** (`executor.py`): DBOS workflow that runs Claude CLI via subprocess
+4. **Scheduler** (`scheduler.py`): DBOS native cron scheduling
+
+### Key Metrics
+
+The executor tracks these metrics via DBOS events:
+- `agent_turns`: Number of conversation turns
+- `tokens_in`: Input tokens (includes cache reads)
+- `tokens_out`: Output tokens
+- `cost_usd`: Total API cost
+- `tool_calls`: Web search/fetch requests (note: Bash/Read tool calls are not tracked by Claude CLI)
+
+### Guardrails
+
+Three guardrails are enforced:
+- `max_tokens`: Maximum token budget (default: 500,000)
+- `max_tool_calls`: Maximum tool invocations (default: 200) - **not enforced by CLI**
+- `max_time`: Maximum execution time in seconds (default: 3600)
+
+### Module Structure
+
+```
+src/kurt/workflows/agents/
+├── __init__.py      # Public exports
+├── parser.py        # Frontmatter parsing (Pydantic models)
+├── registry.py      # File-based workflow registry
+├── executor.py      # DBOS workflow + Claude subprocess
+├── scheduler.py     # DBOS cron scheduling
+└── cli.py           # CLI commands (kurt agents ...)
+```
+
+### Configuration
+
+In `kurt.config`:
+```
+PATH_WORKFLOWS=workflows
+```
+
+### Running Workflows Programmatically
+
+```python
+from kurt.workflows.agents import run_definition
+
+# Background execution
+result = run_definition("my-workflow", inputs={"task": "..."})
+print(result["workflow_id"])
+
+# Foreground execution
+result = run_definition("my-workflow", background=False)
+print(result["status"], result["turns"], result["tokens_in"])
+```
