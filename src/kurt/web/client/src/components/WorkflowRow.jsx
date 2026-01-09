@@ -547,25 +547,21 @@ export default function WorkflowRow({
                         })}
                         {/* Child workflows as nested steps for agent workflows */}
                         {isAgent && depth < 2 && childWorkflows.map((child) => (
-                          <div key={child.workflow_uuid} className="workflow-step-item workflow-child-step">
-                            <WorkflowRow
-                              workflow={child}
-                              isExpanded={expandedChildId === child.workflow_uuid}
-                              onToggleExpand={() =>
-                                setExpandedChildId(
-                                  expandedChildId === child.workflow_uuid ? null : child.workflow_uuid
-                                )
-                              }
-                              onAttach={() => onAttach?.(child.workflow_uuid)}
-                              onCancel={() => onCancel?.(child.workflow_uuid)}
-                              getStatusBadgeClass={getStatusBadgeClass}
-                              depth={depth + 1}
-                            />
-                          </div>
+                          <WorkflowRow
+                            key={child.workflow_uuid}
+                            workflow={child}
+                            isExpanded={expandedChildId === child.workflow_uuid}
+                            onToggleExpand={() =>
+                              setExpandedChildId(
+                                expandedChildId === child.workflow_uuid ? null : child.workflow_uuid
+                              )
+                            }
+                            onAttach={() => onAttach?.(child.workflow_uuid)}
+                            onCancel={() => onCancel?.(child.workflow_uuid)}
+                            getStatusBadgeClass={getStatusBadgeClass}
+                            depth={depth + 1}
+                          />
                         ))}
-                        {isAgent && childWorkflows.length === 0 && (
-                          <div className="workflow-no-children">No nested workflows triggered</div>
-                        )}
                       </div>
                     )}
                   </>
