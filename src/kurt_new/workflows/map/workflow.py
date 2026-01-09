@@ -8,7 +8,7 @@ from dbos import DBOS
 from kurt_new.core import run_workflow, track_step
 
 from .config import MapConfig
-from .steps import map_cms_step, map_folder_step, map_step, map_url_step
+from .steps import map_step
 
 
 @DBOS.workflow()
@@ -29,14 +29,7 @@ def map_workflow(config_dict: dict[str, Any]) -> dict[str, Any]:
     DBOS.set_event("started_at", time.time())
 
     with track_step("map_sources"):
-        if config.source_url:
-            result = map_url_step(config.model_dump())
-        elif config.source_folder:
-            result = map_folder_step(config.model_dump())
-        elif config.cms_platform and config.cms_instance:
-            result = map_cms_step(config.model_dump())
-        else:
-            result = map_step(config.model_dump())
+        result = map_step(config.model_dump())
 
     # Persist rows via transaction (called from workflow, not step)
     if not result.get("dry_run") and result.get("rows"):

@@ -49,12 +49,6 @@ class FetchConfig(StepConfig):
         le=500,
         description="Batch size for embedding generation",
     )
-    embedding_concurrency: int = ConfigParam(
-        default=3,
-        ge=1,
-        le=10,
-        description="Concurrent batches for embedding generation",
-    )
 
     # Behavior
     dry_run: bool = ConfigParam(default=False, description="Dry run mode")

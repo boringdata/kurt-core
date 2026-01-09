@@ -29,6 +29,7 @@ def map_url_step(config_dict: dict[str, Any]) -> dict[str, Any]:
         allow_external=config.allow_external,
         include_patterns=include_patterns,
         exclude_patterns=exclude_patterns,
+        sitemap_path=config.sitemap_path,
     )
 
     discovered_docs = result.get("discovered", [])

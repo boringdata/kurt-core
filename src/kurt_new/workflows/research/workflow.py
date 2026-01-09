@@ -43,7 +43,10 @@ def research_workflow(config_dict: dict[str, Any]) -> dict[str, Any]:
     persistence_info = {}
     if not step_result.get("dry_run"):
         save_to_file = step_result.get("save", False)
-        persistence = persist_research_result(result, save_to_file=save_to_file)
+        output_dir = config.output_dir
+        persistence = persist_research_result(
+            result, save_to_file=save_to_file, output_dir=output_dir
+        )
         persistence_info = persistence
 
     DBOS.set_event("status", "completed")

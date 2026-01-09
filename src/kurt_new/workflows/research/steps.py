@@ -81,6 +81,7 @@ def research_search_step(config_dict: dict[str, Any]) -> dict[str, Any]:
 def persist_research_result(
     result_dict: dict[str, Any],
     save_to_file: bool = False,
+    output_dir: str = "sources/research",
 ) -> dict[str, Any]:
     """
     Persist research result to database and optionally filesystem.
@@ -120,10 +121,10 @@ def persist_research_result(
             # Build markdown content
             markdown = _build_research_markdown(result_dict, timestamp)
 
-            # Save to sources/research/
+            # Save to configured output directory
             date_str = timestamp.strftime("%Y%m%d")
             filename = f"{date_str}-{result_dict['id']}.md"
-            research_dir = Path("sources/research")
+            research_dir = Path(output_dir)
             research_dir.mkdir(parents=True, exist_ok=True)
 
             content_path = str(research_dir / filename)

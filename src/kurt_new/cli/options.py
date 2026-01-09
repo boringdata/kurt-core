@@ -34,7 +34,7 @@ exclude_option = click.option(
 
 in_cluster_option = click.option(
     "--in-cluster",
-    help="Filter documents in specified cluster",
+    help="Filter documents in specified cluster (not yet implemented)",
 )
 
 with_status_option = click.option(
@@ -45,7 +45,7 @@ with_status_option = click.option(
 
 with_content_type_option = click.option(
     "--with-content-type",
-    help="Filter by content type (tutorial, guide, blog, reference, etc.)",
+    help="Filter by content type (not yet implemented)",
 )
 
 # =============================================================================

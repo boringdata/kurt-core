@@ -51,7 +51,11 @@ class ResearchConfig(StepConfig):
     # Output settings
     save: bool = ConfigParam(
         default=False,
-        description="Save results to sources/research/",
+        description="Save results to file",
+    )
+    output_dir: str = ConfigParam(
+        default="sources/research",
+        description="Directory to save research results",
     )
 
     # Behavior

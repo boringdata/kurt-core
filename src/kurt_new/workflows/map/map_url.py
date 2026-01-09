@@ -20,15 +20,25 @@ def discover_from_url(
     allow_external: bool = False,
     include_patterns: tuple[str, ...] = (),
     exclude_patterns: tuple[str, ...] = (),
+    sitemap_path: str | None = None,
 ) -> dict:
     """
     Discover URLs from web source (sitemap or crawl).
+
+    Args:
+        url: Base URL to discover from
+        max_depth: Max crawl depth (enables crawl fallback if sitemap fails)
+        max_pages: Max pages to discover
+        allow_external: Allow external URLs during crawl
+        include_patterns: Glob patterns to include
+        exclude_patterns: Glob patterns to exclude
+        sitemap_path: Custom sitemap path (e.g., "/custom-sitemap.xml")
     """
     discovered_urls: list[str] = []
     discovery_method = "sitemap"
 
     try:
-        discovered_urls = discover_sitemap_urls(url)
+        discovered_urls = discover_sitemap_urls(url, sitemap_path=sitemap_path)
         logger.info("Sitemap discovered %s URLs", len(discovered_urls))
     except Exception as exc:
         if max_depth is not None:
@@ -61,30 +71,41 @@ def discover_from_url(
     }
 
 
-def discover_sitemap_urls(base_url: str) -> list[str]:
+def discover_sitemap_urls(base_url: str, sitemap_path: str | None = None) -> list[str]:
     """
     Discover URLs from sitemap.xml.
+
+    Args:
+        base_url: Base URL of the website
+        sitemap_path: Custom sitemap path (e.g., "/custom-sitemap.xml")
     """
     parsed = urlparse(base_url)
     base = f"{parsed.scheme}://{parsed.netloc}"
 
     sitemap_urls: list[str] = []
 
-    try:
-        response = httpx.get(f"{base}/robots.txt", timeout=10.0, follow_redirects=True)
-        if response.status_code == 200:
-            for line in response.text.split("\n"):
-                if line.lower().startswith("sitemap:"):
-                    sitemap_url = line.split(":", 1)[1].strip()
-                    sitemap_urls.append(sitemap_url)
-    except Exception:
-        pass
+    # If custom sitemap path provided, use it first
+    if sitemap_path:
+        custom_url = f"{base}{sitemap_path}" if sitemap_path.startswith("/") else sitemap_path
+        sitemap_urls.append(custom_url)
+    else:
+        # Try robots.txt for sitemap location
+        try:
+            response = httpx.get(f"{base}/robots.txt", timeout=10.0, follow_redirects=True)
+            if response.status_code == 200:
+                for line in response.text.split("\n"):
+                    if line.lower().startswith("sitemap:"):
+                        sitemap_url = line.split(":", 1)[1].strip()
+                        sitemap_urls.append(sitemap_url)
+        except Exception:
+            pass
 
-    common_paths = ["/sitemap.xml", "/sitemap_index.xml", "/sitemap-index.xml"]
-    for path in common_paths:
-        url = f"{base}{path}"
-        if url not in sitemap_urls:
-            sitemap_urls.append(url)
+        # Add common sitemap paths as fallback
+        common_paths = ["/sitemap.xml", "/sitemap_index.xml", "/sitemap-index.xml"]
+        for path in common_paths:
+            url = f"{base}{path}"
+            if url not in sitemap_urls:
+                sitemap_urls.append(url)
 
     all_urls: list[str] = []
 

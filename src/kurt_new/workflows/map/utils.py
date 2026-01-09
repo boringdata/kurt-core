@@ -81,6 +81,7 @@ def build_rows(
             "discovery_url": discovery_url,
             "is_new": doc_id not in existing_ids,
             "title": item.get("title"),
+            "content_hash": item.get("content_hash"),
             "error": item.get("error"),
             "metadata_json": item.get("metadata"),
         }

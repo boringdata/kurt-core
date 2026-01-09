@@ -17,7 +17,6 @@ class TestFetchConfig:
         assert config.fetch_engine == "trafilatura"
         assert config.embedding_max_chars == 1000
         assert config.embedding_batch_size == 100
-        assert config.embedding_concurrency == 3
         assert config.dry_run is False
 
     def test_config_with_fetch_engine(self):
@@ -46,11 +45,6 @@ class TestFetchConfig:
         """Test embedding_batch_size configuration."""
         config = FetchConfig(embedding_batch_size=50)
         assert config.embedding_batch_size == 50
-
-    def test_config_embedding_concurrency(self):
-        """Test embedding_concurrency configuration."""
-        config = FetchConfig(embedding_concurrency=5)
-        assert config.embedding_concurrency == 5
 
     def test_config_dry_run(self):
         """Test dry_run flag."""
