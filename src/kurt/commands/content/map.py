@@ -40,11 +40,6 @@ def map_cmd():
     help="Override sitemap location (default: auto-detect at /sitemap.xml)",
 )
 @click.option(
-    "--include-blogrolls",
-    is_flag=True,
-    help="Enable LLM blogroll date extraction (max 50 pages analyzed, warns about LLM cost)",
-)
-@click.option(
     "--max-depth",
     type=int,
     help="Maximum crawl depth for spider-based discovery (only used if no sitemap found)",
@@ -83,7 +78,6 @@ def map_cmd():
 def map_url(
     url: str,
     sitemap_path: str,
-    include_blogrolls: bool,
     max_depth: int,
     max_pages: int,
     allow_external: bool,
@@ -141,7 +135,6 @@ def map_url(
                 max_pages=max_pages,
                 max_depth=max_depth,
                 allow_external=allow_external,
-                include_blogrolls=include_blogrolls,
                 include_patterns=",".join(include_patterns) if include_patterns else None,
                 exclude_patterns=",".join(exclude_patterns) if exclude_patterns else None,
                 dry_run=dry_run,

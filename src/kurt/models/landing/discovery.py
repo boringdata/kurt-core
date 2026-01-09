@@ -85,10 +85,6 @@ class DiscoveryConfig(ModelConfig):
         default=False,
         description="Allow following external domain links",
     )
-    include_blogrolls: bool = ConfigParam(
-        default=False,
-        description="Enable LLM-powered blogroll/changelog discovery",
-    )
     dry_run: bool = ConfigParam(
         default=False,
         description="Preview discovery without creating database records",
@@ -288,7 +284,6 @@ def _run_discovery(
             allow_external=config.allow_external,
             include_patterns=include_patterns,
             exclude_patterns=exclude_patterns,
-            include_blogrolls=config.include_blogrolls,
         )
         return result, result.get("method", "sitemap"), config.source_url
 
@@ -308,7 +303,6 @@ def _discover_from_url(
     allow_external: bool = False,
     include_patterns: tuple = (),
     exclude_patterns: tuple = (),
-    include_blogrolls: bool = False,
 ) -> dict:
     """Discover URLs from web source (sitemap or crawl)."""
     from kurt.utils.discovery import discover_from_url
