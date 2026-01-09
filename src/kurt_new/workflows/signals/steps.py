@@ -8,7 +8,7 @@ from typing import Any
 
 from dbos import DBOS
 
-from kurt_new.db import ensure_tables, managed_session
+from kurt_new.db import managed_session
 from kurt_new.integrations.research.monitoring import (
     FeedAdapter,
     HackerNewsAdapter,
@@ -138,8 +138,6 @@ def persist_signals(
         Dict with inserted/updated counts
     """
     with managed_session() as session:
-        ensure_tables([MonitoringSignal], session=session)
-
         inserted = 0
         updated = 0
 

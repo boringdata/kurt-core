@@ -6,7 +6,7 @@ from typing import Any, Callable, Optional
 
 from sqlmodel import select
 
-from kurt_new.db import ensure_tables, managed_session
+from kurt_new.db import managed_session
 
 from .models import MapDocument, MapStatus
 
@@ -48,7 +48,6 @@ def resolve_existing(doc_ids: list[str]) -> set[str]:
     if not doc_ids:
         return set()
     with managed_session() as session:
-        ensure_tables([MapDocument], session=session)
         rows = session.exec(
             select(MapDocument.document_id).where(MapDocument.document_id.in_(doc_ids))
         ).all()

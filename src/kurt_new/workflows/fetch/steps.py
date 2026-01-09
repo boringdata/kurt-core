@@ -8,7 +8,7 @@ from typing import Any
 from dbos import DBOS
 
 from kurt_new.core import embedding_to_bytes, generate_embeddings
-from kurt_new.db import ensure_tables, managed_session
+from kurt_new.db import managed_session
 from kurt_new.integrations.cms import fetch_from_cms
 
 from .config import FetchConfig
@@ -260,7 +260,6 @@ def _serialize_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def persist_fetch_documents(rows: list[dict[str, Any]]) -> dict[str, int]:
     """Persist fetch results in a durable transaction."""
     with managed_session() as session:
-        ensure_tables([FetchDocument], session=session)
         inserted = 0
         updated = 0
         for row in rows:

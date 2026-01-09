@@ -9,7 +9,7 @@ from typing import Any
 
 from dbos import DBOS
 
-from kurt_new.db import ensure_tables, managed_session
+from kurt_new.db import managed_session
 from kurt_new.integrations.research import ResearchResult
 from kurt_new.integrations.research.config import get_source_config
 from kurt_new.integrations.research.perplexity import PerplexityAdapter
@@ -94,8 +94,6 @@ def persist_research_result(
         Dict with persistence info
     """
     with managed_session() as session:
-        ensure_tables([ResearchDocument], session=session)
-
         # Create ResearchDocument
         doc = ResearchDocument(
             id=result_dict["id"],

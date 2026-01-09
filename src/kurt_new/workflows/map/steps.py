@@ -6,7 +6,7 @@ from typing import Any
 
 from dbos import DBOS
 
-from kurt_new.db import ensure_tables, managed_session
+from kurt_new.db import managed_session
 
 from .config import MapConfig
 from .map_cms import discover_from_cms
@@ -213,7 +213,6 @@ def persist_map_documents(rows: list[dict[str, Any]]) -> dict[str, int]:
     Persist map results in a durable transaction.
     """
     with managed_session() as session:
-        ensure_tables([MapDocument], session=session)
         inserted = 0
         updated = 0
         for row in rows:

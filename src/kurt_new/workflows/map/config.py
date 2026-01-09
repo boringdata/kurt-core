@@ -58,5 +58,4 @@ class MapConfig(StepConfig):
 
     # Behavior
     allow_external: bool = ConfigParam(default=False, description="Allow external URLs")
-    include_blogrolls: bool = ConfigParam(default=False, description="Include blogroll links")
     dry_run: bool = ConfigParam(default=False, description="Dry run mode")

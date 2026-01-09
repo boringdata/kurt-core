@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from dbos import DBOS
 
-from kurt_new.db import ensure_tables, managed_session
+from kurt_new.db import managed_session
 from kurt_new.integrations.domains_analytics import sync_domain_metrics
 from kurt_new.integrations.domains_analytics.utils import normalize_url_for_analytics
 
@@ -173,8 +173,6 @@ def persist_domain_analytics(
     rows = deserialize_rows(rows)
 
     with managed_session() as session:
-        ensure_tables([AnalyticsDomain, PageAnalytics], session=session)
-
         # Upsert AnalyticsDomain
         existing_domain = session.get(AnalyticsDomain, domain)
         if existing_domain:

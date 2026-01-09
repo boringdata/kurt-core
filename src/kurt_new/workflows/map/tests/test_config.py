@@ -25,7 +25,6 @@ class TestMapConfig:
         assert config.include_patterns is None
         assert config.exclude_patterns is None
         assert config.allow_external is False
-        assert config.include_blogrolls is False
         assert config.dry_run is False
 
     def test_config_with_source_url(self):
