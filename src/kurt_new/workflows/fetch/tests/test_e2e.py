@@ -181,7 +181,7 @@ class TestFetchWorkflowE2E:
             assert len(db_docs) == 2
 
             for doc in db_docs:
-                assert doc.status == FetchStatus.FETCHED
+                assert doc.status == FetchStatus.SUCCESS
                 assert doc.content_length > 0
                 assert doc.embedding is not None  # Embedding was generated
 
@@ -270,7 +270,7 @@ class TestFetchWorkflowE2E:
             good_doc = session.get(FetchDocument, "doc-1")
             bad_doc = session.get(FetchDocument, "doc-2")
 
-            assert good_doc.status == FetchStatus.FETCHED
+            assert good_doc.status == FetchStatus.SUCCESS
             assert good_doc.content_length > 0
             assert good_doc.embedding is not None
 
@@ -379,7 +379,7 @@ class TestBackgroundWorkflowLifecycle:
                 source_url="https://example.com/lifecycle-test",
                 source_type="url",
                 discovery_method="manual",
-                map_status=MapStatus.DISCOVERED,
+                map_status=MapStatus.SUCCESS,
             )
             session.add(doc)
             session.commit()
@@ -465,7 +465,7 @@ class TestBackgroundWorkflowLifecycle:
                 source_url="https://example.com/immediate-test",
                 source_type="url",
                 discovery_method="manual",
-                map_status=MapStatus.DISCOVERED,
+                map_status=MapStatus.SUCCESS,
             )
             session.add(doc)
             session.commit()
@@ -527,7 +527,7 @@ class TestBackgroundWorkflowLifecycle:
                 source_url="https://example.com/foreground-test",
                 source_type="url",
                 discovery_method="manual",
-                map_status=MapStatus.DISCOVERED,
+                map_status=MapStatus.SUCCESS,
             )
             session.add(doc)
             session.commit()
@@ -593,7 +593,7 @@ class TestBackgroundWorkflowLifecycle:
                     source_url=f"https://example.com/progress-{i}",
                     source_type="url",
                     discovery_method="manual",
-                    map_status=MapStatus.DISCOVERED,
+                    map_status=MapStatus.SUCCESS,
                 )
                 session.add(doc)
             session.commit()

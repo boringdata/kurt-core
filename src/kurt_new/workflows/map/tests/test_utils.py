@@ -52,20 +52,20 @@ class TestComputeStatus:
         row = {"error": "Something went wrong"}
         assert compute_status(row) == MapStatus.ERROR
 
-    def test_discovered_status(self):
-        """Test DISCOVERED status when is_new is True."""
+    def test_success_status_new(self):
+        """Test SUCCESS status when is_new is True."""
         row = {"is_new": True}
-        assert compute_status(row) == MapStatus.DISCOVERED
+        assert compute_status(row) == MapStatus.SUCCESS
 
-    def test_existing_status(self):
-        """Test EXISTING status when is_new is False."""
+    def test_success_status_existing(self):
+        """Test SUCCESS status when is_new is False."""
         row = {"is_new": False}
-        assert compute_status(row) == MapStatus.EXISTING
+        assert compute_status(row) == MapStatus.SUCCESS
 
-    def test_existing_status_default(self):
-        """Test EXISTING status when is_new is not set."""
+    def test_success_status_default(self):
+        """Test SUCCESS status when is_new is not set."""
         row = {}
-        assert compute_status(row) == MapStatus.EXISTING
+        assert compute_status(row) == MapStatus.SUCCESS
 
 
 class TestGetSourceType:
@@ -164,39 +164,39 @@ class TestSerializeRows:
 
     def test_serializes_status_enum(self):
         """Test that MapStatus enum is converted to string value."""
-        rows = [{"status": MapStatus.DISCOVERED, "id": "1"}]
+        rows = [{"status": MapStatus.SUCCESS, "id": "1"}]
         result = serialize_rows(rows)
 
-        assert result[0]["status"] == "DISCOVERED"
+        assert result[0]["status"] == "SUCCESS"
         assert result[0]["id"] == "1"
 
     def test_preserves_string_status(self):
         """Test that string status is preserved."""
-        rows = [{"status": "EXISTING", "id": "2"}]
+        rows = [{"status": "SUCCESS", "id": "2"}]
         result = serialize_rows(rows)
 
-        assert result[0]["status"] == "EXISTING"
+        assert result[0]["status"] == "SUCCESS"
 
     def test_multiple_rows(self):
         """Test serializing multiple rows."""
         rows = [
-            {"status": MapStatus.DISCOVERED, "id": "1"},
-            {"status": MapStatus.EXISTING, "id": "2"},
+            {"status": MapStatus.SUCCESS, "id": "1"},
+            {"status": MapStatus.SUCCESS, "id": "2"},
             {"status": MapStatus.ERROR, "id": "3"},
         ]
         result = serialize_rows(rows)
 
         assert len(result) == 3
-        assert result[0]["status"] == "DISCOVERED"
-        assert result[1]["status"] == "EXISTING"
+        assert result[0]["status"] == "SUCCESS"
+        assert result[1]["status"] == "SUCCESS"
         assert result[2]["status"] == "ERROR"
 
     def test_does_not_modify_original(self):
         """Test that original rows are not modified."""
-        original = [{"status": MapStatus.DISCOVERED, "id": "1"}]
+        original = [{"status": MapStatus.SUCCESS, "id": "1"}]
         serialize_rows(original)
 
-        assert original[0]["status"] == MapStatus.DISCOVERED
+        assert original[0]["status"] == MapStatus.SUCCESS
 
 
 class TestFilterItems:

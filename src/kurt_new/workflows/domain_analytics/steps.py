@@ -182,7 +182,7 @@ def persist_domain_analytics(
             existing_domain.last_synced_at = datetime.utcnow()
             existing_domain.sync_period_days = period_days
             existing_domain.has_data = len(rows) > 0
-            existing_domain.status = AnalyticsStatus.SYNCED
+            existing_domain.status = AnalyticsStatus.SUCCESS
             existing_domain.error = None
         else:
             session.add(
@@ -192,7 +192,7 @@ def persist_domain_analytics(
                     has_data=len(rows) > 0,
                     last_synced_at=datetime.utcnow(),
                     sync_period_days=period_days,
-                    status=AnalyticsStatus.SYNCED,
+                    status=AnalyticsStatus.SUCCESS,
                 )
             )
 

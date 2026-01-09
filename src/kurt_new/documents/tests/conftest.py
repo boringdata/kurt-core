@@ -72,7 +72,7 @@ def tmp_project_with_docs(tmp_project: Path):
                 source_url="https://example.com/docs/intro",
                 source_type="url",
                 discovery_method="sitemap",
-                status=MapStatus.DISCOVERED,
+                status=MapStatus.SUCCESS,
                 title="Introduction",
             )
         )
@@ -82,7 +82,7 @@ def tmp_project_with_docs(tmp_project: Path):
                 source_url="https://example.com/docs/guide",
                 source_type="url",
                 discovery_method="sitemap",
-                status=MapStatus.DISCOVERED,
+                status=MapStatus.SUCCESS,
                 title="User Guide",
             )
         )
@@ -92,7 +92,7 @@ def tmp_project_with_docs(tmp_project: Path):
                 source_url="https://example.com/blog/post-1",
                 source_type="url",
                 discovery_method="crawl",
-                status=MapStatus.DISCOVERED,
+                status=MapStatus.SUCCESS,
                 title="Blog Post",
             )
         )
@@ -104,14 +104,14 @@ def tmp_project_with_docs(tmp_project: Path):
                 source_url="https://example.com/docs/api",
                 source_type="url",
                 discovery_method="sitemap",
-                status=MapStatus.EXISTING,
+                status=MapStatus.SUCCESS,
                 title="API Reference",
             )
         )
         session.add(
             FetchDocument(
                 document_id="doc-4",
-                status=FetchStatus.FETCHED,
+                status=FetchStatus.SUCCESS,
                 content_length=5000,
                 fetch_engine="trafilatura",
                 public_url="https://example.com/docs/api",
@@ -124,14 +124,14 @@ def tmp_project_with_docs(tmp_project: Path):
                 source_url="https://example.com/docs/config",
                 source_type="url",
                 discovery_method="sitemap",
-                status=MapStatus.EXISTING,
+                status=MapStatus.SUCCESS,
                 title="Configuration",
             )
         )
         session.add(
             FetchDocument(
                 document_id="doc-5",
-                status=FetchStatus.FETCHED,
+                status=FetchStatus.SUCCESS,
                 content_length=3000,
                 fetch_engine="firecrawl",
                 public_url="https://example.com/docs/config",
@@ -145,7 +145,7 @@ def tmp_project_with_docs(tmp_project: Path):
                 source_url="https://example.com/private/secret",
                 source_type="url",
                 discovery_method="crawl",
-                status=MapStatus.DISCOVERED,
+                status=MapStatus.SUCCESS,
                 title="Private Page",
             )
         )

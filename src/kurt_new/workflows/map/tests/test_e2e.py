@@ -185,7 +185,7 @@ class TestMapFolderE2E:
             for doc in docs:
                 assert doc.source_type == "file"
                 assert doc.discovery_method == "folder"
-                assert doc.status == MapStatus.DISCOVERED
+                assert doc.status == MapStatus.SUCCESS
                 assert doc.is_new is True
 
     def test_dry_run_does_not_persist(self, tmp_kurt_project: Path, tmp_docs_folder: Path):
@@ -327,7 +327,7 @@ class TestPersistMapDocuments:
                 "source_type": "url",
                 "discovery_method": "sitemap",
                 "discovery_url": "https://example.com",
-                "status": MapStatus.DISCOVERED,
+                "status": MapStatus.SUCCESS,
                 "is_new": True,
                 "title": "Document 1",
             },
@@ -337,7 +337,7 @@ class TestPersistMapDocuments:
                 "source_type": "url",
                 "discovery_method": "sitemap",
                 "discovery_url": "https://example.com",
-                "status": MapStatus.DISCOVERED,
+                "status": MapStatus.SUCCESS,
                 "is_new": True,
                 "title": "Document 2",
             },
@@ -362,7 +362,7 @@ class TestPersistMapDocuments:
                 "source_type": "url",
                 "discovery_method": "sitemap",
                 "discovery_url": "https://example.com",
-                "status": MapStatus.DISCOVERED,
+                "status": MapStatus.SUCCESS,
                 "is_new": True,
                 "title": "Original Title",
             },
@@ -372,7 +372,7 @@ class TestPersistMapDocuments:
 
         # Update with new title
         rows[0]["title"] = "Updated Title"
-        rows[0]["status"] = MapStatus.EXISTING
+        rows[0]["status"] = MapStatus.SUCCESS
 
         result = persist_map_documents(rows)
 
@@ -382,4 +382,4 @@ class TestPersistMapDocuments:
         with managed_session() as session:
             doc = session.get(MapDocument, "doc-1")
             assert doc.title == "Updated Title"
-            assert doc.status == MapStatus.EXISTING
+            assert doc.status == MapStatus.SUCCESS

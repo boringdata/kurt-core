@@ -104,7 +104,7 @@ def persist_research_result(
             model=result_dict.get("model"),
             citations_json=result_dict.get("citations", []),
             response_time_seconds=result_dict.get("response_time_seconds"),
-            status=ResearchStatus.COMPLETED.value,
+            status=ResearchStatus.SUCCESS.value,
         )
 
         # Save to file if requested

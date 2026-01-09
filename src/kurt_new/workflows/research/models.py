@@ -14,7 +14,8 @@ from kurt_new.db.models import TimestampMixin
 class ResearchStatus(str, Enum):
     """Status of a research document."""
 
-    COMPLETED = "COMPLETED"
+    PENDING = "PENDING"
+    SUCCESS = "SUCCESS"
     ERROR = "ERROR"
 
 
@@ -36,7 +37,7 @@ class ResearchDocument(TimestampMixin, SQLModel, table=True):
     response_time_seconds: Optional[float] = Field(default=None)
 
     # Status
-    status: str = Field(default=ResearchStatus.COMPLETED.value)
+    status: str = Field(default=ResearchStatus.SUCCESS.value)
     error: Optional[str] = Field(default=None)
 
     # File storage

@@ -15,7 +15,7 @@ class AnalyticsStatus(str, Enum):
     """Status for analytics sync operations."""
 
     PENDING = "PENDING"
-    SYNCED = "SYNCED"
+    SUCCESS = "SUCCESS"
     ERROR = "ERROR"
 
 

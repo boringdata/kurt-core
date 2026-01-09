@@ -9,13 +9,13 @@ class TestFetchStatus:
     def test_status_values(self):
         """Test FetchStatus enum values."""
         assert FetchStatus.PENDING.value == "PENDING"
-        assert FetchStatus.FETCHED.value == "FETCHED"
+        assert FetchStatus.SUCCESS.value == "SUCCESS"
         assert FetchStatus.ERROR.value == "ERROR"
 
     def test_status_from_string(self):
         """Test creating FetchStatus from string."""
         assert FetchStatus("PENDING") == FetchStatus.PENDING
-        assert FetchStatus("FETCHED") == FetchStatus.FETCHED
+        assert FetchStatus("SUCCESS") == FetchStatus.SUCCESS
         assert FetchStatus("ERROR") == FetchStatus.ERROR
 
 
@@ -40,14 +40,14 @@ class TestFetchDocument:
         """Test FetchDocument with FETCHED status and content."""
         doc = FetchDocument(
             document_id="test-doc-2",
-            status=FetchStatus.FETCHED,
+            status=FetchStatus.SUCCESS,
             content_length=1500,
             content_hash="abc123",
             fetch_engine="trafilatura",
             public_url="https://example.com/doc",
         )
 
-        assert doc.status == FetchStatus.FETCHED
+        assert doc.status == FetchStatus.SUCCESS
         assert doc.content_length == 1500
         assert doc.content_hash == "abc123"
         assert doc.fetch_engine == "trafilatura"
@@ -71,7 +71,7 @@ class TestFetchDocument:
         embedding_bytes = b"\x00\x00\x80?\x00\x00\x00@"  # [1.0, 2.0] as float32
         doc = FetchDocument(
             document_id="test-doc-4",
-            status=FetchStatus.FETCHED,
+            status=FetchStatus.SUCCESS,
             embedding=embedding_bytes,
         )
 
@@ -86,7 +86,7 @@ class TestFetchDocument:
         }
         doc = FetchDocument(
             document_id="test-doc-5",
-            status=FetchStatus.FETCHED,
+            status=FetchStatus.SUCCESS,
             metadata_json=metadata,
         )
 
@@ -101,7 +101,7 @@ class TestFetchDocument:
         """Test FetchDocument with content_path field."""
         doc = FetchDocument(
             document_id="test-doc-6",
-            status=FetchStatus.FETCHED,
+            status=FetchStatus.SUCCESS,
             content_length=2000,
             content_path="ab/cd/test-doc-6.md",
         )

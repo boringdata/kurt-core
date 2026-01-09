@@ -247,7 +247,7 @@ class TestSaveContentStep:
         rows = [
             {
                 "document_id": "doc-1",
-                "status": FetchStatus.FETCHED,
+                "status": FetchStatus.SUCCESS,
                 "content": "# Test Content",
             }
         ]
@@ -287,7 +287,7 @@ class TestSaveContentStep:
         rows = [
             {
                 "document_id": "doc-1",
-                "status": FetchStatus.FETCHED,
+                "status": FetchStatus.SUCCESS,
                 "content": "# Test Content",
             }
         ]
@@ -310,12 +310,12 @@ class TestSaveContentStep:
         rows = [
             {
                 "document_id": "doc-1",
-                "status": FetchStatus.FETCHED,
+                "status": FetchStatus.SUCCESS,
                 "content": "Content 1",
             },
             {
                 "document_id": "doc-2",
-                "status": FetchStatus.FETCHED,
+                "status": FetchStatus.SUCCESS,
                 "content": "Content 2",
             },
         ]
@@ -337,7 +337,7 @@ class TestSaveContentStep:
         rows = [
             {
                 "document_id": "doc-1",
-                "status": FetchStatus.FETCHED,
+                "status": FetchStatus.SUCCESS,
                 "content": "# Test Content",
             }
         ]
@@ -357,12 +357,12 @@ class TestSaveContentStep:
         rows = [
             {
                 "document_id": "doc-empty",
-                "status": FetchStatus.FETCHED,
+                "status": FetchStatus.SUCCESS,
                 "content": None,
             },
             {
                 "document_id": "doc-empty-string",
-                "status": FetchStatus.FETCHED,
+                "status": FetchStatus.SUCCESS,
                 "content": "",
             },
         ]

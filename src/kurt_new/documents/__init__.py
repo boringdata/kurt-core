@@ -135,6 +135,8 @@ def resolve_documents(
             "source_url": d.source_url,
             "source_type": d.source_type,
             "title": d.title,
+            "discovery_url": d.discovery_url,
+            "metadata_json": d.metadata,
         }
         for d in result_docs
     ]

@@ -20,9 +20,7 @@ def parse_patterns(patterns_str: Optional[str]) -> tuple[str, ...]:
 def compute_status(row: dict[str, Any]) -> MapStatus:
     if row.get("error"):
         return MapStatus.ERROR
-    if row.get("is_new", False):
-        return MapStatus.DISCOVERED
-    return MapStatus.EXISTING
+    return MapStatus.SUCCESS
 
 
 def get_source_type(discovery_method: str) -> str:

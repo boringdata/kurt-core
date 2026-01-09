@@ -12,8 +12,8 @@ from kurt_new.db.models import TenantMixin, TimestampMixin
 class MapStatus(str, Enum):
     """Status for mapped documents."""
 
-    DISCOVERED = "DISCOVERED"
-    EXISTING = "EXISTING"
+    PENDING = "PENDING"
+    SUCCESS = "SUCCESS"
     ERROR = "ERROR"
 
 
@@ -27,7 +27,7 @@ class MapDocument(TimestampMixin, TenantMixin, SQLModel, table=True):
     source_type: str = Field(default="url")
     discovery_method: str = Field(default="")
     discovery_url: Optional[str] = Field(default=None)
-    status: MapStatus = Field(default=MapStatus.DISCOVERED)
+    status: MapStatus = Field(default=MapStatus.SUCCESS)
     is_new: bool = Field(default=True)
     title: Optional[str] = Field(default=None)
     content_hash: Optional[str] = Field(default=None, index=True)

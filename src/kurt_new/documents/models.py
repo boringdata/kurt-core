@@ -55,7 +55,7 @@ class DocumentView:
     @property
     def current_stage(self) -> str:
         """Determine the furthest stage this document has reached."""
-        if self.fetch_status == FetchStatus.FETCHED:
+        if self.fetch_status == FetchStatus.SUCCESS:
             return "fetched"
         if self.fetch_status == FetchStatus.PENDING:
             return "fetching"
@@ -71,12 +71,13 @@ class DocumentView:
     @property
     def is_fetchable(self) -> bool:
         """Check if document is ready to be fetched."""
-        return self.map_status in (
-            MapStatus.DISCOVERED,
-            MapStatus.EXISTING,
-        ) and self.fetch_status in (None, FetchStatus.PENDING, FetchStatus.ERROR)
+        return self.map_status == MapStatus.SUCCESS and self.fetch_status in (
+            None,
+            FetchStatus.PENDING,
+            FetchStatus.ERROR,
+        )
 
     @property
     def is_fetched(self) -> bool:
         """Check if document has been successfully fetched."""
-        return self.fetch_status == FetchStatus.FETCHED
+        return self.fetch_status == FetchStatus.SUCCESS

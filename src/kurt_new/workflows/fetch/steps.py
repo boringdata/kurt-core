@@ -12,6 +12,7 @@ from kurt_new.db import ensure_tables, managed_session
 from kurt_new.integrations.cms import fetch_from_cms
 
 from .config import FetchConfig
+from .fetch_file import fetch_from_file
 from .fetch_web import fetch_from_web
 from .models import FetchDocument, FetchStatus
 from .utils import load_document_content, save_content_file
@@ -44,8 +45,11 @@ def _fetch_single_document(doc: dict[str, Any], config: FetchConfig) -> dict[str
                 )
             else:
                 raise ValueError(f"CMS document missing platform/instance/cms_id: {doc_id}")
+        elif source_type == "file":
+            # Local file sources
+            content, metadata = fetch_from_file(source_url)
         else:
-            # Web/file sources
+            # Web URL sources
             content, metadata = fetch_from_web(
                 source_url=source_url,
                 fetch_engine=config.fetch_engine,
@@ -55,7 +59,7 @@ def _fetch_single_document(doc: dict[str, Any], config: FetchConfig) -> dict[str
 
         return {
             "document_id": str(doc_id),
-            "status": FetchStatus.FETCHED,
+            "status": FetchStatus.SUCCESS,
             "content": content,
             "content_length": len(content),
             "content_hash": metadata.get("fingerprint"),
@@ -90,7 +94,7 @@ def embedding_step(rows: list[dict[str, Any]], config_dict: dict[str, Any]) -> l
 
     # Filter to only successfully fetched documents with content_path
     fetchable = [
-        r for r in rows if r.get("status") == FetchStatus.FETCHED and r.get("content_path")
+        r for r in rows if r.get("status") == FetchStatus.SUCCESS and r.get("content_path")
     ]
 
     if not fetchable:
@@ -149,7 +153,7 @@ def save_content_step(
         return rows
 
     for row in rows:
-        if row.get("status") == FetchStatus.FETCHED and row.get("content"):
+        if row.get("status") == FetchStatus.SUCCESS and row.get("content"):
             try:
                 content_path = save_content_file(row["document_id"], row["content"])
                 row["content_path"] = content_path
@@ -214,12 +218,12 @@ def fetch_step(docs: list[dict[str, Any]], config_dict: dict[str, Any]) -> dict[
                 "step": "fetch_documents",
                 "idx": idx,
                 "total": total,
-                "status": "success" if row["status"] == FetchStatus.FETCHED else "error",
+                "status": "success" if row["status"] == FetchStatus.SUCCESS else "error",
                 "timestamp": time.time(),
             },
         )
 
-    fetched = sum(1 for row in rows if row["status"] == FetchStatus.FETCHED)
+    fetched = sum(1 for row in rows if row["status"] == FetchStatus.SUCCESS)
     failed = sum(1 for row in rows if row["status"] == FetchStatus.ERROR)
 
     logger.info(f"Fetch complete: {fetched} successful, {failed} failed")

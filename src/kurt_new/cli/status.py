@@ -179,7 +179,7 @@ def _get_status_data() -> dict:
 
         # Fetch status counts
         fetched = (
-            session.query(FetchDocument).filter(FetchDocument.status == FetchStatus.FETCHED).count()
+            session.query(FetchDocument).filter(FetchDocument.status == FetchStatus.SUCCESS).count()
         )
         error = (
             session.query(FetchDocument).filter(FetchDocument.status == FetchStatus.ERROR).count()

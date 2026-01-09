@@ -34,8 +34,8 @@ class TestDocumentRegistry:
         doc = docs[0]
         assert doc.document_id == "doc-4"
         assert doc.source_url == "https://example.com/docs/api"
-        assert doc.map_status == MapStatus.EXISTING
-        assert doc.fetch_status == FetchStatus.FETCHED
+        assert doc.map_status == MapStatus.SUCCESS
+        assert doc.fetch_status == FetchStatus.SUCCESS
         assert doc.content_length == 5000
         assert doc.fetch_engine == "trafilatura"
 
@@ -76,12 +76,10 @@ class TestDocumentFiltering:
         registry = DocumentRegistry()
 
         with managed_session() as session:
-            discovered = registry.list(session, DocumentFilters(map_status=MapStatus.DISCOVERED))
-            existing = registry.list(session, DocumentFilters(map_status=MapStatus.EXISTING))
+            success = registry.list(session, DocumentFilters(map_status=MapStatus.SUCCESS))
             errors = registry.list(session, DocumentFilters(map_status=MapStatus.ERROR))
 
-        assert len(discovered) == 4  # doc-1, doc-2, doc-3, doc-6
-        assert len(existing) == 2  # doc-4, doc-5
+        assert len(success) == 6  # All docs except doc-7 (ERROR)
         assert len(errors) == 1  # doc-7
 
     def test_filter_by_fetch_status(self, tmp_project_with_docs):
@@ -89,7 +87,7 @@ class TestDocumentFiltering:
         registry = DocumentRegistry()
 
         with managed_session() as session:
-            fetched = registry.list(session, DocumentFilters(fetch_status=FetchStatus.FETCHED))
+            fetched = registry.list(session, DocumentFilters(fetch_status=FetchStatus.SUCCESS))
             fetch_errors = registry.list(session, DocumentFilters(fetch_status=FetchStatus.ERROR))
 
         assert len(fetched) == 2  # doc-4, doc-5
@@ -172,13 +170,13 @@ class TestDocumentFiltering:
             docs = registry.list(
                 session,
                 DocumentFilters(
-                    map_status=MapStatus.DISCOVERED,
+                    map_status=MapStatus.SUCCESS,
                     discovery_method="sitemap",
                 ),
             )
 
-        # Only doc-1 and doc-2 are DISCOVERED + sitemap
-        assert len(docs) == 2
+        # doc-1, doc-2, doc-4, doc-5 are SUCCESS + sitemap
+        assert len(docs) == 4
 
 
 class TestGlobFiltering:
@@ -259,10 +257,10 @@ class TestConvenienceMethods:
 
         with managed_session() as session:
             total = registry.count(session)
-            discovered = registry.count(session, DocumentFilters(map_status=MapStatus.DISCOVERED))
+            success = registry.count(session, DocumentFilters(map_status=MapStatus.SUCCESS))
 
         assert total == 7
-        assert discovered == 4
+        assert success == 6  # All except doc-7 (ERROR)
 
 
 class TestDocumentViewProperties:

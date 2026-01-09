@@ -114,7 +114,7 @@ def fetch_cmd(
                         document_id=doc_id,
                         source_url=url,
                         source_type="url",
-                        status=MapStatus.DISCOVERED,
+                        status=MapStatus.SUCCESS,
                         discovery_method="cli",
                     )
                     session.add(doc)
@@ -145,7 +145,7 @@ def fetch_cmd(
                         document_id=doc_id,
                         source_url=abs_path,
                         source_type="file",
-                        status=MapStatus.DISCOVERED,
+                        status=MapStatus.SUCCESS,
                         discovery_method="cli",
                     )
                     session.add(doc)

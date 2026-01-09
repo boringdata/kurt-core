@@ -8,21 +8,21 @@ class TestMapStatus:
 
     def test_status_values(self):
         """Test MapStatus enum values."""
-        assert MapStatus.DISCOVERED.value == "DISCOVERED"
-        assert MapStatus.EXISTING.value == "EXISTING"
+        assert MapStatus.PENDING.value == "PENDING"
+        assert MapStatus.SUCCESS.value == "SUCCESS"
         assert MapStatus.ERROR.value == "ERROR"
 
     def test_status_is_string_enum(self):
         """Test that MapStatus inherits from str."""
-        assert isinstance(MapStatus.DISCOVERED, str)
-        assert MapStatus.DISCOVERED == "DISCOVERED"
+        assert isinstance(MapStatus.SUCCESS, str)
+        assert MapStatus.SUCCESS == "SUCCESS"
 
     def test_status_members(self):
         """Test all status members exist."""
         members = list(MapStatus)
         assert len(members) == 3
-        assert MapStatus.DISCOVERED in members
-        assert MapStatus.EXISTING in members
+        assert MapStatus.PENDING in members
+        assert MapStatus.SUCCESS in members
         assert MapStatus.ERROR in members
 
 
@@ -44,7 +44,7 @@ class TestMapDocument:
             source_url="https://example.com/page",
             source_type="url",
             discovery_method="sitemap",
-            status=MapStatus.DISCOVERED,
+            status=MapStatus.SUCCESS,
             is_new=True,
         )
 
@@ -52,7 +52,7 @@ class TestMapDocument:
         assert doc.source_url == "https://example.com/page"
         assert doc.source_type == "url"
         assert doc.discovery_method == "sitemap"
-        assert doc.status == MapStatus.DISCOVERED
+        assert doc.status == MapStatus.SUCCESS
         assert doc.is_new is True
 
     def test_document_defaults(self):
@@ -63,7 +63,7 @@ class TestMapDocument:
         assert doc.source_type == "url"
         assert doc.discovery_method == ""
         assert doc.discovery_url is None
-        assert doc.status == MapStatus.DISCOVERED
+        assert doc.status == MapStatus.SUCCESS
         assert doc.is_new is True
         assert doc.title is None
         assert doc.content_hash is None
@@ -97,11 +97,11 @@ class TestMapDocument:
         """Test MapDocument with EXISTING status."""
         doc = MapDocument(
             document_id="existing-doc",
-            status=MapStatus.EXISTING,
+            status=MapStatus.SUCCESS,
             is_new=False,
         )
 
-        assert doc.status == MapStatus.EXISTING
+        assert doc.status == MapStatus.SUCCESS
         assert doc.is_new is False
 
     def test_document_with_discovery_url(self):

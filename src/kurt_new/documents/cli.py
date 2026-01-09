@@ -82,7 +82,7 @@ def list_cmd(
     if with_status:
         status_map = {
             "NOT_FETCHED": None,  # Will use not_fetched flag
-            "FETCHED": FetchStatus.FETCHED,
+            "FETCHED": FetchStatus.SUCCESS,
             "ERROR": FetchStatus.ERROR,
         }
         if with_status.upper() == "NOT_FETCHED":

@@ -13,7 +13,7 @@ class FetchStatus(str, Enum):
     """Status for fetched documents."""
 
     PENDING = "PENDING"
-    FETCHED = "FETCHED"
+    SUCCESS = "SUCCESS"
     ERROR = "ERROR"
 
 

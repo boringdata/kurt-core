@@ -57,8 +57,10 @@ def map_url_step(config_dict: dict[str, Any]) -> dict[str, Any]:
             },
         )
 
-    discovered = sum(1 for row in rows if row["status"] == MapStatus.DISCOVERED)
-    existing = sum(1 for row in rows if row["status"] == MapStatus.EXISTING)
+    discovered = sum(1 for row in rows if row.get("is_new", False))
+    existing = sum(
+        1 for row in rows if not row.get("is_new", False) and row["status"] == MapStatus.SUCCESS
+    )
     errors = sum(1 for row in rows if row["status"] == MapStatus.ERROR)
 
     # Note: persistence is handled by workflow calling persist_map_documents transaction
@@ -113,8 +115,10 @@ def map_folder_step(config_dict: dict[str, Any]) -> dict[str, Any]:
             },
         )
 
-    discovered = sum(1 for row in rows if row["status"] == MapStatus.DISCOVERED)
-    existing = sum(1 for row in rows if row["status"] == MapStatus.EXISTING)
+    discovered = sum(1 for row in rows if row.get("is_new", False))
+    existing = sum(
+        1 for row in rows if not row.get("is_new", False) and row["status"] == MapStatus.SUCCESS
+    )
     errors = sum(1 for row in rows if row["status"] == MapStatus.ERROR)
 
     # Note: persistence is handled by workflow calling persist_map_documents transaction
@@ -166,8 +170,10 @@ def map_cms_step(config_dict: dict[str, Any]) -> dict[str, Any]:
             },
         )
 
-    discovered = sum(1 for row in rows if row["status"] == MapStatus.DISCOVERED)
-    existing = sum(1 for row in rows if row["status"] == MapStatus.EXISTING)
+    discovered = sum(1 for row in rows if row.get("is_new", False))
+    existing = sum(
+        1 for row in rows if not row.get("is_new", False) and row["status"] == MapStatus.SUCCESS
+    )
     errors = sum(1 for row in rows if row["status"] == MapStatus.ERROR)
 
     # Note: persistence is handled by workflow calling persist_map_documents transaction
