@@ -44,7 +44,9 @@ class TestFetchCommand:
         assert_output_contains(result, "--has-content")
         assert_output_contains(result, "--min-content-length")
         # Input options
+        assert_output_contains(result, "--url")
         assert_output_contains(result, "--urls")
+        assert_output_contains(result, "--file")
         assert_output_contains(result, "--files")
         assert_output_contains(result, "--engine")
         assert_output_contains(result, "--refetch")
@@ -149,12 +151,34 @@ class TestFetchCommand:
         assert_cli_success(result)
 
     # Input options tests
+    def test_fetch_with_url_singular(self, cli_runner: CliRunner, tmp_database):
+        """Test fetch --url (singular) option auto-creates document."""
+        result = invoke_cli(
+            cli_runner,
+            fetch_cmd,
+            ["--url", "https://example.com/article", "--dry-run"],
+        )
+        assert_cli_success(result)
+
     def test_fetch_with_urls(self, cli_runner: CliRunner, tmp_database):
         """Test fetch --urls option auto-creates documents."""
         result = invoke_cli(
             cli_runner,
             fetch_cmd,
             ["--urls", "https://example.com/article,https://example.com/other", "--dry-run"],
+        )
+        assert_cli_success(result)
+
+    def test_fetch_with_file_singular(self, cli_runner: CliRunner, tmp_database, tmp_path):
+        """Test fetch --file (singular) option auto-creates document."""
+        # Create temp file
+        file1 = tmp_path / "doc1.md"
+        file1.write_text("# Doc 1")
+
+        result = invoke_cli(
+            cli_runner,
+            fetch_cmd,
+            ["--file", str(file1), "--dry-run"],
         )
         assert_cli_success(result)
 

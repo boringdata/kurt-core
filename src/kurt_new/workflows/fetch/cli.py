@@ -20,7 +20,9 @@ console = Console()
 @click.command("fetch")
 @click.argument("identifier", required=False)
 @add_filter_options(advanced=True, exclude=True)
+@click.option("--url", "single_url", help="Single URL to fetch (auto-creates if doesn't exist)")
 @click.option("--urls", help="Comma-separated list of URLs (auto-creates if don't exist)")
+@click.option("--file", "single_file", help="Single local file path to fetch")
 @click.option("--files", "files_paths", help="Comma-separated list of local file paths")
 @click.option(
     "--engine",
@@ -47,7 +49,9 @@ def fetch_cmd(
     has_content: bool | None,
     min_content_length: int | None,
     fetch_engine: str | None,
+    single_url: str | None,
     urls: str | None,
+    single_file: str | None,
     files_paths: str | None,
     engine: str | None,
     refetch: bool,
@@ -81,6 +85,14 @@ def fetch_cmd(
 
     from .config import FetchConfig
     from .workflow import run_fetch
+
+    # Merge --url into --urls for backward compatibility
+    if single_url:
+        urls = f"{urls},{single_url}" if urls else single_url
+
+    # Merge --file into --files for backward compatibility
+    if single_file:
+        files_paths = f"{files_paths},{single_file}" if files_paths else single_file
 
     # Handle --urls: auto-create documents if they don't exist
     if urls:
