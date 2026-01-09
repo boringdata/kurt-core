@@ -31,7 +31,7 @@ def upgrade() -> None:
         sa.Column("source_type", sa.String(), nullable=False, server_default="url"),
         sa.Column("discovery_method", sa.String(), nullable=False, server_default=""),
         sa.Column("discovery_url", sa.String(), nullable=True),
-        sa.Column("status", sa.String(), nullable=False, server_default="DISCOVERED"),
+        sa.Column("status", sa.String(), nullable=False, server_default="SUCCESS"),
         sa.Column("is_new", sa.Boolean(), nullable=False, server_default="1"),
         sa.Column("title", sa.String(), nullable=True),
         sa.Column("content_hash", sa.String(), nullable=True),
@@ -99,7 +99,7 @@ def upgrade() -> None:
         sa.Column("citations_json", sa.JSON(), nullable=True),
         sa.Column("response_time_seconds", sa.Float(), nullable=True),
         # Status
-        sa.Column("status", sa.String(), nullable=False, server_default="COMPLETED"),
+        sa.Column("status", sa.String(), nullable=False, server_default="SUCCESS"),
         sa.Column("error", sa.Text(), nullable=True),
         # File storage
         sa.Column("content_path", sa.String(), nullable=True),

@@ -24,6 +24,7 @@ def map_url_step(config_dict: dict[str, Any]) -> dict[str, Any]:
 
     result = discover_from_url(
         url=config.source_url or "",
+        discovery_method=config.discovery_method,
         max_depth=config.max_depth,
         max_pages=config.max_pages,
         allow_external=config.allow_external,

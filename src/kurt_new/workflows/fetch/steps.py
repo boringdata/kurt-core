@@ -93,8 +93,12 @@ def embedding_step(rows: list[dict[str, Any]], config_dict: dict[str, Any]) -> l
     config = FetchConfig.model_validate(config_dict)
 
     # Filter to only successfully fetched documents with content_path
+    # Compare both enum and string values (status may be serialized)
     fetchable = [
-        r for r in rows if r.get("status") == FetchStatus.SUCCESS and r.get("content_path")
+        r
+        for r in rows
+        if r.get("status") in (FetchStatus.SUCCESS, FetchStatus.SUCCESS.value)
+        and r.get("content_path")
     ]
 
     if not fetchable:
@@ -153,7 +157,9 @@ def save_content_step(
         return rows
 
     for row in rows:
-        if row.get("status") == FetchStatus.SUCCESS and row.get("content"):
+        # Compare both enum and string values (status may be serialized)
+        is_success = row.get("status") in (FetchStatus.SUCCESS, FetchStatus.SUCCESS.value)
+        if is_success and row.get("content"):
             try:
                 content_path = save_content_file(row["document_id"], row["content"])
                 row["content_path"] = content_path

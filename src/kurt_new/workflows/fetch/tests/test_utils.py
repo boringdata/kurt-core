@@ -373,3 +373,90 @@ class TestSaveContentStep:
         mock_save_file.assert_not_called()
         assert result[0]["content_path"] is None
         assert result[1]["content_path"] is None
+
+    @patch("kurt_new.workflows.fetch.steps.save_content_file")
+    def test_handles_status_as_string_value(self, mock_save_file):
+        """Test that save_content_step handles status as string (after serialization).
+
+        This is critical because _serialize_rows converts FetchStatus enum to string,
+        and subsequent steps receive serialized rows with string status values.
+        """
+        from kurt_new.workflows.fetch.steps import save_content_step
+
+        mock_save_file.return_value = "ab/cd/doc-1.md"
+
+        # Status is string "SUCCESS" instead of FetchStatus.SUCCESS
+        rows = [
+            {
+                "document_id": "doc-1",
+                "status": "SUCCESS",  # String, not enum
+                "content": "# Test Content",
+            }
+        ]
+        config = {"dry_run": False, "fetch_engine": "trafilatura"}
+
+        result = save_content_step(rows, config)
+
+        # Should still save content because "SUCCESS" == FetchStatus.SUCCESS.value
+        mock_save_file.assert_called_once_with("doc-1", "# Test Content")
+        assert result[0]["content_path"] == "ab/cd/doc-1.md"
+
+
+class TestEmbeddingStepStatusHandling:
+    """Tests for embedding_step status handling after serialization."""
+
+    @patch("kurt_new.workflows.fetch.steps.load_document_content")
+    @patch("kurt_new.workflows.fetch.steps.generate_embeddings")
+    @patch("kurt_new.workflows.fetch.steps.embedding_to_bytes")
+    def test_handles_status_as_string_value(
+        self, mock_embed_bytes, mock_gen_embed, mock_load_content
+    ):
+        """Test that embedding_step handles status as string (after serialization).
+
+        This is critical because _serialize_rows converts FetchStatus enum to string,
+        and embedding_step receives serialized rows with string status values.
+        """
+        from kurt_new.workflows.fetch.steps import embedding_step
+
+        mock_load_content.return_value = "Test content for embedding"
+        mock_gen_embed.return_value = [[0.1, 0.2, 0.3]]
+        mock_embed_bytes.return_value = b"embedding_bytes"
+
+        # Status is string "SUCCESS" instead of FetchStatus.SUCCESS
+        rows = [
+            {
+                "document_id": "doc-1",
+                "status": "SUCCESS",  # String, not enum
+                "content_path": "ab/cd/doc-1.md",
+            }
+        ]
+        config = {"embedding_max_chars": 1000, "embedding_batch_size": 100}
+
+        result = embedding_step(rows, config)
+
+        # Should generate embeddings because "SUCCESS" == FetchStatus.SUCCESS.value
+        mock_load_content.assert_called_once()
+        mock_gen_embed.assert_called_once()
+        assert result[0]["embedding"] == b"embedding_bytes"
+
+    @patch("kurt_new.workflows.fetch.steps.load_document_content")
+    @patch("kurt_new.workflows.fetch.steps.generate_embeddings")
+    def test_skips_error_status_string(self, mock_gen_embed, mock_load_content):
+        """Test that embedding_step skips rows with ERROR status as string."""
+        from kurt_new.workflows.fetch.steps import embedding_step
+
+        rows = [
+            {
+                "document_id": "doc-error",
+                "status": "ERROR",  # String ERROR status
+                "content_path": None,
+            }
+        ]
+        config = {"embedding_max_chars": 1000, "embedding_batch_size": 100}
+
+        result = embedding_step(rows, config)
+
+        # Should not generate embeddings for error rows
+        mock_load_content.assert_not_called()
+        mock_gen_embed.assert_not_called()
+        assert result[0]["embedding"] is None

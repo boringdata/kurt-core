@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 def discover_from_url(
     url: str,
     *,
+    discovery_method: str = "auto",
     max_depth: int | None = None,
     max_pages: int = 1000,
     allow_external: bool = False,
@@ -27,6 +28,7 @@ def discover_from_url(
 
     Args:
         url: Base URL to discover from
+        discovery_method: Force discovery method: "auto", "sitemap", or "crawl"
         max_depth: Max crawl depth (enables crawl fallback if sitemap fails)
         max_pages: Max pages to discover
         allow_external: Allow external URLs during crawl
@@ -35,27 +37,50 @@ def discover_from_url(
         sitemap_path: Custom sitemap path (e.g., "/custom-sitemap.xml")
     """
     discovered_urls: list[str] = []
-    discovery_method = "sitemap"
+    actual_method = discovery_method
 
-    try:
+    # Force crawl mode
+    if discovery_method == "crawl":
+        crawl_depth = max_depth if max_depth is not None else 2
+        discovered_urls = crawl_website(
+            homepage=url,
+            max_depth=crawl_depth,
+            max_pages=max_pages,
+            allow_external=allow_external,
+            include_patterns=include_patterns,
+            exclude_patterns=exclude_patterns,
+        )
+        actual_method = "crawl"
+        logger.info("Crawl discovered %s URLs", len(discovered_urls))
+
+    # Force sitemap mode (no fallback)
+    elif discovery_method == "sitemap":
         discovered_urls = discover_sitemap_urls(url, sitemap_path=sitemap_path)
+        actual_method = "sitemap"
         logger.info("Sitemap discovered %s URLs", len(discovered_urls))
-    except Exception as exc:
-        if max_depth is not None:
-            logger.info("Sitemap failed: %s. Falling back to crawl.", exc)
-            discovered_urls = crawl_website(
-                homepage=url,
-                max_depth=max_depth,
-                max_pages=max_pages,
-                allow_external=allow_external,
-                include_patterns=include_patterns,
-                exclude_patterns=exclude_patterns,
-            )
-            discovery_method = "crawl"
-        else:
-            logger.info("Sitemap failed: %s. Using single URL.", exc)
-            discovered_urls = [url]
-            discovery_method = "single_page"
+
+    # Auto mode: try sitemap first, fall back to crawl if max_depth set
+    else:
+        try:
+            discovered_urls = discover_sitemap_urls(url, sitemap_path=sitemap_path)
+            actual_method = "sitemap"
+            logger.info("Sitemap discovered %s URLs", len(discovered_urls))
+        except Exception as exc:
+            if max_depth is not None:
+                logger.info("Sitemap failed: %s. Falling back to crawl.", exc)
+                discovered_urls = crawl_website(
+                    homepage=url,
+                    max_depth=max_depth,
+                    max_pages=max_pages,
+                    allow_external=allow_external,
+                    include_patterns=include_patterns,
+                    exclude_patterns=exclude_patterns,
+                )
+                actual_method = "crawl"
+            else:
+                logger.info("Sitemap failed: %s. Using single URL.", exc)
+                discovered_urls = [url]
+                actual_method = "single_page"
 
     discovered_urls = filter_items(
         discovered_urls,
@@ -66,7 +91,7 @@ def discover_from_url(
 
     return {
         "discovered": [{"url": u} for u in discovered_urls],
-        "method": discovery_method,
+        "method": actual_method,
         "total": len(discovered_urls),
     }
 

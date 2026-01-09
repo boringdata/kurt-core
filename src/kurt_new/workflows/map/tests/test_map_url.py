@@ -363,3 +363,95 @@ class TestDiscoverFromUrl:
 
         assert result["total"] == 1
         assert "draft" not in result["discovered"][0]["url"]
+
+    def test_force_crawl_method(self):
+        """Test that discovery_method='crawl' forces crawl, skipping sitemap."""
+        mock_urls = {"https://example.com/crawled-page"}
+
+        # Even if sitemap would work, it shouldn't be tried
+        with patch(
+            "kurt_new.workflows.map.map_url.focused_crawler",
+            return_value=([], mock_urls),
+        ) as mock_crawler:
+            result = discover_from_url(
+                "https://example.com",
+                discovery_method="crawl",
+            )
+
+        # Crawl should be used directly
+        mock_crawler.assert_called_once()
+        assert result["method"] == "crawl"
+        assert result["total"] == 1
+
+    def test_force_sitemap_method_succeeds(self):
+        """Test that discovery_method='sitemap' forces sitemap without fallback."""
+        sitemap_xml = """<?xml version="1.0" encoding="UTF-8"?>
+        <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+            <url><loc>https://example.com/page1</loc></url>
+        </urlset>
+        """
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = sitemap_xml.encode()
+        mock_response.text = ""
+
+        with patch("httpx.get", return_value=mock_response):
+            result = discover_from_url(
+                "https://example.com",
+                discovery_method="sitemap",
+            )
+
+        assert result["method"] == "sitemap"
+        assert result["total"] == 1
+
+    def test_force_sitemap_method_raises_on_failure(self):
+        """Test that discovery_method='sitemap' raises if sitemap not found."""
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+
+        with patch("httpx.get", return_value=mock_response):
+            with pytest.raises(ValueError, match="No sitemap found"):
+                discover_from_url(
+                    "https://example.com",
+                    discovery_method="sitemap",
+                )
+
+    def test_auto_method_tries_sitemap_first(self):
+        """Test that discovery_method='auto' (default) tries sitemap first."""
+        sitemap_xml = """<?xml version="1.0" encoding="UTF-8"?>
+        <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+            <url><loc>https://example.com/page1</loc></url>
+        </urlset>
+        """
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = sitemap_xml.encode()
+        mock_response.text = ""
+
+        with patch("httpx.get", return_value=mock_response):
+            result = discover_from_url(
+                "https://example.com",
+                discovery_method="auto",  # Explicit auto
+            )
+
+        assert result["method"] == "sitemap"
+
+    def test_force_crawl_uses_default_depth_when_not_specified(self):
+        """Test that forcing crawl uses default depth of 2 when max_depth is None."""
+        mock_urls = {"https://example.com/page"}
+
+        with patch(
+            "kurt_new.workflows.map.map_url.focused_crawler",
+            return_value=([], mock_urls),
+        ) as mock_crawler:
+            discover_from_url(
+                "https://example.com",
+                discovery_method="crawl",
+                max_depth=None,  # Not specified
+            )
+
+        # Should use default depth calculations (depth 2 = 50 max_seen_urls)
+        call_kwargs = mock_crawler.call_args
+        assert call_kwargs is not None
