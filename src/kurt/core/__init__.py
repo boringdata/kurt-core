@@ -46,6 +46,7 @@ from .tracking import (
     track_step,
     update_step_progress,
 )
+from .workflow_utils import store_parent_workflow_id, with_parent_workflow_id
 
 __all__ = [
     "LLMStep",
@@ -91,4 +92,6 @@ __all__ = [
     "set_display_enabled",
     "print_warning",
     "print_info",
+    "store_parent_workflow_id",
+    "with_parent_workflow_id",
 ]

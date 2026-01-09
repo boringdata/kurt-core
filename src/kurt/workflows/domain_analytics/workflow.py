@@ -7,13 +7,14 @@ from typing import Any
 
 from dbos import DBOS
 
-from kurt.core import run_workflow, track_step
+from kurt.core import run_workflow, track_step, with_parent_workflow_id
 
 from .config import DomainAnalyticsConfig
 from .steps import domain_analytics_sync_step, persist_domain_analytics
 
 
 @DBOS.workflow()
+@with_parent_workflow_id
 def domain_analytics_workflow(config_dict: dict[str, Any]) -> dict[str, Any]:
     """
     Sync analytics metrics for a domain.

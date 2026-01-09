@@ -7,13 +7,14 @@ from typing import Any
 
 from dbos import DBOS
 
-from kurt.core import run_workflow, track_step
+from kurt.core import run_workflow, track_step, with_parent_workflow_id
 
 from .config import ResearchConfig
 from .steps import persist_research_result, research_search_step
 
 
 @DBOS.workflow()
+@with_parent_workflow_id
 def research_workflow(config_dict: dict[str, Any]) -> dict[str, Any]:
     """
     Execute a research query via Perplexity.

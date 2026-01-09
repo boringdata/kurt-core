@@ -6,20 +6,10 @@ from typing import Any
 
 from dbos import DBOS
 
-from kurt.core import run_workflow, track_step
+from kurt.core import run_workflow, track_step, with_parent_workflow_id
 
 from .config import FetchConfig
 from .steps import embedding_step, fetch_step, persist_fetch_documents, save_content_step
-
-
-def _store_parent_workflow_id() -> None:
-    """Store parent workflow ID from environment if available."""
-    parent_id = os.environ.get("KURT_PARENT_WORKFLOW_ID")
-    if parent_id:
-        try:
-            DBOS.set_event("parent_workflow_id", parent_id)
-        except Exception:
-            pass
 
 
 def _has_embedding_api_key() -> bool:
@@ -37,6 +27,7 @@ def _has_embedding_api_key() -> bool:
 
 
 @DBOS.workflow()
+@with_parent_workflow_id
 def fetch_workflow(
     docs: list[dict[str, Any]], config_dict: dict[str, Any], cli_command: str | None = None
 ) -> dict[str, Any]:
@@ -45,9 +36,6 @@ def fetch_workflow(
     """
     config = FetchConfig.model_validate(config_dict)
     workflow_id = DBOS.workflow_id
-
-    # Store parent workflow ID for nested workflow display
-    _store_parent_workflow_id()
 
     DBOS.set_event("status", "running")
     DBOS.set_event("workflow_type", "fetch")
