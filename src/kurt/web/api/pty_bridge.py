@@ -387,7 +387,11 @@ async def handle_pty_websocket(
     kurt_args_raw = params.get("kurt_args", "[]")
 
     # Select command and build args based on provider
-    if provider == "kurt":
+    if provider == "shell":
+        # Plain shell terminal - use user's default shell
+        cmd = os.environ.get("SHELL", "/bin/zsh")
+        args = []
+    elif provider == "kurt":
         cmd = os.environ.get("KURT_CMD", "kurt")
         try:
             kurt_args = json.loads(kurt_args_raw) if kurt_args_raw else []

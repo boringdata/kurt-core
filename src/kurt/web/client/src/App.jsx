@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { DockviewReact } from 'dockview-react'
+import { DockviewReact, DockviewDefaultTab } from 'dockview-react'
 import 'dockview-react/dist/styles/dockview.css'
 
 import FileTreePanel from './panels/FileTreePanel'
 import EditorPanel from './panels/EditorPanel'
 import TerminalPanel from './panels/TerminalPanel'
+import ShellTerminalPanel from './panels/ShellTerminalPanel'
 import EmptyPanel from './panels/EmptyPanel'
 import ReviewPanel from './panels/ReviewPanel'
 import WorkflowsPanel from './panels/WorkflowsPanel'
@@ -22,6 +23,7 @@ const components = {
   filetree: FileTreePanel,
   editor: EditorPanel,
   terminal: TerminalPanel,
+  shell: ShellTerminalPanel,
   empty: EmptyPanel,
   review: ReviewPanel,
   workflows: WorkflowsPanel,
@@ -30,12 +32,19 @@ const components = {
 
 const KNOWN_COMPONENTS = new Set(Object.keys(components))
 
+// Custom tab component that hides close button (for workflows/shell tabs)
+const TabWithoutClose = (props) => <DockviewDefaultTab {...props} hideClose />
+
+const tabComponents = {
+  noClose: TabWithoutClose,
+}
+
 const getFileName = (path) => {
   const parts = path.split('/')
   return parts[parts.length - 1]
 }
 
-const LAYOUT_VERSION = 16 // Increment to force layout reset
+const LAYOUT_VERSION = 19 // Increment to force layout reset
 
 // Generate a short hash from the project root path for localStorage keys
 const hashProjectRoot = (root) => {
@@ -758,8 +767,7 @@ export default function App() {
       const workflowsPanel = api.getPanel('workflows')
       const workflowsGroup = workflowsPanel?.group
       if (workflowsGroup) {
-        workflowsGroup.locked = true
-        workflowsGroup.header.hidden = true
+        // Don't lock or hide header - workflows/shell share this group with tabs
         workflowsGroup.api.setConstraints({
           minimumHeight: 100,
           maximumHeight: undefined,
@@ -770,13 +778,14 @@ export default function App() {
     }
 
     const ensureCorePanels = () => {
-      // Layout goal: [filetree | [editor / workflows] | terminal]
+      // Layout goal: [filetree | [editor / [workflows | shell]] | terminal]
       //
       // Strategy: Create in order that establishes correct hierarchy
       // 1. filetree (left)
-      // 2. terminal (right) - this establishes the rightmost column at root level
-      // 3. empty-center (left of terminal) - goes between filetree and terminal
-      // 4. workflows (below empty-center) - splits only the center column
+      // 2. terminal (right) - agent sessions column
+      // 3. empty-center (left of terminal) - center column for editors
+      // 4. workflows (below empty-center) - bottom left of center
+      // 5. shell (right of workflows) - bottom right of center, next to workflows
 
       let filetreePanel = api.getPanel('filetree')
       if (!filetreePanel) {
@@ -788,7 +797,7 @@ export default function App() {
         })
       }
 
-      // Add terminal FIRST (right of filetree) - establishes rightmost column
+      // Add terminal (right of filetree) - establishes rightmost column
       let terminalPanel = api.getPanel('terminal')
       if (!terminalPanel) {
         terminalPanel = api.addPanel({
@@ -799,7 +808,7 @@ export default function App() {
         })
       }
 
-      // Add empty panel LEFT of terminal - creates center column between filetree and terminal
+      // Add empty panel LEFT of terminal - creates center column
       let emptyPanel = api.getPanel('empty-center')
       if (!emptyPanel) {
         emptyPanel = api.addPanel({
@@ -826,6 +835,7 @@ export default function App() {
         workflowsPanel = api.addPanel({
           id: 'workflows',
           component: 'workflows',
+          tabComponent: 'noClose',
           title: 'Workflows',
           position: { direction: 'below', referenceGroup: emptyPanel.group },
           params: {
@@ -834,6 +844,24 @@ export default function App() {
             onAttachWorkflow: () => {},
           },
         })
+      }
+
+      // Add shell panel as a tab in the same group as workflows
+      let shellPanel = api.getPanel('shell')
+      if (!shellPanel && workflowsPanel?.group) {
+        shellPanel = api.addPanel({
+          id: 'shell',
+          component: 'shell',
+          tabComponent: 'noClose',
+          title: 'Shell',
+          position: { referenceGroup: workflowsPanel.group },
+        })
+      }
+
+      // Show tabs for the workflows/shell group
+      if (workflowsPanel?.group) {
+        workflowsPanel.group.header.hidden = false
+        workflowsPanel.group.locked = true // Lock group to prevent closing tabs
       }
 
       // Set centerGroupRef from editor panels if any exist
@@ -1084,13 +1112,26 @@ export default function App() {
 
         const workflowsGroup = workflowsPanel?.group
         if (workflowsGroup) {
+          // Lock group to prevent closing tabs, but show header
           workflowsGroup.locked = true
-          workflowsGroup.header.hidden = true
+          workflowsGroup.header.hidden = false
           workflowsGroup.api.setConstraints({
             minimumHeight: 100,
             maximumHeight: undefined,
             minimumWidth: undefined,
             maximumWidth: undefined,
+          })
+        }
+
+        // Ensure shell panel exists (might be missing from older layouts)
+        let shellPanel = dockApi.getPanel('shell')
+        if (!shellPanel && workflowsPanel?.group) {
+          shellPanel = dockApi.addPanel({
+            id: 'shell',
+            component: 'shell',
+            tabComponent: 'noClose',
+            title: 'Shell',
+            position: { referenceGroup: workflowsPanel.group },
           })
         }
 
@@ -1348,6 +1389,7 @@ export default function App() {
     <DockviewReact
       className="dockview-theme-abyss"
       components={components}
+      tabComponents={tabComponents}
       onReady={onReady}
       showDndOverlay={showDndOverlay}
       onDidDrop={onDidDrop}

@@ -131,7 +131,8 @@ html, body, #root {
 }
 
 /* Terminal panel */
-.terminal-panel-content {
+.terminal-panel-content,
+.shell-panel-content {
   background: #f8fafc;
   display: flex;
   flex-direction: column;
@@ -895,8 +896,30 @@ html, body, #root {
 }
 
 /* Terminal in dockview panel */
-.terminal-panel-content .terminal {
+.terminal-panel-content .terminal,
+.shell-panel-content .terminal {
   flex: 1;
+}
+
+/* Shell panel header */
+.shell-header {
+  display: flex;
+  align-items: center;
+  padding: 6px 8px;
+  background: #fff;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.shell-session-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+
+.shell-panel-content .terminal-select {
+  flex: 1;
+  min-width: 0;
 }
 
 .terminal-header {
@@ -2194,23 +2217,91 @@ html, body, #root {
 /* Workflow Results */
 .workflow-results {
   display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
+  flex-direction: column;
   padding: 8px 0;
   margin-bottom: 8px;
   border-bottom: 1px solid #e5e7eb;
   font-size: 11px;
 }
 
-.workflow-result-step {
+.workflow-results-summary {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  cursor: pointer;
+  padding: 4px 0;
+  user-select: none;
 }
 
-.result-step-name {
+.workflow-results-summary:hover {
+  background: #f9fafb;
+  margin: 0 -8px;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.workflow-results-toggle {
+  font-size: 9px;
   color: #6b7280;
+  width: 12px;
+}
+
+.workflow-results-label {
   font-weight: 500;
+  color: #374151;
+}
+
+.workflow-steps-breakdown {
+  margin-top: 8px;
+  margin-left: 20px;
+  padding-left: 8px;
+  border-left: 2px solid #e5e7eb;
+}
+
+.workflow-steps-header {
+  font-size: 10px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+
+.workflow-step-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 11px;
+}
+
+.workflow-step-name {
+  color: #6b7280;
+}
+
+.workflow-step-results {
+  display: flex;
+  gap: 8px;
+}
+
+.step-success {
+  color: #16a34a;
+  font-weight: 500;
+}
+
+.step-error {
+  color: #ef4444;
+  font-weight: 500;
+}
+
+.step-none {
+  color: #9ca3af;
+}
+
+.step-duration {
+  color: #9ca3af;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
 }
 
 .result-success {
@@ -2219,7 +2310,7 @@ html, body, #root {
 }
 
 .result-success::before {
-  content: '\\2713 ';
+  content: '✓ ';
 }
 
 .result-failed {
@@ -2228,7 +2319,45 @@ html, body, #root {
 }
 
 .result-failed::before {
-  content: '\\2717 ';
+  content: '✗ ';
+}
+
+.workflow-result-summary {
+  color: #374151;
+  font-weight: 500;
+}
+
+/* Workflow Inputs */
+.workflow-inputs {
+  padding: 8px 0;
+  margin-bottom: 8px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.workflow-inputs-header {
+  font-size: 10px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+
+.workflow-inputs-content {
+  display: block;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  color: #374151;
+  background: #f9fafb;
+  padding: 6px 8px;
+  border-radius: 4px;
+  word-break: break-all;
+  white-space: pre-wrap;
+}
+
+.workflow-duration {
+  font-family: 'IBM Plex Mono', monospace;
+  color: #6b7280;
 }
 
 /* Workflows Terminal (Right Pane) */
