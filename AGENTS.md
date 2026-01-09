@@ -726,7 +726,39 @@ The executor tracks these metrics via DBOS events:
 - `tokens_in`: Input tokens (includes cache reads)
 - `tokens_out`: Output tokens
 - `cost_usd`: Total API cost
-- `tool_calls`: Web search/fetch requests (note: Bash/Read tool calls are not tracked by Claude CLI)
+- `tool_calls`: All tool invocations (Bash, Read, Write, Glob, etc.)
+
+#### Tool Call Tracking
+
+Tool calls are tracked using Claude Code's `PostToolUse` hook system:
+
+1. A temporary settings file is created with a hook that calls `kurt agents track-tool`
+2. Each tool invocation is logged to a temporary JSONL file
+3. After execution, the log file is read to count total tool calls
+4. Temp files are cleaned up automatically
+
+This allows accurate tracking of ALL tool calls, not just web_search/web_fetch.
+
+### Nested Workflow Display
+
+When an agent workflow runs `kurt` CLI commands (e.g., `kurt sources add`), the child workflows are linked to their parent agent workflow. This enables hierarchical display in the web UI.
+
+#### How It Works
+
+1. **Parent ID Propagation**: The executor sets `KURT_PARENT_WORKFLOW_ID` environment variable before running Claude
+2. **Child Workflow Storage**: When `run_workflow()` or background workers start a workflow, they check for this env var and store it as a DBOS event (`parent_workflow_id`)
+3. **API Response**: The web API includes `parent_workflow_id` in workflow listings
+4. **Frontend Display**: Child workflows can be grouped/nested under their parent
+
+#### Environment Variable
+
+```
+KURT_PARENT_WORKFLOW_ID=<parent-workflow-uuid>
+```
+
+This is automatically set by `agent_execution_step()` and read by:
+- `kurt.core.runner.run_workflow()` (foreground)
+- `kurt.core._worker.run_workflow_worker()` (background)
 
 ### Guardrails
 
@@ -742,9 +774,16 @@ src/kurt/workflows/agents/
 ├── __init__.py      # Public exports
 ├── parser.py        # Frontmatter parsing (Pydantic models)
 ├── registry.py      # File-based workflow registry
-├── executor.py      # DBOS workflow + Claude subprocess
+├── executor.py      # DBOS workflow + Claude subprocess + tool tracking
 ├── scheduler.py     # DBOS cron scheduling
-└── cli.py           # CLI commands (kurt agents ...)
+├── cli.py           # CLI commands (kurt agents ...)
+└── tests/
+    ├── __init__.py
+    ├── test_cli.py           # CLI command tests
+    ├── test_executor.py      # Executor and tool tracking tests
+    ├── test_nested_workflows.py  # Parent workflow ID tests
+    ├── test_parser.py        # Parser and config model tests
+    └── test_registry.py      # Registry function tests
 ```
 
 ### Configuration

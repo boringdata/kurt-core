@@ -866,12 +866,30 @@ def _decode_workflow_output(raw_output: Any) -> Any:
             return raw_output
 
 
+def _decode_dbos_event_value(encoded_value: Any) -> Any:
+    """
+    Decode DBOS event value (base64 + pickle encoded).
+
+    DBOS stores event values encoded as base64(pickle(value)).
+    """
+    if not encoded_value:
+        return None
+    try:
+        import base64
+        import pickle
+
+        return pickle.loads(base64.b64decode(encoded_value))
+    except Exception:
+        return None
+
+
 @app.get("/api/workflows")
 def api_list_workflows(
     status: Optional[str] = Query(None),
     limit: int = Query(50, le=200),
     offset: int = Query(0, ge=0),
     search: Optional[str] = Query(None),
+    parent_id: Optional[str] = Query(None, description="Filter by parent workflow ID"),
 ):
     """List workflows with optional filtering."""
     session = _get_db_session()
@@ -881,36 +899,59 @@ def api_list_workflows(
     try:
         from sqlalchemy import text
 
-        sql = "SELECT workflow_uuid, name, status, created_at, updated_at FROM workflow_status"
+        # Join with workflow_events to get parent_workflow_id
+        sql = """
+            SELECT
+                ws.workflow_uuid,
+                ws.name,
+                ws.status,
+                ws.created_at,
+                ws.updated_at,
+                we.value as parent_workflow_id
+            FROM workflow_status ws
+            LEFT JOIN workflow_events we
+                ON ws.workflow_uuid = we.workflow_uuid
+                AND we.key = 'parent_workflow_id'
+        """
         params: dict[str, Any] = {}
         conditions = []
 
         if status:
-            conditions.append("status = :status")
+            conditions.append("ws.status = :status")
             params["status"] = status
 
         if search:
-            conditions.append("workflow_uuid LIKE :search")
+            conditions.append("ws.workflow_uuid LIKE :search")
             params["search"] = f"%{search}%"
+
+        if parent_id:
+            # Filter to only show children of a specific parent
+            conditions.append("we.value IS NOT NULL")
 
         if conditions:
             sql += " WHERE " + " AND ".join(conditions)
 
-        sql += " ORDER BY created_at DESC LIMIT :limit OFFSET :offset"
+        sql += " ORDER BY ws.created_at DESC LIMIT :limit OFFSET :offset"
         params["limit"] = limit
         params["offset"] = offset
 
         result = session.execute(text(sql), params)
-        workflows = [
-            {
-                "workflow_uuid": row[0],
-                "name": row[1],
-                "status": row[2],
-                "created_at": str(row[3]) if row[3] else None,
-                "updated_at": str(row[4]) if row[4] else None,
-            }
-            for row in result.fetchall()
-        ]
+        workflows = []
+        for row in result.fetchall():
+            parent_workflow_id = _decode_dbos_event_value(row[5]) if row[5] else None
+            # If filtering by parent_id, only include matching children
+            if parent_id and parent_workflow_id != parent_id:
+                continue
+            workflows.append(
+                {
+                    "workflow_uuid": row[0],
+                    "name": row[1],
+                    "status": row[2],
+                    "created_at": str(row[3]) if row[3] else None,
+                    "updated_at": str(row[4]) if row[4] else None,
+                    "parent_workflow_id": parent_workflow_id,
+                }
+            )
         session.close()
 
         return {"workflows": workflows, "total": len(workflows)}
