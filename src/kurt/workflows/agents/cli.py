@@ -318,6 +318,35 @@ def history_cmd(name: str, limit: int):
         console.print("[dim]Run history requires DBOS to be properly initialized.[/dim]")
 
 
+@agents_group.command(name="track-tool", hidden=True)
+def track_tool_cmd():
+    """
+    Internal command called by PostToolUse hook.
+
+    Reads tool call JSON from stdin and appends to KURT_TOOL_LOG_FILE.
+    This command is not meant to be called directly by users.
+    """
+    import os
+    import sys
+
+    log_file = os.environ.get("KURT_TOOL_LOG_FILE")
+    if not log_file:
+        sys.exit(0)  # No tracking configured, skip silently
+
+    try:
+        data = json.load(sys.stdin)
+        record = {
+            "tool_name": data.get("tool_name"),
+            "tool_use_id": data.get("tool_use_id"),
+        }
+        with open(log_file, "a") as f:
+            f.write(json.dumps(record) + "\n")
+    except Exception:
+        pass  # Don't fail the hook, Claude should continue
+
+    sys.exit(0)
+
+
 @agents_group.command(name="init")
 @track_command
 def init_cmd():

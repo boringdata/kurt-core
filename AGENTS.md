@@ -726,7 +726,156 @@ The executor tracks these metrics via DBOS events:
 - `tokens_in`: Input tokens (includes cache reads)
 - `tokens_out`: Output tokens
 - `cost_usd`: Total API cost
-- `tool_calls`: Web search/fetch requests (note: Bash/Read tool calls are not tracked by Claude CLI)
+- `tool_calls`: All tool invocations (Bash, Read, Write, Glob, etc.)
+
+#### Tool Call Tracking
+
+Tool calls are tracked using Claude Code's `PostToolUse` hook system:
+
+1. A temporary settings file is created with a hook that calls `kurt agents track-tool`
+2. Each tool invocation is logged to a temporary JSONL file
+3. After execution, the log file is read to count total tool calls
+4. Temp files are cleaned up automatically
+
+This allows accurate tracking of ALL tool calls, not just web_search/web_fetch.
+
+### Nested Workflow Display
+
+When an agent workflow runs `kurt` CLI commands (e.g., `kurt content map`, `kurt agents run`), child workflows are automatically linked to their parent. This enables hierarchical display in the web UI.
+
+#### How It Works
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  execute_agent_workflow (parent)                            │
+│  workflow_id: abc-123                                       │
+│                                                             │
+│  1. Set env: KURT_PARENT_WORKFLOW_ID=abc-123                │
+│  2. Run Claude CLI subprocess                               │
+│     │                                                       │
+│     │  ┌───────────────────────────────────────────┐        │
+│     └─▶│ Claude runs: kurt content map ...         │        │
+│        │                                           │        │
+│        │  ┌─────────────────────────────────────┐  │        │
+│        │  │ map_workflow (child)                │  │        │
+│        │  │ workflow_id: def-456                │  │        │
+│        │  │                                     │  │        │
+│        │  │ Reads KURT_PARENT_WORKFLOW_ID       │  │        │
+│        │  │ Stores: parent_workflow_id=abc-123  │  │        │
+│        │  └─────────────────────────────────────┘  │        │
+│        └───────────────────────────────────────────┘        │
+│                                                             │
+│  Result: def-456.parent_workflow_id → abc-123               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+1. **Parent ID Propagation**: The executor sets `KURT_PARENT_WORKFLOW_ID` env var before running Claude
+2. **Child Workflow Storage**: Each workflow function reads the env var and stores it as a DBOS event
+3. **API Response**: The web API includes `parent_workflow_id` in workflow listings
+4. **Frontend Display**: Child workflows can be grouped/nested under their parent
+
+#### Supported Child Workflows
+
+These workflows automatically support parent linking:
+- `execute_agent_workflow` - Agent workflows running other agents
+- `map_workflow` - Content mapping via `kurt content map`
+
+#### Environment Variable
+
+```
+KURT_PARENT_WORKFLOW_ID=<parent-workflow-uuid>
+```
+
+This is automatically set by `agent_execution_step()` and inherited by all subprocess commands.
+
+#### Adding Nested Support to New Workflows
+
+**IMPORTANT**: DBOS events must be set from INSIDE the `@DBOS.workflow()` function, not from outside code.
+
+Add this helper and call it at the start of your workflow:
+
+```python
+import os
+from dbos import DBOS
+
+def _store_parent_workflow_id() -> None:
+    """Store parent workflow ID from environment if available."""
+    parent_id = os.environ.get("KURT_PARENT_WORKFLOW_ID")
+    if parent_id:
+        try:
+            DBOS.set_event("parent_workflow_id", parent_id)
+        except Exception:
+            pass  # Don't fail workflow if storage fails
+
+
+@DBOS.workflow()
+def my_workflow(config_dict: dict) -> dict:
+    workflow_id = DBOS.workflow_id
+
+    # Store parent workflow ID for nested display - MUST be inside workflow function
+    _store_parent_workflow_id()
+
+    # ... rest of workflow
+    DBOS.set_event("status", "running")
+```
+
+#### Querying Parent-Child Relationships
+
+```python
+import sqlite3
+import base64
+import pickle
+
+# Find child workflows for a parent
+cursor.execute('''
+    SELECT ws.workflow_uuid, ws.name, we.value as parent_id
+    FROM workflow_status ws
+    JOIN workflow_events we ON ws.workflow_uuid = we.workflow_uuid
+    WHERE we.key = 'parent_workflow_id'
+''')
+
+for row in cursor.fetchall():
+    parent_id = pickle.loads(base64.b64decode(row[2]))
+    print(f"Child: {row[0]} → Parent: {parent_id}")
+```
+
+#### Testing Nested Workflows
+
+Create a test workflow that runs a kurt command:
+
+```markdown
+---
+name: nested-test
+title: Nested Workflow Test
+agent:
+  model: claude-sonnet-4-20250514
+  max_turns: 3
+  allowed_tools:
+    - Bash
+guardrails:
+  max_tokens: 50000
+  max_time: 120
+---
+
+# Task
+
+Run this command to create a child workflow:
+
+```bash
+kurt content map https://example.com --background
+```
+
+Report the workflow ID from the output.
+```
+
+Then verify in the database:
+```bash
+# Run the workflow
+kurt agents run nested-test --foreground
+
+# Check parent_workflow_id was stored
+kurt workflows list  # Shows both parent and child
+```
 
 ### Guardrails
 
@@ -742,9 +891,16 @@ src/kurt/workflows/agents/
 ├── __init__.py      # Public exports
 ├── parser.py        # Frontmatter parsing (Pydantic models)
 ├── registry.py      # File-based workflow registry
-├── executor.py      # DBOS workflow + Claude subprocess
+├── executor.py      # DBOS workflow + Claude subprocess + tool tracking
 ├── scheduler.py     # DBOS cron scheduling
-└── cli.py           # CLI commands (kurt agents ...)
+├── cli.py           # CLI commands (kurt agents ...)
+└── tests/
+    ├── __init__.py
+    ├── test_cli.py           # CLI command tests
+    ├── test_executor.py      # Executor and tool tracking tests
+    ├── test_nested_workflows.py  # Parent workflow ID tests
+    ├── test_parser.py        # Parser and config model tests
+    └── test_registry.py      # Registry function tests
 ```
 
 ### Configuration
@@ -767,3 +923,76 @@ print(result["workflow_id"])
 result = run_definition("my-workflow", background=False)
 print(result["status"], result["turns"], result["tokens_in"])
 ```
+
+---
+
+## Building Workflow Definitions
+
+### Quick Start
+
+1. Create `workflows/my-workflow.md`
+2. Add frontmatter (YAML) + prompt body (Markdown)
+3. Validate: `kurt agents validate workflows/my-workflow.md`
+4. Run: `kurt agents run my-workflow --foreground`
+
+### Frontmatter Reference
+
+```yaml
+---
+name: my-workflow                    # Required: unique ID (kebab-case)
+title: My Workflow Title             # Required: display name
+
+agent:
+  model: claude-sonnet-4-20250514    # Model to use
+  max_turns: 15                      # Conversation turns limit
+  allowed_tools: [Bash, Read, Write, Glob, Grep]
+
+guardrails:
+  max_tokens: 150000                 # Token budget
+  max_time: 600                      # Timeout (seconds)
+
+inputs:
+  topic: "default value"             # Runtime parameters
+
+schedule:                            # Optional: cron scheduling
+  cron: "0 9 * * 1-5"
+  enabled: true
+
+tags: [research, daily]              # For filtering
+---
+```
+
+### Template Variables
+
+| Variable | Example |
+|----------|---------|
+| `{{topic}}` | From inputs |
+| `{{date}}` | `2024-01-15` |
+| `{{datetime}}` | `2024-01-15T09:30:00` |
+| `{{project_root}}` | `/path/to/project` |
+
+### Prompt Structure
+
+```markdown
+# Workflow Title
+
+Context about the task.
+
+## Steps
+
+1. **Step One**: Use `command` to do X
+2. **Step Two**: Save to `reports/output-{{date}}.md`
+
+## Success Criteria
+
+- Output file created
+- No errors
+```
+
+### Guardrail Guidelines
+
+| Workflow Type | `max_turns` | `max_tokens` | `max_time` |
+|---------------|-------------|--------------|------------|
+| Quick task | 5-10 | 50,000 | 120 |
+| Standard | 15-25 | 150,000 | 600 |
+| Complex | 30-50 | 300,000 | 1800 |

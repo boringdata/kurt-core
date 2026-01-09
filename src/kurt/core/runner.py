@@ -1,11 +1,27 @@
 from __future__ import annotations
 
+import os
 from typing import Any, Callable
 
 from dbos import DBOS
 
 from kurt.core.background import start_background_workflow, workflow_path_for
 from kurt.core.dbos import init_dbos
+
+
+def _store_parent_workflow_id() -> None:
+    """
+    Store parent workflow ID from environment if available.
+
+    This enables nested workflow display - when an agent workflow runs kurt commands,
+    those child workflows will be linked to their parent agent workflow.
+    """
+    parent_id = os.environ.get("KURT_PARENT_WORKFLOW_ID")
+    if parent_id:
+        try:
+            DBOS.set_event("parent_workflow_id", parent_id)
+        except Exception:
+            pass  # Don't fail workflow if event storage fails
 
 
 def run_workflow(
@@ -45,6 +61,8 @@ def run_workflow(
         set_display_enabled(show_display)
         init_dbos()
         handle = DBOS.start_workflow(workflow_func, *args, **kwargs)
+        # Store parent workflow relationship if running inside an agent workflow
+        _store_parent_workflow_id()
         return handle.get_result()
     finally:
         set_display_enabled(False)

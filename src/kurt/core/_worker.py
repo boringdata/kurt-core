@@ -37,6 +37,21 @@ def _redirect_output(log_file: Path) -> None:
     os.close(log_fd)
 
 
+def _store_parent_workflow_id() -> None:
+    """
+    Store parent workflow ID from environment if available.
+
+    This enables nested workflow display - when an agent workflow runs kurt commands,
+    those child workflows will be linked to their parent agent workflow.
+    """
+    parent_id = os.environ.get("KURT_PARENT_WORKFLOW_ID")
+    if parent_id:
+        try:
+            DBOS.set_event("parent_workflow_id", parent_id)
+        except Exception:
+            pass  # Don't fail workflow if event storage fails
+
+
 def run_workflow_worker(workflow_path: str, workflow_args_json: str, priority: int = 10) -> None:
     """
     Execute a workflow in a background worker process.
@@ -54,6 +69,9 @@ def run_workflow_worker(workflow_path: str, workflow_args_json: str, priority: i
     _redirect_output(temp_log_file)
 
     handle = DBOS.start_workflow(workflow_func, *args, **kwargs)
+
+    # Store parent workflow relationship if running inside an agent workflow
+    _store_parent_workflow_id()
 
     final_log_file = log_dir / f"workflow-{handle.workflow_id}.log"
     temp_log_file.rename(final_log_file)

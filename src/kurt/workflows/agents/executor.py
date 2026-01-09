@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import os
 import re
+import tempfile
 import time
 from datetime import datetime
 from typing import Any, Optional
@@ -13,6 +16,70 @@ from kurt.config import get_config_file_path
 from kurt.core import run_workflow
 
 from .parser import ParsedWorkflow
+
+
+def _create_tool_tracking_settings() -> tuple[str, str]:
+    """
+    Create temp settings file with PostToolUse hook for tool call tracking.
+
+    Returns:
+        (settings_file_path, tool_log_path)
+    """
+    # Create temp file for tool call logging
+    tool_log_fd, tool_log_path = tempfile.mkstemp(suffix=".jsonl", prefix="kurt_tools_")
+    os.close(tool_log_fd)
+
+    # Create temp settings file with PostToolUse hook
+    settings = {
+        "hooks": {
+            "PostToolUse": [
+                {
+                    "matcher": "*",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": "kurt agents track-tool",
+                            "timeout": 5,
+                        }
+                    ],
+                }
+            ]
+        }
+    }
+
+    settings_fd, settings_path = tempfile.mkstemp(suffix=".json", prefix="kurt_settings_")
+    with os.fdopen(settings_fd, "w") as f:
+        json.dump(settings, f)
+
+    return settings_path, tool_log_path
+
+
+def _cleanup_tool_tracking(settings_path: str, tool_log_path: str) -> int:
+    """
+    Clean up temp files and return tool call count.
+
+    Args:
+        settings_path: Path to temp settings file
+        tool_log_path: Path to temp tool log file
+
+    Returns:
+        Number of tool calls logged
+    """
+    tool_calls = 0
+    try:
+        with open(tool_log_path) as f:
+            tool_calls = sum(1 for _ in f)
+    except Exception:
+        pass
+
+    # Clean up temp files
+    for path in [settings_path, tool_log_path]:
+        try:
+            os.unlink(path)
+        except Exception:
+            pass
+
+    return tool_calls
 
 
 def _get_project_root() -> str:
@@ -75,6 +142,11 @@ def execute_agent_workflow(
     DBOS.set_event("trigger", trigger)
     DBOS.set_event("status", "running")
     DBOS.set_event("started_at", time.time())
+
+    # Store parent workflow ID for nested workflow display
+    parent_workflow_id = os.environ.get("KURT_PARENT_WORKFLOW_ID")
+    if parent_workflow_id:
+        DBOS.set_event("parent_workflow_id", parent_workflow_id)
 
     DBOS.write_stream(
         "progress",
@@ -159,8 +231,8 @@ def agent_execution_step(
     Execute Claude Code agent via subprocess.
 
     Uses the `claude` CLI directly for simplicity and stability.
+    Tool calls are tracked via PostToolUse hook.
     """
-    import json
     import shutil
     import subprocess
 
@@ -185,6 +257,15 @@ def agent_execution_step(
         },
     )
 
+    # Create tool tracking settings (temp files for hook-based tracking)
+    settings_path, tool_log_path = _create_tool_tracking_settings()
+
+    # Set up environment for subprocess
+    env = os.environ.copy()
+    env["KURT_TOOL_LOG_FILE"] = tool_log_path
+    # Pass parent workflow ID so child workflows can be nested
+    env["KURT_PARENT_WORKFLOW_ID"] = DBOS.workflow_id
+
     # Build claude command
     cmd = [
         claude_path,
@@ -195,6 +276,8 @@ def agent_execution_step(
         str(max_turns),
         "--model",
         model,
+        "--settings",
+        settings_path,  # Use custom settings with tool tracking hook
     ]
 
     # Add allowed tools if specified
@@ -225,7 +308,11 @@ def agent_execution_step(
             text=True,
             timeout=max_time,
             cwd=_get_project_root(),
+            env=env,
         )
+
+        # Get tool call count from hook logs (tracks ALL tools, not just web)
+        tool_calls = _cleanup_tool_tracking(settings_path, tool_log_path)
 
         # Parse JSON output if available
         output_data = {}
@@ -245,13 +332,6 @@ def agent_execution_step(
         usage = output_data.get("usage", {})
         tokens_in = usage.get("input_tokens", 0) + usage.get("cache_read_input_tokens", 0)
         tokens_out = usage.get("output_tokens", 0)
-
-        # Count tool calls from modelUsage if available
-        tool_calls = 0
-        model_usage = output_data.get("modelUsage", {})
-        for model_data in model_usage.values():
-            tool_calls += model_data.get("webSearchRequests", 0)
-            tool_calls += model_data.get("webFetchRequests", 0)
 
         DBOS.set_event("agent_turns", turns)
         DBOS.set_event("tool_calls", tool_calls)
@@ -295,9 +375,10 @@ def agent_execution_step(
                 stop_reason = f"error: {result.stderr[:100]}"
 
     except subprocess.TimeoutExpired:
+        # Ensure cleanup on timeout
+        tool_calls = _cleanup_tool_tracking(settings_path, tool_log_path)
         stop_reason = f"max_time ({max_time}s) exceeded"
         turns = 0
-        tool_calls = 0
         tokens_in = 0
         tokens_out = 0
         cost = 0.0
@@ -310,6 +391,11 @@ def agent_execution_step(
                 "data": {"reason": stop_reason},
             },
         )
+
+    except Exception:
+        # Ensure cleanup on any error
+        _cleanup_tool_tracking(settings_path, tool_log_path)
+        raise
 
     DBOS.write_stream(
         "progress",
