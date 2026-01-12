@@ -2,27 +2,23 @@
 Base database client interface.
 
 This module provides an abstract interface for database operations.
-Currently only SQLite is implemented, but the structure allows for
-easy addition of other databases (PostgreSQL, etc.) in the future.
+Supports both SQLite (local dev) and PostgreSQL (production via DBOS).
 """
 
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
 
-from sqlmodel import Session
+if TYPE_CHECKING:
+    from sqlmodel import Session
 
 
 class DatabaseClient(ABC):
     """
     Abstract base class for database clients.
 
-    This interface allows Kurt to work with different database backends
-    without changing application code. Currently implemented:
-    - SQLiteClient: Local .kurt/kurt.sqlite database
-
-    Future implementations could include:
-    - PostgreSQLClient: Remote PostgreSQL database
-    - MySQLClient: MySQL/MariaDB support
-    - etc.
+    This interface allows kurt to work with different database backends:
+    - SQLiteClient: Local .kurt/kurt.sqlite database (development)
+    - PostgreSQLClient: PostgreSQL database (production, used by DBOS)
     """
 
     @abstractmethod
@@ -36,7 +32,7 @@ class DatabaseClient(ABC):
         pass
 
     @abstractmethod
-    def get_session(self) -> Session:
+    def get_session(self) -> "Session":
         """Get a database session."""
         pass
 
@@ -47,7 +43,7 @@ class DatabaseClient(ABC):
 
     @abstractmethod
     def get_mode_name(self) -> str:
-        """Get the name of this database mode (e.g., 'local', 'remote')."""
+        """Get the name of this database mode (e.g., 'sqlite', 'postgresql')."""
         pass
 
 
@@ -55,14 +51,22 @@ def get_database_client() -> DatabaseClient:
     """
     Factory function to get the appropriate database client.
 
-    Currently returns SQLiteClient (local mode) by default.
-
-    Future enhancement: Could check environment variables to select
-    different database backends (PostgreSQL, MySQL, etc.).
+    Checks environment for DATABASE_URL to determine which client to use:
+    - If DATABASE_URL is set: PostgreSQLClient (production/DBOS mode)
+    - Otherwise: SQLiteClient (local development mode)
 
     Returns:
-        DatabaseClient: SQLiteClient instance (local .kurt/kurt.sqlite)
+        DatabaseClient: Appropriate client for the environment
     """
-    from kurt.db.sqlite import SQLiteClient
+    import os
 
-    return SQLiteClient()
+    database_url = os.environ.get("DATABASE_URL")
+
+    if database_url and database_url.startswith("postgres"):
+        from kurt.db.postgresql import PostgreSQLClient
+
+        return PostgreSQLClient(database_url)
+    else:
+        from kurt.db.sqlite import SQLiteClient
+
+        return SQLiteClient()

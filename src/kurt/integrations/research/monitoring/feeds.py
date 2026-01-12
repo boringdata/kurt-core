@@ -4,8 +4,11 @@ RSS/Atom feed monitoring adapter.
 Uses feedparser to parse feeds.
 """
 
+from __future__ import annotations
+
 from datetime import datetime
-from typing import List, Optional
+from time import mktime
+from typing import Optional
 from urllib.parse import urlparse
 
 import feedparser
@@ -24,9 +27,9 @@ class FeedAdapter:
         self,
         feed_url: str,
         since: Optional[datetime] = None,
-        keywords: Optional[List[str]] = None,
+        keywords: Optional[list[str]] = None,
         limit: int = 50,
-    ) -> List[Signal]:
+    ) -> list[Signal]:
         """
         Get entries from an RSS/Atom feed.
 
@@ -51,12 +54,8 @@ class FeedAdapter:
                 # Parse published date
                 published = None
                 if hasattr(entry, "published_parsed") and entry.published_parsed:
-                    from time import mktime
-
                     published = datetime.fromtimestamp(mktime(entry.published_parsed))
                 elif hasattr(entry, "updated_parsed") and entry.updated_parsed:
-                    from time import mktime
-
                     published = datetime.fromtimestamp(mktime(entry.updated_parsed))
 
                 # Filter by date if provided
@@ -112,7 +111,7 @@ class FeedAdapter:
         except Exception as e:
             raise Exception(f"Failed to fetch feed {feed_url}: {e}")
 
-    def get_multi_feed_entries(self, feed_urls: List[str], **kwargs) -> List[Signal]:
+    def get_multi_feed_entries(self, feed_urls: list[str], **kwargs) -> list[Signal]:
         """
         Get entries from multiple feeds.
 

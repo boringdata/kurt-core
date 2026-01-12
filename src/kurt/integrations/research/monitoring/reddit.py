@@ -4,8 +4,10 @@ Reddit monitoring adapter.
 Uses Reddit's JSON API (no authentication required for public content).
 """
 
+from __future__ import annotations
+
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 
 import requests
 
@@ -28,9 +30,9 @@ class RedditAdapter:
         timeframe: str = "day",
         sort: str = "hot",
         limit: int = 25,
-        keywords: Optional[List[str]] = None,
+        keywords: Optional[list[str]] = None,
         min_score: int = 0,
-    ) -> List[Signal]:
+    ) -> list[Signal]:
         """
         Get posts from a subreddit.
 
@@ -103,7 +105,7 @@ class RedditAdapter:
         except requests.RequestException as e:
             raise Exception(f"Failed to fetch Reddit data: {e}")
 
-    def get_multi_subreddit_posts(self, subreddits: List[str], **kwargs) -> List[Signal]:
+    def get_multi_subreddit_posts(self, subreddits: list[str], **kwargs) -> list[Signal]:
         """
         Get posts from multiple subreddits.
 
@@ -134,7 +136,7 @@ class RedditAdapter:
         timeframe: str = "week",
         sort: str = "relevance",
         limit: int = 25,
-    ) -> List[Signal]:
+    ) -> list[Signal]:
         """
         Search within a subreddit.
 

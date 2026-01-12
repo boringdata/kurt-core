@@ -23,6 +23,7 @@ class KurtConfig(BaseModel):
     DEFAULT_SOURCES_PATH: ClassVar[str] = "sources"
     DEFAULT_PROJECTS_PATH: ClassVar[str] = "projects"
     DEFAULT_RULES_PATH: ClassVar[str] = "rules"
+    DEFAULT_WORKFLOWS_PATH: ClassVar[str] = "workflows"
     DEFAULT_INDEXING_LLM_MODEL: ClassVar[str] = "openai/gpt-4o-mini"
     DEFAULT_ANSWER_LLM_MODEL: ClassVar[str] = "openai/gpt-4o"
     DEFAULT_EMBEDDING_MODEL: ClassVar[str] = "openai/text-embedding-3-small"
@@ -97,6 +98,10 @@ class KurtConfig(BaseModel):
     PATH_RULES: str = Field(
         default=DEFAULT_RULES_PATH,
         description="Path to store rules and configurations (relative to kurt.config location)",
+    )
+    PATH_WORKFLOWS: str = Field(
+        default=DEFAULT_WORKFLOWS_PATH,
+        description="Path to agent workflow definitions (relative to kurt.config location)",
     )
     INDEXING_LLM_MODEL: str = Field(
         default=DEFAULT_INDEXING_LLM_MODEL,
@@ -195,6 +200,16 @@ class KurtConfig(BaseModel):
         if not rules_path.is_absolute():
             return project_root / rules_path
         return rules_path
+
+    def get_absolute_workflows_path(self) -> Path:
+        """Get absolute path to workflows directory."""
+        project_root = self._get_project_root()
+        workflows_path = Path(self.PATH_WORKFLOWS)
+
+        # If workflows path is relative, resolve it relative to project root
+        if not workflows_path.is_absolute():
+            return project_root / workflows_path
+        return workflows_path
 
 
 def get_config_file_path() -> Path:

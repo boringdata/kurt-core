@@ -1,33 +1,49 @@
-"""Alembic migration environment for Kurt."""
+"""Alembic migration environment for kurt.
 
+Supports both SQLite (local dev) and PostgreSQL (production).
+"""
+
+import os
 from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 from sqlmodel import SQLModel
 
-from kurt.config import load_config
-
-# this is the Alembic Config object, which provides
-# access to the values within the .ini file in use.
+# this is the Alembic Config object
 config = context.config
 
-# Interpret the config file for Python logging.
-# This line sets up loggers basically.
+# Interpret the config file for Python logging
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Add your model's MetaData object here for 'autogenerate' support
-target_metadata = SQLModel.metadata
+# ============================================================================
+# EXPLICIT MODEL IMPORTS
+# Add all models here for autogenerate to work properly
+# ============================================================================
 
-# Import all models here to ensure they're registered
-# This is crucial for autogenerate to work properly
+# Infrastructure models (core tables)
+from kurt.db.models import LLMTrace  # noqa: F401, E402
+
+# Workflow-specific models - add imports here as workflows are created
+# from workflows.entity_extraction.models import ExtractedEntity
+# from workflows.sentiment_analysis.models import SentimentResult
+
+target_metadata = SQLModel.metadata
 
 
 def get_database_url() -> str:
-    """Get database URL from Kurt configuration."""
-    kurt_config = load_config()
-    db_path = kurt_config.get_absolute_db_path()
+    """Get database URL from environment or default to SQLite."""
+    # Check for DATABASE_URL (PostgreSQL for production/DBOS)
+    database_url = os.environ.get("DATABASE_URL")
+    if database_url:
+        # Handle Heroku-style postgres:// URLs
+        if database_url.startswith("postgres://"):
+            database_url = database_url.replace("postgres://", "postgresql://", 1)
+        return database_url
+
+    # Default to SQLite for local development
+    db_path = os.environ.get("KURT_DB_PATH", ".kurt/kurt.sqlite")
     return f"sqlite:///{db_path}"
 
 
@@ -36,7 +52,7 @@ def run_migrations_offline() -> None:
 
     This configures the context with just a URL
     and not an Engine, though an Engine is acceptable
-    here as well.  By skipping the Engine creation
+    here as well. By skipping the Engine creation
     we don't even need a DBAPI to be available.
 
     Calls to context.execute() here emit the given string to the
@@ -60,7 +76,6 @@ def run_migrations_online() -> None:
     In this scenario we need to create an Engine
     and associate a connection with the context.
     """
-    # Override the sqlalchemy.url from alembic.ini with Kurt's database path
     config_section = config.get_section(config.config_ini_section, {})
     config_section["sqlalchemy.url"] = get_database_url()
 
