@@ -60,6 +60,18 @@ def serve(
     # Terminal 2: Vite dev server (from src/kurt/web/client/)
     npm run dev
     """
+    # Check if uvicorn is installed (part of 'web' extra)
+    try:
+        import uvicorn  # noqa: F401
+    except ImportError:
+        console.print("[red]Error: uvicorn not installed.[/red]")
+        console.print()
+        console.print("The web UI requires the 'web' extra. Install it with:")
+        console.print("  [cyan]uv pip install 'kurt[web]'[/cyan]")
+        console.print("  or")
+        console.print("  [cyan]pip install 'kurt[web]'[/cyan]")
+        raise SystemExit(1)
+
     # Check if built frontend exists
     client_dist = Path(__file__).parent.parent / "web" / "client" / "dist"
     if not client_dist.exists() or not (client_dist / "index.html").exists():
