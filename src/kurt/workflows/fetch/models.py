@@ -1,12 +1,31 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Optional
+from typing import Optional, Protocol
 
 from sqlalchemy import JSON, Column
 from sqlmodel import Field, SQLModel
 
 from kurt.db.models import EmbeddingMixin, TenantMixin, TimestampMixin
+
+# Type alias for fetch results
+FetchResult = tuple[str, dict]  # (content_markdown, metadata_dict)
+BatchFetchResult = dict[str, FetchResult | Exception]  # URL -> result or error
+
+
+class BatchFetcher(Protocol):
+    """Protocol for batch fetch engines."""
+
+    def __call__(self, urls: list[str]) -> BatchFetchResult:
+        """Batch fetch multiple URLs.
+
+        Args:
+            urls: List of URLs to fetch
+
+        Returns:
+            Dict mapping URL -> (content, metadata) or Exception for failures
+        """
+        ...
 
 
 class FetchStatus(str, Enum):

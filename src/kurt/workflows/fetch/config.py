@@ -33,7 +33,13 @@ class FetchConfig(StepConfig):
     fetch_engine: str = ConfigParam(
         default="trafilatura",
         fallback="INGESTION_FETCH_ENGINE",
-        description="Fetch engine: trafilatura, httpx, firecrawl",
+        description="Fetch engine: trafilatura, httpx, firecrawl, tavily",
+    )
+    batch_size: int | None = ConfigParam(
+        default=None,
+        ge=1,
+        le=100,
+        description="Batch size for engines with batch support (tavily: max 20)",
     )
 
     # Embedding settings

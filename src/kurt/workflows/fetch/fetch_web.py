@@ -4,26 +4,62 @@ from __future__ import annotations
 
 from .fetch_firecrawl import fetch_with_firecrawl
 from .fetch_httpx import fetch_with_httpx
+from .fetch_tavily import fetch_with_tavily
 from .fetch_trafilatura import fetch_with_trafilatura
+from .models import BatchFetchResult
 
 
-def fetch_from_web(source_url: str, fetch_engine: str) -> tuple[str, dict]:
+def fetch_from_web(urls: list[str], fetch_engine: str) -> BatchFetchResult:
     """
-    Fetch content from web URL using specified engine.
+    Fetch content from web URLs using specified engine.
+
+    Processing strategy depends on engine:
+    - httpx/trafilatura: Sequential processing (no native batch support)
+    - tavily/firecrawl: Native batch API (single call with all URLs)
+
+    Note: For parallel processing of httpx/trafilatura, use DBOS Queue at
+    the workflow level (see steps.py). This function is a simple router
+    that can be called from anywhere.
 
     Args:
-        source_url: Web URL to fetch
-        fetch_engine: Engine to use ('firecrawl', 'trafilatura', 'httpx')
+        urls: List of URLs to fetch
+        fetch_engine: Engine to use ('trafilatura', 'httpx', 'firecrawl', 'tavily')
 
     Returns:
-        Tuple of (markdown_content, metadata_dict)
-
-    Raises:
-        ValueError: If fetch fails
+        Dict mapping URL -> (markdown_content, metadata_dict) or Exception
     """
-    if fetch_engine == "firecrawl":
-        return fetch_with_firecrawl(source_url)
+    if not urls:
+        return {}
+
+    results: BatchFetchResult = {}
+
+    if fetch_engine == "tavily":
+        # Tavily has native batch API (up to 20 URLs)
+        try:
+            results = fetch_with_tavily(urls)
+        except Exception as e:
+            # Return all URLs as failed
+            return {url: e for url in urls}
+    elif fetch_engine == "firecrawl":
+        # Firecrawl has native batch API
+        try:
+            results = fetch_with_firecrawl(urls)
+        except Exception as e:
+            # Return all URLs as failed
+            return {url: e for url in urls}
     elif fetch_engine == "httpx":
-        return fetch_with_httpx(source_url)
+        # httpx processes URLs sequentially
+        for url in urls:
+            try:
+                results[url] = fetch_with_httpx(url)
+            except Exception as e:
+                results[url] = e
     else:
-        return fetch_with_trafilatura(source_url)
+        # trafilatura (default) processes URLs sequentially
+        for url in urls:
+            try:
+                results[url] = fetch_with_trafilatura(url)
+            except Exception as e:
+                results[url] = e
+
+    return results

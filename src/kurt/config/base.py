@@ -31,7 +31,12 @@ class KurtConfig(BaseModel):
     DEFAULT_MAX_CONCURRENT_INDEXING: ClassVar[int] = 50
 
     # Acceptable values for validation
-    VALID_FETCH_ENGINES: ClassVar[list[str]] = ["trafilatura", "firecrawl", "httpx"]
+    VALID_FETCH_ENGINES: ClassVar[list[str]] = [
+        "trafilatura",
+        "firecrawl",
+        "httpx",
+        "tavily",
+    ]
 
     # Common DSPy LLM providers (for reference/validation - not exhaustive)
     # DSPy uses format: "provider/model-name"
