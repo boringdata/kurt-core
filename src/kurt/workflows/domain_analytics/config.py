@@ -40,5 +40,5 @@ class DomainAnalyticsConfig(StepConfig):
     # Sync settings
     period_days: int = ConfigParam(default=60, ge=1, le=365, description="Days of data to fetch")
 
-    # Behavior
-    dry_run: bool = ConfigParam(default=False, description="Dry run mode - fetch but don't persist")
+    # Runtime flags (CLI only, not loaded from config file)
+    dry_run: bool = False  # Preview mode - fetch but don't persist

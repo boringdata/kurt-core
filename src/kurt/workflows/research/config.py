@@ -58,8 +58,5 @@ class ResearchConfig(StepConfig):
         description="Directory to save research results",
     )
 
-    # Behavior
-    dry_run: bool = ConfigParam(
-        default=False,
-        description="Dry run mode - execute but don't persist",
-    )
+    # Runtime flags (CLI only, not loaded from config file)
+    dry_run: bool = False  # Preview mode - execute but don't persist

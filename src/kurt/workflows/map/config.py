@@ -5,7 +5,6 @@ Config values can be set in kurt.config with MAP.* prefix:
 
     MAP.MAX_PAGES=500
     MAP.MAX_DEPTH=3
-    MAP.DRY_RUN=true
     MAP.DISCOVERY_METHOD=sitemap
 
 Usage:
@@ -13,10 +12,10 @@ Usage:
     config = MapConfig.from_config("map")
 
     # Or instantiate directly
-    config = MapConfig(max_pages=500, dry_run=True)
+    config = MapConfig(max_pages=500)
 
-    # Or merge: config file + overrides
-    config = MapConfig.from_config("map", max_pages=500)
+    # Or merge: config file + CLI overrides
+    config = MapConfig.from_config("map", max_pages=500, dry_run=True)
 """
 
 from __future__ import annotations
@@ -58,4 +57,6 @@ class MapConfig(StepConfig):
 
     # Behavior
     allow_external: bool = ConfigParam(default=False, description="Allow external URLs")
-    dry_run: bool = ConfigParam(default=False, description="Dry run mode")
+
+    # Runtime flags (CLI only, not loaded from config file)
+    dry_run: bool = False  # Preview mode - don't persist changes

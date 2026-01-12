@@ -619,6 +619,29 @@ session.execute(text("SELECT * FROM workflow_status WHERE ..."))
 
 SQLModel doesn't auto-discover models. Call `register_all_models()` before `create_all()`.
 
+### ConfigParam vs Runtime Flags
+
+In workflow configs (`StepConfig`), distinguish between:
+
+**Persistent config** (use `ConfigParam`) - settings that make sense in `kurt.config`:
+- `fetch_engine`, `batch_size` - project-wide preferences
+- `max_pages`, `max_depth` - workflow tuning parameters
+- `model`, `recency` - API configuration
+
+**Runtime flags** (use simple Pydantic field) - CLI pass-through options:
+- `dry_run` - only relevant for a single command execution
+- `save` - runtime behavior toggle
+
+```python
+# WRONG - dry_run as ConfigParam (would be stored in kurt.config)
+dry_run: bool = ConfigParam(default=False, description="Dry run mode")
+
+# CORRECT - dry_run as simple field (CLI pass-through only)
+dry_run: bool = False  # Preview mode - don't persist changes
+```
+
+Rule of thumb: If storing `WORKFLOW.PARAM=value` in `kurt.config` file doesn't make sense, use a simple field instead of `ConfigParam`.
+
 ---
 
 ## Important Gotchas
