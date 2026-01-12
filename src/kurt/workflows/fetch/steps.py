@@ -428,17 +428,23 @@ def _serialize_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 @DBOS.transaction()
 def persist_fetch_documents(rows: list[dict[str, Any]]) -> dict[str, int]:
     """Persist fetch results in a durable transaction."""
+    # Fields that are in the row dict but not in FetchDocument model
+    # source_url is used for save_content_file path generation but not stored in fetch_documents
+    non_model_fields = {"source_url", "content"}
+
     with managed_session() as session:
         inserted = 0
         updated = 0
         for row in rows:
+            # Filter out non-model fields before persisting
+            db_row = {k: v for k, v in row.items() if k not in non_model_fields}
             existing_row = session.get(FetchDocument, row["document_id"])
             if existing_row:
-                for key, value in row.items():
+                for key, value in db_row.items():
                     setattr(existing_row, key, value)
                 existing_row.updated_at = datetime.utcnow()
                 updated += 1
             else:
-                session.add(FetchDocument(**row))
+                session.add(FetchDocument(**db_row))
                 inserted += 1
         return {"rows_written": inserted, "rows_updated": updated}

@@ -669,3 +669,57 @@ class TestSaveContentStepWithSourceUrl:
         # Should still work, passing None as source_url
         mock_save_file.assert_called_once_with("doc-1", "# Content", None)
         assert result[0]["content_path"] == "ab/cd/doc-1.md"
+
+
+class TestPersistFetchDocumentsFiltering:
+    """Tests for persist_fetch_documents filtering non-model fields.
+
+    These tests verify that source_url and content fields are filtered out
+    before persisting to FetchDocument, since those fields are not in the model.
+    """
+
+    def test_filters_out_source_url_field(self):
+        """Test that source_url is filtered out before persisting to FetchDocument."""
+        from kurt.workflows.fetch.models import FetchDocument
+
+        row = {
+            "document_id": "doc-1",
+            "source_url": "https://example.com/page",  # Not in FetchDocument model
+            "status": FetchStatus.SUCCESS,
+            "content_length": 100,
+            "content_hash": "abc123",
+            "content_path": "example.com/page.md",
+            "fetch_engine": "trafilatura",
+        }
+
+        # Same filtering logic used in persist_fetch_documents
+        non_model_fields = {"source_url", "content"}
+        db_row = {k: v for k, v in row.items() if k not in non_model_fields}
+
+        # Should not raise - source_url filtered out before creating FetchDocument
+        doc = FetchDocument(**db_row)
+        assert doc.document_id == "doc-1"
+        assert doc.content_path == "example.com/page.md"
+
+    def test_filters_out_content_field(self):
+        """Test that content is filtered out before persisting (should already be saved to file)."""
+        from kurt.workflows.fetch.models import FetchDocument
+
+        row = {
+            "document_id": "doc-2",
+            "content": "# Some markdown content",  # Not in FetchDocument model
+            "status": FetchStatus.SUCCESS,
+            "content_length": 22,
+            "content_hash": "def456",
+            "content_path": "example.com/other.md",
+            "fetch_engine": "tavily",
+        }
+
+        # Same filtering logic used in persist_fetch_documents
+        non_model_fields = {"source_url", "content"}
+        db_row = {k: v for k, v in row.items() if k not in non_model_fields}
+
+        # Should not raise - content filtered out before creating FetchDocument
+        doc = FetchDocument(**db_row)
+        assert doc.document_id == "doc-2"
+        assert doc.content_length == 22

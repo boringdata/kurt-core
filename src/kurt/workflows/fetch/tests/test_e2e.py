@@ -918,3 +918,68 @@ class TestCMSFetchE2E:
             assert file_doc.status == FetchStatus.SUCCESS
             assert cms_doc.status == FetchStatus.SUCCESS
             assert cms_doc.public_url == "https://notion.so/mixed"
+
+
+class TestPersistFetchDocumentsE2E:
+    """E2E tests for persist_fetch_documents with source_url filtering."""
+
+    def test_persist_with_source_url_field(self, tmp_kurt_project: Path):
+        """Test that source_url field is filtered out when persisting FetchDocument.
+
+        This is a critical test - source_url is added to rows for URL-based path
+        generation but should not be persisted to the FetchDocument table.
+        """
+        from kurt.workflows.fetch.steps import persist_fetch_documents
+
+        rows = [
+            {
+                "document_id": "persist-test-1",
+                "source_url": "https://example.com/page",  # NOT in FetchDocument model
+                "status": FetchStatus.SUCCESS,
+                "content_length": 100,
+                "content_hash": "abc123",
+                "content_path": "example.com/page.md",
+                "fetch_engine": "trafilatura",
+            }
+        ]
+
+        # This should not raise - source_url filtered out before creating FetchDocument
+        result = persist_fetch_documents(rows)
+        assert result["rows_written"] == 1
+
+        # Verify document was persisted correctly
+        with managed_session() as session:
+            doc = session.get(FetchDocument, "persist-test-1")
+            assert doc is not None
+            assert doc.status == FetchStatus.SUCCESS
+            assert doc.content_path == "example.com/page.md"
+
+    def test_persist_with_content_field(self, tmp_kurt_project: Path):
+        """Test that content field is filtered out when persisting FetchDocument.
+
+        Content should be saved to file, not stored in the database.
+        """
+        from kurt.workflows.fetch.steps import persist_fetch_documents
+
+        rows = [
+            {
+                "document_id": "persist-test-2",
+                "content": "# Markdown content",  # NOT in FetchDocument model
+                "status": FetchStatus.SUCCESS,
+                "content_length": 18,
+                "content_hash": "def456",
+                "content_path": "ab/cd/persist-test-2.md",
+                "fetch_engine": "tavily",
+            }
+        ]
+
+        # This should not raise - content filtered out before creating FetchDocument
+        result = persist_fetch_documents(rows)
+        assert result["rows_written"] == 1
+
+        # Verify document was persisted correctly
+        with managed_session() as session:
+            doc = session.get(FetchDocument, "persist-test-2")
+            assert doc is not None
+            assert doc.status == FetchStatus.SUCCESS
+            assert doc.content_length == 18
