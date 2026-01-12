@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import httpx
 
+from .models import FetchResult
 from .utils import extract_with_trafilatura
 
 
-def fetch_with_httpx(url: str) -> tuple[str, dict]:
+def fetch_with_httpx(url: str) -> FetchResult:
     """
     Fetch content using httpx + trafilatura extraction (proxy-friendly).
 
@@ -28,9 +29,6 @@ def fetch_with_httpx(url: str) -> tuple[str, dict]:
         raise ValueError(f"[httpx] Download error: {type(e).__name__}: {str(e)}") from e
 
     if not downloaded:
-        raise ValueError(f"[httpx] Failed to download (no content returned): {url}")
+        raise ValueError(f"[httpx] No content from: {url}")
 
-    try:
-        return extract_with_trafilatura(downloaded, url)
-    except ValueError as e:
-        raise ValueError(f"[httpx] {e}") from e
+    return extract_with_trafilatura(downloaded, url)

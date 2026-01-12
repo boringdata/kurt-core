@@ -14,7 +14,7 @@ from kurt.integrations.cms import fetch_from_cms
 from .config import FetchConfig
 from .fetch_file import fetch_from_file
 from .fetch_web import fetch_from_web
-from .models import FetchDocument, FetchStatus
+from .models import BatchFetchResult, FetchDocument, FetchStatus
 from .utils import load_document_content, save_content_file
 
 logger = logging.getLogger(__name__)
@@ -49,11 +49,14 @@ def _fetch_single_document(doc: dict[str, Any], config: FetchConfig) -> dict[str
             # Local file sources
             content, metadata = fetch_from_file(source_url)
         else:
-            # Web URL sources
-            content, metadata = fetch_from_web(
-                source_url=source_url,
-                fetch_engine=config.fetch_engine,
-            )
+            # Web URL sources - fetch_from_web returns BatchFetchResult
+            results = fetch_from_web([source_url], config.fetch_engine)
+            if source_url not in results:
+                raise ValueError(f"No result for: {source_url}")
+            result = results[source_url]
+            if isinstance(result, Exception):
+                raise result
+            content, metadata = result
 
         logger.info(f"Fetched {doc_id}: {len(content)} chars")
 
@@ -82,6 +85,115 @@ def _fetch_single_document(doc: dict[str, Any], config: FetchConfig) -> dict[str
             "metadata_json": None,
             "error": str(e),
         }
+
+
+def _fetch_batch_web_documents(
+    docs: list[dict[str, Any]], config: FetchConfig
+) -> list[dict[str, Any]]:
+    """Fetch multiple web documents using batch API when available.
+
+    Args:
+        docs: List of document dicts (all must be source_type="url")
+        config: Fetch configuration
+
+    Returns:
+        List of result dicts
+    """
+    if not docs:
+        return []
+
+    # Build URL to doc mapping
+    url_to_doc: dict[str, dict[str, Any]] = {}
+    for doc in docs:
+        url = doc.get("source_url")
+        if url:
+            url_to_doc[url] = doc
+
+    urls = list(url_to_doc.keys())
+
+    # Determine batch size (tavily max=20, firecrawl unlimited)
+    batch_size = config.batch_size
+    if config.fetch_engine == "tavily":
+        # Tavily API limit is 20 - cap user-provided value
+        batch_size = min(batch_size or 20, 20)
+    elif batch_size is None:
+        batch_size = len(urls)  # No batching for other engines
+
+    # Emit batch start event for observability
+    DBOS.write_stream(
+        "progress",
+        {
+            "step": "fetch_batch",
+            "status": "started",
+            "engine": config.fetch_engine,
+            "url_count": len(urls),
+            "batch_size": batch_size,
+            "timestamp": time.time(),
+        },
+    )
+
+    # Batch fetch URLs in chunks
+    batch_results: BatchFetchResult = {}
+    for i in range(0, len(urls), batch_size):
+        batch_urls = urls[i : i + batch_size]
+        results = fetch_from_web(batch_urls, config.fetch_engine)
+        batch_results.update(results)
+
+    # Emit batch complete event
+    DBOS.write_stream(
+        "progress",
+        {
+            "step": "fetch_batch",
+            "status": "completed",
+            "engine": config.fetch_engine,
+            "url_count": len(urls),
+            "results_count": len(batch_results),
+            "timestamp": time.time(),
+        },
+    )
+
+    # Convert batch results to row format
+    rows: list[dict[str, Any]] = []
+    for url, result in batch_results.items():
+        doc = url_to_doc.get(url)
+        if not doc:
+            continue
+
+        doc_id = doc.get("document_id")
+
+        if isinstance(result, Exception):
+            logger.error(f"Failed to fetch {doc_id}: {result}")
+            rows.append(
+                {
+                    "document_id": str(doc_id),
+                    "status": FetchStatus.ERROR,
+                    "content": None,
+                    "content_length": 0,
+                    "content_hash": None,
+                    "fetch_engine": config.fetch_engine,
+                    "public_url": None,
+                    "metadata_json": None,
+                    "error": str(result),
+                }
+            )
+        else:
+            content, metadata = result
+            logger.info(f"Fetched {doc_id}: {len(content)} chars")
+            rows.append(
+                {
+                    "document_id": str(doc_id),
+                    "status": FetchStatus.SUCCESS,
+                    "content": content,
+                    "content_length": len(content),
+                    "content_hash": metadata.get("fingerprint"),
+                    "fetch_engine": config.fetch_engine,
+                    "public_url": None,
+                    "metadata_json": metadata,
+                    "error": None,
+                }
+            )
+
+    return rows
 
 
 @DBOS.step(name="generate_embeddings")
@@ -180,6 +292,9 @@ def save_content_step(
 def fetch_step(docs: list[dict[str, Any]], config_dict: dict[str, Any]) -> dict[str, Any]:
     """Fetch content for documents.
 
+    Uses batch fetching for web URLs when the engine supports it (tavily, firecrawl).
+    Falls back to sequential fetching for file/cms sources or unsupported engines.
+
     Args:
         docs: List of dicts with:
             - document_id: str (required)
@@ -210,23 +325,70 @@ def fetch_step(docs: list[dict[str, Any]], config_dict: dict[str, Any]) -> dict[
 
     logger.info(f"Fetching {total} documents (engine: {config.fetch_engine})")
 
-    rows: list[dict[str, Any]] = []
+    # Emit observability events
+    DBOS.set_event("fetch_engine", config.fetch_engine)
     DBOS.set_event("stage_total", total)
 
-    for idx, doc in enumerate(docs):
+    # Separate docs by source type
+    web_docs: list[dict[str, Any]] = []
+    non_web_docs: list[dict[str, Any]] = []
+
+    for doc in docs:
+        source_type = doc.get("source_type", "url")
+        if source_type == "url":
+            web_docs.append(doc)
+        else:
+            non_web_docs.append(doc)
+
+    # Emit source type counts for observability
+    DBOS.set_event("web_docs_count", len(web_docs))
+    DBOS.set_event("non_web_docs_count", len(non_web_docs))
+
+    rows: list[dict[str, Any]] = []
+    processed = 0
+
+    # Process web docs using batch API (handles both native batch and sequential fallback)
+    if web_docs:
+        batch_rows = _fetch_batch_web_documents(web_docs, config)
+        rows.extend(batch_rows)
+
+        # Update progress for each document
+        for row in batch_rows:
+            processed += 1
+            DBOS.set_event("stage_current", processed)
+            is_success = row["status"] == FetchStatus.SUCCESS
+            progress_event = {
+                "step": "fetch_documents",
+                "idx": processed - 1,
+                "total": total,
+                "status": "success" if is_success else "error",
+                "engine": config.fetch_engine,
+                "document_id": row.get("document_id"),
+                "content_length": row.get("content_length", 0),
+                "timestamp": time.time(),
+            }
+            if not is_success and row.get("error"):
+                progress_event["error"] = row["error"]
+            DBOS.write_stream("progress", progress_event)
+
+    # Process non-web docs (file, cms) sequentially - no batch support
+    for doc in non_web_docs:
         row = _fetch_single_document(doc, config)
         rows.append(row)
-
-        DBOS.set_event("stage_current", idx + 1)
+        processed += 1
+        DBOS.set_event("stage_current", processed)
         is_success = row["status"] == FetchStatus.SUCCESS
+        source_type = doc.get("source_type", "url")
         progress_event = {
             "step": "fetch_documents",
-            "idx": idx,
+            "idx": processed - 1,
             "total": total,
             "status": "success" if is_success else "error",
+            "source_type": source_type,
+            "document_id": row.get("document_id"),
+            "content_length": row.get("content_length", 0),
             "timestamp": time.time(),
         }
-        # Include error message for failed fetches
         if not is_success and row.get("error"):
             progress_event["error"] = row["error"]
         DBOS.write_stream("progress", progress_event)

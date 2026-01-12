@@ -15,15 +15,27 @@ class TestFetchConfig:
         config = FetchConfig()
 
         assert config.fetch_engine == "trafilatura"
+        assert config.batch_size is None
         assert config.embedding_max_chars == 1000
         assert config.embedding_batch_size == 100
         assert config.dry_run is False
 
     def test_config_with_fetch_engine(self):
         """Test FetchConfig with different fetch engines."""
-        for engine in ["trafilatura", "httpx", "firecrawl"]:
+        for engine in ["trafilatura", "httpx", "firecrawl", "tavily"]:
             config = FetchConfig(fetch_engine=engine)
             assert config.fetch_engine == engine
+
+    def test_config_batch_size_default(self):
+        """Test batch_size default is None."""
+        config = FetchConfig()
+        assert config.batch_size is None
+
+    def test_config_batch_size_valid(self):
+        """Test batch_size with valid values."""
+        for size in [1, 10, 20, 50, 100]:
+            config = FetchConfig(batch_size=size)
+            assert config.batch_size == size
 
     def test_config_embedding_max_chars_valid(self):
         """Test embedding_max_chars with valid values."""
@@ -79,3 +91,64 @@ class TestFetchConfig:
 
         assert config.fetch_engine == "httpx"
         assert config.embedding_max_chars == 500
+
+
+class TestFetchConfigFromFile:
+    """Test FetchConfig loading from kurt.config file."""
+
+    def test_from_config_fetch_engine(self, tmp_project):
+        """Test loading FETCH.FETCH_ENGINE from config file."""
+        from kurt.config.base import get_config_file_path
+
+        config_file = get_config_file_path()
+        with open(config_file, "a") as f:
+            f.write("FETCH.FETCH_ENGINE=tavily\n")
+
+        config = FetchConfig.from_config("fetch")
+        assert config.fetch_engine == "tavily"
+
+    def test_from_config_batch_size(self, tmp_project):
+        """Test loading FETCH.BATCH_SIZE from config file."""
+        from kurt.config.base import get_config_file_path
+
+        config_file = get_config_file_path()
+        with open(config_file, "a") as f:
+            f.write("FETCH.BATCH_SIZE=15\n")
+
+        config = FetchConfig.from_config("fetch")
+        assert config.batch_size == 15
+
+    def test_from_config_multiple_params(self, tmp_project):
+        """Test loading multiple FETCH params from config file."""
+        from kurt.config.base import get_config_file_path
+
+        config_file = get_config_file_path()
+        with open(config_file, "a") as f:
+            f.write("FETCH.FETCH_ENGINE=firecrawl\n")
+            f.write("FETCH.BATCH_SIZE=50\n")
+            f.write("FETCH.EMBEDDING_MAX_CHARS=2000\n")
+
+        config = FetchConfig.from_config("fetch")
+        assert config.fetch_engine == "firecrawl"
+        assert config.batch_size == 50
+        assert config.embedding_max_chars == 2000
+
+    def test_from_config_with_overrides(self, tmp_project):
+        """Test from_config with CLI overrides."""
+        from kurt.config.base import get_config_file_path
+
+        config_file = get_config_file_path()
+        with open(config_file, "a") as f:
+            f.write("FETCH.FETCH_ENGINE=trafilatura\n")
+            f.write("FETCH.BATCH_SIZE=10\n")
+
+        # CLI override takes precedence
+        config = FetchConfig.from_config("fetch", fetch_engine="tavily", batch_size=20)
+        assert config.fetch_engine == "tavily"
+        assert config.batch_size == 20
+
+    def test_from_config_fallback_to_global(self, tmp_project):
+        """Test FETCH.FETCH_ENGINE falls back to INGESTION_FETCH_ENGINE."""
+        # No FETCH.FETCH_ENGINE set, should fall back to global
+        config = FetchConfig.from_config("fetch")
+        assert config.fetch_engine == "trafilatura"  # Default from INGESTION_FETCH_ENGINE

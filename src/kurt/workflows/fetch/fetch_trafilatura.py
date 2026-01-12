@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import trafilatura
 
+from .models import FetchResult
 from .utils import extract_with_trafilatura
 
 
-def fetch_with_trafilatura(url: str) -> tuple[str, dict]:
+def fetch_with_trafilatura(url: str) -> FetchResult:
     """
-    Fetch content using Trafilatura.
+    Fetch content using Trafilatura (free, local extraction).
 
     Args:
         url: URL to fetch
@@ -23,13 +24,10 @@ def fetch_with_trafilatura(url: str) -> tuple[str, dict]:
     try:
         downloaded = trafilatura.fetch_url(url)
         if not downloaded:
-            raise ValueError(f"[Trafilatura] Failed to download (no content returned): {url}")
+            raise ValueError(f"[Trafilatura] No content from: {url}")
     except ValueError:
         raise
     except Exception as e:
         raise ValueError(f"[Trafilatura] Download error: {type(e).__name__}: {str(e)}") from e
 
-    try:
-        return extract_with_trafilatura(downloaded, url)
-    except ValueError as e:
-        raise ValueError(f"[Trafilatura] {e}") from e
+    return extract_with_trafilatura(downloaded, url)

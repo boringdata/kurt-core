@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import os
+
 import click
 from rich.console import Console
+from rich.table import Table
 
 from kurt.admin.telemetry.decorators import track_command
 from kurt.cli.options import (
@@ -17,6 +20,64 @@ from kurt.cli.output import print_json, print_workflow_status
 console = Console()
 
 
+def _check_engine_status(engine: str) -> tuple[str, str]:
+    """Check if engine is ready (has required API key).
+
+    Returns:
+        Tuple of (status, message) where status is 'ready' or 'missing'
+    """
+    if engine == "trafilatura":
+        return "ready", "Free local extraction (default)"
+    elif engine == "httpx":
+        return "ready", "HTTP + trafilatura (proxy-friendly)"
+    elif engine == "firecrawl":
+        if os.getenv("FIRECRAWL_API_KEY"):
+            return "ready", "Firecrawl API"
+        return "missing", "Set FIRECRAWL_API_KEY"
+    elif engine == "tavily":
+        if os.getenv("TAVILY_API_KEY"):
+            return "ready", "Tavily Extract API"
+        return "missing", "Set TAVILY_API_KEY"
+    return "unknown", "Unknown engine"
+
+
+def _list_engines(output_format: str) -> None:
+    """List available fetch engines and their status."""
+    engines = ["trafilatura", "httpx", "firecrawl", "tavily"]
+    engine_info = []
+
+    for engine in engines:
+        status, description = _check_engine_status(engine)
+        engine_info.append(
+            {
+                "engine": engine,
+                "status": status,
+                "description": description,
+            }
+        )
+
+    if output_format == "json":
+        print_json({"engines": engine_info})
+        return
+
+    # Rich table output
+    table = Table(title="Available Fetch Engines")
+    table.add_column("Engine", style="cyan")
+    table.add_column("Status", style="bold")
+    table.add_column("Description")
+
+    for info in engine_info:
+        status_style = "green" if info["status"] == "ready" else "yellow"
+        status_text = f"[{status_style}]{info['status']}[/{status_style}]"
+        table.add_row(info["engine"], status_text, info["description"])
+
+    console.print(table)
+    console.print()
+    console.print("[dim]Batch Support:[/dim]")
+    console.print("  tavily     Up to 20 URLs per request")
+    console.print("  firecrawl  Unlimited URLs per request")
+
+
 @click.command("fetch")
 @click.argument("identifier", required=False)
 @add_filter_options(advanced=True, exclude=True)
@@ -26,9 +87,16 @@ console = Console()
 @click.option("--files", "files_paths", help="Comma-separated list of local file paths")
 @click.option(
     "--engine",
-    type=click.Choice(["firecrawl", "trafilatura", "httpx"], case_sensitive=False),
-    help="Fetch engine (trafilatura=free, firecrawl=API, httpx=httpx+trafilatura)",
+    type=click.Choice(["firecrawl", "trafilatura", "httpx", "tavily"], case_sensitive=False),
+    help="Fetch engine to use",
 )
+@click.option(
+    "--batch-size",
+    type=int,
+    default=None,
+    help="Batch size for engines with batch support (tavily: max 20, firecrawl: unlimited)",
+)
+@click.option("--list-engines", is_flag=True, help="List available engines and exit")
 @click.option("--refetch", is_flag=True, help="Re-fetch already FETCHED documents")
 @add_background_options()
 @dry_run_option
@@ -54,6 +122,8 @@ def fetch_cmd(
     single_file: str | None,
     files_paths: str | None,
     engine: str | None,
+    batch_size: int | None,
+    list_engines: bool,
     refetch: bool,
     background: bool,
     priority: int,
@@ -64,23 +134,32 @@ def fetch_cmd(
     Fetch and index documents from URLs or local files.
 
     \b
-    Examples:
-        kurt content fetch                           # Fetch all NOT_FETCHED documents
-        kurt content fetch --limit 10                # Fetch first 10 documents
-        kurt content fetch --include "*.md"          # Fetch markdown files
-        kurt content fetch --dry-run                 # Preview without fetching
-        kurt content fetch --urls "https://a.com,https://b.com"  # Fetch specific URLs
-        kurt content fetch --refetch --with-status FETCHED       # Re-fetch documents
+    Engines:
+      trafilatura   Free, local extraction (default)
+      httpx         HTTP fetch + trafilatura (respects proxies)
+      firecrawl     Firecrawl API - requires FIRECRAWL_API_KEY
+      tavily        Tavily Extract API - requires TAVILY_API_KEY
 
     \b
-    Advanced Filtering:
-        kurt content fetch --url-contains "/docs/"   # URLs containing /docs/
-        kurt content fetch --file-ext md             # Only .md files
-        kurt content fetch --source-type url         # Only web URLs
-        kurt content fetch --exclude "*internal*"    # Exclude internal paths
-        kurt content fetch --has-content             # Only docs with content
-        kurt content fetch --min-content-length 100  # Min 100 chars
+    Examples:
+      kurt content fetch                              # Fetch all pending docs
+      kurt content fetch --url "https://..."          # Single URL
+      kurt content fetch --engine tavily --url "..."  # Use Tavily
+      kurt content fetch --list-engines               # Show available engines
+
+    \b
+    Filtering:
+      kurt content fetch --limit 10                   # Fetch first 10 documents
+      kurt content fetch --include "*.md"             # Fetch markdown files
+      kurt content fetch --url-contains "/docs/"      # URLs containing /docs/
+      kurt content fetch --source-type url            # Only web URLs
+      kurt content fetch --refetch                    # Re-fetch already fetched
     """
+    # Handle --list-engines early exit
+    if list_engines:
+        _list_engines(output_format)
+        return
+
     from kurt.documents import resolve_documents
 
     from .config import FetchConfig
@@ -197,6 +276,8 @@ def fetch_cmd(
     config_overrides = {"dry_run": dry_run}
     if engine:
         config_overrides["fetch_engine"] = engine.lower()
+    if batch_size is not None:
+        config_overrides["batch_size"] = batch_size
     config = FetchConfig.from_config("fetch", **config_overrides)
 
     # Build CLI command string for replay

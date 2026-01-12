@@ -150,8 +150,8 @@ class TestFetchWorkflowE2E:
         config = {"dry_run": False}
 
         # Mock web fetching
-        def mock_fetch_from_web(source_url, fetch_engine):
-            return f"Content from {source_url}", {"fingerprint": "abc123"}
+        def mock_fetch_from_web(urls, fetch_engine):
+            return {url: (f"Content from {url}", {"fingerprint": "abc123"}) for url in urls}
 
         # Mock embedding generation
         def mock_generate_embeddings(texts, **kwargs):
@@ -200,8 +200,8 @@ class TestFetchWorkflowE2E:
         ]
         config = {"dry_run": True}
 
-        def mock_fetch_from_web(source_url, fetch_engine):
-            return f"Content from {source_url}", {"fingerprint": "abc123"}
+        def mock_fetch_from_web(urls, fetch_engine):
+            return {url: (f"Content from {url}", {"fingerprint": "abc123"}) for url in urls}
 
         def mock_generate_embeddings(texts, **kwargs):
             return [[0.1, 0.2, 0.3] for _ in texts]
@@ -244,10 +244,14 @@ class TestFetchWorkflowE2E:
         ]
         config = {"dry_run": False}
 
-        def mock_fetch_from_web(source_url, fetch_engine):
-            if "bad" in source_url:
-                raise ValueError("Fetch failed")
-            return f"Content from {source_url}", {"fingerprint": "abc123"}
+        def mock_fetch_from_web(urls, fetch_engine):
+            results = {}
+            for url in urls:
+                if "bad" in url:
+                    results[url] = ValueError("Fetch failed")
+                else:
+                    results[url] = (f"Content from {url}", {"fingerprint": "abc123"})
+            return results
 
         def mock_generate_embeddings(texts, **kwargs):
             return [[0.1, 0.2, 0.3] for _ in texts]
@@ -314,8 +318,10 @@ class TestFetchWorkflowE2E:
         ]
         config = {"dry_run": False, "embedding_batch_size": 10}
 
-        def mock_fetch_from_web(source_url, fetch_engine):
-            return "This is test content for embedding", {"fingerprint": "xyz"}
+        def mock_fetch_from_web(urls, fetch_engine):
+            return {
+                url: ("This is test content for embedding", {"fingerprint": "xyz"}) for url in urls
+            }
 
         def mock_generate_embeddings(texts, **kwargs):
             # Return embeddings for each text
@@ -397,9 +403,9 @@ class TestBackgroundWorkflowLifecycle:
             session.commit()
 
         # Mock web fetching and embedding
-        def mock_fetch_from_web(source_url, fetch_engine):
+        def mock_fetch_from_web(urls, fetch_engine):
             time.sleep(0.1)  # Simulate network delay
-            return f"Content from {source_url}", {"fingerprint": "lifecycle-test"}
+            return {url: (f"Content from {url}", {"fingerprint": "lifecycle-test"}) for url in urls}
 
         def mock_generate_embeddings(texts, **kwargs):
             return [[0.1, 0.2, 0.3] for _ in texts]
@@ -546,9 +552,9 @@ class TestBackgroundWorkflowLifecycle:
             session.commit()
 
         # Mock with measurable delay
-        def mock_fetch(source_url, fetch_engine):
+        def mock_fetch(urls, fetch_engine):
             time.sleep(0.3)
-            return "Content", {"fingerprint": "test"}
+            return {url: ("Content", {"fingerprint": "test"}) for url in urls}
 
         def mock_generate_embeddings(texts, **kwargs):
             return [[0.1] for _ in texts]
@@ -873,8 +879,8 @@ class TestCMSFetchE2E:
         ]
         config = {"dry_run": False}
 
-        def mock_fetch_from_web(source_url, fetch_engine):
-            return f"Web content from {source_url}", {"fingerprint": "web123"}
+        def mock_fetch_from_web(urls, fetch_engine):
+            return {url: (f"Web content from {url}", {"fingerprint": "web123"}) for url in urls}
 
         def mock_fetch_from_cms(platform, instance, cms_document_id, discovery_url=None):
             return "CMS content", {"fingerprint": "cms123"}, "https://notion.so/mixed"

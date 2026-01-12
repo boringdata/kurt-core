@@ -14,6 +14,13 @@ class TestFetchFromWeb:
 
         assert fetch_from_web is not None
 
+    def test_empty_urls_returns_empty_dict(self):
+        """Test that empty URL list returns empty dict."""
+        from kurt.workflows.fetch.fetch_web import fetch_from_web
+
+        result = fetch_from_web([], "trafilatura")
+        assert result == {}
+
     @patch("kurt.workflows.fetch.utils.trafilatura")
     @patch("kurt.workflows.fetch.fetch_trafilatura.trafilatura")
     def test_routes_to_trafilatura_by_default(self, mock_traf_fetch, mock_traf_utils):
@@ -26,8 +33,10 @@ class TestFetchFromWeb:
             title="Test", author=None, date=None, description=None, fingerprint="abc"
         )
 
-        content, metadata = fetch_from_web("https://example.com", "trafilatura")
+        results = fetch_from_web(["https://example.com"], "trafilatura")
 
+        assert "https://example.com" in results
+        content, metadata = results["https://example.com"]
         assert content == "# Test Content"
         assert metadata["title"] == "Test"
         mock_traf_fetch.fetch_url.assert_called_once()
@@ -47,20 +56,36 @@ class TestFetchFromWeb:
             title="HTTPX Test", author=None, date=None, description=None, fingerprint="def"
         )
 
-        content, metadata = fetch_from_web("https://example.com", "httpx")
+        results = fetch_from_web(["https://example.com"], "httpx")
 
+        assert "https://example.com" in results
+        content, metadata = results["https://example.com"]
         assert content == "# HTTPX Content"
         mock_httpx.get.assert_called_once()
 
-    @patch("kurt.workflows.fetch.fetch_firecrawl.os.getenv")
-    def test_firecrawl_requires_api_key(self, mock_getenv):
-        """Test that firecrawl raises error without API key."""
+    def test_firecrawl_returns_error_on_missing_key(self):
+        """Test that firecrawl returns error without API key."""
         from kurt.workflows.fetch.fetch_web import fetch_from_web
 
-        mock_getenv.return_value = None
+        with patch("kurt.workflows.fetch.fetch_firecrawl.os.getenv", return_value=None):
+            # fetch_from_web catches exceptions and returns them in results dict
+            results = fetch_from_web(["https://example.com"], "firecrawl")
 
-        with pytest.raises(ValueError, match="FIRECRAWL_API_KEY"):
-            fetch_from_web("https://example.com", "firecrawl")
+            assert "https://example.com" in results
+            assert isinstance(results["https://example.com"], Exception)
+            assert "FIRECRAWL_API_KEY" in str(results["https://example.com"])
+
+    def test_tavily_returns_error_on_missing_key(self):
+        """Test that tavily returns error without API key."""
+        from kurt.workflows.fetch.fetch_web import fetch_from_web
+
+        with patch("kurt.workflows.fetch.fetch_tavily.os.getenv", return_value=None):
+            # fetch_from_web catches exceptions and returns them in results dict
+            results = fetch_from_web(["https://example.com"], "tavily")
+
+            assert "https://example.com" in results
+            assert isinstance(results["https://example.com"], Exception)
+            assert "TAVILY_API_KEY" in str(results["https://example.com"])
 
 
 class TestExtractWithTrafilatura:

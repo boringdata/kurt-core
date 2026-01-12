@@ -4,17 +4,17 @@ Fetch workflow configuration.
 Config values can be set in kurt.config with FETCH.* prefix:
 
     FETCH.FETCH_ENGINE=firecrawl
+    FETCH.BATCH_SIZE=20
     FETCH.EMBEDDING_MAX_CHARS=2000
-    FETCH.DRY_RUN=true
 
 Usage:
     # Load from config file
     config = FetchConfig.from_config("fetch")
 
     # Or instantiate directly
-    config = FetchConfig(fetch_engine="firecrawl", dry_run=True)
+    config = FetchConfig(fetch_engine="firecrawl")
 
-    # Or merge: config file + overrides
+    # Or merge: config file + CLI overrides
     config = FetchConfig.from_config("fetch", dry_run=True)
 """
 
@@ -33,7 +33,13 @@ class FetchConfig(StepConfig):
     fetch_engine: str = ConfigParam(
         default="trafilatura",
         fallback="INGESTION_FETCH_ENGINE",
-        description="Fetch engine: trafilatura, httpx, firecrawl",
+        description="Fetch engine: trafilatura, httpx, firecrawl, tavily",
+    )
+    batch_size: int | None = ConfigParam(
+        default=None,
+        ge=1,
+        le=100,
+        description="Batch size for engines with batch support (tavily: max 20)",
     )
 
     # Embedding settings
@@ -50,5 +56,5 @@ class FetchConfig(StepConfig):
         description="Batch size for embedding generation",
     )
 
-    # Behavior
-    dry_run: bool = ConfigParam(default=False, description="Dry run mode")
+    # Runtime flags (CLI only, not loaded from config file)
+    dry_run: bool = False  # Preview mode - don't persist changes

@@ -50,11 +50,8 @@ class SignalsConfig(StepConfig):
         description="Sort order for Reddit",
     )
 
-    # Workflow options
-    dry_run: bool = ConfigParam(
-        default=False,
-        description="Execute but don't persist to database",
-    )
+    # Runtime flags (CLI only, not loaded from config file)
+    dry_run: bool = False  # Preview mode - execute but don't persist to database
 
     def get_keywords_list(self) -> list[str]:
         """Parse comma-separated keywords into list."""
