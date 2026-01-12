@@ -44,7 +44,7 @@ const getFileName = (path) => {
   return parts[parts.length - 1]
 }
 
-const LAYOUT_VERSION = 19 // Increment to force layout reset
+const LAYOUT_VERSION = 20 // Increment to force layout reset
 
 // Generate a short hash from the project root path for localStorage keys
 const hashProjectRoot = (root) => {
@@ -277,6 +277,38 @@ export default function App() {
       return next
     })
   }, [collapsed.workflows, dockApi])
+
+  // Right header actions component - shows collapse button only for workflows/shell group
+  const RightHeaderActions = useCallback(
+    (props) => {
+      // Check if this group contains the workflows or shell panel
+      const panels = props.group?.panels || []
+      const isWorkflowsGroup = panels.some(
+        (p) => p.id === 'workflows' || p.id === 'shell'
+      )
+
+      if (!isWorkflowsGroup) return null
+
+      return (
+        <button
+          type="button"
+          className="tab-collapse-btn"
+          onClick={toggleWorkflows}
+          title={collapsed.workflows ? 'Expand panel' : 'Collapse panel'}
+          aria-label={collapsed.workflows ? 'Expand panel' : 'Collapse panel'}
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+            {collapsed.workflows ? (
+              <path d="M3.5 6L8 10.5L12.5 6H3.5Z" />
+            ) : (
+              <path d="M3.5 10L8 5.5L12.5 10H3.5Z" />
+            )}
+          </svg>
+        </button>
+      )
+    },
+    [collapsed.workflows, toggleWorkflows]
+  )
 
   // Apply collapsed state to dockview groups
   useEffect(() => {
@@ -855,6 +887,10 @@ export default function App() {
           tabComponent: 'noClose',
           title: 'Shell',
           position: { referenceGroup: workflowsPanel.group },
+          params: {
+            collapsed: false,
+            onToggleCollapse: () => {},
+          },
         })
       }
 
@@ -1132,6 +1168,10 @@ export default function App() {
             tabComponent: 'noClose',
             title: 'Shell',
             position: { referenceGroup: workflowsPanel.group },
+            params: {
+              collapsed: false,
+              onToggleCollapse: () => {},
+            },
           })
         }
 
@@ -1306,6 +1346,14 @@ export default function App() {
         onAttachWorkflow: openWorkflowTerminal,
       })
     }
+    // Also update shell panel with collapse state for the tab button
+    const shellPanel = dockApi.getPanel('shell')
+    if (shellPanel) {
+      shellPanel.api.updateParameters({
+        collapsed: collapsed.workflows,
+        onToggleCollapse: toggleWorkflows,
+      })
+    }
   }, [dockApi, collapsed.workflows, toggleWorkflows, openWorkflowTerminal, projectRoot])
 
   // Restore saved tabs when dockApi and projectRoot become available
@@ -1390,6 +1438,7 @@ export default function App() {
       className="dockview-theme-abyss"
       components={components}
       tabComponents={tabComponents}
+      rightHeaderActionsComponent={RightHeaderActions}
       onReady={onReady}
       showDndOverlay={showDndOverlay}
       onDidDrop={onDidDrop}

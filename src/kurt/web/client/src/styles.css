@@ -171,6 +171,32 @@ html, body, #root {
   border-bottom: 1px solid #e5e7eb;
 }
 
+/* Collapse button in tab header actions */
+.tab-collapse-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-right: 4px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.tab-collapse-btn:hover {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.tab-collapse-btn:active {
+  background: #d1d5db;
+}
+
 /* Legacy .app class - keep for potential fallback */
 .app {
   display: flex;
