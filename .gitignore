@@ -84,3 +84,9 @@ kurt-demo2/
 
 # Agent workflow definitions (user-specific)
 workflows/
+
+# Reports (local demo reports)
+reports/
+
+# Specs (local workflow specs)
+specs/
