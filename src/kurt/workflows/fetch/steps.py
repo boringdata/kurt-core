@@ -62,6 +62,7 @@ def _fetch_single_document(doc: dict[str, Any], config: FetchConfig) -> dict[str
 
         return {
             "document_id": str(doc_id),
+            "source_url": source_url,
             "status": FetchStatus.SUCCESS,
             "content": content,
             "content_length": len(content),
@@ -76,6 +77,7 @@ def _fetch_single_document(doc: dict[str, Any], config: FetchConfig) -> dict[str
         logger.error(f"Failed to fetch {doc_id}: {e}")
         return {
             "document_id": str(doc_id),
+            "source_url": source_url,
             "status": FetchStatus.ERROR,
             "content": None,
             "content_length": 0,
@@ -166,6 +168,7 @@ def _fetch_batch_web_documents(
             rows.append(
                 {
                     "document_id": str(doc_id),
+                    "source_url": url,
                     "status": FetchStatus.ERROR,
                     "content": None,
                     "content_length": 0,
@@ -182,6 +185,7 @@ def _fetch_batch_web_documents(
             rows.append(
                 {
                     "document_id": str(doc_id),
+                    "source_url": url,
                     "status": FetchStatus.SUCCESS,
                     "content": content,
                     "content_length": len(content),

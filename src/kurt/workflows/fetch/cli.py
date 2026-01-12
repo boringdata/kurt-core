@@ -80,7 +80,7 @@ def _list_engines(output_format: str) -> None:
 
 @click.command("fetch")
 @click.argument("identifier", required=False)
-@add_filter_options(advanced=True, exclude=True)
+@add_filter_options(exclude=True)
 @click.option("--url", "single_url", help="Single URL to fetch (auto-creates if doesn't exist)")
 @click.option("--urls", help="Comma-separated list of URLs (auto-creates if don't exist)")
 @click.option("--file", "single_file", help="Single local file path to fetch")
@@ -105,18 +105,13 @@ def _list_engines(output_format: str) -> None:
 def fetch_cmd(
     identifier: str | None,
     include_pattern: str | None,
+    url_contains: str | None,
     ids: str | None,
     in_cluster: str | None,
     with_status: str | None,
     with_content_type: str | None,
     limit: int | None,
     exclude_pattern: str | None,
-    url_contains: str | None,
-    file_ext: str | None,
-    source_type: str | None,
-    has_content: bool | None,
-    min_content_length: int | None,
-    fetch_engine: str | None,
     single_url: str | None,
     urls: str | None,
     single_file: str | None,
@@ -250,11 +245,6 @@ def fetch_cmd(
         limit=limit,
         exclude_pattern=exclude_pattern,
         url_contains=url_contains,
-        file_ext=file_ext,
-        source_type=source_type,
-        has_content=has_content,
-        min_content_length=min_content_length,
-        fetch_engine=fetch_engine,
         # Pass urls/files for filtering if provided
         urls=urls,
         files=files_paths,

@@ -50,6 +50,7 @@ def content_group():
 @track_command
 def list_cmd(
     include_pattern: str | None,
+    url_contains: str | None,
     ids: str | None,
     in_cluster: str | None,
     with_status: str | None,
@@ -75,6 +76,7 @@ def list_cmd(
     filters = DocumentFilters(
         ids=ids.split(",") if ids else None,
         include=include_pattern,
+        url_contains=url_contains,
         limit=limit,
     )
 

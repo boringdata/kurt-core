@@ -34,6 +34,7 @@ class DocumentFilters:
     ids: Optional[list[str]] = None
     include: Optional[str] = None  # glob pattern on source_url
     exclude: Optional[str] = None  # glob pattern to exclude
+    url_contains: Optional[str] = None  # substring match on source_url
 
     # Lifecycle stage filters
     map_status: Optional[MapStatus] = None
@@ -171,6 +172,9 @@ def build_joined_query(filters: DocumentFilters) -> Select:
     # Map filters
     if filters.ids:
         query = query.where(MapDocument.document_id.in_(filters.ids))
+
+    if filters.url_contains:
+        query = query.where(MapDocument.source_url.contains(filters.url_contains))
 
     if filters.map_status:
         query = query.where(MapDocument.status == filters.map_status)

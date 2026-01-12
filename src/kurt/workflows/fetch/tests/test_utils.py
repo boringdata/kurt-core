@@ -506,3 +506,166 @@ class TestEmbeddingStepStatusHandling:
         mock_load_content.assert_not_called()
         mock_gen_embed.assert_not_called()
         assert result[0]["embedding"] is None
+
+
+class TestFetchSingleDocument:
+    """Tests for _fetch_single_document including source_url passthrough."""
+
+    @patch("kurt.workflows.fetch.steps.fetch_from_web")
+    def test_returns_source_url_on_success(self, mock_fetch_web):
+        """Test that source_url is included in success response."""
+        from kurt.workflows.fetch.config import FetchConfig
+        from kurt.workflows.fetch.steps import _fetch_single_document
+
+        mock_fetch_web.return_value = {
+            "https://example.com/page": ("# Content", {"fingerprint": "abc123"})
+        }
+
+        doc = {
+            "document_id": "doc-1",
+            "source_url": "https://example.com/page",
+            "source_type": "url",
+        }
+        config = FetchConfig(fetch_engine="trafilatura")
+
+        result = _fetch_single_document(doc, config)
+
+        assert result["source_url"] == "https://example.com/page"
+        assert result["status"] == FetchStatus.SUCCESS
+
+    @patch("kurt.workflows.fetch.steps.fetch_from_web")
+    def test_returns_source_url_on_error(self, mock_fetch_web):
+        """Test that source_url is included in error response."""
+        from kurt.workflows.fetch.config import FetchConfig
+        from kurt.workflows.fetch.steps import _fetch_single_document
+
+        mock_fetch_web.return_value = {
+            "https://example.com/broken": ValueError("Connection failed")
+        }
+
+        doc = {
+            "document_id": "doc-1",
+            "source_url": "https://example.com/broken",
+            "source_type": "url",
+        }
+        config = FetchConfig(fetch_engine="trafilatura")
+
+        result = _fetch_single_document(doc, config)
+
+        assert result["source_url"] == "https://example.com/broken"
+        assert result["status"] == FetchStatus.ERROR
+
+
+class TestFetchBatchWebDocuments:
+    """Tests for _fetch_batch_web_documents including source_url passthrough."""
+
+    @patch("kurt.workflows.fetch.steps.DBOS")
+    @patch("kurt.workflows.fetch.steps.fetch_from_web")
+    def test_returns_source_url_on_success(self, mock_fetch_web, mock_dbos):
+        """Test that source_url is included in batch success responses."""
+        from kurt.workflows.fetch.config import FetchConfig
+        from kurt.workflows.fetch.steps import _fetch_batch_web_documents
+
+        mock_fetch_web.return_value = {
+            "https://example.com/page1": ("# Page 1", {"fingerprint": "abc"}),
+            "https://example.com/page2": ("# Page 2", {"fingerprint": "def"}),
+        }
+
+        docs = [
+            {"document_id": "doc-1", "source_url": "https://example.com/page1"},
+            {"document_id": "doc-2", "source_url": "https://example.com/page2"},
+        ]
+        config = FetchConfig(fetch_engine="trafilatura")
+
+        results = _fetch_batch_web_documents(docs, config)
+
+        assert len(results) == 2
+        # Find results by document_id
+        result1 = next(r for r in results if r["document_id"] == "doc-1")
+        result2 = next(r for r in results if r["document_id"] == "doc-2")
+
+        assert result1["source_url"] == "https://example.com/page1"
+        assert result1["status"] == FetchStatus.SUCCESS
+        assert result2["source_url"] == "https://example.com/page2"
+        assert result2["status"] == FetchStatus.SUCCESS
+
+    @patch("kurt.workflows.fetch.steps.DBOS")
+    @patch("kurt.workflows.fetch.steps.fetch_from_web")
+    def test_returns_source_url_on_error(self, mock_fetch_web, mock_dbos):
+        """Test that source_url is included in batch error responses."""
+        from kurt.workflows.fetch.config import FetchConfig
+        from kurt.workflows.fetch.steps import _fetch_batch_web_documents
+
+        mock_fetch_web.return_value = {
+            "https://example.com/good": ("# Content", {"fingerprint": "abc"}),
+            "https://example.com/broken": ValueError("Failed"),
+        }
+
+        docs = [
+            {"document_id": "doc-1", "source_url": "https://example.com/good"},
+            {"document_id": "doc-2", "source_url": "https://example.com/broken"},
+        ]
+        config = FetchConfig(fetch_engine="trafilatura")
+
+        results = _fetch_batch_web_documents(docs, config)
+
+        assert len(results) == 2
+        result1 = next(r for r in results if r["document_id"] == "doc-1")
+        result2 = next(r for r in results if r["document_id"] == "doc-2")
+
+        assert result1["source_url"] == "https://example.com/good"
+        assert result1["status"] == FetchStatus.SUCCESS
+        assert result2["source_url"] == "https://example.com/broken"
+        assert result2["status"] == FetchStatus.ERROR
+
+
+class TestSaveContentStepWithSourceUrl:
+    """Tests for save_content_step with source_url passthrough for URL-based paths."""
+
+    @patch("kurt.workflows.fetch.steps.save_content_file")
+    def test_passes_source_url_to_save(self, mock_save_file):
+        """Test that source_url is passed to save_content_file for URL-based paths."""
+        from kurt.workflows.fetch.steps import save_content_step
+
+        mock_save_file.return_value = "example.com/blog/post.md"
+
+        rows = [
+            {
+                "document_id": "doc-1",
+                "source_url": "https://example.com/blog/post",
+                "status": FetchStatus.SUCCESS,
+                "content": "# Blog Post Content",
+            }
+        ]
+        config = {"dry_run": False, "fetch_engine": "trafilatura"}
+
+        result = save_content_step(rows, config)
+
+        # Verify source_url was passed to save_content_file
+        mock_save_file.assert_called_once_with(
+            "doc-1", "# Blog Post Content", "https://example.com/blog/post"
+        )
+        assert result[0]["content_path"] == "example.com/blog/post.md"
+
+    @patch("kurt.workflows.fetch.steps.save_content_file")
+    def test_handles_missing_source_url(self, mock_save_file):
+        """Test graceful handling when source_url is missing (legacy data)."""
+        from kurt.workflows.fetch.steps import save_content_step
+
+        mock_save_file.return_value = "ab/cd/doc-1.md"
+
+        rows = [
+            {
+                "document_id": "doc-1",
+                # No source_url key
+                "status": FetchStatus.SUCCESS,
+                "content": "# Content",
+            }
+        ]
+        config = {"dry_run": False, "fetch_engine": "trafilatura"}
+
+        result = save_content_step(rows, config)
+
+        # Should still work, passing None as source_url
+        mock_save_file.assert_called_once_with("doc-1", "# Content", None)
+        assert result[0]["content_path"] == "ab/cd/doc-1.md"
