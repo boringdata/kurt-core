@@ -67,6 +67,52 @@ class TestGenerateContentPath:
         # Should be truncated to 100 chars + .md
         assert len(filename) <= 103  # 100 + ".md"
 
+    def test_url_based_path(self):
+        """Test URL-based path generation."""
+        from kurt.workflows.fetch.utils import generate_content_path
+
+        path = generate_content_path("doc-id", "https://example.com/blog/post")
+        assert path == "example.com/blog/post.md"
+
+    def test_url_based_path_with_subdomain(self):
+        """Test URL path preserves subdomain."""
+        from kurt.workflows.fetch.utils import generate_content_path
+
+        path = generate_content_path("doc-id", "https://sub.domain.com/a/b/c")
+        assert path == "sub.domain.com/a/b/c.md"
+
+    def test_url_based_path_root(self):
+        """Test URL path for root URL."""
+        from kurt.workflows.fetch.utils import generate_content_path
+
+        path = generate_content_path("doc-id", "https://example.com/")
+        assert path == "example.com/index.md"
+
+    def test_url_based_path_strips_html_extension(self):
+        """Test URL path strips .html extension."""
+        from kurt.workflows.fetch.utils import generate_content_path
+
+        path = generate_content_path("doc-id", "https://example.com/page.html")
+        assert path == "example.com/page.md"
+
+    def test_url_based_path_strips_query_params(self):
+        """Test URL path ignores query parameters."""
+        from kurt.workflows.fetch.utils import generate_content_path
+
+        path = generate_content_path("doc-id", "https://example.com/page?q=1&x=2")
+        assert path == "example.com/page.md"
+
+    def test_url_based_path_sanitizes_special_chars(self):
+        """Test URL path sanitizes special characters."""
+        from kurt.workflows.fetch.utils import generate_content_path
+
+        path = generate_content_path("doc-id", "https://example.com/path with spaces/file%20name")
+        # Spaces and % become underscores
+        assert "example.com/" in path
+        assert path.endswith(".md")
+        assert " " not in path
+        assert "%" not in path
+
 
 class TestSaveContentFile:
     """Test suite for save_content_file."""
@@ -255,7 +301,7 @@ class TestSaveContentStep:
 
         result = save_content_step(rows, config)
 
-        mock_save_file.assert_called_once_with("doc-1", "# Test Content")
+        mock_save_file.assert_called_once_with("doc-1", "# Test Content", None)
         assert result[0]["content_path"] == "ab/cd/doc-1.md"
         assert "content" not in result[0]  # Content should be removed
 
@@ -398,7 +444,7 @@ class TestSaveContentStep:
         result = save_content_step(rows, config)
 
         # Should still save content because "SUCCESS" == FetchStatus.SUCCESS.value
-        mock_save_file.assert_called_once_with("doc-1", "# Test Content")
+        mock_save_file.assert_called_once_with("doc-1", "# Test Content", None)
         assert result[0]["content_path"] == "ab/cd/doc-1.md"
 
 

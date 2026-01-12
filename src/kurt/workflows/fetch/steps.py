@@ -273,7 +273,8 @@ def save_content_step(
         is_success = row.get("status") in (FetchStatus.SUCCESS, FetchStatus.SUCCESS.value)
         if is_success and row.get("content"):
             try:
-                content_path = save_content_file(row["document_id"], row["content"])
+                source_url = row.get("source_url")
+                content_path = save_content_file(row["document_id"], row["content"], source_url)
                 row["content_path"] = content_path
                 logger.info(f"Saved content for {row['document_id']} to {content_path}")
             except Exception as e:
