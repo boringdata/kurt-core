@@ -1235,7 +1235,7 @@ export default function App() {
     }
   }, [dockApi, projectRoot])
 
-  // Track active panel to highlight in file tree
+  // Track active panel to highlight in file tree and sync URL
   useEffect(() => {
     if (!dockApi) return
     const disposable = dockApi.onDidActivePanelChange((panel) => {
@@ -1244,9 +1244,17 @@ export default function App() {
         setActiveFile(path)
         // Also set activeDiffFile if this file is in git changes
         setActiveDiffFile(path)
+        // Sync URL for easy sharing/reload
+        const url = new URL(window.location.href)
+        url.searchParams.set('doc', path)
+        window.history.replaceState({}, '', url)
       } else {
         setActiveFile(null)
         setActiveDiffFile(null)
+        // Clear doc param when not on an editor
+        const url = new URL(window.location.href)
+        url.searchParams.delete('doc')
+        window.history.replaceState({}, '', url)
       }
     })
     return () => disposable.dispose()
@@ -1385,6 +1393,26 @@ export default function App() {
     const paths = Object.keys(tabs)
     saveTabs(projectRoot, paths)
   }, [tabs, projectRoot])
+
+  // Restore document from URL query param on load
+  const hasRestoredFromUrl = useRef(false)
+  useEffect(() => {
+    if (!dockApi || projectRoot === null || hasRestoredFromUrl.current) return
+
+    // Wait for core panels to exist before opening files
+    const filetreePanel = dockApi.getPanel('filetree')
+    if (!filetreePanel) return
+
+    hasRestoredFromUrl.current = true
+
+    const docPath = new URLSearchParams(window.location.search).get('doc')
+    if (docPath) {
+      // Small delay to ensure layout is fully ready
+      setTimeout(() => {
+        openFile(docPath)
+      }, 150)
+    }
+  }, [dockApi, projectRoot, openFile])
 
   // Handle external drag events (files from FileTree)
   const showDndOverlay = (event) => {
