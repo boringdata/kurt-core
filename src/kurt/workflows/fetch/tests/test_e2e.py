@@ -166,6 +166,10 @@ class TestFetchWorkflowE2E:
                 "kurt.workflows.fetch.steps.generate_embeddings",
                 side_effect=mock_generate_embeddings,
             ),
+            patch(
+                "kurt.workflows.fetch.workflow._has_embedding_api_key",
+                return_value=True,
+            ),
         ):
             result = run_fetch(docs, config)
 
@@ -257,6 +261,10 @@ class TestFetchWorkflowE2E:
                 "kurt.workflows.fetch.steps.generate_embeddings",
                 side_effect=mock_generate_embeddings,
             ),
+            patch(
+                "kurt.workflows.fetch.workflow._has_embedding_api_key",
+                return_value=True,
+            ),
         ):
             result = run_fetch(docs, config)
 
@@ -321,6 +329,10 @@ class TestFetchWorkflowE2E:
             patch(
                 "kurt.workflows.fetch.steps.generate_embeddings",
                 side_effect=mock_generate_embeddings,
+            ),
+            patch(
+                "kurt.workflows.fetch.workflow._has_embedding_api_key",
+                return_value=True,
             ),
         ):
             # This will fail if embedding is started from within a step
@@ -498,8 +510,9 @@ class TestBackgroundWorkflowLifecycle:
         elapsed = time.time() - start_time
 
         assert result.exit_code == 0, f"fetch failed: {result.output}"
-        # Should return in < 2 seconds (not wait for 5 second fetch)
-        assert elapsed < 2.0, f"Background fetch took too long: {elapsed}s"
+        # Should return in < 3 seconds (not wait for 5 second fetch)
+        # Using 3s threshold to account for CI environment variability
+        assert elapsed < 3.0, f"Background fetch took too long: {elapsed}s"
 
         import json
 

@@ -3,7 +3,7 @@
  * Shows deleted lines in red above modified content, added lines in green
  * Word-level highlighting for exact changes
  */
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Underline from '@tiptap/extension-underline'
@@ -336,7 +336,7 @@ export default function DiffEditor({
     return createDiffExtension(originalPlainText)
   }, [originalPlainText])
 
-  const autoSaveTimerRef = useMemo(() => ({ current: null }), [])
+  const autoSaveTimerRef = useRef(null)
 
   const editor = useEditor({
     extensions: [

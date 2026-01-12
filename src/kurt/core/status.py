@@ -239,7 +239,26 @@ def get_live_status(workflow_id: str) -> dict[str, Any]:
                     elif args:
                         workflow_inputs = args
             if created_at and updated_at:
-                workflow_duration_ms = int(updated_at - created_at)
+                # Parse timestamps - SQLite returns strings like "2024-01-01 12:00:00"
+                from datetime import datetime
+
+                def parse_ts(ts):
+                    if ts is None:
+                        return None
+                    if isinstance(ts, (int, float)):
+                        return ts
+                    if isinstance(ts, str):
+                        try:
+                            dt = datetime.fromisoformat(ts.replace(" ", "T"))
+                            return dt.timestamp()
+                        except ValueError:
+                            return None
+                    return None
+
+                created_ts = parse_ts(created_at)
+                updated_ts = parse_ts(updated_at)
+                if created_ts and updated_ts:
+                    workflow_duration_ms = int((updated_ts - created_ts) * 1000)
 
     step_state: dict[str, dict[str, Any]] = {}
     for event in progress_events:

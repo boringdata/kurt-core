@@ -124,6 +124,29 @@ export default function Terminal({
     const MAX_RETRIES = 10
     const INITIAL_RETRY_DELAY = 500
 
+    const sendResize = () => {
+      if (!isActiveRef.current || !openedRef.current) return
+      if (!containerRef.current) return
+      if (containerRef.current.clientWidth === 0 || containerRef.current.clientHeight === 0) {
+        return
+      }
+      if (!rendererReadyRef.current) return
+      try {
+        fitAddon.fit()
+      } catch {
+        return
+      }
+      const socket = socketRef.current
+      if (!socket || socket.readyState !== WebSocket.OPEN) return
+      socket.send(
+        JSON.stringify({
+          type: 'resize',
+          cols: term.cols,
+          rows: term.rows,
+        }),
+      )
+    }
+
     const connect = () => {
       if (connectionStarted) return
       connectionStarted = true
@@ -226,29 +249,6 @@ export default function Terminal({
       }
     }
 
-    const sendResize = () => {
-      if (!isActiveRef.current || !openedRef.current) return
-      if (!containerRef.current) return
-      if (containerRef.current.clientWidth === 0 || containerRef.current.clientHeight === 0) {
-        return
-      }
-      if (!rendererReadyRef.current) return
-      try {
-        fitAddon.fit()
-      } catch {
-        return
-      }
-      const socket = socketRef.current
-      if (!socket || socket.readyState !== WebSocket.OPEN) return
-      socket.send(
-        JSON.stringify({
-          type: 'resize',
-          cols: term.cols,
-          rows: term.rows,
-        }),
-      )
-    }
-
     const resizeListener = () => {
       const socket = socketRef.current
       if (socket?.readyState === WebSocket.OPEN && isActiveRef.current) {
@@ -261,6 +261,7 @@ export default function Terminal({
 
     const captureFirstPrompt = (data) => {
       if (!onFirstPrompt || firstPromptSentRef.current) return
+      // eslint-disable-next-line no-control-regex
       const sanitized = data.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')
       let buffer = inputBufferRef.current
 

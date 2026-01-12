@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import Editor from '../components/Editor'
 import CodeEditor from '../components/CodeEditor'
 import GitDiff from '../components/GitDiff'
@@ -47,6 +47,43 @@ export default function EditorPanel({ params: initialParams, api }) {
   const [originalContent, setOriginalContent] = useState(null)
   const [initialModeApplied, setInitialModeApplied] = useState(false)
 
+  const loadDiff = useCallback(async () => {
+    if (!path) return
+    setDiffError('')
+    try {
+      const response = await fetch(
+        apiUrl(`/api/git/diff?path=${encodeURIComponent(path)}`)
+      )
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(data.detail || 'Failed to load git diff')
+      }
+      const data = await response.json()
+      setDiffText(data.diff || '')
+    } catch (err) {
+      setDiffError(err?.message || 'Failed to load git diff')
+      setDiffText('')
+    }
+  }, [path])
+
+  const loadOriginalContent = useCallback(async () => {
+    if (!path) return
+    try {
+      const response = await fetch(
+        apiUrl(`/api/git/show?path=${encodeURIComponent(path)}`)
+      )
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(data.detail || 'Failed to load original content')
+      }
+      const data = await response.json()
+      setOriginalContent(data.is_new ? '' : (data.content || ''))
+    } catch (err) {
+      setOriginalContent(null)
+      setDiffError(err?.message || 'Failed to load original content')
+    }
+  }, [path])
+
   // Apply initial mode when params change (e.g., opening from git changes)
   useEffect(() => {
     if (initialMode && !initialModeApplied) {
@@ -58,7 +95,7 @@ export default function EditorPanel({ params: initialParams, api }) {
         loadOriginalContent()
       }
     }
-  }, [initialMode, initialModeApplied])
+  }, [initialMode, initialModeApplied, loadDiff, loadOriginalContent])
 
   // Sync content from parent when it changes
   useEffect(() => {
@@ -135,43 +172,6 @@ export default function EditorPanel({ params: initialParams, api }) {
   const handleAutoSave = (newContent) => {
     if (newContent === content) return
     save(newContent)
-  }
-
-  const loadDiff = async () => {
-    if (!path) return
-    setDiffError('')
-    try {
-      const response = await fetch(
-        apiUrl(`/api/git/diff?path=${encodeURIComponent(path)}`)
-      )
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}))
-        throw new Error(data.detail || 'Failed to load git diff')
-      }
-      const data = await response.json()
-      setDiffText(data.diff || '')
-    } catch (error) {
-      setDiffError(error?.message || 'Failed to load git diff')
-      setDiffText('')
-    }
-  }
-
-  const loadOriginalContent = async () => {
-    if (!path) return
-    try {
-      const response = await fetch(
-        apiUrl(`/api/git/show?path=${encodeURIComponent(path)}`)
-      )
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}))
-        throw new Error(data.detail || 'Failed to load original content')
-      }
-      const data = await response.json()
-      setOriginalContent(data.is_new ? '' : (data.content || ''))
-    } catch (error) {
-      setOriginalContent(null)
-      setDiffError(error?.message || 'Failed to load original content')
-    }
   }
 
   const handleModeChange = (newMode) => {
