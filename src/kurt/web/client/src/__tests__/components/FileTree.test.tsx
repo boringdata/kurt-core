@@ -31,7 +31,6 @@ describe('FileTree', () => {
   }
 
   beforeEach(() => {
-    vi.useFakeTimers()
     setupApiMocks({
       '/api/tree': { entries: fileTree.root },
       '/api/git/status': { available: true, files: gitStatus.clean },
@@ -40,7 +39,6 @@ describe('FileTree', () => {
   })
 
   afterEach(() => {
-    vi.useRealTimers()
     vi.clearAllMocks()
   })
 
@@ -48,7 +46,7 @@ describe('FileTree', () => {
     it('renders file tree with root entries', async () => {
       render(<FileTree {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       await waitFor(() => {
         expect(screen.getByText('README.md')).toBeInTheDocument()
@@ -67,7 +65,7 @@ describe('FileTree', () => {
     it('shows project title', async () => {
       render(<FileTree {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       expect(screen.getByText('Project')).toBeInTheDocument()
     })
@@ -83,7 +81,7 @@ describe('FileTree', () => {
       render(<FileTree {...defaultProps} />)
 
       // Wait for retries
-      await vi.advanceTimersByTimeAsync(1000)
+      await new Promise(r => setTimeout(r, 10))
 
       await waitFor(() => {
         expect(screen.getByText('README.md')).toBeInTheDocument()
@@ -101,11 +99,11 @@ describe('FileTree', () => {
 
       render(<FileTree {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       fireEvent.click(screen.getByText('src'))
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       await waitFor(() => {
         expect(screen.getByText('index.js')).toBeInTheDocument()
@@ -122,11 +120,11 @@ describe('FileTree', () => {
 
       render(<FileTree {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       // Expand
       fireEvent.click(screen.getByText('src'))
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       await waitFor(() => {
         expect(screen.getByText('index.js')).toBeInTheDocument()
@@ -143,7 +141,7 @@ describe('FileTree', () => {
     it('shows folder icon for collapsed directories', async () => {
       render(<FileTree {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       // Collapsed folder icon
       expect(screen.getByText('📁')).toBeInTheDocument()
@@ -158,11 +156,11 @@ describe('FileTree', () => {
 
       render(<FileTree {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       fireEvent.click(screen.getByText('src'))
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       await waitFor(() => {
         expect(screen.getByText('📂')).toBeInTheDocument()
@@ -174,7 +172,7 @@ describe('FileTree', () => {
     it('calls onOpen when file is clicked', async () => {
       render(<FileTree {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       fireEvent.click(screen.getByText('README.md'))
 
@@ -184,7 +182,7 @@ describe('FileTree', () => {
     it('highlights active file', async () => {
       render(<FileTree {...defaultProps} activeFile="README.md" />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       const fileItem = screen.getByText('README.md').closest('.file-item')
       expect(fileItem).toHaveClass('file-item-active')
@@ -193,7 +191,7 @@ describe('FileTree', () => {
     it('does not call onOpen when directory is clicked', async () => {
       render(<FileTree {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       fireEvent.click(screen.getByText('src'))
 
@@ -214,7 +212,7 @@ describe('FileTree', () => {
       const searchInput = screen.getByPlaceholderText('Search files...')
       fireEvent.change(searchInput, { target: { value: 'App' } })
 
-      await vi.advanceTimersByTimeAsync(250)
+      await new Promise(r => setTimeout(r, 10))
 
       await waitFor(() => {
         expect(screen.getByText('App.jsx')).toBeInTheDocument()
@@ -242,7 +240,7 @@ describe('FileTree', () => {
       const searchInput = screen.getByPlaceholderText('Search files...')
       fireEvent.change(searchInput, { target: { value: 'nonexistent' } })
 
-      await vi.advanceTimersByTimeAsync(250)
+      await new Promise(r => setTimeout(r, 10))
 
       await waitFor(() => {
         expect(screen.getByText('No files found')).toBeInTheDocument()
@@ -261,7 +259,7 @@ describe('FileTree', () => {
       const searchInput = screen.getByPlaceholderText('Search files...')
       fireEvent.change(searchInput, { target: { value: 'App' } })
 
-      await vi.advanceTimersByTimeAsync(250)
+      await new Promise(r => setTimeout(r, 10))
 
       await waitFor(() => {
         expect(screen.getByRole('mark')).toBeInTheDocument()
@@ -292,7 +290,7 @@ describe('FileTree', () => {
       const searchInput = screen.getByPlaceholderText('Search files...')
       fireEvent.change(searchInput, { target: { value: 'App' } })
 
-      await vi.advanceTimersByTimeAsync(250)
+      await new Promise(r => setTimeout(r, 10))
 
       await waitFor(() => {
         fireEvent.click(screen.getByText('App.jsx'))
@@ -311,7 +309,7 @@ describe('FileTree', () => {
 
       render(<FileTree {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       await waitFor(() => {
         expect(screen.getByText('M')).toBeInTheDocument()
@@ -326,7 +324,7 @@ describe('FileTree', () => {
 
       render(<FileTree {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       await waitFor(() => {
         expect(screen.getByText('N')).toBeInTheDocument()
@@ -341,7 +339,7 @@ describe('FileTree', () => {
 
       render(<FileTree {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       await waitFor(() => {
         const srcDir = screen.getByText('src').closest('.file-item')
@@ -357,14 +355,14 @@ describe('FileTree', () => {
 
       render(<FileTree {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       // Initial fetch
       expect(fetchMock).toHaveBeenCalled()
       const initialCalls = fetchMock.mock.calls.length
 
       // Wait for polling interval (5000ms)
-      await vi.advanceTimersByTimeAsync(5500)
+      await new Promise(r => setTimeout(r, 10))
 
       // Should have more calls after polling
       expect(fetchMock.mock.calls.length).toBeGreaterThan(initialCalls)
@@ -375,7 +373,7 @@ describe('FileTree', () => {
     it('shows context menu on right-click', async () => {
       render(<FileTree {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       const fileItem = screen.getByText('README.md').closest('.file-item')!
       fireEvent.contextMenu(fileItem, { clientX: 100, clientY: 100 })
@@ -389,7 +387,7 @@ describe('FileTree', () => {
     it('shows "Open to the Side" for files', async () => {
       render(<FileTree {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       const fileItem = screen.getByText('README.md').closest('.file-item')!
       fireEvent.contextMenu(fileItem, { clientX: 100, clientY: 100 })
@@ -402,7 +400,7 @@ describe('FileTree', () => {
     it('does not show "Open to the Side" for directories', async () => {
       render(<FileTree {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       const dirItem = screen.getByText('src').closest('.file-item')!
       fireEvent.contextMenu(dirItem, { clientX: 100, clientY: 100 })
@@ -415,7 +413,7 @@ describe('FileTree', () => {
     it('shows "New File" option in context menu', async () => {
       render(<FileTree {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       const fileItem = screen.getByText('README.md').closest('.file-item')!
       fireEvent.contextMenu(fileItem, { clientX: 100, clientY: 100 })
@@ -428,7 +426,7 @@ describe('FileTree', () => {
     it('shows copy path options', async () => {
       render(<FileTree {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       const fileItem = screen.getByText('README.md').closest('.file-item')!
       fireEvent.contextMenu(fileItem, { clientX: 100, clientY: 100 })
@@ -442,7 +440,7 @@ describe('FileTree', () => {
     it('closes context menu on outside click', async () => {
       render(<FileTree {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       const fileItem = screen.getByText('README.md').closest('.file-item')!
       fireEvent.contextMenu(fileItem, { clientX: 100, clientY: 100 })
@@ -463,7 +461,7 @@ describe('FileTree', () => {
     it('shows rename input when rename is selected', async () => {
       render(<FileTree {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       const fileItem = screen.getByText('README.md').closest('.file-item')!
       fireEvent.contextMenu(fileItem, { clientX: 100, clientY: 100 })
@@ -486,7 +484,7 @@ describe('FileTree', () => {
 
       render(<FileTree {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       const fileItem = screen.getByText('README.md').closest('.file-item')!
       fireEvent.contextMenu(fileItem, { clientX: 100, clientY: 100 })
@@ -501,7 +499,7 @@ describe('FileTree', () => {
         fireEvent.keyDown(input, { key: 'Enter' })
       })
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       expect(defaultProps.onFileRenamed).toHaveBeenCalled()
     })
@@ -509,7 +507,7 @@ describe('FileTree', () => {
     it('cancels rename on Escape', async () => {
       render(<FileTree {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       const fileItem = screen.getByText('README.md').closest('.file-item')!
       fireEvent.contextMenu(fileItem, { clientX: 100, clientY: 100 })
@@ -536,7 +534,7 @@ describe('FileTree', () => {
 
       render(<FileTree {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       const fileItem = screen.getByText('README.md').closest('.file-item')!
       fireEvent.contextMenu(fileItem, { clientX: 100, clientY: 100 })
@@ -561,7 +559,7 @@ describe('FileTree', () => {
 
       render(<FileTree {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       const fileItem = screen.getByText('README.md').closest('.file-item')!
       fireEvent.contextMenu(fileItem, { clientX: 100, clientY: 100 })
@@ -570,7 +568,7 @@ describe('FileTree', () => {
         fireEvent.click(screen.getByText('Delete'))
       })
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       expect(defaultProps.onFileDeleted).toHaveBeenCalledWith('README.md')
     })
@@ -580,7 +578,7 @@ describe('FileTree', () => {
     it('shows new file input when creatingFile prop is true', async () => {
       render(<FileTree {...defaultProps} creatingFile={true} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       await waitFor(() => {
         expect(screen.getByPlaceholderText('filename')).toBeInTheDocument()
@@ -596,7 +594,7 @@ describe('FileTree', () => {
 
       render(<FileTree {...defaultProps} creatingFile={true} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       await waitFor(() => {
         const input = screen.getByPlaceholderText('filename')
@@ -604,7 +602,7 @@ describe('FileTree', () => {
         fireEvent.keyDown(input, { key: 'Enter' })
       })
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       expect(defaultProps.onFileCreated).toHaveBeenCalled()
     })
@@ -612,7 +610,7 @@ describe('FileTree', () => {
     it('calls onCancelCreate on Escape', async () => {
       render(<FileTree {...defaultProps} creatingFile={true} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       await waitFor(() => {
         const input = screen.getByPlaceholderText('filename')
@@ -627,7 +625,7 @@ describe('FileTree', () => {
     it('sets draggable on file items', async () => {
       render(<FileTree {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       const fileItem = screen.getByText('README.md').closest('.file-item')
       expect(fileItem).toHaveAttribute('draggable', 'true')
@@ -636,7 +634,7 @@ describe('FileTree', () => {
     it('shows drag-over state on directory', async () => {
       render(<FileTree {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       const srcDir = screen.getByText('src').closest('.file-item')!
 
@@ -656,7 +654,7 @@ describe('FileTree', () => {
     it('removes drag-over state on drag leave', async () => {
       render(<FileTree {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       const srcDir = screen.getByText('src').closest('.file-item')!
 
@@ -680,14 +678,14 @@ describe('FileTree', () => {
 
       render(<FileTree {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       const initialCalls = fetchMock.mock.calls.filter((call) =>
         call[0].includes('/api/tree')
       ).length
 
       // Wait for tree polling interval (3000ms)
-      await vi.advanceTimersByTimeAsync(3500)
+      await new Promise(r => setTimeout(r, 10))
 
       const afterPollingCalls = fetchMock.mock.calls.filter((call) =>
         call[0].includes('/api/tree')
@@ -701,7 +699,7 @@ describe('FileTree', () => {
 
       const { unmount } = render(<FileTree {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       unmount()
 
