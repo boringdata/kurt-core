@@ -163,9 +163,8 @@ date: 2024-01-15
       const textarea = document.querySelector('.frontmatter-textarea') as HTMLTextAreaElement
       fireEvent.change(textarea, { target: { value: 'title: Updated' } })
 
-      await waitFor(() => {
-        expect(textarea.value).toBe('title: Updated')
-      })
+      // Value updates synchronously
+      expect(textarea.value).toBe('title: Updated')
     })
 
     it('debounces onChange callback', async () => {
@@ -202,23 +201,27 @@ date: 2024-01-15
       render(<FrontmatterEditor {...defaultProps} />)
 
       const textarea = document.querySelector('.frontmatter-textarea') as HTMLTextAreaElement
-      fireEvent.change(textarea, { target: { value: 'title:\tInvalid' } })
+      fireEvent.change(textarea, { target: { value: 'title:\tBadYaml' } })
 
-      await waitFor(() => {
-        expect(screen.getByText('Invalid')).toBeInTheDocument()
-      })
+      // Advance timers to trigger debounced validation
+      await vi.advanceTimersByTimeAsync(350)
+
+      // Check for the Invalid badge by class
+      const badge = document.querySelector('.frontmatter-error-badge')
+      expect(badge).toBeInTheDocument()
     })
 
     it('applies error class when YAML is invalid', async () => {
       render(<FrontmatterEditor {...defaultProps} />)
 
       const textarea = document.querySelector('.frontmatter-textarea') as HTMLTextAreaElement
-      fireEvent.change(textarea, { target: { value: 'title:\tInvalid' } })
+      fireEvent.change(textarea, { target: { value: 'title:\tBadYaml' } })
 
-      await waitFor(() => {
-        const editor = document.querySelector('.frontmatter-editor')
-        expect(editor).toHaveClass('has-error')
-      })
+      // Advance timers to trigger debounced validation
+      await vi.advanceTimersByTimeAsync(350)
+
+      const editor = document.querySelector('.frontmatter-editor')
+      expect(editor).toHaveClass('has-error')
     })
 
     it('removes error state when YAML is fixed', async () => {
@@ -227,18 +230,17 @@ date: 2024-01-15
       const textarea = document.querySelector('.frontmatter-textarea') as HTMLTextAreaElement
 
       // First make it invalid
-      fireEvent.change(textarea, { target: { value: 'title:\tInvalid' } })
-
-      await waitFor(() => {
-        expect(screen.getByText('Invalid')).toBeInTheDocument()
-      })
+      fireEvent.change(textarea, { target: { value: 'title:\tBadYaml' } })
+      await vi.advanceTimersByTimeAsync(350)
+      const invalidBadge = document.querySelector('.frontmatter-error-badge')
+      expect(invalidBadge).toBeInTheDocument()
 
       // Then fix it
       fireEvent.change(textarea, { target: { value: 'title: Valid' } })
+      await vi.advanceTimersByTimeAsync(350)
 
-      await waitFor(() => {
-        expect(screen.queryByText('Invalid')).not.toBeInTheDocument()
-      })
+      const noBadge = document.querySelector('.frontmatter-error-badge')
+      expect(noBadge).not.toBeInTheDocument()
     })
 
     it('allows empty frontmatter without error', () => {
@@ -255,13 +257,16 @@ date: 2024-01-15
         <FrontmatterEditor
           {...defaultProps}
           isDiffMode={true}
-          originalFrontmatter="title: Original"
-          frontmatter="title: Modified"
+          originalFrontmatter="title: OldValue"
+          frontmatter="title: NewValue"
         />
       )
 
-      expect(screen.getByText('Original')).toBeInTheDocument()
-      expect(screen.getByText(/Current/)).toBeInTheDocument()
+      // Use getAllByText since labels may appear multiple times in the DOM
+      const originalLabels = screen.getAllByText('Original')
+      const currentLabels = screen.getAllByText(/Current/)
+      expect(originalLabels.length).toBeGreaterThan(0)
+      expect(currentLabels.length).toBeGreaterThan(0)
     })
 
     it('shows Changed badge when frontmatter differs from original', () => {

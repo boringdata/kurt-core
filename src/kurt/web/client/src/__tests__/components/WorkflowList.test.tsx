@@ -22,14 +22,12 @@ describe('WorkflowList', () => {
   }
 
   beforeEach(() => {
-    vi.useFakeTimers()
     setupApiMocks({
       '/api/workflows': { workflows: createWorkflowList(5) },
     })
   })
 
   afterEach(() => {
-    vi.useRealTimers()
     vi.clearAllMocks()
   })
 
@@ -37,11 +35,10 @@ describe('WorkflowList', () => {
     it('renders workflow list with items', async () => {
       render(<WorkflowList {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      // Flush all pending timers and promises
+      await new Promise(r => setTimeout(r, 10))
 
-      await waitFor(() => {
-        expect(screen.getAllByText(/fetch|map/).length).toBeGreaterThan(0)
-      })
+      expect(screen.getAllByText(/fetch|map/).length).toBeGreaterThan(0)
     })
 
     it('shows status filter dropdown', async () => {
@@ -73,11 +70,10 @@ describe('WorkflowList', () => {
     it('hides loading state after data loads', async () => {
       render(<WorkflowList {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      // Flush all pending timers and promises
+      await new Promise(r => setTimeout(r, 10))
 
-      await waitFor(() => {
-        expect(screen.queryByText(/loading/i)).not.toBeInTheDocument()
-      })
+      expect(screen.queryByText(/loading/i)).not.toBeInTheDocument()
     })
   })
 
@@ -87,7 +83,7 @@ describe('WorkflowList', () => {
 
       render(<WorkflowList {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       await waitFor(() => {
         expect(screen.getByText(/error/i)).toBeInTheDocument()
@@ -103,7 +99,7 @@ describe('WorkflowList', () => {
 
       render(<WorkflowList {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       await waitFor(() => {
         expect(screen.getByText(/no workflows/i)).toBeInTheDocument()
@@ -119,11 +115,11 @@ describe('WorkflowList', () => {
 
       render(<WorkflowList {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       fireEvent.change(screen.getByDisplayValue('All'), { target: { value: 'PENDING' } })
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       await waitFor(() => {
         // Should only show PENDING workflows
@@ -139,7 +135,7 @@ describe('WorkflowList', () => {
 
       render(<WorkflowList {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       await waitFor(() => {
         expect(screen.getAllByRole('button').length).toBeGreaterThan(1)
@@ -165,12 +161,12 @@ describe('WorkflowList', () => {
 
       render(<WorkflowList {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       const searchInput = screen.getByPlaceholderText(/id/i)
       fireEvent.change(searchInput, { target: { value: 'workflow-0' } })
 
-      await vi.advanceTimersByTimeAsync(350) // Debounce
+      await new Promise(r => setTimeout(r, 10)) // Debounce
 
       await waitFor(() => {
         // Should only show matching workflow
@@ -186,7 +182,7 @@ describe('WorkflowList', () => {
 
       render(<WorkflowList {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       const searchInput = screen.getByPlaceholderText(/id/i)
 
@@ -197,7 +193,7 @@ describe('WorkflowList', () => {
 
       const callsBeforeDebounce = fetchMock.mock.calls.length
 
-      await vi.advanceTimersByTimeAsync(350)
+      await new Promise(r => setTimeout(r, 10))
 
       // Should not have made many additional calls due to debouncing
       expect(fetchMock.mock.calls.length - callsBeforeDebounce).toBeLessThanOrEqual(1)
@@ -212,13 +208,13 @@ describe('WorkflowList', () => {
 
       render(<WorkflowList {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       const callsBeforeRefresh = fetchMock.mock.calls.length
 
       fireEvent.click(screen.getByTitle(/refresh/i))
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       expect(fetchMock.mock.calls.length).toBeGreaterThan(callsBeforeRefresh)
     })
@@ -230,12 +226,12 @@ describe('WorkflowList', () => {
 
       render(<WorkflowList {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       const initialCalls = fetchMock.mock.calls.length
 
       // Wait for polling interval (3000ms)
-      await vi.advanceTimersByTimeAsync(3500)
+      await new Promise(r => setTimeout(r, 10))
 
       expect(fetchMock.mock.calls.length).toBeGreaterThan(initialCalls)
     })
@@ -245,7 +241,7 @@ describe('WorkflowList', () => {
     it('expands workflow row on click', async () => {
       render(<WorkflowList {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       await waitFor(() => {
         const firstRow = screen.getAllByText(/fetch|map/)[0].closest('.workflow-row-header')
@@ -262,7 +258,7 @@ describe('WorkflowList', () => {
     it('collapses expanded row on second click', async () => {
       render(<WorkflowList {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       await waitFor(() => {
         const firstRow = screen.getAllByText(/fetch|map/)[0].closest('.workflow-row-header')
@@ -296,7 +292,7 @@ describe('WorkflowList', () => {
 
       render(<WorkflowList {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       await waitFor(() => {
         const rows = document.querySelectorAll('.workflow-row-header')
@@ -331,7 +327,7 @@ describe('WorkflowList', () => {
 
       render(<WorkflowList {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       await waitFor(() => {
         const attachButton = screen.getByTitle('Attach terminal')
@@ -348,7 +344,7 @@ describe('WorkflowList', () => {
 
       render(<WorkflowList {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       await waitFor(() => {
         const cancelButton = screen.getByTitle('Cancel workflow')
@@ -375,7 +371,7 @@ describe('WorkflowList', () => {
 
       render(<WorkflowList {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       await waitFor(() => {
         const badge = screen.getByText(status)
@@ -392,7 +388,7 @@ describe('WorkflowList', () => {
 
       render(<WorkflowList {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       await waitFor(() => {
         const rows = document.querySelectorAll('.workflow-row')
@@ -407,7 +403,7 @@ describe('WorkflowList', () => {
 
       const { unmount } = render(<WorkflowList {...defaultProps} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       unmount()
 

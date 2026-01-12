@@ -32,7 +32,6 @@ describe('WorkflowRow', () => {
   }
 
   beforeEach(() => {
-    vi.useFakeTimers()
     MockEventSource.clearInstances()
     setupApiMocks({
       '/api/workflows/': { ...workflowStatuses.fetching },
@@ -41,7 +40,7 @@ describe('WorkflowRow', () => {
   })
 
   afterEach(() => {
-    vi.useRealTimers()
+    vi.clearAllMocks()
   })
 
   describe('Rendering', () => {
@@ -184,7 +183,7 @@ describe('WorkflowRow', () => {
 
       render(<WorkflowRow {...defaultProps} isExpanded={true} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
       await flushPromises()
 
       await waitFor(() => {
@@ -204,7 +203,7 @@ describe('WorkflowRow', () => {
 
       render(<WorkflowRow {...defaultProps} isExpanded={true} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       await waitFor(() => {
         const progressFill = document.querySelector('.workflow-progress-fill')
@@ -229,7 +228,7 @@ describe('WorkflowRow', () => {
 
         const { unmount } = render(<WorkflowRow {...defaultProps} isExpanded={true} />)
 
-        await vi.advanceTimersByTimeAsync(100)
+        await new Promise(r => setTimeout(r, 10))
 
         await waitFor(() => {
           expect(screen.getByText(expected)).toBeInTheDocument()
@@ -249,7 +248,7 @@ describe('WorkflowRow', () => {
 
       render(<WorkflowRow {...defaultProps} workflow={workflows.success} isExpanded={true} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       await waitFor(() => {
         expect(screen.getByText('fetch')).toBeInTheDocument()
@@ -269,7 +268,7 @@ describe('WorkflowRow', () => {
 
       render(<WorkflowRow {...defaultProps} workflow={workflows.success} isExpanded={true} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       await waitFor(() => {
         expect(screen.getByText('10')).toBeInTheDocument() // error count
@@ -292,7 +291,7 @@ describe('WorkflowRow', () => {
 
       render(<WorkflowRow {...defaultProps} isExpanded={true} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       await waitFor(() => {
         expect(screen.getByText(/Starting fetch workflow/)).toBeInTheDocument()
@@ -315,7 +314,7 @@ describe('WorkflowRow', () => {
 
       render(<WorkflowRow {...defaultProps} isExpanded={true} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       await waitFor(() => {
         expect(screen.getByText(/Error:/)).toBeInTheDocument()
@@ -330,7 +329,7 @@ describe('WorkflowRow', () => {
 
       render(<WorkflowRow {...defaultProps} workflow={workflows.success} isExpanded={true} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       await waitFor(() => {
         expect(screen.getByText(/No logs available/)).toBeInTheDocument()
@@ -342,7 +341,7 @@ describe('WorkflowRow', () => {
     it('establishes SSE connection for status updates when expanded', async () => {
       render(<WorkflowRow {...defaultProps} isExpanded={true} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       const statusStream = MockEventSource.instances.find((es) =>
         es.url.includes('/status/stream')
@@ -353,7 +352,7 @@ describe('WorkflowRow', () => {
     it('establishes SSE connection for log streaming when expanded', async () => {
       render(<WorkflowRow {...defaultProps} isExpanded={true} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       const logsStream = MockEventSource.instances.find((es) =>
         es.url.includes('/logs/stream')
@@ -364,7 +363,7 @@ describe('WorkflowRow', () => {
     it('updates status when SSE message received', async () => {
       render(<WorkflowRow {...defaultProps} isExpanded={true} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       const statusStream = MockEventSource.instances.find((es) =>
         es.url.includes('/status/stream')
@@ -384,7 +383,7 @@ describe('WorkflowRow', () => {
     it('appends logs when SSE log message received', async () => {
       render(<WorkflowRow {...defaultProps} isExpanded={true} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       const logsStream = MockEventSource.instances.find((es) =>
         es.url.includes('/logs/stream')
@@ -400,7 +399,7 @@ describe('WorkflowRow', () => {
     it('closes SSE connections when collapsed', async () => {
       const { rerender } = render(<WorkflowRow {...defaultProps} isExpanded={true} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       const statusStream = MockEventSource.instances.find((es) =>
         es.url.includes('/status/stream')
@@ -414,7 +413,7 @@ describe('WorkflowRow', () => {
     it('closes SSE connections on component unmount', async () => {
       const { unmount } = render(<WorkflowRow {...defaultProps} isExpanded={true} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       const streams = MockEventSource.instances.filter(
         (es) => es.url.includes('/status/stream') || es.url.includes('/logs/stream')
@@ -430,7 +429,7 @@ describe('WorkflowRow', () => {
     it('does not establish SSE for non-running workflows', async () => {
       render(<WorkflowRow {...defaultProps} workflow={workflows.success} isExpanded={true} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       const statusStream = MockEventSource.instances.find((es) =>
         es.url.includes('/status/stream')
@@ -443,7 +442,7 @@ describe('WorkflowRow', () => {
     it('copies workflow UUID to clipboard when clicked', async () => {
       render(<WorkflowRow {...defaultProps} isExpanded={true} />)
 
-      await vi.advanceTimersByTimeAsync(100)
+      await new Promise(r => setTimeout(r, 10))
 
       const fullId = screen.getByText(workflows.pending.workflow_uuid)
       fireEvent.click(fullId)
