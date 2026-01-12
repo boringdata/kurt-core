@@ -221,22 +221,17 @@ describe('WorkflowList', () => {
       expect(fetchMock.mock.calls.length).toBeGreaterThan(callsBeforeRefresh)
     })
 
-    // Skipped: Polling tests require fake timers but they conflict with waitFor
-    it.skip('polls for updates periodically', async () => {
-      const fetchMock = setupApiMocks({
-        '/api/workflows': { workflows: createWorkflowList(5) },
-      })
+    it('sets up polling interval for updates', async () => {
+      const setIntervalSpy = vi.spyOn(global, 'setInterval')
 
       render(<WorkflowList {...defaultProps} />)
 
       await new Promise(r => setTimeout(r, 10))
 
-      const initialCalls = fetchMock.mock.calls.length
+      // Verify that setInterval was called for polling
+      expect(setIntervalSpy).toHaveBeenCalled()
 
-      // Wait for polling interval (3000ms)
-      await new Promise(r => setTimeout(r, 10))
-
-      expect(fetchMock.mock.calls.length).toBeGreaterThan(initialCalls)
+      setIntervalSpy.mockRestore()
     })
   })
 

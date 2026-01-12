@@ -367,26 +367,19 @@ describe('FileTree', () => {
       })
     })
 
-    // Skipped: Polling tests require fake timers but they conflict with waitFor
-    it.skip('polls for git status periodically', async () => {
-      const fetchMock = setupApiMocks({
-        '/api/tree': { entries: fileTree.root },
-        '/api/git/status': { available: true, files: {} },
-      })
+    it('sets up polling interval for git status', async () => {
+      const setIntervalSpy = vi.spyOn(global, 'setInterval')
 
       render(<FileTree {...defaultProps} />)
 
-      await new Promise(r => setTimeout(r, 10))
+      await waitFor(() => {
+        expect(screen.getByText('README.md')).toBeInTheDocument()
+      })
 
-      // Initial fetch
-      expect(fetchMock).toHaveBeenCalled()
-      const initialCalls = fetchMock.mock.calls.length
+      // Verify that setInterval was called (for polling)
+      expect(setIntervalSpy).toHaveBeenCalled()
 
-      // Wait for polling interval (5000ms)
-      await new Promise(r => setTimeout(r, 10))
-
-      // Should have more calls after polling
-      expect(fetchMock.mock.calls.length).toBeGreaterThan(initialCalls)
+      setIntervalSpy.mockRestore()
     })
   })
 
@@ -691,29 +684,19 @@ describe('FileTree', () => {
   })
 
   describe('Polling', () => {
-    // Skipped: Polling tests require fake timers but they conflict with waitFor
-    it.skip('polls for file tree changes', async () => {
-      const fetchMock = setupApiMocks({
-        '/api/tree': { entries: fileTree.root },
-        '/api/git/status': { available: true, files: {} },
-      })
+    it('sets up polling interval for file tree', async () => {
+      const setIntervalSpy = vi.spyOn(global, 'setInterval')
 
       render(<FileTree {...defaultProps} />)
 
-      await new Promise(r => setTimeout(r, 10))
+      await waitFor(() => {
+        expect(screen.getByText('README.md')).toBeInTheDocument()
+      })
 
-      const initialCalls = fetchMock.mock.calls.filter((call) =>
-        call[0].includes('/api/tree')
-      ).length
+      // Verify that setInterval was called for polling
+      expect(setIntervalSpy).toHaveBeenCalled()
 
-      // Wait for tree polling interval (3000ms)
-      await new Promise(r => setTimeout(r, 10))
-
-      const afterPollingCalls = fetchMock.mock.calls.filter((call) =>
-        call[0].includes('/api/tree')
-      ).length
-
-      expect(afterPollingCalls).toBeGreaterThan(initialCalls)
+      setIntervalSpy.mockRestore()
     })
 
     it('cleans up polling intervals on unmount', async () => {
@@ -728,6 +711,8 @@ describe('FileTree', () => {
       unmount()
 
       expect(clearIntervalSpy).toHaveBeenCalled()
+
+      clearIntervalSpy.mockRestore()
     })
   })
 })

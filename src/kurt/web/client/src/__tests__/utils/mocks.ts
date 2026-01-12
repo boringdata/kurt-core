@@ -14,12 +14,17 @@ interface MockFetchResponse {
 
 /**
  * Create a mock fetch function with predefined responses
+ * Note: Patterns are sorted by length (longest first) to match more specific patterns first
  */
 export function createMockFetch(responses: Record<string, unknown | ((url: string) => unknown)> = {}) {
+  // Sort patterns by length (longest first) so more specific patterns match first
+  const sortedPatterns = Object.keys(responses).sort((a, b) => b.length - a.length)
+
   const mockFetch = vi.fn(async (url: string, _options?: RequestInit): Promise<MockFetchResponse> => {
-    // Find matching response
-    for (const [pattern, response] of Object.entries(responses)) {
+    // Find matching response (checking longer/more specific patterns first)
+    for (const pattern of sortedPatterns) {
       if (url.includes(pattern)) {
+        const response = responses[pattern]
         const data = typeof response === 'function' ? response(url) : response
         return {
           ok: true,
@@ -172,6 +177,8 @@ export class MockWebSocket {
 
 /**
  * Set up mock fetch with common API responses
+ * Note: Patterns are sorted by length (longest first) in createMockFetch,
+ * so more specific patterns will match before general ones
  */
 export function setupApiMocks(overrides: Record<string, unknown> = {}) {
   const defaults: Record<string, unknown> = {
