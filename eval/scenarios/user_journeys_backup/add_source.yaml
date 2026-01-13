@@ -1,0 +1,19 @@
+# User Journey: Add a new source URL
+# Tests if agent uses kurt content commands
+
+name: add_source
+description: User provides a URL to add as source
+
+initial_prompt: |
+  Add this documentation as a source: https://docs.motherduck.com/key-concepts/data-sharing
+
+assertions:
+  # Should use kurt content fetch or map
+  - type: ConversationContains
+    text: "kurt content"
+    case_sensitive: false
+
+  # Should NOT use curl to download manually
+  - type: ConversationContains
+    text: "curl"
+    should_match: false

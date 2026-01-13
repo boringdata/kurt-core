@@ -1,0 +1,252 @@
+# User Journey Scenarios for testing AGENTS.md instructions
+# These test realistic user interactions with the Kurt agent
+# Multiple formulations per task type to test robustness
+
+scenarios:
+  # ========================================================================
+  # DISCOVER CONTENT - Various formulations
+  # Tests if agent correctly uses kurt CLI for content discovery
+  # ========================================================================
+  - name: discover_v1
+    description: "Discover content - formal request"
+    project: motherduck
+    initial_prompt: |
+      Find all the documents we have about authentication and data sharing.
+    assertions:
+      - type: ConversationContains
+        text: "kurt content"
+        case_sensitive: false
+
+  - name: discover_v2
+    description: "Discover content - casual/short"
+    project: motherduck
+    initial_prompt: |
+      what docs do we have on DuckDB?
+    assertions:
+      - type: ConversationContains
+        text: "kurt content"
+        case_sensitive: false
+
+  - name: discover_v3
+    description: "Discover content - search framing"
+    project: motherduck
+    initial_prompt: |
+      Search our sources for anything related to SQL queries
+    assertions:
+      - type: ConversationContains
+        text: "kurt content"
+        case_sensitive: false
+
+  - name: discover_v4
+    description: "Discover content - vague/exploratory"
+    project: motherduck
+    initial_prompt: |
+      Show me what content we have indexed
+    assertions:
+      - type: ConversationContains
+        text: "kurt content"
+        case_sensitive: false
+
+  # ========================================================================
+  # ADD SOURCE - Various formulations
+  # Tests if agent uses kurt content map/fetch commands
+  # ========================================================================
+  - name: add_source_v1
+    description: "Add source - formal with URL"
+    initial_prompt: |
+      Add this documentation as a source: https://docs.motherduck.com/key-concepts/data-sharing
+    assertions:
+      - type: ConversationContains
+        text: "kurt content"
+        case_sensitive: false
+
+  - name: add_source_v2
+    description: "Add source - casual/imperative"
+    initial_prompt: |
+      index this page https://docs.motherduck.com/getting-started
+    assertions:
+      - type: ConversationContains
+        text: "kurt content"
+        case_sensitive: false
+
+  - name: add_source_v3
+    description: "Add source - fetch framing"
+    initial_prompt: |
+      fetch the content from https://motherduck.com/blog/
+    user_agent_prompt: |
+      When asked to confirm fetching many pages: respond "yes, fetch all"
+      When asked about depth/scope: respond "just the blog posts, not comments"
+      Otherwise be brief and cooperative.
+    assertions:
+      - type: ConversationContains
+        text: "kurt content"
+        case_sensitive: false
+
+  - name: add_source_v4
+    description: "Add source - ingest framing"
+    initial_prompt: |
+      I want to ingest https://docs.motherduck.com/integrations into our knowledge base
+    user_agent_prompt: |
+      When asked to confirm: respond "yes, proceed"
+      When asked about scope: respond "all integration docs"
+      Otherwise be brief and cooperative.
+    assertions:
+      - type: ConversationContains
+        text: "kurt content"
+        case_sensitive: false
+
+  # ========================================================================
+  # CREATE PROJECT - Various formulations
+  # Tests if agent checks profile and follows project workflow
+  # ========================================================================
+  - name: create_project_v1
+    description: "Create project - formal"
+    initial_prompt: |
+      Create a new project for writing product documentation for our API.
+    user_agent_prompt: |
+      You are a user creating documentation.
+      When asked about project name: respond "api-docs"
+      When asked about goal: respond "Write comprehensive API documentation"
+      When asked for sources: respond "https://api.example.com/docs"
+      Otherwise be brief and cooperative.
+    assertions:
+      - type: ConversationContains
+        text: "profile"
+        case_sensitive: false
+
+  - name: create_project_v2
+    description: "Create project - casual"
+    initial_prompt: |
+      let's start a new blog post project
+    user_agent_prompt: |
+      When asked about project name: respond "weekly-blog"
+      When asked about topic: respond "data engineering best practices"
+      Otherwise be brief and cooperative.
+    assertions:
+      - type: ConversationContains
+        text: "profile"
+        case_sensitive: false
+
+  - name: create_project_v3
+    description: "Create project - goal-focused"
+    initial_prompt: |
+      I need to write a case study about our customer Acme Corp
+    user_agent_prompt: |
+      When asked about project name: respond "acme-case-study"
+      When asked for details: respond "They reduced costs by 50% using our product"
+      Otherwise be brief and cooperative.
+    assertions:
+      - type: ConversationContains
+        text: "profile"
+        case_sensitive: false
+
+  # ========================================================================
+  # CREATE OUTLINE - Various formulations
+  # Tests if agent checks format templates before writing
+  # ========================================================================
+  - name: outline_v1
+    description: "Create outline - formal product page"
+    project: motherduck
+    initial_prompt: |
+      Create an outline for a product page about MotherDuck's hybrid query execution.
+    user_agent_prompt: |
+      When asked about target audience: respond "developers evaluating data warehouses"
+      When asked about tone/style: respond "technical but accessible"
+      When asked to confirm outline: respond "looks good, proceed"
+      Otherwise be brief and cooperative.
+    assertions:
+      - type: ConversationContains
+        text: "format-templates"
+        case_sensitive: false
+
+  - name: outline_v2
+    description: "Create outline - blog post"
+    project: motherduck
+    initial_prompt: |
+      draft an outline for a blog post about DuckDB performance
+    user_agent_prompt: |
+      When asked about angle/focus: respond "benchmarks vs pandas and spark"
+      When asked about length: respond "around 1500 words"
+      When asked to confirm: respond "yes, create the outline"
+      Otherwise be brief and cooperative.
+    assertions:
+      - type: ConversationContains
+        text: "format-templates"
+        case_sensitive: false
+
+  - name: outline_v3
+    description: "Create outline - tutorial"
+    project: motherduck
+    initial_prompt: |
+      help me outline a getting started tutorial
+    user_agent_prompt: |
+      When asked what product: respond "MotherDuck with Python"
+      When asked about prerequisites: respond "basic SQL and Python knowledge"
+      When asked to confirm: respond "looks good"
+      Otherwise be brief and cooperative.
+    assertions:
+      - type: ConversationContains
+        text: "format-templates"
+        case_sensitive: false
+
+  - name: outline_v4
+    description: "Create outline - vague content request"
+    project: motherduck
+    initial_prompt: |
+      write something about the key features of MotherDuck
+    user_agent_prompt: |
+      When asked what format: respond "a product overview page"
+      When asked about audience: respond "technical decision makers"
+      When asked to clarify: respond "focus on hybrid execution and cost savings"
+      Otherwise be brief and cooperative.
+    assertions:
+      - type: ConversationContains
+        text: "format-templates"
+        case_sensitive: false
+
+  # ========================================================================
+  # EDGE CASES - These test that the agent knows about both database and filesystem
+  # ========================================================================
+  - name: edge_what_is_indexed
+    description: "Edge case - user wants to know what's indexed"
+    project: motherduck
+    initial_prompt: |
+      What documents have we indexed? What's the fetch status?
+    assertions:
+      # Should use kurt content list (database query)
+      - type: ConversationContains
+        text: "kurt content"
+        case_sensitive: false
+
+  - name: edge_search_content
+    description: "Edge case - user wants to search content for keywords"
+    project: motherduck
+    initial_prompt: |
+      Search for any mentions of "hybrid execution" in our sources
+    assertions:
+      # Can use grep or kurt - just needs to find content
+      # No strict assertion - agent can use grep or kurt content list
+      - type: ConversationContains
+        text: "hybrid"
+        case_sensitive: false
+
+  # ========================================================================
+  # RESEARCH SCENARIOS - Test source gathering and DB/filesystem awareness
+  # ========================================================================
+  - name: research_db_vs_filesystem
+    description: "Research - verifies agent uses both DB (status) and filesystem (content)"
+    project: motherduck
+    initial_prompt: |
+      What documents have we fetched about authentication? Show me a summary of the content.
+    user_agent_prompt: |
+      When asked to clarify: respond "yes, I want both the list of docs and a summary of what they contain"
+      Otherwise be brief.
+    assertions:
+      # Should use kurt content list for document status/metadata
+      - type: ConversationContains
+        text: "kurt content"
+        case_sensitive: false
+      # Should also read actual content from filesystem
+      - type: ToolWasUsed
+        tool_name: read
+        min_count: 1

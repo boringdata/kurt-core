@@ -1,0 +1,21 @@
+# User Journey: Create an outline for content
+# Tests if agent checks format templates before writing
+
+name: create_outline
+description: User asks for an outline for a specific content type
+
+project: motherduck
+
+initial_prompt: |
+  Create an outline for a product page about MotherDuck's hybrid query execution.
+
+assertions:
+  # Should check format templates
+  - type: ConversationContains
+    text: "format-templates"
+    case_sensitive: false
+
+  # Should produce an outline
+  - type: ConversationContains
+    text: "outline"
+    case_sensitive: false
