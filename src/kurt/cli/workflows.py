@@ -108,10 +108,10 @@ def list_workflows(status: Optional[str], limit: int, id_filter: Optional[str], 
 
     table = Table(title="DBOS Workflows", box=None, show_edge=False)
     table.add_column("ID", style="cyan", no_wrap=True)
-    table.add_column("Name", style="magenta")
-    table.add_column("Status", style="green")
-    table.add_column("Created", style="blue")
-    table.add_column("Updated", style="blue")
+    table.add_column("Name", style="magenta", no_wrap=True, overflow="ellipsis")
+    table.add_column("Status", style="green", no_wrap=True)
+    table.add_column("Created", style="blue", no_wrap=True)
+    table.add_column("Updated", style="blue", no_wrap=True)
 
     for wf in workflows:
         status_str = wf[2]
@@ -182,10 +182,10 @@ def _format_streams_table(streams: list[dict]) -> None:
     """Format workflow streams as a table."""
     table = Table(box=None, show_edge=False)
     table.add_column("Time", style="dim", no_wrap=True)
-    table.add_column("Step", style="cyan")
-    table.add_column("Status", style="green")
-    table.add_column("Progress", justify="right")
-    table.add_column("Details", style="dim")
+    table.add_column("Step", style="cyan", no_wrap=True)
+    table.add_column("Status", style="green", no_wrap=True)
+    table.add_column("Progress", justify="right", no_wrap=True)
+    table.add_column("Details", style="dim", no_wrap=True, overflow="ellipsis")
 
     for entry in streams:
         ts = _format_timestamp(entry.get("timestamp"))
@@ -364,10 +364,10 @@ def workflow_stats(workflow_id: Optional[str], output_json: bool):
     if stats.get("by_step"):
         console.print("\n[bold]By Step:[/bold]")
         table = Table(box=None, show_edge=False)
-        table.add_column("Step", style="cyan")
-        table.add_column("Calls", justify="right")
-        table.add_column("Tokens", justify="right")
-        table.add_column("Cost", justify="right")
+        table.add_column("Step", style="cyan", no_wrap=True, overflow="ellipsis")
+        table.add_column("Calls", justify="right", no_wrap=True)
+        table.add_column("Tokens", justify="right", no_wrap=True)
+        table.add_column("Cost", justify="right", no_wrap=True)
 
         for step_name, step_stats in stats["by_step"].items():
             table.add_row(

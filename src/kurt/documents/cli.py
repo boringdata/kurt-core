@@ -105,13 +105,13 @@ def list_cmd(
         console.print("[dim]No documents found[/dim]")
         return
 
-    # Display as table
+    # Display as table - use no_wrap to prevent broken rows in narrow terminals
     table = Table(show_header=True, header_style="bold")
-    table.add_column("ID", style="dim", max_width=8)
-    table.add_column("Source URL", max_width=50)
-    table.add_column("Map", width=8)
-    table.add_column("Fetch", width=8)
-    table.add_column("Length", width=8, justify="right")
+    table.add_column("ID", style="dim", width=8, no_wrap=True)
+    table.add_column("Source URL", overflow="ellipsis", no_wrap=True)
+    table.add_column("Map", width=10, no_wrap=True)
+    table.add_column("Fetch", width=10, no_wrap=True)
+    table.add_column("Length", width=8, justify="right", no_wrap=True)
 
     for doc in docs:
         table.add_row(
