@@ -91,6 +91,9 @@ def ensure_tables(models: list[type[SQLModel]], session: Optional[Session] = Non
 def managed_session(session: Optional[Session] = None):
     """Transactional context manager with automatic commit/rollback.
 
+    In cloud mode (KURT_CLOUD_AUTH=true), also sets RLS context variables
+    for PostgreSQL row-level security.
+
     Args:
         session: Optional existing session to use (will NOT be closed/committed)
 
@@ -102,11 +105,17 @@ def managed_session(session: Optional[Session] = None):
             session.add(LLMTrace(workflow_id="123", ...))
             # Auto-commits on exit, rolls back on exception
     """
+    from kurt.db.tenant import set_rls_context
+
     if session is not None:
+        # Set RLS context on existing session
+        set_rls_context(session)
         yield session
     else:
         _session = get_session()
         try:
+            # Set RLS context for cloud mode
+            set_rls_context(_session)
             yield _session
             _session.commit()
         except Exception:

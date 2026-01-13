@@ -110,6 +110,42 @@ def is_multi_tenant() -> bool:
     return False
 
 
+def is_cloud_mode() -> bool:
+    """Check if running in cloud mode with auth enabled.
+
+    Cloud mode requires:
+    - KURT_CLOUD_AUTH=true
+
+    In cloud mode:
+    - Auth middleware validates JWT tokens
+    - RLS context is set from JWT claims
+    - All queries filter by user_id/workspace_id
+    """
+    return os.environ.get("KURT_CLOUD_AUTH", "").lower() == "true"
+
+
+def is_postgres() -> bool:
+    """Check if using PostgreSQL database."""
+    db_url = os.environ.get("DATABASE_URL", "")
+    return db_url.startswith("postgresql")
+
+
+def get_mode() -> str:
+    """Get current operating mode.
+
+    Returns:
+        "local_sqlite" - Default CLI usage with SQLite
+        "local_postgres" - Local testing with PostgreSQL
+        "cloud_postgres" - Production SaaS with auth + RLS
+    """
+    if not is_postgres():
+        return "local_sqlite"
+    elif is_cloud_mode():
+        return "cloud_postgres"
+    else:
+        return "local_postgres"
+
+
 def load_context_from_credentials() -> bool:
     """Load workspace context from stored CLI credentials.
 
@@ -133,6 +169,35 @@ def load_context_from_credentials() -> bool:
         return True
     except ImportError:
         return False
+
+
+# =============================================================================
+# RLS Context for PostgreSQL
+# =============================================================================
+
+
+def set_rls_context(session: "Session") -> None:
+    """Set PostgreSQL session variables for RLS policies.
+
+    Call this at the start of each request/session when in cloud mode.
+    RLS policies use these variables to filter data:
+        user_id = current_setting('app.user_id', true)::uuid
+
+    Args:
+        session: SQLAlchemy session to configure
+    """
+    from sqlalchemy import text
+
+    if not is_cloud_mode() or not is_postgres():
+        return
+
+    user_id = get_user_id()
+    workspace_id = get_workspace_id()
+
+    if user_id:
+        session.execute(text(f"SET LOCAL app.user_id = '{user_id}'"))
+    if workspace_id:
+        session.execute(text(f"SET LOCAL app.workspace_id = '{workspace_id}'"))
 
 
 # =============================================================================
