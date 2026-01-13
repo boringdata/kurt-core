@@ -3244,3 +3244,22 @@ html, body, #root {
   color: #6b7280;
   font-style: italic;
 }
+
+/* Disable resize handles when panels are collapsed */
+/* When filetree is collapsed, disable the sash to its right (first sash in horizontal splitview) */
+.filetree-is-collapsed > .dv-grid-view > .dv-split-view-container.dv-horizontal > .dv-sash-container > .dv-sash:first-child {
+  pointer-events: none !important;
+  cursor: default !important;
+}
+
+/* When terminal is collapsed, disable the sash to its left (last sash in horizontal splitview) */
+.terminal-is-collapsed > .dv-grid-view > .dv-split-view-container.dv-horizontal > .dv-sash-container > .dv-sash:last-child {
+  pointer-events: none !important;
+  cursor: default !important;
+}
+
+/* When workflows is collapsed, disable all vertical splitview sashes (horizontal resize line) */
+.workflows-is-collapsed .dv-split-view-container.dv-vertical > .dv-sash-container > .dv-sash {
+  pointer-events: none !important;
+  cursor: default !important;
+}

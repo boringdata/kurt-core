@@ -1218,23 +1218,53 @@ export default function App() {
           saveLayout(projectRoot, dockApi.toJSON())
         }
 
-        // Apply saved panel sizes and reset collapsed effect flag
+        // Apply saved panel sizes, respecting collapsed state
+        // collapsed state is loaded from localStorage at init, so we can check it here
         requestAnimationFrame(() => {
           const ftGroup = dockApi.getPanel('filetree')?.group
           const tGroup = dockApi.getPanel('terminal')?.group
           const wGroup = dockApi.getPanel('workflows')?.group
+
+          // For collapsed panels, set collapsed size; for expanded, use saved size
           if (ftGroup) {
-            dockApi.getGroup(ftGroup.id)?.api.setSize({ width: panelSizesRef.current.filetree })
+            const ftApi = dockApi.getGroup(ftGroup.id)?.api
+            if (ftApi) {
+              if (collapsed.filetree) {
+                ftApi.setConstraints({ minimumWidth: 48, maximumWidth: 48 })
+                ftApi.setSize({ width: 48 })
+              } else {
+                ftApi.setConstraints({ minimumWidth: 180, maximumWidth: Infinity })
+                ftApi.setSize({ width: panelSizesRef.current.filetree })
+              }
+            }
           }
           if (tGroup) {
-            dockApi.getGroup(tGroup.id)?.api.setSize({ width: panelSizesRef.current.terminal })
+            const tApi = dockApi.getGroup(tGroup.id)?.api
+            if (tApi) {
+              if (collapsed.terminal) {
+                tApi.setConstraints({ minimumWidth: 48, maximumWidth: 48 })
+                tApi.setSize({ width: 48 })
+              } else {
+                tApi.setConstraints({ minimumWidth: 250, maximumWidth: Infinity })
+                tApi.setSize({ width: panelSizesRef.current.terminal })
+              }
+            }
           }
           if (wGroup) {
-            dockApi.getGroup(wGroup.id)?.api.setSize({ height: panelSizesRef.current.workflows })
+            const wApi = dockApi.getGroup(wGroup.id)?.api
+            if (wApi) {
+              if (collapsed.workflows) {
+                wApi.setConstraints({ minimumHeight: 36, maximumHeight: 36 })
+                wApi.setSize({ height: 36 })
+              } else {
+                wApi.setConstraints({ minimumHeight: 100, maximumHeight: Infinity })
+                wApi.setSize({ height: panelSizesRef.current.workflows })
+              }
+            }
           }
 
-          // Reset the collapsed effect flag so constraints get reapplied
-          collapsedEffectRan.current = false
+          // Reset the collapsed effect flag so it doesn't override on first toggle
+          collapsedEffectRan.current = true
         })
       } catch (error) {
         layoutRestored.current = false
@@ -1468,9 +1498,17 @@ export default function App() {
     return <TiptapDiffPOC />
   }
 
+  // Build className with collapsed state flags for CSS targeting
+  const dockviewClassName = [
+    'dockview-theme-abyss',
+    collapsed.filetree && 'filetree-is-collapsed',
+    collapsed.terminal && 'terminal-is-collapsed',
+    collapsed.workflows && 'workflows-is-collapsed',
+  ].filter(Boolean).join(' ')
+
   return (
     <DockviewReact
-      className="dockview-theme-abyss"
+      className={dockviewClassName}
       components={components}
       tabComponents={tabComponents}
       rightHeaderActionsComponent={RightHeaderActions}
