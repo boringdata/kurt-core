@@ -150,8 +150,21 @@ def get_cmd(identifier: str, output_format: str):
 
         # If not found, try URL match or partial ID
         if not doc:
-            filters = DocumentFilters(include=f"*{identifier}*", limit=1)
-            docs = registry.list(session, filters)
+            if identifier.startswith(("http://", "https://")):
+                # URL match
+                filters = DocumentFilters(url_contains=identifier, limit=1)
+                docs = registry.list(session, filters)
+            else:
+                # Partial document ID match - query directly with LIKE
+                from sqlmodel import select
+
+                from kurt.workflows.map.models import MapDocument
+
+                query = (
+                    select(MapDocument).where(MapDocument.document_id.contains(identifier)).limit(1)
+                )
+                map_doc = session.exec(query).first()
+                docs = [registry.get(session, map_doc.document_id)] if map_doc else []
             doc = docs[0] if docs else None
 
     if not doc:
@@ -194,6 +207,7 @@ def delete_cmd(
     identifier: str | None,
     include_pattern: str | None,
     ids: str | None,
+    url_contains: str | None,
     limit: int | None,
     dry_run: bool,
     yes_flag: bool,
@@ -216,6 +230,7 @@ def delete_cmd(
     filters = DocumentFilters(
         ids=[identifier] if identifier else (ids.split(",") if ids else None),
         include=include_pattern,
+        url_contains=url_contains,
         limit=limit,
     )
 

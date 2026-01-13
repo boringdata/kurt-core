@@ -8,6 +8,7 @@ from typing import Any
 
 from dbos import DBOS
 
+from kurt.core import log_item, step_log
 from kurt.db import managed_session
 from kurt.integrations.research.monitoring import (
     FeedAdapter,
@@ -99,6 +100,13 @@ def fetch_signals_step(config_dict: dict[str, Any]) -> dict[str, Any]:
 
     # Stream progress
     total = len(signals)
+    if total == 0:
+        step_log("No signals found", step_name="fetch_signals")
+    else:
+        step_log(
+            f"Fetched {total} signal(s) from {config.source}",
+            step_name="fetch_signals",
+        )
     DBOS.set_event("stage_total", total)
     for idx, signal in enumerate(signals):
         DBOS.set_event("stage_current", idx + 1)
@@ -108,10 +116,19 @@ def fetch_signals_step(config_dict: dict[str, Any]) -> dict[str, Any]:
                 "step": "fetch_signals",
                 "idx": idx,
                 "total": total,
+                "status": "success",
+                "signal_id": signal.signal_id,
                 "title": signal.title[:50],
                 "source": signal.source,
                 "timestamp": time.time(),
             },
+        )
+        log_item(
+            signal.signal_id,
+            status="success",
+            message=signal.title,
+            counter=(idx + 1, total),
+            step_name="fetch_signals",
         )
 
     return {

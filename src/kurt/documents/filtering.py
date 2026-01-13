@@ -174,7 +174,15 @@ def build_joined_query(filters: DocumentFilters) -> Select:
         query = query.where(MapDocument.document_id.in_(filters.ids))
 
     if filters.url_contains:
-        query = query.where(MapDocument.source_url.contains(filters.url_contains))
+        # Support both glob patterns (with *) and plain substring matching
+        pattern = filters.url_contains
+        if "*" in pattern:
+            # Convert glob pattern to SQL LIKE pattern
+            # * -> % (match any characters)
+            like_pattern = pattern.replace("*", "%")
+            query = query.where(MapDocument.source_url.like(like_pattern))
+        else:
+            query = query.where(MapDocument.source_url.contains(pattern))
 
     if filters.map_status:
         query = query.where(MapDocument.status == filters.map_status)

@@ -6,6 +6,7 @@ from typing import Any
 
 from dbos import DBOS
 
+from kurt.core import log_item, step_log
 from kurt.db import managed_session
 
 from .config import MapConfig
@@ -45,8 +46,13 @@ def map_url_step(config_dict: dict[str, Any]) -> dict[str, Any]:
         discovery_url=discovery_url,
         source_type=source_type,
     )
+    step_log(
+        f"Discovered {total} document(s) via {discovery_method}",
+        step_name="map_url",
+    )
     DBOS.set_event("stage_total", total)
     for idx, row in enumerate(rows):
+        status = "success" if row["status"] != MapStatus.ERROR else "error"
         DBOS.set_event("stage_current", idx + 1)
         DBOS.write_stream(
             "progress",
@@ -54,9 +60,22 @@ def map_url_step(config_dict: dict[str, Any]) -> dict[str, Any]:
                 "step": "map_url",
                 "idx": idx,
                 "total": total,
-                "status": "success" if row["status"] != MapStatus.ERROR else "error",
+                "status": status,
+                "document_id": row.get("document_id"),
+                "source_url": row.get("source_url"),
+                "is_new": row.get("is_new"),
                 "timestamp": time.time(),
             },
+        )
+        message = row.get("title") or row.get("source_url") or ""
+        if status == "error":
+            message = row.get("error") or message
+        log_item(
+            str(row.get("document_id", "")),
+            status=status,
+            message=message,
+            counter=(idx + 1, total),
+            step_name="map_url",
         )
 
     discovered = sum(1 for row in rows if row.get("is_new", False))
@@ -64,6 +83,10 @@ def map_url_step(config_dict: dict[str, Any]) -> dict[str, Any]:
         1 for row in rows if not row.get("is_new", False) and row["status"] == MapStatus.SUCCESS
     )
     errors = sum(1 for row in rows if row["status"] == MapStatus.ERROR)
+    step_log(
+        f"Map complete: {discovered} new, {existing} existing, {errors} errors",
+        step_name="map_url",
+    )
 
     # Note: persistence is handled by workflow calling persist_map_documents transaction
     return {
@@ -103,8 +126,13 @@ def map_folder_step(config_dict: dict[str, Any]) -> dict[str, Any]:
         discovery_url=discovery_url,
         source_type=source_type,
     )
+    step_log(
+        f"Discovered {total} document(s) via folder scan",
+        step_name="map_folder",
+    )
     DBOS.set_event("stage_total", total)
     for idx, row in enumerate(rows):
+        status = "success" if row["status"] != MapStatus.ERROR else "error"
         DBOS.set_event("stage_current", idx + 1)
         DBOS.write_stream(
             "progress",
@@ -112,9 +140,22 @@ def map_folder_step(config_dict: dict[str, Any]) -> dict[str, Any]:
                 "step": "map_folder",
                 "idx": idx,
                 "total": total,
-                "status": "success" if row["status"] != MapStatus.ERROR else "error",
+                "status": status,
+                "document_id": row.get("document_id"),
+                "source_url": row.get("source_url"),
+                "is_new": row.get("is_new"),
                 "timestamp": time.time(),
             },
+        )
+        message = row.get("title") or row.get("source_url") or ""
+        if status == "error":
+            message = row.get("error") or message
+        log_item(
+            str(row.get("document_id", "")),
+            status=status,
+            message=message,
+            counter=(idx + 1, total),
+            step_name="map_folder",
         )
 
     discovered = sum(1 for row in rows if row.get("is_new", False))
@@ -122,6 +163,10 @@ def map_folder_step(config_dict: dict[str, Any]) -> dict[str, Any]:
         1 for row in rows if not row.get("is_new", False) and row["status"] == MapStatus.SUCCESS
     )
     errors = sum(1 for row in rows if row["status"] == MapStatus.ERROR)
+    step_log(
+        f"Map complete: {discovered} new, {existing} existing, {errors} errors",
+        step_name="map_folder",
+    )
 
     # Note: persistence is handled by workflow calling persist_map_documents transaction
     return {
@@ -158,8 +203,13 @@ def map_cms_step(config_dict: dict[str, Any]) -> dict[str, Any]:
         discovery_url=discovery_url,
         source_type=source_type,
     )
+    step_log(
+        f"Discovered {total} document(s) via CMS",
+        step_name="map_cms",
+    )
     DBOS.set_event("stage_total", total)
     for idx, row in enumerate(rows):
+        status = "success" if row["status"] != MapStatus.ERROR else "error"
         DBOS.set_event("stage_current", idx + 1)
         DBOS.write_stream(
             "progress",
@@ -167,9 +217,22 @@ def map_cms_step(config_dict: dict[str, Any]) -> dict[str, Any]:
                 "step": "map_cms",
                 "idx": idx,
                 "total": total,
-                "status": "success" if row["status"] != MapStatus.ERROR else "error",
+                "status": status,
+                "document_id": row.get("document_id"),
+                "source_url": row.get("source_url"),
+                "is_new": row.get("is_new"),
                 "timestamp": time.time(),
             },
+        )
+        message = row.get("title") or row.get("source_url") or ""
+        if status == "error":
+            message = row.get("error") or message
+        log_item(
+            str(row.get("document_id", "")),
+            status=status,
+            message=message,
+            counter=(idx + 1, total),
+            step_name="map_cms",
         )
 
     discovered = sum(1 for row in rows if row.get("is_new", False))
@@ -177,6 +240,10 @@ def map_cms_step(config_dict: dict[str, Any]) -> dict[str, Any]:
         1 for row in rows if not row.get("is_new", False) and row["status"] == MapStatus.SUCCESS
     )
     errors = sum(1 for row in rows if row["status"] == MapStatus.ERROR)
+    step_log(
+        f"Map complete: {discovered} new, {existing} existing, {errors} errors",
+        step_name="map_cms",
+    )
 
     # Note: persistence is handled by workflow calling persist_map_documents transaction
     return {

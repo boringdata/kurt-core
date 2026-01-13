@@ -132,7 +132,7 @@ def _setup_ide(ide: str) -> None:
         console.print(f"[dim]Setting up {ide_name} agent instructions...[/dim]")
 
     try:
-        agents_source = Path(__file__).parent / "agents" / "AGENTS.md"
+        agents_source = Path(__file__).parent.parent / "agents" / "AGENTS.md"
 
         if not agents_source.exists():
             console.print("[yellow]⚠[/yellow] AGENTS.md not found in package")
@@ -207,7 +207,7 @@ def _setup_claude(ide_dir: Path) -> None:
     instructions_symlink.symlink_to(instructions_target)
     console.print("[dim]  .claude/instructions/AGENTS.md → .agents/AGENTS.md[/dim]")
 
-    settings_source = Path(__file__).parent / "agents" / "claude-settings.json"
+    settings_source = Path(__file__).parent.parent / "agents" / "claude-settings.json"
     if settings_source.exists():
         dest_settings = ide_dir / "settings.json"
         with open(settings_source) as f:

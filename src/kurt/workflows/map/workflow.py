@@ -33,7 +33,14 @@ def map_workflow(config_dict: dict[str, Any], cli_command: str | None = None) ->
     if cli_command:
         DBOS.set_event("cli_command", cli_command)
 
-    with track_step("map_url"):
+    if config.source_url:
+        step_name = "map_url"
+    elif config.source_folder:
+        step_name = "map_folder"
+    else:
+        step_name = "map_cms"
+
+    with track_step(step_name):
         result = map_step(config.model_dump())
 
     # Persist rows via transaction (called from workflow, not step)

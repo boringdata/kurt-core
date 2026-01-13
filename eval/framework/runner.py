@@ -1330,6 +1330,14 @@ Execute commands as requested and report results concisely.""",
 
                                     metrics_collector.add_tool_call(tool_name, tool_input)
 
+                                    # Record tool calls in conversation for ConversationContains assertions
+                                    metrics_collector.add_conversation_turn(
+                                        {
+                                            "role": "tool",
+                                            "content": f"[Tool: {tool_name}] {json.dumps(tool_input)}",
+                                        }
+                                    )
+
                     # Turn complete - check if conversation should continue
                     # Use two-tier detection: heuristics + LLM fallback
                     from .conversation_completion import should_continue_conversation

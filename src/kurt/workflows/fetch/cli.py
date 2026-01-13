@@ -251,6 +251,38 @@ def fetch_cmd(
     )
 
     if not docs:
+        # Check if documents exist but are already fetched (when using default NOT_FETCHED filter)
+        if effective_status == "NOT_FETCHED" and (urls or identifier):
+            # Re-query without status filter to see if documents exist
+            all_docs = resolve_documents(
+                identifier=identifier,
+                include_pattern=include_pattern,
+                ids=ids if not urls and not files_paths else None,
+                in_cluster=in_cluster,
+                with_status=None,  # No status filter
+                with_content_type=with_content_type,
+                limit=limit,
+                exclude_pattern=exclude_pattern,
+                url_contains=url_contains,
+                urls=urls,
+                files=files_paths,
+            )
+            if all_docs:
+                # Documents exist but are already fetched
+                if output_format == "json":
+                    print_json(
+                        {
+                            "status": "already_fetched",
+                            "message": "Document(s) already fetched. Use --refetch to fetch again.",
+                            "documents": [d["document_id"] for d in all_docs],
+                        }
+                    )
+                else:
+                    console.print(
+                        "[yellow]Document(s) already fetched. Use --refetch to fetch again.[/yellow]"
+                    )
+                return
+
         if output_format == "json":
             print_json(
                 {"status": "no_documents", "message": "No documents found matching criteria"}

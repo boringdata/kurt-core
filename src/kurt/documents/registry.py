@@ -44,6 +44,13 @@ class DocumentRegistry:
         """
         filters = filters or DocumentFilters()
 
+        # If glob filters are set, don't apply SQL limit - we need to filter first
+        # then apply limit to the filtered results
+        saved_limit = None
+        if (filters.include or filters.exclude) and filters.limit:
+            saved_limit = filters.limit
+            filters.limit = None
+
         query = build_joined_query(filters)
         results = session.exec(query).all()
 
@@ -52,6 +59,10 @@ class DocumentRegistry:
         # Apply glob filters post-query (fnmatch doesn't translate to SQL)
         if filters.include or filters.exclude:
             views = apply_glob_filters(views, filters.include, filters.exclude)
+
+        # Apply limit after glob filtering
+        if saved_limit:
+            views = views[:saved_limit]
 
         return views
 

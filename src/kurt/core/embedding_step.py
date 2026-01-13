@@ -207,6 +207,11 @@ class EmbeddingStep:
             """Process a batch of texts and return embeddings."""
             start = time.time()
             try:
+                try:
+                    DBOS.set_event("parent_step_name", step_instance.name)
+                except Exception:
+                    pass
+
                 step_instance._resolve_model_settings()
 
                 # Prepare texts

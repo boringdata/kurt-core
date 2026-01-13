@@ -8,7 +8,7 @@ from typing import Optional
 from sqlalchemy import JSON, Column
 from sqlmodel import Field, SQLModel
 
-from kurt.db.models import TimestampMixin
+from kurt.db.models import TenantMixin, TimestampMixin
 
 
 class ResearchStatus(str, Enum):
@@ -19,7 +19,7 @@ class ResearchStatus(str, Enum):
     ERROR = "ERROR"
 
 
-class ResearchDocument(TimestampMixin, SQLModel, table=True):
+class ResearchDocument(TimestampMixin, TenantMixin, SQLModel, table=True):
     """Saved research result from Perplexity queries."""
 
     __tablename__ = "research_documents"

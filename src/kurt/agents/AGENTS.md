@@ -32,11 +32,27 @@ You assist with writing **internal product marketing artifacts** (positioning + 
 
 Optional feedback is gathered after project planning + writing stages, to improve the system.
 
+### ⚠️ CRITICAL: Order of Operations for ANY Writing Task
+
+Before creating ANY outline, draft, or content:
+1. **Check profile** → `kurt/profile.md` exists? If not, create it first.
+2. **Check format templates** → `uv run kurt show format-templates` - select or create appropriate template
+3. **Clarify vague requests** → If user says "write something about X" without specifying format, ASK what type of content they want (blog post, product page, tutorial, etc.)
+4. **Search sources** → Use `uv run kurt content list` or grep to find relevant content
+5. **Create outline/draft** → Only after steps 1-4 are complete
+
 ---
 
 ## Quick Reference Commands
 
 Agents should use these commands to dynamically discover options and access workflows:
+
+**⚠️ Content Operations (use these exact commands):**
+- `uv run kurt content list` - List all indexed documents
+- `uv run kurt content list --url-contains "topic"` - Filter by URL substring
+- `uv run kurt content map <url>` - Discover content from a URL (crawls site)
+- `uv run kurt content fetch` - Fetch and index discovered documents
+- `uv run kurt content get <doc-id>` - Get document by ID or URL
 
 **Format & Options:**
 - `uv run kurt show format-templates` - List available format templates
@@ -258,27 +274,28 @@ For setup instructions, run: `uv run kurt show analytics-setup`
 
 ## Content Discovery
 
-### ⚠️ MANDATORY: Use kurt CLI for ALL Content Operations
+### Two Data Sources
 
-You MUST use kurt CLI commands for discovering and retrieving content. **NEVER use grep, filesystem operations, or direct file reading** to find content.
+Kurt stores content in two places:
 
-**Why:** Document metadata is stored in the database, not in filesystem files. The kurt CLI provides access to this indexed metadata.
+1. **Database** - Document metadata: source URLs, titles, fetch status, embeddings
+   - Query via: `uv run kurt content list`, `uv run kurt content get`
 
-**Correct approach:**
-- ✅ `uv run kurt content list` - List all documents
-- ✅ `uv run kurt content list --url-contains "fivetran"` - Filter by URL substring
-- ✅ `uv run kurt content list --with-status fetched` - Filter by fetch status
-- ✅ `uv run kurt content list --limit 50` - List with limit
-- ✅ `uv run kurt content get <doc-id>` - Get document by ID or URL
+2. **Filesystem** - Actual markdown content at `.kurt/sources/`
+   - Search/read via: `grep`, `cat`, Read tool, etc.
 
-**Incorrect approach:**
-- ❌ `grep -r "query" sources/` - Cannot access indexed metadata
-- ❌ Reading files directly from filesystem - Missing DB metadata
-- ❌ Using file operations to search - No access to document metadata
+### How to Find Content
 
-**Separation of concerns:**
-- **Document metadata** → In database, accessed via `uv run kurt content` commands
-- **Source document files** → In filesystem at `/sources/` or `/projects/{project}/sources/`, but access via kurt CLI
+**Both approaches work - use whichever fits your task:**
+
+| Method | Best For | Example |
+|--------|----------|---------|
+| `kurt content list` | See all indexed docs, check fetch status, filter by URL | `uv run kurt content list --url-contains "auth"` |
+| `grep` in `.kurt/sources/` | Search actual content for keywords | `grep -r "authentication" .kurt/sources/` |
+| `kurt content get` | Get doc with metadata (source URL, etc.) | `uv run kurt content get <doc-id>` |
+| `cat` / Read tool | Read a specific file | `cat .kurt/sources/motherduck.com/docs/auth.md` |
+
+**Key insight:** The database knows what's been indexed and from where (URLs). The filesystem has the actual content. Use both.
 
 ### ⚠️ IMPORTANT: Iterative Source Gathering Strategy
 
@@ -307,24 +324,35 @@ For detailed discovery methods, run: `uv run kurt show discovery-methods`
 
 ## ⚠️ Common Mistakes to Avoid
 
-### 1. Using grep/filesystem for content discovery
+### 1. Using wrong CLI command syntax
 
 **❌ Don't:**
 ```bash
-grep -r "authentication" sources/
-ls sources/ | grep "auth"
-cat sources/some-file.md
+uv run kurt map url <url>      # Wrong - "map" is not a subcommand
+uv run kurt fetch              # Wrong - "fetch" is not a subcommand
+uv run kurt fetch <url>        # Wrong - "fetch" is not a subcommand
 ```
 
 **✅ Do:**
 ```bash
-uv run kurt content list --url-contains "auth"
-uv run kurt content get <doc-id>
+uv run kurt content map <url>  # Correct - use "content" subcommand
+uv run kurt content fetch      # Correct - use "content" subcommand
+uv run kurt content list       # Correct - use "content" subcommand
 ```
 
-**Why:** Document metadata is stored in the database, not in filesystem files. Only kurt CLI provides access to this indexed metadata.
+**Why:** The kurt CLI uses a subcommand structure. Content operations go under `kurt content`.
 
-### 2. Single-attempt source gathering
+### 2. Not knowing about the database
+
+Kurt has a **database** with document metadata (URLs, fetch status, embeddings) at `.kurt/kurt.sqlite`.
+
+**Be aware:**
+- `uv run kurt content list` shows what's indexed and fetch status
+- `grep` in `.kurt/sources/` searches actual content
+- Both are valid - use whichever fits your task
+- The database is the source of truth for "what have we indexed from where"
+
+### 3. Single-attempt source gathering
 
 **❌ Don't:**
 - Try one pattern and give up
@@ -335,7 +363,7 @@ uv run kurt content get <doc-id>
 - Map and fetch from relevant URLs
 - Document all findings in plan.md
 
-### 3. Forgetting to update plan.md
+### 4. Forgetting to update plan.md
 
 **❌ Don't:**
 - Complete tasks without updating checkboxes
@@ -349,7 +377,7 @@ uv run kurt content get <doc-id>
 - Use native todo tool if available
 - See "plan.md Update Checklist" above
 
-### 4. Skipping profile check
+### 5. Skipping profile check
 
 **❌ Don't:**
 - Start project without checking profile exists
@@ -362,18 +390,28 @@ uv run kurt content get <doc-id>
 - Load profile as context for all writing
 - See "MANDATORY FIRST STEP: Writer Profile Check" above
 
-### 5. Proceeding without format templates
+### 6. Proceeding without format templates
 
 **❌ Don't:**
 - Write content without a format template
 - Assume format exists without checking
 - Use nearest match template
+- **Go straight to content research without checking format first**
+- **For vague requests like "write something about X" - just start writing**
 
 **✅ Do:**
-- Check: `uv run kurt show format-templates`
+- **FIRST** check: `uv run kurt show format-templates`
+- Match user request to an existing template
 - If no match → Run: `uv run kurt show template-workflow`
 - Do NOT proceed with writing until template exists
-- See "IMPORTANT: Proactively create missing templates" above
+- **For vague requests: ASK the user what format they want before proceeding**
+
+**Order of operations for any writing task:**
+1. Check profile exists (`kurt/profile.md`)
+2. Check format templates (`uv run kurt show format-templates`)
+3. **If request is vague (no clear format): ask user to choose from available formats**
+4. Search for source content
+5. Create outline/draft
 
 ---
 

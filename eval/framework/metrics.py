@@ -105,8 +105,25 @@ class MetricsCollector:
         self.metrics["tool_calls"].append({"tool": tool_name, "params": params})
 
     def get_metrics(self) -> Dict[str, Any]:
-        """Get the collected metrics."""
-        return self.metrics
+        """Get collected metrics with conversation and tool usage summary.
+
+        Returns a copy of metrics dict with:
+        - conversation: List of conversation turns for ConversationContains assertions
+        - tool_usage: Dict mapping tool names (lowercase) to usage counts for ToolWasUsed assertions
+        """
+        metrics = self.metrics.copy()
+        metrics["conversation"] = self.conversation
+        metrics["tool_usage"] = self._compute_tool_usage()
+        return metrics
+
+    def _compute_tool_usage(self) -> Dict[str, int]:
+        """Compute tool usage counts from tool_calls list."""
+        usage: Dict[str, int] = {}
+        for call in self.metrics.get("tool_calls", []):
+            name = call.get("tool", "").lower()
+            if name:
+                usage[name] = usage.get(name, 0) + 1
+        return usage
 
     def get_conversation(self) -> List[Dict[str, Any]]:
         """Get the conversation history."""

@@ -94,7 +94,7 @@ export default function Terminal({
 
     const term = new XTerm({
       cursorBlink: true,
-      convertEol: true,
+      convertEol: false,
       fontFamily: '"IBM Plex Mono", "SFMono-Regular", Menlo, monospace',
       fontSize: 13,
       theme: {

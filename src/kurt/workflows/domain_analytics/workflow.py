@@ -35,7 +35,7 @@ def domain_analytics_workflow(config_dict: dict[str, Any]) -> dict[str, Any]:
     DBOS.set_event("status", "running")
     DBOS.set_event("started_at", time.time())
 
-    with track_step("sync_domain_analytics"):
+    with track_step("domain_analytics_sync"):
         result = domain_analytics_sync_step(config.model_dump())
 
     # Persist if not dry run and we have data

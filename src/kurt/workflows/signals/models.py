@@ -7,10 +7,10 @@ from typing import Any
 from sqlalchemy import JSON
 from sqlmodel import Field, SQLModel
 
-from kurt.db.models import TimestampMixin
+from kurt.db.models import TenantMixin, TimestampMixin
 
 
-class MonitoringSignal(TimestampMixin, SQLModel, table=True):
+class MonitoringSignal(TimestampMixin, TenantMixin, SQLModel, table=True):
     """Persisted monitoring signal from Reddit/HN/Feeds."""
 
     __tablename__ = "monitoring_signals"

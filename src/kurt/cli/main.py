@@ -45,9 +45,10 @@ class LazyGroup(click.Group):
         "agents": ("kurt.workflows.agents.cli", "agents_group"),
         "admin": ("kurt.cli.admin", "admin"),
         "show": ("kurt.cli.show", "show_group"),
+        "auth": ("kurt.cli.auth", "auth"),
     },
 )
-@click.version_option(prog_name="kurt")
+@click.version_option(package_name="kurt-core", prog_name="kurt")
 @click.pass_context
 def main(ctx):
     """
@@ -57,8 +58,8 @@ def main(ctx):
     """
     from kurt.config import config_file_exists
 
-    # Skip migration check for init and admin (which includes migrate)
-    if ctx.invoked_subcommand in ["init", "admin"]:
+    # Skip migration check for init, admin, and auth (which don't need local DB)
+    if ctx.invoked_subcommand in ["init", "admin", "auth"]:
         return
 
     # Skip migration check if running in hook mode

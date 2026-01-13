@@ -179,6 +179,52 @@ class TestDocumentFiltering:
         assert len(docs) == 4
 
 
+class TestUrlContainsFiltering:
+    """Test suite for url_contains filtering with glob support."""
+
+    def test_url_contains_substring(self, tmp_project_with_docs):
+        """Test url_contains with simple substring match."""
+        registry = DocumentRegistry()
+
+        with managed_session() as session:
+            docs = registry.list(session, DocumentFilters(url_contains="docs"))
+
+        # doc-1, doc-2, doc-4, doc-5 have "docs" in URL
+        assert len(docs) == 4
+        for doc in docs:
+            assert "docs" in doc.source_url
+
+    def test_url_contains_glob_pattern(self, tmp_project_with_docs):
+        """Test url_contains with glob pattern using *."""
+        registry = DocumentRegistry()
+
+        with managed_session() as session:
+            docs = registry.list(session, DocumentFilters(url_contains="*blog*"))
+
+        # doc-3 has "blog" in URL
+        assert len(docs) == 1
+        assert "blog" in docs[0].source_url
+
+    def test_url_contains_glob_prefix(self, tmp_project_with_docs):
+        """Test url_contains with glob pattern at start."""
+        registry = DocumentRegistry()
+
+        with managed_session() as session:
+            docs = registry.list(session, DocumentFilters(url_contains="*example.com/docs*"))
+
+        # doc-1, doc-2, doc-4, doc-5 match this pattern
+        assert len(docs) == 4
+
+    def test_url_contains_no_match(self, tmp_project_with_docs):
+        """Test url_contains with pattern that matches nothing."""
+        registry = DocumentRegistry()
+
+        with managed_session() as session:
+            docs = registry.list(session, DocumentFilters(url_contains="nonexistent"))
+
+        assert len(docs) == 0
+
+
 class TestGlobFiltering:
     """Test suite for glob pattern filtering."""
 
@@ -220,6 +266,48 @@ class TestGlobFiltering:
         for doc in docs:
             assert "example.com" in doc.source_url
             assert "/private/" not in doc.source_url
+
+    def test_include_with_limit_applies_limit_after_filter(self, tmp_project_with_docs):
+        """Test that limit is applied after glob filtering, not before.
+
+        This is critical: if limit is applied at SQL level first, the glob filter
+        may receive documents that don't match and return nothing.
+        """
+        registry = DocumentRegistry()
+
+        with managed_session() as session:
+            # There are 4 docs with /docs/ in URL
+            # Without the fix, limit=2 at SQL level might return 2 non-docs URLs
+            # and glob filter would find nothing
+            docs = registry.list(session, DocumentFilters(include="*/docs/*", limit=2))
+
+        # Should return exactly 2 docs matching the pattern
+        assert len(docs) == 2
+        for doc in docs:
+            assert "/docs/" in doc.source_url
+
+    def test_include_with_limit_returns_less_if_fewer_matches(self, tmp_project_with_docs):
+        """Test that limit with include returns fewer if not enough matches."""
+        registry = DocumentRegistry()
+
+        with managed_session() as session:
+            # Only 1 doc matches */blog/*
+            docs = registry.list(session, DocumentFilters(include="*/blog/*", limit=10))
+
+        assert len(docs) == 1
+        assert "/blog/" in docs[0].source_url
+
+    def test_exclude_with_limit(self, tmp_project_with_docs):
+        """Test exclude pattern combined with limit."""
+        registry = DocumentRegistry()
+
+        with managed_session() as session:
+            # Exclude blog, limit to 3
+            docs = registry.list(session, DocumentFilters(exclude="*/blog/*", limit=3))
+
+        assert len(docs) == 3
+        for doc in docs:
+            assert "/blog/" not in doc.source_url
 
 
 class TestConvenienceMethods:
