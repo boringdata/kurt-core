@@ -105,13 +105,13 @@ def list_cmd(
         console.print("[dim]No documents found[/dim]")
         return
 
-    # Display as table
+    # Display as table - use no_wrap to prevent broken rows in narrow terminals
     table = Table(show_header=True, header_style="bold")
-    table.add_column("ID", style="dim", max_width=8)
-    table.add_column("Source URL", max_width=50)
-    table.add_column("Map", width=8)
-    table.add_column("Fetch", width=8)
-    table.add_column("Length", width=8, justify="right")
+    table.add_column("ID", style="dim", width=8, no_wrap=True)
+    table.add_column("Source URL", overflow="ellipsis", no_wrap=True)
+    table.add_column("Map", width=10, no_wrap=True)
+    table.add_column("Fetch", width=10, no_wrap=True)
+    table.add_column("Length", width=8, justify="right", no_wrap=True)
 
     for doc in docs:
         table.add_row(
@@ -148,10 +148,23 @@ def get_cmd(identifier: str, output_format: str):
         # First try exact ID match
         doc = registry.get(session, identifier)
 
-        # If not found, try URL match or partial ID
+        # If not found, try partial ID match or URL match
         if not doc:
-            filters = DocumentFilters(include=f"*{identifier}*", limit=1)
-            docs = registry.list(session, filters)
+            if identifier.startswith(("http://", "https://")):
+                # URL match
+                filters = DocumentFilters(url_contains=identifier, limit=1)
+                docs = registry.list(session, filters)
+            else:
+                # Partial document ID match - query directly with LIKE
+                from sqlmodel import select
+
+                from kurt.workflows.map.models import MapDocument
+
+                query = (
+                    select(MapDocument).where(MapDocument.document_id.contains(identifier)).limit(1)
+                )
+                map_doc = session.exec(query).first()
+                docs = [registry.get(session, map_doc.document_id)] if map_doc else []
             doc = docs[0] if docs else None
 
     if not doc:
