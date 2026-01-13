@@ -333,9 +333,10 @@ export default function App() {
         })
         filetreeGroup.api.setSize({ width: 48 })
       } else {
+        // Use Infinity to explicitly clear max constraint and allow resizing
         filetreeGroup.api.setConstraints({
           minimumWidth: 180,
-          maximumWidth: undefined,
+          maximumWidth: Infinity,
         })
         // Only set size on subsequent runs (user toggled), not on initial load
         if (!isFirstRun) {
@@ -353,9 +354,10 @@ export default function App() {
         })
         terminalGroup.api.setSize({ width: 48 })
       } else {
+        // Use Infinity to explicitly clear max constraint and allow resizing
         terminalGroup.api.setConstraints({
           minimumWidth: 250,
-          maximumWidth: undefined,
+          maximumWidth: Infinity,
         })
         if (!isFirstRun) {
           terminalGroup.api.setSize({ width: panelSizesRef.current.terminal })
@@ -370,19 +372,18 @@ export default function App() {
         workflowsGroup.api.setConstraints({
           minimumHeight: 36,
           maximumHeight: 36,
-          minimumWidth: undefined,
-          maximumWidth: undefined,
         })
         workflowsGroup.api.setSize({ height: 36 })
       } else {
+        // Clear height constraints to allow resizing (use Infinity to explicitly remove max)
         workflowsGroup.api.setConstraints({
           minimumHeight: 100,
-          maximumHeight: undefined,
-          minimumWidth: undefined,
-          maximumWidth: undefined,
+          maximumHeight: Infinity,
         })
-        // Always restore saved height for workflows (no isFirstRun check)
-        workflowsGroup.api.setSize({ height: panelSizesRef.current.workflows })
+        // Only set size on subsequent runs (user toggled), not on initial load
+        if (!isFirstRun) {
+          workflowsGroup.api.setSize({ height: panelSizesRef.current.workflows })
+        }
       }
     }
   }, [dockApi, collapsed])
@@ -555,10 +556,10 @@ export default function App() {
         if (panel?.group) {
           panel.group.header.hidden = false
           centerGroupRef.current = panel.group
-          // Apply minimum height constraint to center group
+          // Apply minimum height constraint to center group (use Infinity to allow resize)
           panel.group.api.setConstraints({
             minimumHeight: 200,
-            maximumHeight: undefined,
+            maximumHeight: Infinity,
           })
         }
       }
@@ -587,16 +588,23 @@ export default function App() {
         return true
       }
 
-      // Use empty panel's group first to maintain layout hierarchy
+      // Priority: existing editor group > centerGroupRef > empty panel > workflows > fallback
       const emptyPanel = dockApi.getPanel('empty-center')
       const workflowsPanel = dockApi.getPanel('workflows')
       const centerGroup = centerGroupRef.current
 
+      // Find existing editor panels to add as sibling tab
+      const allPanels = Array.isArray(dockApi.panels) ? dockApi.panels : []
+      const existingEditorPanel = allPanels.find(p => p.id.startsWith('editor-') || p.id.startsWith('review-'))
+
       let position
-      if (emptyPanel?.group) {
-        position = { referenceGroup: emptyPanel.group }
+      if (existingEditorPanel?.group) {
+        // Add as tab next to existing editors/reviews
+        position = { referenceGroup: existingEditorPanel.group }
       } else if (centerGroup) {
         position = { referenceGroup: centerGroup }
+      } else if (emptyPanel?.group) {
+        position = { referenceGroup: emptyPanel.group }
       } else if (workflowsPanel?.group) {
         // Add above workflows to maintain center column structure
         position = { direction: 'above', referenceGroup: workflowsPanel.group }
@@ -714,20 +722,23 @@ export default function App() {
         return
       }
 
-      // Get empty panel reference before determining position
+      // Get panel references for positioning
       const emptyPanel = dockApi.getPanel('empty-center')
       const workflowsPanel = dockApi.getPanel('workflows')
 
-      // Determine the correct position to maintain layout hierarchy:
-      // 1. If empty-center exists, add to its group (will be in center column)
-      // 2. Else if centerGroupRef exists, use it
-      // 3. Else if workflows panel exists, add ABOVE it (same column structure)
-      // 4. Last resort: right of filetree (but this may break layout)
+      // Find existing editor/review panels to add as sibling tab
+      const allPanels = Array.isArray(dockApi.panels) ? dockApi.panels : []
+      const existingEditorPanel = allPanels.find(p => p.id.startsWith('editor-') || p.id.startsWith('review-'))
+
+      // Priority: existing editor group > centerGroupRef > empty panel > workflows > fallback
       let position
-      if (emptyPanel?.group) {
-        position = { referenceGroup: emptyPanel.group }
+      if (existingEditorPanel?.group) {
+        // Add as tab next to existing editors/reviews
+        position = { referenceGroup: existingEditorPanel.group }
       } else if (centerGroupRef.current) {
         position = { referenceGroup: centerGroupRef.current }
+      } else if (emptyPanel?.group) {
+        position = { referenceGroup: emptyPanel.group }
       } else if (workflowsPanel?.group) {
         // Add above workflows to maintain center column structure
         position = { direction: 'above', referenceGroup: workflowsPanel.group }
@@ -751,10 +762,10 @@ export default function App() {
       if (panel?.group) {
         panel.group.header.hidden = false
         centerGroupRef.current = panel.group
-        // Apply minimum height constraint to center group
+        // Apply minimum height constraint to center group (use Infinity to allow resize)
         panel.group.api.setConstraints({
           minimumHeight: 200,
-          maximumHeight: undefined,
+          maximumHeight: Infinity,
         })
       }
     })
@@ -782,7 +793,7 @@ export default function App() {
         filetreeGroup.header.hidden = true
         filetreeGroup.api.setConstraints({
           minimumWidth: 180,
-          maximumWidth: undefined,
+          maximumWidth: Infinity,
         })
       }
 
@@ -792,7 +803,7 @@ export default function App() {
         terminalGroup.header.hidden = true
         terminalGroup.api.setConstraints({
           minimumWidth: 250,
-          maximumWidth: undefined,
+          maximumWidth: Infinity,
         })
       }
 
@@ -802,9 +813,7 @@ export default function App() {
         // Don't lock or hide header - workflows/shell share this group with tabs
         workflowsGroup.api.setConstraints({
           minimumHeight: 100,
-          maximumHeight: undefined,
-          minimumWidth: undefined,
-          maximumWidth: undefined,
+          maximumHeight: Infinity,
         })
       }
     }
@@ -854,10 +863,10 @@ export default function App() {
       if (emptyPanel?.group) {
         emptyPanel.group.header.hidden = true
         centerGroupRef.current = emptyPanel.group
-        // Set minimum height for the center group so workflows doesn't take all space
+        // Set minimum height for the center group (use Infinity to allow resize)
         emptyPanel.group.api.setConstraints({
           minimumHeight: 200,
-          maximumHeight: undefined,
+          maximumHeight: Infinity,
         })
       }
 
@@ -1031,7 +1040,7 @@ export default function App() {
         emptyPanel.group.header.hidden = true
         emptyPanel.group.api.setConstraints({
           minimumHeight: 200,
-          maximumHeight: undefined,
+          maximumHeight: Infinity,
         })
       }
     })
@@ -1153,9 +1162,7 @@ export default function App() {
           workflowsGroup.header.hidden = false
           workflowsGroup.api.setConstraints({
             minimumHeight: 100,
-            maximumHeight: undefined,
-            minimumWidth: undefined,
-            maximumWidth: undefined,
+            maximumHeight: Infinity,
           })
         }
 
@@ -1198,10 +1205,10 @@ export default function App() {
         const emptyPanel = dockApi.getPanel('empty-center')
         if (emptyPanel?.group) {
           centerGroupRef.current = emptyPanel.group
-          // Set minimum height for the center group so workflows doesn't take all space
+          // Set minimum height for the center group (use Infinity to allow resize)
           emptyPanel.group.api.setConstraints({
             minimumHeight: 200,
-            maximumHeight: undefined,
+            maximumHeight: Infinity,
           })
         }
 
