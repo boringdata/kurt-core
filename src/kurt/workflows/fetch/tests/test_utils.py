@@ -7,7 +7,216 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from kurt.workflows.fetch.models import FetchStatus
+from kurt.workflows.fetch.utils import _deduplicate_images, _preprocess_html_for_images
 from kurt.workflows.fetch.workflow import _has_embedding_api_key
+
+
+class TestDeduplicateImages:
+    """Test suite for _deduplicate_images."""
+
+    def test_removes_consecutive_duplicate_images(self):
+        """Test that consecutive duplicate images are removed."""
+        content = """# Title
+
+Some text.
+
+![](https://example.com/image1.png)
+
+![](https://example.com/image1.png)
+
+More text."""
+
+        result = _deduplicate_images(content)
+
+        assert result.count("![](https://example.com/image1.png)") == 1
+        assert "Some text." in result
+        assert "More text." in result
+
+    def test_keeps_different_images(self):
+        """Test that different images are all kept."""
+        content = """# Title
+
+![](https://example.com/image1.png)
+
+![](https://example.com/image2.png)
+
+![](https://example.com/image3.png)"""
+
+        result = _deduplicate_images(content)
+
+        assert result.count("![](https://example.com/image1.png)") == 1
+        assert result.count("![](https://example.com/image2.png)") == 1
+        assert result.count("![](https://example.com/image3.png)") == 1
+
+    def test_allows_same_image_in_different_sections(self):
+        """Test that the same image can appear in different sections."""
+        content = """# Section 1
+
+![](https://example.com/image1.png)
+
+Some text between sections.
+
+# Section 2
+
+![](https://example.com/image1.png)"""
+
+        result = _deduplicate_images(content)
+
+        # Image should appear twice because there's text between them
+        assert result.count("![](https://example.com/image1.png)") == 2
+
+    def test_handles_images_with_alt_text(self):
+        """Test images with alt text are deduplicated by URL."""
+        content = """![Alt 1](https://example.com/image.png)
+
+![Alt 2](https://example.com/image.png)"""
+
+        result = _deduplicate_images(content)
+
+        # Only first image should remain
+        assert "![Alt 1](https://example.com/image.png)" in result
+        assert "![Alt 2](https://example.com/image.png)" not in result
+
+    def test_handles_empty_content(self):
+        """Test empty content is handled."""
+        result = _deduplicate_images("")
+        assert result == ""
+
+    def test_handles_no_images(self):
+        """Test content without images is unchanged."""
+        content = """# Title
+
+Just some text.
+
+More text."""
+
+        result = _deduplicate_images(content)
+        assert result == content
+
+    def test_preserves_blank_lines(self):
+        """Test that blank lines are preserved."""
+        content = """# Title
+
+
+![](https://example.com/image.png)
+
+
+Text."""
+
+        result = _deduplicate_images(content)
+
+        # Should preserve the blank lines structure
+        assert "\n\n" in result
+
+
+class TestPreprocessHtmlForImages:
+    """Test suite for _preprocess_html_for_images."""
+
+    def test_unwraps_captioned_image_container(self):
+        """Test that captioned-image-container divs are unwrapped."""
+        html = """<html><body>
+<div class="captioned-image-container">
+<figure><img src="test.png"></figure>
+</div>
+</body></html>"""
+
+        result = _preprocess_html_for_images(html)
+
+        # The figure should still be present but not wrapped in the container div
+        assert "<figure>" in result
+        assert "captioned-image-container" not in result
+
+    def test_unwraps_image_container(self):
+        """Test that image-container divs are unwrapped."""
+        html = """<html><body>
+<div class="image-container">
+<img src="test.png">
+</div>
+</body></html>"""
+
+        result = _preprocess_html_for_images(html)
+
+        assert "<img" in result
+        assert "image-container" not in result
+
+    def test_unwraps_img_container(self):
+        """Test that img-container divs are unwrapped."""
+        html = """<html><body>
+<div class="img-container">
+<img src="test.png">
+</div>
+</body></html>"""
+
+        result = _preprocess_html_for_images(html)
+
+        assert "<img" in result
+        assert "img-container" not in result
+
+    def test_preserves_other_divs(self):
+        """Test that other divs are not affected."""
+        html = """<html><body>
+<div class="content-wrapper">
+<p>Hello</p>
+</div>
+</body></html>"""
+
+        result = _preprocess_html_for_images(html)
+
+        assert "content-wrapper" in result
+        assert "<p>Hello</p>" in result
+
+    def test_handles_nested_containers(self):
+        """Test handling of nested container divs."""
+        html = """<html><body>
+<div class="captioned-image-container">
+<div class="image-container">
+<img src="test.png">
+</div>
+</div>
+</body></html>"""
+
+        result = _preprocess_html_for_images(html)
+
+        assert "<img" in result
+        assert "captioned-image-container" not in result
+        assert "image-container" not in result
+
+    def test_handles_plain_text_gracefully(self):
+        """Test that plain text is handled without error."""
+        html = "not valid html at all {{{"
+
+        result = _preprocess_html_for_images(html)
+
+        # lxml will parse even invalid HTML, just verify no error and content preserved
+        assert "not valid html at all {{{" in result
+
+    def test_handles_empty_html(self):
+        """Test empty HTML is handled."""
+        result = _preprocess_html_for_images("")
+
+        # lxml may return a minimal structure or empty
+        # Just verify it doesn't raise
+        assert result is not None
+
+    def test_preserves_figure_content(self):
+        """Test that figure content including img is preserved."""
+        html = """<html><body>
+<div class="captioned-image-container">
+<figure>
+<a href="full.png">
+<img src="thumb.png" alt="Test">
+</a>
+<figcaption>Caption text</figcaption>
+</figure>
+</div>
+</body></html>"""
+
+        result = _preprocess_html_for_images(html)
+
+        assert "<figure>" in result
+        assert 'src="thumb.png"' in result
+        assert "<figcaption>" in result
+        assert "Caption text" in result
 
 
 class TestGenerateContentPath:

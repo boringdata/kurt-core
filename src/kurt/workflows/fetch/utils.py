@@ -3,10 +3,92 @@
 from __future__ import annotations
 
 import hashlib
+import re
 
 import trafilatura
+from lxml import etree
+from lxml import html as lxml_html
 
 from kurt.config import load_config
+
+
+def _deduplicate_images(content: str) -> str:
+    """
+    Remove duplicate consecutive images from markdown content.
+
+    Trafilatura with favor_recall=True can produce duplicate images.
+    This function removes consecutive duplicate image references.
+
+    Args:
+        content: Markdown content
+
+    Returns:
+        Content with duplicate consecutive images removed
+    """
+    lines = content.split("\n")
+    result = []
+    seen_images: set[str] = set()
+
+    for line in lines:
+        # Check if line is an image
+        img_match = re.match(r"^!\[.*?\]\((.*?)\)$", line.strip())
+        if img_match:
+            img_url = img_match.group(1)
+            if img_url in seen_images:
+                # Skip duplicate image
+                continue
+            seen_images.add(img_url)
+        else:
+            # Reset seen images when we hit non-image content
+            # This allows the same image to appear in different sections
+            if line.strip() and not line.strip().startswith("!"):
+                seen_images.clear()
+
+        result.append(line)
+
+    return "\n".join(result)
+
+
+def _preprocess_html_for_images(html: str) -> str:
+    """
+    Preprocess HTML to fix image extraction issues.
+
+    Trafilatura's boilerplate detection can incorrectly strip images wrapped
+    in certain container divs (e.g., Substack's "captioned-image-container").
+    This function unwraps such divs to preserve images.
+
+    Args:
+        html: Raw HTML content
+
+    Returns:
+        Preprocessed HTML with problematic container divs unwrapped
+    """
+    try:
+        doc = lxml_html.fromstring(html)
+
+        # Unwrap divs that contain "container" in class and wrap figures/images
+        # These are often incorrectly detected as boilerplate by trafilatura
+        container_classes = [
+            "captioned-image-container",
+            "image-container",
+            "img-container",
+        ]
+
+        for class_name in container_classes:
+            for div in doc.xpath(f'//div[contains(@class, "{class_name}")]'):
+                parent = div.getparent()
+                if parent is not None:
+                    # Move all children to parent, in place of this div
+                    index = list(parent).index(div)
+                    for child in list(div):
+                        parent.insert(index, child)
+                        index += 1
+                    parent.remove(div)
+
+        return etree.tostring(doc, encoding="unicode")
+    except Exception:
+        # If preprocessing fails, return original HTML
+        return html
 
 
 def extract_with_trafilatura(html: str, url: str) -> tuple[str, dict]:
@@ -23,23 +105,31 @@ def extract_with_trafilatura(html: str, url: str) -> tuple[str, dict]:
     Raises:
         ValueError: If no content extracted
     """
+    # Preprocess HTML to fix image extraction issues
+    processed_html = _preprocess_html_for_images(html)
+
     metadata = trafilatura.extract_metadata(
-        html,
+        processed_html,
         default_url=url,
         extensive=True,
     )
 
     content = trafilatura.extract(
-        html,
+        processed_html,
         output_format="markdown",
         include_tables=True,
         include_links=True,
+        include_images=True,
+        favor_recall=True,
         url=url,
         with_metadata=True,
     )
 
     if not content:
         raise ValueError(f"No content extracted (page might be empty or paywall blocked): {url}")
+
+    # Remove duplicate images caused by favor_recall
+    content = _deduplicate_images(content)
 
     metadata_dict = {}
     if metadata:
