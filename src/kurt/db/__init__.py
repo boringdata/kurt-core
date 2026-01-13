@@ -17,17 +17,6 @@ from kurt.db.models import (
     TenantMixin,
     TimestampMixin,
 )
-from kurt.db.tenant import (
-    clear_workspace_context,
-    get_user_id,
-    get_workspace_context,
-    get_workspace_id,
-    is_multi_tenant,
-    load_context_from_credentials,
-    register_tenant_listeners,
-    require_workspace_id,
-    set_workspace_context,
-)
 
 __all__ = [
     # Database client
@@ -48,14 +37,4 @@ __all__ = [
     "ConfidenceMixin",
     # Infrastructure models
     "LLMTrace",
-    # Tenant context
-    "set_workspace_context",
-    "clear_workspace_context",
-    "get_workspace_context",
-    "get_workspace_id",
-    "get_user_id",
-    "require_workspace_id",
-    "is_multi_tenant",
-    "load_context_from_credentials",
-    "register_tenant_listeners",
 ]
