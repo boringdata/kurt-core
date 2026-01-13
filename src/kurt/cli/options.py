@@ -155,7 +155,11 @@ def add_filter_options(
     content_type: bool = True,
     limit: bool = True,
     exclude: bool = False,
-    advanced: bool = False,
+    url_contains: bool = True,
+    file_ext: bool = False,
+    source_type: bool = False,
+    has_content: bool = False,
+    min_content_length: bool = False,
 ):
     """
     Decorator to add standard filter options to a command.
@@ -163,24 +167,19 @@ def add_filter_options(
     Usage:
         @click.command("fetch")
         @add_filter_options()
-        def fetch(include_pattern, ids, in_cluster, with_status, with_content_type, limit):
-            ...
-
-        @click.command("fetch")
-        @add_filter_options(advanced=True)
-        def fetch(..., url_contains, file_ext, source_type, has_content, min_content_length):
+        def fetch(include_pattern, ids, in_cluster, with_status, with_content_type, limit, url_contains):
             ...
     """
 
     def decorator(f):
-        # Advanced filters (applied first so they appear last in --help)
-        if advanced:
-            f = fetch_engine_option(f)
+        if min_content_length:
             f = min_content_length_option(f)
+        if has_content:
             f = has_content_option(f)
+        if source_type:
             f = source_type_option(f)
+        if file_ext:
             f = file_extension_option(f)
-            f = url_contains_option(f)
         if exclude:
             f = exclude_option(f)
         if limit:
@@ -193,6 +192,8 @@ def add_filter_options(
             f = in_cluster_option(f)
         if ids:
             f = ids_option(f)
+        if url_contains:
+            f = url_contains_option(f)
         if include:
             f = include_option(f)
         return f

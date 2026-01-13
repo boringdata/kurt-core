@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from typing import Any, Callable
 
 from dbos import DBOS
@@ -53,11 +54,16 @@ def run_workflow(
         )
 
     # Foreground mode: enable display by default
-    from kurt.core.display import set_display_enabled
+    from kurt.core.display import set_display_enabled, set_display_mode
 
     show_display = display if display is not None else True
+    use_rich = sys.stdout.isatty()
 
     try:
+        if show_display:
+            set_display_mode("rich" if use_rich else "plain")
+        else:
+            set_display_mode("rich")
         set_display_enabled(show_display)
         init_dbos()
         handle = DBOS.start_workflow(workflow_func, *args, **kwargs)
@@ -66,3 +72,4 @@ def run_workflow(
         return handle.get_result()
     finally:
         set_display_enabled(False)
+        set_display_mode("rich")

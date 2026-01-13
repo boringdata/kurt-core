@@ -33,8 +33,8 @@ class PTYSession:
         cmd: str,
         args: list[str],
         cwd: str,
-        cols: int = 80,
-        rows: int = 24,
+        cols: int = 60,
+        rows: int = 30,
         extra_env: Optional[dict[str, str]] = None,
     ):
         self.cmd = cmd
@@ -56,6 +56,9 @@ class PTYSession:
                 "FORCE_COLOR": env.get("FORCE_COLOR", "1"),
                 # Signal to Claude Code hooks that this session is running from web UI
                 "CLAUDE_CODE_REMOTE": "true",
+                # Set terminal dimensions for tools that check env vars (like rich)
+                "COLUMNS": str(self.cols),
+                "LINES": str(self.rows),
             }
         )
         # Add extra environment variables (e.g., session info for hooks)
@@ -265,9 +268,18 @@ def build_claude_args(
     resume: bool,
     force_new: bool,
     fork_session: Optional[str],
+    cwd: Optional[str] = None,
 ) -> list[str]:
     """Build Claude CLI arguments based on session parameters."""
     args = list(base_args)
+
+    # Add --settings flag if project has .claude/settings.json
+    if cwd:
+        from pathlib import Path
+
+        settings_file = Path(cwd) / ".claude" / "settings.json"
+        if settings_file.exists() and "--settings" not in args:
+            args.extend(["--settings", str(settings_file)])
 
     if force_new:
         return args
@@ -410,7 +422,9 @@ async def handle_pty_websocket(
         args = build_codex_args(base_args or [], session_id, resume, force_new)
     else:
         cmd = os.environ.get("KURT_CLAUDE_CMD", "claude")
-        args = build_claude_args(base_args or [], session_id, resume, force_new, fork_session)
+        args = build_claude_args(
+            base_args or [], session_id, resume, force_new, fork_session, cwd=cwd
+        )
 
     extra_env = {
         "KURT_SESSION_PROVIDER": provider,

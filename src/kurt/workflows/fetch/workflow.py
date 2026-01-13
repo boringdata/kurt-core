@@ -6,10 +6,18 @@ from typing import Any
 
 from dbos import DBOS
 
-from kurt.core import run_workflow, track_step, with_parent_workflow_id
+from kurt.core import run_workflow, with_parent_workflow_id
+from kurt.core.tracking import track_batch_step
 
 from .config import FetchConfig
-from .steps import embedding_step, fetch_step, persist_fetch_documents, save_content_step
+from .models import FetchStatus
+from .steps import (
+    embedding_step,
+    fetch_step,
+    fetch_urls_parallel,
+    persist_fetch_documents,
+    save_content_step,
+)
 
 
 def _has_embedding_api_key() -> bool:
@@ -44,19 +52,49 @@ def fetch_workflow(
     if cli_command:
         DBOS.set_event("cli_command", cli_command)
 
-    with track_step("fetch_documents"):
-        result = fetch_step(docs, config.model_dump())
+    # Separate web docs from non-web docs
+    web_docs = [d for d in docs if d.get("source_type", "url") == "url"]
+    non_web_docs = [d for d in docs if d.get("source_type", "url") != "url"]
 
-    # Save content to files and get content_path
+    # Fetch documents - QueueStepTracker handles its own progress tracking
+    # All web docs use parallel queue (handles batching for tavily/firecrawl internally)
+    if web_docs:
+        web_rows = fetch_urls_parallel(web_docs, config)
+    else:
+        web_rows = []
+
+    # Non-web docs (file, cms) go through fetch_step
+    if non_web_docs:
+        non_web_result = fetch_step(non_web_docs, config.model_dump())
+        non_web_rows = non_web_result.get("rows", [])
+    else:
+        non_web_rows = []
+
+    # Combine results
+    all_rows = web_rows + non_web_rows
+    fetched = sum(1 for r in all_rows if r.get("status") in ("SUCCESS", FetchStatus.SUCCESS))
+    failed = sum(1 for r in all_rows if r.get("status") in ("ERROR", FetchStatus.ERROR))
+    result = {
+        "total": len(docs),
+        "documents_fetched": fetched,
+        "documents_failed": failed,
+        "rows": all_rows,
+        "dry_run": config.dry_run,
+    }
+
+    # Save content to files - batch step (no per-item progress)
+    rows = result["rows"]
+    success_count = sum(1 for r in rows if r.get("status") in ("SUCCESS", FetchStatus.SUCCESS))
+
     DBOS.set_event("stage", "saving")
-    with track_step("save_content"):
-        rows_with_paths = save_content_step(result["rows"], config.model_dump())
+    with track_batch_step("save_content", total=success_count):
+        rows_with_paths = save_content_step(rows, config.model_dump())
         result["rows"] = rows_with_paths
 
-    # Generate embeddings (skip if no API key available)
+    # Generate embeddings - batch step (no per-item progress)
     if _has_embedding_api_key():
         DBOS.set_event("stage", "embedding")
-        with track_step("generate_embeddings"):
+        with track_batch_step("generate_embeddings", total=success_count):
             rows_with_embeddings = embedding_step(result["rows"], config.model_dump())
             result["rows"] = rows_with_embeddings
     else:

@@ -133,7 +133,7 @@ PATH_SOURCES="sources"
 class TestFetchWorkflowE2E:
     """End-to-end tests for fetch workflow with real DBOS and database."""
 
-    def test_fetch_and_persist_documents(self, tmp_kurt_project: Path):
+    def test_fetch_and_persist_documents(self, tmp_kurt_project: Path, httpx_mock):
         """Test full fetch workflow: fetch content, generate embeddings, persist."""
         docs = [
             {
@@ -147,21 +147,23 @@ class TestFetchWorkflowE2E:
                 "source_type": "url",
             },
         ]
-        config = {"dry_run": False}
+        config = {"dry_run": False, "fetch_engine": "httpx"}
 
-        # Mock web fetching
-        def mock_fetch_from_web(urls, fetch_engine):
-            return {url: (f"Content from {url}", {"fingerprint": "abc123"}) for url in urls}
+        # Mock HTTP responses (httpx engine uses httpx for fetching)
+        httpx_mock.add_response(
+            url="https://example.com/page1",
+            html="<html><body><h1>Page 1</h1><p>Content from page 1</p></body></html>",
+        )
+        httpx_mock.add_response(
+            url="https://example.com/page2",
+            html="<html><body><h1>Page 2</h1><p>Content from page 2</p></body></html>",
+        )
 
-        # Mock embedding generation
+        # Mock embedding generation (still needed as it calls external API)
         def mock_generate_embeddings(texts, **kwargs):
             return [[0.1, 0.2, 0.3] for _ in texts]
 
         with (
-            patch(
-                "kurt.workflows.fetch.steps.fetch_from_web",
-                side_effect=mock_fetch_from_web,
-            ),
             patch(
                 "kurt.workflows.fetch.steps.generate_embeddings",
                 side_effect=mock_generate_embeddings,
@@ -189,7 +191,7 @@ class TestFetchWorkflowE2E:
                 assert doc.content_length > 0
                 assert doc.embedding is not None  # Embedding was generated
 
-    def test_fetch_dry_run_does_not_persist(self, tmp_kurt_project: Path):
+    def test_fetch_dry_run_does_not_persist(self, tmp_kurt_project: Path, httpx_mock):
         """Test that dry_run=True does not persist to database."""
         docs = [
             {
@@ -198,23 +200,20 @@ class TestFetchWorkflowE2E:
                 "source_type": "url",
             },
         ]
-        config = {"dry_run": True}
+        config = {"dry_run": True, "fetch_engine": "httpx"}
 
-        def mock_fetch_from_web(urls, fetch_engine):
-            return {url: (f"Content from {url}", {"fingerprint": "abc123"}) for url in urls}
+        # Mock HTTP response
+        httpx_mock.add_response(
+            url="https://example.com/page1",
+            html="<html><body><p>Content from page 1</p></body></html>",
+        )
 
         def mock_generate_embeddings(texts, **kwargs):
             return [[0.1, 0.2, 0.3] for _ in texts]
 
-        with (
-            patch(
-                "kurt.workflows.fetch.steps.fetch_from_web",
-                side_effect=mock_fetch_from_web,
-            ),
-            patch(
-                "kurt.workflows.fetch.steps.generate_embeddings",
-                side_effect=mock_generate_embeddings,
-            ),
+        with patch(
+            "kurt.workflows.fetch.steps.generate_embeddings",
+            side_effect=mock_generate_embeddings,
         ):
             result = run_fetch(docs, config)
 
@@ -228,7 +227,7 @@ class TestFetchWorkflowE2E:
             db_docs = session.query(FetchDocument).all()
             assert len(db_docs) == 0
 
-    def test_fetch_with_errors_partial_success(self, tmp_kurt_project: Path):
+    def test_fetch_with_errors_partial_success(self, tmp_kurt_project: Path, httpx_mock):
         """Test fetch workflow with some documents failing."""
         docs = [
             {
@@ -242,25 +241,22 @@ class TestFetchWorkflowE2E:
                 "source_type": "url",
             },
         ]
-        config = {"dry_run": False}
+        config = {"dry_run": False, "fetch_engine": "httpx"}
 
-        def mock_fetch_from_web(urls, fetch_engine):
-            results = {}
-            for url in urls:
-                if "bad" in url:
-                    results[url] = ValueError("Fetch failed")
-                else:
-                    results[url] = (f"Content from {url}", {"fingerprint": "abc123"})
-            return results
+        # Mock HTTP responses - good URL succeeds, bad URL fails
+        httpx_mock.add_response(
+            url="https://example.com/good",
+            html="<html><body><p>Content from good page</p></body></html>",
+        )
+        httpx_mock.add_response(
+            url="https://example.com/bad",
+            status_code=500,
+        )
 
         def mock_generate_embeddings(texts, **kwargs):
             return [[0.1, 0.2, 0.3] for _ in texts]
 
         with (
-            patch(
-                "kurt.workflows.fetch.steps.fetch_from_web",
-                side_effect=mock_fetch_from_web,
-            ),
             patch(
                 "kurt.workflows.fetch.steps.generate_embeddings",
                 side_effect=mock_generate_embeddings,
@@ -300,7 +296,7 @@ class TestFetchWorkflowE2E:
         assert result["documents_fetched"] == 0
         assert result["documents_failed"] == 0
 
-    def test_embedding_step_called_from_workflow_not_step(self, tmp_kurt_project: Path):
+    def test_embedding_step_called_from_workflow_not_step(self, tmp_kurt_project: Path, httpx_mock):
         """
         Critical test: Verify embeddings work correctly.
 
@@ -316,22 +312,19 @@ class TestFetchWorkflowE2E:
                 "source_type": "url",
             },
         ]
-        config = {"dry_run": False, "embedding_batch_size": 10}
+        config = {"dry_run": False, "embedding_batch_size": 10, "fetch_engine": "httpx"}
 
-        def mock_fetch_from_web(urls, fetch_engine):
-            return {
-                url: ("This is test content for embedding", {"fingerprint": "xyz"}) for url in urls
-            }
+        # Mock HTTP response
+        httpx_mock.add_response(
+            url="https://example.com/page1",
+            html="<html><body><p>This is test content for embedding</p></body></html>",
+        )
 
         def mock_generate_embeddings(texts, **kwargs):
             # Return embeddings for each text
             return [[0.5] * 384 for _ in texts]
 
         with (
-            patch(
-                "kurt.workflows.fetch.steps.fetch_from_web",
-                side_effect=mock_fetch_from_web,
-            ),
             patch(
                 "kurt.workflows.fetch.steps.generate_embeddings",
                 side_effect=mock_generate_embeddings,
@@ -849,7 +842,7 @@ class TestCMSFetchE2E:
             assert doc.status == FetchStatus.ERROR
             assert "missing" in doc.error.lower() or "platform" in doc.error.lower()
 
-    def test_fetch_mixed_sources(self, tmp_kurt_project: Path):
+    def test_fetch_mixed_sources(self, tmp_kurt_project: Path, httpx_mock):
         """Test fetching a mix of URL, file, and CMS sources in one workflow."""
         # Create a test file
         test_file = tmp_kurt_project / "sources" / "mixed_test.md"
@@ -877,10 +870,13 @@ class TestCMSFetchE2E:
                 },
             },
         ]
-        config = {"dry_run": False}
+        config = {"dry_run": False, "fetch_engine": "httpx"}
 
-        def mock_fetch_from_web(urls, fetch_engine):
-            return {url: (f"Web content from {url}", {"fingerprint": "web123"}) for url in urls}
+        # Mock HTTP response for web URL
+        httpx_mock.add_response(
+            url="https://example.com/page",
+            html="<html><body><p>Web content from example.com</p></body></html>",
+        )
 
         def mock_fetch_from_cms(platform, instance, cms_document_id, discovery_url=None):
             return "CMS content", {"fingerprint": "cms123"}, "https://notion.so/mixed"
@@ -889,10 +885,6 @@ class TestCMSFetchE2E:
             return [[0.1] for _ in texts]
 
         with (
-            patch(
-                "kurt.workflows.fetch.steps.fetch_from_web",
-                side_effect=mock_fetch_from_web,
-            ),
             patch(
                 "kurt.workflows.fetch.steps.fetch_from_cms",
                 side_effect=mock_fetch_from_cms,
@@ -918,3 +910,68 @@ class TestCMSFetchE2E:
             assert file_doc.status == FetchStatus.SUCCESS
             assert cms_doc.status == FetchStatus.SUCCESS
             assert cms_doc.public_url == "https://notion.so/mixed"
+
+
+class TestPersistFetchDocumentsE2E:
+    """E2E tests for persist_fetch_documents with source_url filtering."""
+
+    def test_persist_with_source_url_field(self, tmp_kurt_project: Path):
+        """Test that source_url field is filtered out when persisting FetchDocument.
+
+        This is a critical test - source_url is added to rows for URL-based path
+        generation but should not be persisted to the FetchDocument table.
+        """
+        from kurt.workflows.fetch.steps import persist_fetch_documents
+
+        rows = [
+            {
+                "document_id": "persist-test-1",
+                "source_url": "https://example.com/page",  # NOT in FetchDocument model
+                "status": FetchStatus.SUCCESS,
+                "content_length": 100,
+                "content_hash": "abc123",
+                "content_path": "example.com/page.md",
+                "fetch_engine": "trafilatura",
+            }
+        ]
+
+        # This should not raise - source_url filtered out before creating FetchDocument
+        result = persist_fetch_documents(rows)
+        assert result["rows_written"] == 1
+
+        # Verify document was persisted correctly
+        with managed_session() as session:
+            doc = session.get(FetchDocument, "persist-test-1")
+            assert doc is not None
+            assert doc.status == FetchStatus.SUCCESS
+            assert doc.content_path == "example.com/page.md"
+
+    def test_persist_with_content_field(self, tmp_kurt_project: Path):
+        """Test that content field is filtered out when persisting FetchDocument.
+
+        Content should be saved to file, not stored in the database.
+        """
+        from kurt.workflows.fetch.steps import persist_fetch_documents
+
+        rows = [
+            {
+                "document_id": "persist-test-2",
+                "content": "# Markdown content",  # NOT in FetchDocument model
+                "status": FetchStatus.SUCCESS,
+                "content_length": 18,
+                "content_hash": "def456",
+                "content_path": "ab/cd/persist-test-2.md",
+                "fetch_engine": "tavily",
+            }
+        ]
+
+        # This should not raise - content filtered out before creating FetchDocument
+        result = persist_fetch_documents(rows)
+        assert result["rows_written"] == 1
+
+        # Verify document was persisted correctly
+        with managed_session() as session:
+            doc = session.get(FetchDocument, "persist-test-2")
+            assert doc is not None
+            assert doc.status == FetchStatus.SUCCESS
+            assert doc.content_length == 18

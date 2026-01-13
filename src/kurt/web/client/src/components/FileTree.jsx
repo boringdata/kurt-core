@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react'
+import React, { useEffect, useState, useRef, useCallback } from 'react'
 
 const apiBase = import.meta.env.VITE_API_URL || ''
 const apiUrl = (path) => `${apiBase}${path}`
@@ -33,6 +33,12 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
   const renameInputRef = useRef(null)
   const newFileInputRef = useRef(null)
 
+  // Use ref to track expandedDirs for polling (avoids stale closure)
+  const expandedDirsRef = useRef(expandedDirs)
+  useEffect(() => {
+    expandedDirsRef.current = expandedDirs
+  }, [expandedDirs])
+
   const fetchDir = (dirPath) => {
     return fetch(apiUrl(`/api/tree?path=${encodeURIComponent(dirPath)}`))
       .then((r) => r.json())
@@ -51,20 +57,24 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
       .catch(() => {})
   }
 
-  const refreshTree = async () => {
+  const refreshTree = useCallback(async () => {
     const root = await fetchDir('.')
     setEntries(root)
-    // Refresh expanded dirs
-    const newExpanded = {}
-    for (const path of Object.keys(expandedDirs)) {
-      const children = await fetchDir(path)
-      if (children.length > 0) {
-        newExpanded[path] = children
-      }
+    // Refresh expanded dirs in parallel, updating in-place
+    // Use ref to get current expanded dirs (avoids stale closure in setInterval)
+    const paths = Object.keys(expandedDirsRef.current)
+    if (paths.length > 0) {
+      const results = await Promise.all(paths.map(fetchDir))
+      setExpandedDirs((prev) => {
+        const updated = { ...prev }
+        paths.forEach((path, i) => {
+          updated[path] = results[i]
+        })
+        return updated
+      })
     }
-    setExpandedDirs(newExpanded)
     fetchGitStatus()
-  }
+  }, [])
 
   // Fetch Kurt config for section organization
   const fetchConfig = () => {
@@ -123,9 +133,7 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
     // Poll for git status changes
     const gitInterval = setInterval(fetchGitStatus, 5000)
     // Poll for file tree changes (new/deleted files)
-    const treeInterval = setInterval(() => {
-      fetchDir('.').then(setEntries)
-    }, 3000)
+    const treeInterval = setInterval(refreshTree, 3000)
 
     return () => {
       clearInterval(gitInterval)

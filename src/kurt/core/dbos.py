@@ -39,6 +39,7 @@ def init_dbos() -> None:
         database_url=db_url,
         log_level="ERROR",
         run_admin_server=False,
+        dbos_system_schema="dbos",  # Isolate DBOS tables in their own schema
     )
 
     try:

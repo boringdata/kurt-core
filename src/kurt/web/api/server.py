@@ -1009,6 +1009,9 @@ def api_list_workflows(
                 wf_type = events.get("workflow_type")
                 if wf_type:
                     workflow["workflow_type"] = wf_type
+                parent_step_name = events.get("parent_step_name")
+                if parent_step_name:
+                    workflow["parent_step_name"] = parent_step_name
                 # Agent workflow specific fields
                 if wf_type == "agent":
                     workflow["definition_name"] = events.get("definition_name")

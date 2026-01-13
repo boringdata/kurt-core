@@ -23,7 +23,7 @@ class MapDocument(TimestampMixin, TenantMixin, SQLModel, table=True):
     __tablename__ = "map_documents"
 
     document_id: str = Field(primary_key=True)
-    source_url: str = Field(default="")
+    source_url: str = Field(default="", unique=True)
     source_type: str = Field(default="url")
     discovery_method: str = Field(default="")
     discovery_url: Optional[str] = Field(default=None)

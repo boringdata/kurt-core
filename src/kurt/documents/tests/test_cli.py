@@ -211,3 +211,118 @@ class TestE2EWithDocs:
         )
         assert_cli_success(result)
         assert "Would delete" in result.output or "dry run" in result.output.lower()
+
+    def test_get_partial_id_match(self, cli_runner: CliRunner, tmp_project_with_docs):
+        """Test get command finds document by partial ID."""
+        # doc-1 exists in tmp_project_with_docs
+        result = invoke_cli(cli_runner, content_group, ["get", "doc-1", "--format", "json"])
+        assert_cli_success(result)
+        data = assert_json_output(result)
+        assert data.get("document_id") == "doc-1"
+
+        # Test partial ID (just "oc-1" should still match "doc-1")
+        result = invoke_cli(cli_runner, content_group, ["get", "oc-1", "--format", "json"])
+        assert_cli_success(result)
+        data = assert_json_output(result)
+        assert "doc-1" in data.get("document_id", "")
+
+    def test_get_by_url(self, cli_runner: CliRunner, tmp_project_with_docs):
+        """Test get command finds document by URL."""
+        # doc-1 has source_url https://example.com/docs/intro
+        result = invoke_cli(
+            cli_runner,
+            content_group,
+            ["get", "https://example.com/docs/intro", "--format", "json"],
+        )
+        assert_cli_success(result)
+        data = assert_json_output(result)
+        assert data.get("source_url") == "https://example.com/docs/intro"
+
+
+class TestResolveDocumentsUrlAutoCreate:
+    """Tests for resolve_documents URL auto-creation."""
+
+    def test_resolve_url_identifier_creates_document(self, tmp_database):
+        """Test that passing a URL as identifier auto-creates MapDocument."""
+        from kurt.db import managed_session
+        from kurt.documents import resolve_documents
+        from kurt.workflows.map.models import MapDocument
+
+        test_url = "https://example.com/test-auto-create"
+
+        # Before: document doesn't exist
+        with managed_session() as session:
+            existing = session.query(MapDocument).filter(MapDocument.source_url == test_url).first()
+            assert existing is None
+
+        # Call resolve_documents with URL as identifier
+        docs = resolve_documents(identifier=test_url)
+
+        # After: document was auto-created and returned
+        assert len(docs) == 1
+        assert docs[0]["source_url"] == test_url
+
+        # Verify it was persisted
+        with managed_session() as session:
+            created = session.query(MapDocument).filter(MapDocument.source_url == test_url).first()
+            assert created is not None
+            assert created.source_type == "url"
+            assert created.discovery_method == "cli"
+
+    def test_resolve_url_identifier_uses_existing_document(self, tmp_project_with_docs):
+        """Test that passing a URL that already exists returns existing document."""
+        from kurt.documents import resolve_documents
+
+        # doc-1 has source_url https://example.com/docs/intro
+        existing_url = "https://example.com/docs/intro"
+
+        docs = resolve_documents(identifier=existing_url)
+
+        assert len(docs) == 1
+        assert docs[0]["document_id"] == "doc-1"  # Uses existing ID, not hash
+
+    def test_resolve_non_url_identifier_uses_id_filter(self, tmp_project_with_docs):
+        """Test that non-URL identifier is treated as document ID."""
+        from kurt.documents import resolve_documents
+
+        docs = resolve_documents(identifier="doc-1")
+
+        assert len(docs) == 1
+        assert docs[0]["document_id"] == "doc-1"
+
+
+class TestSourceUrlUniqueConstraint:
+    """Tests for source_url unique constraint on map_documents."""
+
+    def test_unique_constraint_prevents_duplicates(self, tmp_database):
+        """Test that new documents with duplicate URLs are rejected."""
+        import pytest
+        from sqlalchemy.exc import IntegrityError
+
+        from kurt.db import managed_session
+        from kurt.workflows.map.models import MapDocument, MapStatus
+
+        test_url = "https://example.com/unique-test"
+
+        # First insert should succeed
+        with managed_session() as session:
+            doc1 = MapDocument(
+                document_id="unique-doc-1",
+                source_url=test_url,
+                source_type="url",
+                status=MapStatus.SUCCESS,
+            )
+            session.add(doc1)
+            session.commit()
+
+        # Second insert with same URL should fail
+        with pytest.raises(IntegrityError):
+            with managed_session() as session:
+                doc2 = MapDocument(
+                    document_id="unique-doc-2",
+                    source_url=test_url,
+                    source_type="url",
+                    status=MapStatus.SUCCESS,
+                )
+                session.add(doc2)
+                session.commit()

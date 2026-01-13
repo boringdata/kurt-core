@@ -1,0 +1,34 @@
+# User Journey: Write content from gathered sources
+# Tests if agent reads plan.md and updates it after writing
+
+name: write_from_sources
+description: User asks to write content using gathered sources
+
+project: motherduck
+
+setup_commands:
+  - mkdir -p projects/test-article
+  - |
+    cat > projects/test-article/plan.md << 'EOF'
+    # Test Article Project
+
+    ## Sources of Ground Truth
+    - path: sources/motherduck/key-concepts.md, purpose: "Core concepts"
+
+    ## Documents
+    - Blog post about hybrid execution (Status: not started)
+    EOF
+
+initial_prompt: |
+  Write the blog post about hybrid execution based on the sources in the project plan at projects/test-article/plan.md.
+
+assertions:
+  # Should read plan.md first
+  - type: ConversationContains
+    text: "plan.md"
+    case_sensitive: false
+
+  # Should update plan after writing
+  - type: FileContains
+    path: projects/test-article/plan.md
+    content: "draft"

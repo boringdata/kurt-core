@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from dbos import DBOS
 
+from kurt.core import log_item, step_log
 from kurt.db import managed_session
 from kurt.integrations.domains_analytics import sync_domain_metrics
 from kurt.integrations.domains_analytics.utils import normalize_url_for_analytics
@@ -107,6 +108,7 @@ def domain_analytics_sync_step(config_dict: dict[str, Any]) -> dict[str, Any]:
     )
 
     if not metrics_map:
+        step_log("No analytics data found", step_name="domain_analytics_sync")
         return {
             "domain": config.domain,
             "platform": config.platform,
@@ -124,6 +126,10 @@ def domain_analytics_sync_step(config_dict: dict[str, Any]) -> dict[str, Any]:
 
     # Stream progress
     total = len(rows)
+    step_log(
+        f"Synced {total} URL(s) from {config.platform}",
+        step_name="domain_analytics_sync",
+    )
     DBOS.set_event("stage_total", total)
     for idx, row in enumerate(rows):
         DBOS.set_event("stage_current", idx + 1)
@@ -133,10 +139,18 @@ def domain_analytics_sync_step(config_dict: dict[str, Any]) -> dict[str, Any]:
                 "step": "domain_analytics_sync",
                 "idx": idx,
                 "total": total,
+                "status": "success",
                 "url": row["url"],
                 "pageviews": row["pageviews_60d"],
                 "timestamp": time.time(),
             },
+        )
+        log_item(
+            str(row.get("id", "")),
+            status="success",
+            message=row.get("url") or "",
+            counter=(idx + 1, total),
+            step_name="domain_analytics_sync",
         )
 
     return {

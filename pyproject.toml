@@ -33,6 +33,7 @@ dependencies = [
     "google-auth-oauthlib>=1.2.2",
     "python-frontmatter>=1.0.0",
     "croniter>=2.0.0",
+    "psycopg2-binary>=2.9.11",
 ]
 
 [project.optional-dependencies]

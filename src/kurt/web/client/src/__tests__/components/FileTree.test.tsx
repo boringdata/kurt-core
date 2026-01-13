@@ -714,5 +714,146 @@ describe('FileTree', () => {
 
       clearIntervalSpy.mockRestore()
     })
+
+    it('refreshes expanded directories during polling', async () => {
+      // Track fetch calls to verify expanded dirs are refreshed
+      const fetchCalls: string[] = []
+
+      // Initial state: src has index.js
+      const initialSrcDir = [
+        { name: 'index.js', path: 'src/index.js', is_dir: false },
+      ]
+      // After polling: src has index.js AND new-file.js
+      const updatedSrcDir = [
+        { name: 'index.js', path: 'src/index.js', is_dir: false },
+        { name: 'new-file.js', path: 'src/new-file.js', is_dir: false },
+      ]
+
+      let srcCallCount = 0
+      setupApiMocks({
+        '/api/tree': (url: string) => {
+          fetchCalls.push(url)
+          const match = url.match(/path=([^&]+)/)
+          const path = match ? decodeURIComponent(match[1]) : '.'
+          if (path === 'src') {
+            srcCallCount++
+            // Return updated content on subsequent calls (simulating file creation)
+            return { entries: srcCallCount > 1 ? updatedSrcDir : initialSrcDir }
+          }
+          if (path === '.') return { entries: fileTree.root }
+          return { entries: [] }
+        },
+        '/api/git/status': { available: true, files: {} },
+        // Return config without paths so it uses flat rendering (not sectioned)
+        '/api/config': { available: false },
+      })
+
+      render(<FileTree {...defaultProps} />)
+
+      // Wait for initial render - in flat mode, files appear at root
+      await waitFor(() => {
+        expect(screen.getByText('README.md')).toBeInTheDocument()
+      })
+
+      // Wait a bit more for the full tree to load
+      await new Promise(r => setTimeout(r, 100))
+
+      // Find and expand the src directory
+      const srcElement = screen.getByText('src')
+      expect(srcElement).toBeInTheDocument()
+      fireEvent.click(srcElement)
+
+      await waitFor(() => {
+        expect(screen.getByText('index.js')).toBeInTheDocument()
+      })
+
+      // Verify initial content - new file not yet present
+      expect(screen.queryByText('new-file.js')).not.toBeInTheDocument()
+
+      // Wait for polling to trigger (3 second interval + some buffer)
+      // The refreshTree function will fetch expanded dirs and update with new content
+      await waitFor(
+        () => {
+          expect(screen.getByText('new-file.js')).toBeInTheDocument()
+        },
+        { timeout: 5000 }
+      )
+
+      // Verify that src directory was fetched multiple times (initial expand + polling refresh)
+      const srcFetchCalls = fetchCalls.filter(url => url.includes('path=src'))
+      expect(srcFetchCalls.length).toBeGreaterThan(1)
+    })
+
+    it('reflects moved files in UI after polling', async () => {
+      // Simulates: user moves README.md from root to docs/ folder
+      // After polling, README.md should disappear from root and appear in docs/
+
+      // Track state changes
+      let pollCount = 0
+
+      // Initial root has README.md, after move it doesn't
+      const initialRoot = [
+        { name: 'README.md', path: 'README.md', is_dir: false },
+        { name: 'docs', path: 'docs', is_dir: true },
+      ]
+      const rootAfterMove = [
+        { name: 'docs', path: 'docs', is_dir: true },
+      ]
+
+      // docs/ folder initially empty, after move has README.md
+      const initialDocs = []
+      const docsAfterMove = [
+        { name: 'README.md', path: 'docs/README.md', is_dir: false },
+      ]
+
+      setupApiMocks({
+        '/api/tree': (url: string) => {
+          const match = url.match(/path=([^&]+)/)
+          const path = match ? decodeURIComponent(match[1]) : '.'
+          if (path === '.') {
+            pollCount++
+            // After first poll (initial + expand docs + first refresh), return moved state
+            return { entries: pollCount > 2 ? rootAfterMove : initialRoot }
+          }
+          if (path === 'docs') {
+            return { entries: pollCount > 2 ? docsAfterMove : initialDocs }
+          }
+          return { entries: [] }
+        },
+        '/api/git/status': { available: true, files: {} },
+        '/api/config': { available: false },
+      })
+
+      render(<FileTree {...defaultProps} />)
+
+      // Wait for initial render
+      await waitFor(() => {
+        expect(screen.getByText('README.md')).toBeInTheDocument()
+      })
+
+      // Expand docs folder
+      fireEvent.click(screen.getByText('docs'))
+
+      await waitFor(() => {
+        // docs is expanded (shows open folder icon)
+        expect(screen.getByText('📂')).toBeInTheDocument()
+      })
+
+      // Initially README.md is in root, not in docs
+      expect(screen.getByText('README.md')).toBeInTheDocument()
+
+      // Wait for polling to detect the move (3 second interval + buffer)
+      await waitFor(
+        () => {
+          // README.md should now be inside docs folder (still visible since docs is expanded)
+          // But it should NOT be at root level anymore
+          const readmeElements = screen.getAllByText('README.md')
+          // Should only find one README.md now (in docs folder)
+          expect(readmeElements.length).toBe(1)
+          // The one README should be inside the docs tree (has docs/README.md path)
+        },
+        { timeout: 5000 }
+      )
+    })
   })
 })

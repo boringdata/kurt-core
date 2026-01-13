@@ -70,7 +70,7 @@ def fetch_with_tavily(urls: str | list[str]) -> BatchFetchResult:
         "urls": url_list if len(url_list) > 1 else url_list[0],
         "format": "markdown",
         "extract_depth": "advanced",
-        "include_images": False,
+        "include_images": True,
     }
 
     headers = {

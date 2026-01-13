@@ -25,6 +25,15 @@ from rich.text import Text
 # Thread-local storage for display enabled flag
 _display_context = threading.local()
 
+# Display mode: "rich" for TTY, "plain" for log files/pipes
+_display_mode = "rich"
+
+# Max log lines to show in the live log window
+LOG_WINDOW_LINES = 10
+
+# Keep the Rich live display on screen after completion
+PERSIST_LIVE_DISPLAY = True
+
 # Shared console instance for consistent output
 _console = Console()
 
@@ -37,6 +46,19 @@ def is_display_enabled() -> bool:
 def set_display_enabled(enabled: bool) -> None:
     """Set display enabled flag for current context."""
     _display_context.enabled = enabled
+
+
+def get_display_mode() -> str:
+    """Get current display mode ("rich" or "plain")."""
+    return _display_mode
+
+
+def set_display_mode(mode: str) -> None:
+    """Set display mode ("rich" or "plain")."""
+    if mode not in ("rich", "plain"):
+        raise ValueError("display mode must be 'rich' or 'plain'")
+    global _display_mode
+    _display_mode = mode
 
 
 def _format_duration(seconds: float) -> str:
@@ -58,9 +80,17 @@ def _get_timestamp() -> str:
     return datetime.now().strftime("%H:%M:%S")
 
 
+def _get_plain_timestamp() -> str:
+    """Get current UTC timestamp in ISO format for plain logs."""
+    return datetime.utcnow().isoformat(timespec="seconds") + "Z"
+
+
 def print_warning(message: str) -> None:
     """Print a warning message with yellow styling."""
     if not is_display_enabled():
+        return
+    if get_display_mode() == "plain":
+        print(f"{_get_plain_timestamp()} [WARN] {message}")
         return
     text = Text()
     text.append("⚠ ", style="bold yellow")
@@ -71,6 +101,9 @@ def print_warning(message: str) -> None:
 def print_info(message: str) -> None:
     """Print an info message."""
     if not is_display_enabled():
+        return
+    if get_display_mode() == "plain":
+        print(f"{_get_plain_timestamp()} [INFO] {message}")
         return
     text = Text()
     text.append(message, style="dim")
@@ -102,17 +135,12 @@ class ConcurrentProgressManager:
 
         self.console = Console()
         self._trackers: dict[str, dict[str, Any]] = {}
-        self._log_buffer: deque = deque(maxlen=5)
+        self._log_buffer: deque = deque(maxlen=LOG_WINDOW_LINES)
         self._live: Live | None = None
         self._started = False
 
         # Shared progress display for all trackers
-        self._progress = Progress(
-            TextColumn("  {task.description}"),
-            BarColumn(bar_width=30),
-            MofNCompleteColumn(),
-            console=self.console,
-        )
+        self._progress = self._create_progress()
 
         self._initialized = True
 
@@ -125,14 +153,26 @@ class ConcurrentProgressManager:
 
         return Group(*parts)
 
+    def _create_progress(self) -> Progress:
+        """Create a fresh progress instance."""
+        return Progress(
+            TextColumn("  {task.description}"),
+            BarColumn(bar_width=30),
+            MofNCompleteColumn(),
+            console=self.console,
+        )
+
     def _ensure_live_started(self):
         """Start the shared live display if not already started."""
         if not self._started:
+            # Reset per-run state
+            self._progress = self._create_progress()
+            self._log_buffer.clear()
             self._live = Live(
                 self._render(),
                 console=self.console,
                 refresh_per_second=4,
-                transient=True,
+                transient=not PERSIST_LIVE_DISPLAY,
             )
             self._live.start()
             self._started = True
@@ -206,7 +246,7 @@ class ConcurrentProgressManager:
         with self._lock:
             if tracker_id in self._trackers:
                 task_id = self._trackers[tracker_id]["task_id"]
-                if task_id is not None:
+                if task_id is not None and not PERSIST_LIVE_DISPLAY:
                     self._progress.update(task_id, visible=False)
                 del self._trackers[tracker_id]
 
@@ -361,3 +401,94 @@ class StepDisplay:
 
     def __exit__(self, *args):
         self.stop()
+
+
+class PlainStepDisplay:
+    """Plain console output for non-TTY (log files, pipes)."""
+
+    def __init__(
+        self,
+        step_name: str,
+        *,
+        total: int = 0,
+        description: str = "",
+        max_log_lines: int = 5,
+    ):
+        self._step_name = step_name
+        self._total = total
+        self._description = description
+        self._max_log_lines = max_log_lines
+        self._start_time: float = 0
+        self._started = False
+
+    def _log_line(self, message: str, level: str = "INFO") -> None:
+        ts = _get_plain_timestamp()
+        step = self._step_name or "-"
+        print(f"{ts} [{level}] [{step}] {message}")
+
+    def start(self) -> None:
+        if self._started or not is_display_enabled():
+            return
+        self._start_time = time.time()
+        total_str = f" total={self._total}" if self._total else ""
+        self._log_line(f"start{total_str}", level="START")
+        self._started = True
+
+    def update(self, completed: int) -> None:
+        if not self._started:
+            return
+
+    def log(self, message: str, style: str = "dim") -> None:
+        if not self._started:
+            return
+        self._log_line(message, level="INFO")
+
+    def log_success(
+        self,
+        item_id: str,
+        *,
+        title: str = "",
+        elapsed: float = 0,
+        counter: tuple[int, int] | None = None,
+    ) -> None:
+        short_id = item_id[:8] if len(item_id) > 8 else item_id
+        counter_prefix = f"{counter[0]}/{counter[1]} " if counter else ""
+        time_suffix = f" ({elapsed:.1f}s)" if elapsed >= 0.1 else ""
+        message = f"{counter_prefix}OK [{short_id}] {title}{time_suffix}".strip()
+        self._log_line(message, level="INFO")
+
+    def log_skip(
+        self,
+        item_id: str,
+        *,
+        reason: str = "unchanged",
+        title: str = "",
+        counter: tuple[int, int] | None = None,
+    ) -> None:
+        short_id = item_id[:8] if len(item_id) > 8 else item_id
+        counter_prefix = f"{counter[0]}/{counter[1]} " if counter else ""
+        reason_str = title or reason
+        message = f"{counter_prefix}SKIP [{short_id}] {reason_str}".strip()
+        self._log_line(message, level="INFO")
+
+    def log_error(
+        self,
+        item_id: str,
+        *,
+        error: str,
+        counter: tuple[int, int] | None = None,
+    ) -> None:
+        short_id = item_id[:8] if len(item_id) > 8 else item_id
+        counter_prefix = f"{counter[0]}/{counter[1]} " if counter else ""
+        message = f"{counter_prefix}ERR [{short_id}] {error}".strip()
+        self._log_line(message, level="ERROR")
+
+    def log_info(self, message: str) -> None:
+        self.log(message)
+
+    def stop(self) -> None:
+        if not self._started:
+            return
+        elapsed = time.time() - self._start_time
+        self._log_line(f"done duration={_format_duration(elapsed)}", level="END")
+        self._started = False

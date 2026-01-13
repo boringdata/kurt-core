@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 from .hooks import StepHooks
 
 if TYPE_CHECKING:
-    from .display import StepDisplay
+    from .display import PlainStepDisplay, StepDisplay
 
 try:
     from dbos import DBOS
@@ -36,11 +36,45 @@ def _safe_write_stream(key: str, payload: dict[str, Any]) -> None:
         return
 
 
+def _format_item_log(
+    item_id: str,
+    *,
+    status: str,
+    message: str,
+    elapsed: float,
+    counter: tuple[int, int] | None,
+) -> tuple[str, str]:
+    message = str(message or "")
+    short_id = item_id[:8] if len(item_id) > 8 else item_id
+    counter_prefix = f"{counter[0]}/{counter[1]} " if counter else ""
+
+    if status == "success":
+        short_title = (message[:47] + "...") if len(message) > 50 else message
+        time_suffix = f" ({elapsed:.1f}s)" if elapsed >= 0.1 else ""
+        if short_title:
+            return f"{counter_prefix}✓ [{short_id}] {short_title}{time_suffix}", "info"
+        return f"{counter_prefix}✓ {short_id}{time_suffix}", "info"
+
+    if status == "skip":
+        short_reason = (message[:47] + "...") if len(message) > 50 else message
+        if short_reason:
+            return f"{counter_prefix}○ [{short_id}] {short_reason} (skipped)", "info"
+        return f"{counter_prefix}○ {short_id} (skipped)", "info"
+
+    if status == "error":
+        short_error = (message[:60] + "...") if len(message) > 60 else message
+        if short_error:
+            return f"{counter_prefix}✗ [{short_id}] {short_error}", "error"
+        return f"{counter_prefix}✗ [{short_id}] error", "error"
+
+    return f"{counter_prefix}{short_id} {message}".strip(), "info"
+
+
 @dataclass
 class WorkflowTracker:
     """DBOS-based tracking with optional console display."""
 
-    _display: StepDisplay | None = field(default=None, init=False, repr=False)
+    _display: StepDisplay | PlainStepDisplay | None = field(default=None, init=False, repr=False)
     _current_step: str | None = field(default=None, init=False, repr=False)
 
     def start_step(
@@ -68,16 +102,25 @@ class WorkflowTracker:
 
         # Console display if enabled
         self._current_step = step_name
-        from .display import StepDisplay, is_display_enabled
+        from .display import PlainStepDisplay, StepDisplay, get_display_mode, is_display_enabled
 
         if is_display_enabled():
-            self._display = StepDisplay(step_name, total=total)
+            if get_display_mode() == "plain":
+                self._display = PlainStepDisplay(step_name, total=total)
+            else:
+                self._display = StepDisplay(step_name, total=total)
             self._display.start()
 
-    def update_progress(self, current: int, *, step_name: str | None = None) -> None:
+    def update_progress(
+        self,
+        current: int,
+        *,
+        step_name: str | None = None,
+        emit_stream: bool = True,
+    ) -> None:
         # DBOS tracking
         _safe_set_event("stage_current", current)
-        if step_name:
+        if step_name and emit_stream:
             _safe_write_stream(
                 "progress",
                 {
@@ -100,8 +143,32 @@ class WorkflowTracker:
         message: str = "",
         elapsed: float = 0,
         counter: tuple[int, int] | None = None,
+        step_name: str | None = None,
     ) -> None:
         """Log individual item progress (for batch operations)."""
+        log_step = step_name or self._current_step
+        log_message, level = _format_item_log(
+            item_id,
+            status=status,
+            message=message,
+            elapsed=elapsed,
+            counter=counter,
+        )
+
+        _safe_write_stream(
+            "logs",
+            {
+                "step": log_step,
+                "level": level,
+                "message": log_message,
+                "metadata": {
+                    "item_id": item_id,
+                    "status": status,
+                },
+                "timestamp": time.time(),
+            },
+        )
+
         if self._display:
             if status == "success":
                 self._display.log_success(item_id, title=message, elapsed=elapsed, counter=counter)
@@ -129,6 +196,9 @@ class WorkflowTracker:
 
         # Console display
         if self._display:
+            total = getattr(self._display, "_total", 0)
+            if isinstance(total, int) and total > 0:
+                self._display.update(total)
             self._display.stop()
             self._display = None
         self._current_step = None
@@ -294,14 +364,149 @@ def track_step(
         tracker.end_step(name, status=status, error=error)
 
 
+class QueueStepTracker:
+    """Tracker for steps that process items via queue with progress updates.
+
+    Use this for steps that process items one-by-one (e.g., fetch URLs via queue).
+    Emits per-item progress events with idx for accurate progress tracking.
+
+    Usage:
+        tracker = QueueStepTracker("fetch_documents", total=len(docs))
+        tracker.start("Fetching documents")
+
+        for idx, item in enumerate(items):
+            if success:
+                tracker.item_success(idx, item_id, metadata={"chars": 1234})
+            else:
+                tracker.item_error(idx, item_id, error="Connection failed")
+
+        tracker.end()  # Logs completion summary automatically
+    """
+
+    def __init__(self, step_name: str, total: int = 0):
+        self.step_name = step_name
+        self.total = total
+        self._success_count = 0
+        self._error_count = 0
+        self._tracker = WorkflowTracker()
+
+    def start(self, message: str | None = None) -> None:
+        """Start the step with optional log message."""
+        self._tracker.start_step(self.step_name, step_type="queue", total=self.total)
+        if message:
+            self._tracker.log(message, step_name=self.step_name)
+
+    def item_success(
+        self,
+        idx: int,
+        item_id: str,
+        *,
+        metadata: dict | None = None,
+    ) -> None:
+        """Record successful processing of an item."""
+        self._success_count += 1
+        payload: dict[str, Any] = {
+            "step": self.step_name,
+            "idx": idx,
+            "total": self.total,
+            "status": "success",
+            "document_id": item_id,
+            "timestamp": time.time(),
+        }
+        if metadata:
+            payload.update(metadata)
+        _safe_write_stream("progress", payload)
+        message = ""
+        if metadata and "content_length" in metadata:
+            message = f"{metadata['content_length']} chars"
+        self._tracker.log_item(
+            item_id,
+            status="success",
+            message=message,
+            counter=(idx + 1, self.total) if self.total else None,
+            step_name=self.step_name,
+        )
+        self._tracker.update_progress(idx + 1, step_name=self.step_name, emit_stream=False)
+
+    def item_error(
+        self,
+        idx: int,
+        item_id: str,
+        *,
+        error: str,
+    ) -> None:
+        """Record failed processing of an item."""
+        self._error_count += 1
+        _safe_write_stream(
+            "progress",
+            {
+                "step": self.step_name,
+                "idx": idx,
+                "total": self.total,
+                "status": "error",
+                "document_id": item_id,
+                "error": error,
+                "timestamp": time.time(),
+            },
+        )
+        self._tracker.log_item(
+            item_id,
+            status="error",
+            message=error,
+            counter=(idx + 1, self.total) if self.total else None,
+            step_name=self.step_name,
+        )
+        self._tracker.update_progress(idx + 1, step_name=self.step_name, emit_stream=False)
+
+    def end(self, message: str | None = None) -> None:
+        """End the step with completion summary."""
+        if message is None:
+            message = f"Complete: {self._success_count} ok, {self._error_count} failed"
+        self._tracker.log(message, step_name=self.step_name)
+        status = "error" if self._error_count > 0 and self._success_count == 0 else "success"
+        self._tracker.end_step(self.step_name, status=status)
+
+
+@contextmanager
+def track_batch_step(name: str, *, message: str | None = None, total: int = 0):
+    """Context manager for simple batch steps (no per-item progress).
+
+    Use this for steps that process all items at once (e.g., save_content, embeddings).
+    Does NOT emit per-item progress - just start/done status.
+
+    Usage:
+        with track_batch_step("save_content", message="Saving 10 documents", total=10):
+            save_all_documents(docs)
+        # Automatically logs completion
+
+    For steps that process items one-by-one with progress, use QueueStepTracker instead.
+    """
+    tracker = WorkflowTracker()
+    tracker.start_step(name, step_type="batch", total=total)
+    if message:
+        tracker.log(message, step_name=name)
+
+    error: str | None = None
+    try:
+        yield
+    except Exception as exc:
+        error = str(exc)
+        tracker.log(f"Error: {error}", level="error", step_name=name)
+        raise
+    finally:
+        status = "error" if error else "success"
+        tracker.end_step(name, status=status, error=error)
+
+
 def update_step_progress(
     current: int,
     *,
     tracker: WorkflowTracker | None = None,
     step_name: str | None = None,
+    emit_stream: bool = True,
 ):
     tracker = tracker or WorkflowTracker()
-    tracker.update_progress(current, step_name=step_name)
+    tracker.update_progress(current, step_name=step_name, emit_stream=emit_stream)
 
 
 def step_log(
@@ -323,6 +528,7 @@ def log_item(
     message: str = "",
     elapsed: float = 0,
     counter: tuple[int, int] | None = None,
+    step_name: str | None = None,
     tracker: WorkflowTracker | None = None,
 ):
     """Log individual item progress (for batch operations).
@@ -336,4 +542,11 @@ def log_item(
         tracker: WorkflowTracker instance (creates new one if None)
     """
     tracker = tracker or WorkflowTracker()
-    tracker.log_item(item_id, status=status, message=message, elapsed=elapsed, counter=counter)
+    tracker.log_item(
+        item_id,
+        status=status,
+        message=message,
+        elapsed=elapsed,
+        counter=counter,
+        step_name=step_name,
+    )

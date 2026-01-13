@@ -80,7 +80,9 @@ def _list_engines(output_format: str) -> None:
 
 @click.command("fetch")
 @click.argument("identifier", required=False)
-@add_filter_options(advanced=True, exclude=True)
+@add_filter_options(
+    exclude=True, file_ext=True, source_type=True, has_content=True, min_content_length=True
+)
 @click.option("--url", "single_url", help="Single URL to fetch (auto-creates if doesn't exist)")
 @click.option("--urls", help="Comma-separated list of URLs (auto-creates if don't exist)")
 @click.option("--file", "single_file", help="Single local file path to fetch")
@@ -105,18 +107,17 @@ def _list_engines(output_format: str) -> None:
 def fetch_cmd(
     identifier: str | None,
     include_pattern: str | None,
+    url_contains: str | None,
     ids: str | None,
     in_cluster: str | None,
     with_status: str | None,
     with_content_type: str | None,
     limit: int | None,
     exclude_pattern: str | None,
-    url_contains: str | None,
     file_ext: str | None,
     source_type: str | None,
     has_content: bool | None,
     min_content_length: int | None,
-    fetch_engine: str | None,
     single_url: str | None,
     urls: str | None,
     single_file: str | None,
@@ -250,17 +251,44 @@ def fetch_cmd(
         limit=limit,
         exclude_pattern=exclude_pattern,
         url_contains=url_contains,
-        file_ext=file_ext,
-        source_type=source_type,
-        has_content=has_content,
-        min_content_length=min_content_length,
-        fetch_engine=fetch_engine,
         # Pass urls/files for filtering if provided
         urls=urls,
         files=files_paths,
     )
 
     if not docs:
+        # Check if documents exist but are already fetched (when using default NOT_FETCHED filter)
+        if effective_status == "NOT_FETCHED" and (urls or identifier):
+            # Re-query without status filter to see if documents exist
+            all_docs = resolve_documents(
+                identifier=identifier,
+                include_pattern=include_pattern,
+                ids=ids if not urls and not files_paths else None,
+                in_cluster=in_cluster,
+                with_status=None,  # No status filter
+                with_content_type=with_content_type,
+                limit=limit,
+                exclude_pattern=exclude_pattern,
+                url_contains=url_contains,
+                urls=urls,
+                files=files_paths,
+            )
+            if all_docs:
+                # Documents exist but are already fetched
+                if output_format == "json":
+                    print_json(
+                        {
+                            "status": "already_fetched",
+                            "message": "Document(s) already fetched. Use --refetch to fetch again.",
+                            "documents": [d["document_id"] for d in all_docs],
+                        }
+                    )
+                else:
+                    console.print(
+                        "[yellow]Document(s) already fetched. Use --refetch to fetch again.[/yellow]"
+                    )
+                return
+
         if output_format == "json":
             print_json(
                 {"status": "no_documents", "message": "No documents found matching criteria"}

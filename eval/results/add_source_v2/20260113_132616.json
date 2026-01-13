@@ -1,0 +1,40 @@
+{
+  "scenario": "add_source_v2",
+  "passed": false,
+  "error": "Conversation does not contain text: kurt content",
+  "metrics": {
+    "usage": {
+      "input_tokens": 2,
+      "output_tokens": 437,
+      "total_tokens": 439
+    },
+    "timing": {
+      "start_time": 1768307089.28034,
+      "end_time": 1768307176.6014779,
+      "duration_seconds": 87.32113790512085
+    },
+    "conversation_turns": 3,
+    "tool_calls": [
+      {
+        "tool": "Bash",
+        "params": {
+          "command": "cd /var/folders/yr/lv_0z6m15fg8llcm02_kw4m80000gn/T/kurt_eval_00zxgmg3 && uv run kurt content map https://docs.motherduck.com/getting-started",
+          "description": "Map MotherDuck docs URL",
+          "timeout": 60000
+        }
+      },
+      {
+        "tool": "Bash",
+        "params": {
+          "command": "cd /var/folders/yr/lv_0z6m15fg8llcm02_kw4m80000gn/T/kurt_eval_00zxgmg3 && uv run kurt content fetch",
+          "description": "Fetch discovered content",
+          "timeout": 120000
+        }
+      }
+    ]
+  },
+  "workspace": {
+    "command_outputs": []
+  },
+  "timestamp": "20260113_132616"
+}

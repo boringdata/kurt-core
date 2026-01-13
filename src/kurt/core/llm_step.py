@@ -95,6 +95,11 @@ class LLMStep:
             start = time.time()
             prompt = ""
             try:
+                try:
+                    DBOS.set_event("parent_step_name", step_instance.name)
+                except Exception:
+                    pass
+
                 if step_instance._prepare_fn:
                     row_dict = step_instance._prepare_fn(row_dict.copy())
 

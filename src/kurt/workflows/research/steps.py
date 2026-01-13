@@ -9,6 +9,7 @@ from typing import Any
 
 from dbos import DBOS
 
+from kurt.core import log_item, step_log
 from kurt.db import managed_session
 from kurt.integrations.research import ResearchResult
 from kurt.integrations.research.config import get_source_config
@@ -57,17 +58,31 @@ def research_search_step(config_dict: dict[str, Any]) -> dict[str, Any]:
     )
 
     # Stream progress
+    step_log(
+        f"Query: {config.query} ({len(result.citations)} citation(s))",
+        step_name="research_search",
+    )
     DBOS.set_event("stage_total", 1)
     DBOS.set_event("stage_current", 1)
     DBOS.write_stream(
         "progress",
         {
             "step": "research_search",
+            "idx": 0,
+            "total": 1,
+            "status": "success",
             "query": config.query,
             "citations_count": len(result.citations),
             "response_time": result.response_time_seconds,
             "timestamp": time.time(),
         },
+    )
+    log_item(
+        result.id,
+        status="success",
+        message=config.query,
+        counter=(1, 1),
+        step_name="research_search",
     )
 
     return {

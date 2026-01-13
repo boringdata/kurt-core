@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -13,6 +14,28 @@ import click
 from rich.console import Console
 
 from kurt.admin.telemetry.decorators import track_command
+
+
+def _is_port_available(host: str, port: int) -> bool:
+    """Check if a port is available for binding."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind((host, port))
+            return True
+        except OSError:
+            return False
+
+
+def _find_available_port(host: str, start_port: int, max_attempts: int = 10) -> int:
+    """Find an available port starting from start_port."""
+    for offset in range(max_attempts):
+        port = start_port + offset
+        if _is_port_available(host, port):
+            return port
+    raise RuntimeError(
+        f"No available port found in range {start_port}-{start_port + max_attempts - 1}"
+    )
+
 
 console = Console()
 
@@ -27,6 +50,7 @@ def _start_process(label: str, cmd: list[str], cwd: Path, env: dict[str, str]):
 @click.option("--port", default=8765, type=int, help="Port for the web server")
 @click.option("--no-browser", is_flag=True, help="Do not open the browser automatically")
 @click.option("--reload", is_flag=True, help="Enable auto-reload (for development)")
+@click.option("--verbose", "-v", is_flag=True, help="Show detailed server logs")
 @click.option(
     "--claude-cmd",
     default="claude",
@@ -43,6 +67,7 @@ def serve(
     port: int,
     no_browser: bool,
     reload: bool,
+    verbose: bool,
     claude_cmd: str,
     codex_cmd: str,
 ):
@@ -67,10 +92,21 @@ def serve(
         console.print("[red]Error: uvicorn not installed.[/red]")
         console.print()
         console.print("The web UI requires the 'web' extra. Install it with:")
-        console.print("  [cyan]uv pip install 'kurt[web]'[/cyan]")
+        console.print("  [cyan]uv pip install 'kurt-core\\[web]'[/cyan]")
         console.print("  or")
-        console.print("  [cyan]pip install 'kurt[web]'[/cyan]")
+        console.print("  [cyan]pip install 'kurt-core\\[web]'[/cyan]")
         raise SystemExit(1)
+
+    # Find an available port
+    original_port = port
+    try:
+        port = _find_available_port(host, port)
+    except RuntimeError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise SystemExit(1)
+
+    if port != original_port:
+        console.print(f"[yellow]Port {original_port} is in use, using {port} instead[/yellow]")
 
     # Check if built frontend exists
     client_dist = Path(__file__).parent.parent / "web" / "client" / "dist"
@@ -102,14 +138,28 @@ def serve(
         host,
         "--port",
         str(port),
+        "--log-level",
+        "info" if verbose else "warning",
     ]
     if reload:
         api_cmd.append("--reload")
 
     console.print(f"[bold]Starting Kurt Web UI on http://{host}:{port}[/bold]")
+    if not verbose:
+        console.print("[dim]Use --verbose for detailed server logs[/dim]")
     console.print()
 
-    process = _start_process("API server", api_cmd, Path.cwd(), env)
+    if verbose:
+        process = _start_process("API server", api_cmd, Path.cwd(), env)
+    else:
+        # Suppress server output in non-verbose mode
+        process = subprocess.Popen(
+            api_cmd,
+            cwd=str(Path.cwd()),
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
     if not no_browser:
         # Wait for server to be ready before opening browser

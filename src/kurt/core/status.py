@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import os
 import pickle
 from datetime import datetime
 from typing import Any
@@ -8,6 +9,35 @@ from typing import Any
 from sqlalchemy import text
 
 from kurt.db import managed_session
+
+
+def _get_dbos_schema() -> str:
+    """Get DBOS schema name (dbos for Postgres, empty for SQLite)."""
+    db_url = os.environ.get("DATABASE_URL", "")
+    if db_url.startswith("postgresql"):
+        return "dbos"
+    return ""  # SQLite doesn't use schemas
+
+
+def _dbos_table(table: str) -> str:
+    """Return schema-qualified table name for DBOS tables."""
+    schema = _get_dbos_schema()
+    if schema:
+        return f"{schema}.{table}"
+    return table
+
+
+def get_dbos_table_names() -> dict[str, str]:
+    """Get schema-qualified DBOS table names.
+
+    Returns dict with keys: workflow_status, workflow_events, streams
+    Values are schema-qualified for Postgres, plain for SQLite.
+    """
+    return {
+        "workflow_status": _dbos_table("workflow_status"),
+        "workflow_events": _dbos_table("workflow_events"),
+        "streams": _dbos_table("streams"),
+    }
 
 
 def _decode_dbos_value(value: Any) -> Any:
@@ -38,9 +68,10 @@ def read_workflow_events(workflow_id: str) -> dict[str, Any]:
     """
     Read DBOS workflow events into a dict.
     """
+    table = _dbos_table("workflow_events")
     with managed_session() as session:
         rows = session.execute(
-            text("SELECT key, value FROM workflow_events WHERE workflow_uuid = :workflow_id"),
+            text(f"SELECT key, value FROM {table} WHERE workflow_uuid = :workflow_id"),
             {"workflow_id": workflow_id},
         ).all()
 
@@ -56,19 +87,21 @@ def read_workflow_streams(
     key: str | None = None,
     since_offset: int | None = None,
     limit: int | None = None,
+    desc: bool = False,
 ) -> list[dict[str, Any]]:
     """
     Read DBOS streams (decoded) for a workflow.
     """
+    table = _dbos_table("streams")
     params: dict[str, Any] = {"workflow_id": workflow_id}
-    query = 'SELECT key, value, "offset" FROM streams WHERE workflow_uuid = :workflow_id'
+    query = f'SELECT key, value, "offset" FROM {table} WHERE workflow_uuid = :workflow_id'
     if key:
         query += " AND key = :key"
         params["key"] = key
     if since_offset is not None:
         query += ' AND "offset" > :since_offset'
         params["since_offset"] = since_offset
-    query += ' ORDER BY "offset"'
+    query += ' ORDER BY "offset"' + (" DESC" if desc else "")
     if limit is not None:
         query += " LIMIT :limit"
         params["limit"] = limit
@@ -210,20 +243,19 @@ def get_live_status(workflow_id: str) -> dict[str, Any]:
     """
     events = read_workflow_events(workflow_id)
     progress_events = read_workflow_streams(workflow_id, key="progress")
-    logs = get_step_logs(workflow_id, limit=1)
+    # Get most recent log (desc=True to get newest first)
+    recent_logs = read_workflow_streams(workflow_id, key="logs", limit=1, desc=True)
 
-    # Fetch workflow metadata (inputs, timestamps) from workflow_status table
+    # Fetch workflow metadata (inputs) from workflow_status table
     workflow_inputs = None
-    workflow_duration_ms = None
+    status_table = _dbos_table("workflow_status")
     with managed_session() as session:
         row = session.execute(
-            text(
-                "SELECT inputs, created_at, updated_at FROM workflow_status WHERE workflow_uuid = :id"
-            ),
+            text(f"SELECT inputs FROM {status_table} WHERE workflow_uuid = :id"),
             {"id": workflow_id},
         ).fetchone()
         if row:
-            inputs_raw, created_at, updated_at = row
+            (inputs_raw,) = row
             if inputs_raw:
                 decoded = _decode_dbos_value(inputs_raw)
                 if isinstance(decoded, dict):
@@ -238,27 +270,16 @@ def get_live_status(workflow_id: str) -> dict[str, Any]:
                             workflow_inputs = {"args": args}
                     elif args:
                         workflow_inputs = args
-            if created_at and updated_at:
-                # Parse timestamps - SQLite returns strings like "2024-01-01 12:00:00"
-                from datetime import datetime
 
-                def parse_ts(ts):
-                    if ts is None:
-                        return None
-                    if isinstance(ts, (int, float)):
-                        return ts
-                    if isinstance(ts, str):
-                        try:
-                            dt = datetime.fromisoformat(ts.replace(" ", "T"))
-                            return dt.timestamp()
-                        except ValueError:
-                            return None
-                    return None
-
-                created_ts = parse_ts(created_at)
-                updated_ts = parse_ts(updated_at)
-                if created_ts and updated_ts:
-                    workflow_duration_ms = int((updated_ts - created_ts) * 1000)
+    # Calculate duration from workflow events (started_at, completed_at)
+    workflow_duration_ms = None
+    started_at = events.get("started_at")
+    completed_at = events.get("completed_at")
+    if started_at is not None and completed_at is not None:
+        try:
+            workflow_duration_ms = int((float(completed_at) - float(started_at)) * 1000)
+        except (TypeError, ValueError):
+            pass
 
     step_state: dict[str, dict[str, Any]] = {}
     for event in progress_events:
@@ -269,18 +290,23 @@ def get_live_status(workflow_id: str) -> dict[str, Any]:
             step,
             {
                 "seen": set(),
+                "seen_success": set(),  # Track unique successful idx values
+                "seen_error": set(),  # Track unique error idx values
                 "current": 0,
                 "total": 0,
-                "success": 0,
-                "error": 0,
                 "errors": [],  # List of error messages
                 "last_status": None,
                 "last_latency_ms": None,
                 "start_timestamp": None,
                 "end_timestamp": None,
                 "last_timestamp": None,
+                "step_type": None,
             },
         )
+
+        step_type = event.get("type")
+        if step_type:
+            state["step_type"] = step_type
 
         total = event.get("total")
         if isinstance(total, int):
@@ -297,10 +323,11 @@ def get_live_status(workflow_id: str) -> dict[str, Any]:
         status = event.get("status")
         if status:
             state["last_status"] = status
-        if status == "success":
-            state["success"] += 1
-        elif status == "error":
-            state["error"] += 1
+        # Only count success/error if we have an idx (unique per document)
+        if status == "success" and idx is not None:
+            state["seen_success"].add(idx)
+        elif status == "error" and idx is not None:
+            state["seen_error"].add(idx)
             # Capture error message if present
             error_msg = event.get("error")
             if error_msg and len(state["errors"]) < 10:  # Limit to 10 errors
@@ -324,15 +351,28 @@ def get_live_status(workflow_id: str) -> dict[str, Any]:
         total = state["total"]
         status = state["last_status"]
 
+        # Count unique successes and errors
+        success_count = len(state["seen_success"])
+        error_count = len(state["seen_error"])
+
         if status in {"start", "progress"}:
             status = "running"
         elif status in {"success", "error"}:
-            status = status
+            if total and current < total and seen_count > 0:
+                status = "running"
+            else:
+                status = status
         else:
             if total and current >= total:
-                status = "error" if state["error"] else "completed"
+                status = "error" if error_count > 0 else "completed"
             else:
                 status = "running"
+
+        # For steps that complete successfully without per-item tracking,
+        # use total as success count (e.g., save_content, generate_embeddings)
+        if status == "success" and success_count == 0 and total > 0:
+            success_count = total
+            current = total  # Also update current to match total
 
         # Calculate duration if we have both start and end timestamps
         duration_ms = None
@@ -345,16 +385,30 @@ def get_live_status(workflow_id: str) -> dict[str, Any]:
                 "status": status,
                 "current": current,
                 "total": total,
-                "success": state["success"],
-                "error": state["error"],
+                "success": success_count,
+                "error": error_count,
                 "errors": state["errors"],  # Include error messages
                 "last_latency_ms": state["last_latency_ms"],
                 "duration_ms": duration_ms,
                 "last_timestamp": state["last_timestamp"],
+                "step_type": state["step_type"],
             }
         )
 
     steps.sort(key=lambda s: (s["last_timestamp"] is None, s["last_timestamp"] or 0))
+
+    # Get all logs and group by step
+    all_logs = read_workflow_streams(workflow_id, key="logs")
+    step_logs: dict[str, list[dict[str, Any]]] = {}
+    for log in all_logs:
+        step_name = log.get("step") or "_general"
+        if step_name not in step_logs:
+            step_logs[step_name] = []
+        step_logs[step_name].append(log)
+
+    # Calculate overall progress from steps
+    total_items = sum(s.get("total", 0) for s in steps)
+    completed_items = sum(s.get("current", 0) for s in steps)
 
     return {
         "workflow_id": workflow_id,
@@ -362,11 +416,12 @@ def get_live_status(workflow_id: str) -> dict[str, Any]:
         "current_step": events.get("current_step"),
         "stage": events.get("stage"),
         "progress": {
-            "current": events.get("stage_current", 0),
-            "total": events.get("stage_total", 0),
+            "current": completed_items,
+            "total": total_items,
         },
         "steps": steps,
-        "last_log": logs[0]["message"] if logs else None,
+        "step_logs": step_logs,
+        "last_log": recent_logs[0].get("message") if recent_logs else None,
         "inputs": workflow_inputs,
         "cli_command": events.get("cli_command"),
         "duration_ms": workflow_duration_ms,
@@ -389,7 +444,6 @@ def format_live_status(status: dict[str, Any]) -> str:
     """
     workflow_id = status.get("workflow_id", "-")
     state = status.get("status", "unknown")
-    current_step = status.get("current_step") or "-"
     progress = status.get("progress", {})
     current = progress.get("current", 0)
     total = progress.get("total", 0)
@@ -397,23 +451,44 @@ def format_live_status(status: dict[str, Any]) -> str:
 
     lines = [
         f"Workflow {workflow_id} [{state}]",
-        f"Current step: {current_step}",
-        f"Stage progress: {current}/{total} ({pct}%)",
+        f"Progress: {current}/{total} ({pct}%)",
     ]
 
     steps = status.get("steps", [])
+    step_logs = status.get("step_logs", {})
+
     if steps:
+        lines.append("")
         lines.append("Steps:")
         for step in steps:
             name = step.get("name", "-")
             st = step.get("status", "unknown")
-            cur = step.get("current", 0)
+            success = step.get("success", 0)
+            error = step.get("error", 0)
             tot = step.get("total", 0)
-            lines.append(f"  - {name}: {st} {cur}/{tot}")
+            duration = step.get("duration_ms")
 
-    last_log = status.get("last_log")
-    if last_log:
-        lines.append(f"Last log: {last_log}")
+            # Format step header with status
+            if tot > 0:
+                parts = []
+                if success > 0:
+                    parts.append(f"{success} ok")
+                if error > 0:
+                    parts.append(f"{error} failed")
+                result_str = ", ".join(parts) if parts else "done"
+            else:
+                result_str = "done" if st == "success" else st
+
+            duration_str = f" ({duration}ms)" if duration else ""
+            lines.append(f"  {name}: {result_str}{duration_str}")
+
+            # Show logs for this step
+            logs = step_logs.get(name, [])
+            for log in logs:
+                msg = log.get("message", "")
+                level = log.get("level", "info")
+                prefix = "    ⚠ " if level == "error" else "    → "
+                lines.append(f"{prefix}{msg}")
 
     return "\n".join(lines)
 

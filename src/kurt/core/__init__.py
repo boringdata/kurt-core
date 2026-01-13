@@ -29,6 +29,7 @@ from .runner import run_workflow
 from .status import (
     format_live_status,
     format_step_logs,
+    get_dbos_table_names,
     get_live_status,
     get_progress_page,
     get_step_logs,
@@ -39,10 +40,12 @@ from .status import (
 )
 from .tracing import LLMTracer, TracingHooks
 from .tracking import (
+    QueueStepTracker,
     TrackingHooks,
     WorkflowTracker,
     log_item,
     step_log,
+    track_batch_step,
     track_step,
     update_step_progress,
 )
@@ -62,9 +65,11 @@ __all__ = [
     "CompositeStepHooks",
     "WorkflowTracker",
     "TrackingHooks",
+    "QueueStepTracker",
     "LLMTracer",
     "TracingHooks",
     "track_step",
+    "track_batch_step",
     "update_step_progress",
     "step_log",
     "log_item",
@@ -77,6 +82,7 @@ __all__ = [
     "format_step_logs",
     "read_workflow_events",
     "read_workflow_streams",
+    "get_dbos_table_names",
     "mock_llm",
     "mock_embeddings",
     "mock_embedding_step",

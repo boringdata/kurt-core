@@ -15,7 +15,6 @@ import WorkflowRow from '../../components/WorkflowRow'
 import {
   workflows,
   workflowStatuses,
-  workflowLogs,
   createWorkflow,
   createWorkflowStatus,
 } from '../fixtures'
@@ -72,7 +71,6 @@ describe('WorkflowRow', () => {
     vi.stubGlobal('EventSource', TrackableEventSource)
     setupApiMocks({
       '/api/workflows/': { ...workflowStatuses.fetching },
-      '/logs': workflowLogs.short,
     })
   })
 
@@ -203,7 +201,6 @@ describe('WorkflowRow', () => {
       await waitFor(() => {
         expect(screen.getByText('Full ID:')).toBeInTheDocument()
         expect(screen.getByText('Updated:')).toBeInTheDocument()
-        expect(screen.getByText('Logs')).toBeInTheDocument()
       })
     })
 
@@ -219,7 +216,6 @@ describe('WorkflowRow', () => {
       // Use specific patterns that are longer than /api/workflows
       setupApiMocks({
         '/api/workflows/pending-1234-5678-9abc-def012345678/status': workflowStatuses.fetching,
-        '/api/workflows/pending-1234-5678-9abc-def012345678/logs': workflowLogs.empty,
       })
 
       render(<WorkflowRow {...defaultProps} isExpanded={true} />)
@@ -239,7 +235,6 @@ describe('WorkflowRow', () => {
           stage: 'saving',
           progress: { current: 50, total: 100 },
         }),
-        '/api/workflows/pending-1234-5678-9abc-def012345678/logs': workflowLogs.empty,
       })
 
       render(<WorkflowRow {...defaultProps} isExpanded={true} />)
@@ -254,7 +249,6 @@ describe('WorkflowRow', () => {
       // Test just one stage to keep the test fast and reliable
       setupApiMocks({
         '/api/workflows/pending-1234-5678-9abc-def012345678/status': createWorkflowStatus({ stage: 'embedding' }),
-        '/api/workflows/pending-1234-5678-9abc-def012345678/logs': workflowLogs.empty,
       })
 
       render(<WorkflowRow {...defaultProps} isExpanded={true} />)
@@ -269,7 +263,6 @@ describe('WorkflowRow', () => {
     it('shows results for completed workflows', async () => {
       setupApiMocks({
         '/api/workflows/success-1234-5678-9abc-def012345678/status': workflowStatuses.completed,
-        '/api/workflows/success-1234-5678-9abc-def012345678/logs': workflowLogs.empty,
       })
 
       render(<WorkflowRow {...defaultProps} workflow={workflows.success} isExpanded={true} />)
@@ -287,7 +280,6 @@ describe('WorkflowRow', () => {
           progress: { current: 100, total: 100 },
           steps: [{ name: 'fetch', success: 90, error: 10, total: 100 }],
         },
-        '/api/workflows/success-1234-5678-9abc-def012345678/logs': workflowLogs.empty,
       })
 
       render(<WorkflowRow {...defaultProps} workflow={workflows.success} isExpanded={true} />)
@@ -296,65 +288,6 @@ describe('WorkflowRow', () => {
         // Look for the "failed" text which indicates errors
         expect(screen.getByText(/failed/)).toBeInTheDocument()
       }, { timeout: 3000 })
-    })
-  })
-
-  describe('Logs', () => {
-    it('shows loading state while fetching logs', async () => {
-      render(<WorkflowRow {...defaultProps} isExpanded={true} />)
-
-      expect(screen.getByText('Loading logs...')).toBeInTheDocument()
-    })
-
-    it('displays log content when loaded', async () => {
-      setupApiMocks({
-        '/api/workflows/pending-1234-5678-9abc-def012345678/status': workflowStatuses.fetching,
-        '/api/workflows/pending-1234-5678-9abc-def012345678/logs': workflowLogs.short,
-      })
-
-      render(<WorkflowRow {...defaultProps} isExpanded={true} />)
-
-      await waitFor(() => {
-        expect(screen.getByText(/Starting fetch workflow/)).toBeInTheDocument()
-      }, { timeout: 3000 })
-    })
-
-    it('shows LIVE indicator for running workflows', async () => {
-      render(<WorkflowRow {...defaultProps} isExpanded={true} />)
-
-      await waitFor(() => {
-        expect(screen.getByText('LIVE')).toBeInTheDocument()
-      })
-    })
-
-    it('shows error message when log fetch fails', async () => {
-      vi.stubGlobal(
-        'fetch',
-        vi.fn().mockRejectedValue(new Error('Network error'))
-      )
-
-      render(<WorkflowRow {...defaultProps} isExpanded={true} />)
-
-      await new Promise(r => setTimeout(r, 10))
-
-      await waitFor(() => {
-        expect(screen.getByText(/Error:/)).toBeInTheDocument()
-      })
-    })
-
-    it('shows fallback message when no logs available', async () => {
-      setupApiMocks({
-        '/api/workflows/': workflowStatuses.fetching,
-        '/logs': workflowLogs.empty,
-      })
-
-      render(<WorkflowRow {...defaultProps} workflow={workflows.success} isExpanded={true} />)
-
-      await new Promise(r => setTimeout(r, 10))
-
-      await waitFor(() => {
-        expect(screen.getByText(/No logs available/)).toBeInTheDocument()
-      })
     })
   })
 
@@ -367,17 +300,6 @@ describe('WorkflowRow', () => {
           es.url.includes('/status/stream')
         )
         expect(statusStream).toBeDefined()
-      })
-    })
-
-    it('establishes SSE connection for log streaming when expanded', async () => {
-      render(<WorkflowRow {...defaultProps} isExpanded={true} />)
-
-      await waitFor(() => {
-        const logsStream = eventSourceInstances.find((es) =>
-          es.url.includes('/logs/stream')
-        )
-        expect(logsStream).toBeDefined()
       })
     })
 

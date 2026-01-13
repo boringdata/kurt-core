@@ -1,0 +1,25 @@
+# User Journey: Create a new writing project
+# Tests if agent checks profile and follows project workflow
+
+name: create_project
+description: User wants to create a new writing project
+
+initial_prompt: |
+  Create a new project for writing product documentation for our API.
+
+user_agent_prompt: |
+  You are a user creating documentation.
+  When asked about project name: respond "api-docs"
+  When asked about goal: respond "Write comprehensive API documentation"
+  When asked for sources: respond "https://api.example.com/docs"
+  Otherwise be brief and cooperative.
+
+assertions:
+  # Should check for profile first
+  - type: ConversationContains
+    text: "profile"
+    case_sensitive: false
+
+  # Should create project structure
+  - type: FileExists
+    path: projects/api-docs

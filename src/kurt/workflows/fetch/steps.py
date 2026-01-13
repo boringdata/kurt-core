@@ -5,9 +5,10 @@ import time
 from datetime import datetime
 from typing import Any
 
-from dbos import DBOS
+from dbos import DBOS, Queue
 
 from kurt.core import embedding_to_bytes, generate_embeddings
+from kurt.core.tracking import QueueStepTracker, log_item, step_log
 from kurt.db import managed_session
 from kurt.integrations.cms import fetch_from_cms
 
@@ -18,6 +19,321 @@ from .models import BatchFetchResult, FetchDocument, FetchStatus
 from .utils import load_document_content, save_content_file
 
 logger = logging.getLogger(__name__)
+
+# Queue for parallel URL fetching (trafilatura/httpx)
+fetch_url_queue = Queue("fetch_url_queue", concurrency=5)
+
+
+@DBOS.step(name="fetch_single_url")
+def fetch_single_url_step(
+    url: str,
+    fetch_engine: str,
+    parent_workflow_id: str | None = None,
+    parent_step_name: str | None = None,
+    document_id: str | None = None,
+) -> dict[str, Any]:
+    """Fetch a single URL using specified engine.
+
+    This step is enqueued by the workflow for parallel execution.
+    Used for trafilatura/httpx which don't have native batch APIs.
+
+    Args:
+        url: URL to fetch
+        fetch_engine: Engine to use (trafilatura or httpx)
+        parent_workflow_id: Parent workflow ID for linking in UI
+        parent_step_name: Parent step name for grouping in UI
+
+    Returns:
+        Dict with url, content, metadata, or error
+    """
+    from .fetch_httpx import fetch_with_httpx
+    from .fetch_trafilatura import fetch_with_trafilatura
+
+    # Store parent workflow ID for UI linking
+    if parent_workflow_id:
+        try:
+            DBOS.set_event("parent_workflow_id", parent_workflow_id)
+        except Exception:
+            pass
+    if parent_step_name:
+        try:
+            DBOS.set_event("parent_step_name", parent_step_name)
+        except Exception:
+            pass
+
+    tracker = QueueStepTracker("fetch_single_url", total=1)
+    tracker.start(f"Fetching URL using {fetch_engine}")
+
+    try:
+        if fetch_engine == "httpx":
+            content, metadata = fetch_with_httpx(url)
+        else:
+            content, metadata = fetch_with_trafilatura(url)
+
+        tracker.item_success(0, url, metadata={"content_length": len(content) if content else 0})
+        tracker.end()
+
+        return {
+            "url": url,
+            "content": content,
+            "metadata": metadata,
+            "error": None,
+        }
+    except Exception as e:
+        error_msg = str(e)
+        tracker.item_error(0, url, error=error_msg)
+        tracker.end()
+        return {
+            "url": url,
+            "content": None,
+            "metadata": None,
+            "error": error_msg,
+        }
+
+
+@DBOS.step(name="fetch_url_batch")
+def fetch_url_batch_step(
+    urls: list[str],
+    fetch_engine: str,
+    parent_workflow_id: str | None = None,
+    parent_step_name: str | None = None,
+    document_ids: list[str] | None = None,
+) -> dict[str, Any]:
+    """Fetch a batch of URLs using native batch API.
+
+    This step is enqueued by the workflow for parallel execution.
+    Used for tavily/firecrawl which have native batch APIs.
+
+    Args:
+        urls: List of URLs to fetch in this batch
+        fetch_engine: Engine to use (tavily or firecrawl)
+        parent_workflow_id: Parent workflow ID for linking in UI
+        parent_step_name: Parent step name for grouping in UI
+
+    Returns:
+        Dict with results mapping url -> (content, metadata) or error
+    """
+    # Store parent workflow ID for UI linking
+    if parent_workflow_id:
+        try:
+            DBOS.set_event("parent_workflow_id", parent_workflow_id)
+        except Exception:
+            pass
+    if parent_step_name:
+        try:
+            DBOS.set_event("parent_step_name", parent_step_name)
+        except Exception:
+            pass
+
+    tracker = QueueStepTracker("fetch_url_batch", total=len(urls))
+    tracker.start(f"Fetching {len(urls)} URL(s) using {fetch_engine}")
+
+    try:
+        results = fetch_from_web(urls, fetch_engine)
+    except Exception as e:
+        error_msg = str(e)
+        for idx, url in enumerate(urls):
+            tracker.item_error(idx, url, error=error_msg)
+        tracker.end()
+        return {"results": {url: e for url in urls}, "error": error_msg}
+
+    for idx, url in enumerate(urls):
+        result = results.get(url)
+        if isinstance(result, Exception) or result is None:
+            error_msg = str(result) if result else "No result"
+            tracker.item_error(idx, url, error=error_msg)
+            continue
+        content, _metadata = result
+        tracker.item_success(idx, url, metadata={"content_length": len(content) if content else 0})
+
+    tracker.end()
+    return {"results": results, "error": None}
+
+
+def fetch_urls_parallel(docs: list[dict[str, Any]], config: FetchConfig) -> list[dict[str, Any]]:
+    """Fetch URLs in parallel using DBOS Queue.
+
+    Must be called from a workflow (not from a step) because Queue.enqueue()
+    is forbidden inside steps.
+
+    Strategy:
+    - trafilatura/httpx: One task per URL (no native batch)
+    - tavily: Batches of 20 URLs (API limit)
+    - firecrawl: Batches based on config.batch_size
+
+    Args:
+        docs: List of document dicts with source_url
+        config: Fetch configuration
+
+    Returns:
+        List of result dicts with content/error
+    """
+    if not docs:
+        return []
+
+    total = len(docs)
+
+    # Use QueueStepTracker for progress tracking
+    tracker = QueueStepTracker("fetch_documents", total=total)
+    tracker.start(f"Fetching {total} document(s) using {config.fetch_engine}")
+
+    # Get parent workflow ID to link queue tasks in UI
+    try:
+        parent_workflow_id = DBOS.workflow_id
+    except Exception:
+        parent_workflow_id = None
+
+    # Build URL to doc mapping
+    url_to_doc: dict[str, dict[str, Any]] = {}
+    for doc in docs:
+        url = doc.get("source_url")
+        if url:
+            url_to_doc[url] = doc
+
+    urls = list(url_to_doc.keys())
+    handles: list[tuple[list[str], Any]] = []  # (urls_in_batch, handle)
+
+    if config.fetch_engine in ("tavily", "firecrawl"):
+        # Batch mode: group URLs into batches
+        batch_size = config.batch_size or 20
+        if config.fetch_engine == "tavily":
+            batch_size = min(batch_size, 20)  # Tavily API limit
+
+        for i in range(0, len(urls), batch_size):
+            batch_urls = urls[i : i + batch_size]
+            batch_doc_ids = []
+            for url in batch_urls:
+                doc_id = url_to_doc.get(url, {}).get("document_id")
+                batch_doc_ids.append(str(doc_id) if doc_id is not None else None)
+            handle = fetch_url_queue.enqueue(
+                fetch_url_batch_step,
+                batch_urls,
+                config.fetch_engine,
+                parent_workflow_id,
+                "fetch_documents",
+                batch_doc_ids,
+            )
+            handles.append((batch_urls, handle))
+    else:
+        # Single URL mode: one task per URL
+        for url in urls:
+            doc_id = url_to_doc.get(url, {}).get("document_id")
+            handle = fetch_url_queue.enqueue(
+                fetch_single_url_step,
+                url,
+                config.fetch_engine,
+                parent_workflow_id,
+                "fetch_documents",
+                str(doc_id) if doc_id is not None else None,
+            )
+            handles.append(([url], handle))
+
+    # Collect results
+    rows: list[dict[str, Any]] = []
+    processed = 0
+
+    for batch_urls, handle in handles:
+        result = handle.get_result()
+
+        if config.fetch_engine in ("tavily", "firecrawl"):
+            # Batch result: result["results"] is a dict mapping url -> (content, metadata) or Exception
+            batch_results = result.get("results", {})
+            for url in batch_urls:
+                doc = url_to_doc.get(url)
+                if not doc:
+                    continue
+                doc_id = doc.get("document_id")
+                url_result = batch_results.get(url)
+
+                if isinstance(url_result, Exception) or url_result is None:
+                    error_msg = str(url_result) if url_result else "No result"
+                    logger.error(f"Failed to fetch {doc_id}: {error_msg}")
+                    rows.append(
+                        {
+                            "document_id": str(doc_id),
+                            "source_url": url,
+                            "status": FetchStatus.ERROR,
+                            "content": None,
+                            "content_length": 0,
+                            "content_hash": None,
+                            "fetch_engine": config.fetch_engine,
+                            "public_url": None,
+                            "metadata_json": None,
+                            "error": error_msg,
+                        }
+                    )
+                    tracker.item_error(processed, str(doc_id), error=error_msg)
+                else:
+                    content, metadata = url_result
+                    logger.info(f"Fetched {doc_id}: {len(content)} chars")
+                    rows.append(
+                        {
+                            "document_id": str(doc_id),
+                            "source_url": url,
+                            "status": FetchStatus.SUCCESS,
+                            "content": content,
+                            "content_length": len(content),
+                            "content_hash": metadata.get("fingerprint") if metadata else None,
+                            "fetch_engine": config.fetch_engine,
+                            "public_url": None,
+                            "metadata_json": metadata,
+                            "error": None,
+                        }
+                    )
+                    tracker.item_success(
+                        processed, str(doc_id), metadata={"content_length": len(content)}
+                    )
+                processed += 1
+        else:
+            # Single URL result
+            url = batch_urls[0]
+            doc = url_to_doc.get(url)
+            if not doc:
+                continue
+            doc_id = doc.get("document_id")
+
+            if result.get("error"):
+                logger.error(f"Failed to fetch {doc_id}: {result['error']}")
+                rows.append(
+                    {
+                        "document_id": str(doc_id),
+                        "source_url": url,
+                        "status": FetchStatus.ERROR,
+                        "content": None,
+                        "content_length": 0,
+                        "content_hash": None,
+                        "fetch_engine": config.fetch_engine,
+                        "public_url": None,
+                        "metadata_json": None,
+                        "error": result["error"],
+                    }
+                )
+                tracker.item_error(processed, str(doc_id), error=result["error"])
+            else:
+                content = result["content"]
+                metadata = result.get("metadata", {})
+                logger.info(f"Fetched {doc_id}: {len(content)} chars")
+                rows.append(
+                    {
+                        "document_id": str(doc_id),
+                        "source_url": url,
+                        "status": FetchStatus.SUCCESS,
+                        "content": content,
+                        "content_length": len(content),
+                        "content_hash": metadata.get("fingerprint") if metadata else None,
+                        "fetch_engine": config.fetch_engine,
+                        "public_url": None,
+                        "metadata_json": metadata,
+                        "error": None,
+                    }
+                )
+                tracker.item_success(
+                    processed, str(doc_id), metadata={"content_length": len(content)}
+                )
+            processed += 1
+
+    tracker.end()
+    return rows
 
 
 def _fetch_single_document(doc: dict[str, Any], config: FetchConfig) -> dict[str, Any]:
@@ -62,6 +378,7 @@ def _fetch_single_document(doc: dict[str, Any], config: FetchConfig) -> dict[str
 
         return {
             "document_id": str(doc_id),
+            "source_url": source_url,
             "status": FetchStatus.SUCCESS,
             "content": content,
             "content_length": len(content),
@@ -76,6 +393,7 @@ def _fetch_single_document(doc: dict[str, Any], config: FetchConfig) -> dict[str
         logger.error(f"Failed to fetch {doc_id}: {e}")
         return {
             "document_id": str(doc_id),
+            "source_url": source_url,
             "status": FetchStatus.ERROR,
             "content": None,
             "content_length": 0,
@@ -119,38 +437,12 @@ def _fetch_batch_web_documents(
     elif batch_size is None:
         batch_size = len(urls)  # No batching for other engines
 
-    # Emit batch start event for observability
-    DBOS.write_stream(
-        "progress",
-        {
-            "step": "fetch_batch",
-            "status": "started",
-            "engine": config.fetch_engine,
-            "url_count": len(urls),
-            "batch_size": batch_size,
-            "timestamp": time.time(),
-        },
-    )
-
     # Batch fetch URLs in chunks
     batch_results: BatchFetchResult = {}
     for i in range(0, len(urls), batch_size):
         batch_urls = urls[i : i + batch_size]
         results = fetch_from_web(batch_urls, config.fetch_engine)
         batch_results.update(results)
-
-    # Emit batch complete event
-    DBOS.write_stream(
-        "progress",
-        {
-            "step": "fetch_batch",
-            "status": "completed",
-            "engine": config.fetch_engine,
-            "url_count": len(urls),
-            "results_count": len(batch_results),
-            "timestamp": time.time(),
-        },
-    )
 
     # Convert batch results to row format
     rows: list[dict[str, Any]] = []
@@ -166,6 +458,7 @@ def _fetch_batch_web_documents(
             rows.append(
                 {
                     "document_id": str(doc_id),
+                    "source_url": url,
                     "status": FetchStatus.ERROR,
                     "content": None,
                     "content_length": 0,
@@ -182,6 +475,7 @@ def _fetch_batch_web_documents(
             rows.append(
                 {
                     "document_id": str(doc_id),
+                    "source_url": url,
                     "status": FetchStatus.SUCCESS,
                     "content": content,
                     "content_length": len(content),
@@ -214,9 +508,14 @@ def embedding_step(rows: list[dict[str, Any]], config_dict: dict[str, Any]) -> l
     ]
 
     if not fetchable:
+        step_log("No documents to embed", step_name="generate_embeddings")
         for row in rows:
             row["embedding"] = None
         return rows
+
+    step_log(
+        f"Generating embeddings for {len(fetchable)} document(s)", step_name="generate_embeddings"
+    )
 
     # Load content from files and truncate for embedding
     texts = []
@@ -264,9 +563,17 @@ def save_content_step(
 
     if config.dry_run:
         # In dry run, don't save files but keep content for inspection
+        step_log("Dry run: skipping content save", step_name="save_content")
         for row in rows:
             row["content_path"] = None
         return rows
+
+    saved_count = sum(
+        1
+        for r in rows
+        if r.get("status") in (FetchStatus.SUCCESS, FetchStatus.SUCCESS.value) and r.get("content")
+    )
+    step_log(f"Saving content for {saved_count} document(s)", step_name="save_content")
 
     for row in rows:
         # Compare both enum and string values (status may be serialized)
@@ -325,6 +632,10 @@ def fetch_step(docs: list[dict[str, Any]], config_dict: dict[str, Any]) -> dict[
     total = len(docs)
 
     logger.info(f"Fetching {total} documents (engine: {config.fetch_engine})")
+    step_log(
+        f"Fetching {total} document(s) using {config.fetch_engine}",
+        step_name="fetch_documents",
+    )
 
     # Emit observability events
     DBOS.set_event("fetch_engine", config.fetch_engine)
@@ -371,6 +682,13 @@ def fetch_step(docs: list[dict[str, Any]], config_dict: dict[str, Any]) -> dict[
             if not is_success and row.get("error"):
                 progress_event["error"] = row["error"]
             DBOS.write_stream("progress", progress_event)
+            log_item(
+                str(row.get("document_id", "")),
+                status="success" if is_success else "error",
+                message=row.get("error") if not is_success else row.get("source_url", ""),
+                counter=(processed, total),
+                step_name="fetch_documents",
+            )
 
     # Process non-web docs (file, cms) sequentially - no batch support
     for doc in non_web_docs:
@@ -393,11 +711,22 @@ def fetch_step(docs: list[dict[str, Any]], config_dict: dict[str, Any]) -> dict[
         if not is_success and row.get("error"):
             progress_event["error"] = row["error"]
         DBOS.write_stream("progress", progress_event)
+        log_item(
+            str(row.get("document_id", "")),
+            status="success" if is_success else "error",
+            message=row.get("error") if not is_success else row.get("source_url", ""),
+            counter=(processed, total),
+            step_name="fetch_documents",
+        )
 
     fetched = sum(1 for row in rows if row["status"] == FetchStatus.SUCCESS)
     failed = sum(1 for row in rows if row["status"] == FetchStatus.ERROR)
 
     logger.info(f"Fetch complete: {fetched} successful, {failed} failed")
+    step_log(
+        f"Fetch complete: {fetched} successful, {failed} failed",
+        step_name="fetch_documents",
+    )
 
     return {
         "total": total,
@@ -424,17 +753,23 @@ def _serialize_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 @DBOS.transaction()
 def persist_fetch_documents(rows: list[dict[str, Any]]) -> dict[str, int]:
     """Persist fetch results in a durable transaction."""
+    # Fields that are in the row dict but not in FetchDocument model
+    # source_url is used for save_content_file path generation but not stored in fetch_documents
+    non_model_fields = {"source_url", "content"}
+
     with managed_session() as session:
         inserted = 0
         updated = 0
         for row in rows:
+            # Filter out non-model fields before persisting
+            db_row = {k: v for k, v in row.items() if k not in non_model_fields}
             existing_row = session.get(FetchDocument, row["document_id"])
             if existing_row:
-                for key, value in row.items():
+                for key, value in db_row.items():
                     setattr(existing_row, key, value)
                 existing_row.updated_at = datetime.utcnow()
                 updated += 1
             else:
-                session.add(FetchDocument(**row))
+                session.add(FetchDocument(**db_row))
                 inserted += 1
         return {"rows_written": inserted, "rows_updated": updated}

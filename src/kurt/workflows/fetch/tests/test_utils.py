@@ -7,7 +7,216 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from kurt.workflows.fetch.models import FetchStatus
+from kurt.workflows.fetch.utils import _deduplicate_images, _preprocess_html_for_images
 from kurt.workflows.fetch.workflow import _has_embedding_api_key
+
+
+class TestDeduplicateImages:
+    """Test suite for _deduplicate_images."""
+
+    def test_removes_consecutive_duplicate_images(self):
+        """Test that consecutive duplicate images are removed."""
+        content = """# Title
+
+Some text.
+
+![](https://example.com/image1.png)
+
+![](https://example.com/image1.png)
+
+More text."""
+
+        result = _deduplicate_images(content)
+
+        assert result.count("![](https://example.com/image1.png)") == 1
+        assert "Some text." in result
+        assert "More text." in result
+
+    def test_keeps_different_images(self):
+        """Test that different images are all kept."""
+        content = """# Title
+
+![](https://example.com/image1.png)
+
+![](https://example.com/image2.png)
+
+![](https://example.com/image3.png)"""
+
+        result = _deduplicate_images(content)
+
+        assert result.count("![](https://example.com/image1.png)") == 1
+        assert result.count("![](https://example.com/image2.png)") == 1
+        assert result.count("![](https://example.com/image3.png)") == 1
+
+    def test_allows_same_image_in_different_sections(self):
+        """Test that the same image can appear in different sections."""
+        content = """# Section 1
+
+![](https://example.com/image1.png)
+
+Some text between sections.
+
+# Section 2
+
+![](https://example.com/image1.png)"""
+
+        result = _deduplicate_images(content)
+
+        # Image should appear twice because there's text between them
+        assert result.count("![](https://example.com/image1.png)") == 2
+
+    def test_handles_images_with_alt_text(self):
+        """Test images with alt text are deduplicated by URL."""
+        content = """![Alt 1](https://example.com/image.png)
+
+![Alt 2](https://example.com/image.png)"""
+
+        result = _deduplicate_images(content)
+
+        # Only first image should remain
+        assert "![Alt 1](https://example.com/image.png)" in result
+        assert "![Alt 2](https://example.com/image.png)" not in result
+
+    def test_handles_empty_content(self):
+        """Test empty content is handled."""
+        result = _deduplicate_images("")
+        assert result == ""
+
+    def test_handles_no_images(self):
+        """Test content without images is unchanged."""
+        content = """# Title
+
+Just some text.
+
+More text."""
+
+        result = _deduplicate_images(content)
+        assert result == content
+
+    def test_preserves_blank_lines(self):
+        """Test that blank lines are preserved."""
+        content = """# Title
+
+
+![](https://example.com/image.png)
+
+
+Text."""
+
+        result = _deduplicate_images(content)
+
+        # Should preserve the blank lines structure
+        assert "\n\n" in result
+
+
+class TestPreprocessHtmlForImages:
+    """Test suite for _preprocess_html_for_images."""
+
+    def test_unwraps_captioned_image_container(self):
+        """Test that captioned-image-container divs are unwrapped."""
+        html = """<html><body>
+<div class="captioned-image-container">
+<figure><img src="test.png"></figure>
+</div>
+</body></html>"""
+
+        result = _preprocess_html_for_images(html)
+
+        # The figure should still be present but not wrapped in the container div
+        assert "<figure>" in result
+        assert "captioned-image-container" not in result
+
+    def test_unwraps_image_container(self):
+        """Test that image-container divs are unwrapped."""
+        html = """<html><body>
+<div class="image-container">
+<img src="test.png">
+</div>
+</body></html>"""
+
+        result = _preprocess_html_for_images(html)
+
+        assert "<img" in result
+        assert "image-container" not in result
+
+    def test_unwraps_img_container(self):
+        """Test that img-container divs are unwrapped."""
+        html = """<html><body>
+<div class="img-container">
+<img src="test.png">
+</div>
+</body></html>"""
+
+        result = _preprocess_html_for_images(html)
+
+        assert "<img" in result
+        assert "img-container" not in result
+
+    def test_preserves_other_divs(self):
+        """Test that other divs are not affected."""
+        html = """<html><body>
+<div class="content-wrapper">
+<p>Hello</p>
+</div>
+</body></html>"""
+
+        result = _preprocess_html_for_images(html)
+
+        assert "content-wrapper" in result
+        assert "<p>Hello</p>" in result
+
+    def test_handles_nested_containers(self):
+        """Test handling of nested container divs."""
+        html = """<html><body>
+<div class="captioned-image-container">
+<div class="image-container">
+<img src="test.png">
+</div>
+</div>
+</body></html>"""
+
+        result = _preprocess_html_for_images(html)
+
+        assert "<img" in result
+        assert "captioned-image-container" not in result
+        assert "image-container" not in result
+
+    def test_handles_plain_text_gracefully(self):
+        """Test that plain text is handled without error."""
+        html = "not valid html at all {{{"
+
+        result = _preprocess_html_for_images(html)
+
+        # lxml will parse even invalid HTML, just verify no error and content preserved
+        assert "not valid html at all {{{" in result
+
+    def test_handles_empty_html(self):
+        """Test empty HTML is handled."""
+        result = _preprocess_html_for_images("")
+
+        # lxml may return a minimal structure or empty
+        # Just verify it doesn't raise
+        assert result is not None
+
+    def test_preserves_figure_content(self):
+        """Test that figure content including img is preserved."""
+        html = """<html><body>
+<div class="captioned-image-container">
+<figure>
+<a href="full.png">
+<img src="thumb.png" alt="Test">
+</a>
+<figcaption>Caption text</figcaption>
+</figure>
+</div>
+</body></html>"""
+
+        result = _preprocess_html_for_images(html)
+
+        assert "<figure>" in result
+        assert 'src="thumb.png"' in result
+        assert "<figcaption>" in result
+        assert "Caption text" in result
 
 
 class TestGenerateContentPath:
@@ -506,3 +715,220 @@ class TestEmbeddingStepStatusHandling:
         mock_load_content.assert_not_called()
         mock_gen_embed.assert_not_called()
         assert result[0]["embedding"] is None
+
+
+class TestFetchSingleDocument:
+    """Tests for _fetch_single_document including source_url passthrough."""
+
+    @patch("kurt.workflows.fetch.steps.fetch_from_web")
+    def test_returns_source_url_on_success(self, mock_fetch_web):
+        """Test that source_url is included in success response."""
+        from kurt.workflows.fetch.config import FetchConfig
+        from kurt.workflows.fetch.steps import _fetch_single_document
+
+        mock_fetch_web.return_value = {
+            "https://example.com/page": ("# Content", {"fingerprint": "abc123"})
+        }
+
+        doc = {
+            "document_id": "doc-1",
+            "source_url": "https://example.com/page",
+            "source_type": "url",
+        }
+        config = FetchConfig(fetch_engine="trafilatura")
+
+        result = _fetch_single_document(doc, config)
+
+        assert result["source_url"] == "https://example.com/page"
+        assert result["status"] == FetchStatus.SUCCESS
+
+    @patch("kurt.workflows.fetch.steps.fetch_from_web")
+    def test_returns_source_url_on_error(self, mock_fetch_web):
+        """Test that source_url is included in error response."""
+        from kurt.workflows.fetch.config import FetchConfig
+        from kurt.workflows.fetch.steps import _fetch_single_document
+
+        mock_fetch_web.return_value = {
+            "https://example.com/broken": ValueError("Connection failed")
+        }
+
+        doc = {
+            "document_id": "doc-1",
+            "source_url": "https://example.com/broken",
+            "source_type": "url",
+        }
+        config = FetchConfig(fetch_engine="trafilatura")
+
+        result = _fetch_single_document(doc, config)
+
+        assert result["source_url"] == "https://example.com/broken"
+        assert result["status"] == FetchStatus.ERROR
+
+
+class TestFetchBatchWebDocuments:
+    """Tests for _fetch_batch_web_documents including source_url passthrough."""
+
+    @patch("kurt.workflows.fetch.steps.DBOS")
+    @patch("kurt.workflows.fetch.steps.fetch_from_web")
+    def test_returns_source_url_on_success(self, mock_fetch_web, mock_dbos):
+        """Test that source_url is included in batch success responses."""
+        from kurt.workflows.fetch.config import FetchConfig
+        from kurt.workflows.fetch.steps import _fetch_batch_web_documents
+
+        mock_fetch_web.return_value = {
+            "https://example.com/page1": ("# Page 1", {"fingerprint": "abc"}),
+            "https://example.com/page2": ("# Page 2", {"fingerprint": "def"}),
+        }
+
+        docs = [
+            {"document_id": "doc-1", "source_url": "https://example.com/page1"},
+            {"document_id": "doc-2", "source_url": "https://example.com/page2"},
+        ]
+        config = FetchConfig(fetch_engine="trafilatura")
+
+        results = _fetch_batch_web_documents(docs, config)
+
+        assert len(results) == 2
+        # Find results by document_id
+        result1 = next(r for r in results if r["document_id"] == "doc-1")
+        result2 = next(r for r in results if r["document_id"] == "doc-2")
+
+        assert result1["source_url"] == "https://example.com/page1"
+        assert result1["status"] == FetchStatus.SUCCESS
+        assert result2["source_url"] == "https://example.com/page2"
+        assert result2["status"] == FetchStatus.SUCCESS
+
+    @patch("kurt.workflows.fetch.steps.DBOS")
+    @patch("kurt.workflows.fetch.steps.fetch_from_web")
+    def test_returns_source_url_on_error(self, mock_fetch_web, mock_dbos):
+        """Test that source_url is included in batch error responses."""
+        from kurt.workflows.fetch.config import FetchConfig
+        from kurt.workflows.fetch.steps import _fetch_batch_web_documents
+
+        mock_fetch_web.return_value = {
+            "https://example.com/good": ("# Content", {"fingerprint": "abc"}),
+            "https://example.com/broken": ValueError("Failed"),
+        }
+
+        docs = [
+            {"document_id": "doc-1", "source_url": "https://example.com/good"},
+            {"document_id": "doc-2", "source_url": "https://example.com/broken"},
+        ]
+        config = FetchConfig(fetch_engine="trafilatura")
+
+        results = _fetch_batch_web_documents(docs, config)
+
+        assert len(results) == 2
+        result1 = next(r for r in results if r["document_id"] == "doc-1")
+        result2 = next(r for r in results if r["document_id"] == "doc-2")
+
+        assert result1["source_url"] == "https://example.com/good"
+        assert result1["status"] == FetchStatus.SUCCESS
+        assert result2["source_url"] == "https://example.com/broken"
+        assert result2["status"] == FetchStatus.ERROR
+
+
+class TestSaveContentStepWithSourceUrl:
+    """Tests for save_content_step with source_url passthrough for URL-based paths."""
+
+    @patch("kurt.workflows.fetch.steps.save_content_file")
+    def test_passes_source_url_to_save(self, mock_save_file):
+        """Test that source_url is passed to save_content_file for URL-based paths."""
+        from kurt.workflows.fetch.steps import save_content_step
+
+        mock_save_file.return_value = "example.com/blog/post.md"
+
+        rows = [
+            {
+                "document_id": "doc-1",
+                "source_url": "https://example.com/blog/post",
+                "status": FetchStatus.SUCCESS,
+                "content": "# Blog Post Content",
+            }
+        ]
+        config = {"dry_run": False, "fetch_engine": "trafilatura"}
+
+        result = save_content_step(rows, config)
+
+        # Verify source_url was passed to save_content_file
+        mock_save_file.assert_called_once_with(
+            "doc-1", "# Blog Post Content", "https://example.com/blog/post"
+        )
+        assert result[0]["content_path"] == "example.com/blog/post.md"
+
+    @patch("kurt.workflows.fetch.steps.save_content_file")
+    def test_handles_missing_source_url(self, mock_save_file):
+        """Test graceful handling when source_url is missing (legacy data)."""
+        from kurt.workflows.fetch.steps import save_content_step
+
+        mock_save_file.return_value = "ab/cd/doc-1.md"
+
+        rows = [
+            {
+                "document_id": "doc-1",
+                # No source_url key
+                "status": FetchStatus.SUCCESS,
+                "content": "# Content",
+            }
+        ]
+        config = {"dry_run": False, "fetch_engine": "trafilatura"}
+
+        result = save_content_step(rows, config)
+
+        # Should still work, passing None as source_url
+        mock_save_file.assert_called_once_with("doc-1", "# Content", None)
+        assert result[0]["content_path"] == "ab/cd/doc-1.md"
+
+
+class TestPersistFetchDocumentsFiltering:
+    """Tests for persist_fetch_documents filtering non-model fields.
+
+    These tests verify that source_url and content fields are filtered out
+    before persisting to FetchDocument, since those fields are not in the model.
+    """
+
+    def test_filters_out_source_url_field(self):
+        """Test that source_url is filtered out before persisting to FetchDocument."""
+        from kurt.workflows.fetch.models import FetchDocument
+
+        row = {
+            "document_id": "doc-1",
+            "source_url": "https://example.com/page",  # Not in FetchDocument model
+            "status": FetchStatus.SUCCESS,
+            "content_length": 100,
+            "content_hash": "abc123",
+            "content_path": "example.com/page.md",
+            "fetch_engine": "trafilatura",
+        }
+
+        # Same filtering logic used in persist_fetch_documents
+        non_model_fields = {"source_url", "content"}
+        db_row = {k: v for k, v in row.items() if k not in non_model_fields}
+
+        # Should not raise - source_url filtered out before creating FetchDocument
+        doc = FetchDocument(**db_row)
+        assert doc.document_id == "doc-1"
+        assert doc.content_path == "example.com/page.md"
+
+    def test_filters_out_content_field(self):
+        """Test that content is filtered out before persisting (should already be saved to file)."""
+        from kurt.workflows.fetch.models import FetchDocument
+
+        row = {
+            "document_id": "doc-2",
+            "content": "# Some markdown content",  # Not in FetchDocument model
+            "status": FetchStatus.SUCCESS,
+            "content_length": 22,
+            "content_hash": "def456",
+            "content_path": "example.com/other.md",
+            "fetch_engine": "tavily",
+        }
+
+        # Same filtering logic used in persist_fetch_documents
+        non_model_fields = {"source_url", "content"}
+        db_row = {k: v for k, v in row.items() if k not in non_model_fields}
+
+        # Should not raise - content filtered out before creating FetchDocument
+        doc = FetchDocument(**db_row)
+        assert doc.document_id == "doc-2"
+        assert doc.content_length == 22

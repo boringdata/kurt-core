@@ -171,6 +171,32 @@ html, body, #root {
   border-bottom: 1px solid #e5e7eb;
 }
 
+/* Collapse button in tab header actions */
+.tab-collapse-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-right: 4px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.tab-collapse-btn:hover {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.tab-collapse-btn:active {
+  background: #d1d5db;
+}
+
 /* Legacy .app class - keep for potential fallback */
 .app {
   display: flex;
@@ -2260,6 +2286,10 @@ html, body, #root {
   background: #fff;
 }
 
+.workflow-meta {
+  margin-bottom: 8px;
+}
+
 .workflow-detail-row {
   display: flex;
   gap: 8px;
@@ -2282,35 +2312,22 @@ html, body, #root {
   text-overflow: ellipsis;
 }
 
+.workflow-detail-inline {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.workflow-detail-separator {
+  color: #9ca3af;
+}
+
 .workflow-id-copyable {
   cursor: pointer;
 }
 
 .workflow-id-copyable:hover {
   color: #3b82f6;
-}
-
-.workflow-logs {
-  margin-top: 10px;
-}
-
-.workflow-logs-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  color: #374151;
-}
-
-.workflow-logs-live {
-  font-size: 8px;
-  padding: 2px 5px;
-  background: #16a34a;
-  color: #fff;
-  border-radius: 3px;
-  animation: pulse 2s infinite;
 }
 
 @keyframes pulse {
@@ -2477,6 +2494,8 @@ html, body, #root {
   background: #f9fafb;
   border-radius: 4px;
   border-left: 2px solid #e5e7eb;
+  max-height: 160px;
+  overflow: auto;
 }
 
 .workflow-step-log {
@@ -2582,6 +2601,17 @@ html, body, #root {
   border-top: 1px solid #e5e7eb;
 }
 
+.workflow-command-section {
+  margin-bottom: 8px;
+}
+
+.workflow-command-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 4px;
+}
+
 .workflow-inputs-content {
   display: block;
   font-family: 'IBM Plex Mono', monospace;
@@ -2608,6 +2638,7 @@ html, body, #root {
   font-size: 12px;
   white-space: pre-wrap;
   word-break: break-all;
+  max-height: none;
 }
 
 .workflow-command-copy {
@@ -2634,6 +2665,248 @@ html, body, #root {
 
 .workflow-duration {
   font-family: 'IBM Plex Mono', monospace;
+  color: #6b7280;
+}
+
+.workflow-step-box {
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  background: #fff;
+  margin-bottom: 6px;
+}
+
+.workflow-step-box-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+  user-select: none;
+  background: #f8fafc;
+  border-radius: 3px;
+}
+
+.workflow-step-box-header:hover {
+  background: #f1f5f9;
+}
+
+.workflow-step-box-toggle {
+  font-size: 9px;
+  color: #9ca3af;
+  width: 10px;
+  flex-shrink: 0;
+}
+
+.workflow-step-status {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.step-status-success {
+  background: #16a34a;
+}
+
+.step-status-error {
+  background: #ef4444;
+}
+
+.step-status-running {
+  background: #f59e0b;
+}
+
+.workflow-step-box-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #374151;
+  flex: 1;
+}
+
+.workflow-step-box-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.step-meta-success {
+  color: #16a34a;
+  font-weight: 600;
+}
+
+.step-meta-error {
+  color: #ef4444;
+  font-weight: 600;
+}
+
+.step-meta-duration {
+  color: #6b7280;
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+.workflow-step-box-body {
+  padding: 8px;
+  border-top: 1px solid #e5e7eb;
+  max-height: 280px;
+  overflow: auto;
+}
+
+.workflow-step-children,
+.workflow-unassigned-children {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.workflow-child-box {
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  background: #f9fafb;
+}
+
+.workflow-child-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.workflow-child-header:hover {
+  background: #f3f4f6;
+}
+
+
+.workflow-child-toggle {
+  font-size: 9px;
+  color: #9ca3af;
+  width: 10px;
+  flex-shrink: 0;
+}
+
+.workflow-child-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: #374151;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow-child-id {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: #9ca3af;
+}
+
+.workflow-child-duration {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: #6b7280;
+}
+
+.workflow-child-body {
+  padding: 8px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.workflow-child-doc-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 4px 8px;
+  border-top: 1px solid #e5e7eb;
+  background: #f8fafc;
+  font-size: 10px;
+  color: #6b7280;
+}
+
+.workflow-child-doc-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.workflow-child-doc-label {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 9px;
+  color: #94a3b8;
+}
+
+.workflow-child-doc-value {
+  font-family: 'IBM Plex Mono', monospace;
+  color: #475569;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow-child-doc-url .workflow-child-doc-value {
+  max-width: 420px;
+}
+
+.workflow-child-input-meta {
+  margin-bottom: 8px;
+}
+
+.workflow-child-input-meta-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 4px;
+}
+
+.workflow-child-input-meta-list {
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  background: #fff;
+  max-height: 120px;
+  overflow: auto;
+}
+
+.workflow-child-input-meta-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(0, 3fr);
+  gap: 6px 10px;
+  padding: 4px 6px;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 10px;
+}
+
+.workflow-child-input-meta-row:last-child {
+  border-bottom: none;
+}
+
+.workflow-child-input-meta-id {
+  font-family: 'IBM Plex Mono', monospace;
+  color: #475569;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow-child-input-meta-url {
+  font-family: 'IBM Plex Mono', monospace;
+  color: #6b7280;
+  white-space: normal;
+  word-break: break-all;
+}
+
+.workflow-child-loading,
+.workflow-child-error {
+  font-size: 11px;
   color: #6b7280;
 }
 
@@ -3217,4 +3490,23 @@ html, body, #root {
   font-size: 12px;
   color: #6b7280;
   font-style: italic;
+}
+
+/* Disable resize handles when panels are collapsed */
+/* When filetree is collapsed, disable the sash to its right (first sash in horizontal splitview) */
+.filetree-is-collapsed > .dv-grid-view > .dv-split-view-container.dv-horizontal > .dv-sash-container > .dv-sash:first-child {
+  pointer-events: none !important;
+  cursor: default !important;
+}
+
+/* When terminal is collapsed, disable the sash to its left (last sash in horizontal splitview) */
+.terminal-is-collapsed > .dv-grid-view > .dv-split-view-container.dv-horizontal > .dv-sash-container > .dv-sash:last-child {
+  pointer-events: none !important;
+  cursor: default !important;
+}
+
+/* When workflows is collapsed, disable all vertical splitview sashes (horizontal resize line) */
+.workflows-is-collapsed .dv-split-view-container.dv-vertical > .dv-sash-container > .dv-sash {
+  pointer-events: none !important;
+  cursor: default !important;
 }

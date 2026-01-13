@@ -323,17 +323,30 @@ class TestGetLiveStatus:
         assert status["steps"] == []
 
     def test_get_status_with_events(self, dbos_tables):
-        """Test status with workflow events."""
+        """Test status with workflow events and steps."""
         workflow_id = "test-status-1"
         _insert_event(workflow_id, "status", "running")
         _insert_event(workflow_id, "current_step", "extract")
-        _insert_event(workflow_id, "stage_current", 5)
-        _insert_event(workflow_id, "stage_total", 10)
+
+        # Add step progress - progress is now calculated from steps
+        _insert_stream(
+            workflow_id,
+            "progress",
+            {"step": "extract", "total": 10, "status": "start", "timestamp": 1000},
+            offset=1,
+        )
+        _insert_stream(
+            workflow_id,
+            "progress",
+            {"step": "extract", "idx": 0, "total": 10, "status": "success", "timestamp": 1001},
+            offset=2,
+        )
 
         status = get_live_status(workflow_id)
         assert status["status"] == "running"
         assert status["current_step"] == "extract"
-        assert status["progress"]["current"] == 5
+        # Progress is calculated from steps (1 step with 1/10 complete)
+        assert status["progress"]["current"] == 1
         assert status["progress"]["total"] == 10
 
     def test_get_status_with_progress_streams(self, dbos_tables):
@@ -377,11 +390,11 @@ class TestFormatLiveStatus:
             "current_step": "extract",
             "progress": {"current": 5, "total": 10},
             "steps": [],
+            "step_logs": {},
         }
         output = format_live_status(status)
         assert "test-123" in output
         assert "running" in output
-        assert "extract" in output
         assert "5/10" in output
 
     def test_format_with_steps(self):
@@ -392,14 +405,33 @@ class TestFormatLiveStatus:
             "current_step": "extract",
             "progress": {"current": 5, "total": 10},
             "steps": [
-                {"name": "extract", "status": "completed", "current": 10, "total": 10},
-                {"name": "transform", "status": "running", "current": 3, "total": 5},
+                {
+                    "name": "extract",
+                    "status": "success",
+                    "success": 10,
+                    "error": 0,
+                    "current": 10,
+                    "total": 10,
+                },
+                {
+                    "name": "transform",
+                    "status": "running",
+                    "success": 3,
+                    "error": 0,
+                    "current": 3,
+                    "total": 5,
+                },
             ],
+            "step_logs": {
+                "extract": [{"message": "Processing complete", "level": "info"}],
+            },
         }
         output = format_live_status(status)
         assert "extract" in output
         assert "transform" in output
-        assert "completed" in output
+        assert "10 ok" in output  # extract success count
+        assert "3 ok" in output  # transform success count
+        assert "Processing complete" in output  # log message
 
 
 class TestFormatStepLogs:
@@ -421,3 +453,142 @@ class TestFormatStepLogs:
         assert "[error]" in output
         assert "Processing item 1" in output
         assert "Failed" in output
+
+
+# ============================================================================
+# Duration Calculation Tests
+# ============================================================================
+
+
+class TestDurationCalculation:
+    """Tests for duration_ms calculation from started_at/completed_at events."""
+
+    def test_duration_from_events(self, dbos_tables):
+        """Test duration is calculated from started_at and completed_at events."""
+        workflow_id = "test-duration-1"
+        start_time = 1700000000.0  # Some timestamp
+        end_time = 1700000002.5  # 2.5 seconds later
+
+        _insert_event(workflow_id, "status", "completed")
+        _insert_event(workflow_id, "started_at", start_time)
+        _insert_event(workflow_id, "completed_at", end_time)
+
+        status = get_live_status(workflow_id)
+        assert status["duration_ms"] == 2500  # 2.5 seconds = 2500ms
+
+    def test_duration_none_when_not_completed(self, dbos_tables):
+        """Test duration is None when completed_at is missing."""
+        workflow_id = "test-duration-2"
+        _insert_event(workflow_id, "status", "running")
+        _insert_event(workflow_id, "started_at", 1700000000.0)
+        # No completed_at event
+
+        status = get_live_status(workflow_id)
+        assert status["duration_ms"] is None
+
+    def test_duration_none_when_started_missing(self, dbos_tables):
+        """Test duration is None when started_at is missing."""
+        workflow_id = "test-duration-3"
+        _insert_event(workflow_id, "status", "completed")
+        _insert_event(workflow_id, "completed_at", 1700000002.5)
+        # No started_at event
+
+        status = get_live_status(workflow_id)
+        assert status["duration_ms"] is None
+
+    def test_duration_short_workflow(self, dbos_tables):
+        """Test duration for a very short workflow (milliseconds)."""
+        workflow_id = "test-duration-4"
+        start_time = 1700000000.0
+        end_time = 1700000000.125  # 125ms later (use exact binary fraction)
+
+        _insert_event(workflow_id, "status", "completed")
+        _insert_event(workflow_id, "started_at", start_time)
+        _insert_event(workflow_id, "completed_at", end_time)
+
+        status = get_live_status(workflow_id)
+        assert status["duration_ms"] == 125
+
+
+# ============================================================================
+# Batch Step Success Counting Tests
+# ============================================================================
+
+
+class TestBatchStepSuccessCounting:
+    """Tests for steps that complete without per-item progress (e.g., save_content)."""
+
+    def test_batch_step_success_uses_total(self, dbos_tables):
+        """Test that a step completing with status=success uses total as success count."""
+        workflow_id = "test-batch-1"
+        _insert_event(workflow_id, "status", "completed")
+
+        # Step emits start (with total) and success (without per-item idx)
+        _insert_stream(
+            workflow_id,
+            "progress",
+            {"step": "save_content", "total": 5, "status": "start", "timestamp": 1000},
+            offset=1,
+        )
+        _insert_stream(
+            workflow_id,
+            "progress",
+            {"step": "save_content", "status": "success", "timestamp": 1001},
+            offset=2,
+        )
+
+        status = get_live_status(workflow_id)
+        assert len(status["steps"]) == 1
+        step = status["steps"][0]
+        assert step["name"] == "save_content"
+        assert step["status"] == "success"
+        assert step["total"] == 5
+        # Success count should fall back to total when no per-item tracking
+        assert step["success"] == 5
+        # Current should also be set to total for completed steps without per-item tracking
+        assert step["current"] == 5
+
+    def test_batch_step_with_per_item_uses_seen_count(self, dbos_tables):
+        """Test that per-item tracking takes precedence over total fallback."""
+        workflow_id = "test-batch-2"
+        _insert_event(workflow_id, "status", "completed")
+
+        # Step with per-item progress (has idx)
+        _insert_stream(
+            workflow_id,
+            "progress",
+            {"step": "fetch_documents", "total": 3, "status": "start", "timestamp": 1000},
+            offset=1,
+        )
+        _insert_stream(
+            workflow_id,
+            "progress",
+            {
+                "step": "fetch_documents",
+                "idx": 0,
+                "total": 3,
+                "status": "success",
+                "timestamp": 1001,
+            },
+            offset=2,
+        )
+        _insert_stream(
+            workflow_id,
+            "progress",
+            {
+                "step": "fetch_documents",
+                "idx": 1,
+                "total": 3,
+                "status": "success",
+                "timestamp": 1002,
+            },
+            offset=3,
+        )
+        # idx=2 failed, not emitted with success
+
+        status = get_live_status(workflow_id)
+        step = status["steps"][0]
+        assert step["name"] == "fetch_documents"
+        # Should use actual per-item count, not total
+        assert step["success"] == 2
+        assert step["total"] == 3
