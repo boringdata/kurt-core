@@ -883,6 +883,27 @@ export default function WorkflowRow({
                 {formatDateTime(workflow.updated_at)}
               </span>
             </div>
+            {(workflow.tokens_in || workflow.tokens_out || workflow.cost_usd) && (
+              <div className="workflow-detail-row workflow-detail-inline workflow-tokens">
+                {(workflow.tokens_in != null || workflow.tokens_out != null) && (
+                  <>
+                    <span className="workflow-detail-label">Tokens:</span>
+                    <span className="workflow-detail-value workflow-token-count">
+                      {workflow.tokens_in?.toLocaleString() || 0} in / {workflow.tokens_out?.toLocaleString() || 0} out
+                    </span>
+                  </>
+                )}
+                {workflow.cost_usd != null && (
+                  <>
+                    <span className="workflow-detail-separator">•</span>
+                    <span className="workflow-detail-label">Cost:</span>
+                    <span className="workflow-detail-value workflow-cost">
+                      ${workflow.cost_usd.toFixed(4)}
+                    </span>
+                  </>
+                )}
+              </div>
+            )}
           </div>
 
           <CommandBlock command={command} />
