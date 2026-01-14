@@ -1,0 +1,117 @@
+"""Show Kurt Cloud setup and migration instructions."""
+
+import click
+
+from kurt.admin.telemetry.decorators import track_command
+
+
+@click.command()
+@track_command
+def cloud_setup_cmd():
+    """Show instructions for Kurt Cloud setup and migration."""
+    content = """
+═══════════════════════════════════════════════════════════════════
+KURT CLOUD SETUP
+═══════════════════════════════════════════════════════════════════
+
+Kurt supports three database modes:
+  • Local SQLite (default) - .kurt/kurt.sqlite
+  • Shared PostgreSQL - Team collaboration with shared Supabase/Postgres
+  • Kurt Cloud (future) - Fully managed with GitHub integration
+
+═══════════════════════════════════════════════════════════════════
+AUTHENTICATION
+═══════════════════════════════════════════════════════════════════
+
+LOGIN (required for shared database):
+  kurt cloud login
+
+  Sends a magic link to your email. Click to authenticate.
+  Your user_id is used to tag all data you create.
+
+CHECK STATUS:
+  kurt cloud status
+
+LOGOUT:
+  kurt cloud logout
+
+═══════════════════════════════════════════════════════════════════
+SHARED POSTGRESQL SETUP (TEAM OWNER)
+═══════════════════════════════════════════════════════════════════
+
+1. LOGIN TO KURT CLOUD:
+   kurt cloud login
+
+2. GET A DATABASE URL:
+   From Supabase, Neon, or your Postgres provider
+
+3. ADD TO kurt.config:
+   DATABASE_URL="postgresql://user:pass@host:5432/dbname"
+
+4. RUN MIGRATIONS:
+   kurt admin migrate apply
+
+5. VERIFY:
+   kurt db status
+
+═══════════════════════════════════════════════════════════════════
+INVITE TEAM MEMBERS
+═══════════════════════════════════════════════════════════════════
+
+SHOW INVITE INFO:
+  kurt cloud invite user@example.com
+
+This displays the WORKSPACE_ID and DATABASE_URL to share.
+
+TEAM MEMBER JOINS:
+  1. kurt cloud login (with their email)
+  2. Add shared WORKSPACE_ID and DATABASE_URL to their kurt.config
+  3. kurt admin migrate apply
+  4. kurt cloud join <WORKSPACE_ID>
+
+Or use the join command directly:
+  kurt cloud join <WORKSPACE_ID>
+
+═══════════════════════════════════════════════════════════════════
+MIGRATE FROM SQLITE TO SHARED POSTGRES
+═══════════════════════════════════════════════════════════════════
+
+EXPORT LOCAL DATA:
+  kurt db export --output my-backup.json --pretty
+
+SET DATABASE_URL in kurt.config (see above)
+
+IMPORT TO POSTGRESQL:
+  kurt db import my-backup.json
+
+Your local SQLite database remains unchanged as a backup.
+
+═══════════════════════════════════════════════════════════════════
+DATA MANAGEMENT
+═══════════════════════════════════════════════════════════════════
+
+EXPORT DATA (backup):
+  kurt db export --output my-backup.json --pretty
+
+IMPORT DATA:
+  kurt db import my-backup.json
+
+═══════════════════════════════════════════════════════════════════
+KURT CLOUD (FUTURE)
+═══════════════════════════════════════════════════════════════════
+
+Full Kurt Cloud will provide:
+  • Managed database with automatic backups
+  • GitHub App integration for repo access
+  • Web dashboard for team management
+  • Scheduled agent workflows
+
+REQUIREMENTS (not yet implemented):
+  • GitHub OAuth or GitHub App installation
+  • Kurt Cloud account and subscription
+
+For now, use shared PostgreSQL for team collaboration.
+
+═══════════════════════════════════════════════════════════════════
+"""
+    click.echo(content.strip())

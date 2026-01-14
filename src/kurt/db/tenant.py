@@ -11,6 +11,10 @@ Usage:
     # Check if multi-tenant mode is enabled
     if is_multi_tenant():
         # Enforce workspace filtering
+
+Local SQLite mode:
+    Workspace is auto-detected from GitHub repo (owner/repo:branch).
+    This ensures data is tagged consistently for later migration to cloud.
 """
 
 from __future__ import annotations
@@ -146,10 +150,52 @@ def get_mode() -> str:
         return "local_postgres"
 
 
+# =============================================================================
+# Local Workspace Context (from kurt.config)
+# =============================================================================
+
+
+def init_workspace_from_config() -> bool:
+    """Initialize workspace context from kurt.config.
+
+    Reads WORKSPACE_ID from config and sets workspace context.
+    Call this at CLI startup for local SQLite mode.
+
+    Returns:
+        True if context was set, False if no config or workspace ID.
+    """
+    # Don't override if already in cloud mode
+    if is_cloud_mode():
+        return False
+
+    # Already set?
+    if get_workspace_id():
+        return True
+
+    try:
+        from kurt.config import config_file_exists, get_config
+
+        if not config_file_exists():
+            return False
+
+        config = get_config()
+        if config.WORKSPACE_ID:
+            set_workspace_context(
+                workspace_id=config.WORKSPACE_ID,
+                user_id="local",  # Local user marker
+            )
+            return True
+    except Exception:
+        pass
+
+    return False
+
+
 def load_context_from_credentials() -> bool:
     """Load workspace context from stored CLI credentials.
 
-    Call this at CLI startup to set context from `kurt auth login` credentials.
+    Call this at CLI startup to set context from `kurt cloud login` credentials.
+    Uses the stored user_id and workspace_id (from kurt.config).
 
     Returns:
         True if context was set, False if no credentials or not logged in.
@@ -161,13 +207,31 @@ def load_context_from_credentials() -> bool:
         if creds is None:
             return False
 
+        # Get workspace_id from config (preferred) or credentials
+        workspace_id = creds.workspace_id
+        if not workspace_id:
+            try:
+                from kurt.config import config_file_exists, get_config
+
+                if config_file_exists():
+                    config = get_config()
+                    workspace_id = config.WORKSPACE_ID
+            except Exception:
+                pass
+
+        # Fall back to user_id if no workspace_id
+        if not workspace_id:
+            workspace_id = creds.user_id
+
         # Set context from stored credentials
         set_workspace_context(
-            workspace_id=creds.workspace_id or creds.user_id,
+            workspace_id=workspace_id,
             user_id=creds.user_id,
         )
         return True
     except ImportError:
+        return False
+    except Exception:
         return False
 
 

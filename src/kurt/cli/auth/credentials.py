@@ -10,8 +10,11 @@ from pathlib import Path
 from typing import Optional
 
 # =============================================================================
-# Kurt Cloud Supabase Configuration (safe to be public)
+# Kurt Cloud Configuration
 # =============================================================================
+
+# Kurt Cloud API URL (for hosted auth callback)
+KURT_CLOUD_API_URL = "https://api.kurt.cloud"
 
 # Kurt Cloud Supabase project URL
 KURT_CLOUD_SUPABASE_URL = "https://hnhlfropgnbskbsojgts.supabase.co"
@@ -115,3 +118,24 @@ def get_supabase_anon_key() -> str:
         or os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY")
         or KURT_CLOUD_SUPABASE_ANON_KEY
     )
+
+
+def get_cloud_api_url() -> str:
+    """Get Kurt Cloud API URL (env override or hardcoded default)."""
+    return os.environ.get("KURT_CLOUD_URL") or KURT_CLOUD_API_URL
+
+
+def get_auth_callback_url(cli_port: int = 9876) -> str:
+    """Get the auth callback URL.
+
+    In production, this points to the hosted Kurt Cloud callback.
+    The callback page will then post tokens to the local CLI server.
+
+    Args:
+        cli_port: Local CLI callback server port
+
+    Returns:
+        Callback URL for Supabase magic link
+    """
+    cloud_url = get_cloud_api_url()
+    return f"{cloud_url}/auth/callback?cli_port={cli_port}"
