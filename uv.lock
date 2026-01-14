@@ -1648,6 +1648,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
+    { name = "pytest-postgresql" },
     { name = "ruff" },
 ]
 
@@ -1703,6 +1704,7 @@ dev = [
     { name = "pytest", specifier = ">=8.4.2" },
     { name = "pytest-asyncio", specifier = ">=0.24.0" },
     { name = "pytest-cov", specifier = ">=4.1.0" },
+    { name = "pytest-postgresql", specifier = ">=7.0.2" },
     { name = "ruff", specifier = ">=0.1.0" },
 ]
 
