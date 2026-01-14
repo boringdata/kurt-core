@@ -36,104 +36,97 @@ def login_cmd():
     Example:
         kurt cloud login
     """
-    import http.server
-    import threading
+    import json
     import time
+    import urllib.request
     import webbrowser
 
-    from kurt.cli.auth.commands import MagicLinkCallbackHandler, get_user_info
     from kurt.cli.auth.credentials import Credentials, get_cloud_api_url, save_credentials
 
-    # Start local callback server
-    port = 9876  # Fixed port for callback
-
-    try:
-        server = http.server.HTTPServer(("localhost", port), MagicLinkCallbackHandler)
-    except OSError as e:
-        if "Address already in use" in str(e):
-            console.print(f"[red]Port {port} is already in use.[/red]")
-            console.print("[dim]Please close other applications using this port.[/dim]")
-            raise click.Abort()
-        raise
-
-    server.auth_result = None
-    server.auth_error = None
-
-    # Open browser to Kurt Cloud login page
     cloud_url = get_cloud_api_url()
-    login_url = f"{cloud_url}/auth/login-page?cli_port={port}"
 
+    # Step 1: Create CLI session
+    console.print("[dim]Creating login session...[/dim]")
+    try:
+        req = urllib.request.Request(f"{cloud_url}/auth/cli-session", method="POST")
+        req.add_header("Content-Type", "application/json")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            session_data = json.loads(resp.read().decode())
+    except Exception as e:
+        console.print(f"[red]Failed to create login session: {e}[/red]")
+        raise click.Abort()
+
+    session_id = session_data["session_id"]
+    login_url = session_data["login_url"]
+
+    # Step 2: Open browser
+    console.print()
     console.print("[bold]Opening browser for login...[/bold]")
-    console.print(f"[dim]If browser doesn't open, visit: {login_url}[/dim]")
+    console.print("[dim]If browser doesn't open, visit:[/dim]")
+    console.print(f"  {login_url}")
     console.print()
 
     webbrowser.open(login_url)
 
-    console.print("[dim]Waiting for authentication (timeout: 5 minutes)...[/dim]")
+    # Step 3: Poll for completion
+    console.print("[dim]Waiting for authentication...[/dim]")
 
-    # Handle requests in background
-    def handle_requests():
-        while server.auth_result is None and server.auth_error is None:
-            server.handle_request()
-
-    thread = threading.Thread(target=handle_requests)
-    thread.daemon = True
-    thread.start()
-
-    # Wait with timeout
-    timeout = 300
+    timeout = 600  # 10 minutes
+    poll_interval = 2  # seconds
     start = time.time()
-    while (
-        server.auth_result is None and server.auth_error is None and time.time() - start < timeout
-    ):
-        time.sleep(0.5)
 
-    if server.auth_error:
-        console.print(f"[red]Authentication failed: {server.auth_error}[/red]")
-        raise click.Abort()
+    while time.time() - start < timeout:
+        time.sleep(poll_interval)
 
-    if server.auth_result is None:
-        console.print("[red]Authentication timed out. Please try again.[/red]")
-        raise click.Abort()
+        try:
+            req = urllib.request.Request(f"{cloud_url}/auth/cli-session/{session_id}")
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                status_data = json.loads(resp.read().decode())
+        except Exception:
+            continue  # Network error, retry
 
-    # Get user info via Kurt Cloud
-    access_token = server.auth_result["access_token"]
-    try:
-        user_info = get_user_info(access_token)
-    except click.ClickException as e:
-        console.print(f"[red]{e.message}[/red]")
-        raise click.Abort()
+        status = status_data.get("status")
 
-    # Calculate expiry timestamp
-    expires_at = int(time.time()) + server.auth_result["expires_in"]
+        if status == "completed":
+            # Success! Save credentials
+            expires_at = int(time.time()) + status_data.get("expires_in", 3600)
 
-    # Get workspace_id from local config if available
-    workspace_id = None
-    try:
-        from kurt.config import config_file_exists, get_config
+            # Get workspace_id from local config if available
+            workspace_id = None
+            try:
+                from kurt.config import config_file_exists, get_config
 
-        if config_file_exists():
-            config = get_config()
-            workspace_id = config.WORKSPACE_ID
-    except Exception:
-        pass
+                if config_file_exists():
+                    config = get_config()
+                    workspace_id = config.WORKSPACE_ID
+            except Exception:
+                pass
 
-    # Save credentials
-    creds = Credentials(
-        access_token=access_token,
-        refresh_token=server.auth_result["refresh_token"],
-        user_id=user_info["user_id"],
-        email=user_info.get("email"),
-        workspace_id=workspace_id,
-        expires_at=expires_at,
-    )
-    save_credentials(creds)
+            creds = Credentials(
+                access_token=status_data["access_token"],
+                refresh_token=status_data.get("refresh_token", ""),
+                user_id=status_data.get("user_id", ""),
+                email=status_data.get("email"),
+                workspace_id=workspace_id,
+                expires_at=expires_at,
+            )
+            save_credentials(creds)
 
-    console.print()
-    console.print(f"[green]✓ Logged in as {creds.email or creds.user_id}[/green]")
-    console.print(f"[dim]User ID: {creds.user_id}[/dim]")
-    if workspace_id:
-        console.print(f"[dim]Workspace: {workspace_id}[/dim]")
+            console.print()
+            console.print(f"[green]✓ Logged in as {creds.email or creds.user_id}[/green]")
+            console.print(f"[dim]User ID: {creds.user_id}[/dim]")
+            if workspace_id:
+                console.print(f"[dim]Workspace: {workspace_id}[/dim]")
+            return
+
+        elif status == "expired":
+            console.print("[red]Login session expired. Please try again.[/red]")
+            raise click.Abort()
+
+        # status == "pending", continue polling
+
+    console.print("[red]Authentication timed out. Please try again.[/red]")
+    raise click.Abort()
 
 
 @cloud_group.command(name="logout")

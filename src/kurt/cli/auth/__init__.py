@@ -2,7 +2,7 @@
 
 import click
 
-from .commands import login, logout, status, whoami
+from .commands import logout, status, whoami
 
 
 @click.group()
@@ -14,7 +14,7 @@ def auth():
     pass
 
 
-auth.add_command(login)
+# Note: login command is now in kurt.cli.cloud (uses browser + polling)
 auth.add_command(logout)
 auth.add_command(status)
 auth.add_command(whoami)
