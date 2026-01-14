@@ -159,10 +159,11 @@ def init_workspace_from_config() -> bool:
     """Initialize workspace context from kurt.config.
 
     Reads WORKSPACE_ID from config and sets workspace context.
+    If no WORKSPACE_ID exists, generates one and saves it to config.
     Call this at CLI startup for local SQLite mode.
 
     Returns:
-        True if context was set, False if no config or workspace ID.
+        True if context was set, False if no config file.
     """
     # Don't override if already in cloud mode
     if is_cloud_mode():
@@ -179,16 +180,57 @@ def init_workspace_from_config() -> bool:
             return False
 
         config = get_config()
-        if config.WORKSPACE_ID:
-            set_workspace_context(
-                workspace_id=config.WORKSPACE_ID,
-                user_id="local",  # Local user marker
-            )
-            return True
+        workspace_id = config.WORKSPACE_ID
+
+        # Auto-generate WORKSPACE_ID for older configs that don't have one
+        if not workspace_id:
+            workspace_id = _ensure_workspace_id_in_config()
+            if not workspace_id:
+                return False
+
+        set_workspace_context(
+            workspace_id=workspace_id,
+            user_id="local",  # Local user marker
+        )
+        return True
     except Exception:
         pass
 
     return False
+
+
+def _ensure_workspace_id_in_config() -> Optional[str]:
+    """Generate and save WORKSPACE_ID if missing from config.
+
+    Returns:
+        The workspace ID (existing or newly generated), or None on error.
+    """
+    import re
+    import uuid
+
+    try:
+        from kurt.config import get_config_path
+
+        config_path = get_config_path()
+        if not config_path.exists():
+            return None
+
+        content = config_path.read_text()
+
+        # Check if already has WORKSPACE_ID
+        if re.search(r"^WORKSPACE_ID\s*=", content, re.MULTILINE):
+            return None  # Already exists, let caller handle
+
+        # Generate new workspace ID
+        workspace_id = str(uuid.uuid4())
+
+        # Append to config file
+        content += f'\n# Auto-generated workspace identifier\nWORKSPACE_ID="{workspace_id}"\n'
+        config_path.write_text(content)
+
+        return workspace_id
+    except Exception:
+        return None
 
 
 def load_context_from_credentials() -> bool:

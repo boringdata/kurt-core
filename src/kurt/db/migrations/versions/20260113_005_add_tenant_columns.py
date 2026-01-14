@@ -5,8 +5,11 @@ Revises: 004_unique_source_url
 Create Date: 2026-01-13
 
 These tables were missing user_id and workspace_id columns for multi-tenant support.
+Also ensures WORKSPACE_ID exists in kurt.config for data tagging.
 """
 
+import re
+import uuid
 from typing import Sequence, Union
 
 import sqlalchemy as sa
@@ -19,7 +22,39 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _ensure_workspace_id_in_config() -> None:
+    """Generate and save WORKSPACE_ID to kurt.config if missing.
+
+    This ensures existing users get a workspace identifier for data tagging,
+    which is required for future migration to cloud/shared databases.
+    """
+    try:
+        from kurt.config import get_config_path
+
+        config_path = get_config_path()
+        if not config_path.exists():
+            return
+
+        content = config_path.read_text()
+
+        # Check if already has WORKSPACE_ID
+        if re.search(r"^WORKSPACE_ID\s*=", content, re.MULTILINE):
+            return  # Already exists
+
+        # Generate new workspace ID
+        workspace_id = str(uuid.uuid4())
+
+        # Append to config file
+        content += f'\n# Auto-generated workspace identifier for multi-tenant support\nWORKSPACE_ID="{workspace_id}"\n'
+        config_path.write_text(content)
+    except Exception:
+        # Don't fail migration if config can't be updated
+        pass
+
+
 def upgrade() -> None:
+    # Ensure WORKSPACE_ID exists in kurt.config for data tagging
+    _ensure_workspace_id_in_config()
     # Add tenant columns to research_documents
     op.add_column("research_documents", sa.Column("user_id", sa.String(), nullable=True))
     op.add_column("research_documents", sa.Column("workspace_id", sa.String(), nullable=True))
