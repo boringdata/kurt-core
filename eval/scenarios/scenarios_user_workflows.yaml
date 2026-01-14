@@ -328,3 +328,193 @@ scenarios:
       - type: ConversationContains
         text: "kurt agents run"
         case_sensitive: false
+
+  # ========================================================================
+  # Scenario 05: Create Workflow with Proper Tracking Hooks
+  # ========================================================================
+  - name: 05_create_workflow_with_tracking_hooks
+    description: Agent creates a workflow with LLMStep that uses TrackingHooks and TracingHooks
+
+    setup_commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt init
+      - mkdir -p workflows
+
+    initial_prompt: |
+      Create a workflow for analyzing documents that uses LLMStep with proper tracking.
+
+      IMPORTANT: You MUST use the hooks system for progress tracking and cost tracing.
+
+      Step 1: Read the workflow creation guidelines
+      ```bash
+      kurt show workflow-create
+      ```
+
+      Step 2: Create directory
+      ```bash
+      mkdir -p workflows/doc_analyzer
+      ```
+
+      Step 3: Create workflows/doc_analyzer/workflow.md:
+      ```yaml
+      ---
+      name: doc-analyzer
+      title: Document Analyzer
+      description: Analyze documents using LLM with tracking
+      agent:
+        model: claude-sonnet-4-20250514
+        max_turns: 15
+        allowed_tools:
+          - Bash
+          - Read
+          - Write
+      guardrails:
+        max_tokens: 100000
+        max_time: 300
+      ---
+
+      # Document Analyzer
+
+      Analyze documents and extract key information with full tracking.
+      ```
+
+      Step 4: Create workflows/doc_analyzer/tools.py with:
+      - Import CompositeStepHooks, TrackingHooks, TracingHooks from kurt.core
+      - Create a create_hooks() function that returns CompositeStepHooks with both TrackingHooks and TracingHooks
+      - Use LLMStep with hooks=create_hooks() parameter
+      - The llm_fn must return (result, metrics) tuple where metrics has tokens_in, tokens_out, cost
+
+      The tools.py MUST include:
+      ```python
+      from kurt.core import (
+          LLMStep,
+          CompositeStepHooks,
+          TrackingHooks,
+          TracingHooks,
+      )
+
+      def create_hooks() -> CompositeStepHooks:
+          return CompositeStepHooks([
+              TrackingHooks(),
+              TracingHooks(model_name="claude-sonnet-4-20250514", provider="anthropic"),
+          ])
+      ```
+
+      And the LLMStep must use hooks:
+      ```python
+      step = LLMStep(
+          name="analyze",
+          ...
+          hooks=create_hooks(),
+      )
+      ```
+
+      Step 5: Validate
+      ```bash
+      kurt agents validate
+      ```
+
+      Execute all steps and ensure the tools.py uses hooks correctly.
+
+    assertions:
+      - type: FileExists
+        path: workflows/doc_analyzer/workflow.md
+      - type: FileExists
+        path: workflows/doc_analyzer/tools.py
+      - type: FileContains
+        path: workflows/doc_analyzer/tools.py
+        content: "TrackingHooks"
+      - type: FileContains
+        path: workflows/doc_analyzer/tools.py
+        content: "TracingHooks"
+      - type: FileContains
+        path: workflows/doc_analyzer/tools.py
+        content: "CompositeStepHooks"
+      - type: FileContains
+        path: workflows/doc_analyzer/tools.py
+        content: "create_hooks"
+      - type: FileContains
+        path: workflows/doc_analyzer/tools.py
+        content: "hooks="
+      - type: FileContains
+        path: workflows/doc_analyzer/tools.py
+        content: "tokens_in"
+      - type: ConversationContains
+        text: "kurt agents validate"
+        case_sensitive: false
+
+  # ========================================================================
+  # Scenario 06: Verify Hooks Return Metrics
+  # ========================================================================
+  - name: 06_verify_llm_fn_returns_metrics
+    description: Agent creates tools.py where llm_fn returns proper metrics for TracingHooks
+
+    setup_commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt init
+      - mkdir -p workflows
+
+    initial_prompt: |
+      Create a workflow tool that correctly returns metrics from the LLM function.
+
+      The llm_fn MUST return a tuple of (result, metrics) for TracingHooks to track costs.
+
+      Step 1: Read guidelines
+      ```bash
+      kurt show workflow-create
+      ```
+
+      Step 2: Create directory
+      ```bash
+      mkdir -p workflows/cost_tracker
+      ```
+
+      Step 3: Create workflows/cost_tracker/workflow.md with basic config
+
+      Step 4: Create workflows/cost_tracker/tools.py that includes:
+
+      1. A Pydantic output schema
+      2. An llm_fn that returns (result, metrics) tuple:
+         ```python
+         def call_llm(prompt: str) -> tuple[OutputSchema, dict]:
+             # Call the LLM API
+             response = litellm.completion(...)
+
+             # Parse result
+             result = OutputSchema.model_validate_json(response.choices[0].message.content)
+
+             # Return metrics for TracingHooks
+             metrics = {
+                 "tokens_in": response.usage.prompt_tokens,
+                 "tokens_out": response.usage.completion_tokens,
+                 "cost": response.usage.prompt_tokens * 0.000003 + response.usage.completion_tokens * 0.000015,
+             }
+
+             return result, metrics
+         ```
+
+      3. An LLMStep using hooks and the llm_fn
+
+      Step 5: Validate
+      ```bash
+      kurt agents validate
+      ```
+
+      Create the complete implementation.
+
+    assertions:
+      - type: FileExists
+        path: workflows/cost_tracker/tools.py
+      - type: FileContains
+        path: workflows/cost_tracker/tools.py
+        content: "tuple["
+      - type: FileContains
+        path: workflows/cost_tracker/tools.py
+        content: "tokens_in"
+      - type: FileContains
+        path: workflows/cost_tracker/tools.py
+        content: "tokens_out"
+      - type: FileContains
+        path: workflows/cost_tracker/tools.py
+        content: "cost"
+      - type: FileContains
+        path: workflows/cost_tracker/tools.py
+        content: "return result, metrics"
