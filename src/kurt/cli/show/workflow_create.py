@@ -110,7 +110,8 @@ TEMPLATE VARIABLES
 FILE 2: tools.py (Optional)
 ═══════════════════════════════════════════════════════════════════
 
-Tools are DBOS workflows that use building blocks.
+Tools are DBOS workflows that use building blocks with hooks for
+logging, progress tracking, and cost tracing.
 
 ```python
 \"\"\"Custom tools for competitor_tracker workflow.\"\"\"
@@ -120,7 +121,14 @@ from typing import Any
 import pandas as pd
 from dbos import DBOS
 from pydantic import BaseModel
-from kurt.core import LLMStep, EmbeddingStep, get_session
+from kurt.core import (
+    LLMStep,
+    EmbeddingStep,
+    CompositeStepHooks,
+    TrackingHooks,
+    TracingHooks,
+    get_session,
+)
 
 
 # Output schema for LLM
@@ -131,6 +139,18 @@ class AnalysisOutput(BaseModel):
     summary: str
 
 
+# Create hooks for logging and tracing
+def create_hooks() -> CompositeStepHooks:
+    \"\"\"Create hooks for progress tracking and cost tracing.\"\"\"
+    return CompositeStepHooks([
+        TrackingHooks(),   # DBOS events + streams (progress, logs)
+        TracingHooks(      # Token/cost tracking in llm_traces
+            model_name="claude-sonnet-4-20250514",
+            provider="anthropic",
+        ),
+    ])
+
+
 # Tool = DBOS workflow
 @DBOS.workflow()
 def analyze_competitor(url: str) -> dict[str, Any]:
@@ -139,7 +159,7 @@ def analyze_competitor(url: str) -> dict[str, Any]:
     # Step 1: Fetch content
     content = fetch_url(url)
 
-    # Step 2: LLM analysis
+    # Step 2: LLM analysis (with hooks)
     analysis = run_analysis(content)
 
     # Step 3: Persist (transaction from workflow)
@@ -157,18 +177,21 @@ def fetch_url(url: str) -> str:
     return response.text
 
 
-# Step using LLMStep building block
+# Step using LLMStep building block WITH HOOKS
 @DBOS.step()
 def run_analysis(content: str) -> dict:
     \"\"\"Analyze content with LLM.\"\"\"
     df = pd.DataFrame([{"content": content}])
 
+    # Create step with hooks for tracking and tracing
     step = LLMStep(
         name="analyze",
         input_columns=["content"],
         prompt_template="Analyze this competitor:\\n{content}",
         output_schema=AnalysisOutput,
         llm_fn=_call_llm,
+        concurrency=3,
+        hooks=create_hooks(),  # ← IMPORTANT: enables logging + tracing
     )
 
     result_df = step.run(df)
@@ -190,7 +213,7 @@ def save_analysis(url: str, analysis: dict) -> None:
 
 
 def _call_llm(prompt: str) -> tuple[AnalysisOutput, dict]:
-    \"\"\"LLM call - returns (result, metrics).\"\"\"
+    \"\"\"LLM call - returns (result, metrics) for TracingHooks.\"\"\"
     import litellm
 
     response = litellm.completion(
@@ -203,9 +226,11 @@ def _call_llm(prompt: str) -> tuple[AnalysisOutput, dict]:
         response.choices[0].message.content
     )
 
+    # Return metrics for TracingHooks to record in llm_traces
     metrics = {
         "tokens_in": response.usage.prompt_tokens,
         "tokens_out": response.usage.completion_tokens,
+        "cost": response.usage.prompt_tokens * 0.000003 + response.usage.completion_tokens * 0.000015,
     }
 
     return result, metrics
@@ -233,6 +258,7 @@ LLMStep - Batch LLM processing:
       output_schema=OutputModel,
       llm_fn=my_llm_fn,
       concurrency=3,
+      hooks=create_hooks(),  # ← Add hooks!
   )
   result_df = step.run(df)
 
@@ -241,8 +267,79 @@ EmbeddingStep - Batch embeddings:
       name="embed",
       input_column="text",
       output_column="embedding",
+      hooks=create_hooks(),  # ← Add hooks!
   )
   result_df = step.run(df)
+
+─────────────────────────────────────────────────────────────────
+HOOKS SYSTEM (Logging & Tracing)
+─────────────────────────────────────────────────────────────────
+
+Always use hooks to enable progress tracking and cost tracing:
+
+from kurt.core import (
+    CompositeStepHooks,
+    TrackingHooks,
+    TracingHooks,
+    get_live_status,
+    get_step_logs_page,
+)
+
+# Create composite hooks
+hooks = CompositeStepHooks([
+    TrackingHooks(),   # Progress via DBOS events/streams
+    TracingHooks(      # Token/cost in llm_traces table
+        model_name="claude-sonnet-4-20250514",
+        provider="anthropic",
+    ),
+])
+
+# Use with any step
+step = LLMStep(..., hooks=hooks)
+
+─────────────────────────────────────────────────────────────────
+WHAT HOOKS PROVIDE
+─────────────────────────────────────────────────────────────────
+
+TrackingHooks emits DBOS events:
+• current_step     - Name of active step
+• stage            - Current stage name
+• stage_total      - Total items to process
+• stage_current    - Current item index
+• stage_status     - Status message
+
+TrackingHooks emits DBOS streams:
+• progress         - Real-time progress updates
+• logs             - Step execution logs
+
+TracingHooks records to llm_traces table:
+• tokens_in        - Input tokens used
+• tokens_out       - Output tokens generated
+• cost             - API cost in USD
+• model_name       - Model used
+• provider         - API provider
+
+─────────────────────────────────────────────────────────────────
+READING STATUS & LOGS
+─────────────────────────────────────────────────────────────────
+
+# Get live workflow status
+status = get_live_status(workflow_id)
+# Returns: {step, stage, progress, ...}
+
+# Get paginated logs
+page = get_step_logs_page(workflow_id, since_offset=0)
+# Returns: {logs: [...], next_offset: int}
+
+# In your llm_fn, return metrics for TracingHooks:
+def my_llm_fn(prompt: str) -> tuple[OutputModel, dict]:
+    result = call_api(prompt)
+    metrics = {
+        "tokens_in": result.usage.input_tokens,
+        "tokens_out": result.usage.output_tokens,
+        "cost": calculate_cost(result.usage),
+    }
+    return parsed_result, metrics
 
 ═══════════════════════════════════════════════════════════════════
 FILE 3: schema.yaml (Optional)
