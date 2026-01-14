@@ -29,9 +29,9 @@ def _ensure_workspace_id_in_config() -> None:
     which is required for future migration to cloud/shared databases.
     """
     try:
-        from kurt.config import get_config_path
+        from kurt.config import get_config_file_path
 
-        config_path = get_config_path()
+        config_path = get_config_file_path()
         if not config_path.exists():
             return
 

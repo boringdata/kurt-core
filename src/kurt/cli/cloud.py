@@ -94,10 +94,10 @@ def login_cmd():
             # Get workspace_id from local config if available
             workspace_id = None
             try:
-                from kurt.config import config_file_exists, get_config
+                from kurt.config import config_file_exists, load_config
 
                 if config_file_exists():
-                    config = get_config()
+                    config = load_config()
                     workspace_id = config.WORKSPACE_ID
             except Exception:
                 pass
@@ -162,7 +162,7 @@ def status_cmd():
         kurt cloud status
     """
     from kurt.cli.auth.credentials import load_credentials
-    from kurt.config import config_file_exists, get_config
+    from kurt.config import config_file_exists, load_config
     from kurt.db import get_mode
 
     console.print()
@@ -187,7 +187,7 @@ def status_cmd():
 
     # Workspace status
     if config_file_exists():
-        config = get_config()
+        config = load_config()
         if config.WORKSPACE_ID:
             console.print(f"Workspace ID: {config.WORKSPACE_ID}")
         else:
@@ -300,7 +300,7 @@ def invite_cmd(email: str, role: str):
     import urllib.request
 
     from kurt.cli.auth.credentials import get_cloud_api_url, load_credentials
-    from kurt.config import config_file_exists, get_config
+    from kurt.config import config_file_exists, load_config
 
     # Check auth
     creds = load_credentials()
@@ -315,7 +315,7 @@ def invite_cmd(email: str, role: str):
         console.print("[dim]Run 'kurt init' first.[/dim]")
         raise click.Abort()
 
-    config = get_config()
+    config = load_config()
     workspace_id = config.WORKSPACE_ID
 
     if not workspace_id:
@@ -379,7 +379,7 @@ def use_cmd(workspace_id: str):
         load_credentials,
         save_credentials,
     )
-    from kurt.config import config_file_exists, get_config_path
+    from kurt.config import config_file_exists, get_config_file_path
 
     # Check auth
     creds = load_credentials()
@@ -417,7 +417,7 @@ def use_cmd(workspace_id: str):
 
     # Update local config file
     if config_file_exists():
-        config_path = get_config_path()
+        config_path = get_config_file_path()
         content = config_path.read_text()
 
         if re.search(r"^WORKSPACE_ID\s*=", content, re.MULTILINE):
@@ -463,7 +463,7 @@ def workspaces_cmd():
     import urllib.request
 
     from kurt.cli.auth.credentials import get_cloud_api_url, load_credentials
-    from kurt.config import config_file_exists, get_config
+    from kurt.config import config_file_exists, load_config
 
     # Check auth
     creds = load_credentials()
@@ -475,7 +475,7 @@ def workspaces_cmd():
     # Get current workspace from config
     current_workspace_id = None
     if config_file_exists():
-        config = get_config()
+        config = load_config()
         current_workspace_id = config.WORKSPACE_ID
 
     # Call the workspace API
@@ -541,7 +541,7 @@ def members_cmd():
     import urllib.request
 
     from kurt.cli.auth.credentials import get_cloud_api_url, load_credentials
-    from kurt.config import config_file_exists, get_config
+    from kurt.config import config_file_exists, load_config
 
     # Check auth
     creds = load_credentials()
@@ -556,7 +556,7 @@ def members_cmd():
         console.print("[dim]Run 'kurt init' first.[/dim]")
         raise click.Abort()
 
-    config = get_config()
+    config = load_config()
     workspace_id = config.WORKSPACE_ID
 
     if not workspace_id:
