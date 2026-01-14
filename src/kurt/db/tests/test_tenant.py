@@ -3,18 +3,21 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from kurt.db.tenant import (
     WorkspaceContext,
+    _ensure_workspace_id_in_config,
     add_workspace_filter,
     clear_workspace_context,
     get_mode,
     get_user_id,
     get_workspace_context,
     get_workspace_id,
+    init_workspace_from_config,
     is_cloud_mode,
     is_multi_tenant,
     is_postgres,
@@ -292,3 +295,141 @@ class TestAddWorkspaceFilter:
 
         assert "fd.workspace_id = :workspace_id" in result_sql
         assert result_params["workspace_id"] == "ws-alias"
+
+
+class TestEnsureWorkspaceIdInConfig:
+    """Tests for _ensure_workspace_id_in_config function."""
+
+    def test_generates_workspace_id_when_missing(self, tmp_path: Path):
+        """Test that workspace ID is generated when missing from config."""
+        config_file = tmp_path / "kurt.config"
+        config_file.write_text('OPENAI_API_KEY="sk-test"\n')
+
+        with patch("kurt.config.get_config_file_path", return_value=config_file):
+            result = _ensure_workspace_id_in_config()
+
+        assert result is not None
+        # Should be a valid UUID format
+        assert len(result) == 36
+        assert result.count("-") == 4
+
+        # Check file was updated
+        content = config_file.read_text()
+        assert f'WORKSPACE_ID="{result}"' in content
+
+    def test_skips_when_workspace_id_exists(self, tmp_path: Path):
+        """Test that no new ID is generated when one already exists."""
+        config_file = tmp_path / "kurt.config"
+        config_file.write_text('WORKSPACE_ID="existing-id-123"\n')
+
+        with patch("kurt.config.get_config_file_path", return_value=config_file):
+            result = _ensure_workspace_id_in_config()
+
+        # Should return None since it already exists
+        assert result is None
+
+        # File should not be modified
+        content = config_file.read_text()
+        assert content == 'WORKSPACE_ID="existing-id-123"\n'
+
+    def test_skips_when_config_not_exists(self, tmp_path: Path):
+        """Test graceful handling when config file doesn't exist."""
+        config_file = tmp_path / "nonexistent.config"
+
+        with patch("kurt.config.get_config_file_path", return_value=config_file):
+            result = _ensure_workspace_id_in_config()
+
+        assert result is None
+
+    def test_handles_workspace_id_with_spaces(self, tmp_path: Path):
+        """Test regex matches WORKSPACE_ID with spaces around =."""
+        config_file = tmp_path / "kurt.config"
+        config_file.write_text('WORKSPACE_ID = "spaced-id"\n')
+
+        with patch("kurt.config.get_config_file_path", return_value=config_file):
+            result = _ensure_workspace_id_in_config()
+
+        # Should detect existing ID even with spaces
+        assert result is None
+
+
+class TestInitWorkspaceFromConfig:
+    """Tests for init_workspace_from_config function."""
+
+    def setup_method(self):
+        """Clear context before each test."""
+        clear_workspace_context()
+
+    def teardown_method(self):
+        """Clear context after each test."""
+        clear_workspace_context()
+
+    def test_sets_context_from_config(self, tmp_path: Path):
+        """Test workspace context is set from config file."""
+        config_file = tmp_path / "kurt.config"
+        config_file.write_text('WORKSPACE_ID="ws-from-config"\n')
+
+        mock_config = MagicMock()
+        mock_config.WORKSPACE_ID = "ws-from-config"
+
+        with (
+            patch("kurt.db.tenant.is_cloud_mode", return_value=False),
+            patch("kurt.config.config_file_exists", return_value=True),
+            patch("kurt.config.load_config", return_value=mock_config),
+        ):
+            result = init_workspace_from_config()
+
+        assert result is True
+        assert get_workspace_id() == "ws-from-config"
+        assert get_user_id() == "local"
+
+    def test_returns_false_in_cloud_mode(self):
+        """Test returns False when in cloud mode."""
+        with patch("kurt.db.tenant.is_cloud_mode", return_value=True):
+            result = init_workspace_from_config()
+
+        assert result is False
+
+    def test_returns_false_when_no_config(self):
+        """Test returns False when config file doesn't exist."""
+        with (
+            patch("kurt.db.tenant.is_cloud_mode", return_value=False),
+            patch("kurt.config.config_file_exists", return_value=False),
+        ):
+            result = init_workspace_from_config()
+
+        assert result is False
+
+    def test_auto_generates_workspace_id_when_missing(self, tmp_path: Path):
+        """Test auto-generates WORKSPACE_ID when missing from config."""
+        config_file = tmp_path / "kurt.config"
+        config_file.write_text('OPENAI_API_KEY="sk-test"\n')
+
+        mock_config = MagicMock()
+        mock_config.WORKSPACE_ID = None
+
+        generated_id = "auto-generated-uuid"
+
+        with (
+            patch("kurt.db.tenant.is_cloud_mode", return_value=False),
+            patch("kurt.config.config_file_exists", return_value=True),
+            patch("kurt.config.load_config", return_value=mock_config),
+            patch(
+                "kurt.db.tenant._ensure_workspace_id_in_config",
+                return_value=generated_id,
+            ),
+        ):
+            result = init_workspace_from_config()
+
+        assert result is True
+        assert get_workspace_id() == generated_id
+
+    def test_returns_true_when_context_already_set(self):
+        """Test returns True immediately when context already set."""
+        set_workspace_context(workspace_id="already-set")
+
+        with patch("kurt.db.tenant.is_cloud_mode", return_value=False):
+            result = init_workspace_from_config()
+
+        assert result is True
+        assert get_workspace_id() == "already-set"

@@ -174,12 +174,12 @@ def init_workspace_from_config() -> bool:
         return True
 
     try:
-        from kurt.config import config_file_exists, get_config
+        from kurt.config import config_file_exists, load_config
 
         if not config_file_exists():
             return False
 
-        config = get_config()
+        config = load_config()
         workspace_id = config.WORKSPACE_ID
 
         # Auto-generate WORKSPACE_ID for older configs that don't have one
@@ -209,9 +209,9 @@ def _ensure_workspace_id_in_config() -> Optional[str]:
     import uuid
 
     try:
-        from kurt.config import get_config_path
+        from kurt.config import get_config_file_path
 
-        config_path = get_config_path()
+        config_path = get_config_file_path()
         if not config_path.exists():
             return None
 
@@ -253,10 +253,10 @@ def load_context_from_credentials() -> bool:
         workspace_id = creds.workspace_id
         if not workspace_id:
             try:
-                from kurt.config import config_file_exists, get_config
+                from kurt.config import config_file_exists, load_config
 
                 if config_file_exists():
-                    config = get_config()
+                    config = load_config()
                     workspace_id = config.WORKSPACE_ID
             except Exception:
                 pass
