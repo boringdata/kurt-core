@@ -16,8 +16,7 @@ import click
 from .credentials import (
     Credentials,
     clear_credentials,
-    get_supabase_anon_key,
-    get_supabase_url,
+    get_cloud_api_url,
     load_credentials,
     save_credentials,
 )
@@ -31,7 +30,7 @@ def find_free_port() -> int:
 
 
 class MagicLinkCallbackHandler(http.server.BaseHTTPRequestHandler):
-    """Handle magic link callback from Supabase."""
+    """Handle magic link callback from Kurt Cloud."""
 
     def log_message(self, format: str, *args) -> None:
         """Suppress HTTP server logs."""
@@ -140,21 +139,12 @@ if (data.error) {
         self.wfile.write(html.encode())
 
 
-def send_magic_link(email: str, supabase_url: str, redirect_to: str) -> bool:
-    """Send magic link email via Supabase."""
-    url = f"{supabase_url}/auth/v1/otp"
-    data = json.dumps(
-        {
-            "email": email,
-            "options": {
-                "emailRedirectTo": redirect_to,
-            },
-        }
-    ).encode()
+def send_magic_link(email: str, cli_port: int) -> bool:
+    """Send magic link email via Kurt Cloud API."""
+    cloud_url = get_cloud_api_url()
+    url = f"{cloud_url}/auth/login?email={urllib.parse.quote(email)}&cli_port={cli_port}"
 
-    req = urllib.request.Request(url, data=data, method="POST")
-    req.add_header("Content-Type", "application/json")
-    req.add_header("apikey", get_supabase_anon_key())
+    req = urllib.request.Request(url, method="GET")
 
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -166,12 +156,12 @@ def send_magic_link(email: str, supabase_url: str, redirect_to: str) -> bool:
         raise click.ClickException(f"Failed to send magic link: {e}")
 
 
-def get_user_info(access_token: str, supabase_url: str) -> dict:
-    """Get user info from Supabase using the access token."""
-    url = f"{supabase_url}/auth/v1/user"
+def get_user_info(access_token: str) -> dict:
+    """Get user info from Kurt Cloud using the access token."""
+    cloud_url = get_cloud_api_url()
+    url = f"{cloud_url}/auth/verify"
     req = urllib.request.Request(url)
     req.add_header("Authorization", f"Bearer {access_token}")
-    req.add_header("apikey", get_supabase_anon_key())
 
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -180,14 +170,14 @@ def get_user_info(access_token: str, supabase_url: str) -> dict:
         raise click.ClickException(f"Failed to get user info: {e}")
 
 
-def refresh_access_token(refresh_token: str, supabase_url: str) -> Optional[dict]:
-    """Refresh the access token using the refresh token."""
-    url = f"{supabase_url}/auth/v1/token?grant_type=refresh_token"
+def refresh_access_token(refresh_token: str) -> Optional[dict]:
+    """Refresh the access token via Kurt Cloud API."""
+    cloud_url = get_cloud_api_url()
+    url = f"{cloud_url}/auth/refresh"
     data = json.dumps({"refresh_token": refresh_token}).encode()
 
     req = urllib.request.Request(url, data=data, method="POST")
     req.add_header("Content-Type", "application/json")
-    req.add_header("apikey", get_supabase_anon_key())
 
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -209,11 +199,8 @@ def login(email: str) -> None:
     Sends a magic link to your email. Click the link to authenticate.
     Your credentials are stored locally for future use.
     """
-    url = get_supabase_url()
-
-    # Start local callback server on fixed port (must match Supabase redirect URL config)
-    port = 9876  # Fixed port - add http://localhost:9876 to Supabase redirect URLs
-    redirect_uri = f"http://localhost:{port}/callback"
+    # Start local callback server on fixed port
+    port = 9876
 
     try:
         server = http.server.HTTPServer(("localhost", port), MagicLinkCallbackHandler)
@@ -226,9 +213,9 @@ def login(email: str) -> None:
     server.auth_result = None
     server.auth_error = None
 
-    # Send magic link
+    # Send magic link via Kurt Cloud
     click.echo(f"Sending magic link to {email}...")
-    send_magic_link(email, url, redirect_uri)
+    send_magic_link(email, port)
 
     click.echo("Check your email and click the magic link.")
     click.echo("Waiting for authentication (timeout: 5 minutes)...")
@@ -256,9 +243,9 @@ def login(email: str) -> None:
     if server.auth_result is None:
         raise click.ClickException("Authentication timed out. Please try again.")
 
-    # Get user info
+    # Get user info via Kurt Cloud
     access_token = server.auth_result["access_token"]
-    user_info = get_user_info(access_token, url)
+    user_info = get_user_info(access_token)
 
     # Calculate expiry timestamp
     expires_at = int(time.time()) + server.auth_result["expires_in"]
@@ -267,10 +254,9 @@ def login(email: str) -> None:
     creds = Credentials(
         access_token=access_token,
         refresh_token=server.auth_result["refresh_token"],
-        user_id=user_info["id"],
+        user_id=user_info["user_id"],
         email=user_info.get("email"),
         expires_at=expires_at,
-        supabase_url=url,
     )
     save_credentials(creds)
 
@@ -315,9 +301,6 @@ def status() -> None:
     else:
         click.echo("Status: Active")
 
-    if creds.supabase_url:
-        click.echo(f"Supabase: {creds.supabase_url}")
-
 
 @click.command()
 def whoami() -> None:
@@ -330,34 +313,24 @@ def whoami() -> None:
         raise click.ClickException("Not logged in. Run 'kurt auth login' first.")
 
     # Refresh token if expired
-    if creds.is_expired() and creds.refresh_token and creds.supabase_url:
+    if creds.is_expired() and creds.refresh_token:
         click.echo("Token expired, refreshing...")
-        result = refresh_access_token(creds.refresh_token, creds.supabase_url)
+        result = refresh_access_token(creds.refresh_token)
         if result:
             creds = Credentials(
                 access_token=result["access_token"],
                 refresh_token=result.get("refresh_token", creds.refresh_token),
-                user_id=creds.user_id,
-                email=creds.email,
+                user_id=result.get("user_id", creds.user_id),
+                email=result.get("email", creds.email),
                 workspace_id=creds.workspace_id,
                 expires_at=int(time.time()) + result.get("expires_in", 3600),
-                supabase_url=creds.supabase_url,
             )
             save_credentials(creds)
         else:
             raise click.ClickException("Token refresh failed. Please run 'kurt auth login' again.")
 
     # Fetch current user info
-    if not creds.supabase_url:
-        raise click.ClickException("Supabase URL not stored. Please login again.")
+    user_info = get_user_info(creds.access_token)
 
-    user_info = get_user_info(creds.access_token, creds.supabase_url)
-
-    click.echo(f"User ID: {user_info['id']}")
+    click.echo(f"User ID: {user_info['user_id']}")
     click.echo(f"Email: {user_info.get('email', 'N/A')}")
-    if user_info.get("user_metadata"):
-        meta = user_info["user_metadata"]
-        if meta.get("full_name"):
-            click.echo(f"Name: {meta['full_name']}")
-        if meta.get("avatar_url"):
-            click.echo(f"Avatar: {meta['avatar_url']}")

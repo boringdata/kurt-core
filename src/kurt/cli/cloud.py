@@ -27,42 +27,25 @@ def cloud_group():
 
 
 @cloud_group.command(name="login")
-@click.option(
-    "--email",
-    "-e",
-    prompt="Email address",
-    help="Your email address for magic link login",
-)
-def login_cmd(email: str):
-    """Login to Kurt Cloud via email magic link.
+def login_cmd():
+    """Login to Kurt Cloud via browser.
 
-    Sends a magic link to your email. Click the link to authenticate.
-    Your credentials are stored locally for future CLI use.
-
-    After login, your user_id is used to tag all data you create.
+    Opens the Kurt Cloud login page in your browser.
+    After authentication, credentials are saved locally.
 
     Example:
         kurt cloud login
-        kurt cloud login --email user@example.com
     """
     import http.server
     import threading
     import time
+    import webbrowser
 
-    from kurt.cli.auth.commands import (
-        MagicLinkCallbackHandler,
-        get_supabase_url,
-        get_user_info,
-        send_magic_link,
-    )
-    from kurt.cli.auth.credentials import Credentials, get_auth_callback_url, save_credentials
-
-    url = get_supabase_url()
+    from kurt.cli.auth.commands import MagicLinkCallbackHandler, get_user_info
+    from kurt.cli.auth.credentials import Credentials, get_cloud_api_url, save_credentials
 
     # Start local callback server
-    port = 9876  # Fixed port for local callback
-    # Use hosted callback URL - it will redirect tokens back to localhost
-    redirect_uri = get_auth_callback_url(cli_port=port)
+    port = 9876  # Fixed port for callback
 
     try:
         server = http.server.HTTPServer(("localhost", port), MagicLinkCallbackHandler)
@@ -76,15 +59,16 @@ def login_cmd(email: str):
     server.auth_result = None
     server.auth_error = None
 
-    # Send magic link
-    console.print(f"Sending magic link to [cyan]{email}[/cyan]...")
-    try:
-        send_magic_link(email, url, redirect_uri)
-    except click.ClickException as e:
-        console.print(f"[red]{e.message}[/red]")
-        raise click.Abort()
+    # Open browser to Kurt Cloud login page
+    cloud_url = get_cloud_api_url()
+    login_url = f"{cloud_url}/auth/login-page?cli_port={port}"
 
-    console.print("[green]✓[/green] Check your email and click the magic link.")
+    console.print("[bold]Opening browser for login...[/bold]")
+    console.print(f"[dim]If browser doesn't open, visit: {login_url}[/dim]")
+    console.print()
+
+    webbrowser.open(login_url)
+
     console.print("[dim]Waiting for authentication (timeout: 5 minutes)...[/dim]")
 
     # Handle requests in background
@@ -112,10 +96,10 @@ def login_cmd(email: str):
         console.print("[red]Authentication timed out. Please try again.[/red]")
         raise click.Abort()
 
-    # Get user info
+    # Get user info via Kurt Cloud
     access_token = server.auth_result["access_token"]
     try:
-        user_info = get_user_info(access_token, url)
+        user_info = get_user_info(access_token)
     except click.ClickException as e:
         console.print(f"[red]{e.message}[/red]")
         raise click.Abort()
@@ -138,11 +122,10 @@ def login_cmd(email: str):
     creds = Credentials(
         access_token=access_token,
         refresh_token=server.auth_result["refresh_token"],
-        user_id=user_info["id"],
+        user_id=user_info["user_id"],
         email=user_info.get("email"),
         workspace_id=workspace_id,
         expires_at=expires_at,
-        supabase_url=url,
     )
     save_credentials(creds)
 
@@ -267,18 +250,17 @@ def whoami_cmd():
         raise click.Abort()
 
     # Refresh token if expired
-    if creds.is_expired() and creds.refresh_token and creds.supabase_url:
+    if creds.is_expired() and creds.refresh_token:
         console.print("[dim]Token expired, refreshing...[/dim]")
-        result = refresh_access_token(creds.refresh_token, creds.supabase_url)
+        result = refresh_access_token(creds.refresh_token)
         if result:
             creds = Credentials(
                 access_token=result["access_token"],
                 refresh_token=result.get("refresh_token", creds.refresh_token),
-                user_id=creds.user_id,
-                email=creds.email,
+                user_id=result.get("user_id", creds.user_id),
+                email=result.get("email", creds.email),
                 workspace_id=creds.workspace_id,
                 expires_at=int(time.time()) + result.get("expires_in", 3600),
-                supabase_url=creds.supabase_url,
             )
             save_credentials(creds)
         else:
@@ -286,25 +268,15 @@ def whoami_cmd():
             console.print("[dim]Please run 'kurt cloud login' again.[/dim]")
             raise click.Abort()
 
-    if not creds.supabase_url:
-        console.print("[red]Supabase URL not stored.[/red]")
-        console.print("[dim]Please login again.[/dim]")
-        raise click.Abort()
-
     try:
-        user_info = get_user_info(creds.access_token, creds.supabase_url)
+        user_info = get_user_info(creds.access_token)
     except click.ClickException as e:
         console.print(f"[red]{e.message}[/red]")
         raise click.Abort()
 
     console.print()
-    console.print(f"[bold]User ID:[/bold] {user_info['id']}")
+    console.print(f"[bold]User ID:[/bold] {user_info['user_id']}")
     console.print(f"[bold]Email:[/bold] {user_info.get('email', 'N/A')}")
-
-    if user_info.get("user_metadata"):
-        meta = user_info["user_metadata"]
-        if meta.get("full_name"):
-            console.print(f"[bold]Name:[/bold] {meta['full_name']}")
 
 
 # =============================================================================
@@ -442,7 +414,6 @@ def join_cmd(workspace_id: str):
         email=creds.email,
         workspace_id=workspace_id,
         expires_at=creds.expires_at,
-        supabase_url=creds.supabase_url,
     )
     save_credentials(creds)
 
