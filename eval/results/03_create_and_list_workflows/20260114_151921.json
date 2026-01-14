@@ -1,0 +1,140 @@
+{
+  "scenario": "03_create_and_list_workflows",
+  "passed": true,
+  "error": null,
+  "metrics": {
+    "usage": {
+      "input_tokens": 2,
+      "output_tokens": 1175,
+      "total_tokens": 1177
+    },
+    "timing": {
+      "start_time": 1768400322.8716009,
+      "end_time": 1768400361.037097,
+      "duration_seconds": 38.16549611091614
+    },
+    "conversation_turns": 11,
+    "tool_calls": [
+      {
+        "tool": "Write",
+        "params": {
+          "file_path": "/var/folders/yr/lv_0z6m15fg8llcm02_kw4m80000gn/T/kurt_eval_vkmgrjm2/workflows/task_one.md",
+          "content": "---\nname: task-one\ntitle: Task One\ndescription: A simple flat workflow\nagent:\n  model: claude-sonnet-4-20250514\n  max_turns: 5\n  allowed_tools:\n    - Bash\n---\n\n# Task One\n\nExecute a simple bash command.\n"
+        }
+      },
+      {
+        "tool": "Bash",
+        "params": {
+          "command": "mkdir -p /var/folders/yr/lv_0z6m15fg8llcm02_kw4m80000gn/T/kurt_eval_vkmgrjm2/workflows/task_two",
+          "description": "Create task_two workflow directory"
+        }
+      },
+      {
+        "tool": "Write",
+        "params": {
+          "file_path": "/var/folders/yr/lv_0z6m15fg8llcm02_kw4m80000gn/T/kurt_eval_vkmgrjm2/workflows/task_two/workflow.md",
+          "content": "---\nname: task-two\ntitle: Task Two\ndescription: A workflow with custom tools\nagent:\n  model: claude-sonnet-4-20250514\n  max_turns: 10\n  allowed_tools:\n    - Bash\n    - Read\n---\n\n# Task Two\n\nA more complex workflow with tools.\n"
+        }
+      },
+      {
+        "tool": "Write",
+        "params": {
+          "file_path": "/var/folders/yr/lv_0z6m15fg8llcm02_kw4m80000gn/T/kurt_eval_vkmgrjm2/workflows/task_two/tools.py",
+          "content": "\"\"\"Tools for task two.\"\"\"\nfrom dbos import DBOS\n\n@DBOS.step()\ndef process_data(input: str) -> str:\n    \"\"\"Process input data.\"\"\"\n    return f\"Processed: {input}\"\n"
+        }
+      },
+      {
+        "tool": "Bash",
+        "params": {
+          "command": "cd /var/folders/yr/lv_0z6m15fg8llcm02_kw4m80000gn/T/kurt_eval_vkmgrjm2 && kurt agents list",
+          "description": "List all workflows"
+        }
+      },
+      {
+        "tool": "Bash",
+        "params": {
+          "command": "cd /var/folders/yr/lv_0z6m15fg8llcm02_kw4m80000gn/T/kurt_eval_vkmgrjm2 && kurt agents show task-one",
+          "description": "Show task-one workflow details"
+        }
+      },
+      {
+        "tool": "Bash",
+        "params": {
+          "command": "cd /var/folders/yr/lv_0z6m15fg8llcm02_kw4m80000gn/T/kurt_eval_vkmgrjm2 && kurt agents show task-two",
+          "description": "Show task-two workflow details"
+        }
+      }
+    ],
+    "conversation": [
+      {
+        "role": "user",
+        "message": "Create two workflows and verify they are properly discovered.\n\nStep 1: Create a flat workflow file\nCreate workflows/task_one.md:\n```yaml\n---\nname: task-one\ntitle: Task One\ndescription: A simple flat workflow\nagent:\n  model: claude-sonnet-4-20250514\n  max_turns: 5\n  allowed_tools:\n    - Bash\n---\n\n# Task One\n\nExecute a simple bash command.\n```\n\nStep 2: Create a directory workflow\n```bash\nmkdir -p workflows/task_two\n```\n\nCreate workflows/task_two/workflow.md:\n```yaml\n---\nname: task-two\ntitle: Task Two\ndescription: A workflow with custom tools\nagent:\n  model: claude-sonnet-4-20250514\n  max_turns: 10\n  allowed_tools:\n    - Bash\n    - Read\n---\n\n# Task Two\n\nA more complex workflow with tools.\n```\n\nCreate workflows/task_two/tools.py:\n```python\n\"\"\"Tools for task two.\"\"\"\nfrom dbos import DBOS\n\n@DBOS.step()\ndef process_data(input: str) -> str:\n    \"\"\"Process input data.\"\"\"\n    return f\"Processed: {input}\"\n```\n\nStep 3: List all workflows\n```bash\nkurt agents list\n```\n\nStep 4: Show details of each workflow\n```bash\nkurt agents show task-one\nkurt agents show task-two\n```\n\nExecute all steps and verify both workflows appear in the list.\n"
+      },
+      {
+        "role": "agent",
+        "message": "I'll create the workflows and verify they're properly discovered."
+      },
+      {
+        "role": "tool",
+        "message": "[Tool: Write] {\"file_path\": \"/var/folders/yr/lv_0z6m15fg8llcm02_kw4m80000gn/T/kurt_eval_vkmgrjm2/workflows/task_one.md\", \"content\": \"---\\nname: task-one\\ntitle: Task One\\ndescription: A simple flat workflow\\nagent:\\n  model: claude-sonnet-4-20250514\\n  max_turns: 5\\n  allowed_tools:\\n    - Bash\\n---\\n\\n# Task One\\n\\nExecute a simple bash command.\\n\"}"
+      },
+      {
+        "role": "tool",
+        "message": "[Tool: Bash] {\"command\": \"mkdir -p /var/folders/yr/lv_0z6m15fg8llcm02_kw4m80000gn/T/kurt_eval_vkmgrjm2/workflows/task_two\", \"description\": \"Create task_two workflow directory\"}"
+      },
+      {
+        "role": "tool",
+        "message": "[Tool: Write] {\"file_path\": \"/var/folders/yr/lv_0z6m15fg8llcm02_kw4m80000gn/T/kurt_eval_vkmgrjm2/workflows/task_two/workflow.md\", \"content\": \"---\\nname: task-two\\ntitle: Task Two\\ndescription: A workflow with custom tools\\nagent:\\n  model: claude-sonnet-4-20250514\\n  max_turns: 10\\n  allowed_tools:\\n    - Bash\\n    - Read\\n---\\n\\n# Task Two\\n\\nA more complex workflow with tools.\\n\"}"
+      },
+      {
+        "role": "tool",
+        "message": "[Tool: Write] {\"file_path\": \"/var/folders/yr/lv_0z6m15fg8llcm02_kw4m80000gn/T/kurt_eval_vkmgrjm2/workflows/task_two/tools.py\", \"content\": \"\\\"\\\"\\\"Tools for task two.\\\"\\\"\\\"\\nfrom dbos import DBOS\\n\\n@DBOS.step()\\ndef process_data(input: str) -> str:\\n    \\\"\\\"\\\"Process input data.\\\"\\\"\\\"\\n    return f\\\"Processed: {input}\\\"\\n\"}"
+      },
+      {
+        "role": "tool",
+        "message": "[Tool: Bash] {\"command\": \"cd /var/folders/yr/lv_0z6m15fg8llcm02_kw4m80000gn/T/kurt_eval_vkmgrjm2 && kurt agents list\", \"description\": \"List all workflows\"}"
+      },
+      {
+        "role": "agent",
+        "message": "Both workflows are discovered. Now let me show the details of each:"
+      },
+      {
+        "role": "tool",
+        "message": "[Tool: Bash] {\"command\": \"cd /var/folders/yr/lv_0z6m15fg8llcm02_kw4m80000gn/T/kurt_eval_vkmgrjm2 && kurt agents show task-one\", \"description\": \"Show task-one workflow details\"}"
+      },
+      {
+        "role": "tool",
+        "message": "[Tool: Bash] {\"command\": \"cd /var/folders/yr/lv_0z6m15fg8llcm02_kw4m80000gn/T/kurt_eval_vkmgrjm2 && kurt agents show task-two\", \"description\": \"Show task-two workflow details\"}"
+      },
+      {
+        "role": "agent",
+        "message": "**Summary: Both workflows created and verified successfully.**\n\n| Workflow | Type | Model | Max Turns | Tools |\n|----------|------|-------|-----------|-------|\n| task-one | Flat file (`task_one.md`) | claude-sonnet-4-20250514 | 5 | Bash |\n| task-two | Directory (`task_two/workflow.md`) | claude-sonnet-4-20250514 | 10 | Bash, Read |\n\nBoth workflow formats (flat file and directory-based) are properly discovered by `kurt agents list` and show correct details with `kurt agents show`."
+      }
+    ],
+    "tool_usage": {
+      "write": 3,
+      "bash": 4
+    }
+  },
+  "workspace": {
+    "command_outputs": [
+      {
+        "command": "KURT_TELEMETRY_DISABLED=1 uv run kurt init",
+        "index": 1,
+        "stdout": "Initializing Kurt project...\n\nKurt project already initialized \n(/private/var/folders/yr/lv_0z6m15fg8llcm02_kw4m80000gn/T/kurt_eval_vkmgrjm2/kur\nt.config)\nReinitialize? (y/N): Error: EOF when reading a line\n",
+        "stderr": "Aborted!\n",
+        "returncode": 1,
+        "error": null
+      },
+      {
+        "command": "mkdir -p workflows",
+        "index": 2,
+        "stdout": "",
+        "stderr": "",
+        "returncode": 0,
+        "error": null
+      }
+    ]
+  },
+  "timestamp": "20260114_151921"
+}

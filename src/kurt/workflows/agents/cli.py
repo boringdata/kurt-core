@@ -171,21 +171,28 @@ def validate_cmd(file: str):
 
 
 @agents_group.command(name="run")
-@click.argument("name")
+@click.argument("name_or_path")
 @click.option("--input", "-i", "inputs", multiple=True, help="Input in key=value format")
 @click.option("--foreground", "-f", is_flag=True, help="Run in foreground (blocking)")
 @track_command
-def run_cmd(name: str, inputs: tuple, foreground: bool):
+def run_cmd(name_or_path: str, inputs: tuple, foreground: bool):
     """
     Run a workflow definition.
+
+    NAME_OR_PATH can be:
+    - A workflow name from the registry (e.g., daily-research)
+    - A path to a workflow.md file (e.g., ./my-workflow.md)
+    - A path to a workflow directory (e.g., ./my_workflow/)
 
     \\b
     Examples:
         kurt agents run daily-research
+        kurt agents run ./experiments/test-workflow.md
+        kurt agents run ./workflows/my_workflow/
         kurt agents run daily-research --input topics='["AI", "ML"]'
         kurt agents run daily-research --foreground
     """
-    from .executor import run_definition
+    from .executor import run_definition, run_from_path
 
     # Parse inputs
     input_dict = {}
@@ -198,37 +205,69 @@ def run_cmd(name: str, inputs: tuple, foreground: bool):
         except json.JSONDecodeError:
             input_dict[key] = value
 
-    console.print(f"[dim]Running workflow: {name}[/dim]")
+    # Determine if this is a path or a registry name
+    path = Path(name_or_path)
+    is_path = path.exists() or "/" in name_or_path or name_or_path.endswith(".md")
 
-    try:
-        result = run_definition(
-            name,
-            inputs=input_dict if input_dict else None,
-            background=not foreground,
-            trigger="manual",
-        )
-
-        if result.get("workflow_id") and not foreground:
-            console.print("[green]✓ Workflow started[/green]")
-            console.print(f"  Workflow ID: {result['workflow_id']}")
-            console.print()
-            console.print(
-                f"[dim]Monitor with: [cyan]kurt workflows follow {result['workflow_id']}[/cyan][/dim]"
-            )
+    if is_path:
+        # Resolve the workflow file path
+        if path.is_dir():
+            workflow_file = path / "workflow.md"
+            if not workflow_file.exists():
+                console.print(f"[red]Error:[/red] No workflow.md found in {path}")
+                raise click.Abort()
+            workflow_path = workflow_file
+        elif path.exists():
+            workflow_path = path
         else:
-            console.print("[green]✓ Workflow completed[/green]")
-            console.print(f"  Status: {result.get('status')}")
-            console.print(f"  Turns: {result.get('turns')}")
-            console.print(f"  Tool Calls: {result.get('tool_calls')}")
-            console.print(f"  Tokens: {result.get('tokens_in', 0) + result.get('tokens_out', 0):,}")
-            console.print(f"  Duration: {result.get('duration_seconds')}s")
+            console.print(f"[red]Error:[/red] Path not found: {name_or_path}")
+            raise click.Abort()
 
-    except ValueError as e:
-        console.print(f"[red]Error:[/red] {e}")
-        raise click.Abort()
-    except Exception as e:
-        console.print(f"[red]Error running workflow:[/red] {e}")
-        raise click.Abort()
+        console.print(f"[dim]Running workflow from: {workflow_path}[/dim]")
+
+        try:
+            result = run_from_path(
+                workflow_path,
+                inputs=input_dict if input_dict else None,
+                background=not foreground,
+                trigger="manual",
+            )
+        except Exception as e:
+            console.print(f"[red]Error running workflow:[/red] {e}")
+            raise click.Abort()
+    else:
+        # Registry-based lookup
+        console.print(f"[dim]Running workflow: {name_or_path}[/dim]")
+
+        try:
+            result = run_definition(
+                name_or_path,
+                inputs=input_dict if input_dict else None,
+                background=not foreground,
+                trigger="manual",
+            )
+        except ValueError as e:
+            console.print(f"[red]Error:[/red] {e}")
+            raise click.Abort()
+        except Exception as e:
+            console.print(f"[red]Error running workflow:[/red] {e}")
+            raise click.Abort()
+
+    # Display results
+    if result.get("workflow_id") and not foreground:
+        console.print("[green]✓ Workflow started[/green]")
+        console.print(f"  Workflow ID: {result['workflow_id']}")
+        console.print()
+        console.print(
+            f"[dim]Monitor with: [cyan]kurt workflows follow {result['workflow_id']}[/cyan][/dim]"
+        )
+    else:
+        console.print("[green]✓ Workflow completed[/green]")
+        console.print(f"  Status: {result.get('status')}")
+        console.print(f"  Turns: {result.get('turns')}")
+        console.print(f"  Tool Calls: {result.get('tool_calls')}")
+        console.print(f"  Tokens: {result.get('tokens_in', 0) + result.get('tokens_out', 0):,}")
+        console.print(f"  Duration: {result.get('duration_seconds')}s")
 
 
 @agents_group.command(name="history")

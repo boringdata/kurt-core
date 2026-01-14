@@ -1,0 +1,121 @@
+{
+  "scenario": "02_create_workflow_with_schema",
+  "passed": true,
+  "error": null,
+  "metrics": {
+    "usage": {
+      "input_tokens": 2,
+      "output_tokens": 942,
+      "total_tokens": 944
+    },
+    "timing": {
+      "start_time": 1768400276.405982,
+      "end_time": 1768400313.383174,
+      "duration_seconds": 36.97719192504883
+    },
+    "conversation_turns": 8,
+    "tool_calls": [
+      {
+        "tool": "Bash",
+        "params": {
+          "command": "kurt show workflow-create",
+          "description": "Read workflow creation guidelines"
+        }
+      },
+      {
+        "tool": "Bash",
+        "params": {
+          "command": "mkdir -p workflows/site_monitor",
+          "description": "Create site_monitor workflow directory"
+        }
+      },
+      {
+        "tool": "Write",
+        "params": {
+          "file_path": "/var/folders/yr/lv_0z6m15fg8llcm02_kw4m80000gn/T/kurt_eval_6hskm0qf/workflows/site_monitor/workflow.md",
+          "content": "---\nname: site-monitor\ntitle: Site Monitor\ndescription: Monitor websites for changes\nagent:\n  model: claude-sonnet-4-20250514\n  max_turns: 15\n  allowed_tools:\n    - Bash\n    - Read\n    - Write\nguardrails:\n  max_tokens: 100000\n  max_time: 300\n---\n\n# Site Monitor Workflow\n\nMonitor a website for content changes and store snapshots.\n"
+        }
+      },
+      {
+        "tool": "Write",
+        "params": {
+          "file_path": "/var/folders/yr/lv_0z6m15fg8llcm02_kw4m80000gn/T/kurt_eval_6hskm0qf/workflows/site_monitor/tools.py",
+          "content": "\"\"\"Tools for site monitoring workflow.\"\"\"\nfrom dbos import DBOS\n\n@DBOS.step()\ndef check_site(url: str) -> dict:\n    \"\"\"Check a website and return its current state.\"\"\"\n    return {\"url\": url, \"status\": \"checked\", \"changed\": False}\n\n@DBOS.step()\ndef store_snapshot(url: str, content: str) -> str:\n    \"\"\"Store a snapshot of the page content.\"\"\"\n    return f\"Stored snapshot for {url}\"\n"
+        }
+      },
+      {
+        "tool": "Write",
+        "params": {
+          "file_path": "/var/folders/yr/lv_0z6m15fg8llcm02_kw4m80000gn/T/kurt_eval_6hskm0qf/workflows/site_monitor/schema.yaml",
+          "content": "tables:\n  - name: wf_site_monitor_snapshots\n    columns:\n      - name: id\n        type: integer\n        primary_key: true\n      - name: url\n        type: text\n      - name: content_hash\n        type: text\n      - name: captured_at\n        type: timestamp\n"
+        }
+      },
+      {
+        "tool": "Bash",
+        "params": {
+          "command": "kurt agents validate",
+          "description": "Validate the workflow"
+        }
+      }
+    ],
+    "conversation": [
+      {
+        "role": "user",
+        "message": "Create a workflow for monitoring website changes with database persistence.\n\nStep 1: Read the guidelines first\n```bash\nkurt show workflow-create\n```\n\nStep 2: Create directory\n```bash\nmkdir -p workflows/site_monitor\n```\n\nStep 3: Create workflows/site_monitor/workflow.md:\n```yaml\n---\nname: site-monitor\ntitle: Site Monitor\ndescription: Monitor websites for changes\nagent:\n  model: claude-sonnet-4-20250514\n  max_turns: 15\n  allowed_tools:\n    - Bash\n    - Read\n    - Write\nguardrails:\n  max_tokens: 100000\n  max_time: 300\n---\n\n# Site Monitor Workflow\n\nMonitor a website for content changes and store snapshots.\n```\n\nStep 4: Create workflows/site_monitor/tools.py:\n```python\n\"\"\"Tools for site monitoring workflow.\"\"\"\nfrom dbos import DBOS\n\n@DBOS.step()\ndef check_site(url: str) -> dict:\n    \"\"\"Check a website and return its current state.\"\"\"\n    return {\"url\": url, \"status\": \"checked\", \"changed\": False}\n\n@DBOS.step()\ndef store_snapshot(url: str, content: str) -> str:\n    \"\"\"Store a snapshot of the page content.\"\"\"\n    return f\"Stored snapshot for {url}\"\n```\n\nStep 5: Create workflows/site_monitor/schema.yaml:\n```yaml\ntables:\n  - name: wf_site_monitor_snapshots\n    columns:\n      - name: id\n        type: integer\n        primary_key: true\n      - name: url\n        type: text\n      - name: content_hash\n        type: text\n      - name: captured_at\n        type: timestamp\n```\n\nStep 6: Validate\n```bash\nkurt agents validate\n```\n\nExecute all steps.\n"
+      },
+      {
+        "role": "tool",
+        "message": "[Tool: Bash] {\"command\": \"kurt show workflow-create\", \"description\": \"Read workflow creation guidelines\"}"
+      },
+      {
+        "role": "tool",
+        "message": "[Tool: Bash] {\"command\": \"mkdir -p workflows/site_monitor\", \"description\": \"Create site_monitor workflow directory\"}"
+      },
+      {
+        "role": "tool",
+        "message": "[Tool: Write] {\"file_path\": \"/var/folders/yr/lv_0z6m15fg8llcm02_kw4m80000gn/T/kurt_eval_6hskm0qf/workflows/site_monitor/workflow.md\", \"content\": \"---\\nname: site-monitor\\ntitle: Site Monitor\\ndescription: Monitor websites for changes\\nagent:\\n  model: claude-sonnet-4-20250514\\n  max_turns: 15\\n  allowed_tools:\\n    - Bash\\n    - Read\\n    - Write\\nguardrails:\\n  max_tokens: 100000\\n  max_time: 300\\n---\\n\\n# Site Monitor Workflow\\n\\nMonitor a website for content changes and store snapshots.\\n\"}"
+      },
+      {
+        "role": "tool",
+        "message": "[Tool: Write] {\"file_path\": \"/var/folders/yr/lv_0z6m15fg8llcm02_kw4m80000gn/T/kurt_eval_6hskm0qf/workflows/site_monitor/tools.py\", \"content\": \"\\\"\\\"\\\"Tools for site monitoring workflow.\\\"\\\"\\\"\\nfrom dbos import DBOS\\n\\n@DBOS.step()\\ndef check_site(url: str) -> dict:\\n    \\\"\\\"\\\"Check a website and return its current state.\\\"\\\"\\\"\\n    return {\\\"url\\\": url, \\\"status\\\": \\\"checked\\\", \\\"changed\\\": False}\\n\\n@DBOS.step()\\ndef store_snapshot(url: str, content: str) -> str:\\n    \\\"\\\"\\\"Store a snapshot of the page content.\\\"\\\"\\\"\\n    return f\\\"Stored snapshot for {url}\\\"\\n\"}"
+      },
+      {
+        "role": "tool",
+        "message": "[Tool: Write] {\"file_path\": \"/var/folders/yr/lv_0z6m15fg8llcm02_kw4m80000gn/T/kurt_eval_6hskm0qf/workflows/site_monitor/schema.yaml\", \"content\": \"tables:\\n  - name: wf_site_monitor_snapshots\\n    columns:\\n      - name: id\\n        type: integer\\n        primary_key: true\\n      - name: url\\n        type: text\\n      - name: content_hash\\n        type: text\\n      - name: captured_at\\n        type: timestamp\\n\"}"
+      },
+      {
+        "role": "tool",
+        "message": "[Tool: Bash] {\"command\": \"kurt agents validate\", \"description\": \"Validate the workflow\"}"
+      },
+      {
+        "role": "agent",
+        "message": "Done. Created site-monitor workflow with:\n- `workflows/site_monitor/workflow.md` - Agent config\n- `workflows/site_monitor/tools.py` - DBOS tools (check_site, store_snapshot)\n- `workflows/site_monitor/schema.yaml` - DB table for snapshots\n\nValidation passed \u2713"
+      }
+    ],
+    "tool_usage": {
+      "bash": 3,
+      "write": 3
+    }
+  },
+  "workspace": {
+    "command_outputs": [
+      {
+        "command": "KURT_TELEMETRY_DISABLED=1 uv run kurt init",
+        "index": 1,
+        "stdout": "Initializing Kurt project...\n\nKurt project already initialized \n(/private/var/folders/yr/lv_0z6m15fg8llcm02_kw4m80000gn/T/kurt_eval_6hskm0qf/kur\nt.config)\nReinitialize? (y/N): Error: EOF when reading a line\n",
+        "stderr": "Aborted!\n",
+        "returncode": 1,
+        "error": null
+      },
+      {
+        "command": "mkdir -p workflows",
+        "index": 2,
+        "stdout": "",
+        "stderr": "",
+        "returncode": 0,
+        "error": null
+      }
+    ]
+  },
+  "timestamp": "20260114_151833"
+}

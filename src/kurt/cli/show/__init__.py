@@ -13,6 +13,7 @@ from .project_workflow import project_workflow_cmd
 from .source_gathering import source_gathering_cmd
 from .source_workflow import source_workflow_cmd
 from .template_workflow import template_workflow_cmd
+from .workflow_create import workflow_create_cmd
 
 
 @click.group()
@@ -33,6 +34,7 @@ def show():
     - discovery-methods: Methods for discovering existing content
     - cms-setup: CMS integration setup
     - analytics-setup: Analytics integration setup
+    - workflow-create: Instructions for creating user workflows with tools
     """
     pass
 
@@ -49,6 +51,7 @@ show.add_command(feedback_workflow_cmd, name="feedback-workflow")
 show.add_command(discovery_methods_cmd, name="discovery-methods")
 show.add_command(cms_setup_cmd, name="cms-setup")
 show.add_command(analytics_setup_cmd, name="analytics-setup")
+show.add_command(workflow_create_cmd, name="workflow-create")
 
 # Export for lazy loading
 show_group = show

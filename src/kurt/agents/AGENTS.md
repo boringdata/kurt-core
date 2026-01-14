@@ -434,6 +434,7 @@ Users can customize Kurt's system in several ways:
 - **Modify project plan template**: `kurt show plan-template-workflow`
 - **Collect feedback**: `kurt show feedback-workflow`
 - **Add sources**: `kurt show source-workflow`
+- **Create custom workflows with tools**: `kurt show workflow-create`
 - **(ADVANCED!)** Modify document metadata template: `@kurt/templates/doc-metadata-template.md`
 - **(ADVANCED!)** Additional CMS, research and analytics integrations can be added to the open source `kurt-core` repo on GitHub
 
