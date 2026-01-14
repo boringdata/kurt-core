@@ -16,19 +16,83 @@ def get_workflows_dir() -> Path:
     return config.get_absolute_workflows_path()
 
 
+def _find_workflow_files(workflows_dir: Path) -> list[Path]:
+    """
+    Find all workflow definition files.
+
+    Supports two structures:
+    - workflows/simple-workflow.md (flat file)
+    - workflows/complex_workflow/workflow.md (directory with tools)
+
+    Returns:
+        List of paths to workflow.md files
+    """
+    if not workflows_dir.exists():
+        return []
+
+    paths = []
+
+    # Flat files: workflows/*.md
+    for path in workflows_dir.glob("*.md"):
+        paths.append(path)
+
+    # Directory structure: workflows/*/workflow.md
+    for path in workflows_dir.glob("*/workflow.md"):
+        paths.append(path)
+
+    return sorted(set(paths))
+
+
+def get_workflow_dir(name: str) -> Optional[Path]:
+    """
+    Get the directory for a workflow (if it uses directory structure).
+
+    Args:
+        name: Workflow name
+
+    Returns:
+        Path to workflow directory or None if flat file
+    """
+    workflows_dir = get_workflows_dir()
+
+    # Check for directory structure
+    # Convert kebab-case to snake_case for directory lookup
+    dir_name = name.replace("-", "_")
+    dir_path = workflows_dir / dir_name
+    if dir_path.is_dir() and (dir_path / "workflow.md").exists():
+        return dir_path
+
+    return None
+
+
+def has_tools(name: str) -> bool:
+    """Check if a workflow has a tools.py file."""
+    workflow_dir = get_workflow_dir(name)
+    if workflow_dir:
+        return (workflow_dir / "tools.py").exists()
+    return False
+
+
+def has_schema(name: str) -> bool:
+    """Check if a workflow has a schema.yaml file."""
+    workflow_dir = get_workflow_dir(name)
+    if workflow_dir:
+        return (workflow_dir / "schema.yaml").exists()
+    return False
+
+
 def list_definitions() -> list[ParsedWorkflow]:
     """
-    List all workflow definitions from .kurt/workflows/.
+    List all workflow definitions from workflows/.
 
     Returns:
         List of parsed workflow definitions
     """
     workflows_dir = get_workflows_dir()
-    if not workflows_dir.exists():
-        return []
+    paths = _find_workflow_files(workflows_dir)
 
     definitions = []
-    for path in sorted(workflows_dir.glob("*.md")):
+    for path in paths:
         try:
             parsed = parse_workflow(path)
             definitions.append(parsed)
@@ -52,7 +116,17 @@ def get_definition(name: str) -> Optional[ParsedWorkflow]:
     if not workflows_dir.exists():
         return None
 
-    # Try exact filename match first
+    # Try directory structure first: workflows/{name}/workflow.md
+    dir_name = name.replace("-", "_")
+    dir_path = workflows_dir / dir_name / "workflow.md"
+    if dir_path.exists():
+        try:
+            parsed = parse_workflow(dir_path)
+            return parsed
+        except Exception:
+            pass
+
+    # Try exact filename match: workflows/{name}.md
     exact_path = workflows_dir / f"{name}.md"
     if exact_path.exists():
         try:
@@ -63,7 +137,7 @@ def get_definition(name: str) -> Optional[ParsedWorkflow]:
             pass
 
     # Otherwise scan all files for matching name
-    for path in workflows_dir.glob("*.md"):
+    for path in _find_workflow_files(workflows_dir):
         try:
             parsed = parse_workflow(path)
             if parsed.name == name:
@@ -87,10 +161,12 @@ def validate_all() -> dict:
 
     result = {"valid": [], "errors": []}
 
-    for path in workflows_dir.glob("*.md"):
+    for path in _find_workflow_files(workflows_dir):
         errors = validate_workflow(path)
+        # Show relative path from workflows dir
+        rel_path = path.relative_to(workflows_dir)
         if errors:
-            result["errors"].append({"file": str(path.name), "errors": errors})
+            result["errors"].append({"file": str(rel_path), "errors": errors})
         else:
             parsed = parse_workflow(path)
             result["valid"].append(parsed.name)

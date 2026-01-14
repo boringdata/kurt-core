@@ -1,0 +1,330 @@
+# Kurt Evaluation Scenarios - User Workflows with Custom Tools
+#
+# Meta-eval: Agent creates a workflow and we validate it follows guidelines
+
+scenarios:
+  # ========================================================================
+  # Scenario 01: Create Workflow Following Guidelines
+  # ========================================================================
+  - name: 01_create_workflow_with_guidelines
+    description: Agent creates a workflow and we verify it follows all guidelines
+
+    setup_commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt init
+      - mkdir -p workflows
+
+    initial_prompt: |
+      I need you to create a workflow for tracking competitor pricing.
+
+      Step 1: Read the workflow creation guidelines
+      ```bash
+      kurt show workflow-create
+      ```
+
+      Step 2: Create the workflow directory structure
+      ```bash
+      mkdir -p workflows/competitor_tracker
+      ```
+
+      Step 3: Create workflows/competitor_tracker/workflow.md with this content:
+      - YAML frontmatter with: name, title, description, agent config (model, max_turns, allowed_tools)
+      - Use model: claude-sonnet-4-20250514
+      - Set max_turns: 10
+      - Allow tools: Bash, Read, Write, Glob
+
+      Step 4: Create workflows/competitor_tracker/tools.py with:
+      - Import: from dbos import DBOS
+      - A @DBOS.step() decorated function called fetch_price(url: str) -> dict
+      - Add a docstring explaining what the function does
+      - Return a dict with price and currency fields
+
+      Step 5: Validate the workflow
+      ```bash
+      kurt agents validate
+      ```
+
+      Execute all steps and show me the results.
+
+    assertions:
+      - type: FileExists
+        path: workflows/competitor_tracker/workflow.md
+      - type: FileExists
+        path: workflows/competitor_tracker/tools.py
+      - type: FileContains
+        path: workflows/competitor_tracker/workflow.md
+        content: "name:"
+      - type: FileContains
+        path: workflows/competitor_tracker/workflow.md
+        content: "title:"
+      - type: FileContains
+        path: workflows/competitor_tracker/workflow.md
+        content: "agent:"
+      - type: FileContains
+        path: workflows/competitor_tracker/workflow.md
+        content: "model:"
+      - type: FileContains
+        path: workflows/competitor_tracker/tools.py
+        content: "@DBOS"
+      - type: FileContains
+        path: workflows/competitor_tracker/tools.py
+        content: '"""'
+      - type: ConversationContains
+        text: "kurt agents validate"
+        case_sensitive: false
+
+  # ========================================================================
+  # Scenario 02: Create Workflow with Schema
+  # ========================================================================
+  - name: 02_create_workflow_with_schema
+    description: Agent creates a workflow with database schema following guidelines
+
+    setup_commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt init
+      - mkdir -p workflows
+
+    initial_prompt: |
+      Create a workflow for monitoring website changes with database persistence.
+
+      Step 1: Read the guidelines first
+      ```bash
+      kurt show workflow-create
+      ```
+
+      Step 2: Create directory
+      ```bash
+      mkdir -p workflows/site_monitor
+      ```
+
+      Step 3: Create workflows/site_monitor/workflow.md:
+      ```yaml
+      ---
+      name: site-monitor
+      title: Site Monitor
+      description: Monitor websites for changes
+      agent:
+        model: claude-sonnet-4-20250514
+        max_turns: 15
+        allowed_tools:
+          - Bash
+          - Read
+          - Write
+      guardrails:
+        max_tokens: 100000
+        max_time: 300
+      ---
+
+      # Site Monitor Workflow
+
+      Monitor a website for content changes and store snapshots.
+      ```
+
+      Step 4: Create workflows/site_monitor/tools.py:
+      ```python
+      """Tools for site monitoring workflow."""
+      from dbos import DBOS
+
+      @DBOS.step()
+      def check_site(url: str) -> dict:
+          """Check a website and return its current state."""
+          return {"url": url, "status": "checked", "changed": False}
+
+      @DBOS.step()
+      def store_snapshot(url: str, content: str) -> str:
+          """Store a snapshot of the page content."""
+          return f"Stored snapshot for {url}"
+      ```
+
+      Step 5: Create workflows/site_monitor/schema.yaml:
+      ```yaml
+      tables:
+        - name: wf_site_monitor_snapshots
+          columns:
+            - name: id
+              type: integer
+              primary_key: true
+            - name: url
+              type: text
+            - name: content_hash
+              type: text
+            - name: captured_at
+              type: timestamp
+      ```
+
+      Step 6: Validate
+      ```bash
+      kurt agents validate
+      ```
+
+      Execute all steps.
+
+    assertions:
+      - type: FileExists
+        path: workflows/site_monitor/workflow.md
+      - type: FileExists
+        path: workflows/site_monitor/tools.py
+      - type: FileExists
+        path: workflows/site_monitor/schema.yaml
+      - type: FileContains
+        path: workflows/site_monitor/schema.yaml
+        content: "table"
+      - type: FileContains
+        path: workflows/site_monitor/tools.py
+        content: "@DBOS"
+
+  # ========================================================================
+  # Scenario 03: Create and List Workflows
+  # ========================================================================
+  - name: 03_create_and_list_workflows
+    description: Create workflows and verify they are discovered
+
+    setup_commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt init
+      - mkdir -p workflows
+
+    initial_prompt: |
+      Create two workflows and verify they are properly discovered.
+
+      Step 1: Create a flat workflow file
+      Create workflows/task_one.md:
+      ```yaml
+      ---
+      name: task-one
+      title: Task One
+      description: A simple flat workflow
+      agent:
+        model: claude-sonnet-4-20250514
+        max_turns: 5
+        allowed_tools:
+          - Bash
+      ---
+
+      # Task One
+
+      Execute a simple bash command.
+      ```
+
+      Step 2: Create a directory workflow
+      ```bash
+      mkdir -p workflows/task_two
+      ```
+
+      Create workflows/task_two/workflow.md:
+      ```yaml
+      ---
+      name: task-two
+      title: Task Two
+      description: A workflow with custom tools
+      agent:
+        model: claude-sonnet-4-20250514
+        max_turns: 10
+        allowed_tools:
+          - Bash
+          - Read
+      ---
+
+      # Task Two
+
+      A more complex workflow with tools.
+      ```
+
+      Create workflows/task_two/tools.py:
+      ```python
+      """Tools for task two."""
+      from dbos import DBOS
+
+      @DBOS.step()
+      def process_data(input: str) -> str:
+          """Process input data."""
+          return f"Processed: {input}"
+      ```
+
+      Step 3: List all workflows
+      ```bash
+      kurt agents list
+      ```
+
+      Step 4: Show details of each workflow
+      ```bash
+      kurt agents show task-one
+      kurt agents show task-two
+      ```
+
+      Execute all steps and verify both workflows appear in the list.
+
+    assertions:
+      - type: FileExists
+        path: workflows/task_one.md
+      - type: FileExists
+        path: workflows/task_two/workflow.md
+      - type: FileExists
+        path: workflows/task_two/tools.py
+      - type: ConversationContains
+        text: "kurt agents list"
+        case_sensitive: false
+      - type: ConversationContains
+        text: "task-one"
+        case_sensitive: false
+      - type: ConversationContains
+        text: "task-two"
+        case_sensitive: false
+
+  # ========================================================================
+  # Scenario 04: Run Workflow from Path
+  # ========================================================================
+  - name: 04_run_workflow_from_path
+    description: Create and run a workflow using path-based execution
+
+    setup_commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt init
+      - mkdir -p workflows
+
+    initial_prompt: |
+      Create a simple workflow and run it using path-based execution.
+
+      Step 1: Create the workflow file
+      Create workflows/echo_test.md:
+      ```yaml
+      ---
+      name: echo-test
+      title: Echo Test
+      description: Simple echo test workflow
+      agent:
+        model: claude-sonnet-4-20250514
+        max_turns: 3
+        allowed_tools:
+          - Bash
+        permission_mode: bypassPermissions
+      guardrails:
+        max_tokens: 50000
+        max_time: 60
+      ---
+
+      # Echo Test
+
+      Run this command: echo "Hello from workflow"
+      ```
+
+      Step 2: Validate the workflow
+      ```bash
+      kurt agents validate
+      ```
+
+      Step 3: Run the workflow using the file path
+      ```bash
+      kurt agents run workflows/echo_test.md --foreground
+      ```
+
+      Execute all steps and report the results.
+
+    assertions:
+      - type: FileExists
+        path: workflows/echo_test.md
+      - type: FileContains
+        path: workflows/echo_test.md
+        content: "name: echo-test"
+      - type: ConversationContains
+        text: "kurt agents validate"
+        case_sensitive: false
+      - type: ConversationContains
+        text: "kurt agents run"
+        case_sensitive: false

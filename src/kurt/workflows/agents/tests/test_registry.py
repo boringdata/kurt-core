@@ -338,3 +338,220 @@ class TestEnsureWorkflowsDir:
         assert workflows_dir.exists()
         # Verify existing content wasn't deleted
         assert test_file.exists()
+
+
+class TestDirectoryStructure:
+    """Tests for workflows with directory structure (tools.py, schema.yaml)."""
+
+    def test_list_includes_directory_workflows(self, tmp_path):
+        """Test that list_definitions finds both flat and directory workflows."""
+        from kurt.workflows.agents.registry import list_definitions
+
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+
+        # Flat workflow
+        flat_file = workflows_dir / "flat-workflow.md"
+        flat_file.write_text(
+            dedent("""
+            ---
+            name: flat-workflow
+            title: Flat Workflow
+            agent:
+              model: claude-sonnet-4-20250514
+            ---
+
+            Flat body.
+        """).strip()
+        )
+
+        # Directory workflow
+        dir_workflow = workflows_dir / "complex_workflow"
+        dir_workflow.mkdir()
+        (dir_workflow / "workflow.md").write_text(
+            dedent("""
+            ---
+            name: complex-workflow
+            title: Complex Workflow
+            agent:
+              model: claude-sonnet-4-20250514
+            ---
+
+            Complex body.
+        """).strip()
+        )
+        (dir_workflow / "tools.py").write_text('"""Tools for complex workflow."""')
+
+        with patch("kurt.workflows.agents.registry.get_workflows_dir") as mock_dir:
+            mock_dir.return_value = workflows_dir
+
+            result = list_definitions()
+
+        assert len(result) == 2
+        names = [w.name for w in result]
+        assert "flat-workflow" in names
+        assert "complex-workflow" in names
+
+    def test_get_definition_from_directory(self, tmp_path):
+        """Test getting a workflow from directory structure."""
+        from kurt.workflows.agents.registry import get_definition
+
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+
+        # Directory workflow
+        dir_workflow = workflows_dir / "my_workflow"
+        dir_workflow.mkdir()
+        (dir_workflow / "workflow.md").write_text(
+            dedent("""
+            ---
+            name: my-workflow
+            title: My Workflow
+            agent:
+              model: claude-sonnet-4-20250514
+            ---
+
+            My body.
+        """).strip()
+        )
+
+        with patch("kurt.workflows.agents.registry.get_workflows_dir") as mock_dir:
+            mock_dir.return_value = workflows_dir
+
+            result = get_definition("my-workflow")
+
+        assert result is not None
+        assert result.name == "my-workflow"
+        assert result.title == "My Workflow"
+
+    def test_get_workflow_dir(self, tmp_path):
+        """Test get_workflow_dir returns path for directory workflows."""
+        from kurt.workflows.agents.registry import get_workflow_dir
+
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+
+        # Create directory workflow
+        dir_workflow = workflows_dir / "my_workflow"
+        dir_workflow.mkdir()
+        (dir_workflow / "workflow.md").write_text("---\nname: my-workflow\n---\nBody")
+
+        with patch("kurt.workflows.agents.registry.get_workflows_dir") as mock_dir:
+            mock_dir.return_value = workflows_dir
+
+            result = get_workflow_dir("my-workflow")
+
+        assert result == dir_workflow
+
+    def test_get_workflow_dir_returns_none_for_flat(self, tmp_path):
+        """Test get_workflow_dir returns None for flat file workflows."""
+        from kurt.workflows.agents.registry import get_workflow_dir
+
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+
+        # Flat workflow
+        (workflows_dir / "flat.md").write_text("---\nname: flat\n---\nBody")
+
+        with patch("kurt.workflows.agents.registry.get_workflows_dir") as mock_dir:
+            mock_dir.return_value = workflows_dir
+
+            result = get_workflow_dir("flat")
+
+        assert result is None
+
+    def test_has_tools(self, tmp_path):
+        """Test has_tools detects tools.py presence."""
+        from kurt.workflows.agents.registry import has_tools
+
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+
+        # Workflow with tools
+        with_tools = workflows_dir / "with_tools"
+        with_tools.mkdir()
+        (with_tools / "workflow.md").write_text("---\nname: with-tools\n---\nBody")
+        (with_tools / "tools.py").write_text("# tools")
+
+        # Workflow without tools
+        without_tools = workflows_dir / "without_tools"
+        without_tools.mkdir()
+        (without_tools / "workflow.md").write_text("---\nname: without-tools\n---\nBody")
+
+        with patch("kurt.workflows.agents.registry.get_workflows_dir") as mock_dir:
+            mock_dir.return_value = workflows_dir
+
+            assert has_tools("with-tools") is True
+            assert has_tools("without-tools") is False
+            assert has_tools("nonexistent") is False
+
+    def test_has_schema(self, tmp_path):
+        """Test has_schema detects schema.yaml presence."""
+        from kurt.workflows.agents.registry import has_schema
+
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+
+        # Workflow with schema
+        with_schema = workflows_dir / "with_schema"
+        with_schema.mkdir()
+        (with_schema / "workflow.md").write_text("---\nname: with-schema\n---\nBody")
+        (with_schema / "schema.yaml").write_text("tables: []")
+
+        # Workflow without schema
+        without_schema = workflows_dir / "without_schema"
+        without_schema.mkdir()
+        (without_schema / "workflow.md").write_text("---\nname: without-schema\n---\nBody")
+
+        with patch("kurt.workflows.agents.registry.get_workflows_dir") as mock_dir:
+            mock_dir.return_value = workflows_dir
+
+            assert has_schema("with-schema") is True
+            assert has_schema("without-schema") is False
+
+    def test_validate_all_includes_directory_workflows(self, tmp_path):
+        """Test validate_all validates both flat and directory workflows."""
+        from kurt.workflows.agents.registry import validate_all
+
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+
+        # Flat workflow
+        (workflows_dir / "flat.md").write_text(
+            dedent("""
+            ---
+            name: flat-workflow
+            title: Flat
+            agent:
+              model: claude-sonnet-4-20250514
+            ---
+
+            Flat body.
+        """).strip()
+        )
+
+        # Directory workflow
+        dir_workflow = workflows_dir / "dir_workflow"
+        dir_workflow.mkdir()
+        (dir_workflow / "workflow.md").write_text(
+            dedent("""
+            ---
+            name: dir-workflow
+            title: Dir
+            agent:
+              model: claude-sonnet-4-20250514
+            ---
+
+            Dir body.
+        """).strip()
+        )
+
+        with patch("kurt.workflows.agents.registry.get_workflows_dir") as mock_dir:
+            mock_dir.return_value = workflows_dir
+
+            result = validate_all()
+
+        assert len(result["valid"]) == 2
+        assert "flat-workflow" in result["valid"]
+        assert "dir-workflow" in result["valid"]
+        assert len(result["errors"]) == 0
