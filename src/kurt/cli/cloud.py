@@ -289,14 +289,17 @@ def whoami_cmd():
 def invite_cmd(email: str, role: str):
     """Invite a user to your workspace.
 
-    The invited user must have a Kurt Cloud account.
-    They will be added to your current workspace.
+    Sends an invite to the specified email address.
+    They can accept by logging in and running 'kurt cloud join'.
 
     Example:
         kurt cloud invite user@example.com
         kurt cloud invite user@example.com --role admin
     """
-    from kurt.cli.auth.credentials import load_credentials
+    import json
+    import urllib.request
+
+    from kurt.cli.auth.credentials import get_cloud_api_url, load_credentials
     from kurt.config import config_file_exists, get_config
 
     # Check auth
@@ -320,51 +323,62 @@ def invite_cmd(email: str, role: str):
         console.print("[dim]Run 'kurt init' to generate one.[/dim]")
         raise click.Abort()
 
-    # For now, show instructions (full implementation requires cloud API)
-    console.print()
-    console.print(f"[bold]Inviting {email} to workspace[/bold]")
-    console.print()
-    console.print("[yellow]Note: Full invite system coming soon.[/yellow]")
-    console.print()
-    console.print("For now, share these values with your team member:")
-    console.print()
-    console.print(f'  WORKSPACE_ID="{workspace_id}"')
-    if config.DATABASE_URL:
-        # Mask password for display
-        url = config.DATABASE_URL
-        if "://" in url and "@" in url:
-            parts = url.split("@")
-            prefix = parts[0]
-            if ":" in prefix.split("://")[1]:
-                user_part = prefix.split("://")[1].split(":")[0]
-                scheme = prefix.split("://")[0]
-                masked = f"{scheme}://{user_part}:***@{parts[1]}"
-            else:
-                masked = url
-        else:
-            masked = url
-        console.print(f'  DATABASE_URL="{masked}"')
+    # Call the workspace API to invite
+    cloud_url = get_cloud_api_url()
+    url = f"{cloud_url}/api/v1/workspaces/{workspace_id}/members"
+
+    data = json.dumps({"email": email, "role": role}).encode()
+    req = urllib.request.Request(url, data=data, method="POST")
+    req.add_header("Content-Type", "application/json")
+    req.add_header("Authorization", f"Bearer {creds.access_token}")
+
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            result = json.loads(resp.read().decode())
+
         console.print()
-        console.print("[dim]Share the actual DATABASE_URL securely (contains password)[/dim]")
-    console.print()
-    console.print("They should:")
-    console.print("  1. Run 'kurt cloud login' with their email")
-    console.print("  2. Add WORKSPACE_ID and DATABASE_URL to their kurt.config")
-    console.print("  3. Run 'kurt admin migrate apply'")
+        console.print(f"[green]✓ Invited {email} to workspace[/green]")
+        console.print(f"  Role: {result.get('role', role)}")
+        console.print(f"  Status: {result.get('status', 'pending')}")
+        console.print()
+        console.print("[dim]They can accept by:[/dim]")
+        console.print("  1. Run 'kurt cloud login'")
+        console.print(f"  2. Run 'kurt cloud join {workspace_id}'")
+
+    except urllib.error.HTTPError as e:
+        try:
+            error_body = json.loads(e.read().decode())
+            detail = error_body.get("detail", str(e))
+        except Exception:
+            detail = str(e)
+        console.print(f"[red]Failed to invite: {detail}[/red]")
+        raise click.Abort()
+    except Exception as e:
+        console.print(f"[red]Failed to invite: {e}[/red]")
+        raise click.Abort()
 
 
-@cloud_group.command(name="join")
+@cloud_group.command(name="use")
 @click.argument("workspace_id")
-def join_cmd(workspace_id: str):
-    """Join an existing workspace.
+def use_cmd(workspace_id: str):
+    """Switch to a different workspace.
 
-    Updates your kurt.config with the shared workspace ID.
-    You must already have DATABASE_URL configured.
+    Updates your local config to use the specified workspace.
+    You must be a member of the workspace (run 'kurt cloud workspaces' first).
 
     Example:
-        kurt cloud join abc123-def456-...
+        kurt cloud use abc123-def456-...
     """
-    from kurt.cli.auth.credentials import Credentials, load_credentials, save_credentials
+    import json
+    import re
+    import urllib.request
+
+    from kurt.cli.auth.credentials import (
+        Credentials,
+        get_cloud_api_url,
+        load_credentials,
+        save_credentials,
+    )
     from kurt.config import config_file_exists, get_config_path
 
     # Check auth
@@ -374,30 +388,49 @@ def join_cmd(workspace_id: str):
         console.print("[dim]Run 'kurt cloud login' first.[/dim]")
         raise click.Abort()
 
-    # Check config exists
-    if not config_file_exists():
-        console.print("[red]No kurt.config found.[/red]")
-        console.print("[dim]Run 'kurt init' first, then set DATABASE_URL.[/dim]")
+    # Verify user has access to this workspace
+    cloud_url = get_cloud_api_url()
+    url = f"{cloud_url}/api/v1/workspaces/{workspace_id}"
+
+    req = urllib.request.Request(url)
+    req.add_header("Authorization", f"Bearer {creds.access_token}")
+
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            workspace = json.loads(resp.read().decode())
+
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            console.print("[red]Workspace not found or you don't have access.[/red]")
+            console.print("[dim]Run 'kurt cloud workspaces' to see available workspaces.[/dim]")
+        else:
+            try:
+                error_body = json.loads(e.read().decode())
+                detail = error_body.get("detail", str(e))
+            except Exception:
+                detail = str(e)
+            console.print(f"[red]Failed: {detail}[/red]")
+        raise click.Abort()
+    except Exception as e:
+        console.print(f"[red]Failed: {e}[/red]")
         raise click.Abort()
 
-    # Update workspace in config file
-    config_path = get_config_path()
-    content = config_path.read_text()
+    # Update local config file
+    if config_file_exists():
+        config_path = get_config_path()
+        content = config_path.read_text()
 
-    # Replace or add WORKSPACE_ID
-    import re
+        if re.search(r"^WORKSPACE_ID\s*=", content, re.MULTILINE):
+            content = re.sub(
+                r"^WORKSPACE_ID\s*=.*$",
+                f'WORKSPACE_ID="{workspace_id}"',
+                content,
+                flags=re.MULTILINE,
+            )
+        else:
+            content += f'\nWORKSPACE_ID="{workspace_id}"\n'
 
-    if re.search(r"^WORKSPACE_ID\s*=", content, re.MULTILINE):
-        content = re.sub(
-            r"^WORKSPACE_ID\s*=.*$",
-            f'WORKSPACE_ID="{workspace_id}"',
-            content,
-            flags=re.MULTILINE,
-        )
-    else:
-        content += f'\nWORKSPACE_ID="{workspace_id}"\n'
-
-    config_path.write_text(content)
+        config_path.write_text(content)
 
     # Update credentials with new workspace_id
     creds = Credentials(
@@ -411,9 +444,167 @@ def join_cmd(workspace_id: str):
     save_credentials(creds)
 
     console.print()
-    console.print(f"[green]✓ Joined workspace: {workspace_id}[/green]")
+    console.print(f"[green]✓ Switched to workspace: {workspace.get('name', workspace_id)}[/green]")
+    console.print(f"  Role: {workspace.get('role', 'member')}")
+    console.print(f"  ID: {workspace_id}")
+
+
+@cloud_group.command(name="workspaces")
+def workspaces_cmd():
+    """List your workspaces.
+
+    Shows all workspaces you own or are a member of.
+    Pending invites are automatically accepted.
+
+    Example:
+        kurt cloud workspaces
+    """
+    import json
+    import urllib.request
+
+    from kurt.cli.auth.credentials import get_cloud_api_url, load_credentials
+    from kurt.config import config_file_exists, get_config
+
+    # Check auth
+    creds = load_credentials()
+    if creds is None:
+        console.print("[red]Not logged in.[/red]")
+        console.print("[dim]Run 'kurt cloud login' first.[/dim]")
+        raise click.Abort()
+
+    # Get current workspace from config
+    current_workspace_id = None
+    if config_file_exists():
+        config = get_config()
+        current_workspace_id = config.WORKSPACE_ID
+
+    # Call the workspace API
+    cloud_url = get_cloud_api_url()
+    url = f"{cloud_url}/api/v1/workspaces"
+
+    req = urllib.request.Request(url)
+    req.add_header("Authorization", f"Bearer {creds.access_token}")
+
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            workspaces = json.loads(resp.read().decode())
+
+    except urllib.error.HTTPError as e:
+        try:
+            error_body = json.loads(e.read().decode())
+            detail = error_body.get("detail", str(e))
+        except Exception:
+            detail = str(e)
+        console.print(f"[red]Failed to list workspaces: {detail}[/red]")
+        raise click.Abort()
+    except Exception as e:
+        console.print(f"[red]Failed to list workspaces: {e}[/red]")
+        raise click.Abort()
+
+    if not workspaces:
+        console.print()
+        console.print("[yellow]No workspaces found.[/yellow]")
+        console.print("[dim]Create one with 'kurt init' or ask someone to invite you.[/dim]")
+        return
+
     console.print()
-    console.print("[dim]Next steps:[/dim]")
-    console.print("  1. Ensure DATABASE_URL is set in kurt.config")
-    console.print("  2. Run 'kurt admin migrate apply'")
-    console.print("  3. Run 'kurt db status' to verify")
+    console.print("[bold]Your Workspaces[/bold]")
+    console.print()
+
+    for ws in workspaces:
+        role = ws.get("role", "member")
+        name = ws.get("name", "Unnamed")
+        ws_id = ws.get("id", "")
+
+        role_color = {"owner": "green", "admin": "blue", "member": "dim"}.get(role, "dim")
+
+        # Mark current workspace
+        current_marker = " [green]← current[/green]" if ws_id == current_workspace_id else ""
+
+        console.print(f"  [{role_color}]{role:6}[/{role_color}]  {name}{current_marker}")
+        console.print(f"          [dim]{ws_id}[/dim]")
+        console.print()
+
+    console.print("[dim]Use 'kurt cloud use <workspace_id>' to switch workspaces[/dim]")
+
+
+@cloud_group.command(name="members")
+def members_cmd():
+    """List members of the current workspace.
+
+    Shows all members and their roles.
+
+    Example:
+        kurt cloud members
+    """
+    import json
+    import urllib.request
+
+    from kurt.cli.auth.credentials import get_cloud_api_url, load_credentials
+    from kurt.config import config_file_exists, get_config
+
+    # Check auth
+    creds = load_credentials()
+    if creds is None:
+        console.print("[red]Not logged in.[/red]")
+        console.print("[dim]Run 'kurt cloud login' first.[/dim]")
+        raise click.Abort()
+
+    # Get current workspace from config
+    if not config_file_exists():
+        console.print("[red]No kurt.config found.[/red]")
+        console.print("[dim]Run 'kurt init' first.[/dim]")
+        raise click.Abort()
+
+    config = get_config()
+    workspace_id = config.WORKSPACE_ID
+
+    if not workspace_id:
+        console.print("[red]No WORKSPACE_ID in kurt.config.[/red]")
+        console.print("[dim]Run 'kurt cloud workspaces' and 'kurt cloud use <id>'.[/dim]")
+        raise click.Abort()
+
+    # Call the workspace API
+    cloud_url = get_cloud_api_url()
+    url = f"{cloud_url}/api/v1/workspaces/{workspace_id}/members"
+
+    req = urllib.request.Request(url)
+    req.add_header("Authorization", f"Bearer {creds.access_token}")
+
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            members = json.loads(resp.read().decode())
+
+    except urllib.error.HTTPError as e:
+        try:
+            error_body = json.loads(e.read().decode())
+            detail = error_body.get("detail", str(e))
+        except Exception:
+            detail = str(e)
+        console.print(f"[red]Failed to list members: {detail}[/red]")
+        raise click.Abort()
+    except Exception as e:
+        console.print(f"[red]Failed to list members: {e}[/red]")
+        raise click.Abort()
+
+    if not members:
+        console.print()
+        console.print("[yellow]No members found.[/yellow]")
+        return
+
+    console.print()
+    console.print("[bold]Workspace Members[/bold]")
+    console.print()
+
+    for m in members:
+        role = m.get("role", "member")
+        email = m.get("email", "")
+        status = m.get("status", "active")
+
+        role_color = {"owner": "green", "admin": "blue", "member": "dim"}.get(role, "dim")
+        status_marker = " [yellow](pending)[/yellow]" if status == "pending" else ""
+
+        console.print(f"  [{role_color}]{role:6}[/{role_color}]  {email}{status_marker}")
+
+    console.print()
+    console.print("[dim]Invite with 'kurt cloud invite <email>'[/dim]")

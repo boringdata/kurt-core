@@ -20,13 +20,33 @@ Kurt supports three database modes:
   • Kurt Cloud (future) - Fully managed with GitHub integration
 
 ═══════════════════════════════════════════════════════════════════
+UPGRADING FROM OLDER VERSIONS
+═══════════════════════════════════════════════════════════════════
+
+If upgrading from a version before multi-tenant support:
+
+1. BACKUP YOUR DATA FIRST:
+   kurt db export --output backup-before-upgrade.json --pretty
+
+2. RUN MIGRATIONS:
+   kurt admin migrate apply
+
+   This adds multi-tenant columns (user_id, workspace_id) to tables.
+
+3. LOGIN TO ASSOCIATE YOUR DATA:
+   kurt cloud login
+
+4. VERIFY:
+   kurt db status
+
+═══════════════════════════════════════════════════════════════════
 AUTHENTICATION
 ═══════════════════════════════════════════════════════════════════
 
 LOGIN (required for shared database):
   kurt cloud login
 
-  Sends a magic link to your email. Click to authenticate.
+  Opens browser for authentication via Kurt Cloud.
   Your user_id is used to tag all data you create.
 
 CHECK STATUS:

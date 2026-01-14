@@ -21,6 +21,7 @@ from rich.table import Table
 
 console = Console()
 
+
 # Tables to export/import (in dependency order)
 MIGRATABLE_TABLES = [
     "map_documents",
