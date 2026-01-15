@@ -1,6 +1,28 @@
-"""Database module for kurt - models, database connection, and migrations."""
+"""Database module for kurt - models, database connection, and migrations.
 
-from kurt.db.base import DatabaseClient, get_database_client
+Supported database backends:
+- SQLite (local development): .kurt/kurt.sqlite
+- PostgreSQL (production): Direct connection via DATABASE_URL
+- Kurt Cloud: Supabase PostgREST via DATABASE_URL="kurt"
+
+Usage:
+    from kurt.db import get_database_client, managed_session
+
+    # Auto-detect backend from DATABASE_URL
+    db = get_database_client()
+
+    # Use managed_session for CRUD operations
+    with managed_session() as session:
+        session.add(LLMTrace(...))
+"""
+
+from kurt.db.base import DatabaseClient, KurtCloudAuthError, get_database_client
+from kurt.db.cloud import (
+    CloudDatabaseClient,
+    SupabaseClient,
+    SupabaseSession,
+    get_cloud_client,
+)
 from kurt.db.database import (
     async_session_scope,
     dispose_async_resources,
@@ -35,9 +57,15 @@ from kurt.db.tenant import (
 )
 
 __all__ = [
-    # Database client
+    # Database clients
     "DatabaseClient",
     "get_database_client",
+    "KurtCloudAuthError",
+    # Cloud-specific
+    "CloudDatabaseClient",
+    "SupabaseClient",
+    "SupabaseSession",
+    "get_cloud_client",
     # Session management
     "get_session",
     "init_database",

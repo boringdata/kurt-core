@@ -342,7 +342,24 @@ def status_cmd():
     """
     from sqlalchemy import text
 
-    from kurt.db import get_mode, is_cloud_mode, is_postgres, managed_session
+    from kurt.db import (
+        KurtCloudAuthError,
+        get_database_client,
+        get_mode,
+        is_cloud_mode,
+        is_postgres,
+        managed_session,
+    )
+
+    # Try to get database client first (validates cloud auth if DATABASE_URL="kurt")
+    try:
+        get_database_client()
+    except KurtCloudAuthError as e:
+        console.print()
+        console.print(f"[red]✗ {e}[/red]")
+        console.print()
+        console.print('[dim]DATABASE_URL="kurt" requires authentication.[/dim]')
+        raise click.Abort()
 
     mode = get_mode()
 

@@ -188,26 +188,73 @@ def login_cmd():
     tokens = auth_result["tokens"]
     expires_at = int(time.time()) + tokens.get("expires_in", 3600)
 
-    # Get workspace_id from local config if available
+    # Extract user_id and email from JWT if not in params
+    user_id = tokens.get("user_id", "")
+    email = tokens.get("email", "")
+    if not user_id or not email:
+        try:
+            import base64
+            import json as json_module
+
+            # Decode JWT payload (second part)
+            token_parts = tokens["access_token"].split(".")
+            if len(token_parts) >= 2:
+                # Add proper base64 padding
+                payload_b64 = token_parts[1]
+                padding = 4 - len(payload_b64) % 4
+                if padding != 4:
+                    payload_b64 += "=" * padding
+                payload = json_module.loads(base64.urlsafe_b64decode(payload_b64))
+                user_id = user_id or payload.get("sub", "")
+                email = email or payload.get("email", "")
+        except Exception:
+            pass
+
+    # Get workspace_id from local config, generate if missing
     workspace_id = None
     try:
-        from kurt.config import config_file_exists, load_config
+        from kurt.config import config_file_exists, get_config_file_path, load_config
 
         if config_file_exists():
             config = load_config()
             workspace_id = config.WORKSPACE_ID
+
+            # Fallback: auto-generate WORKSPACE_ID if missing
+            if not workspace_id:
+                import re
+                import uuid as uuid_module
+
+                workspace_id = str(uuid_module.uuid4())
+                config_path = get_config_file_path()
+                content = config_path.read_text()
+
+                # Append WORKSPACE_ID to config
+                if not re.search(r"^WORKSPACE_ID\s*=", content, re.MULTILINE):
+                    content += (
+                        f'\n# Auto-generated workspace identifier\nWORKSPACE_ID="{workspace_id}"\n'
+                    )
+                    config_path.write_text(content)
     except Exception:
         pass
 
     creds = Credentials(
         access_token=tokens["access_token"],
         refresh_token=tokens.get("refresh_token", ""),
-        user_id=tokens.get("user_id", ""),
-        email=tokens.get("email"),
+        user_id=user_id,
+        email=email,
         workspace_id=workspace_id,
         expires_at=expires_at,
     )
     save_credentials(creds)
+
+    # Register workspace path for tracking
+    if workspace_id:
+        from pathlib import Path
+
+        from kurt.cli.auth.credentials import register_workspace_path
+
+        project_path = str(Path.cwd().resolve())
+        register_workspace_path(workspace_id, project_path)
 
     console.print()
     console.print(f"[green]✓ Logged in as {creds.email or creds.user_id}[/green]")
@@ -244,6 +291,7 @@ def status_cmd():
     - Login status and user info
     - Current workspace ID
     - Database connection mode
+    - Pending migrations
 
     Example:
         kurt cloud status
@@ -255,6 +303,15 @@ def status_cmd():
     console.print()
     console.print("[bold]Kurt Cloud Status[/bold]")
     console.print()
+
+    # Check for pending migrations first
+    migration_info = _check_pending_migrations()
+    if migration_info.get("has_pending"):
+        console.print(f"[yellow]⚠ {migration_info['count']} pending database migration(s)[/yellow]")
+        console.print("[dim]Run: `kurt admin migrate apply` to update the database[/dim]")
+        for migration_name in migration_info.get("migrations", []):
+            console.print(f"[dim]  - {migration_name}[/dim]")
+        console.print()
 
     # Auth status
     creds = load_credentials()
@@ -289,6 +346,16 @@ def status_cmd():
         }.get(mode, mode)
         console.print(f"Database: {mode_display}")
 
+        # Schema version
+        try:
+            from kurt.db.migrations.utils import get_current_version
+
+            schema_version = get_current_version()
+            if schema_version:
+                console.print(f"  Schema: {schema_version}")
+        except Exception:
+            pass
+
         # Show masked DATABASE_URL if set
         if config.DATABASE_URL:
             url = config.DATABASE_URL
@@ -307,6 +374,30 @@ def status_cmd():
     else:
         console.print("[yellow]No kurt.config found[/yellow]")
         console.print("[dim]Run 'kurt init' to initialize a project[/dim]")
+
+
+def _check_pending_migrations() -> dict:
+    """Check if there are pending database migrations."""
+    try:
+        from kurt.db.migrations.utils import (
+            check_migrations_needed,
+            get_pending_migrations,
+        )
+
+        has_pending = check_migrations_needed()
+        if has_pending:
+            pending = get_pending_migrations()
+            return {
+                "has_pending": True,
+                "count": len(pending),
+                "migrations": [revision_id for revision_id, _ in pending],
+            }
+
+        return {"has_pending": False, "count": 0, "migrations": []}
+    except ImportError:
+        return {"has_pending": False, "count": 0, "migrations": []}
+    except Exception:
+        return {"has_pending": False, "count": 0, "migrations": []}
 
 
 @cloud_group.command(name="whoami")
@@ -364,7 +455,7 @@ def whoami_cmd():
 # =============================================================================
 
 
-@cloud_group.command(name="invite")
+@cloud_group.command(name="invite", hidden=True)
 @click.argument("email")
 @click.option(
     "--role",
@@ -445,7 +536,7 @@ def invite_cmd(email: str, role: str):
         raise click.Abort()
 
 
-@cloud_group.command(name="use")
+@cloud_group.command(name="use", hidden=True)
 @click.argument("workspace_id")
 def use_cmd(workspace_id: str):
     """Switch to a different workspace.
@@ -536,7 +627,60 @@ def use_cmd(workspace_id: str):
     console.print(f"  ID: {workspace_id}")
 
 
-@cloud_group.command(name="workspaces")
+@cloud_group.command(name="workspace-create")
+@click.argument("name")
+def workspace_create_cmd(name: str):
+    """Create a new workspace.
+
+    Creates a workspace in Kurt Cloud. You will be the owner.
+
+    Example:
+        kurt cloud workspace-create "My Project"
+    """
+    import json
+    import urllib.request
+
+    from kurt.cli.auth.credentials import get_cloud_api_url, load_credentials
+
+    # Check auth
+    creds = load_credentials()
+    if creds is None:
+        console.print("[red]Not logged in.[/red]")
+        console.print("[dim]Run 'kurt cloud login' first.[/dim]")
+        raise click.Abort()
+
+    # Call the workspace API
+    cloud_url = get_cloud_api_url()
+    url = f"{cloud_url}/api/v1/workspaces"
+
+    data = json.dumps({"name": name}).encode()
+    req = urllib.request.Request(url, data=data, method="POST")
+    req.add_header("Content-Type", "application/json")
+    req.add_header("Authorization", f"Bearer {creds.access_token}")
+
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            workspace = json.loads(resp.read().decode())
+
+        console.print()
+        console.print(f"[green]✓ Created workspace: {workspace.get('name', name)}[/green]")
+        console.print(f"  ID: {workspace.get('id')}")
+        console.print(f"  Role: {workspace.get('role', 'owner')}")
+
+    except urllib.error.HTTPError as e:
+        try:
+            error_body = json.loads(e.read().decode())
+            detail = error_body.get("detail", str(e))
+        except Exception:
+            detail = str(e)
+        console.print(f"[red]Failed to create workspace: {detail}[/red]")
+        raise click.Abort()
+    except Exception as e:
+        console.print(f"[red]Failed to create workspace: {e}[/red]")
+        raise click.Abort()
+
+
+@cloud_group.command(name="workspaces", hidden=True)
 def workspaces_cmd():
     """List your workspaces.
 
@@ -545,6 +689,8 @@ def workspaces_cmd():
 
     Example:
         kurt cloud workspaces
+
+    Note: This command is hidden until workspace support is fully configured.
     """
     import json
     import urllib.request
@@ -615,7 +761,7 @@ def workspaces_cmd():
     console.print("[dim]Use 'kurt cloud use <workspace_id>' to switch workspaces[/dim]")
 
 
-@cloud_group.command(name="members")
+@cloud_group.command(name="members", hidden=True)
 def members_cmd():
     """List members of the current workspace.
 

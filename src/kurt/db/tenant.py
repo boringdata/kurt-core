@@ -117,21 +117,46 @@ def is_multi_tenant() -> bool:
 def is_cloud_mode() -> bool:
     """Check if running in cloud mode with auth enabled.
 
-    Cloud mode requires:
-    - KURT_CLOUD_AUTH=true
+    Cloud mode is enabled when:
+    - KURT_CLOUD_AUTH=true env var is set, OR
+    - DATABASE_URL="kurt" in config (uses Kurt Cloud)
 
     In cloud mode:
     - Auth middleware validates JWT tokens
     - RLS context is set from JWT claims
     - All queries filter by user_id/workspace_id
     """
-    return os.environ.get("KURT_CLOUD_AUTH", "").lower() == "true"
+    if os.environ.get("KURT_CLOUD_AUTH", "").lower() == "true":
+        return True
+    # Check if using Kurt Cloud via config
+    try:
+        from kurt.config import config_file_exists, load_config
+
+        if config_file_exists():
+            config = load_config()
+            return config.DATABASE_URL == "kurt"
+    except Exception:
+        pass
+    return False
 
 
 def is_postgres() -> bool:
     """Check if using PostgreSQL database."""
     db_url = os.environ.get("DATABASE_URL", "")
-    return db_url.startswith("postgresql")
+    if db_url.startswith("postgresql"):
+        return True
+    # Check config file for DATABASE_URL="kurt" or postgresql://...
+    if not db_url:
+        try:
+            from kurt.config import config_file_exists, load_config
+
+            if config_file_exists():
+                config = load_config()
+                config_url = config.DATABASE_URL or ""
+                return config_url == "kurt" or config_url.startswith("postgresql")
+        except Exception:
+            pass
+    return db_url == "kurt"
 
 
 def get_mode() -> str:

@@ -96,3 +96,84 @@ def clear_credentials() -> None:
 def get_cloud_api_url() -> str:
     """Get Kurt Cloud API URL (env override or hardcoded default)."""
     return os.environ.get("KURT_CLOUD_URL") or KURT_CLOUD_API_URL
+
+
+# =============================================================================
+# Workspace Path Tracking
+# =============================================================================
+
+
+def get_workspaces_path() -> Path:
+    """Get path to workspaces tracking file."""
+    return get_config_dir() / "workspaces.json"
+
+
+def load_workspaces() -> dict:
+    """Load workspace-to-path mappings.
+
+    Returns:
+        Dict mapping workspace_id to workspace info:
+        {
+            "ws-uuid": {
+                "paths": ["/path/to/project1", "/path/to/project2"],
+                "name": "Optional workspace name",
+                "last_used": "2026-01-15T12:00:00"
+            }
+        }
+    """
+    path = get_workspaces_path()
+    if not path.exists():
+        return {}
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (json.JSONDecodeError, KeyError):
+        return {}
+
+
+def save_workspaces(workspaces: dict) -> None:
+    """Save workspace-to-path mappings."""
+    path = get_workspaces_path()
+    with open(path, "w") as f:
+        json.dump(workspaces, f, indent=2)
+
+
+def register_workspace_path(
+    workspace_id: str, project_path: str, name: Optional[str] = None
+) -> None:
+    """Register a project path for a workspace.
+
+    Args:
+        workspace_id: The workspace UUID
+        project_path: Absolute path to the project directory
+        name: Optional workspace name
+    """
+    workspaces = load_workspaces()
+
+    if workspace_id not in workspaces:
+        workspaces[workspace_id] = {"paths": [], "name": name, "last_used": None}
+
+    # Add path if not already registered
+    if project_path not in workspaces[workspace_id]["paths"]:
+        workspaces[workspace_id]["paths"].append(project_path)
+
+    # Update last_used and name
+    workspaces[workspace_id]["last_used"] = datetime.now().isoformat()
+    if name:
+        workspaces[workspace_id]["name"] = name
+
+    save_workspaces(workspaces)
+
+
+def get_workspace_paths(workspace_id: str) -> list[str]:
+    """Get all registered paths for a workspace."""
+    workspaces = load_workspaces()
+    if workspace_id in workspaces:
+        return workspaces[workspace_id].get("paths", [])
+    return []
+
+
+def get_all_workspace_paths() -> dict[str, list[str]]:
+    """Get all workspace-to-paths mappings."""
+    workspaces = load_workspaces()
+    return {ws_id: info.get("paths", []) for ws_id, info in workspaces.items()}

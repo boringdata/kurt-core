@@ -43,7 +43,9 @@ def get_database_url() -> str:
         # Handle Heroku-style postgres:// URLs
         if database_url.startswith("postgres://"):
             database_url = database_url.replace("postgres://", "postgresql://", 1)
-        return database_url
+            return database_url
+        if database_url.startswith("postgresql://"):
+            return database_url
 
     # Try to load from kurt config
     try:
@@ -51,6 +53,21 @@ def get_database_url() -> str:
 
         if config_file_exists():
             kurt_config = load_config()
+            config_db_url = kurt_config.DATABASE_URL
+
+            # Handle "kurt" magic value - resolve to Kurt Cloud URL
+            if config_db_url == "kurt":
+                from kurt.db.base import _resolve_kurt_cloud_url
+
+                resolved_url = _resolve_kurt_cloud_url()
+                if resolved_url:
+                    return resolved_url
+
+            # Handle direct PostgreSQL URL in config
+            if config_db_url and config_db_url.startswith("postgresql://"):
+                return config_db_url
+
+            # Fall back to SQLite path
             db_path = kurt_config.get_absolute_db_path()
             return f"sqlite:///{db_path}"
     except Exception:
@@ -474,19 +491,23 @@ def apply_migrations(auto_confirm: bool = False, silent: bool = False) -> dict:
 
 def show_migration_status() -> None:
     """Display current migration status with Rich UI."""
-    import os
-
     console.print()
     console.print("[bold]Migration Status[/bold]\n")
 
-    # Database info
-    database_url = os.environ.get("DATABASE_URL")
-    if database_url and database_url.startswith("postgres"):
-        console.print("[dim]Database:[/dim] PostgreSQL (via DATABASE_URL)")
+    # Database info - use get_database_url() which handles kurt config
+    database_url = get_database_url()
+    if database_url.startswith("postgres"):
+        # Mask credentials in URL for display
+        if "@" in database_url:
+            parts = database_url.split("@")
+            host_part = parts[-1]
+            console.print(f"[dim]Database:[/dim] PostgreSQL ({host_part.split('/')[0]})")
+        else:
+            console.print("[dim]Database:[/dim] PostgreSQL")
     else:
         try:
             db_path = get_database_path()
-            console.print(f"[dim]Database:[/dim] {db_path}")
+            console.print(f"[dim]Database:[/dim]\n{db_path}")
         except Exception:
             console.print("[dim]Database:[/dim] SQLite (path unknown)")
 
