@@ -8,6 +8,44 @@ This guide explains how to build DBOS workflows using the kurt_new core abstract
 Keep workflows minimal, durable, and observable. Use DBOS for orchestration and
 use kurt_new core for LLM batch steps and tracing.
 
+## Database Modes
+
+Kurt supports three database modes via `DATABASE_URL` in `kurt.config`:
+
+1. **SQLite (Local Development)**
+   ```
+   DATABASE_URL="sqlite:///.kurt/kurt.sqlite"
+   ```
+   - File-based database for local development
+   - No server required
+   - Single-user, local files only
+   - Views and JOINs work natively
+
+2. **PostgreSQL (Direct Connection)**
+   ```
+   DATABASE_URL="postgresql://user:pass@host:5432/dbname"
+   ```
+   - Direct PostgreSQL connection
+   - Full SQL support including views and JOINs
+   - Use for self-hosted PostgreSQL or local Postgres
+
+3. **Kurt Cloud (PostgREST via Supabase)**
+   ```
+   DATABASE_URL="kurt"
+   ```
+   - Uses PostgREST API (not direct SQL)
+   - Automatic multi-tenancy via RLS
+   - Requires `kurt cloud login` for authentication
+   - JOINs use database VIEWs (e.g., `document_lifecycle`)
+   - PostgREST quirks: returns string 'null' for NULL values
+
+### Database Views for Cloud Mode
+
+When using Kurt Cloud (PostgREST), complex JOINs must be pre-defined as database VIEWs:
+- **document_lifecycle**: Joins `map_documents` ⟕ `fetch_documents`
+- Views are detected in `SupabaseSession._exec_join_query()` and used automatically
+- RLS policies apply to views automatically
+
 ## Principles
 
 - Keep core logic small; put domain persistence in workflow modules.

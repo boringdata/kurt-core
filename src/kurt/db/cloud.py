@@ -28,7 +28,6 @@ import os
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from functools import cached_property
 from typing import TYPE_CHECKING, Any, Iterator, TypeVar
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -113,13 +112,162 @@ def fetch_cloud_connection() -> CloudConnectionInfo:
         raise KurtCloudAuthError(f"Could not connect to Kurt Cloud: {e.reason}")
 
 
-class SupabaseClient:
-    """Supabase client wrapper for PostgREST access.
+class SupabaseTable:
+    """Table query builder using httpx for PostgREST.
 
-    Wraps the supabase-py library and provides:
-    - Table operations (select, insert, update, delete)
-    - RPC function calls
-    - Automatic JWT auth header injection
+    Provides a fluent interface for building PostgREST queries.
+    Executes via httpx to ensure proper header handling.
+    """
+
+    def __init__(self, client: "SupabaseClient", name: str):
+        self._client = client
+        self._name = name
+        self._select_cols = "*"
+        self._filters: list[tuple[str, str, str]] = []
+        self._order_col: str | None = None
+        self._order_desc: bool = False
+        self._limit_val: int | None = None
+        self._insert_data: list[dict] | None = None
+        self._update_data: dict | None = None
+        self._upsert_data: list[dict] | None = None
+        self._delete_mode: bool = False
+
+    def select(self, columns: str = "*") -> "SupabaseTable":
+        self._select_cols = columns
+        return self
+
+    def eq(self, col: str, val: Any) -> "SupabaseTable":
+        self._filters.append((col, "eq", str(val)))
+        return self
+
+    def neq(self, col: str, val: Any) -> "SupabaseTable":
+        self._filters.append((col, "neq", str(val)))
+        return self
+
+    def gt(self, col: str, val: Any) -> "SupabaseTable":
+        self._filters.append((col, "gt", str(val)))
+        return self
+
+    def gte(self, col: str, val: Any) -> "SupabaseTable":
+        self._filters.append((col, "gte", str(val)))
+        return self
+
+    def lt(self, col: str, val: Any) -> "SupabaseTable":
+        self._filters.append((col, "lt", str(val)))
+        return self
+
+    def lte(self, col: str, val: Any) -> "SupabaseTable":
+        self._filters.append((col, "lte", str(val)))
+        return self
+
+    def order(self, col: str, desc: bool = False) -> "SupabaseTable":
+        self._order_col = col
+        self._order_desc = desc
+        return self
+
+    def limit(self, n: int) -> "SupabaseTable":
+        self._limit_val = n
+        return self
+
+    def insert(self, data: dict | list[dict]) -> "SupabaseTable":
+        self._insert_data = data if isinstance(data, list) else [data]
+        return self
+
+    def update(self, data: dict) -> "SupabaseTable":
+        self._update_data = data
+        return self
+
+    def upsert(self, data: dict | list[dict]) -> "SupabaseTable":
+        self._upsert_data = data if isinstance(data, list) else [data]
+        return self
+
+    def delete(self) -> "SupabaseTable":
+        self._delete_mode = True
+        return self
+
+    def execute(self) -> "SupabaseTableResult":
+        import httpx
+
+        url = f"{self._client.base_url}/rest/v1/{self._name}"
+        headers = self._client.headers.copy()
+
+        # Handle upsert
+        if self._upsert_data is not None:
+            headers["Prefer"] = "return=representation,resolution=merge-duplicates"
+            data = self._upsert_data[0] if len(self._upsert_data) == 1 else self._upsert_data
+            resp = httpx.post(url, json=data, headers=headers, timeout=30.0)
+            if resp.status_code >= 400:
+                raise Exception(f"Upsert failed ({resp.status_code}): {resp.text}")
+            result = resp.json() if resp.text else []
+            return SupabaseTableResult(result if isinstance(result, list) else [result])
+
+        # Handle insert
+        if self._insert_data is not None:
+            headers["Prefer"] = "return=representation"
+            data = self._insert_data[0] if len(self._insert_data) == 1 else self._insert_data
+            resp = httpx.post(url, json=data, headers=headers, timeout=30.0)
+            if resp.status_code >= 400:
+                raise Exception(f"Insert failed ({resp.status_code}): {resp.text}")
+            result = resp.json() if resp.text else []
+            return SupabaseTableResult(result if isinstance(result, list) else [result])
+
+        # Handle update
+        if self._update_data is not None:
+            params = {}
+            for col, op, val in self._filters:
+                params[col] = f"{op}.{val}"
+            headers["Prefer"] = "return=representation"
+            resp = httpx.patch(
+                url, json=self._update_data, params=params, headers=headers, timeout=30.0
+            )
+            if resp.status_code >= 400:
+                raise Exception(f"Update failed ({resp.status_code}): {resp.text}")
+            result = resp.json() if resp.text else []
+            return SupabaseTableResult(result if isinstance(result, list) else [result])
+
+        # Handle delete
+        if self._delete_mode:
+            params = {}
+            for col, op, val in self._filters:
+                params[col] = f"{op}.{val}"
+            resp = httpx.delete(url, params=params, headers=headers, timeout=30.0)
+            if resp.status_code >= 400:
+                raise Exception(f"Delete failed ({resp.status_code}): {resp.text}")
+            result = resp.json() if resp.text else []
+            return SupabaseTableResult(result if isinstance(result, list) else [result])
+
+        # Handle select
+        params = {"select": self._select_cols}
+        for col, op, val in self._filters:
+            params[col] = f"{op}.{val}"
+        if self._order_col:
+            params["order"] = f"{self._order_col}.{'desc' if self._order_desc else 'asc'}"
+        if self._limit_val:
+            params["limit"] = str(self._limit_val)
+
+        resp = httpx.get(url, params=params, headers=headers, timeout=30.0)
+        if resp.status_code >= 400:
+            raise Exception(f"Query failed ({resp.status_code}): {resp.text}")
+        result = resp.json() if resp.text else []
+        return SupabaseTableResult(result if isinstance(result, list) else [result])
+
+
+class SupabaseTableResult:
+    """Result wrapper for table operations."""
+
+    def __init__(self, data: list[dict]):
+        self.data = data
+
+    def __len__(self):
+        return len(self.data)
+
+
+class SupabaseClient:
+    """Supabase client using httpx for PostgREST access.
+
+    Uses httpx directly instead of supabase-py to ensure proper header handling.
+    This is important because supabase-py doesn't properly forward custom headers
+    like Accept-Profile for schema selection.
 
     RLS policies in Supabase use the JWT claims to filter data.
     """
@@ -127,34 +275,28 @@ class SupabaseClient:
     def __init__(self, connection_info: CloudConnectionInfo, access_token: str):
         self._info = connection_info
         self._access_token = access_token
-        self._client = None
+        self.base_url = connection_info.supabase_url
+        self.headers = {
+            "Authorization": f"Bearer {access_token}",
+            "apikey": connection_info.supabase_anon_key,
+            "Content-Type": "application/json",
+            # Note: We target 'public' schema by default for kurt-core tables
+            # The 'cloud' schema is used by kurt-cloud API endpoints
+        }
 
-    @cached_property
-    def client(self):
-        """Get initialized Supabase client."""
-        try:
-            from supabase import Client, create_client
-        except ImportError:
-            raise ImportError(
-                "supabase package required for cloud mode. " "Install with: uv pip install supabase"
-            )
-
-        # Create client with auth header
-        client: Client = create_client(
-            self._info.supabase_url,
-            self._info.supabase_anon_key,
-        )
-        # Set the auth token for RLS
-        client.postgrest.auth(self._access_token)
-        return client
-
-    def table(self, name: str):
+    def table(self, name: str) -> SupabaseTable:
         """Get a table reference for queries."""
-        return self.client.table(name)
+        return SupabaseTable(self, name)
 
-    def rpc(self, fn: str, params: dict | None = None):
+    def rpc(self, fn: str, params: dict | None = None) -> dict:
         """Call a Postgres function via RPC."""
-        return self.client.rpc(fn, params or {})
+        import httpx
+
+        url = f"{self.base_url}/rest/v1/rpc/{fn}"
+        resp = httpx.post(url, json=params or {}, headers=self.headers, timeout=30.0)
+        if resp.status_code >= 400:
+            raise Exception(f"RPC failed ({resp.status_code}): {resp.text}")
+        return resp.json() if resp.text else {}
 
     # Convenience methods for common operations
 
@@ -177,29 +319,29 @@ class SupabaseClient:
             query = query.order(col, desc=desc)
         if limit:
             query = query.limit(limit)
-        return query.execute().data or []
+        return query.execute().data
 
     def insert(self, table: str, data: dict | list[dict]) -> list[dict]:
         """Insert one or more rows."""
-        return self.table(table).insert(data).execute().data or []
+        return self.table(table).insert(data).execute().data
 
     def update(self, table: str, data: dict, filters: dict[str, Any]) -> list[dict]:
         """Update rows matching filters."""
         query = self.table(table).update(data)
         for key, value in filters.items():
             query = query.eq(key, value)
-        return query.execute().data or []
+        return query.execute().data
 
     def upsert(self, table: str, data: dict | list[dict]) -> list[dict]:
         """Upsert (insert or update on conflict)."""
-        return self.table(table).upsert(data).execute().data or []
+        return self.table(table).upsert(data).execute().data
 
     def delete(self, table: str, filters: dict[str, Any]) -> list[dict]:
         """Delete rows matching filters."""
         query = self.table(table).delete()
         for key, value in filters.items():
             query = query.eq(key, value)
-        return query.execute().data or []
+        return query.execute().data
 
 
 # =============================================================================
@@ -340,32 +482,67 @@ class SupabaseSession:
         then executes via Supabase.
 
         Note: Only simple select statements are supported.
-        For complex queries, use client.rpc() with Postgres functions.
+        For complex queries with JOINs, we fetch from each table
+        separately and join in Python.
         """
         # Parse SQLModel/SQLAlchemy statement
         # This is a simplified parser - works for basic select() calls
 
         table_name = None
-        model_class = None
+        model_classes = []
         filters = {}
         limit = None
         order_by = None
 
-        # Extract info from compiled statement
-        if hasattr(statement, "froms") and statement.froms:
-            table = statement.froms[0]
-            table_name = table.name if hasattr(table, "name") else str(table)
-
-        # Try to get model class from column_descriptions
+        # Try to get model classes from column_descriptions
         if hasattr(statement, "column_descriptions"):
             for desc in statement.column_descriptions:
                 if "entity" in desc and desc["entity"]:
-                    model_class = desc["entity"]
-                    break
+                    model_classes.append(desc["entity"])
+
+        # Check if this is a JOIN query by looking at froms
+        is_join_query = False
+        join_info = None
+        if hasattr(statement, "froms") and statement.froms:
+            from_clause = statement.froms[0]
+            # Check if it's a Join object
+            if hasattr(from_clause, "left") and hasattr(from_clause, "right"):
+                is_join_query = True
+                # Extract left and right table names
+                left_table = from_clause.left
+                right_table = from_clause.right
+                left_name = left_table.name if hasattr(left_table, "name") else str(left_table)
+                right_name = right_table.name if hasattr(right_table, "name") else str(right_table)
+
+                # Extract join condition to find the key column
+                join_key = "document_id"  # Default for map_documents/fetch_documents
+                if hasattr(from_clause, "onclause") and from_clause.onclause is not None:
+                    onclause = from_clause.onclause
+                    if hasattr(onclause, "left"):
+                        join_key = str(onclause.left).split(".")[-1]
+
+                join_info = {
+                    "left": left_name,
+                    "right": right_name,
+                    "key": join_key,
+                    "is_outer": hasattr(from_clause, "isouter") and from_clause.isouter,
+                }
+            else:
+                table_name = from_clause.name if hasattr(from_clause, "name") else str(from_clause)
+
+        # Extract LIMIT
+        if hasattr(statement, "_limit_clause") and statement._limit_clause is not None:
+            limit = statement._limit_clause.value
+
+        # Handle JOIN queries by fetching from both tables
+        if is_join_query and join_info:
+            return self._exec_join_query(join_info, model_classes, limit)
+
+        # Simple single-table query
+        model_class = model_classes[0] if model_classes else None
 
         # Extract WHERE clauses (simplified)
         if hasattr(statement, "whereclause") and statement.whereclause is not None:
-            # Basic equality extraction
             clause = statement.whereclause
             if hasattr(clause, "left") and hasattr(clause, "right"):
                 col = str(clause.left).split(".")[-1]
@@ -373,16 +550,126 @@ class SupabaseSession:
                 if val is not None:
                     filters[col] = val
 
-        # Extract LIMIT
-        if hasattr(statement, "_limit_clause") and statement._limit_clause is not None:
-            limit = statement._limit_clause.value
-
         # Execute via Supabase
         if table_name:
             rows = self._client.select(table_name, filters=filters, limit=limit, order_by=order_by)
             return SupabaseResult(rows, model_class)
 
         return SupabaseResult([], model_class)
+
+    def _exec_join_query(
+        self,
+        join_info: dict,
+        model_classes: list,
+        limit: int | None,
+    ) -> "SupabaseResult":
+        """Execute a JOIN query using database view.
+
+        For map_documents + fetch_documents, we use the document_lifecycle view
+        which does the JOIN in the database. For other joins, we fall back to
+        fetching separately and joining in Python.
+        """
+        left_table = join_info["left"]
+        right_table = join_info["right"]
+        join_key = join_info["key"]
+        is_outer = join_info["is_outer"]
+
+        # Check if this is the map_documents + fetch_documents join
+        if (
+            left_table == "map_documents"
+            and right_table == "fetch_documents"
+            and join_key == "document_id"
+        ):
+            # Use the database view for this common join
+            rows = self._client.select("document_lifecycle", limit=limit or 10000)
+
+            # Convert view rows back to (MapDocument, FetchDocument) tuples
+            # The view flattens the data, so we need to split it back
+            joined_rows = []
+            for row in rows:
+                # Extract map_documents fields (all non-fetch-prefixed fields)
+                map_data = {}
+                for k, v in row.items():
+                    if not k.startswith("fetch_") and k not in [
+                        "content_path",
+                        "fetch_engine",
+                        "public_url",
+                        "embedding",
+                    ]:
+                        # Convert string 'null' to None (PostgREST quirk)
+                        if v == "null":
+                            v = None
+                        map_data[k] = v
+
+                # Extract fetch_documents fields (prefixed or specific to fetch)
+                fetch_data = None
+                if row.get("fetch_status"):  # Only if fetch record exists
+                    import json
+
+                    # Parse JSON fields and handle 'null' strings
+                    metadata_json = row.get("fetch_metadata_json")
+                    if isinstance(metadata_json, str) and metadata_json != "null":
+                        metadata_json = json.loads(metadata_json)
+                    elif metadata_json == "null":
+                        metadata_json = None
+
+                    fetch_data = {
+                        "document_id": row["document_id"],
+                        "status": row.get("fetch_status")
+                        if row.get("fetch_status") != "null"
+                        else None,
+                        "content_length": row.get("fetch_content_length"),
+                        "content_hash": row.get("fetch_content_hash")
+                        if row.get("fetch_content_hash") != "null"
+                        else None,
+                        "content_path": row.get("content_path")
+                        if row.get("content_path") != "null"
+                        else None,
+                        "fetch_engine": row.get("fetch_engine")
+                        if row.get("fetch_engine") != "null"
+                        else None,
+                        "public_url": row.get("public_url")
+                        if row.get("public_url") != "null"
+                        else None,
+                        "error": row.get("fetch_error")
+                        if row.get("fetch_error") != "null"
+                        else None,
+                        "metadata_json": metadata_json,
+                        "embedding": row.get("embedding")
+                        if row.get("embedding") != "null"
+                        else None,
+                        "created_at": row.get("fetch_created_at"),
+                        "updated_at": row.get("fetch_updated_at"),
+                        "user_id": row.get("user_id"),
+                        "workspace_id": row.get("workspace_id"),
+                    }
+
+                joined_rows.append((map_data, fetch_data))
+
+            return SupabaseJoinResult(joined_rows, model_classes)
+
+        # For other joins, fall back to Python-side join
+        # Fetch from left table
+        left_rows = self._client.select(left_table, limit=limit or 10000)
+
+        # Fetch from right table
+        right_rows = self._client.select(right_table, limit=10000)
+        right_by_key = {row.get(join_key): row for row in right_rows}
+
+        # Join results
+        joined_rows = []
+        for left_row in left_rows:
+            key = left_row.get(join_key)
+            right_row = right_by_key.get(key) if key else None
+
+            if right_row or is_outer:
+                joined_rows.append((left_row, right_row))
+
+        # Apply limit after join
+        if limit:
+            joined_rows = joined_rows[:limit]
+
+        return SupabaseJoinResult(joined_rows, model_classes)
 
     def execute(self, statement, params: dict | None = None):
         """Execute raw SQL (limited support).
@@ -496,6 +783,41 @@ class ScalarsResult:
 
     def __iter__(self) -> Iterator:
         return iter(self.all())
+
+
+class SupabaseJoinResult:
+    """Result wrapper for JOIN queries.
+
+    Handles tuples of (left_model, right_model) from joined queries.
+    """
+
+    def __init__(self, rows: list[tuple[dict, dict | None]], model_classes: list):
+        self._rows = rows
+        self._model_classes = model_classes
+
+    def all(self) -> list[tuple]:
+        """Get all results as tuples of model instances."""
+        if len(self._model_classes) >= 2:
+            left_class, right_class = self._model_classes[0], self._model_classes[1]
+            result = []
+            for left_data, right_data in self._rows:
+                left_obj = left_class.model_validate(left_data) if left_data else None
+                right_obj = right_class.model_validate(right_data) if right_data else None
+                result.append((left_obj, right_obj))
+            return result
+        return [(row[0], row[1]) for row in self._rows]
+
+    def first(self):
+        """Get first result or None."""
+        if not self._rows:
+            return None
+        return self.all()[0]
+
+    def __iter__(self) -> Iterator:
+        return iter(self.all())
+
+    def __len__(self) -> int:
+        return len(self._rows)
 
 
 class CloudDatabaseClient(DatabaseClient):
@@ -638,7 +960,7 @@ class CloudDatabaseClient(DatabaseClient):
         try:
             self._ensure_connected()
             # Try a simple query to verify connection
-            self.supabase.client.table("llm_traces").select("id").limit(1).execute()
+            self.supabase.table("llm_traces").select("id").limit(1).execute()
             return True
         except Exception as e:
             logger.warning(f"Cloud database check failed: {e}")

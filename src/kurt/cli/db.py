@@ -191,30 +191,29 @@ def import_cmd(
     dry_run: bool,
     skip_duplicates: bool,
 ):
-    """Import data from JSON export into PostgreSQL.
+    """Import data from JSON export into PostgreSQL or Kurt Cloud.
 
     Imports data exported with 'kurt db export' into the current
-    PostgreSQL database, tagged with the specified workspace ID.
+    database, tagged with the specified workspace ID.
 
-    Requires:
+    For cloud mode (DATABASE_URL="kurt"):
+    - Valid authentication (kurt cloud login)
+
+    For local PostgreSQL:
     - DATABASE_URL pointing to PostgreSQL
-    - KURT_CLOUD_AUTH=true for cloud mode
+    - KURT_CLOUD_AUTH=true
     - Valid authentication (kurt auth login)
 
     Example:
-        export DATABASE_URL="postgresql://..."
-        export KURT_CLOUD_AUTH=true
         kurt db import kurt-export.json --workspace-id ws-123
     """
-    from sqlalchemy import text
+    from kurt.db import get_mode, get_user_id, is_cloud_mode, set_workspace_context
 
-    from kurt.db import get_mode, get_user_id, managed_session, set_workspace_context
-
-    # Check we're in PostgreSQL mode
+    # Check database mode
     mode = get_mode()
     if mode == "local_sqlite":
-        console.print("[red]Error: Import requires PostgreSQL database[/red]")
-        console.print("[dim]Set DATABASE_URL to a PostgreSQL connection string[/dim]")
+        console.print("[red]Error: Import requires PostgreSQL or cloud database[/red]")
+        console.print("[dim]Set DATABASE_URL to PostgreSQL or 'kurt' for cloud mode[/dim]")
         raise click.Abort()
 
     # Load credentials for user_id
@@ -222,7 +221,7 @@ def import_cmd(
 
     if not load_context_from_credentials():
         console.print("[red]Error: Not logged in[/red]")
-        console.print("[dim]Run 'kurt auth login' first[/dim]")
+        console.print("[dim]Run 'kurt cloud login' first[/dim]")
         raise click.Abort()
 
     user_id = get_user_id()
@@ -236,6 +235,7 @@ def import_cmd(
 
     console.print(f"[dim]Export version: {export_data.get('version', 'unknown')}[/dim]")
     console.print(f"[dim]Exported at: {export_data.get('exported_at', 'unknown')}[/dim]")
+    console.print(f"[dim]Mode: {mode}[/dim]")
     console.print()
 
     if dry_run:
@@ -246,6 +246,9 @@ def import_cmd(
     set_workspace_context(workspace_id=workspace_id, user_id=user_id)
 
     results = {}
+
+    # Use different import strategies based on mode
+    cloud_mode = is_cloud_mode()
 
     with Progress(
         SpinnerColumn(),
@@ -261,42 +264,23 @@ def import_cmd(
             records = table_data.get("records", [])
             imported = 0
             skipped = 0
+            errors = 0
 
             if not dry_run:
-                with managed_session() as session:
-                    for record in records:
-                        try:
-                            # Add tenant fields
-                            record["user_id"] = user_id
-                            record["workspace_id"] = workspace_id
-
-                            # Build INSERT statement
-                            columns = list(record.keys())
-                            placeholders = [f":{col}" for col in columns]
-
-                            sql = f"""
-                                INSERT INTO {table_name} ({', '.join(columns)})
-                                VALUES ({', '.join(placeholders)})
-                                ON CONFLICT DO NOTHING
-                            """
-
-                            result = session.execute(text(sql), record)
-                            if result.rowcount > 0:
-                                imported += 1
-                            else:
-                                skipped += 1
-
-                        except Exception as e:
-                            if skip_duplicates:
-                                skipped += 1
-                            else:
-                                console.print(f"[red]Error importing record: {e}[/red]")
-                                raise
-
+                if cloud_mode:
+                    # Cloud mode: use Supabase client directly
+                    imported, skipped, errors = _import_via_supabase(
+                        table_name, records, workspace_id, user_id, skip_duplicates
+                    )
+                else:
+                    # PostgreSQL mode: use raw SQL
+                    imported, skipped, errors = _import_via_sql(
+                        table_name, records, workspace_id, user_id, skip_duplicates
+                    )
             else:
                 imported = len(records)
 
-            results[table_name] = {"imported": imported, "skipped": skipped}
+            results[table_name] = {"imported": imported, "skipped": skipped, "errors": errors}
             progress.advance(task)
 
     # Summary
@@ -311,24 +295,190 @@ def import_cmd(
     table.add_column("Table", style="cyan")
     table.add_column("Imported", justify="right", style="green")
     table.add_column("Skipped", justify="right", style="yellow")
+    table.add_column("Errors", justify="right", style="red")
 
     total_imported = 0
     total_skipped = 0
+    total_errors = 0
     for table_name, counts in results.items():
-        table.add_row(table_name, str(counts["imported"]), str(counts["skipped"]))
+        table.add_row(
+            table_name,
+            str(counts["imported"]),
+            str(counts["skipped"]),
+            str(counts.get("errors", 0)),
+        )
         total_imported += counts["imported"]
         total_skipped += counts["skipped"]
+        total_errors += counts.get("errors", 0)
 
     table.add_row(
         "[bold]Total[/bold]",
         f"[bold]{total_imported}[/bold]",
         f"[bold]{total_skipped}[/bold]",
+        f"[bold]{total_errors}[/bold]",
     )
     console.print(table)
 
     console.print()
     console.print(f"[dim]Data imported to workspace: {workspace_id}[/dim]")
     console.print(f"[dim]User ID: {user_id}[/dim]")
+
+
+def _import_via_supabase(
+    table_name: str,
+    records: list[dict],
+    workspace_id: str,
+    user_id: str,
+    skip_duplicates: bool,
+) -> tuple[int, int, int]:
+    """Import records via Supabase PostgREST API.
+
+    Returns (imported, skipped, errors) counts.
+    """
+    from kurt.db.cloud import get_cloud_client
+
+    client = get_cloud_client()
+
+    imported = 0
+    skipped = 0
+    errors = 0
+
+    # Batch records for efficiency
+    batch_size = 100
+    batch = []
+
+    for record in records:
+        # Add tenant fields
+        record["user_id"] = user_id
+        record["workspace_id"] = workspace_id
+
+        # Remove None values (Supabase doesn't like explicit nulls for missing cols)
+        record = {k: v for k, v in record.items() if v is not None}
+
+        batch.append(record)
+
+        if len(batch) >= batch_size:
+            imp, skip, err = _flush_supabase_batch(client, table_name, batch, skip_duplicates)
+            imported += imp
+            skipped += skip
+            errors += err
+            batch = []
+
+    # Flush remaining
+    if batch:
+        imp, skip, err = _flush_supabase_batch(client, table_name, batch, skip_duplicates)
+        imported += imp
+        skipped += skip
+        errors += err
+
+    return imported, skipped, errors
+
+
+def _flush_supabase_batch(
+    client,
+    table_name: str,
+    batch: list[dict],
+    skip_duplicates: bool,
+) -> tuple[int, int, int]:
+    """Flush a batch of records to Supabase.
+
+    Returns (imported, skipped, errors) counts.
+    """
+    imported = 0
+    skipped = 0
+    errors = 0
+
+    # Normalize batch: ensure all records have same keys (PostgREST requirement)
+    all_keys = set()
+    for record in batch:
+        all_keys.update(record.keys())
+
+    normalized_batch = []
+    for record in batch:
+        normalized = {k: record.get(k) for k in all_keys}
+        normalized_batch.append(normalized)
+
+    try:
+        # Use upsert to handle duplicates gracefully
+        result = client.supabase.upsert(table_name, normalized_batch)
+        imported = len(result)
+        skipped = len(batch) - imported
+    except Exception as e:
+        # If batch fails, try individual inserts
+        error_msg = str(e)
+        # Handle various error cases by falling back to individual inserts
+        if any(
+            err_type in error_msg.lower()
+            for err_type in ["duplicate", "conflict", "pgrst102", "must match"]
+        ):
+            # Try one by one
+            for record in batch:
+                try:
+                    client.supabase.upsert(table_name, record)
+                    imported += 1
+                except Exception as rec_err:
+                    rec_msg = str(rec_err).lower()
+                    if skip_duplicates and ("duplicate" in rec_msg or "conflict" in rec_msg):
+                        skipped += 1
+                    else:
+                        errors += 1
+        else:
+            console.print(f"[red]Batch error: {e}[/red]")
+            errors = len(batch)
+
+    return imported, skipped, errors
+
+
+def _import_via_sql(
+    table_name: str,
+    records: list[dict],
+    workspace_id: str,
+    user_id: str,
+    skip_duplicates: bool,
+) -> tuple[int, int, int]:
+    """Import records via raw SQL (PostgreSQL mode).
+
+    Returns (imported, skipped, errors) counts.
+    """
+    from sqlalchemy import text
+
+    from kurt.db import managed_session
+
+    imported = 0
+    skipped = 0
+    errors = 0
+
+    with managed_session() as session:
+        for record in records:
+            try:
+                # Add tenant fields
+                record["user_id"] = user_id
+                record["workspace_id"] = workspace_id
+
+                # Build INSERT statement
+                columns = list(record.keys())
+                placeholders = [f":{col}" for col in columns]
+
+                sql = f"""
+                    INSERT INTO {table_name} ({', '.join(columns)})
+                    VALUES ({', '.join(placeholders)})
+                    ON CONFLICT DO NOTHING
+                """
+
+                result = session.execute(text(sql), record)
+                if result.rowcount > 0:
+                    imported += 1
+                else:
+                    skipped += 1
+
+            except Exception as e:
+                if skip_duplicates:
+                    skipped += 1
+                else:
+                    console.print(f"[red]Error importing record: {e}[/red]")
+                    errors += 1
+
+    return imported, skipped, errors
 
 
 @db_group.command(name="status")
@@ -394,13 +544,45 @@ def status_cmd():
     table.add_column("Records", justify="right")
 
     try:
-        with managed_session() as session:
+        if is_cloud_mode():
+            # Use Supabase client for counting (raw SQL not supported)
+            from kurt.db.cloud import get_cloud_client
+
+            client = get_cloud_client()
             for table_name in MIGRATABLE_TABLES + OPTIONAL_TABLES:
                 try:
-                    result = session.execute(text(f"SELECT COUNT(*) FROM {table_name}")).scalar()
-                    table.add_row(table_name, str(result))
+                    # Use count RPC or fetch with Prefer: count=exact header
+                    import httpx
+
+                    url = f"{client.supabase.base_url}/rest/v1/{table_name}"
+                    headers = client.supabase.headers.copy()
+                    headers["Prefer"] = "count=exact"
+                    headers["Range-Unit"] = "items"
+                    resp = httpx.head(url, headers=headers, timeout=30.0)
+                    # Count is in Content-Range header: "0-N/total"
+                    content_range = resp.headers.get("Content-Range", "")
+                    if "/" in content_range:
+                        count = content_range.split("/")[-1]
+                        table.add_row(table_name, count)
+                    else:
+                        # Fallback: just count returned rows (may be limited)
+                        result = (
+                            client.supabase.table(table_name).select("*").limit(10000).execute()
+                        )
+                        table.add_row(table_name, str(len(result.data)))
                 except Exception:
                     table.add_row(table_name, "[dim]N/A[/dim]")
+        else:
+            # Use raw SQL for local databases
+            with managed_session() as session:
+                for table_name in MIGRATABLE_TABLES + OPTIONAL_TABLES:
+                    try:
+                        result = session.execute(
+                            text(f"SELECT COUNT(*) FROM {table_name}")
+                        ).scalar()
+                        table.add_row(table_name, str(result))
+                    except Exception:
+                        table.add_row(table_name, "[dim]N/A[/dim]")
 
         console.print(table)
     except Exception as e:
