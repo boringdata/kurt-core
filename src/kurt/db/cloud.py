@@ -500,6 +500,15 @@ class SupabaseSession:
                 if "entity" in desc and desc["entity"]:
                     model_classes.append(desc["entity"])
 
+        # Check if this is a COUNT query
+        is_count_query = False
+        if hasattr(statement, "_raw_columns"):
+            for col in statement._raw_columns:
+                col_str = str(col)
+                if "count" in col_str.lower():
+                    is_count_query = True
+                    break
+
         # Check if this is a JOIN query by looking at froms
         is_join_query = False
         join_info = None
@@ -549,6 +558,14 @@ class SupabaseSession:
                 val = clause.right.value if hasattr(clause.right, "value") else None
                 if val is not None:
                     filters[col] = val
+
+        # Handle COUNT queries
+        if is_count_query:
+            if table_name:
+                count = self._client.count(table_name, filters=filters)
+                # Return count as a single-row result
+                return SupabaseResult([{"count": count}], None)
+            return SupabaseResult([{"count": 0}], None)
 
         # Execute via Supabase
         if table_name:
@@ -1034,6 +1051,38 @@ def is_cloud_mode() -> bool:
         pass
 
     return False
+
+
+def get_api_base_url() -> str:
+    """Get Kurt Cloud API base URL.
+
+    Returns:
+        str: API base URL (e.g., "https://kurt-cloud.vercel.app")
+
+    Raises:
+        KurtCloudAuthError: If not logged in or invalid configuration
+    """
+    from kurt.cli.auth.credentials import get_cloud_api_url
+
+    return get_cloud_api_url()
+
+
+def get_auth_token() -> str:
+    """Get Kurt Cloud authentication token.
+
+    Returns:
+        str: JWT access token for API requests
+
+    Raises:
+        KurtCloudAuthError: If not logged in or token expired
+    """
+    from kurt.cli.auth.credentials import load_credentials
+
+    creds = load_credentials()
+    if not creds or not creds.access_token:
+        raise KurtCloudAuthError("Kurt Cloud session expired. Run 'kurt cloud login' to refresh.")
+
+    return creds.access_token
 
 
 # =============================================================================

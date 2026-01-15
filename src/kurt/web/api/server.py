@@ -151,6 +151,90 @@ def api_config():
         }
 
 
+@app.get("/api/status")
+def api_status():
+    """
+    Get comprehensive project status.
+
+    Returns document counts, status breakdown, and domain distribution.
+    Used by both CLI (in cloud mode) and web UI.
+    """
+    from kurt.db import managed_session
+    from kurt.status.queries import get_status_data
+
+    with managed_session() as session:
+        return get_status_data(session)
+
+
+@app.get("/api/documents")
+def api_list_documents(
+    status: Optional[str] = None,
+    limit: Optional[int] = None,
+    offset: Optional[int] = None,
+    url_pattern: Optional[str] = None,
+):
+    """
+    List documents with optional filters.
+
+    Used by both CLI (in cloud mode) and web UI.
+    """
+    from kurt.db import managed_session
+    from kurt.documents import DocumentFilters, DocumentRegistry
+
+    filters = DocumentFilters(
+        fetch_status=status,
+        limit=limit,
+        offset=offset,
+        url_contains=url_pattern,
+    )
+
+    registry = DocumentRegistry()
+    with managed_session() as session:
+        docs = registry.list(session, filters)
+        return [doc.model_dump() for doc in docs]
+
+
+@app.get("/api/documents/count")
+def api_count_documents(
+    status: Optional[str] = None,
+    url_pattern: Optional[str] = None,
+):
+    """
+    Count documents matching filters.
+
+    Used by both CLI (in cloud mode) and web UI.
+    """
+    from kurt.db import managed_session
+    from kurt.documents import DocumentFilters, DocumentRegistry
+
+    filters = DocumentFilters(
+        fetch_status=status,
+        url_contains=url_pattern,
+    )
+
+    registry = DocumentRegistry()
+    with managed_session() as session:
+        return {"count": registry.count(session, filters)}
+
+
+@app.get("/api/documents/{document_id}")
+def api_get_document(document_id: str):
+    """
+    Get a single document's full lifecycle view.
+
+    Used by both CLI (in cloud mode) and web UI.
+    """
+    from kurt.db import managed_session
+    from kurt.documents import DocumentRegistry
+
+    registry = DocumentRegistry()
+    with managed_session() as session:
+        doc = registry.get(session, document_id)
+        if doc is None:
+            raise HTTPException(status_code=404, detail="Document not found")
+        return doc.model_dump()
+
+
 @app.get("/api/tree")
 def api_tree(path: Optional[str] = Query(".")):
     try:

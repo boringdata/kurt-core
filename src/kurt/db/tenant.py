@@ -326,9 +326,11 @@ def set_rls_context(session: "Session") -> None:
     workspace_id = get_workspace_id()
 
     if user_id:
-        session.execute(text(f"SET LOCAL app.user_id = '{user_id}'"))
+        session.execute(text("SET LOCAL app.user_id = :user_id"), {"user_id": user_id})
     if workspace_id:
-        session.execute(text(f"SET LOCAL app.workspace_id = '{workspace_id}'"))
+        session.execute(
+            text("SET LOCAL app.workspace_id = :workspace_id"), {"workspace_id": workspace_id}
+        )
 
 
 # =============================================================================

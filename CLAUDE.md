@@ -46,6 +46,132 @@ When using Kurt Cloud (PostgREST), complex JOINs must be pre-defined as database
 - Views are detected in `SupabaseSession._exec_join_query()` and used automatically
 - RLS policies apply to views automatically
 
+### Cloud Mode Architecture: CLI → Web API → Queries
+
+**Problem**: PostgREST API cannot execute arbitrary SQLAlchemy queries (COUNT, aggregations, complex JOINs fail).
+
+**Solution**: CLI routes to web API in cloud mode, which runs SQLAlchemy queries server-side.
+
+**Architecture**:
+```
+Local Mode:
+  kurt status → queries.py → SQLite/PostgreSQL
+  kurt serve → web/api/server.py (web UI)
+
+Cloud Mode:
+  kurt status → HTTP → web/api/server.py → queries.py → PostgreSQL
+  Web UI → HTTP → web/api/server.py → queries.py → PostgreSQL
+```
+
+**Module Structure** (example: `src/kurt/status/`):
+```
+status/
+├── __init__.py     # Public exports
+├── cli.py          # Click commands - routes based on is_cloud_mode()
+└── queries.py      # SQLAlchemy queries (used by web API)
+
+documents/
+├── __init__.py     # Public exports
+├── cli.py          # Click commands - routes based on is_cloud_mode()
+├── registry.py     # DocumentRegistry class with list(), get(), count()
+├── filtering.py    # DocumentFilters
+└── models.py       # DocumentView dataclass
+
+web/api/
+└── server.py       # FastAPI app with ALL endpoints (CLI + web UI)
+```
+
+**Key points**:
+- `queries.py` contains pure SQLAlchemy - works in all modes
+  - For simple modules (status), create dedicated `queries.py`
+  - For complex modules (documents), use existing registry/service classes directly
+- `cli.py` checks `is_cloud_mode()` and routes to queries/registry or web API
+- `web/api/server.py` defines ALL endpoints (used by CLI and web UI)
+- Kurt-cloud hosts `web/api/server.py` (single FastAPI app)
+- **No PostgREST emulation** - direct PostgreSQL on backend
+- **Single API** - CLI and web UI use same endpoints
+
+**Benefits**:
+- ✅ Single source of truth for SQL queries
+- ✅ Single API definition (`web/api/server.py`)
+- ✅ No duplication between CLI API and web UI API
+- ✅ `kurt serve` uses same API that kurt-cloud hosts
+- ✅ Better performance (one HTTP call vs multiple PostgREST queries)
+
+**When adding new features**:
+1. Use existing registry/service classes OR create `module/queries.py` with SQLAlchemy queries
+2. Add `/api/module` endpoint to `web/api/server.py` that calls queries/registry directly
+3. Create `module/cli.py` that routes to queries/registry (local) or API (cloud)
+
+### Multi-Tenancy with RLS (Row Level Security)
+
+**Overview**: Kurt uses PostgreSQL RLS for multi-tenant data isolation in cloud mode.
+
+**Architecture**:
+```
+1. JWT Token → 2. Middleware → 3. Context → 4. Session → 5. PostgreSQL RLS
+   (user_id,       set_workspace_   (contextvars)  SET LOCAL    (auto-filter)
+    workspace_id)  context()                       variables
+```
+
+**Implementation**:
+
+```python
+# 1. Middleware (web/api/auth.py) extracts JWT claims
+async def auth_middleware_setup(request, call_next):
+    user_data = verify_token_with_supabase(token)
+    user_id = user_data.get("id")
+    workspace_id = user_data.get("user_metadata", {}).get("workspace_id")
+
+    # 2. Set workspace context (thread-local via contextvars)
+    set_workspace_context(workspace_id=workspace_id, user_id=user_id)
+
+    try:
+        response = await call_next(request)
+        return response
+    finally:
+        clear_workspace_context()
+
+# 3. managed_session() reads context and sets PostgreSQL variables
+@contextmanager
+def managed_session():
+    session = get_session()
+    try:
+        # Calls set_rls_context(session) which does:
+        # session.execute(text("SET LOCAL app.user_id = :user_id"), {"user_id": ...})
+        # session.execute(text("SET LOCAL app.workspace_id = :workspace_id"), {"workspace_id": ...})
+        set_rls_context(session)
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+# 4. RLS policies in PostgreSQL automatically filter data:
+# CREATE POLICY tenant_isolation ON map_documents
+#   USING (workspace_id = current_setting('app.workspace_id', true)::uuid);
+```
+
+**Key Points**:
+- ✅ Context variables (`set_workspace_context`) propagate across async boundaries
+- ✅ Parameterized queries prevent SQL injection (`SET LOCAL app.user_id = :user_id`)
+- ✅ Local mode (SQLite) skips RLS - no overhead
+- ✅ SupabaseSession skips RLS - handled by PostgREST
+- ✅ Tests verify SQL injection protection and context propagation
+
+**Files**:
+- `src/kurt/db/tenant.py` - Context management and `set_rls_context()`
+- `src/kurt/db/database.py` - `managed_session()` calls `set_rls_context()`
+- `src/kurt/web/api/auth.py` - Middleware sets context from JWT
+- `src/kurt/web/api/tests/test_rls_integration.py` - RLS tests (5 tests passing)
+
+**Security**:
+- SQL injection prevented via parameterized queries
+- Workspace isolation enforced at database level
+- JWT validation via Supabase auth API
+
 ## Principles
 
 - Keep core logic small; put domain persistence in workflow modules.
