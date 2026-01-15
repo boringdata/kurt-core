@@ -256,6 +256,15 @@ def check_migrations_needed() -> bool:
     Returns:
         True if migrations are pending, False otherwise
     """
+    # Skip migration check in cloud mode - migrations are managed via kurt-cloud scripts
+    try:
+        from kurt.db.cloud import is_cloud_mode
+
+        if is_cloud_mode():
+            return False
+    except Exception:
+        pass
+
     # Check if database has an unknown revision (from different migration chain)
     current = get_current_version()
     if current and not is_known_revision(current):

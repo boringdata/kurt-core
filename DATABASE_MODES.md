@@ -102,6 +102,10 @@ kurt cloud login
 - ✅ JSON parsing for metadata fields
 - ✅ RLS enforcement via JWT
 
+**CLI Behavior:**
+- Migration warnings are suppressed in cloud mode (migrations managed via kurt-cloud)
+- `kurt admin migrate` commands are not available in cloud mode
+
 ---
 
 ## Implementation Details
