@@ -93,15 +93,33 @@ def get_database_client() -> DatabaseClient:
 
     # Handle "kurt" magic value - use CloudDatabaseClient
     if database_url == "kurt":
-        from kurt.db.cloud import CloudDatabaseClient
+        try:
+            from kurt.db.cloud import CloudDatabaseClient
 
-        return CloudDatabaseClient()
+            return CloudDatabaseClient()
+        except ImportError as e:
+            missing_module = str(e).split("'")[1] if "'" in str(e) else "unknown"
+            raise ImportError(
+                f"Kurt Cloud mode requires additional dependencies.\n"
+                f"Missing module: {missing_module}\n\n"
+                f"Install with: uv pip install 'kurt[cloud]'\n"
+                f"Or install all extras: uv pip install 'kurt[all]'"
+            ) from e
 
     # PostgreSQL direct connection
     if database_url and database_url.startswith("postgres"):
-        from kurt.db.postgresql import PostgreSQLClient
+        try:
+            from kurt.db.postgresql import PostgreSQLClient
 
-        return PostgreSQLClient(database_url)
+            return PostgreSQLClient(database_url)
+        except ImportError as e:
+            missing_module = str(e).split("'")[1] if "'" in str(e) else "unknown"
+            raise ImportError(
+                f"PostgreSQL mode requires additional dependencies.\n"
+                f"Missing module: {missing_module}\n\n"
+                f"Install with: uv pip install 'kurt[postgres]'\n"
+                f"Or install all extras: uv pip install 'kurt[all]'"
+            ) from e
 
     # Default: SQLite
     from kurt.db.sqlite import SQLiteClient

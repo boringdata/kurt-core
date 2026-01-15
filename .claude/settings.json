@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Read(//Users/julien/**)"
+      "Read(//Users/julien/**)",
+      "Bash(git grep:*)"
     ]
   }
 }

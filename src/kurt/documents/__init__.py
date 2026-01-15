@@ -76,10 +76,12 @@ def resolve_documents(
 
     # If identifier looks like a URL, auto-create MapDocument if needed
     if identifier and identifier.startswith(("http://", "https://")):
+        from sqlmodel import select
+
         with managed_session() as session:
-            existing = (
-                session.query(MapDocument).filter(MapDocument.source_url == identifier).first()
-            )
+            existing = session.exec(
+                select(MapDocument).where(MapDocument.source_url == identifier)
+            ).first()
             if not existing:
                 doc_id = hashlib.sha256(identifier.encode()).hexdigest()[:12]
                 doc = MapDocument(

@@ -169,27 +169,33 @@ def _get_status_data() -> dict:
     """Gather all status information."""
     from urllib.parse import urlparse
 
+    from sqlmodel import func, select
+
     from kurt.db import managed_session
     from kurt.workflows.fetch.models import FetchDocument, FetchStatus
     from kurt.workflows.map.models import MapDocument
 
     with managed_session() as session:
         # Total documents from map table
-        total = session.query(MapDocument).count()
+        total = session.exec(select(func.count()).select_from(MapDocument)).one()
 
         # Fetch status counts
-        fetched = (
-            session.query(FetchDocument).filter(FetchDocument.status == FetchStatus.SUCCESS).count()
-        )
-        error = (
-            session.query(FetchDocument).filter(FetchDocument.status == FetchStatus.ERROR).count()
-        )
+        fetched = session.exec(
+            select(func.count())
+            .select_from(FetchDocument)
+            .where(FetchDocument.status == FetchStatus.SUCCESS)
+        ).one()
+        error = session.exec(
+            select(func.count())
+            .select_from(FetchDocument)
+            .where(FetchDocument.status == FetchStatus.ERROR)
+        ).one()
         not_fetched = total - fetched - error
 
         # Documents by domain
-        docs = session.query(MapDocument.source_url).all()
+        docs = session.exec(select(MapDocument.source_url)).all()
         domains: dict[str, int] = {}
-        for (url,) in docs:
+        for url in docs:
             if url:
                 try:
                     domain = urlparse(url).netloc

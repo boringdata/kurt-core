@@ -162,11 +162,11 @@ def persist_signals(
             signal_id = signal_dict["signal_id"]
 
             # Check existing
-            existing = (
-                session.query(MonitoringSignal)
-                .filter(MonitoringSignal.signal_id == signal_id)
-                .first()
-            )
+            from sqlmodel import select
+
+            existing = session.exec(
+                select(MonitoringSignal).where(MonitoringSignal.signal_id == signal_id)
+            ).first()
 
             # Parse timestamp as string for storage
             timestamp_str = None
