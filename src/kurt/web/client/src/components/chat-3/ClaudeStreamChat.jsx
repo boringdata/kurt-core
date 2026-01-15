@@ -1364,17 +1364,24 @@ const Thread = ({
   )
 }
 
-export default function ClaudeStreamChat() {
+export default function ClaudeStreamChat({ initialSessionId = null, provider = 'claude' }) {
   const [attachments, setAttachments] = useState([])
   const [contextFiles, setContextFiles] = useState([])
   const [sessions, setSessions] = useState([])
-  const [currentSessionId, setCurrentSessionId] = useState(null)
+  const [currentSessionId, setCurrentSessionId] = useState(initialSessionId)
   const [showSessionDropdown, setShowSessionDropdown] = useState(false)
   const [mode, setMode] = useState('ask')
   const [approvalRequest, setApprovalRequest] = useState(null)
   const [imageCache, setImageCache] = useState({})
   const [lastUserMessage, setLastUserMessage] = useState(null)
   const retryMessageRef = useRef(null)
+
+  // Update session ID when initialSessionId prop changes
+  useEffect(() => {
+    if (initialSessionId && initialSessionId !== currentSessionId) {
+      setCurrentSessionId(initialSessionId)
+    }
+  }, [initialSessionId])
 
   // Fetch sessions on mount and when dropdown opens
   useEffect(() => {

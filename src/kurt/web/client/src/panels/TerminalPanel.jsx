@@ -75,14 +75,9 @@ const getFileName = (path) => {
 
 // Build WebSocket URL for chat mode
 const buildChatSocketUrl = (sessionId, provider) => {
-  const apiBase = import.meta.env.VITE_API_URL || ''
-  let wsBase
-  if (apiBase) {
-    wsBase = apiBase.replace(/^http/, 'ws')
-  } else {
-    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    wsBase = `${protocol}://${window.location.host}`
-  }
+  // Always use the Vite dev server proxy (localhost:5173)
+  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+  const wsBase = `${protocol}://${window.location.host}`
   const params = new URLSearchParams()
   if (sessionId) params.set('session_id', sessionId)
   params.set('resume', '1') // Always try to resume in chat mode
@@ -438,7 +433,10 @@ export default function TerminalPanel({ params }) {
               // WEB: Show ClaudeStreamChat
               return (
                 <div key={session.id} style={style} className="terminal-instance">
-                  <ClaudeStreamChat />
+                  <ClaudeStreamChat
+                    initialSessionId={session.sessionId}
+                    provider={session.provider}
+                  />
                 </div>
               )
             })}
