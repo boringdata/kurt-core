@@ -93,13 +93,8 @@ const buildChatSocketUrl = (sessionId, provider) => {
 export default function TerminalPanel({ params }) {
   const { collapsed, onToggleCollapse, approvals, onFocusReview, onDecision, normalizeApprovalPath } = params || {}
   const terminalCounter = useRef(1)
-  const [viewMode, setViewMode] = useState(() => {
-    try {
-      return localStorage.getItem(VIEW_MODE_KEY) || 'raw'
-    } catch {
-      return 'raw'
-    }
-  })
+  // Always in chat mode (removed raw/chat toggle)
+  const viewMode = 'chat'
   const [chatInterface, setChatInterface] = useState(() => {
     try {
       return localStorage.getItem(CHAT_INTERFACE_KEY) || 'cli'
@@ -234,15 +229,6 @@ export default function TerminalPanel({ params }) {
     }
   }, [sessions, activeId])
 
-  // Save view mode preference
-  useEffect(() => {
-    try {
-      localStorage.setItem(VIEW_MODE_KEY, viewMode)
-    } catch {
-      // Ignore storage errors
-    }
-  }, [viewMode])
-
   // Save chat interface preference
   useEffect(() => {
     try {
@@ -254,9 +240,9 @@ export default function TerminalPanel({ params }) {
 
   // Manage chat WebSocket connection
   useEffect(() => {
-    console.log('[ChatSocket] Effect triggered:', { viewMode, chatInterface, activeId })
-    if (viewMode !== 'chat' || chatInterface === 'web' || !activeId) {
-      // Close existing socket when not in CLI chat mode
+    console.log('[ChatSocket] Effect triggered:', { chatInterface, activeId })
+    if (chatInterface === 'web' || !activeId) {
+      // Close existing socket when in Web mode or no active session
       setChatSocket((prev) => {
         if (prev) {
           console.log('[ChatSocket] Closing existing socket')
@@ -299,7 +285,7 @@ export default function TerminalPanel({ params }) {
       socket.close()
       setChatSocket(null)
     }
-  }, [viewMode, chatInterface, activeId, sessions])
+  }, [chatInterface, activeId, sessions])
 
   if (collapsed) {
     return (
@@ -339,25 +325,6 @@ export default function TerminalPanel({ params }) {
           Agent Sessions
         </div>
         <div className="terminal-actions">
-          {/* View mode toggle */}
-          <div className="view-mode-toggle">
-            <button
-              type="button"
-              className={`view-mode-btn ${viewMode === 'raw' ? 'active' : ''}`}
-              onClick={() => setViewMode('raw')}
-              title="Raw terminal mode"
-            >
-              Raw
-            </button>
-            <button
-              type="button"
-              className={`view-mode-btn ${viewMode === 'chat' ? 'active' : ''}`}
-              onClick={() => setViewMode('chat')}
-              title="Chat mode"
-            >
-              Chat
-            </button>
-          </div>
           <select
             id="terminal-provider-select"
             className="terminal-select terminal-provider-select"
@@ -405,27 +372,25 @@ export default function TerminalPanel({ params }) {
                 </option>
               ))}
             </select>
-            {/* CLI/Web toggle - only show in chat mode */}
-            {viewMode === 'chat' && (
-              <div className="view-mode-toggle" style={{ marginLeft: '8px' }}>
-                <button
-                  type="button"
-                  className={`view-mode-btn ${chatInterface === 'cli' ? 'active' : ''}`}
-                  onClick={() => setChatInterface('cli')}
-                  title="CLI chat interface"
-                >
-                  CLI
-                </button>
-                <button
-                  type="button"
-                  className={`view-mode-btn ${chatInterface === 'web' ? 'active' : ''}`}
-                  onClick={() => setChatInterface('web')}
-                  title="Web chat interface"
-                >
-                  Web
-                </button>
-              </div>
-            )}
+            {/* CLI/Web toggle */}
+            <div className="view-mode-toggle" style={{ marginLeft: '8px' }}>
+              <button
+                type="button"
+                className={`view-mode-btn ${chatInterface === 'cli' ? 'active' : ''}`}
+                onClick={() => setChatInterface('cli')}
+                title="CLI chat interface"
+              >
+                CLI
+              </button>
+              <button
+                type="button"
+                className={`view-mode-btn ${chatInterface === 'web' ? 'active' : ''}`}
+                onClick={() => setChatInterface('web')}
+                title="Web chat interface"
+              >
+                Web
+              </button>
+            </div>
             <button
               type="button"
               className="terminal-copy-id"
@@ -455,27 +420,7 @@ export default function TerminalPanel({ params }) {
               const isActive = session.id === activeId
               const style = { display: isActive ? 'flex' : 'none' }
 
-              // RAW MODE: Show Terminal
-              if (viewMode === 'raw') {
-                return (
-                  <div key={session.id} style={style} className="terminal-instance">
-                    <Terminal
-                      key={`${session.id}-${session.sessionId}-${session.provider}-${session.resume}`}
-                      isActive={isActive}
-                      provider={session.provider}
-                      sessionId={session.sessionId}
-                      sessionName={session.title}
-                      resume={Boolean(session.resume)}
-                      onFirstPrompt={(prompt) => handleFirstPrompt(session.id, prompt)}
-                      onResumeMissing={() => handleResumeMissing(session.id)}
-                      bannerMessage={session.bannerMessage}
-                      onBannerShown={() => handleBannerShown(session.id)}
-                    />
-                  </div>
-                )
-              }
-
-              // CHAT MODE - CLI: Show ChatView
+              // CLI: Show ChatView
               if (chatInterface === 'cli') {
                 return (
                   <div key={session.id} style={style} className="terminal-instance">
@@ -490,7 +435,7 @@ export default function TerminalPanel({ params }) {
                 )
               }
 
-              // CHAT MODE - WEB: Show ClaudeStreamChat
+              // WEB: Show ClaudeStreamChat
               return (
                 <div key={session.id} style={style} className="terminal-instance">
                   <ClaudeStreamChat />
