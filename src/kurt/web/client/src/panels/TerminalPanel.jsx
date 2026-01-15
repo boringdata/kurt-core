@@ -340,63 +340,24 @@ export default function TerminalPanel({ params }) {
         </div>
         <div className="terminal-actions">
           {/* View mode toggle */}
-          {viewMode === 'raw' ? (
-            <div className="view-mode-toggle">
-              <button
-                type="button"
-                className="view-mode-btn active"
-                title="Raw terminal mode"
-              >
-                Raw
-              </button>
-              <button
-                type="button"
-                className="view-mode-btn"
-                onClick={() => setViewMode('chat')}
-                title="Chat mode"
-              >
-                Chat
-              </button>
-            </div>
-          ) : (
-            <>
-              <div className="view-mode-toggle">
-                <button
-                  type="button"
-                  className="view-mode-btn"
-                  onClick={() => setViewMode('raw')}
-                  title="Raw terminal mode"
-                >
-                  Raw
-                </button>
-                <button
-                  type="button"
-                  className="view-mode-btn active"
-                  title="Chat mode"
-                >
-                  Chat
-                </button>
-              </div>
-              <div className="view-mode-toggle" style={{ marginLeft: '4px' }}>
-                <button
-                  type="button"
-                  className={`view-mode-btn ${chatInterface === 'cli' ? 'active' : ''}`}
-                  onClick={() => setChatInterface('cli')}
-                  title="CLI chat interface"
-                >
-                  CLI
-                </button>
-                <button
-                  type="button"
-                  className={`view-mode-btn ${chatInterface === 'web' ? 'active' : ''}`}
-                  onClick={() => setChatInterface('web')}
-                  title="Web chat interface"
-                >
-                  Web
-                </button>
-              </div>
-            </>
-          )}
+          <div className="view-mode-toggle">
+            <button
+              type="button"
+              className={`view-mode-btn ${viewMode === 'raw' ? 'active' : ''}`}
+              onClick={() => setViewMode('raw')}
+              title="Raw terminal mode"
+            >
+              Raw
+            </button>
+            <button
+              type="button"
+              className={`view-mode-btn ${viewMode === 'chat' ? 'active' : ''}`}
+              onClick={() => setViewMode('chat')}
+              title="Chat mode"
+            >
+              Chat
+            </button>
+          </div>
           <select
             id="terminal-provider-select"
             className="terminal-select terminal-provider-select"
@@ -444,6 +405,27 @@ export default function TerminalPanel({ params }) {
                 </option>
               ))}
             </select>
+            {/* CLI/Web toggle - only show in chat mode */}
+            {viewMode === 'chat' && (
+              <div className="view-mode-toggle" style={{ marginLeft: '8px' }}>
+                <button
+                  type="button"
+                  className={`view-mode-btn ${chatInterface === 'cli' ? 'active' : ''}`}
+                  onClick={() => setChatInterface('cli')}
+                  title="CLI chat interface"
+                >
+                  CLI
+                </button>
+                <button
+                  type="button"
+                  className={`view-mode-btn ${chatInterface === 'web' ? 'active' : ''}`}
+                  onClick={() => setChatInterface('web')}
+                  title="Web chat interface"
+                >
+                  Web
+                </button>
+              </div>
+            )}
             <button
               type="button"
               className="terminal-copy-id"
