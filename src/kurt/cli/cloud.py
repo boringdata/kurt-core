@@ -36,30 +36,125 @@ def login_cmd():
     Example:
         kurt cloud login
     """
-    import json
+    import http.server
+    import threading
     import time
-    import urllib.request
     import webbrowser
 
     from kurt.cli.auth.credentials import Credentials, get_cloud_api_url, save_credentials
 
     cloud_url = get_cloud_api_url()
 
-    # Step 1: Create CLI session
-    console.print("[dim]Creating login session...[/dim]")
-    try:
-        req = urllib.request.Request(f"{cloud_url}/auth/cli-session", method="POST")
-        req.add_header("Content-Type", "application/json")
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            session_data = json.loads(resp.read().decode())
-    except Exception as e:
-        console.print(f"[red]Failed to create login session: {e}[/red]")
+    # Result container for the callback
+    auth_result = {"tokens": None, "error": None}
+    server_ready = threading.Event()
+
+    class CallbackHandler(http.server.BaseHTTPRequestHandler):
+        """Handle OAuth callback from browser."""
+
+        def log_message(self, format, *args):
+            pass  # Suppress HTTP logs
+
+        def do_GET(self):  # noqa: N802
+            """Handle GET request with tokens in query params."""
+            from urllib.parse import parse_qs, urlparse
+
+            parsed = urlparse(self.path)
+            params = parse_qs(parsed.query)
+
+            if "access_token" in params:
+                auth_result["tokens"] = {
+                    "access_token": params["access_token"][0],
+                    "refresh_token": params.get("refresh_token", [""])[0],
+                    "expires_in": int(params.get("expires_in", ["3600"])[0]),
+                    "user_id": params.get("user_id", [""])[0],
+                    "email": params.get("email", [""])[0],
+                }
+            elif "error" in params:
+                auth_result["error"] = params.get("error_description", params["error"])[0]
+            else:
+                auth_result["error"] = "No tokens received"
+
+            # Send success response
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            html = """<!DOCTYPE html><html><head><title>Kurt Cloud</title>
+            <style>body{font-family:system-ui;max-width:400px;margin:100px auto;text-align:center;}
+            .success{color:#22c55e;}.error{color:#ef4444;}</style></head><body>
+            <h1 class="success">✓ Login Successful</h1>
+            <p>You can close this window and return to your terminal.</p>
+            </body></html>"""
+            if auth_result["error"]:
+                html = html.replace("success", "error").replace(
+                    "✓ Login Successful", "Login Failed"
+                )
+                html = html.replace("You can close this window", auth_result["error"])
+            self.wfile.write(html.encode())
+
+        def do_POST(self):  # noqa: N802
+            """Handle POST request with tokens in body."""
+            content_length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(content_length).decode()
+
+            try:
+                import json as json_module
+
+                data = json_module.loads(body)
+                auth_result["tokens"] = {
+                    "access_token": data.get("access_token", ""),
+                    "refresh_token": data.get("refresh_token", ""),
+                    "expires_in": int(data.get("expires_in", 3600)),
+                    "user_id": data.get("user_id", ""),
+                    "email": data.get("email", ""),
+                }
+            except Exception as e:
+                auth_result["error"] = str(e)
+
+            # Send CORS headers and response
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.end_headers()
+            self.wfile.write(b'{"status":"ok"}')
+
+        def do_OPTIONS(self):  # noqa: N802
+            """Handle CORS preflight."""
+            self.send_response(200)
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.end_headers()
+
+    # Start local server
+    port = 9876
+    server = None
+    for p in [port, port + 1, port + 2]:
+        try:
+            server = http.server.HTTPServer(("127.0.0.1", p), CallbackHandler)
+            port = p
+            break
+        except OSError:
+            continue
+
+    if not server:
+        console.print("[red]Failed to start local auth server (ports 9876-9878 in use)[/red]")
         raise click.Abort()
 
-    session_id = session_data["session_id"]
-    login_url = session_data["login_url"]
+    def run_server():
+        server_ready.set()
+        server.handle_request()  # Handle one request then stop
 
-    # Step 2: Open browser
+    server_thread = threading.Thread(target=run_server, daemon=True)
+    server_thread.start()
+    server_ready.wait()
+
+    # Build login URL with callback to local server
+    login_url = f"{cloud_url}/auth/login-page?cli_callback=http://127.0.0.1:{port}"
+
+    # Open browser
     console.print()
     console.print("[bold]Opening browser for login...[/bold]")
     console.print("[dim]If browser doesn't open, visit:[/dim]")
@@ -68,65 +163,57 @@ def login_cmd():
 
     webbrowser.open(login_url)
 
-    # Step 3: Poll for completion
+    # Wait for callback
     console.print("[dim]Waiting for authentication...[/dim]")
 
-    timeout = 600  # 10 minutes
-    poll_interval = 2  # seconds
+    timeout = 300  # 5 minutes
     start = time.time()
 
     while time.time() - start < timeout:
-        time.sleep(poll_interval)
+        if auth_result["tokens"] or auth_result["error"]:
+            break
+        time.sleep(0.5)
 
-        try:
-            req = urllib.request.Request(f"{cloud_url}/auth/cli-session/{session_id}")
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                status_data = json.loads(resp.read().decode())
-        except Exception:
-            continue  # Network error, retry
+    server.server_close()
 
-        status = status_data.get("status")
+    if auth_result["error"]:
+        console.print(f"[red]Login failed: {auth_result['error']}[/red]")
+        raise click.Abort()
 
-        if status == "completed":
-            # Success! Save credentials
-            expires_at = int(time.time()) + status_data.get("expires_in", 3600)
+    if not auth_result["tokens"]:
+        console.print("[red]Authentication timed out. Please try again.[/red]")
+        raise click.Abort()
 
-            # Get workspace_id from local config if available
-            workspace_id = None
-            try:
-                from kurt.config import config_file_exists, load_config
+    # Success! Save credentials
+    tokens = auth_result["tokens"]
+    expires_at = int(time.time()) + tokens.get("expires_in", 3600)
 
-                if config_file_exists():
-                    config = load_config()
-                    workspace_id = config.WORKSPACE_ID
-            except Exception:
-                pass
+    # Get workspace_id from local config if available
+    workspace_id = None
+    try:
+        from kurt.config import config_file_exists, load_config
 
-            creds = Credentials(
-                access_token=status_data["access_token"],
-                refresh_token=status_data.get("refresh_token", ""),
-                user_id=status_data.get("user_id", ""),
-                email=status_data.get("email"),
-                workspace_id=workspace_id,
-                expires_at=expires_at,
-            )
-            save_credentials(creds)
+        if config_file_exists():
+            config = load_config()
+            workspace_id = config.WORKSPACE_ID
+    except Exception:
+        pass
 
-            console.print()
-            console.print(f"[green]✓ Logged in as {creds.email or creds.user_id}[/green]")
-            console.print(f"[dim]User ID: {creds.user_id}[/dim]")
-            if workspace_id:
-                console.print(f"[dim]Workspace: {workspace_id}[/dim]")
-            return
+    creds = Credentials(
+        access_token=tokens["access_token"],
+        refresh_token=tokens.get("refresh_token", ""),
+        user_id=tokens.get("user_id", ""),
+        email=tokens.get("email"),
+        workspace_id=workspace_id,
+        expires_at=expires_at,
+    )
+    save_credentials(creds)
 
-        elif status == "expired":
-            console.print("[red]Login session expired. Please try again.[/red]")
-            raise click.Abort()
-
-        # status == "pending", continue polling
-
-    console.print("[red]Authentication timed out. Please try again.[/red]")
-    raise click.Abort()
+    console.print()
+    console.print(f"[green]✓ Logged in as {creds.email or creds.user_id}[/green]")
+    console.print(f"[dim]User ID: {creds.user_id}[/dim]")
+    if workspace_id:
+        console.print(f"[dim]Workspace: {workspace_id}[/dim]")
 
 
 @cloud_group.command(name="logout")
