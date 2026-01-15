@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import difflib
 import hashlib
+import json
 import os
 import subprocess
 import time
@@ -14,12 +16,13 @@ from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Query, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from kurt.web.api.pty_bridge import handle_pty_websocket
+from kurt.web.api.pty_bridge import build_claude_args, handle_pty_websocket
 from kurt.web.api.storage import LocalStorage, S3Storage
+from kurt.web.api.stream_bridge import handle_stream_websocket
 
 # Ensure working directory is project root (when running from worktree)
 project_root = Path(os.environ.get("KURT_PROJECT_ROOT", Path.cwd())).expanduser().resolve()
@@ -55,6 +58,14 @@ class ApprovalDecisionPayload(BaseModel):
     request_id: str
     decision: str
     reason: str | None = None
+
+
+class ClaudeStreamPayload(BaseModel):
+    prompt: str
+    session_id: str | None = None
+    resume: bool = False
+    fork_session: str | None = None
+    output_format: str = "stream-json"
 
 
 def get_storage():
@@ -103,6 +114,33 @@ if CLIENT_DIST.exists() and (CLIENT_DIST / "index.html").exists():
 @app.get("/api/project")
 def api_project():
     return {"root": str(Path.cwd().resolve())}
+
+
+@app.get("/api/sessions")
+async def api_sessions():
+    """List active Claude stream sessions."""
+    from kurt.web.api.stream_bridge import _SESSION_REGISTRY
+
+    sessions = []
+    for session_id, session in _SESSION_REGISTRY.items():
+        sessions.append(
+            {
+                "id": session_id,
+                "alive": session.is_alive(),
+                "clients": len(session.clients),
+                "history_count": len(session.history),
+            }
+        )
+    return {"sessions": sessions}
+
+
+@app.post("/api/sessions")
+async def api_create_session():
+    """Create a new session ID (client will connect via WebSocket)."""
+    import uuid
+
+    session_id = str(uuid.uuid4())
+    return {"session_id": session_id}
 
 
 @app.get("/api/config")
@@ -681,6 +719,141 @@ def api_approval_decision(payload: ApprovalDecisionPayload):
         APPROVALS[payload.request_id] = req
 
     return {"status": decision}
+
+
+class PermissionPayload(BaseModel):
+    permission: str
+
+
+@app.post("/api/settings/permission")
+def api_add_permission(payload: PermissionPayload):
+    """Add a permission to .claude/settings.json."""
+    settings_path = project_root / ".claude" / "settings.json"
+
+    # Read existing settings
+    if settings_path.exists():
+        try:
+            settings = json.loads(settings_path.read_text())
+        except json.JSONDecodeError:
+            settings = {}
+    else:
+        settings = {}
+
+    # Ensure permissions.allow list exists
+    if "permissions" not in settings:
+        settings["permissions"] = {}
+    if "allow" not in settings["permissions"]:
+        settings["permissions"]["allow"] = []
+
+    # Add permission if not already present
+    allow_list = settings["permissions"]["allow"]
+    if payload.permission not in allow_list:
+        allow_list.append(payload.permission)
+        settings["permissions"]["allow"] = allow_list
+
+        # Write back
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        settings_path.write_text(json.dumps(settings, indent=2) + "\n")
+
+    return {"status": "added", "permission": payload.permission, "all_permissions": allow_list}
+
+
+@app.get("/api/settings/permissions")
+def api_get_permissions():
+    """Get current permissions from .claude/settings.json."""
+    settings_path = project_root / ".claude" / "settings.json"
+
+    if not settings_path.exists():
+        return {"permissions": []}
+
+    try:
+        settings = json.loads(settings_path.read_text())
+        return {"permissions": settings.get("permissions", {}).get("allow", [])}
+    except json.JSONDecodeError:
+        return {"permissions": []}
+
+
+@app.post("/api/claude")
+async def api_claude_stream(payload: ClaudeStreamPayload, request: Request):
+    prompt = payload.prompt.strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="prompt is required")
+
+    cmd = os.environ.get("KURT_CLAUDE_CMD", "claude")
+    base_args = os.environ.get("KURT_CLAUDE_ARGS", "").split()
+    output_flag = os.environ.get("KURT_CLAUDE_OUTPUT_FLAG", "--output-format")
+    prompt_flag = os.environ.get("KURT_CLAUDE_PROMPT_FLAG", "").strip()
+
+    if output_flag and output_flag not in base_args:
+        base_args += [output_flag, payload.output_format]
+
+    args = build_claude_args(
+        base_args,
+        payload.session_id,
+        payload.resume,
+        False,
+        payload.fork_session,
+        cwd=str(Path.cwd()),
+    )
+
+    send_stdin = True
+    if prompt_flag:
+        args += [prompt_flag, prompt]
+        send_stdin = False
+
+    env = os.environ.copy()
+    env.setdefault("CLAUDE_CODE_REMOTE", "true")
+    env["KURT_SESSION_PROVIDER"] = "claude"
+    if payload.session_id:
+        env["KURT_SESSION_NAME"] = payload.session_id
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            cmd,
+            *args,
+            cwd=str(Path.cwd()),
+            stdin=asyncio.subprocess.PIPE if send_stdin else asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=env,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=500, detail=f"Claude CLI not found: {exc}") from exc
+
+    async def stream():
+        if send_stdin and proc.stdin:
+            proc.stdin.write((prompt + "\n").encode("utf-8"))
+            await proc.stdin.drain()
+            proc.stdin.close()
+
+        try:
+            while True:
+                if await request.is_disconnected():
+                    proc.terminate()
+                    break
+                chunk = await proc.stdout.read(1024)
+                if not chunk:
+                    break
+                yield chunk
+
+            stderr = await proc.stderr.read()
+            await proc.wait()
+            if proc.returncode and stderr:
+                detail = stderr.decode("utf-8", errors="replace").strip()
+                if detail:
+                    error_line = json.dumps(
+                        {
+                            "type": "result",
+                            "subtype": "error",
+                            "result": f"Claude exited with code {proc.returncode}: {detail}",
+                        }
+                    )
+                    yield (error_line + "\n").encode("utf-8")
+        finally:
+            if proc.returncode is None:
+                proc.terminate()
+
+    return StreamingResponse(stream(), media_type="text/plain")
 
 
 def _search_files(query: str, limit: int = 50) -> list[dict]:
@@ -1408,6 +1581,27 @@ async def websocket_pty(websocket: WebSocket):
         websocket,
         cmd=PTY_CMD,
         base_args=[a for a in PTY_ARGS if a],
+        cwd=str(Path.cwd()),
+    )
+
+
+# Stream-JSON WebSocket endpoint for structured Claude communication
+STREAM_CMD = os.environ.get("KURT_STREAM_CMD", os.environ.get("KURT_CLAUDE_CMD", "claude"))
+STREAM_ARGS = os.environ.get("KURT_STREAM_ARGS", "").split()
+
+
+@app.websocket("/ws/claude-stream")
+async def websocket_claude_stream(websocket: WebSocket):
+    """WebSocket endpoint for Claude stream-json sessions.
+
+    Uses pipe-based I/O (not PTY) for structured JSON communication.
+    Client sends: {"type": "user", "message": "..."}
+    Server forwards Claude's stream-json output directly.
+    """
+    await handle_stream_websocket(
+        websocket,
+        cmd=STREAM_CMD,
+        base_args=[a for a in STREAM_ARGS if a],
         cwd=str(Path.cwd()),
     )
 

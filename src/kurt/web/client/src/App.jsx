@@ -12,6 +12,9 @@ import WorkflowsPanel from './panels/WorkflowsPanel'
 import WorkflowTerminalPanel from './panels/WorkflowTerminalPanel'
 import DiffHighlightPOC from './components/DiffHighlightPOC'
 import TiptapDiffPOC from './components/TiptapDiffPOC'
+import ChatDemo from './components/chat/ChatDemo'
+import StandaloneChat from './components/chat/StandaloneChat'
+import ClaudeStreamChat from './components/chat-3/ClaudeStreamChat'
 
 // POC mode - add ?poc=diff or ?poc=tiptap-diff to URL to test
 const POC_MODE = new URLSearchParams(window.location.search).get('poc')
@@ -1646,6 +1649,15 @@ export default function App() {
   }
   if (POC_MODE === 'tiptap-diff') {
     return <TiptapDiffPOC />
+  }
+  if (POC_MODE === 'chat') {
+    return <ChatDemo />
+  }
+  if (POC_MODE === 'standalone') {
+    return <StandaloneChat />
+  }
+  if (POC_MODE === 'chat-3') {
+    return <ClaudeStreamChat />
   }
 
   // Build className with collapsed state flags for CSS targeting

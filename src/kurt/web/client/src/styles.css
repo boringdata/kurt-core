@@ -1076,6 +1076,35 @@ html, body, #root {
   gap: 8px;
 }
 
+/* View mode toggle (Raw/Chat) */
+.view-mode-toggle {
+  display: flex;
+  background: var(--vscode-input-background);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.view-mode-btn {
+  padding: 2px 8px;
+  font-size: 11px;
+  border: none;
+  background: transparent;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.view-mode-btn:hover {
+  opacity: 0.8;
+}
+
+.view-mode-btn.active {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  opacity: 1;
+}
+
 .terminal-provider-label {
   font-size: 12px;
   font-weight: 600;
