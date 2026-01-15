@@ -71,8 +71,8 @@ class TestDocumentRegistryAllModes:
         with managed_session() as session:
             docs = registry.list(session, DocumentFilters(not_fetched=True))
 
-        # Should return 3 documents (doc-1, doc-2, doc-3)
-        assert len(docs) == 3
+        # Should return 4 documents: doc-1, doc-2, doc-3 (not fetched), doc-7 (map error, no fetch)
+        assert len(docs) == 4
         for doc in docs:
             assert doc.fetch_status is None
 
