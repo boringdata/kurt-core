@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Terminal from '../components/Terminal'
 import ChatView from '../components/chat/ChatView'
+import ClaudeStreamChat from '../components/chat-3/ClaudeStreamChat'
 
 const SESSION_STORAGE_KEY = 'kurt-web-terminal-sessions'
 const VIEW_MODE_KEY = 'kurt-web-terminal-view-mode'
 const ACTIVE_SESSION_KEY = 'kurt-web-terminal-active'
+const CHAT_INTERFACE_KEY = 'kurt-web-terminal-chat-interface'
 const PROVIDERS = [
   { id: 'claude', label: 'Claude' },
   { id: 'codex', label: 'Codex' },
@@ -96,6 +98,13 @@ export default function TerminalPanel({ params }) {
       return localStorage.getItem(VIEW_MODE_KEY) || 'raw'
     } catch {
       return 'raw'
+    }
+  })
+  const [chatInterface, setChatInterface] = useState(() => {
+    try {
+      return localStorage.getItem(CHAT_INTERFACE_KEY) || 'cli'
+    } catch {
+      return 'cli'
     }
   })
   const [chatSocket, setChatSocket] = useState(null)
@@ -234,11 +243,20 @@ export default function TerminalPanel({ params }) {
     }
   }, [viewMode])
 
+  // Save chat interface preference
+  useEffect(() => {
+    try {
+      localStorage.setItem(CHAT_INTERFACE_KEY, chatInterface)
+    } catch {
+      // Ignore storage errors
+    }
+  }, [chatInterface])
+
   // Manage chat WebSocket connection
   useEffect(() => {
-    console.log('[ChatSocket] Effect triggered:', { viewMode, activeId })
-    if (viewMode !== 'chat' || !activeId) {
-      // Close existing socket when not in chat mode
+    console.log('[ChatSocket] Effect triggered:', { viewMode, chatInterface, activeId })
+    if (viewMode !== 'chat' || chatInterface === 'web' || !activeId) {
+      // Close existing socket when not in CLI chat mode
       setChatSocket((prev) => {
         if (prev) {
           console.log('[ChatSocket] Closing existing socket')
@@ -281,7 +299,7 @@ export default function TerminalPanel({ params }) {
       socket.close()
       setChatSocket(null)
     }
-  }, [viewMode, activeId, sessions])
+  }, [viewMode, chatInterface, activeId, sessions])
 
   if (collapsed) {
     return (
@@ -322,24 +340,63 @@ export default function TerminalPanel({ params }) {
         </div>
         <div className="terminal-actions">
           {/* View mode toggle */}
-          <div className="view-mode-toggle">
-            <button
-              type="button"
-              className={`view-mode-btn ${viewMode === 'raw' ? 'active' : ''}`}
-              onClick={() => setViewMode('raw')}
-              title="Raw terminal mode"
-            >
-              Raw
-            </button>
-            <button
-              type="button"
-              className={`view-mode-btn ${viewMode === 'chat' ? 'active' : ''}`}
-              onClick={() => setViewMode('chat')}
-              title="Chat mode"
-            >
-              Chat
-            </button>
-          </div>
+          {viewMode === 'raw' ? (
+            <div className="view-mode-toggle">
+              <button
+                type="button"
+                className="view-mode-btn active"
+                title="Raw terminal mode"
+              >
+                Raw
+              </button>
+              <button
+                type="button"
+                className="view-mode-btn"
+                onClick={() => setViewMode('chat')}
+                title="Chat mode"
+              >
+                Chat
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="view-mode-toggle">
+                <button
+                  type="button"
+                  className="view-mode-btn"
+                  onClick={() => setViewMode('raw')}
+                  title="Raw terminal mode"
+                >
+                  Raw
+                </button>
+                <button
+                  type="button"
+                  className="view-mode-btn active"
+                  title="Chat mode"
+                >
+                  Chat
+                </button>
+              </div>
+              <div className="view-mode-toggle" style={{ marginLeft: '4px' }}>
+                <button
+                  type="button"
+                  className={`view-mode-btn ${chatInterface === 'cli' ? 'active' : ''}`}
+                  onClick={() => setChatInterface('cli')}
+                  title="CLI chat interface"
+                >
+                  CLI
+                </button>
+                <button
+                  type="button"
+                  className={`view-mode-btn ${chatInterface === 'web' ? 'active' : ''}`}
+                  onClick={() => setChatInterface('web')}
+                  title="Web chat interface"
+                >
+                  Web
+                </button>
+              </div>
+            </>
+          )}
           <select
             id="terminal-provider-select"
             className="terminal-select terminal-provider-select"
@@ -412,36 +469,52 @@ export default function TerminalPanel({ params }) {
             </button>
           </div>
           <div className="terminal-body">
-            {viewMode === 'chat' ? (
-              /* Chat mode - single ChatView for active session */
-              <div className="terminal-instance active">
-                <ChatView
-                  socket={chatSocket}
-                  sessionId={sessions.find((s) => s.id === activeId)?.sessionId}
-                />
-              </div>
-            ) : (
-              /* Raw mode - Terminal instances */
-              sessions.map((session) => (
-                <div
-                  key={session.id}
-                  className={`terminal-instance ${session.id === activeId ? 'active' : ''}`}
-                >
-                  <Terminal
-                    key={`${session.id}-${session.sessionId}-${session.provider}-${session.resume}`}
-                    isActive={session.id === activeId}
-                    provider={session.provider}
-                    sessionId={session.sessionId}
-                    sessionName={session.title}
-                    resume={Boolean(session.resume)}
-                    onFirstPrompt={(prompt) => handleFirstPrompt(session.id, prompt)}
-                    onResumeMissing={() => handleResumeMissing(session.id)}
-                    bannerMessage={session.bannerMessage}
-                    onBannerShown={() => handleBannerShown(session.id)}
-                  />
+            {sessions.map((session) => {
+              const isActive = session.id === activeId
+              const style = { display: isActive ? 'flex' : 'none' }
+
+              // RAW MODE: Show Terminal
+              if (viewMode === 'raw') {
+                return (
+                  <div key={session.id} style={style} className="terminal-instance">
+                    <Terminal
+                      key={`${session.id}-${session.sessionId}-${session.provider}-${session.resume}`}
+                      isActive={isActive}
+                      provider={session.provider}
+                      sessionId={session.sessionId}
+                      sessionName={session.title}
+                      resume={Boolean(session.resume)}
+                      onFirstPrompt={(prompt) => handleFirstPrompt(session.id, prompt)}
+                      onResumeMissing={() => handleResumeMissing(session.id)}
+                      bannerMessage={session.bannerMessage}
+                      onBannerShown={() => handleBannerShown(session.id)}
+                    />
+                  </div>
+                )
+              }
+
+              // CHAT MODE - CLI: Show ChatView
+              if (chatInterface === 'cli') {
+                return (
+                  <div key={session.id} style={style} className="terminal-instance">
+                    {chatSocket && (
+                      <ChatView
+                        socket={chatSocket}
+                        sessionId={session.sessionId}
+                        onSendInput={(prompt) => handleFirstPrompt(session.id, prompt)}
+                      />
+                    )}
+                  </div>
+                )
+              }
+
+              // CHAT MODE - WEB: Show ClaudeStreamChat
+              return (
+                <div key={session.id} style={style} className="terminal-instance">
+                  <ClaudeStreamChat />
                 </div>
-              ))
-            )}
+              )
+            })}
           </div>
         </>
       )}
