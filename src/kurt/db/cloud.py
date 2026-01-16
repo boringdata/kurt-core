@@ -284,6 +284,34 @@ class SupabaseClient:
             # The 'cloud' schema is used by kurt-cloud API endpoints
         }
 
+    @classmethod
+    def from_access_token(cls, access_token: str) -> "SupabaseClient":
+        """Create client from access token (for API server use).
+
+        Uses environment variables for Supabase URL and anon key.
+        This is used when running in kurt-cloud API server context.
+        """
+        import os
+
+        supabase_url = os.environ.get("SUPABASE_URL")
+        anon_key = os.environ.get("SUPABASE_ANON_KEY")
+
+        if not supabase_url or not anon_key:
+            raise ValueError(
+                "SUPABASE_URL and SUPABASE_ANON_KEY environment variables required for cloud mode"
+            )
+
+        # Create minimal connection info from env vars
+        connection_info = CloudConnectionInfo(
+            supabase_url=supabase_url,
+            supabase_anon_key=anon_key,
+            workspace_id="",  # Not needed for client creation
+            workspace_schema="",  # Not needed for client creation
+            user_id="",  # Not needed for client creation
+        )
+
+        return cls(connection_info, access_token)
+
     def table(self, name: str) -> SupabaseTable:
         """Get a table reference for queries."""
         return SupabaseTable(self, name)

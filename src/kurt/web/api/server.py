@@ -172,22 +172,26 @@ def api_status(request: Request):
         auth_header = request.headers.get("Authorization")
 
         if auth_header and auth_header.startswith("Bearer "):
-            # Cloud mode: get workspace_id from header or JWT
+            # Cloud mode: create Supabase session from JWT
             import jwt
 
-            from kurt.db.cloud import SupabaseSession
+            from kurt.db.cloud import SupabaseClient, SupabaseSession
 
-            # First try X-Workspace-ID header
-            workspace_id = request.headers.get("X-Workspace-ID")
+            token = auth_header.split(" ", 1)[1]
+            payload = jwt.decode(token, options={"verify_signature": False})
 
-            # If no header, decode JWT and use user_id as workspace
-            if not workspace_id:
-                token = auth_header.split(" ", 1)[1]
-                payload = jwt.decode(token, options={"verify_signature": False})
-                workspace_id = payload.get("sub")  # user_id from JWT
+            # Get workspace_id from header or fall back to user_id
+            workspace_id = request.headers.get("X-Workspace-ID") or payload.get("sub")
+            user_id = payload.get("sub")
 
-            if workspace_id:
-                session = SupabaseSession(workspace_id=workspace_id)
+            if workspace_id and user_id:
+                # Create Supabase client using token for auth
+                client = SupabaseClient.from_access_token(token)
+                session = SupabaseSession(
+                    client=client,
+                    workspace_id=workspace_id,
+                    user_id=user_id,
+                )
                 return get_status_data(session)
 
         # Local mode: use managed_session (SQLite/PostgreSQL)
