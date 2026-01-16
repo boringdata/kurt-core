@@ -172,17 +172,19 @@ def api_status(request: Request):
         auth_header = request.headers.get("Authorization")
 
         if auth_header and auth_header.startswith("Bearer "):
-            # Cloud mode: decode token to get workspace_id
+            # Cloud mode: get workspace_id from header or JWT
             import jwt
 
             from kurt.db.cloud import SupabaseSession
 
-            token = auth_header.split(" ", 1)[1]
+            # First try X-Workspace-ID header
+            workspace_id = request.headers.get("X-Workspace-ID")
 
-            # Decode token (we don't verify here since middleware already did)
-            # We just need to extract the workspace_id claim
-            payload = jwt.decode(token, options={"verify_signature": False})
-            workspace_id = payload.get("workspace_id")
+            # If no header, decode JWT and use user_id as workspace
+            if not workspace_id:
+                token = auth_header.split(" ", 1)[1]
+                payload = jwt.decode(token, options={"verify_signature": False})
+                workspace_id = payload.get("sub")  # user_id from JWT
 
             if workspace_id:
                 session = SupabaseSession(workspace_id=workspace_id)
