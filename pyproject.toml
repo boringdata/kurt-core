@@ -8,35 +8,50 @@ authors = [
 ]
 requires-python = ">=3.10"
 dependencies = [
+    # Core CLI and database
     "click>=8.1.0",
     "rich>=13.0.0",
     "pydantic>=2.0.0",
     "sqlmodel>=0.0.14",
     "alembic>=1.13.0",
-    "trafilatura>=2.0.0",
-    "firecrawl-py>=1.0.0",
-    "httpx>=0.27.0",
-    "dspy>=2.5.0",
-    "requests>=2.31.0",
-    "pyyaml>=6.0.0",
-    "feedparser>=6.0.0",
-    "python-dotenv>=1.0.0",
-    "posthog>=3.0.0",
-    "dbos>=0.9.0",
-    "scikit-learn>=1.3.0",
-    "numpy>=1.24.0",
     "aiosqlite>=0.19.0",
     "greenlet>=3.0.0",
-    "pandas>=2.0.0",
-    "google-api-python-client>=2.187.0",
-    "google-auth>=2.45.0",
-    "google-auth-oauthlib>=1.2.2",
+    "psycopg2-binary>=2.9.11",
+    "python-dotenv>=1.0.0",
+    "pyyaml>=6.0.0",
+    "requests>=2.31.0",
+    "httpx>=0.27.0",
+    "posthog>=3.0.0",
+    "dbos>=0.9.0",
     "python-frontmatter>=1.0.0",
     "croniter>=2.0.0",
-    "psycopg2-binary>=2.9.11",
 ]
 
 [project.optional-dependencies]
+# Heavy ML dependencies for workflow execution (fetch, extract, etc.)
+workflows = [
+    "scikit-learn>=1.3.0",
+    "numpy>=1.24.0",
+    "pandas>=2.0.0",
+    "dspy>=2.5.0",
+    "trafilatura>=2.0.0",
+    "firecrawl-py>=1.0.0",
+    "feedparser>=6.0.0",
+    "google-api-python-client>=2.187.0",
+    "google-auth>=2.45.0",
+    "google-auth-oauthlib>=1.2.2",
+]
+# Web API dependencies (minimal - no ML libraries)
+api = [
+    "fastapi>=0.95",
+    "uvicorn>=0.22",
+    "websockets>=12.0",
+    "ptyprocess>=0.7",
+]
+# S3 storage support
+storage = [
+    "s3fs>=2023.11.1",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
@@ -51,12 +66,13 @@ eval = [
     "responses>=0.25.0",
     "pytest-httpx>=0.30.0",
 ]
+# Legacy 'web' for backwards compatibility (includes everything)
 web = [
-    "fastapi>=0.95",
-    "uvicorn>=0.22",
-    "s3fs>=2023.11.1",
-    "ptyprocess>=0.7",
-    "websockets>=12.0",
+    "kurt-core[api,storage]",
+]
+# Full installation with all features
+full = [
+    "kurt-core[workflows,api,storage]",
 ]
 
 [project.scripts]

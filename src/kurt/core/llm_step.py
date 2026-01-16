@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Callable, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, TypeVar
 
-import pandas as pd
 from dbos import DBOS, Queue, SetEnqueueOptions
 from pydantic import BaseModel
 
 from .hooks import NoopStepHooks, StepHooks
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -174,6 +176,13 @@ class LLMStep:
         *,
         priority: int | None = None,
     ) -> pd.DataFrame:
+        try:
+            import pandas  # noqa: F401
+        except ImportError as e:
+            raise ImportError(
+                "pandas is required for LLMStep. Install with: pip install kurt-core[workflows]"
+            ) from e
+
         total = len(df)
         self._hooks.on_start(
             step_name=self.name,
