@@ -1070,10 +1070,30 @@ export default function App() {
           const raw = localStorage.getItem(key)
           if (raw) {
             const parsed = JSON.parse(raw)
-            // Check version, panels exist, and structure is valid
-            if (parsed?.version >= LAYOUT_VERSION && parsed?.panels && validateLayoutStructure(parsed)) {
+            const hasValidVersion = parsed?.version >= LAYOUT_VERSION
+            const hasPanels = !!parsed?.panels
+            const hasValidStructure = validateLayoutStructure(parsed)
+
+            // Check if layout is valid
+            if (hasValidVersion && hasPanels && hasValidStructure) {
               hasSavedLayout = true
               break
+            }
+
+            // Invalid layout detected - clean up and reload
+            if (!hasValidStructure || !hasValidVersion || !hasPanels) {
+              console.warn('[Layout] Invalid layout detected in onReady, clearing and reloading:', key)
+              localStorage.removeItem(key)
+              // Clear related session storage
+              const prefix = key.replace('-layout', '')
+              localStorage.removeItem(`${prefix}-tabs`)
+              localStorage.removeItem('kurt-web-terminal-sessions')
+              localStorage.removeItem('kurt-web-terminal-active')
+              localStorage.removeItem('kurt-web-terminal-chat-interface')
+
+              // Force reload to start fresh
+              window.location.reload()
+              return // Don't continue - reload will happen
             }
           }
         }

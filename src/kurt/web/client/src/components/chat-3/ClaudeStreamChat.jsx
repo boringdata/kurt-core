@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AssistantIf,
   AssistantRuntimeProvider,
@@ -80,6 +80,14 @@ const buildRestartKey = (options) => {
     disallowedTools: options?.disallowedTools?.trim() || '',
   }
   return JSON.stringify(normalized)
+}
+
+const formatSessionLabel = (sessionId, sessions) => {
+  if (!sessionId) return 'New conversation'
+  const shortId = sessionId.slice(0, 8)
+  const index = sessions.findIndex((session) => session.id === sessionId)
+  const prefix = index >= 0 ? `Session ${index + 1} (Claude)` : 'Session (Claude)'
+  return `${prefix} - ${shortId}`
 }
 
 const normalizeStoredOptions = (options) => ({
@@ -563,12 +571,12 @@ const useClaudeStreamRuntime = (
     })
   }, [])
 
-  // Connect proactively on mount or when session/mode changes
+  // Connect proactively on mount or when session changes
   useEffect(() => {
     connect(currentSessionId, mode).catch(() => {
       // Connection failed, will retry on message send
     })
-  }, [connect, currentSessionId, mode])
+  }, [connect, currentSessionId])
 
   const switchSession = useCallback((sessionId, resumeOverride = true) => {
     if (wsRef.current) {
@@ -1909,7 +1917,8 @@ const ThinkingIndicator = () => (
 )
 
 const Thread = ({
-  sessionName,
+  sessionLabel,
+  activeSessionId,
   isConnected,
   attachments,
   setAttachments,
@@ -1993,7 +2002,7 @@ const Thread = ({
 
       <div style={{ position: 'relative' }} ref={sessionDropdownRef}>
         <SessionHeader
-          title={sessionName}
+          title={sessionLabel}
           onTitleClick={
             showSessionPicker
               ? () => setShowSessionDropdown((prev) => !prev)
@@ -2011,7 +2020,7 @@ const Thread = ({
                 <button
                   key={s.id}
                   type="button"
-                  className={`claude-session-item ${s.id === sessionName ? 'active' : ''}`}
+                  className={`claude-session-item ${s.id === activeSessionId ? 'active' : ''}`}
                   onClick={() => {
                     onSelectSession(s.id)
                     setShowSessionDropdown(false)
@@ -2340,6 +2349,7 @@ export default function ClaudeStreamChat({
   const [showErrorLog, setShowErrorLog] = useState(false)
   const retryMessageRef = useRef(null)
   const pendingRewindIdRef = useRef(null)
+  const modeChangeRef = useRef(false)
 
   // Update session ID when initialSessionId prop changes
   useEffect(() => {
@@ -2621,8 +2631,18 @@ export default function ClaudeStreamChat({
   }, [sendControlMessage])
 
   const applyModeChange = useCallback((nextMode) => {
+    if (nextMode === mode) return
+    modeChangeRef.current = true
     setMode(nextMode)
-  }, [])
+  }, [mode])
+
+  useEffect(() => {
+    if (!modeChangeRef.current) return
+    modeChangeRef.current = false
+    setTimeout(() => {
+      restartSession()
+    }, 0)
+  }, [mode, restartSession])
 
   const handleApprovalDecision = useCallback(async (option) => {
     if (!option || !approvalRequest?.id) {
@@ -2857,12 +2877,18 @@ export default function ClaudeStreamChat({
     setActiveError(null)
   }, [currentSessionId, switchSession])
 
+  const sessionLabel = useMemo(() => {
+    const id = currentSessionId || sessionName
+    return formatSessionLabel(id, sessions)
+  }, [currentSessionId, sessionName, sessions])
+
   return (
     <div style={{ width: '100%', height: '100%', overflow: 'hidden' }}>
       <style>{chatThemeVars}</style>
       <AssistantRuntimeProvider runtime={runtime}>
         <Thread
-          sessionName={sessionName}
+          sessionLabel={sessionLabel}
+          activeSessionId={currentSessionId || sessionName}
           isConnected={isConnected}
           attachments={attachments}
           setAttachments={setAttachments}
