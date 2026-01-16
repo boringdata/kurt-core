@@ -36,14 +36,21 @@ def get_session_for_request(request: Request):
     Returns:
         Session for database queries
     """
+    import logging
     import os
     from contextlib import contextmanager
 
     # Check if DATABASE_URL is set (cloud/PostgreSQL mode)
     database_url = os.environ.get("DATABASE_URL")
 
+    logging.info(f"DATABASE_URL present: {database_url is not None}")
+    if database_url:
+        logging.info(f"DATABASE_URL value: {database_url[:20]}...")
+        logging.info(f"Starts with 'postgresql': {database_url.startswith('postgresql')}")
+
     if database_url and database_url.startswith("postgresql"):
         # Cloud mode: direct PostgreSQL connection
+        logging.info("Using PostgreSQL connection")
         from sqlalchemy import create_engine
         from sqlmodel import Session
 
@@ -57,6 +64,7 @@ def get_session_for_request(request: Request):
         return _postgres_session()
 
     # Local mode: use managed_session (SQLite)
+    logging.warning("Falling back to managed_session (SQLite)")
     from kurt.db import managed_session
 
     return managed_session()
