@@ -332,8 +332,10 @@ def status_cmd():
     # Workspace status
     if config_file_exists():
         config = load_config()
-        if config.WORKSPACE_ID:
-            console.print(f"Workspace ID: {config.WORKSPACE_ID}")
+        workspace_id = config.WORKSPACE_ID
+
+        if workspace_id:
+            console.print(f"Workspace ID: {workspace_id}")
         else:
             console.print("Workspace ID: [yellow]not set[/yellow]")
 
@@ -371,6 +373,29 @@ def status_cmd():
             else:
                 masked = url
             console.print(f"  URL: {masked}")
+
+        # Fetch workspace details from cloud if in cloud mode
+        if mode == "cloud_postgres" and workspace_id and creds:
+            try:
+                import json
+                import urllib.request
+
+                from kurt.cli.auth.credentials import get_cloud_api_url
+
+                cloud_url = get_cloud_api_url()
+                url = f"{cloud_url}/api/v1/workspaces/{workspace_id}"
+
+                req = urllib.request.Request(url)
+                req.add_header("Authorization", f"Bearer {creds.access_token}")
+
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    workspace = json.loads(resp.read().decode())
+
+                    # Display GitHub repository if linked
+                    if workspace.get("github_repo"):
+                        console.print(f"  GitHub: https://github.com/{workspace['github_repo']}")
+            except Exception:
+                pass  # Silently ignore if can't fetch workspace details
     else:
         console.print("[yellow]No kurt.config found[/yellow]")
         console.print("[dim]Run 'kurt init' to initialize a project[/dim]")

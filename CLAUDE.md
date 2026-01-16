@@ -276,15 +276,67 @@ and add `user_id` / `workspace_id` there as needed.
 
 ## Table Schema Management
 
-- DBOS tables (events/streams/workflow state) are managed by DBOS. Do not
-  create or migrate them manually.
-- kurt_new schema tables live in `src/kurt_new/db/models.py`.
-- Use Alembic migrations in `src/kurt_new/db/migrations` for kurt_new tables.
+### Database Schema Separation
 
-When you add or change a kurt_new table:
-1) Update `src/kurt_new/db/models.py`
-2) Create a migration
-3) Apply migrations in your environment
+Kurt uses **two separate Alembic migration trees** to separate concerns:
+
+1. **Kurt-core migrations** (`src/kurt/db/migrations/`)
+   - Schema: `public` (default PostgreSQL schema)
+   - Tables: Workflow data (map_documents, fetch_documents, content_items, etc.)
+   - Owned by: kurt-core repository
+   - Applied by: `scripts/run_core_migrations.py` in kurt-cloud
+
+2. **Kurt-cloud migrations** (`src/kurt_cloud/db/migrations/` in kurt-cloud repo)
+   - Schema: `cloud` (separate schema)
+   - Tables: Multi-tenancy (workspaces, workspace_members, user_connections, usage_events)
+   - Owned by: kurt-cloud repository
+   - Applied by: `alembic upgrade head` in kurt-cloud
+
+**IMPORTANT**: Workspace/auth tables belong in kurt-cloud (not kurt-core).
+
+### DBOS Tables
+
+- DBOS tables (events/streams/workflow_status) are managed by DBOS
+- Do not create or migrate DBOS tables manually
+- Use raw SQL for DBOS queries (no SQLModel models)
+
+### Creating Kurt-Core Migrations
+
+When you add workflow tables (map, fetch, content, etc.):
+
+```bash
+cd src/kurt/db/migrations
+alembic revision -m "add_my_workflow_tables"
+```
+
+Edit the generated file in `versions/`:
+```python
+def upgrade() -> None:
+    op.create_table(
+        "my_workflow_documents",
+        sa.Column("id", sa.String(), nullable=False),
+        sa.Column("workspace_id", sa.String(), nullable=True),  # For multi-tenancy
+        # ... other columns
+    )
+```
+
+Apply locally:
+```bash
+export DATABASE_URL="sqlite:///.kurt/kurt.sqlite"
+cd src/kurt/db/migrations
+alembic upgrade head
+```
+
+Apply to Supabase (from kurt-cloud):
+```bash
+cd /path/to/kurt-cloud
+export SUPABASE_DB_URL="postgresql://postgres:PASSWORD@db.xxx.supabase.co:5432/postgres"
+python scripts/run_core_migrations.py
+```
+
+### SQL Migrations (Deprecated)
+
+**Do NOT use manual SQL migrations** (e.g., `supabase/migrations/*.sql`). Use Alembic exclusively for consistency and version control.
 
 ## Testing
 
