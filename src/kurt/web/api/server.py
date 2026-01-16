@@ -87,7 +87,8 @@ APPROVAL_TIMEOUT_SECONDS = int(os.environ.get("KURT_APPROVAL_TIMEOUT", "600"))
 APPROVAL_CLEANUP_SECONDS = int(os.environ.get("KURT_APPROVAL_CLEANUP_SECONDS", "600"))
 
 allowed_origins_raw = os.environ.get("KURT_WEB_ORIGINS") or os.environ.get(
-    "KURT_WEB_ORIGIN", "http://localhost:5173"
+    "KURT_WEB_ORIGIN",
+    "http://localhost:5173,http://127.0.0.1:5173",
 )
 allowed_origins = [origin.strip() for origin in allowed_origins_raw.split(",") if origin.strip()]
 

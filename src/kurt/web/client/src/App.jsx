@@ -1063,6 +1063,7 @@ export default function App() {
     // We check localStorage directly since projectRoot isn't available yet
     // Look for any layout key that might match
     let hasSavedLayout = false
+    let invalidLayoutFound = false
     try {
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i)
@@ -1090,10 +1091,7 @@ export default function App() {
               localStorage.removeItem('kurt-web-terminal-sessions')
               localStorage.removeItem('kurt-web-terminal-active')
               localStorage.removeItem('kurt-web-terminal-chat-interface')
-
-              // Force reload to start fresh
-              window.location.reload()
-              return // Don't continue - reload will happen
+              invalidLayoutFound = true
             }
           }
         }
@@ -1104,7 +1102,7 @@ export default function App() {
 
     // Only create fresh panels if no saved layout exists
     // Otherwise, layout restoration will handle panel creation
-    if (!hasSavedLayout) {
+    if (!hasSavedLayout || invalidLayoutFound) {
       ensureCorePanels()
     }
 
