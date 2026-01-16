@@ -98,6 +98,43 @@ def get_cloud_api_url() -> str:
     return os.environ.get("KURT_CLOUD_URL") or KURT_CLOUD_API_URL
 
 
+def ensure_fresh_token() -> Optional[Credentials]:
+    """Load credentials and refresh token if expired.
+
+    Returns:
+        Fresh credentials, or None if not logged in or refresh failed.
+    """
+    creds = load_credentials()
+    if not creds:
+        return None
+
+    # If not expired, return as-is
+    if not creds.is_expired():
+        return creds
+
+    # Token expired - try to refresh
+    if not creds.refresh_token:
+        return creds  # No refresh token available
+
+    from kurt.cli.auth.commands import refresh_access_token
+
+    result = refresh_access_token(creds.refresh_token)
+    if not result:
+        return creds  # Refresh failed, return expired creds
+
+    # Update credentials with fresh token
+    fresh_creds = Credentials(
+        access_token=result["access_token"],
+        refresh_token=result.get("refresh_token", creds.refresh_token),
+        user_id=result.get("user_id", creds.user_id),
+        email=result.get("email", creds.email),
+        workspace_id=creds.workspace_id,
+        expires_at=int(datetime.now().timestamp()) + result.get("expires_in", 3600),
+    )
+    save_credentials(fresh_creds)
+    return fresh_creds
+
+
 # =============================================================================
 # Workspace Path Tracking
 # =============================================================================

@@ -313,37 +313,14 @@ def status_cmd():
             console.print(f"[dim]  - {migration_name}[/dim]")
         console.print()
 
-    # Auth status and token refresh (if needed for cloud mode)
-    creds = load_credentials()
-    token_was_refreshed = False
+    # Auth status - auto-refresh token if needed
+    from kurt.cli.auth.credentials import ensure_fresh_token
 
-    if creds and creds.is_expired() and creds.refresh_token:
-        # Check if we're in cloud mode - if so, refresh token now
-        mode = None
-        if config_file_exists():
-            from kurt.db import get_mode
-
-            mode = get_mode()
-
-        if mode == "cloud_postgres":
-            # Refresh token before showing status
-            import time
-
-            from kurt.cli.auth.commands import refresh_access_token
-            from kurt.cli.auth.credentials import Credentials, save_credentials
-
-            result = refresh_access_token(creds.refresh_token)
-            if result:
-                creds = Credentials(
-                    access_token=result["access_token"],
-                    refresh_token=result.get("refresh_token", creds.refresh_token),
-                    user_id=result.get("user_id", creds.user_id),
-                    email=result.get("email", creds.email),
-                    workspace_id=creds.workspace_id,
-                    expires_at=int(time.time()) + result.get("expires_in", 3600),
-                )
-                save_credentials(creds)
-                token_was_refreshed = True
+    original_creds = load_credentials()
+    creds = ensure_fresh_token()
+    token_was_refreshed = (
+        original_creds and creds and original_creds.access_token != creds.access_token
+    )
 
     if creds:
         console.print("[green]✓ Authenticated[/green]")
@@ -468,10 +445,9 @@ def whoami_cmd():
     Example:
         kurt cloud whoami
     """
-    import time
 
-    from kurt.cli.auth.commands import get_user_info, refresh_access_token
-    from kurt.cli.auth.credentials import Credentials, load_credentials, save_credentials
+    from kurt.cli.auth.commands import get_user_info
+    from kurt.cli.auth.credentials import load_credentials
 
     creds = load_credentials()
     if creds is None:
@@ -479,24 +455,14 @@ def whoami_cmd():
         console.print("[dim]Run 'kurt cloud login' first.[/dim]")
         raise click.Abort()
 
-    # Refresh token if expired
-    if creds.is_expired() and creds.refresh_token:
-        console.print("[dim]Token expired, refreshing...[/dim]")
-        result = refresh_access_token(creds.refresh_token)
-        if result:
-            creds = Credentials(
-                access_token=result["access_token"],
-                refresh_token=result.get("refresh_token", creds.refresh_token),
-                user_id=result.get("user_id", creds.user_id),
-                email=result.get("email", creds.email),
-                workspace_id=creds.workspace_id,
-                expires_at=int(time.time()) + result.get("expires_in", 3600),
-            )
-            save_credentials(creds)
-        else:
-            console.print("[red]Token refresh failed.[/red]")
-            console.print("[dim]Please run 'kurt cloud login' again.[/dim]")
-            raise click.Abort()
+    # Auto-refresh token if expired
+    from kurt.cli.auth.credentials import ensure_fresh_token
+
+    creds = ensure_fresh_token()
+    if not creds:
+        console.print("[red]Token refresh failed.[/red]")
+        console.print("[dim]Please run 'kurt cloud login' again.[/dim]")
+        raise click.Abort()
 
     try:
         user_info = get_user_info(creds.access_token)
@@ -536,11 +502,11 @@ def invite_cmd(email: str, role: str):
     import json
     import urllib.request
 
-    from kurt.cli.auth.credentials import get_cloud_api_url, load_credentials
+    from kurt.cli.auth.credentials import ensure_fresh_token, get_cloud_api_url
     from kurt.config import config_file_exists, load_config
 
-    # Check auth
-    creds = load_credentials()
+    # Check auth and refresh token if needed
+    creds = ensure_fresh_token()
     if creds is None:
         console.print("[red]Not logged in.[/red]")
         console.print("[dim]Run 'kurt cloud login' first.[/dim]")
@@ -754,11 +720,11 @@ def workspaces_cmd():
     import json
     import urllib.request
 
-    from kurt.cli.auth.credentials import get_cloud_api_url, load_credentials
+    from kurt.cli.auth.credentials import ensure_fresh_token, get_cloud_api_url
     from kurt.config import config_file_exists, load_config
 
-    # Check auth
-    creds = load_credentials()
+    # Check auth and refresh token if needed
+    creds = ensure_fresh_token()
     if creds is None:
         console.print("[red]Not logged in.[/red]")
         console.print("[dim]Run 'kurt cloud login' first.[/dim]")
@@ -832,11 +798,11 @@ def members_cmd():
     import json
     import urllib.request
 
-    from kurt.cli.auth.credentials import get_cloud_api_url, load_credentials
+    from kurt.cli.auth.credentials import ensure_fresh_token, get_cloud_api_url
     from kurt.config import config_file_exists, load_config
 
-    # Check auth
-    creds = load_credentials()
+    # Check auth and refresh token if needed
+    creds = ensure_fresh_token()
     if creds is None:
         console.print("[red]Not logged in.[/red]")
         console.print("[dim]Run 'kurt cloud login' first.[/dim]")
