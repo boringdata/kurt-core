@@ -5,12 +5,6 @@ Adds multi-tenant workspace tables for GitHub repository integration.
 Each workspace represents one GitHub repository and can have multiple team members
 with different roles (viewer, editor, admin).
 
-Setup Guide:
-    For guided workspace creation and GitHub App installation, use:
-    kurt agents run setup-github-workspace
-
-    Or see: src/kurt/workflows/agents/examples/setup-github-workspace.md
-
 Revision ID: 58703e7a5ec5
 Revises: 84688a81b9ab
 Create Date: 2026-01-16 09:09:12.617414+00:00
