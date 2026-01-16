@@ -8,10 +8,13 @@ For workflow execution (requires [workflows] extras):
 """
 
 from .config import MapConfig
+from .models import MapDocument, MapStatus
 
 # NOTE: workflow and steps not imported here to avoid heavy dependencies
 # Import directly when needed: from kurt.workflows.map.workflow import map_workflow
 
 __all__ = [
     "MapConfig",
+    "MapDocument",
+    "MapStatus",
 ]
