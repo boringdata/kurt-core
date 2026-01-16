@@ -1611,6 +1611,7 @@ dependencies = [
 [package.optional-dependencies]
 api = [
     { name = "fastapi" },
+    { name = "psycopg2-binary" },
     { name = "ptyprocess" },
     { name = "pyjwt" },
     { name = "uvicorn" },
@@ -1642,6 +1643,7 @@ full = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.3.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pandas" },
+    { name = "psycopg2-binary" },
     { name = "ptyprocess" },
     { name = "pyjwt" },
     { name = "s3fs" },
@@ -1655,6 +1657,7 @@ storage = [
 ]
 web = [
     { name = "fastapi" },
+    { name = "psycopg2-binary" },
     { name = "ptyprocess" },
     { name = "pyjwt" },
     { name = "s3fs" },
@@ -1711,6 +1714,7 @@ requires-dist = [
     { name = "posthog", specifier = ">=3.0.0" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.5.0" },
     { name = "psycopg2-binary", specifier = ">=2.9.11" },
+    { name = "psycopg2-binary", marker = "extra == 'api'", specifier = ">=2.9.0" },
     { name = "ptyprocess", marker = "extra == 'api'", specifier = ">=0.7" },
     { name = "pydantic", specifier = ">=2.0.0" },
     { name = "pyjwt", marker = "extra == 'api'", specifier = ">=2.8.0" },
