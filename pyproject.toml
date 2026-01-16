@@ -25,6 +25,7 @@ dependencies = [
     "dbos>=0.9.0",
     "python-frontmatter>=1.0.0",
     "croniter>=2.0.0",
+    "litellm>=1.0.0",  # Required for embeddings (lightweight, ~15MB)
 ]
 
 [project.optional-dependencies]
