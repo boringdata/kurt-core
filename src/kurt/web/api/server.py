@@ -30,9 +30,33 @@ os.chdir(project_root)
 def get_session_for_request(request: Request):
     """Get database session for API request.
 
+    In cloud mode (when DATABASE_URL env var is set), uses PostgreSQL.
+    In local mode, uses SQLite via managed_session.
+
     Returns:
-        Session using local database (SQLite)
+        Session for database queries
     """
+    import os
+    from contextlib import contextmanager
+
+    # Check if DATABASE_URL is set (cloud/PostgreSQL mode)
+    database_url = os.environ.get("DATABASE_URL")
+
+    if database_url and database_url.startswith("postgresql"):
+        # Cloud mode: direct PostgreSQL connection
+        from sqlalchemy import create_engine
+        from sqlmodel import Session
+
+        engine = create_engine(database_url)
+
+        @contextmanager
+        def _postgres_session():
+            with Session(engine) as session:
+                yield session
+
+        return _postgres_session()
+
+    # Local mode: use managed_session (SQLite)
     from kurt.db import managed_session
 
     return managed_session()
