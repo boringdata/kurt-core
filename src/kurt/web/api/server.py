@@ -27,6 +27,54 @@ project_root = Path(os.environ.get("KURT_PROJECT_ROOT", Path.cwd())).expanduser(
 os.chdir(project_root)
 
 
+def get_session_for_request(request: Request):
+    """Get appropriate database session based on request context.
+
+    Returns:
+        Session or SupabaseSession depending on whether running in cloud mode
+    """
+    from contextlib import contextmanager
+
+    from kurt.db import managed_session
+
+    # Check for Authorization header (cloud mode)
+    auth_header = request.headers.get("Authorization")
+
+    if auth_header and auth_header.startswith("Bearer "):
+        # Cloud mode: create Supabase session from JWT
+        import jwt
+
+        from kurt.db.cloud import SupabaseClient, SupabaseSession
+
+        token = auth_header.split(" ", 1)[1]
+        payload = jwt.decode(token, options={"verify_signature": False})
+
+        # Get workspace_id from header or fall back to user_id
+        workspace_id = request.headers.get("X-Workspace-ID") or payload.get("sub")
+        user_id = payload.get("sub")
+
+        if workspace_id and user_id:
+            # Create Supabase client using token for auth
+            client = SupabaseClient.from_access_token(token)
+
+            @contextmanager
+            def _cloud_session():
+                session = SupabaseSession(
+                    client=client,
+                    workspace_id=workspace_id,
+                    user_id=user_id,
+                )
+                try:
+                    yield session
+                finally:
+                    session.close()
+
+            return _cloud_session()
+
+    # Local mode: use managed_session (SQLite/PostgreSQL)
+    return managed_session()
+
+
 class FilePayload(BaseModel):
     content: str
 
@@ -164,38 +212,10 @@ def api_status(request: Request):
 
     from fastapi import HTTPException
 
-    from kurt.db import managed_session
     from kurt.status.queries import get_status_data
 
     try:
-        # Check for Authorization header (cloud mode)
-        auth_header = request.headers.get("Authorization")
-
-        if auth_header and auth_header.startswith("Bearer "):
-            # Cloud mode: create Supabase session from JWT
-            import jwt
-
-            from kurt.db.cloud import SupabaseClient, SupabaseSession
-
-            token = auth_header.split(" ", 1)[1]
-            payload = jwt.decode(token, options={"verify_signature": False})
-
-            # Get workspace_id from header or fall back to user_id
-            workspace_id = request.headers.get("X-Workspace-ID") or payload.get("sub")
-            user_id = payload.get("sub")
-
-            if workspace_id and user_id:
-                # Create Supabase client using token for auth
-                client = SupabaseClient.from_access_token(token)
-                session = SupabaseSession(
-                    client=client,
-                    workspace_id=workspace_id,
-                    user_id=user_id,
-                )
-                return get_status_data(session)
-
-        # Local mode: use managed_session (SQLite/PostgreSQL)
-        with managed_session() as session:
+        with get_session_for_request(request) as session:
             return get_status_data(session)
     except Exception as e:
         logging.error(f"Status API error: {e}")
@@ -205,6 +225,7 @@ def api_status(request: Request):
 
 @app.get("/api/documents")
 def api_list_documents(
+    request: Request,
     status: Optional[str] = None,
     limit: Optional[int] = None,
     offset: Optional[int] = None,
@@ -215,7 +236,6 @@ def api_list_documents(
 
     Used by both CLI (in cloud mode) and web UI.
     """
-    from kurt.db import managed_session
     from kurt.documents import DocumentFilters, DocumentRegistry
 
     filters = DocumentFilters(
@@ -226,13 +246,14 @@ def api_list_documents(
     )
 
     registry = DocumentRegistry()
-    with managed_session() as session:
+    with get_session_for_request(request) as session:
         docs = registry.list(session, filters)
         return [doc.model_dump() for doc in docs]
 
 
 @app.get("/api/documents/count")
 def api_count_documents(
+    request: Request,
     status: Optional[str] = None,
     url_pattern: Optional[str] = None,
 ):
@@ -241,7 +262,6 @@ def api_count_documents(
 
     Used by both CLI (in cloud mode) and web UI.
     """
-    from kurt.db import managed_session
     from kurt.documents import DocumentFilters, DocumentRegistry
 
     filters = DocumentFilters(
@@ -250,22 +270,21 @@ def api_count_documents(
     )
 
     registry = DocumentRegistry()
-    with managed_session() as session:
+    with get_session_for_request(request) as session:
         return {"count": registry.count(session, filters)}
 
 
 @app.get("/api/documents/{document_id}")
-def api_get_document(document_id: str):
+def api_get_document(request: Request, document_id: str):
     """
     Get a single document's full lifecycle view.
 
     Used by both CLI (in cloud mode) and web UI.
     """
-    from kurt.db import managed_session
     from kurt.documents import DocumentRegistry
 
     registry = DocumentRegistry()
-    with managed_session() as session:
+    with get_session_for_request(request) as session:
         doc = registry.get(session, document_id)
         if doc is None:
             raise HTTPException(status_code=404, detail="Document not found")
