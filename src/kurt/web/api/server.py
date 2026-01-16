@@ -223,21 +223,28 @@ def api_list_documents(
 
     Used by both CLI (in cloud mode) and web UI.
     """
+    import logging
+    import traceback
     from dataclasses import asdict
 
     from kurt.documents import DocumentFilters, DocumentRegistry
 
-    filters = DocumentFilters(
-        fetch_status=status,
-        limit=limit,
-        offset=offset,
-        url_contains=url_pattern,
-    )
+    try:
+        filters = DocumentFilters(
+            fetch_status=status,
+            limit=limit,
+            offset=offset,
+            url_contains=url_pattern,
+        )
 
-    registry = DocumentRegistry()
-    with get_session_for_request(request) as session:
-        docs = registry.list(session, filters)
-        return [asdict(doc) for doc in docs]
+        registry = DocumentRegistry()
+        with get_session_for_request(request) as session:
+            docs = registry.list(session, filters)
+            return [asdict(doc) for doc in docs]
+    except Exception as e:
+        logging.error(f"Documents API error: {e}")
+        logging.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Documents query failed: {str(e)}")
 
 
 @app.get("/api/documents/count")
