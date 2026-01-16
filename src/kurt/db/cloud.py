@@ -343,6 +343,34 @@ class SupabaseClient:
             query = query.eq(key, value)
         return query.execute().data
 
+    def count(self, table: str, filters: dict[str, Any] | None = None) -> int:
+        """Count rows matching filters using PostgREST's count feature.
+
+        PostgREST returns count in Content-Range header when count=exact is used.
+        """
+        import httpx
+
+        url = f"{self.base_url}/rest/v1/{table}"
+        headers = self.headers.copy()
+        headers["Prefer"] = "count=exact"
+
+        params = {"select": "*"}
+        if filters:
+            for key, value in filters.items():
+                params[key] = f"eq.{value}"
+
+        # Use HEAD request to get count without fetching data
+        resp = httpx.head(url, params=params, headers=headers, timeout=30.0)
+        if resp.status_code >= 400:
+            raise Exception(f"Count failed ({resp.status_code}): {resp.text}")
+
+        # Parse Content-Range header: "0-99/1000" or "*/0"
+        content_range = resp.headers.get("Content-Range", "")
+        if "/" in content_range:
+            count_str = content_range.split("/")[1]
+            return int(count_str)
+        return 0
+
 
 # =============================================================================
 # SQLModel-Compatible Session Wrapper
