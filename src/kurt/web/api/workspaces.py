@@ -84,7 +84,7 @@ async def create_workspace(payload: WorkspaceCreatePayload, request: Request):
         - install_url: URL to install GitHub App
     """
     # Get current user ID from auth middleware
-    user_id = request.state.get("user_id", "unknown")
+    user_id = getattr(request.state, "user_id", "unknown")
 
     # Validate slug format (lowercase alphanumeric + hyphens)
     import re
@@ -165,7 +165,7 @@ async def get_workspace(workspace_slug: str):
 @router.get("")
 async def list_workspaces(request: Request):
     """List all workspaces for the current user."""
-    user_id = request.state.get("user_id", "unknown")
+    user_id = getattr(request.state, "user_id", "unknown")
 
     with managed_session() as session:
         from sqlmodel import select
@@ -202,7 +202,7 @@ async def list_workspaces(request: Request):
 @router.delete("/{workspace_slug}")
 async def delete_workspace(workspace_slug: str, request: Request):
     """Delete a workspace (admin only)."""
-    user_id = request.state.get("user_id", "unknown")
+    user_id = getattr(request.state, "user_id", "unknown")
 
     with managed_session() as session:
         from sqlmodel import select
