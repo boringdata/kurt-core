@@ -28,51 +28,11 @@ os.chdir(project_root)
 
 
 def get_session_for_request(request: Request):
-    """Get appropriate database session based on request context.
+    """Get database session for API request.
 
     Returns:
-        Session using PostgreSQL connection (cloud or local mode)
+        Session using local database (SQLite)
     """
-    import os
-    from contextlib import contextmanager
-
-    from sqlalchemy import create_engine, text
-    from sqlmodel import Session
-
-    # Check for Authorization header (cloud mode)
-    auth_header = request.headers.get("Authorization")
-
-    if auth_header and auth_header.startswith("Bearer "):
-        # Cloud mode: use direct PostgreSQL connection with RLS
-        import jwt
-
-        token = auth_header.split(" ", 1)[1]
-        payload = jwt.decode(token, options={"verify_signature": False})
-
-        # Get workspace_id from header or fall back to user_id
-        workspace_id = request.headers.get("X-Workspace-ID") or payload.get("sub")
-        user_id = payload.get("sub")
-
-        if workspace_id and user_id:
-            # Use direct PostgreSQL connection from environment
-            database_url = os.environ.get("DATABASE_URL")
-            if not database_url:
-                raise ValueError("DATABASE_URL environment variable required for cloud mode")
-
-            # Create engine and session
-            engine = create_engine(database_url)
-
-            @contextmanager
-            def _postgres_session():
-                with Session(engine) as session:
-                    # Set RLS context variables for workspace isolation
-                    session.exec(text(f"SET app.workspace_id = '{workspace_id}'"))
-                    session.exec(text(f"SET app.user_id = '{user_id}'"))
-                    yield session
-
-            return _postgres_session()
-
-    # Local mode: use managed_session (SQLite/PostgreSQL)
     from kurt.db import managed_session
 
     return managed_session()
