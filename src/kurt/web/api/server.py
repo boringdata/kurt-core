@@ -152,7 +152,7 @@ def api_config():
 
 
 @app.get("/api/status")
-def api_status():
+def api_status(request: Request):
     """
     Get comprehensive project status.
 
@@ -160,6 +160,7 @@ def api_status():
     Used by both CLI (in cloud mode) and web UI.
     """
     import logging
+    import os
     import traceback
 
     from fastapi import HTTPException
@@ -168,8 +169,22 @@ def api_status():
     from kurt.status.queries import get_status_data
 
     try:
-        with managed_session() as session:
+        # Check if running in cloud mode (when DATABASE_URL not set, use cloud session)
+        is_cloud_mode = os.environ.get("DATABASE_URL") == "kurt" or not os.environ.get(
+            "DATABASE_URL"
+        )
+
+        if is_cloud_mode and hasattr(request.state, "workspace_id"):
+            # Cloud mode: create Supabase session using workspace_id from middleware
+            from kurt.db.cloud import SupabaseSession
+
+            workspace_id = request.state.workspace_id
+            session = SupabaseSession(workspace_id=workspace_id)
             return get_status_data(session)
+        else:
+            # Local mode: use managed_session (SQLite/PostgreSQL)
+            with managed_session() as session:
+                return get_status_data(session)
     except Exception as e:
         logging.error(f"Status API error: {e}")
         logging.error(traceback.format_exc())
