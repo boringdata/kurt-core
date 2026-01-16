@@ -10,10 +10,6 @@ import EmptyPanel from './panels/EmptyPanel'
 import ReviewPanel from './panels/ReviewPanel'
 import WorkflowsPanel from './panels/WorkflowsPanel'
 import WorkflowTerminalPanel from './panels/WorkflowTerminalPanel'
-import DiffHighlightPOC from './components/DiffHighlightPOC'
-import TiptapDiffPOC from './components/TiptapDiffPOC'
-import ChatDemo from './components/chat/ChatDemo'
-import StandaloneChat from './components/chat/StandaloneChat'
 import ClaudeStreamChat from './components/chat-3/ClaudeStreamChat'
 
 // POC mode - add ?poc=diff or ?poc=tiptap-diff to URL to test
@@ -1643,19 +1639,6 @@ export default function App() {
     }
   }
 
-  // POC mode for testing diff highlighting
-  if (POC_MODE === 'diff') {
-    return <DiffHighlightPOC />
-  }
-  if (POC_MODE === 'tiptap-diff') {
-    return <TiptapDiffPOC />
-  }
-  if (POC_MODE === 'chat') {
-    return <ChatDemo />
-  }
-  if (POC_MODE === 'standalone') {
-    return <StandaloneChat />
-  }
   if (POC_MODE === 'chat-3') {
     return <ClaudeStreamChat />
   }

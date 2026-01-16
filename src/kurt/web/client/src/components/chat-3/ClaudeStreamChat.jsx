@@ -10,7 +10,7 @@ import {
   useMessage,
   useThread,
 } from '@assistant-ui/react'
-import ChatPanel, { chatThemeVars, assistantMessageStyles } from '../chat/ChatPanel'
+import ChatPanel, { chatThemeVars } from '../chat/ChatPanel'
 import MessageList, { Messages, EmptyState } from '../chat/MessageList'
 import TextBlock from '../chat/TextBlock'
 import SessionHeader from '../chat/SessionHeader'
@@ -2860,7 +2860,6 @@ export default function ClaudeStreamChat({
   return (
     <div style={{ width: '100%', height: '100%', overflow: 'hidden' }}>
       <style>{chatThemeVars}</style>
-      <style>{assistantMessageStyles}</style>
       <AssistantRuntimeProvider runtime={runtime}>
         <Thread
           sessionName={sessionName}

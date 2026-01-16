@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { chatThemeVars } from './ChatPanel'
-import { assistantMessageStyles } from './AssistantMessage'
 import usePtyMessages from './usePtyMessages'
 
 /**
@@ -221,7 +220,7 @@ const ChatView = ({ socket, sessionId, onSendInput }) => {
   return (
     <>
       <style>{chatThemeVars}</style>
-      <style>{assistantMessageStyles}</style>
+      {/* Assistant message styles removed with legacy component */}
       <style>{`
         @keyframes blink {
           0%, 100% { opacity: 1; }
