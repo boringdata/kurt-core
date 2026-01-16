@@ -313,18 +313,49 @@ def status_cmd():
             console.print(f"[dim]  - {migration_name}[/dim]")
         console.print()
 
-    # Auth status
+    # Auth status and token refresh (if needed for cloud mode)
     creds = load_credentials()
-    token_was_expired = False
+    token_was_refreshed = False
+
+    if creds and creds.is_expired() and creds.refresh_token:
+        # Check if we're in cloud mode - if so, refresh token now
+        mode = None
+        if config_file_exists():
+            from kurt.db import get_mode
+
+            mode = get_mode()
+
+        if mode == "cloud_postgres":
+            # Refresh token before showing status
+            import time
+
+            from kurt.cli.auth.commands import refresh_access_token
+            from kurt.cli.auth.credentials import Credentials, save_credentials
+
+            result = refresh_access_token(creds.refresh_token)
+            if result:
+                creds = Credentials(
+                    access_token=result["access_token"],
+                    refresh_token=result.get("refresh_token", creds.refresh_token),
+                    user_id=result.get("user_id", creds.user_id),
+                    email=result.get("email", creds.email),
+                    workspace_id=creds.workspace_id,
+                    expires_at=int(time.time()) + result.get("expires_in", 3600),
+                )
+                save_credentials(creds)
+                token_was_refreshed = True
+
     if creds:
         console.print("[green]✓ Authenticated[/green]")
         console.print(f"  Email: {creds.email or 'N/A'}")
         console.print(f"  User ID: {creds.user_id}")
         if creds.is_expired():
-            token_was_expired = True
             console.print("  Token: [yellow]expired (will refresh on next use)[/yellow]")
         else:
-            console.print("  Token: [green]active[/green]")
+            if token_was_refreshed:
+                console.print("  Token: [green]active[/green] [dim](refreshed)[/dim]")
+            else:
+                console.print("  Token: [green]active[/green]")
     else:
         console.print("[yellow]Not logged in[/yellow]")
         console.print("[dim]Run 'kurt cloud login' to authenticate[/dim]")
@@ -403,8 +434,6 @@ def status_cmd():
                             expires_at=int(time.time()) + result.get("expires_in", 3600),
                         )
                         save_credentials(creds)
-                        if token_was_expired:
-                            console.print("  [dim]Token refreshed[/dim]")
 
                 cloud_url = get_cloud_api_url()
                 url = f"{cloud_url}/api/v1/workspaces/{workspace_id}"
