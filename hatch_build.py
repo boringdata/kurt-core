@@ -25,18 +25,30 @@ class FrontendBuildHook(BuildHookInterface):
             return
 
         client_dir = Path(self.root) / "src" / "kurt" / "web" / "client"
+
+        # Skip if client directory doesn't exist (shallow clone, API-only install, etc.)
         if not client_dir.exists():
-            self.app.display_warning(f"Client directory not found: {client_dir}")
+            self.app.display_info(
+                f"Client directory not found: {client_dir} - skipping frontend build"
+            )
             return
 
         package_json = client_dir / "package.json"
         if not package_json.exists():
-            self.app.display_warning(f"package.json not found: {package_json}")
+            self.app.display_info(
+                f"package.json not found: {package_json} - skipping frontend build"
+            )
+            return
+
+        # Check if dist already exists (pre-built or cached)
+        dist_dir = client_dir / "dist"
+        if dist_dir.exists() and (dist_dir / "index.html").exists():
+            self.app.display_info("Frontend already built - skipping build")
             return
 
         # Check if npm is available
         if not shutil.which("npm"):
-            self.app.display_warning("npm not found - skipping frontend build")
+            self.app.display_info("npm not found - skipping frontend build")
             return
 
         self.app.display_info("Building frontend client...")
