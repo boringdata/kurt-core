@@ -302,10 +302,11 @@ def _get_status_data() -> dict:
 
 def _generate_status_markdown(data: dict) -> str:
     """Generate markdown summary of status."""
-    lines = ["# Kurt Status\n"]
+    lines = ["# Kurt Status", ""]
 
     docs = data.get("documents", {})
-    lines.append(f"## Documents: {docs.get('total', 0)}\n")
+    lines.append(f"## Documents: {docs.get('total', 0)}")
+    lines.append("")
 
     by_status = docs.get("by_status", {})
     lines.append(f"- Fetched: {by_status.get('fetched', 0)}")
@@ -314,7 +315,9 @@ def _generate_status_markdown(data: dict) -> str:
 
     by_domain = docs.get("by_domain", {})
     if by_domain:
-        lines.append("\n## By Domain\n")
+        lines.append("")
+        lines.append("## By Domain")
+        lines.append("")
         for domain, count in sorted(by_domain.items(), key=lambda x: -x[1])[:10]:
             lines.append(f"- {domain}: {count}")
 
