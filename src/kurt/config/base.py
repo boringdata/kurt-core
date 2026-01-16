@@ -136,6 +136,22 @@ class KurtConfig(BaseModel):
         description="Enable telemetry collection (can be disabled via DO_NOT_TRACK or KURT_TELEMETRY_DISABLED env vars)",
     )
 
+    # Workspace identification
+    # Generated automatically at `kurt init` - unique ID for this workspace
+    # Used to tag all data for consistent migration to cloud
+    WORKSPACE_ID: str | None = Field(
+        default=None,
+        description="Unique workspace identifier (auto-generated at init)",
+    )
+
+    # Cloud database configuration
+    # Set to "kurt" to use Kurt Cloud (requires `kurt cloud login`)
+    # Or set to a PostgreSQL URL for self-hosted: "postgresql://user:pass@host/db"
+    DATABASE_URL: str | None = Field(
+        default=None,
+        description="Database mode: 'kurt' for cloud, PostgreSQL URL for self-hosted, or None for local SQLite",
+    )
+
     # Analytics provider configurations (stored as extra fields with ANALYTICS_ prefix)
     # CMS provider configurations (stored as extra fields with CMS_ prefix)
     # These are dynamically added when onboarding providers
@@ -281,6 +297,7 @@ def create_config(
     sources_path: str = KurtConfig.DEFAULT_SOURCES_PATH,
     projects_path: str = KurtConfig.DEFAULT_PROJECTS_PATH,
     rules_path: str = KurtConfig.DEFAULT_RULES_PATH,
+    workspace_id: str | None = None,
 ) -> KurtConfig:
     """
     Create a new kurt.config configuration file in the current directory.
@@ -292,15 +309,23 @@ def create_config(
         sources_path: Path to store fetched content (relative to kurt.config location)
         projects_path: Path to store project-specific content (relative to kurt.config location)
         rules_path: Path to store rules and configurations (relative to kurt.config location)
+        workspace_id: Unique workspace ID (auto-generated if not provided)
 
     Returns:
         KurtConfig instance
     """
+    import uuid
+
+    # Generate workspace ID if not provided
+    if not workspace_id:
+        workspace_id = str(uuid.uuid4())
+
     config = KurtConfig(
         PATH_DB=db_path,
         PATH_SOURCES=sources_path,
         PATH_PROJECTS=projects_path,
         PATH_RULES=rules_path,
+        WORKSPACE_ID=workspace_id,
     )
 
     config_file = get_config_file_path()
@@ -338,6 +363,8 @@ def create_config(
         f.write("\n# Telemetry Configuration\n")
         # Write boolean as True/False (not "True"/"False" string)
         f.write(f"TELEMETRY_ENABLED={config.TELEMETRY_ENABLED}\n")
+        f.write("\n# Workspace Configuration\n")
+        f.write(f'WORKSPACE_ID="{config.WORKSPACE_ID}"\n')
 
     return config
 

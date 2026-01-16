@@ -7,12 +7,17 @@ DocumentView is a virtual aggregation - not a persisted table.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from kurt.documents.filtering import DocumentFilters
 from kurt.documents.models import DocumentView
 from kurt.documents.registry import DocumentRegistry
-from kurt.workflows.fetch.utils import load_document_content
+
+# Lazy import to avoid requiring heavy ML dependencies (trafilatura, lxml) in API mode
+if TYPE_CHECKING:
+    from kurt.workflows.fetch.utils import load_document_content as _load_document_content
+else:
+    _load_document_content = None
 
 __all__ = [
     "DocumentView",
@@ -21,6 +26,16 @@ __all__ = [
     "resolve_documents",
     "load_document_content",
 ]
+
+
+def load_document_content(*args, **kwargs):
+    """Lazy wrapper for load_document_content to avoid importing trafilatura in API mode."""
+    global _load_document_content
+    if _load_document_content is None:
+        from kurt.workflows.fetch.utils import load_document_content as _ldc
+
+        _load_document_content = _ldc
+    return _load_document_content(*args, **kwargs)
 
 
 def resolve_documents(
@@ -76,10 +91,12 @@ def resolve_documents(
 
     # If identifier looks like a URL, auto-create MapDocument if needed
     if identifier and identifier.startswith(("http://", "https://")):
+        from sqlmodel import select
+
         with managed_session() as session:
-            existing = (
-                session.query(MapDocument).filter(MapDocument.source_url == identifier).first()
-            )
+            existing = session.exec(
+                select(MapDocument).where(MapDocument.source_url == identifier)
+            ).first()
             if not existing:
                 doc_id = hashlib.sha256(identifier.encode()).hexdigest()[:12]
                 doc = MapDocument(

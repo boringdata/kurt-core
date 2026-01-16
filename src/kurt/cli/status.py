@@ -165,31 +165,120 @@ def _handle_hook_output():
     print(json.dumps(output, indent=2))
 
 
+class BaseStatusRepository:
+    """Base class for status queries - abstracts SQL vs Cloud differences."""
+
+    def __init__(self, session):
+        self._session = session
+
+    def count_total_documents(self) -> int:
+        """Count total documents in map table."""
+        raise NotImplementedError
+
+    def count_fetched_documents(self) -> int:
+        """Count successfully fetched documents."""
+        raise NotImplementedError
+
+    def count_error_documents(self) -> int:
+        """Count documents with fetch errors."""
+        raise NotImplementedError
+
+    def get_all_source_urls(self, limit: int = 10000) -> list[str]:
+        """Get all source URLs for domain distribution."""
+        raise NotImplementedError
+
+
+class SQLStatusRepository(BaseStatusRepository):
+    """Status repository for SQLite/PostgreSQL using SQLAlchemy."""
+
+    def count_total_documents(self) -> int:
+        from sqlmodel import func, select
+
+        from kurt.workflows.map.models import MapDocument
+
+        return self._session.exec(select(func.count()).select_from(MapDocument)).one()
+
+    def count_fetched_documents(self) -> int:
+        from sqlmodel import func, select
+
+        from kurt.workflows.fetch.models import FetchDocument, FetchStatus
+
+        return self._session.exec(
+            select(func.count())
+            .select_from(FetchDocument)
+            .where(FetchDocument.status == FetchStatus.SUCCESS)
+        ).one()
+
+    def count_error_documents(self) -> int:
+        from sqlmodel import func, select
+
+        from kurt.workflows.fetch.models import FetchDocument, FetchStatus
+
+        return self._session.exec(
+            select(func.count())
+            .select_from(FetchDocument)
+            .where(FetchDocument.status == FetchStatus.ERROR)
+        ).one()
+
+    def get_all_source_urls(self, limit: int = 10000) -> list[str]:
+        from sqlmodel import select
+
+        from kurt.workflows.map.models import MapDocument
+
+        return self._session.exec(select(MapDocument.source_url).limit(limit)).all()
+
+
+class CloudStatusRepository(BaseStatusRepository):
+    """Status repository for PostgREST/Supabase cloud mode."""
+
+    def count_total_documents(self) -> int:
+        # Direct PostgREST count call
+        return self._session._client.count("map_documents")
+
+    def count_fetched_documents(self) -> int:
+        from kurt.workflows.fetch.models import FetchStatus
+
+        return self._session._client.count("fetch_documents", {"status": FetchStatus.SUCCESS.value})
+
+    def count_error_documents(self) -> int:
+        from kurt.workflows.fetch.models import FetchStatus
+
+        return self._session._client.count("fetch_documents", {"status": FetchStatus.ERROR.value})
+
+    def get_all_source_urls(self, limit: int = 10000) -> list[str]:
+        rows = self._session._client.select("map_documents", columns="source_url", limit=limit)
+        return [row["source_url"] for row in rows if "source_url" in row and row["source_url"]]
+
+
+def _get_status_repository(session) -> BaseStatusRepository:
+    """Factory to get the right repository based on session type."""
+    from kurt.db.cloud import SupabaseSession
+
+    if isinstance(session, SupabaseSession):
+        return CloudStatusRepository(session)
+    else:
+        return SQLStatusRepository(session)
+
+
 def _get_status_data() -> dict:
     """Gather all status information."""
     from urllib.parse import urlparse
 
     from kurt.db import managed_session
-    from kurt.workflows.fetch.models import FetchDocument, FetchStatus
-    from kurt.workflows.map.models import MapDocument
 
     with managed_session() as session:
-        # Total documents from map table
-        total = session.query(MapDocument).count()
+        repo = _get_status_repository(session)
 
-        # Fetch status counts
-        fetched = (
-            session.query(FetchDocument).filter(FetchDocument.status == FetchStatus.SUCCESS).count()
-        )
-        error = (
-            session.query(FetchDocument).filter(FetchDocument.status == FetchStatus.ERROR).count()
-        )
+        # Get counts
+        total = repo.count_total_documents()
+        fetched = repo.count_fetched_documents()
+        error = repo.count_error_documents()
         not_fetched = total - fetched - error
 
         # Documents by domain
-        docs = session.query(MapDocument.source_url).all()
+        urls = repo.get_all_source_urls()
         domains: dict[str, int] = {}
-        for (url,) in docs:
+        for url in urls:
             if url:
                 try:
                     domain = urlparse(url).netloc
@@ -213,10 +302,11 @@ def _get_status_data() -> dict:
 
 def _generate_status_markdown(data: dict) -> str:
     """Generate markdown summary of status."""
-    lines = ["# Kurt Status\n"]
+    lines = ["# Kurt Status", ""]
 
     docs = data.get("documents", {})
-    lines.append(f"## Documents: {docs.get('total', 0)}\n")
+    lines.append(f"## Documents: {docs.get('total', 0)}")
+    lines.append("")
 
     by_status = docs.get("by_status", {})
     lines.append(f"- Fetched: {by_status.get('fetched', 0)}")
@@ -225,7 +315,9 @@ def _generate_status_markdown(data: dict) -> str:
 
     by_domain = docs.get("by_domain", {})
     if by_domain:
-        lines.append("\n## By Domain\n")
+        lines.append("")
+        lines.append("## By Domain")
+        lines.append("")
         for domain, count in sorted(by_domain.items(), key=lambda x: -x[1])[:10]:
             lines.append(f"- {domain}: {count}")
 

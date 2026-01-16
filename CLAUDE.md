@@ -8,6 +8,161 @@ This guide explains how to build DBOS workflows using the kurt_new core abstract
 Keep workflows minimal, durable, and observable. Use DBOS for orchestration and
 use kurt_new core for LLM batch steps and tracing.
 
+## Database Modes
+
+Kurt supports three database modes via `DATABASE_URL` in `kurt.config`:
+
+1. **SQLite (Local Development)**
+   ```
+   DATABASE_URL="sqlite:///.kurt/kurt.sqlite"
+   ```
+   - File-based database for local development
+   - No server required
+   - Single-user, local files only
+   - Views and JOINs work natively
+
+2. **PostgreSQL (Direct Connection)**
+   ```
+   DATABASE_URL="postgresql://user:pass@host:5432/dbname"
+   ```
+   - Direct PostgreSQL connection
+   - Full SQL support including views and JOINs
+   - Use for self-hosted PostgreSQL or local Postgres
+
+3. **Kurt Cloud**
+   ```
+   DATABASE_URL="kurt"
+   ```
+   - Automatic multi-tenancy via RLS
+   - Requires `kurt cloud login` for authentication
+   - CLI commands route through kurt-cloud API
+
+### Cloud Mode Architecture: CLI → Web API → PostgreSQL
+
+**Purpose**: Provide cloud-hosted backend with API-based access for CLI commands.
+
+**Solution**: CLI routes to web API in cloud mode, which runs SQLAlchemy queries server-side using direct PostgreSQL connection.
+
+**Architecture**:
+```
+Local Mode:
+  kurt status → queries.py → SQLite/PostgreSQL
+  kurt serve → web/api/server.py (web UI)
+
+Cloud Mode:
+  kurt status → HTTP → web/api/server.py → queries.py → PostgreSQL
+  Web UI → HTTP → web/api/server.py → queries.py → PostgreSQL
+```
+
+**Module Structure** (example: `src/kurt/status/`):
+```
+status/
+├── __init__.py     # Public exports
+├── cli.py          # Click commands - routes based on is_cloud_mode()
+└── queries.py      # SQLAlchemy queries (used by web API)
+
+documents/
+├── __init__.py     # Public exports
+├── cli.py          # Click commands - routes based on is_cloud_mode()
+├── registry.py     # DocumentRegistry class with list(), get(), count()
+├── filtering.py    # DocumentFilters
+└── models.py       # DocumentView dataclass
+
+web/api/
+└── server.py       # FastAPI app with ALL endpoints (CLI + web UI)
+```
+
+**Key points**:
+- `queries.py` contains pure SQLAlchemy - works in all modes
+  - For simple modules (status), create dedicated `queries.py`
+  - For complex modules (documents), use existing registry/service classes directly
+- `cli.py` checks `is_cloud_mode()` and routes to queries/registry or web API
+- `web/api/server.py` defines ALL endpoints (used by CLI and web UI)
+- Kurt-cloud hosts `web/api/server.py` (single FastAPI app)
+- **No PostgREST emulation** - direct PostgreSQL on backend
+- **Single API** - CLI and web UI use same endpoints
+
+**Benefits**:
+- ✅ Single source of truth for SQL queries
+- ✅ Single API definition (`web/api/server.py`)
+- ✅ No duplication between CLI API and web UI API
+- ✅ `kurt serve` uses same API that kurt-cloud hosts
+- ✅ Direct PostgreSQL access on backend
+
+**When adding new features**:
+1. Use existing registry/service classes OR create `module/queries.py` with SQLAlchemy queries
+2. Add `/api/module` endpoint to `web/api/server.py` that calls queries/registry directly
+3. Create `module/cli.py` that routes to queries/registry (local) or API (cloud)
+
+### Multi-Tenancy with RLS (Row Level Security)
+
+**Overview**: Kurt uses PostgreSQL RLS for multi-tenant data isolation in cloud mode.
+
+**Architecture**:
+```
+1. JWT Token → 2. Middleware → 3. Context → 4. Session → 5. PostgreSQL RLS
+   (user_id,       set_workspace_   (contextvars)  SET LOCAL    (auto-filter)
+    workspace_id)  context()                       variables
+```
+
+**Implementation**:
+
+```python
+# 1. Middleware (web/api/auth.py) extracts JWT claims
+async def auth_middleware_setup(request, call_next):
+    user_data = verify_token_with_supabase(token)
+    user_id = user_data.get("id")
+    workspace_id = user_data.get("user_metadata", {}).get("workspace_id")
+
+    # 2. Set workspace context (thread-local via contextvars)
+    set_workspace_context(workspace_id=workspace_id, user_id=user_id)
+
+    try:
+        response = await call_next(request)
+        return response
+    finally:
+        clear_workspace_context()
+
+# 3. managed_session() reads context and sets PostgreSQL variables
+@contextmanager
+def managed_session():
+    session = get_session()
+    try:
+        # Calls set_rls_context(session) which does:
+        # session.execute(text("SET LOCAL app.user_id = :user_id"), {"user_id": ...})
+        # session.execute(text("SET LOCAL app.workspace_id = :workspace_id"), {"workspace_id": ...})
+        set_rls_context(session)
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+# 4. RLS policies in PostgreSQL automatically filter data:
+# CREATE POLICY tenant_isolation ON map_documents
+#   USING (workspace_id = current_setting('app.workspace_id', true)::uuid);
+```
+
+**Key Points**:
+- ✅ Context variables (`set_workspace_context`) propagate across async boundaries
+- ✅ Parameterized queries prevent SQL injection (`SET LOCAL app.user_id = :user_id`)
+- ✅ Local mode (SQLite) skips RLS - no overhead
+- ✅ Cloud mode uses direct PostgreSQL with RLS
+- ✅ Tests verify SQL injection protection and context propagation
+
+**Files**:
+- `src/kurt/db/tenant.py` - Context management and `set_rls_context()`
+- `src/kurt/db/database.py` - `managed_session()` calls `set_rls_context()`
+- `src/kurt/web/api/auth.py` - Middleware sets context from JWT
+- `src/kurt/web/api/tests/test_rls_integration.py` - RLS tests (4 tests passing)
+
+**Security**:
+- SQL injection prevented via parameterized queries
+- Workspace isolation enforced at database level
+- JWT validation via auth API
+
 ## Principles
 
 - Keep core logic small; put domain persistence in workflow modules.
@@ -112,15 +267,67 @@ and add `user_id` / `workspace_id` there as needed.
 
 ## Table Schema Management
 
-- DBOS tables (events/streams/workflow state) are managed by DBOS. Do not
-  create or migrate them manually.
-- kurt_new schema tables live in `src/kurt_new/db/models.py`.
-- Use Alembic migrations in `src/kurt_new/db/migrations` for kurt_new tables.
+### Database Schema Separation
 
-When you add or change a kurt_new table:
-1) Update `src/kurt_new/db/models.py`
-2) Create a migration
-3) Apply migrations in your environment
+Kurt uses **two separate Alembic migration trees** to separate concerns:
+
+1. **Kurt-core migrations** (`src/kurt/db/migrations/`)
+   - Schema: `public` (default PostgreSQL schema)
+   - Tables: Workflow data (map_documents, fetch_documents, content_items, etc.)
+   - Owned by: kurt-core repository
+   - Applied by: `scripts/run_core_migrations.py` in kurt-cloud
+
+2. **Kurt-cloud migrations** (`src/kurt_cloud/db/migrations/` in kurt-cloud repo)
+   - Schema: `cloud` (separate schema)
+   - Tables: Multi-tenancy (workspaces, workspace_members, user_connections, usage_events)
+   - Owned by: kurt-cloud repository
+   - Applied by: `alembic upgrade head` in kurt-cloud
+
+**IMPORTANT**: Workspace/auth tables belong in kurt-cloud (not kurt-core).
+
+### DBOS Tables
+
+- DBOS tables (events/streams/workflow_status) are managed by DBOS
+- Do not create or migrate DBOS tables manually
+- Use raw SQL for DBOS queries (no SQLModel models)
+
+### Creating Kurt-Core Migrations
+
+When you add workflow tables (map, fetch, content, etc.):
+
+```bash
+cd src/kurt/db/migrations
+alembic revision -m "add_my_workflow_tables"
+```
+
+Edit the generated file in `versions/`:
+```python
+def upgrade() -> None:
+    op.create_table(
+        "my_workflow_documents",
+        sa.Column("id", sa.String(), nullable=False),
+        sa.Column("workspace_id", sa.String(), nullable=True),  # For multi-tenancy
+        # ... other columns
+    )
+```
+
+Apply locally:
+```bash
+export DATABASE_URL="sqlite:///.kurt/kurt.sqlite"
+cd src/kurt/db/migrations
+alembic upgrade head
+```
+
+Apply to Supabase (from kurt-cloud):
+```bash
+cd /path/to/kurt-cloud
+export SUPABASE_DB_URL="postgresql://postgres:PASSWORD@db.xxx.supabase.co:5432/postgres"
+python scripts/run_core_migrations.py
+```
+
+### SQL Migrations (Deprecated)
+
+**Do NOT use manual SQL migrations**. Use Alembic exclusively for consistency and version control.
 
 ## Testing
 
@@ -663,6 +870,28 @@ Rule of thumb: If storing `WORKFLOW.PARAM=value` in `kurt.config` file doesn't m
 ## Agent Workflows (Claude Code)
 
 Agent workflows execute Claude Code CLI as a subprocess inside DBOS workflows. They're defined as Markdown files with YAML frontmatter in `workflows/` (configurable via `PATH_WORKFLOWS` in `kurt.config`).
+
+### Directory Structure
+
+Three distinct directories for agent-related files:
+
+1. **`src/kurt/agents/templates/`** - Agent prompt templates
+   - Static prompt files for agent operations
+   - Example: `setup-github-workspace.md`, `plan-template.md`
+   - Shipped with the product
+   - Used by agent CLI for specific tasks
+
+2. **`src/kurt/workflows/agents/`** - Agent workflow system implementation
+   - Parser, executor, registry, scheduler
+   - CLI commands (`kurt agents list`, `kurt agents run`)
+   - Tests for the workflow system
+   - This is the **code** that runs user workflows
+
+3. **`/workflows/`** (project root) - User-defined workflows (development testing only)
+   - Gitignored via `/workflows/`
+   - Used for testing during development
+   - In production, users create workflows in their own project directories
+   - Configured via `PATH_WORKFLOWS` in `kurt.config`
 
 ### Workflow Definition Format
 
