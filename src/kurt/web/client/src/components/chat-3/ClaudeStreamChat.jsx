@@ -10,7 +10,7 @@ import {
   useMessage,
   useThread,
 } from '@assistant-ui/react'
-import ChatPanel, { chatThemeVars } from '../chat/ChatPanel'
+import ChatPanel, { chatThemeVars, assistantMessageStyles } from '../chat/ChatPanel'
 import MessageList, { Messages, EmptyState } from '../chat/MessageList'
 import TextBlock from '../chat/TextBlock'
 import SessionHeader from '../chat/SessionHeader'
@@ -22,10 +22,15 @@ import GlobToolRenderer from '../chat/GlobToolRenderer'
 import GrepToolRenderer from '../chat/GrepToolRenderer'
 import ToolUseBlock, { ToolOutput } from '../chat/ToolUseBlock'
 import PermissionPanel from '../chat/PermissionPanel'
-import { assistantMessageStyles } from '../chat/AssistantMessage'
 import './styles.css'
 
-const SLASH_COMMANDS = [
+// Helper to safely find content in arrays (content might be a string sometimes)
+const findContent = (content, predicate) => {
+  if (!Array.isArray(content)) return undefined
+  return content.find(predicate)
+}
+
+const DEFAULT_SLASH_COMMANDS = [
   { id: 'help', label: '/help', description: 'Show available commands' },
   { id: 'clear', label: '/clear', description: 'Clear the chat' },
   { id: 'compact', label: '/compact', description: 'Compact conversation' },
@@ -38,17 +43,89 @@ const SLASH_COMMANDS = [
   { id: 'memory', label: '/memory', description: 'Manage memory/context' },
 ]
 
+const normalizeSlashCommands = (commands) => {
+  if (!Array.isArray(commands)) return DEFAULT_SLASH_COMMANDS
+  const seen = new Set()
+  const normalized = commands
+    .map((name) => String(name || '').trim())
+    .filter(Boolean)
+    .filter((name) => {
+      if (seen.has(name)) return false
+      seen.add(name)
+      return true
+    })
+    .map((name) => ({
+      id: name,
+      label: name.startsWith('/') ? name : `/${name}`,
+      description: 'Command',
+    }))
+  return normalized.length ? normalized : DEFAULT_SLASH_COMMANDS
+}
+
+const CLI_OPTIONS_KEY = 'kurt-web-claude-cli-options'
+const DEFAULT_CLI_OPTIONS = {
+  model: '',
+  maxThinkingTokens: '',
+  maxTurns: '',
+  maxBudgetUsd: '',
+  allowedTools: '',
+  disallowedTools: '',
+}
+
+const buildRestartKey = (options) => {
+  const normalized = {
+    maxTurns: String(options?.maxTurns || '').trim(),
+    maxBudgetUsd: String(options?.maxBudgetUsd || '').trim(),
+    allowedTools: options?.allowedTools?.trim() || '',
+    disallowedTools: options?.disallowedTools?.trim() || '',
+  }
+  return JSON.stringify(normalized)
+}
+
+const normalizeStoredOptions = (options) => ({
+  model: options?.model?.trim() || '',
+  maxThinkingTokens: String(options?.maxThinkingTokens || '').trim(),
+  maxTurns: String(options?.maxTurns || '').trim(),
+  maxBudgetUsd: String(options?.maxBudgetUsd || '').trim(),
+  allowedTools: options?.allowedTools?.trim() || '',
+  disallowedTools: options?.disallowedTools?.trim() || '',
+})
+
+const buildFileSpec = (attachment) => {
+  if (!attachment?.fileId || !attachment?.relativePath) return ''
+  return `${attachment.fileId}:${attachment.relativePath}`
+}
+
 const getApiBase = () => {
   const apiUrl = import.meta.env.VITE_API_URL || ''
   return apiUrl ? apiUrl.replace(/\/$/, '') : ''
 }
 
-const buildWsUrl = (sessionId, mode, forceNew = false) => {
+const buildWsUrl = (
+  sessionId,
+  mode,
+  forceNew = false,
+  resume = false,
+  options = {},
+  fileSpecs = []
+) => {
   const apiUrl = import.meta.env.VITE_API_URL || ''
   const queryParams = new URLSearchParams()
   if (sessionId) queryParams.set('session_id', sessionId)
   if (mode) queryParams.set('mode', mode)
   if (forceNew) queryParams.set('force_new', '1')
+  if (resume) queryParams.set('resume', '1')
+  if (options?.model) queryParams.set('model', options.model)
+  if (options?.maxThinkingTokens) queryParams.set('max_thinking_tokens', options.maxThinkingTokens)
+  if (options?.maxTurns) queryParams.set('max_turns', options.maxTurns)
+  if (options?.maxBudgetUsd) queryParams.set('max_budget_usd', options.maxBudgetUsd)
+  if (options?.allowedTools) queryParams.set('allowed_tools', options.allowedTools)
+  if (options?.disallowedTools) queryParams.set('disallowed_tools', options.disallowedTools)
+  if (Array.isArray(fileSpecs)) {
+    fileSpecs.forEach((spec) => {
+      if (spec) queryParams.append('file', spec)
+    })
+  }
   const params = queryParams.toString() ? `?${queryParams.toString()}` : ''
   if (apiUrl) {
     const url = new URL(apiUrl)
@@ -58,6 +135,19 @@ const buildWsUrl = (sessionId, mode, forceNew = false) => {
   const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
   const host = window.location.host
   return `${protocol}://${host}/ws/claude-stream${params}`
+}
+
+const uploadAttachment = async (file) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  const res = await fetch(`${getApiBase()}/api/attachments`, {
+    method: 'POST',
+    body: formData,
+  })
+  if (!res.ok) {
+    throw new Error('Upload failed')
+  }
+  return res.json()
 }
 
 const fetchSessions = async () => {
@@ -71,11 +161,21 @@ const fetchSessions = async () => {
   }
 }
 
-const searchFiles = async (query) => {
+const searchFiles = async (query, onError) => {
   if (!query || query.length < 1) return []
   try {
     const res = await fetch(`${getApiBase()}/api/search?q=${encodeURIComponent(query)}`)
-    if (!res.ok) return []
+    if (!res.ok) {
+      onError?.({
+        title: 'File search failed',
+        detail: 'The backend returned an error while searching files.',
+        suggestions: ['Check the backend status and retry.'],
+        source: 'search',
+        canRetry: true,
+        canRestart: false,
+      }, { showBanner: false })
+      return []
+    }
     const data = await res.json()
     return (data.results || []).map((f) => ({
       id: f.path,
@@ -83,7 +183,51 @@ const searchFiles = async (query) => {
       path: f.path,
       dir: f.dir,
     }))
-  } catch {
+  } catch (error) {
+    onError?.({
+      title: 'File search failed',
+      detail: error?.message || 'Unable to reach the backend.',
+      suggestions: ['Check the backend status and retry.'],
+      source: 'search',
+      canRetry: true,
+      canRestart: false,
+    }, { showBanner: false })
+    return []
+  }
+}
+
+const fetchMentionDefaults = async (onError) => {
+  try {
+    const res = await fetch(`${getApiBase()}/api/tree?path=.`)
+    if (!res.ok) {
+      onError?.({
+        title: 'File list failed',
+        detail: 'The backend returned an error while listing files.',
+        suggestions: ['Check the backend status and retry.'],
+        source: 'search',
+        canRetry: true,
+        canRestart: false,
+      }, { showBanner: false })
+      return []
+    }
+    const data = await res.json()
+    const entries = Array.isArray(data.entries) ? data.entries : []
+    const files = entries.filter((entry) => !entry.is_dir)
+    return files.map((file) => ({
+      id: file.path,
+      label: file.name,
+      path: file.path,
+      dir: file.path.includes('/') ? file.path.split('/').slice(0, -1).join('/') : '',
+    }))
+  } catch (error) {
+    onError?.({
+      title: 'File list failed',
+      detail: error?.message || 'Unable to reach the backend.',
+      suggestions: ['Check the backend status and retry.'],
+      source: 'search',
+      canRetry: true,
+      canRestart: false,
+    }, { showBanner: false })
     return []
   }
 }
@@ -215,26 +359,54 @@ const useClaudeStreamRuntime = (
   currentSessionId,
   setCurrentSessionId,
   mode,
+  cliOptions,
+  resume,
   contextFiles,
   clearContextFiles,
+  fileAttachments,
+  clearFileAttachments,
   onStreamingChange,
+  onControlMessage,
+  onError,
+  onSlashCommands,
+  onUserMessageId,
   onLastMessageChange,
-  imageCache
+  imageCache,
 ) => {
   const wsRef = useRef(null)
   const queueRef = useRef([])
   const waitersRef = useRef([])
   const modeRef = useRef(mode)
+  const optionsRef = useRef(cliOptions)
+  const resumeRef = useRef(Boolean(resume))
   const contextFilesRef = useRef(contextFiles)
   const clearContextFilesRef = useRef(clearContextFiles)
+  const fileAttachmentsRef = useRef(fileAttachments)
+  const clearFileAttachmentsRef = useRef(clearFileAttachments)
   const imageCacheRef = useRef(imageCache)
+  const permissionToolRef = useRef(new Map())
   const [sessionName, setSessionName] = useState('New conversation')
   const [isConnected, setIsConnected] = useState(false)
+
+  useEffect(() => {
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close()
+        wsRef.current = null
+      }
+    }
+  }, [])
 
   // Keep refs updated
   useEffect(() => {
     modeRef.current = mode
   }, [mode])
+  useEffect(() => {
+    optionsRef.current = cliOptions
+  }, [cliOptions])
+  useEffect(() => {
+    resumeRef.current = Boolean(resume)
+  }, [resume])
   useEffect(() => {
     contextFilesRef.current = contextFiles
   }, [contextFiles])
@@ -242,16 +414,36 @@ const useClaudeStreamRuntime = (
     clearContextFilesRef.current = clearContextFiles
   }, [clearContextFiles])
   useEffect(() => {
+    fileAttachmentsRef.current = fileAttachments
+  }, [fileAttachments])
+  useEffect(() => {
+    clearFileAttachmentsRef.current = clearFileAttachments
+  }, [clearFileAttachments])
+  useEffect(() => {
     imageCacheRef.current = imageCache
   }, [imageCache])
 
   const lastModeRef = useRef(null)
+  const lastOptionsKeyRef = useRef(null)
+  const lastAttachmentKeyRef = useRef('')
 
-  const connect = useCallback((sessionId, connectMode) => {
+  const connect = useCallback((sessionId, connectMode, resumeOverride, fileSpecsOverride) => {
     const useMode = connectMode || modeRef.current
-    // Check if mode changed - need force_new to restart Claude with new --permission-mode
-    const modeChanged = lastModeRef.current !== null && lastModeRef.current !== useMode
+    const shouldResume =
+      typeof resumeOverride === 'boolean' ? resumeOverride : resumeRef.current
+    const fileSpecs = Array.isArray(fileSpecsOverride)
+      ? fileSpecsOverride
+      : (fileAttachmentsRef.current || [])
+        .filter((attachment) => attachment?.status === 'ready')
+        .map((attachment) => buildFileSpec(attachment))
+        .filter(Boolean)
+    const fileSpecKey = fileSpecs.join('|')
+    const optionsKey = buildRestartKey(optionsRef.current)
+    const optionsChanged =
+      lastOptionsKeyRef.current !== null && lastOptionsKeyRef.current !== optionsKey
+    const attachmentsChanged = fileSpecKey && lastAttachmentKeyRef.current !== fileSpecKey
     lastModeRef.current = useMode
+    lastOptionsKeyRef.current = optionsKey
 
     // Close existing connection if switching sessions or mode
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -259,19 +451,51 @@ const useClaudeStreamRuntime = (
     }
 
     return new Promise((resolve, reject) => {
-      const ws = new WebSocket(buildWsUrl(sessionId, useMode, modeChanged))
+      const shouldForceNew = optionsChanged || attachmentsChanged
+      const ws = new WebSocket(
+        buildWsUrl(sessionId, useMode, shouldForceNew, shouldResume, optionsRef.current, fileSpecs)
+      )
       wsRef.current = ws
 
       ws.onopen = () => {
+        if (wsRef.current !== ws) return
         setIsConnected(true)
+        if (fileSpecKey) {
+          lastAttachmentKeyRef.current = fileSpecKey
+        }
+        ws.send(JSON.stringify({
+          type: 'control',
+          subtype: 'initialize',
+          capabilities: {
+            permissions: true,
+            file_diffs: true,
+            user_questions: true,
+          },
+        }))
         resolve(ws)
       }
-      ws.onclose = () => setIsConnected(false)
-      ws.onerror = (event) => {
+      ws.onclose = () => {
+        if (wsRef.current !== ws) return
         setIsConnected(false)
+      }
+      ws.onerror = (event) => {
+        if (wsRef.current !== ws) return
+        setIsConnected(false)
+        onError?.({
+          title: 'Connection error',
+          detail: 'Unable to reach the Claude CLI backend.',
+          suggestions: [
+            'Make sure the backend is running.',
+            'Try reconnecting or restarting the session.',
+          ],
+          source: 'connection',
+          canRetry: true,
+          canRestart: true,
+        })
         reject(event)
       }
       ws.onmessage = (event) => {
+        if (wsRef.current !== ws) return
         let payload = null
         try {
           payload = JSON.parse(event.data)
@@ -283,7 +507,45 @@ const useClaudeStreamRuntime = (
           setSessionName(payload.session_id)
           setCurrentSessionId(payload.session_id)
         }
+        if (payload.type === 'system' && payload.subtype === 'error') {
+          onError?.({
+            title: 'Claude session error',
+            detail: payload.message || 'Claude CLI reported an error.',
+            suggestions: [
+              'Check the CLI output for details.',
+              'Try restarting the session.',
+            ],
+            source: 'session',
+            canRetry: true,
+            canRestart: true,
+          })
+        }
+        if (payload.type === 'system' && payload.subtype === 'init') {
+          if (Array.isArray(payload.slash_commands)) {
+            onSlashCommands?.(payload.slash_commands)
+          }
+        }
 
+        // Handle session_not_found error - restart with a new session
+        if (payload.type === 'system' && payload.subtype === 'session_not_found') {
+          console.log('[ClaudeStream] Session not found, restarting with new session')
+          // Close current connection
+          if (wsRef.current) {
+            wsRef.current.close()
+            wsRef.current = null
+          }
+          setIsConnected(false)
+          // Generate new session ID and reconnect without resume
+          const newSessionId = crypto.randomUUID()
+          setCurrentSessionId(newSessionId)
+          resumeRef.current = false
+          // Connect will be triggered by the state change via useEffect
+          return
+        }
+
+        if (payload.type === 'control') {
+          onControlMessage?.(payload)
+        }
         const queue = queueRef.current
         if (queue) {
           queue.push(payload)
@@ -292,7 +554,7 @@ const useClaudeStreamRuntime = (
         }
       }
     })
-  }, [setCurrentSessionId])
+  }, [setCurrentSessionId, onControlMessage, onError, onSlashCommands])
 
   const nextPayload = useCallback(async () => {
     if (queueRef.current.length) return queueRef.current.shift()
@@ -302,20 +564,19 @@ const useClaudeStreamRuntime = (
   }, [])
 
   // Connect proactively on mount or when session/mode changes
-  // Mode change requires reconnect with force_new to restart Claude with new --permission-mode
   useEffect(() => {
     connect(currentSessionId, mode).catch(() => {
       // Connection failed, will retry on message send
     })
   }, [connect, currentSessionId, mode])
 
-  const switchSession = useCallback((sessionId) => {
+  const switchSession = useCallback((sessionId, resumeOverride = true) => {
     if (wsRef.current) {
       wsRef.current.close()
       wsRef.current = null
     }
     setIsConnected(false)
-    connect(sessionId).catch(() => {})
+    connect(sessionId, undefined, resumeOverride).catch(() => {})
   }, [connect])
 
   // Force restart session (e.g., after permission change)
@@ -325,13 +586,40 @@ const useClaudeStreamRuntime = (
       wsRef.current = null
     }
     setIsConnected(false)
+    const fileSpecs = (fileAttachmentsRef.current || [])
+      .filter((attachment) => attachment?.status === 'ready')
+      .map((attachment) => buildFileSpec(attachment))
+      .filter(Boolean)
     // Reconnect with force_new to restart CLI with new settings
-    const wsUrl = buildWsUrl(currentSessionId, modeRef.current, true) // force_new=true
+    const wsUrl = buildWsUrl(
+      currentSessionId,
+      modeRef.current,
+      true,
+      resumeRef.current,
+      optionsRef.current,
+      fileSpecs,
+    ) // force_new=true
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
-    ws.onopen = () => setIsConnected(true)
-    ws.onclose = () => setIsConnected(false)
+    ws.onopen = () => {
+      if (wsRef.current !== ws) return
+      setIsConnected(true)
+      ws.send(JSON.stringify({
+        type: 'control',
+        subtype: 'initialize',
+        capabilities: {
+          permissions: true,
+          file_diffs: true,
+          user_questions: true,
+        },
+      }))
+    }
+    ws.onclose = () => {
+      if (wsRef.current !== ws) return
+      setIsConnected(false)
+    }
     ws.onmessage = (event) => {
+      if (wsRef.current !== ws) return
       try {
         const payload = JSON.parse(event.data)
         if (payload.type === 'system' && payload.subtype === 'connected') {
@@ -370,6 +658,46 @@ const useClaudeStreamRuntime = (
 
     console.log('[ClaudeStream] Sending control response:', response)
     wsRef.current.send(JSON.stringify(response))
+    const pendingTool = permissionToolRef.current.get(requestId)
+    if (pendingTool) {
+      if (decision === 'allow') {
+        pendingTool.status = 'running'
+        setTimeout(() => {
+          if (pendingTool.status === 'running') {
+            pendingTool.status = 'complete'
+          }
+        }, 180)
+      } else {
+        pendingTool.status = 'error'
+        pendingTool.error = message || 'Permission denied'
+      }
+      permissionToolRef.current.delete(requestId)
+    }
+  }, [])
+
+  const sendQuestionResponse = useCallback((requestId, answers) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      console.warn('[ClaudeStream] Cannot send question response - WebSocket not connected')
+      return
+    }
+    const response = {
+      type: 'control_response',
+      request_id: requestId,
+      answers: answers || {},
+    }
+    wsRef.current.send(JSON.stringify(response))
+  }, [])
+
+  const sendControlMessage = useCallback((subtype, payload = {}) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      console.warn('[ClaudeStream] Cannot send control - WebSocket not connected')
+      return
+    }
+    wsRef.current.send(JSON.stringify({
+      type: 'control',
+      subtype,
+      ...payload,
+    }))
   }, [])
 
   // Send a message directly (for retry)
@@ -388,7 +716,7 @@ const useClaudeStreamRuntime = (
   const adapter = {
     async *run({ messages, abortSignal }) {
       const lastUser = messages.filter((m) => m.role === 'user').pop()
-      const userText = lastUser?.content?.find((c) => c.type === 'text')?.text || ''
+      const userText = findContent(lastUser?.content, (c) => c.type === 'text')?.text || ''
       const extracted = extractImagesFromText(userText, imageCacheRef.current)
       const cleanedText = extracted.text || ''
       const imageParts = extracted.images
@@ -402,7 +730,15 @@ const useClaudeStreamRuntime = (
 
       onStreamingChange?.(true)
 
-      const ws = await connect(currentSessionId)
+      const fileSpecs = (fileAttachmentsRef.current || [])
+        .filter((attachment) => attachment?.status === 'ready')
+        .map((attachment) => buildFileSpec(attachment))
+        .filter(Boolean)
+      const ws = await connect(currentSessionId, undefined, undefined, fileSpecs)
+      const abortHandler = () => {
+        sendControlMessage('interrupt')
+      }
+      abortSignal?.addEventListener('abort', abortHandler, { once: true })
       queueRef.current = []
       waitersRef.current = []
 
@@ -443,6 +779,7 @@ const useClaudeStreamRuntime = (
         }))
       }
       clearContextFilesRef.current?.()
+      clearFileAttachmentsRef.current?.()
 
       const parts = []
       let textPartIndex = -1
@@ -451,6 +788,13 @@ const useClaudeStreamRuntime = (
       const seenUuids = new Set() // Track seen message uuids to avoid duplicates
       let latestCommandOutput = null // Track latest command output (for slash commands, show only the last)
       let running = true
+      const scheduleStatusChange = (toolPart, fromStatus, toStatus, delayMs) => {
+        setTimeout(() => {
+          if (toolPart.status === fromStatus) {
+            toolPart.status = toStatus
+          }
+        }, delayMs)
+      }
 
       while (running) {
         if (abortSignal?.aborted) break
@@ -490,9 +834,10 @@ const useClaudeStreamRuntime = (
                 name: part.name,
                 input: part.input || {},
                 output: '',
-                status: 'running',
+                status: 'pending',
                 lineCount: null,
               }
+              scheduleStatusChange(toolPart, 'pending', 'running', 120)
               toolSignature.add(signature)
               toolIndex.set(part.id, toolPart)
               parts.push(toolPart)
@@ -511,6 +856,16 @@ const useClaudeStreamRuntime = (
           }
           if (messageUuid) seenUuids.add(messageUuid)
 
+          const messageId =
+            payload.message?.id ||
+            payload.message?.message_id ||
+            payload.message?.uuid ||
+            payload.message_id ||
+            payload.uuid
+          if (messageId) {
+            onUserMessageId?.(messageId)
+          }
+
           // Check for slash command output (wrapped in <local-command-stdout> tags)
           const messageContent = payload.message?.content
           if (typeof messageContent === 'string' && messageContent.includes('<local-command-stdout>')) {
@@ -522,7 +877,7 @@ const useClaudeStreamRuntime = (
             }
           }
 
-          const toolResult = payload.message?.content?.find?.((c) => c.type === 'tool_result')
+          const toolResult = findContent(payload.message?.content, (c) => c.type === 'tool_result')
           if (toolResult?.tool_use_id && toolIndex.has(toolResult.tool_use_id)) {
             const toolPart = toolIndex.get(toolResult.tool_use_id)
             const resultText = [
@@ -539,7 +894,12 @@ const useClaudeStreamRuntime = (
             } else {
               toolPart.output = mergeStreamText(toolPart.output || '', resultText)
             }
-            toolPart.status = toolResult.is_error ? 'error' : 'complete'
+            if (toolResult.is_error) {
+              toolPart.status = 'error'
+            } else {
+              toolPart.status = 'streaming'
+              scheduleStatusChange(toolPart, 'streaming', 'complete', 160)
+            }
           }
         }
 
@@ -547,6 +907,32 @@ const useClaudeStreamRuntime = (
         // This is sent when --permission-prompt-tool stdio is used
         if (payload.type === 'control_request') {
           console.log('[ClaudeStream] Control request detected:', payload)
+          const request = payload.request || {}
+          const toolName = request.tool_name || request.toolName || 'tool'
+          const toolInput = request.input || request.tool_input || request.inputs || {}
+          const toolId = request.tool_use_id || payload.request_id || `control-${Date.now()}`
+          if (!toolIndex.has(toolId)) {
+            const inputKey = toolInput.file_path || toolInput.path || toolInput.command || toolId
+            const signature = `${toolName}-${inputKey}`
+            if (!toolSignature.has(signature)) {
+              const toolPart = {
+                type: 'tool_use',
+                id: toolId,
+                name: toolName,
+                input: toolInput,
+                output: '',
+                status: 'pending',
+                lineCount: null,
+              }
+              toolSignature.add(signature)
+              toolIndex.set(toolId, toolPart)
+              parts.push(toolPart)
+              textPartIndex = -1
+              if (payload.request_id) {
+                permissionToolRef.current.set(payload.request_id, toolPart)
+              }
+            }
+          }
           onStreamingChange?.({
             type: 'control_request',
             payload,
@@ -554,8 +940,22 @@ const useClaudeStreamRuntime = (
         }
         if (payload.type === 'control_cancel_request') {
           console.log('[ClaudeStream] Control cancel detected:', payload)
+          const requestId = payload.request_id
+          if (requestId && permissionToolRef.current.has(requestId)) {
+            const toolPart = permissionToolRef.current.get(requestId)
+            toolPart.status = 'error'
+            toolPart.error = 'Permission request canceled'
+            permissionToolRef.current.delete(requestId)
+          }
           onStreamingChange?.({
             type: 'control_cancel_request',
+            payload,
+          })
+        }
+        if (payload.type === 'control' && payload.subtype === 'user_question_request') {
+          console.log('[ClaudeStream] User question request detected:', payload)
+          onStreamingChange?.({
+            type: 'user_question',
             payload,
           })
         }
@@ -566,6 +966,7 @@ const useClaudeStreamRuntime = (
           payload.type === 'approval_request' ||
           payload.type === 'input_request' ||
           payload.type === 'user_input_request' ||
+          (payload.type === 'control' && payload.subtype === 'permission_request') ||
           (payload.type === 'system' && payload.subtype === 'permission_request')
 
         if (isPermissionRequest) {
@@ -609,10 +1010,22 @@ const useClaudeStreamRuntime = (
 
         yield { content: parts.map((part) => ({ ...part })) }
       }
+
+      abortSignal?.removeEventListener?.('abort', abortHandler)
     },
   }
 
-  return { adapter, sessionName, isConnected, switchSession, sendApprovalResponse, sendMessage, restartSession }
+  return {
+    adapter,
+    sessionName,
+    isConnected,
+    switchSession,
+    sendApprovalResponse,
+    sendQuestionResponse,
+    sendMessage,
+    restartSession,
+    sendControlMessage,
+  }
 }
 
 const renderToolPart = (part) => {
@@ -626,6 +1039,7 @@ const renderToolPart = (part) => {
         command={input.command || input.cmd}
         description={input.description}
         output={output}
+        error={part.error}
         status={part.status}
         compact={true}
       />
@@ -647,6 +1061,7 @@ const renderToolPart = (part) => {
       <WriteToolRenderer
         filePath={input.path || input.file_path}
         content={input.content || output}
+        error={part.error}
         status={part.status}
       />
     )
@@ -656,6 +1071,7 @@ const renderToolPart = (part) => {
       <EditToolRenderer
         filePath={input.path || input.file_path}
         diff={input.diff || output}
+        error={part.error}
         status={part.status}
       />
     )
@@ -709,16 +1125,9 @@ const AssistantMessage = () => {
               <div className="claude-assistant-text">
                 <TextBlock text={part.text} />
                 {isStreaming && (
-                  <span
-                    style={{
-                      display: 'inline-block',
-                      width: '2px',
-                      height: '16px',
-                      backgroundColor: '#cccccc',
-                      marginLeft: '2px',
-                      animation: 'blink 1s step-end infinite',
-                    }}
-                  />
+                  <span className="claude-streaming-cursor" aria-hidden="true">
+                    ▌
+                  </span>
                 )}
               </div>
             </div>
@@ -744,6 +1153,36 @@ const MODES = [
   { id: 'plan', title: 'Plan', description: 'Defines a plan before acting.' },
 ]
 
+const mapModeToControl = (mode) => {
+  const map = {
+    ask: 'default',
+    act: 'acceptEdits',
+    plan: 'plan',
+  }
+  return map[mode] || 'default'
+}
+
+const mapControlToMode = (mode) => {
+  const map = {
+    default: 'ask',
+    acceptEdits: 'act',
+    plan: 'plan',
+    bypassPermissions: 'act',
+    dontAsk: 'act',
+    delegate: 'ask',
+  }
+  return map[mode] || 'ask'
+}
+
+const formatBytes = (value) => {
+  const bytes = Number(value || 0)
+  if (!bytes || Number.isNaN(bytes)) return ''
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`
+}
+
 const ImageIcon = () => (
   <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
     <rect x="3" y="5" width="18" height="14" rx="2" ry="2" fill="none" stroke="currentColor" strokeWidth="1.5" />
@@ -752,19 +1191,37 @@ const ImageIcon = () => (
   </svg>
 )
 
+const FileIcon = () => (
+  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+    <path
+      d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+    />
+    <path d="M14 3v5h5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+  </svg>
+)
+
 const INLINE_IMAGE_LIMIT = 80000
 
 const ComposerShell = ({
   isConnected,
   mode,
-  setMode,
+  onModeChange,
   showModeMenu,
   setShowModeMenu,
   attachments,
   setAttachments,
+  fileAttachments,
+  setFileAttachments,
+  onAttachFiles,
+  isUploadingAttachments,
   contextFiles,
   setContextFiles,
   onRegisterImages,
+  slashCommands,
+  onError,
 }) => {
   const composer = useComposer()
   const api = useAssistantApi()
@@ -817,6 +1274,7 @@ const ComposerShell = ({
     setAttachments([])
   }, [attachments, composer, setAttachments, applyComposerText, onRegisterImages])
   const slashMenuRef = useRef(null)
+  const selectedItemRef = useRef(null)
 
   // Close slash menu when clicking outside
   useEffect(() => {
@@ -832,10 +1290,21 @@ const ComposerShell = ({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [showSlashMenu, showAtMenu])
 
+  // Auto-scroll selected menu item into view
+  useEffect(() => {
+    if ((showSlashMenu || showAtMenu) && selectedItemRef.current) {
+      selectedItemRef.current.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+        inline: 'nearest',
+      })
+    }
+  }, [selectedIndex, showSlashMenu, showAtMenu])
+
 
   const [searchedFiles, setSearchedFiles] = useState([])
 
-  const filteredCommands = SLASH_COMMANDS.filter(
+  const filteredCommands = (slashCommands || DEFAULT_SLASH_COMMANDS).filter(
     (cmd) =>
       cmd.label.toLowerCase().includes(menuFilter.toLowerCase()) ||
       cmd.description.toLowerCase().includes(menuFilter.toLowerCase())
@@ -845,18 +1314,29 @@ const ComposerShell = ({
   useEffect(() => {
     if (!showAtMenu) return
     const query = menuFilter || ''
-    if (query.length < 1) {
-      setSearchedFiles([])
-      return
-    }
     const controller = new AbortController()
-    searchFiles(query).then((files) => {
+    let timerId = null
+    const handleResults = (files) => {
       if (!controller.signal.aborted) {
         setSearchedFiles(files.slice(0, 10))
       }
-    })
-    return () => controller.abort()
-  }, [showAtMenu, menuFilter])
+    }
+
+    if (query.length < 1) {
+      timerId = window.setTimeout(() => {
+        fetchMentionDefaults(onError).then(handleResults)
+      }, 150)
+    } else {
+      searchFiles(query, onError).then(handleResults)
+    }
+
+    return () => {
+      controller.abort()
+      if (timerId) {
+        window.clearTimeout(timerId)
+      }
+    }
+  }, [showAtMenu, menuFilter, onError])
 
   const handleMenuSelect = (item, type) => {
     if (type === 'at') {
@@ -918,6 +1398,10 @@ const ComposerShell = ({
     }
 
     if (event.key === 'Enter' && !event.shiftKey && !showSlashMenu && !showAtMenu) {
+      if (isUploadingAttachments) {
+        event.preventDefault()
+        return
+      }
       if (attachments.length > 0) {
         event.preventDefault()
         appendAttachmentsToText()
@@ -957,6 +1441,7 @@ const ComposerShell = ({
               filteredCommands.map((cmd, idx) => (
                 <button
                   key={cmd.id}
+                  ref={idx === selectedIndex ? selectedItemRef : null}
                   className={`claude-menu-item ${idx === selectedIndex ? 'selected' : ''}`}
                   onPointerDown={(event) => {
                     event.preventDefault()
@@ -973,6 +1458,7 @@ const ComposerShell = ({
               searchedFiles.map((file, idx) => (
                 <button
                   key={file.id}
+                  ref={idx === selectedIndex ? selectedItemRef : null}
                   className={`claude-menu-item ${idx === selectedIndex ? 'selected' : ''}`}
                   onPointerDown={(event) => {
                     event.preventDefault()
@@ -985,6 +1471,9 @@ const ComposerShell = ({
                   <span className="desc">{file.path}</span>
                 </button>
               ))}
+            {showAtMenu && searchedFiles.length === 0 && (
+              <div className="claude-menu-empty">Type to search files…</div>
+            )}
           </div>
         )}
         {attachments.length > 0 && (
@@ -995,6 +1484,31 @@ const ComposerShell = ({
                 <button
                   type="button"
                   onClick={() => setAttachments((prev) => prev.filter((item) => item.id !== img.id))}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        {fileAttachments?.length > 0 && (
+          <div className="claude-file-attachments">
+            {fileAttachments.map((file) => (
+              <div key={file.id} className={`claude-file-attachment ${file.status || ''}`}>
+                <div className="claude-file-meta">
+                  <span className="claude-file-name">{file.name || 'attachment'}</span>
+                  {file.size ? (
+                    <span className="claude-file-size">{formatBytes(file.size)}</span>
+                  ) : null}
+                </div>
+                <div className="claude-file-status">
+                  {file.status === 'uploading' && <span>Uploading…</span>}
+                  {file.status === 'ready' && <span>Ready</span>}
+                  {file.status === 'error' && <span>Error</span>}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFileAttachments((prev) => prev.filter((item) => item.id !== file.id))}
                 >
                   ×
                 </button>
@@ -1085,6 +1599,19 @@ const ComposerShell = ({
                 }}
               />
             </label>
+            <label className="claude-icon-button" title="Attach file">
+              <FileIcon />
+              <input
+                type="file"
+                className="claude-file-input"
+                multiple
+                onChange={(event) => {
+                  const files = Array.from(event.target.files || [])
+                  onAttachFiles?.(files)
+                  event.target.value = ''
+                }}
+              />
+            </label>
             <button
               type="button"
               className="claude-icon-button"
@@ -1146,7 +1673,7 @@ const ComposerShell = ({
                       type="button"
                       className={`claude-mode-item ${mode === item.id ? 'active' : ''}`}
                       onClick={() => {
-                        setMode(item.id)
+                        onModeChange?.(item.id)
                         setShowModeMenu(false)
                       }}
                     >
@@ -1170,7 +1697,7 @@ const ComposerShell = ({
             ) : (
               <ComposerPrimitive.Send
                 className="claude-send"
-                disabled={!isConnected}
+                disabled={!isConnected || isUploadingAttachments}
                 onClick={() => appendAttachmentsToText()}
               >
                 ↑
@@ -1203,9 +1730,37 @@ const extractMarkdownImages = (text, imageCache) => {
   return { text: cleaned, images }
 }
 
+const buildQuestionAnswers = (questions, answersByQuestion) => {
+  if (!Array.isArray(questions)) return {}
+  const answers = {}
+  questions.forEach((question, index) => {
+    const answer = answersByQuestion?.[question.question]
+    if (!answer) return
+    if (question.multiSelect) {
+      const parts = String(answer)
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean)
+      if (parts.length) {
+        answers[index] = parts
+      }
+      return
+    }
+    answers[index] = String(answer)
+  })
+  return answers
+}
+
+const formatErrorTime = (timestamp) => {
+  if (!timestamp) return ''
+  const date = new Date(timestamp)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
 const UserMessageWithImages = ({ imageCache }) => {
   const message = useMessage()
-  const rawText = message.content?.find((part) => part.type === 'text')?.text || ''
+  const rawText = findContent(message.content, (part) => part.type === 'text')?.text || ''
   const { text, images } = extractMarkdownImages(rawText, imageCache)
 
   return (
@@ -1232,11 +1787,136 @@ const UserMessageWithImages = ({ imageCache }) => {
   )
 }
 
+const ErrorBanner = ({
+  error,
+  onDismiss,
+  onViewLog,
+  onRetry,
+  onRestart,
+}) => {
+  if (!error) return null
+  const suggestions = Array.isArray(error.suggestions)
+    ? error.suggestions
+    : (error.suggestion ? [error.suggestion] : [])
+  return (
+    <div className="claude-error-banner" role="alert">
+      <div className="claude-error-header">
+        <div className="claude-error-title">{error.title || 'Something went wrong'}</div>
+        {error.timestamp && (
+          <div className="claude-error-time">{formatErrorTime(error.timestamp)}</div>
+        )}
+      </div>
+      {error.detail && <div className="claude-error-detail">{error.detail}</div>}
+      {suggestions.length > 0 && (
+        <ul className="claude-error-suggestions">
+          {suggestions.map((item, index) => (
+            <li key={`${item}-${index}`}>{item}</li>
+          ))}
+        </ul>
+      )}
+      <div className="claude-error-actions">
+        {error.canRetry && (
+          <button type="button" className="claude-error-button" onClick={onRetry}>
+            Retry connection
+          </button>
+        )}
+        {error.canRestart && (
+          <button type="button" className="claude-error-button ghost" onClick={onRestart}>
+            Restart session
+          </button>
+        )}
+        <button type="button" className="claude-error-button ghost" onClick={onViewLog}>
+          View log
+        </button>
+        <button type="button" className="claude-error-button ghost" onClick={onDismiss}>
+          Dismiss
+        </button>
+      </div>
+    </div>
+  )
+}
+
+const ErrorLogModal = ({ isOpen, errors, onClear, onClose }) => {
+  if (!isOpen) return null
+  return (
+    <div className="claude-settings-overlay" onClick={onClose}>
+      <div
+        className="claude-settings-modal claude-error-log-modal"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+      >
+        <div className="claude-settings-header">
+          <h3>Error log</h3>
+          <button type="button" className="claude-settings-close" onClick={onClose}>
+            ×
+          </button>
+        </div>
+        <div className="claude-settings-body">
+          {errors.length === 0 ? (
+            <div className="claude-error-log-empty">No errors recorded.</div>
+          ) : (
+            <div className="claude-error-log">
+              {errors.map((entry) => (
+                <div key={entry.id} className="claude-error-log-item">
+                  <div className="claude-error-log-header">
+                    <div className="claude-error-log-title">{entry.title}</div>
+                    <div className="claude-error-log-time">{formatErrorTime(entry.timestamp)}</div>
+                  </div>
+                  {entry.detail && (
+                    <div className="claude-error-log-detail">{entry.detail}</div>
+                  )}
+                  {entry.source && (
+                    <div className="claude-error-log-source">Source: {entry.source}</div>
+                  )}
+                  {Array.isArray(entry.suggestions) && entry.suggestions.length > 0 && (
+                    <ul className="claude-error-log-suggestions">
+                      {entry.suggestions.map((item, index) => (
+                        <li key={`${entry.id}-${index}`}>{item}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="claude-settings-actions">
+          <button type="button" className="claude-settings-button ghost" onClick={onClear}>
+            Clear log
+          </button>
+          <div className="claude-settings-spacer" />
+          <button type="button" className="claude-settings-button ghost" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const ThinkingIndicator = () => (
+  <div className="claude-status" role="status" aria-live="polite">
+    <span className="mark">✳</span>
+    <span className="claude-thinking-spinner" aria-hidden="true" />
+    <span>Claude is thinking</span>
+    <span className="claude-thinking-dots" aria-hidden="true">
+      <span>.</span>
+      <span>.</span>
+      <span>.</span>
+    </span>
+  </div>
+)
+
 const Thread = ({
   sessionName,
   isConnected,
   attachments,
   setAttachments,
+  fileAttachments,
+  setFileAttachments,
+  onAttachFiles,
+  isUploadingAttachments,
   contextFiles,
   setContextFiles,
   sessions,
@@ -1244,19 +1924,29 @@ const Thread = ({
   setShowSessionDropdown,
   onSelectSession,
   onNewSession,
+  showSessionPicker,
   mode,
-  setMode,
+  onModeChange,
   approvalRequest,
   onApprovalDecision,
+  errorBanner,
+  onDismissError,
+  onViewErrorLog,
+  onRetryConnection,
   imageCache,
   onRegisterImages,
+  onOpenSettings,
+  onRestartSession,
+  onOpenRewind,
+  slashCommands,
+  onError,
 }) => {
   const [showModeMenu, setShowModeMenu] = useState(false)
   const sessionDropdownRef = useRef(null)
 
   // Close dropdown when clicking outside
   useEffect(() => {
-    if (!showSessionDropdown) return
+    if (!showSessionPicker || !showSessionDropdown) return
     const handleClickOutside = (event) => {
       if (sessionDropdownRef.current && !sessionDropdownRef.current.contains(event.target)) {
         setShowSessionDropdown(false)
@@ -1264,7 +1954,13 @@ const Thread = ({
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [showSessionDropdown, setShowSessionDropdown])
+  }, [showSessionPicker, showSessionDropdown, setShowSessionDropdown])
+
+  useEffect(() => {
+    if (!showSessionPicker && showSessionDropdown) {
+      setShowSessionDropdown(false)
+    }
+  }, [showSessionPicker, showSessionDropdown, setShowSessionDropdown])
 
   return (
     <ChatPanel>
@@ -1274,18 +1970,39 @@ const Thread = ({
           <span>Claude Code</span>
         </div>
         <div className="claude-stream-header-actions">
-          <button type="button" title="Lock">🔒</button>
-          <button type="button" title="More">⋯</button>
+          <button type="button" title="Rewind files" onClick={onOpenRewind}>
+            ↶
+          </button>
+          <button type="button" title="Restart session" onClick={onRestartSession}>
+            ↻
+          </button>
+          <button type="button" title="Session settings" onClick={onOpenSettings}>
+            ⚙
+          </button>
         </div>
       </div>
+      {errorBanner && (
+        <ErrorBanner
+          error={errorBanner}
+          onDismiss={onDismissError}
+          onViewLog={onViewErrorLog}
+          onRetry={onRetryConnection}
+          onRestart={onRestartSession}
+        />
+      )}
 
       <div style={{ position: 'relative' }} ref={sessionDropdownRef}>
         <SessionHeader
           title={sessionName}
-          onTitleClick={() => setShowSessionDropdown((prev) => !prev)}
-          onNewSession={onNewSession}
+          onTitleClick={
+            showSessionPicker
+              ? () => setShowSessionDropdown((prev) => !prev)
+              : undefined
+          }
+          onNewSession={showSessionPicker ? onNewSession : undefined}
+          showDropdown={showSessionPicker}
         />
-        {showSessionDropdown && (
+        {showSessionPicker && showSessionDropdown && (
           <div className="claude-session-dropdown">
             {sessions.length === 0 ? (
               <div className="claude-session-item empty">No other sessions</div>
@@ -1328,10 +2045,7 @@ const Thread = ({
       </MessageList>
 
       <AssistantIf condition={({ thread }) => thread.isRunning}>
-        <div className="claude-status">
-          <span className="mark">✳</span>
-          <span style={{ fontStyle: 'italic' }}>Brewing...</span>
-        </div>
+        <ThinkingIndicator />
       </AssistantIf>
       {approvalRequest && (
         <div className="claude-permission-panel">
@@ -1351,30 +2065,281 @@ const Thread = ({
       <ComposerShell
         isConnected={isConnected}
         mode={mode}
-        setMode={setMode}
+        onModeChange={onModeChange}
         showModeMenu={showModeMenu}
         setShowModeMenu={setShowModeMenu}
         attachments={attachments}
         setAttachments={setAttachments}
+        fileAttachments={fileAttachments}
+        setFileAttachments={setFileAttachments}
+        onAttachFiles={onAttachFiles}
+        isUploadingAttachments={isUploadingAttachments}
         contextFiles={contextFiles}
         setContextFiles={setContextFiles}
         onRegisterImages={onRegisterImages}
+        slashCommands={slashCommands}
+        onError={onError}
       />
     </ChatPanel>
   )
 }
 
-export default function ClaudeStreamChat({ initialSessionId = null, provider = 'claude' }) {
+const SessionSettingsModal = ({ isOpen, options, onClose, onSave }) => {
+  const [draft, setDraft] = useState(options)
+
+  useEffect(() => {
+    if (isOpen) {
+      setDraft(options)
+    }
+  }, [isOpen, options])
+
+  if (!isOpen) return null
+
+  const updateDraft = (key, value) => {
+    setDraft((prev) => ({ ...prev, [key]: value }))
+  }
+
+  return (
+    <div className="claude-settings-overlay" onClick={onClose}>
+      <div
+        className="claude-settings-modal"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+      >
+        <div className="claude-settings-header">
+          <div>
+            <div className="claude-settings-title">CLI startup options</div>
+            <div className="claude-settings-subtitle">
+              Applied on restart for this session.
+            </div>
+          </div>
+          <button type="button" className="claude-settings-close" onClick={onClose}>
+            ×
+          </button>
+        </div>
+        <div className="claude-settings-body">
+          <label className="claude-settings-label">
+            Model
+            <input
+              className="claude-settings-input"
+              value={draft.model}
+              onChange={(event) => updateDraft('model', event.target.value)}
+              placeholder="claude-sonnet-4-20250514"
+            />
+          </label>
+          <label className="claude-settings-label">
+            Max thinking tokens
+            <input
+              className="claude-settings-input"
+              type="number"
+              min="0"
+              value={draft.maxThinkingTokens}
+              onChange={(event) => updateDraft('maxThinkingTokens', event.target.value)}
+              placeholder="e.g. 5000"
+            />
+          </label>
+          <label className="claude-settings-label">
+            Max turns
+            <input
+              className="claude-settings-input"
+              type="number"
+              min="0"
+              value={draft.maxTurns}
+              onChange={(event) => updateDraft('maxTurns', event.target.value)}
+              placeholder="e.g. 20"
+            />
+          </label>
+          <label className="claude-settings-label">
+            Max budget (USD)
+            <input
+              className="claude-settings-input"
+              type="number"
+              min="0"
+              step="0.01"
+              value={draft.maxBudgetUsd}
+              onChange={(event) => updateDraft('maxBudgetUsd', event.target.value)}
+              placeholder="e.g. 1.50"
+            />
+          </label>
+          <label className="claude-settings-label">
+            Allowed tools (comma-separated)
+            <input
+              className="claude-settings-input"
+              value={draft.allowedTools}
+              onChange={(event) => updateDraft('allowedTools', event.target.value)}
+              placeholder="Bash,Read,Write"
+            />
+          </label>
+          <label className="claude-settings-label">
+            Disallowed tools (comma-separated)
+            <input
+              className="claude-settings-input"
+              value={draft.disallowedTools}
+              onChange={(event) => updateDraft('disallowedTools', event.target.value)}
+              placeholder="WebSearch,WebFetch"
+            />
+          </label>
+        </div>
+        <div className="claude-settings-actions">
+          <button
+            type="button"
+            className="claude-settings-button ghost"
+            onClick={() => setDraft({ ...DEFAULT_CLI_OPTIONS })}
+          >
+            Reset
+          </button>
+          <div className="claude-settings-spacer" />
+          <button type="button" className="claude-settings-button ghost" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="claude-settings-button primary"
+            onClick={() => onSave(draft)}
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const RewindModal = ({
+  isOpen,
+  lastUserMessage,
+  lastUserMessageId,
+  status,
+  result,
+  error,
+  onPreview,
+  onApply,
+  onClose,
+}) => {
+  if (!isOpen) return null
+
+  const messageText = lastUserMessage?.text || ''
+  const previewText = messageText.length > 140 ? `${messageText.slice(0, 140)}…` : messageText
+  const fileDiffs = result?.file_diffs || result?.fileDiffs || []
+  const canSubmit = Boolean(lastUserMessageId) && status === 'idle'
+
+  return (
+    <div className="claude-settings-overlay" onClick={onClose}>
+      <div
+        className="claude-settings-modal claude-rewind-modal"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+      >
+        <div className="claude-settings-header">
+          <h3>Rewind files</h3>
+          <button type="button" className="claude-settings-close" onClick={onClose}>
+            ×
+          </button>
+        </div>
+        <div className="claude-settings-body">
+          <div className="claude-rewind-summary">
+            <div className="claude-rewind-label">Last user message</div>
+            <div className="claude-rewind-text">
+              {previewText || 'No recent message'}
+            </div>
+            {lastUserMessageId && (
+              <div className="claude-rewind-id">Message ID: {lastUserMessageId}</div>
+            )}
+          </div>
+          {!lastUserMessageId && (
+            <div className="claude-rewind-status">Send a message to enable rewind.</div>
+          )}
+          {status !== 'idle' && (
+            <div className="claude-rewind-status">
+              Waiting for Claude CLI… ({status === 'preview' ? 'preview' : 'apply'})
+            </div>
+          )}
+          {error && <div className="claude-rewind-error">{error}</div>}
+          {fileDiffs.length > 0 && (
+            <div className="claude-rewind-diffs">
+              {fileDiffs.map((diff, index) => (
+                <div key={`${diff.file_path || diff.filePath || 'file'}-${index}`}>
+                  <div className="claude-rewind-file">
+                    {diff.file_path || diff.filePath || 'file'}
+                  </div>
+                  <pre className="claude-rewind-diff">{diff.diff || diff.patch || ''}</pre>
+                </div>
+              ))}
+            </div>
+          )}
+          {result && fileDiffs.length === 0 && (
+            <pre className="claude-rewind-diff">{JSON.stringify(result, null, 2)}</pre>
+          )}
+        </div>
+        <div className="claude-settings-actions">
+          <button
+            type="button"
+            className="claude-settings-button ghost"
+            onClick={onPreview}
+            disabled={!canSubmit}
+          >
+            Preview changes
+          </button>
+          <div className="claude-settings-spacer" />
+          <button type="button" className="claude-settings-button ghost" onClick={onClose}>
+            Close
+          </button>
+          <button
+            type="button"
+            className="claude-settings-button primary"
+            onClick={onApply}
+            disabled={!canSubmit}
+          >
+            Rewind files
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default function ClaudeStreamChat({
+  initialSessionId = null,
+  provider = 'claude',
+  resume = false,
+  onSessionStarted,
+  showSessionPicker = true,
+}) {
   const [attachments, setAttachments] = useState([])
   const [contextFiles, setContextFiles] = useState([])
   const [sessions, setSessions] = useState([])
   const [currentSessionId, setCurrentSessionId] = useState(initialSessionId)
   const [showSessionDropdown, setShowSessionDropdown] = useState(false)
   const [mode, setMode] = useState('ask')
+  const [cliOptions, setCliOptions] = useState(() => {
+    try {
+      const raw = localStorage.getItem(CLI_OPTIONS_KEY)
+      if (raw) {
+        return { ...DEFAULT_CLI_OPTIONS, ...JSON.parse(raw) }
+      }
+    } catch {
+      // Ignore storage errors
+    }
+    return { ...DEFAULT_CLI_OPTIONS }
+  })
+  const [fileAttachments, setFileAttachments] = useState([])
+  const [showSettings, setShowSettings] = useState(false)
   const [approvalRequest, setApprovalRequest] = useState(null)
   const [imageCache, setImageCache] = useState({})
   const [lastUserMessage, setLastUserMessage] = useState(null)
+  const [lastUserMessageId, setLastUserMessageId] = useState(null)
+  const [slashCommands, setSlashCommands] = useState(DEFAULT_SLASH_COMMANDS)
+  const [showRewindModal, setShowRewindModal] = useState(false)
+  const [rewindStatus, setRewindStatus] = useState('idle')
+  const [rewindResult, setRewindResult] = useState(null)
+  const [rewindError, setRewindError] = useState('')
+  const [errorLog, setErrorLog] = useState([])
+  const [activeError, setActiveError] = useState(null)
+  const [showErrorLog, setShowErrorLog] = useState(false)
   const retryMessageRef = useRef(null)
+  const pendingRewindIdRef = useRef(null)
 
   // Update session ID when initialSessionId prop changes
   useEffect(() => {
@@ -1382,6 +2347,14 @@ export default function ClaudeStreamChat({ initialSessionId = null, provider = '
       setCurrentSessionId(initialSessionId)
     }
   }, [initialSessionId])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(CLI_OPTIONS_KEY, JSON.stringify(normalizeStoredOptions(cliOptions)))
+    } catch {
+      // Ignore storage errors
+    }
+  }, [cliOptions])
 
   // Fetch sessions on mount and when dropdown opens
   useEffect(() => {
@@ -1394,7 +2367,33 @@ export default function ClaudeStreamChat({ initialSessionId = null, provider = '
   // The hook-based approach can be re-enabled by uncommenting and configuring .claude/settings.json hooks
 
   const clearContextFiles = useCallback(() => setContextFiles([]), [])
+  const clearFileAttachments = useCallback(() => setFileAttachments([]), [])
+  const logError = useCallback((payload, options = {}) => {
+    const entry = {
+      id: payload?.id || `error-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      title: payload?.title || 'Something went wrong',
+      detail: payload?.detail || '',
+      suggestions: Array.isArray(payload?.suggestions)
+        ? payload.suggestions
+        : (payload?.suggestion ? [payload.suggestion] : []),
+      source: payload?.source || 'ui',
+      timestamp: payload?.timestamp || new Date().toISOString(),
+      canRetry: Boolean(payload?.canRetry),
+      canRestart: Boolean(payload?.canRestart),
+    }
+    setErrorLog((prev) => [entry, ...prev].slice(0, 50))
+    if (options.showBanner !== false) {
+      setActiveError(entry)
+    }
+  }, [])
+  const dismissError = useCallback(() => setActiveError(null), [])
+  const clearErrorLog = useCallback(() => {
+    setErrorLog([])
+    setActiveError(null)
+  }, [])
   const sendApprovalResponseRef = useRef(null)
+  const sendQuestionResponseRef = useRef(null)
+  const sendControlMessageRef = useRef(null)
   const handleStreamingChange = useCallback((event) => {
     // Handle boolean (start/stop streaming)
     if (typeof event === 'boolean') {
@@ -1402,6 +2401,21 @@ export default function ClaudeStreamChat({ initialSessionId = null, provider = '
         // Clear any pending approval when stream ends
         setApprovalRequest(null)
       }
+      return
+    }
+
+    if (event?.type === 'user_question') {
+      const payload = event.payload || {}
+      const questions = payload.questions || payload.request?.questions || []
+      setApprovalRequest({
+        id: payload.request_id || payload.id || `question-${Date.now()}`,
+        tool_name: 'AskUserQuestion',
+        tool_input: {
+          questions,
+          answers: {},
+        },
+        source: 'user_question',
+      })
       return
     }
 
@@ -1478,27 +2492,137 @@ export default function ClaudeStreamChat({ initialSessionId = null, provider = '
     }
   }, [])
 
+  const handleControlMessage = useCallback((payload) => {
+    const subtype = payload?.subtype
+    const pendingRewindId = pendingRewindIdRef.current
+    const responsePayload = payload?.response?.subtype ? payload.response : payload
+    const isRewindResponse = (
+      subtype === 'rewind_files' ||
+      payload?.response?.subtype === 'rewind_files' ||
+      (pendingRewindId && payload?.request_id === pendingRewindId)
+    )
+
+    if (isRewindResponse) {
+      setRewindResult(responsePayload)
+      setRewindStatus('idle')
+      setRewindError('')
+      pendingRewindIdRef.current = null
+      setShowRewindModal(true)
+      return
+    }
+
+    if (subtype === 'error' && pendingRewindId && payload?.request_id === pendingRewindId) {
+      const errorMessage = payload?.error?.message || payload?.message || 'Rewind failed'
+      setRewindError(String(errorMessage))
+      setRewindStatus('idle')
+      pendingRewindIdRef.current = null
+      return
+    }
+    if (subtype === 'error') {
+      logError({
+        title: 'Claude control error',
+        detail: payload?.error?.message || payload?.message || 'An unknown error occurred.',
+        suggestions: [
+          'Review the CLI output for details.',
+          'Retry the action after reconnecting.',
+        ],
+        source: 'control',
+        canRetry: true,
+        canRestart: true,
+      })
+      return
+    }
+
+    if (subtype === 'set_permission_mode') {
+      const nextMode = mapControlToMode(payload.mode)
+      setMode(nextMode)
+      return
+    }
+    if (subtype === 'set_model') {
+      const nextModel = payload.model
+      if (nextModel) {
+        setCliOptions((prev) => ({ ...prev, model: String(nextModel) }))
+      }
+      return
+    }
+    if (subtype === 'set_max_thinking_tokens') {
+      if (payload.max_thinking_tokens !== undefined && payload.max_thinking_tokens !== null) {
+        setCliOptions((prev) => ({
+          ...prev,
+          maxThinkingTokens: String(payload.max_thinking_tokens),
+        }))
+      }
+    }
+  }, [])
+
   const handleLastMessageChange = useCallback((msg) => {
     setLastUserMessage(msg)
     retryMessageRef.current = msg
   }, [])
 
-  const { adapter, sessionName, isConnected, switchSession, sendApprovalResponse, sendMessage, restartSession } = useClaudeStreamRuntime(
+  const handleUserMessageId = useCallback((messageId) => {
+    setLastUserMessageId(messageId)
+  }, [])
+
+  const handleSlashCommands = useCallback((commands) => {
+    setSlashCommands(normalizeSlashCommands(commands))
+  }, [])
+
+  const {
+    adapter,
+    sessionName,
+    isConnected,
+    switchSession,
+    sendApprovalResponse,
+    sendQuestionResponse,
+    sendMessage,
+    restartSession,
+    sendControlMessage,
+  } = useClaudeStreamRuntime(
     currentSessionId,
     setCurrentSessionId,
     mode,
+    cliOptions,
+    resume,
     contextFiles,
     clearContextFiles,
+    fileAttachments,
+    clearFileAttachments,
     handleStreamingChange,
+    handleControlMessage,
+    logError,
+    handleSlashCommands,
+    handleUserMessageId,
     handleLastMessageChange,
-    imageCache
+    imageCache,
   )
   const runtime = useLocalRuntime(adapter)
+  const streamStartedRef = useRef(false)
+
+  useEffect(() => {
+    streamStartedRef.current = false
+  }, [currentSessionId])
+
+  useEffect(() => {
+    if (!isConnected || streamStartedRef.current) return
+    streamStartedRef.current = true
+    onSessionStarted?.(currentSessionId)
+  }, [isConnected, currentSessionId, onSessionStarted])
 
   // Store sendApprovalResponse in ref for use in callback
   useEffect(() => {
     sendApprovalResponseRef.current = sendApprovalResponse
   }, [sendApprovalResponse])
+  useEffect(() => {
+    sendQuestionResponseRef.current = sendQuestionResponse
+  }, [sendQuestionResponse])
+  useEffect(() => {
+    sendControlMessageRef.current = sendControlMessage
+  }, [sendControlMessage])
+
+  const applyModeChange = useCallback((nextMode) => {
+    setMode(nextMode)
+  }, [])
 
   const handleApprovalDecision = useCallback(async (option) => {
     if (!option || !approvalRequest?.id) {
@@ -1508,6 +2632,17 @@ export default function ClaudeStreamChat({ initialSessionId = null, provider = '
 
     const decision = option.decision || (option.label?.toLowerCase().includes('deny') ? 'deny' : 'allow')
     if (decision === 'dismiss') {
+      setApprovalRequest(null)
+      return
+    }
+
+    if (approvalRequest.source === 'user_question' && sendQuestionResponseRef.current) {
+      const input = option.updatedInput || approvalRequest.tool_input || {}
+      const questions = input.questions || approvalRequest.tool_input?.questions || []
+      const answers = decision === 'deny'
+        ? {}
+        : buildQuestionAnswers(questions, input.answers)
+      sendQuestionResponseRef.current(approvalRequest.id, answers)
       setApprovalRequest(null)
       return
     }
@@ -1536,30 +2671,194 @@ export default function ClaudeStreamChat({ initialSessionId = null, provider = '
     }
 
     if (option.nextMode && option.nextMode !== mode) {
-      setMode(option.nextMode)
+      applyModeChange(option.nextMode)
     }
     setApprovalRequest(null)
-  }, [approvalRequest, mode])
+  }, [approvalRequest, mode, applyModeChange])
+
+  const handleSaveSettings = useCallback((nextOptions, onComplete) => {
+    const merged = { ...DEFAULT_CLI_OPTIONS, ...nextOptions }
+    const previous = normalizeStoredOptions(cliOptions)
+    const next = normalizeStoredOptions(merged)
+    const requiresRestart = (
+      previous.allowedTools !== next.allowedTools ||
+      previous.disallowedTools !== next.disallowedTools ||
+      previous.maxTurns !== next.maxTurns ||
+      previous.maxBudgetUsd !== next.maxBudgetUsd
+    )
+    const modelChanged = previous.model !== next.model
+    const thinkingChanged = previous.maxThinkingTokens !== next.maxThinkingTokens
+
+    setCliOptions(merged)
+    setShowSettings(false)
+
+    if (modelChanged && next.model) {
+      sendControlMessageRef.current?.('set_model', { model: next.model })
+    }
+    if (thinkingChanged && next.maxThinkingTokens) {
+      const parsed = Number(next.maxThinkingTokens)
+      if (!Number.isNaN(parsed)) {
+        sendControlMessageRef.current?.('set_max_thinking_tokens', {
+          max_thinking_tokens: parsed,
+        })
+      }
+    }
+
+    if (requiresRestart) {
+      requestAnimationFrame(() => {
+        restartSession()
+        onComplete?.()
+      })
+      return
+    }
+    onComplete?.()
+  }, [cliOptions, restartSession])
+
+  const handleRestartSession = useCallback(() => {
+    restartSession()
+  }, [restartSession])
 
   const handleNewSession = useCallback(async () => {
     const newId = await createNewSession()
     if (newId) {
-      switchSession(newId)
+      switchSession(newId, false)
       // Refresh sessions list
       fetchSessions().then(setSessions)
+    } else {
+      logError({
+        title: 'Could not start a new session',
+        detail: 'The backend did not return a new session id.',
+        suggestions: [
+          'Make sure the backend is running.',
+          'Retry creating a new session.',
+        ],
+        source: 'session',
+        canRetry: true,
+        canRestart: true,
+      })
     }
-  }, [switchSession])
+  }, [switchSession, logError])
 
   const handleSelectSession = useCallback((sessionId) => {
     switchSession(sessionId)
   }, [switchSession])
+
+  const handleAttachFiles = useCallback((files) => {
+    const list = Array.from(files || [])
+    if (list.length === 0) return
+
+    list.forEach((file) => {
+      const tempId = `${Date.now()}-${file.name}-${Math.random().toString(36).slice(2, 6)}`
+      setFileAttachments((prev) => [
+        ...prev,
+        {
+          id: tempId,
+          name: file.name,
+          size: file.size,
+          status: 'uploading',
+        },
+      ])
+      uploadAttachment(file)
+        .then((data) => {
+          setFileAttachments((prev) => prev.map((item) => (
+            item.id === tempId
+              ? {
+                ...item,
+                status: 'ready',
+                fileId: data.file_id,
+                relativePath: data.relative_path,
+                name: data.name || file.name,
+                size: data.size || file.size,
+              }
+              : item
+          )))
+        })
+        .catch((error) => {
+          setFileAttachments((prev) => prev.map((item) => (
+            item.id === tempId
+              ? {
+                ...item,
+                status: 'error',
+                error: error?.message || 'Upload failed',
+              }
+              : item
+          )))
+          logError({
+            title: `Upload failed for ${file.name}`,
+            detail: error?.message || 'The file could not be uploaded.',
+            suggestions: [
+              'Check the file size and permissions.',
+              'Try uploading the file again.',
+            ],
+            source: 'upload',
+            canRetry: false,
+            canRestart: false,
+          })
+        })
+    })
+  }, [logError])
   const handleRegisterImages = useCallback((image) => {
     if (!image?.id) return
     setImageCache((prev) => ({ ...prev, [image.id]: image }))
   }, [])
 
+  const isUploadingAttachments = fileAttachments.some((attachment) => attachment.status === 'uploading')
+
+  const openRewindModal = useCallback(() => {
+    setShowRewindModal(true)
+  }, [])
+  const closeRewindModal = useCallback(() => {
+    setShowRewindModal(false)
+    setRewindStatus('idle')
+    setRewindResult(null)
+    setRewindError('')
+    pendingRewindIdRef.current = null
+  }, [])
+  const requestRewind = useCallback((dryRun) => {
+    if (!lastUserMessageId) {
+      setRewindError('No user message available to rewind.')
+      logError({
+        title: 'Rewind unavailable',
+        detail: 'No user message was found to rewind.',
+        suggestions: ['Send a message first, then try again.'],
+        source: 'rewind',
+        canRetry: false,
+        canRestart: false,
+      })
+      return
+    }
+    if (!sendControlMessageRef.current) {
+      setRewindError('Rewind is unavailable while disconnected.')
+      logError({
+        title: 'Rewind unavailable',
+        detail: 'The session is disconnected.',
+        suggestions: ['Reconnect and retry rewind.'],
+        source: 'rewind',
+        canRetry: true,
+        canRestart: true,
+      })
+      return
+    }
+    const requestId = `rewind-${Date.now()}`
+    pendingRewindIdRef.current = requestId
+    setRewindStatus(dryRun ? 'preview' : 'apply')
+    setRewindResult(null)
+    setRewindError('')
+    sendControlMessageRef.current('rewind_files', {
+      request_id: requestId,
+      user_message_id: lastUserMessageId,
+      dry_run: Boolean(dryRun),
+    })
+  }, [lastUserMessageId, logError])
+
+  const handleRetryConnection = useCallback(() => {
+    if (!currentSessionId) return
+    switchSession(currentSessionId, true)
+    setActiveError(null)
+  }, [currentSessionId, switchSession])
+
   return (
-    <div style={{ width: '100vw', height: '100vh', overflow: 'hidden' }}>
+    <div style={{ width: '100%', height: '100%', overflow: 'hidden' }}>
       <style>{chatThemeVars}</style>
       <style>{assistantMessageStyles}</style>
       <AssistantRuntimeProvider runtime={runtime}>
@@ -1568,6 +2867,10 @@ export default function ClaudeStreamChat({ initialSessionId = null, provider = '
           isConnected={isConnected}
           attachments={attachments}
           setAttachments={setAttachments}
+          fileAttachments={fileAttachments}
+          setFileAttachments={setFileAttachments}
+          onAttachFiles={handleAttachFiles}
+          isUploadingAttachments={isUploadingAttachments}
           contextFiles={contextFiles}
           setContextFiles={setContextFiles}
           sessions={sessions}
@@ -1575,12 +2878,45 @@ export default function ClaudeStreamChat({ initialSessionId = null, provider = '
           setShowSessionDropdown={setShowSessionDropdown}
           onSelectSession={handleSelectSession}
           onNewSession={handleNewSession}
+          showSessionPicker={showSessionPicker}
           mode={mode}
-          setMode={setMode}
+          onModeChange={applyModeChange}
           approvalRequest={approvalRequest}
           onApprovalDecision={handleApprovalDecision}
+          errorBanner={activeError}
+          onDismissError={dismissError}
+          onViewErrorLog={() => setShowErrorLog(true)}
+          onRetryConnection={handleRetryConnection}
           imageCache={imageCache}
           onRegisterImages={handleRegisterImages}
+          onOpenSettings={() => setShowSettings(true)}
+          onRestartSession={handleRestartSession}
+          onOpenRewind={openRewindModal}
+          slashCommands={slashCommands}
+          onError={logError}
+        />
+        <SessionSettingsModal
+          isOpen={showSettings}
+          options={cliOptions}
+          onClose={() => setShowSettings(false)}
+          onSave={handleSaveSettings}
+        />
+        <RewindModal
+          isOpen={showRewindModal}
+          lastUserMessage={lastUserMessage}
+          lastUserMessageId={lastUserMessageId}
+          status={rewindStatus}
+          result={rewindResult}
+          error={rewindError}
+          onPreview={() => requestRewind(true)}
+          onApply={() => requestRewind(false)}
+          onClose={closeRewindModal}
+        />
+        <ErrorLogModal
+          isOpen={showErrorLog}
+          errors={errorLog}
+          onClear={clearErrorLog}
+          onClose={() => setShowErrorLog(false)}
         />
       </AssistantRuntimeProvider>
     </div>

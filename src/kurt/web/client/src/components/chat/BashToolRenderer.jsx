@@ -31,7 +31,9 @@ const BashToolRenderer = ({
   }
 
   // Determine status based on exit code if not provided
-  const effectiveStatus = error ? 'error' : exitCode !== 0 ? 'error' : status
+  const hasExitCode = typeof exitCode === 'number'
+  const effectiveStatus = error ? 'error' : hasExitCode && exitCode !== 0 ? 'error' : status
+  const isStreaming = ['pending', 'running', 'streaming'].includes(effectiveStatus)
 
   return (
     <ToolUseBlock
@@ -96,12 +98,14 @@ const BashToolRenderer = ({
             }
             return formatted.join('\n')
           })()}
+          {isStreaming && <span className="claude-streaming-cursor" aria-hidden="true">▌</span>}
         </pre>
       )}
 
       {output && !error && !compact && (
         <ToolOutput
           className="claude-tool-output"
+          streaming={isStreaming}
           style={{
             maxHeight: '260px',
           }}
@@ -129,6 +133,19 @@ const BashToolRenderer = ({
           }}
         >
           Exit code: {exitCode}
+        </div>
+      )}
+
+      {/* Pending state */}
+      {status === 'pending' && !output && (
+        <div
+          style={{
+            color: 'var(--chat-text-muted, #858585)',
+            fontSize: '13px',
+            fontStyle: 'italic',
+          }}
+        >
+          Waiting for permission...
         </div>
       )}
 

@@ -17,6 +17,7 @@ import json
 import os
 import shutil
 from collections import deque
+from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import WebSocket, WebSocketDisconnect
@@ -26,6 +27,227 @@ IDLE_TTL_SECONDS = int(os.environ.get("KURT_STREAM_IDLE_TTL", "60"))
 
 _SESSION_REGISTRY: dict[str, "StreamSession"] = {}
 _SESSION_REGISTRY_LOCK = asyncio.Lock()
+
+
+async def _persist_permission_suggestions(
+    suggestions: list[dict[str, Any]], project_root: Optional[str] = None
+) -> None:
+    """
+    Persist permission suggestions to settings files.
+
+    The Claude CLI subprocess cannot reliably persist settings when running in
+    stream-json mode, so we must handle it here. This is similar to how the
+    VSCode extension handles it.
+
+    Args:
+        suggestions: List of permission suggestion objects with:
+            - type: "addRules" | "setMode" | "addDirectories"
+            - destination: "userSettings" | "projectSettings" | "localSettings" | "session"
+            - rules/mode/directories: depends on type
+        project_root: Project directory where CLI subprocess is running (if None, uses cwd)
+    """
+    if not suggestions:
+        return
+
+    if project_root:
+        project_root_path = Path(project_root)
+    else:
+        project_root_path = Path.cwd()
+
+    def _normalize_rule(rule_content: Optional[str], tool_name: Optional[str]) -> str:
+        if rule_content is None and tool_name:
+            return str(tool_name).strip()
+        if rule_content is None:
+            return ""
+
+        normalized = str(rule_content).strip()
+        if not normalized:
+            return ""
+
+        if "(" in normalized:
+            return normalized
+
+        tool = None
+        pattern = normalized
+        if ":" in normalized:
+            candidate, rest = normalized.split(":", 1)
+            candidate = candidate.strip()
+            if candidate and candidate.replace("-", "").replace("_", "").isalnum():
+                tool = candidate
+                pattern = rest.strip()
+
+        if not tool and tool_name:
+            tool = str(tool_name).strip()
+
+        if tool:
+            pattern = _normalize_rule_pattern(pattern)
+            return f"{tool}({pattern})" if pattern else tool
+
+        return normalized
+
+    def _normalize_rule_pattern(pattern: str) -> str:
+        normalized = str(pattern or "").strip()
+        if not normalized:
+            return ""
+        if ":" in normalized:
+            return normalized
+        if normalized.endswith("*"):
+            star_index = normalized[:-1].rfind(" ")
+            if star_index != -1:
+                return f"{normalized[:star_index]}:{normalized[star_index + 1:]}"
+            return f"{normalized[:-1]}:*"
+        return normalized
+
+    def _rule_bucket(rule: dict[str, Any]) -> str:
+        mode = (
+            rule.get("mode") or rule.get("ruleMode") or rule.get("behavior") or rule.get("decision")
+        )
+        if not isinstance(mode, str):
+            return "allow"
+        mode = mode.lower()
+        if mode in ("deny", "reject", "block"):
+            return "deny"
+        if mode in ("ask", "prompt", "confirm"):
+            return "ask"
+        return "allow"
+
+    for suggestion in suggestions:
+        if not isinstance(suggestion, dict):
+            continue
+
+        suggestion_type = suggestion.get("type")
+        destination = suggestion.get("destination", "session")
+
+        # Skip session-only suggestions (not persisted to files)
+        if destination == "session":
+            continue
+
+        # Map destination to file path
+        settings_path = None
+        if destination == "userSettings":
+            settings_path = Path.home() / ".claude" / "settings.json"
+        elif destination == "projectSettings":
+            settings_path = project_root_path / ".claude" / "settings.json"
+        elif destination == "localSettings":
+            settings_path = project_root_path / ".claude" / "settings.local.json"
+        else:
+            print(f"[Stream] Unknown destination: {destination}")
+            continue
+
+        print(f"[Stream] Persisting {suggestion_type} to {settings_path}")
+
+        # Ensure directory exists
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Load existing settings
+        if settings_path.exists():
+            try:
+                with open(settings_path) as f:
+                    settings = json.load(f)
+            except json.JSONDecodeError:
+                settings = {}
+        else:
+            settings = {}
+
+        # Apply the suggestion
+        if suggestion_type == "addRules":
+            rules = suggestion.get("rules", [])
+            if not isinstance(rules, list):
+                continue
+
+            if "permissions" not in settings:
+                settings["permissions"] = {}
+            for key in ("allow", "deny", "ask"):
+                if key not in settings["permissions"]:
+                    settings["permissions"][key] = []
+
+            # Add each rule
+            for rule in rules:
+                if isinstance(rule, str):
+                    bucket = "allow"
+                    rule_content = _normalize_rule(rule, None)
+                elif isinstance(rule, dict):
+                    bucket = _rule_bucket(rule)
+                    rule_content = _normalize_rule(rule.get("ruleContent"), rule.get("toolName"))
+                else:
+                    continue
+
+                if not rule_content:
+                    continue
+
+                target_list = settings["permissions"][bucket]
+                if rule_content not in target_list:
+                    target_list.append(rule_content)
+                    print(f"[Stream] Added {bucket} rule: {rule_content}")
+
+        elif suggestion_type == "setMode":
+            # Set defaultMode in settings
+            mode = suggestion.get("mode")
+            if mode:
+                if "permissions" not in settings:
+                    settings["permissions"] = {}
+                settings["permissions"]["defaultMode"] = mode
+                print(f"[Stream] Set permissions.defaultMode: {mode}")
+
+        elif suggestion_type == "addDirectories":
+            directories = suggestion.get("directories", [])
+            if not isinstance(directories, list):
+                continue
+
+            # Add directories to permissions.additionalDirectories
+            if "permissions" not in settings:
+                settings["permissions"] = {}
+            if "additionalDirectories" not in settings["permissions"]:
+                if isinstance(settings.get("allowedDirectories"), list):
+                    settings["permissions"]["additionalDirectories"] = settings.pop(
+                        "allowedDirectories"
+                    )
+                else:
+                    settings["permissions"]["additionalDirectories"] = []
+
+            for directory in directories:
+                if directory and directory not in settings["permissions"]["additionalDirectories"]:
+                    settings["permissions"]["additionalDirectories"].append(directory)
+                    print(f"[Stream] Added directory: {directory}")
+
+        # Write back to file
+        try:
+            with open(settings_path, "w") as f:
+                json.dump(settings, f, indent=2)
+                f.write("\n")
+            print(f"[Stream] Saved settings to {settings_path}")
+        except Exception as e:
+            print(f"[Stream] Error saving settings: {e}")
+
+
+def _split_permission_suggestions(
+    suggestions: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    session_suggestions: list[dict[str, Any]] = []
+    persist_suggestions: list[dict[str, Any]] = []
+    for suggestion in suggestions or []:
+        if not isinstance(suggestion, dict):
+            continue
+        destination = suggestion.get("destination", "session")
+        if destination == "session":
+            session_suggestions.append(suggestion)
+        else:
+            persist_suggestions.append(suggestion)
+    return session_suggestions, persist_suggestions
+
+
+def _map_permission_mode(mode: Optional[str]) -> Optional[str]:
+    if not mode:
+        return None
+    mapping = {
+        "default": "ask",
+        "acceptEdits": "act",
+        "plan": "plan",
+        "bypassPermissions": "act",
+        "dontAsk": "act",
+        "delegate": "ask",
+    }
+    return mapping.get(mode, None)
 
 
 class StreamSession:
@@ -73,7 +295,8 @@ class StreamSession:
             {
                 "NO_COLOR": "1",
                 "FORCE_COLOR": "0",
-                "CLAUDE_CODE_REMOTE": "true",
+                # NOTE: CLAUDE_CODE_REMOTE might disable settings writes
+                # "CLAUDE_CODE_REMOTE": "true",
             }
         )
         env.update(self.extra_env)
@@ -298,6 +521,16 @@ class StreamSession:
                         elif subtype == "error_during_execution" or "error" in subtype.lower():
                             errors = payload.get("errors", [])
                             print(f"[Stream] ERROR: {errors}")
+                            # Check for "No conversation found" error and send special message
+                            error_str = " ".join(str(e) for e in errors)
+                            if "No conversation found with session ID" in error_str:
+                                await self.broadcast(
+                                    {
+                                        "type": "system",
+                                        "subtype": "session_not_found",
+                                        "message": "Session not found. Starting a new conversation.",
+                                    }
+                                )
                         elif msg_type == "user":
                             # Log user messages (includes slash command outputs)
                             msg_content = payload.get("message", {}).get("content", "")
@@ -420,9 +653,13 @@ def build_stream_args(
     resume: bool,
     cwd: Optional[str] = None,
     mode: Optional[str] = None,
+    model: Optional[str] = None,
     allowed_tools: Optional[list[str]] = None,
     disallowed_tools: Optional[list[str]] = None,
     max_thinking_tokens: Optional[int] = None,
+    max_turns: Optional[int] = None,
+    max_budget_usd: Optional[float] = None,
+    file_specs: Optional[list[str]] = None,
     include_partial: bool = True,
 ) -> list[str]:
     """Build Claude CLI arguments for stream-json mode.
@@ -434,12 +671,16 @@ def build_stream_args(
         base_args: Base CLI arguments
         session_id: Session ID for conversation continuity
         resume: If True, use --resume instead of --session-id
-        cwd: Working directory (used for settings file)
+        cwd: Working directory (kept for API compatibility)
         mode: UI mode - "ask", "act", or "plan"
               Maps to --permission-mode: ask=default, act=acceptEdits, plan=plan
+        model: Claude model name (e.g., "claude-sonnet-4-20250514")
         allowed_tools: List of allowed tools (e.g., ["Bash", "Read", "Write"])
         disallowed_tools: List of disallowed tools (e.g., ["WebSearch"])
         max_thinking_tokens: Maximum thinking tokens budget
+        max_turns: Maximum number of conversation turns
+        max_budget_usd: Maximum spend in USD
+        file_specs: File attachment specs in the form "file_id:relative_path"
         include_partial: Include partial messages for streaming (default True)
     """
     args = list(base_args)
@@ -469,6 +710,15 @@ def build_stream_args(
         if permission_mode:
             args.extend(["--permission-mode", permission_mode])
 
+    # Model selection
+    if model:
+        if "--model" in args:
+            idx = args.index("--model")
+            if idx + 1 < len(args):
+                args[idx + 1] = model
+        else:
+            args.extend(["--model", model])
+
     # Enable interactive permission prompts via stdin/stdout (like SDK does)
     # This flag makes CLI send control_request messages for permission decisions
     # instead of auto-denying or using terminal prompts
@@ -476,14 +726,57 @@ def build_stream_args(
         args.extend(["--permission-prompt-tool", "stdio"])
 
     # Tool restrictions (from VSCode extension reverse engineering)
-    if allowed_tools and "--allowedTools" not in args:
-        args.extend(["--allowedTools", ",".join(allowed_tools)])
-    if disallowed_tools and "--disallowedTools" not in args:
-        args.extend(["--disallowedTools", ",".join(disallowed_tools)])
+    if allowed_tools:
+        if "--allowedTools" in args:
+            idx = args.index("--allowedTools")
+            if idx + 1 < len(args):
+                args[idx + 1] = ",".join(allowed_tools)
+        else:
+            args.extend(["--allowedTools", ",".join(allowed_tools)])
+    if disallowed_tools:
+        if "--disallowedTools" in args:
+            idx = args.index("--disallowedTools")
+            if idx + 1 < len(args):
+                args[idx + 1] = ",".join(disallowed_tools)
+        else:
+            args.extend(["--disallowedTools", ",".join(disallowed_tools)])
 
     # Thinking tokens budget
-    if max_thinking_tokens and "--max-thinking-tokens" not in args:
-        args.extend(["--max-thinking-tokens", str(max_thinking_tokens)])
+    if max_thinking_tokens:
+        if "--max-thinking-tokens" in args:
+            idx = args.index("--max-thinking-tokens")
+            if idx + 1 < len(args):
+                args[idx + 1] = str(max_thinking_tokens)
+        else:
+            args.extend(["--max-thinking-tokens", str(max_thinking_tokens)])
+
+    # Max turns budget
+    if max_turns:
+        if "--max-turns" in args:
+            idx = args.index("--max-turns")
+            if idx + 1 < len(args):
+                args[idx + 1] = str(max_turns)
+        else:
+            args.extend(["--max-turns", str(max_turns)])
+
+    # Max budget in USD
+    if max_budget_usd:
+        if "--max-budget-usd" in args:
+            idx = args.index("--max-budget-usd")
+            if idx + 1 < len(args):
+                args[idx + 1] = str(max_budget_usd)
+        else:
+            args.extend(["--max-budget-usd", str(max_budget_usd)])
+
+    # File attachments (match VSCode extension CLI flags)
+    if file_specs:
+        existing_files = set()
+        for idx, arg in enumerate(args):
+            if arg == "--file" and idx + 1 < len(args):
+                existing_files.add(args[idx + 1])
+        for spec in file_specs:
+            if spec and spec not in existing_files:
+                args.extend(["--file", spec])
 
     # Match VSCode extension: load user/project/local settings sources
     if "--setting-sources" not in args:
@@ -538,10 +831,73 @@ async def handle_stream_websocket(
     force_new = params.get("force_new", "0") in ("1", "true")
     mode = params.get("mode", "ask")  # Default to "ask" mode
 
+    def _parse_csv(param_value: Optional[str]) -> Optional[list[str]]:
+        if not param_value:
+            return None
+        items = [item.strip() for item in param_value.split(",")]
+        cleaned = [item for item in items if item]
+        return cleaned or None
+
+    def _parse_int(value: Optional[str]) -> Optional[int]:
+        if value is None or value == "":
+            return None
+        try:
+            return int(value)
+        except ValueError:
+            return None
+
+    def _parse_float(value: Optional[str]) -> Optional[float]:
+        if value is None or value == "":
+            return None
+        try:
+            return float(value)
+        except ValueError:
+            return None
+
+    def _parse_file_specs(values: list[str]) -> Optional[list[str]]:
+        if not values:
+            return None
+        cleaned = [value.strip() for value in values if value and value.strip()]
+        if not cleaned:
+            return None
+        # Preserve order while removing duplicates
+        seen = set()
+        ordered: list[str] = []
+        for value in cleaned:
+            if value in seen:
+                continue
+            seen.add(value)
+            ordered.append(value)
+        return ordered
+
+    model = params.get("model") or None
+    allowed_tools = _parse_csv(params.get("allowed_tools") or params.get("allowedTools"))
+    disallowed_tools = _parse_csv(params.get("disallowed_tools") or params.get("disallowedTools"))
+    max_thinking_tokens = _parse_int(params.get("max_thinking_tokens"))
+    max_turns = _parse_int(params.get("max_turns"))
+    max_budget_usd = _parse_float(params.get("max_budget_usd"))
+    test_events = params.get("test_events", "0") in ("1", "true")
+    file_specs = _parse_file_specs(params.getlist("file"))
+    if file_specs is None:
+        raw_files = params.get("files")
+        if raw_files:
+            file_specs = _parse_file_specs(raw_files.split(","))
+
     extra_env = {
         "KURT_SESSION_PROVIDER": "claude-stream",
         "KURT_SESSION_NAME": session_id,
     }
+
+    def _extract_text_from_content(message_content: Any) -> str:
+        if isinstance(message_content, str):
+            return message_content
+        if isinstance(message_content, dict):
+            message_content = message_content.get("content")
+        if isinstance(message_content, list):
+            for part in message_content:
+                if isinstance(part, dict) and part.get("type") == "text":
+                    return part.get("text", "")
+        return ""
 
     stale: Optional[StreamSession] = None
     created = False
@@ -559,6 +915,16 @@ async def handle_stream_websocket(
         if existing:
             should_resume = True
 
+        requested_options = {
+            "model": model,
+            "allowed_tools": allowed_tools,
+            "disallowed_tools": disallowed_tools,
+            "max_thinking_tokens": max_thinking_tokens,
+            "max_turns": max_turns,
+            "max_budget_usd": max_budget_usd,
+            "file_specs": file_specs,
+        }
+
         if force_new and existing:
             stale = existing
             _SESSION_REGISTRY.pop(session_id, None)
@@ -567,13 +933,12 @@ async def handle_stream_websocket(
             should_resume = True
             print(f"[Stream] Force new session requested, will resume: {session_id}")
 
-        # Check if mode changed - need to restart session with new mode
+        # Check if mode or startup options changed - need to restart session
         if existing and existing.is_alive():
             existing_mode = getattr(existing, "_mode", None)
-            if existing_mode != mode:
-                print(
-                    f"[Stream] Mode changed from {existing_mode} to {mode}, will resume with new mode"
-                )
+            existing_options = getattr(existing, "_options", None)
+            if existing_mode != mode or existing_options != requested_options:
+                print("[Stream] Session options changed; will resume with new settings")
                 stale = existing
                 _SESSION_REGISTRY.pop(session_id, None)
                 existing = None
@@ -590,16 +955,27 @@ async def handle_stream_websocket(
                 should_resume = True
 
             # Build args with the correct resume flag
-            # - For brand new sessions: should_resume=False -> uses --session-id
-            # - For reconnecting/mode change: should_resume=True -> uses --resume
+            # - Frontend tracks whether session is new or should be resumed
+            # - Backend registry tracks whether we've seen this session before (for mode changes)
+            # - Use resume if EITHER frontend says so OR session was in registry
+            use_resume = resume or should_resume
             args = build_stream_args(
                 base_args or [],
                 session_id,
-                resume=resume or should_resume,  # Use --resume only if CLI knows about session
+                resume=use_resume,
                 cwd=cwd,
                 mode=mode,
+                model=model,
+                allowed_tools=allowed_tools,
+                disallowed_tools=disallowed_tools,
+                max_thinking_tokens=max_thinking_tokens,
+                max_turns=max_turns,
+                max_budget_usd=max_budget_usd,
+                file_specs=file_specs,
             )
-            print(f"[Stream] Building new session: resume={resume or should_resume}, mode={mode}")
+            print(
+                f"[Stream] Building new session: resume={use_resume} (frontend={resume}, registry={should_resume}), mode={mode}"
+            )
 
             session = StreamSession(
                 cmd=cmd,
@@ -609,6 +985,7 @@ async def handle_stream_websocket(
             )
             session.session_id = session_id
             session._mode = mode  # Track mode for future comparisons
+            session._options = requested_options  # Track startup options for reconnects
             _SESSION_REGISTRY[session_id] = session
             created = True
 
@@ -616,11 +993,28 @@ async def handle_stream_websocket(
     if stale:
         await stale.terminate()
 
+    # Add client BEFORE starting read loop so errors can be broadcast
+    await session.add_client(websocket)
+
     # Start new session if created
     if created:
         try:
             await session.spawn()
             await session.start_read_loop()
+            # Give Claude a moment to start and check if it's still alive
+            await asyncio.sleep(0.2)
+            if session.proc and session.proc.returncode is not None:
+                # Process exited - error was already broadcast via stderr
+                await websocket.send_json(
+                    {
+                        "type": "system",
+                        "subtype": "error",
+                        "message": "Claude process exited unexpectedly. Session may be in use.",
+                    }
+                )
+                await websocket.close()
+                await session.terminate()
+                return
         except Exception as e:
             await websocket.send_json(
                 {
@@ -632,9 +1026,6 @@ async def handle_stream_websocket(
             await websocket.close()
             await session.terminate()
             return
-
-    await session.add_client(websocket)
-    # Don't send history - CLI handles it via --resume
 
     # Send connection confirmation
     await websocket.send_json(
@@ -715,6 +1106,114 @@ async def handle_stream_websocket(
                 # {"type": "image", "source": {"type": "base64", "media_type": "...", "data": "..."}}
                 # No transformation needed - pass through as-is
                 if content:
+                    if test_events:
+                        text_content = _extract_text_from_content(content)
+                        triggered = False
+                        if "__emit_permission__" in text_content:
+                            await websocket.send_json(
+                                {
+                                    "type": "control_request",
+                                    "request_id": "perm-1",
+                                    "request": {
+                                        "subtype": "can_use_tool",
+                                        "tool_name": "Write",
+                                        "input": {
+                                            "file_path": "README.md",
+                                            "content": "hello",
+                                        },
+                                        "tool_use_id": "toolu_write_1",
+                                        "permission_suggestions": [
+                                            {
+                                                "type": "setMode",
+                                                "mode": "acceptEdits",
+                                                "destination": "session",
+                                            }
+                                        ],
+                                    },
+                                }
+                            )
+                            triggered = True
+                        if "__emit_question__" in text_content:
+                            await websocket.send_json(
+                                {
+                                    "type": "control",
+                                    "subtype": "user_question_request",
+                                    "request_id": "quest-1",
+                                    "questions": [
+                                        {
+                                            "question": "Pick a color",
+                                            "header": "Color",
+                                            "multiSelect": False,
+                                            "options": [
+                                                {
+                                                    "label": "Red",
+                                                    "description": "Warm",
+                                                },
+                                                {
+                                                    "label": "Blue",
+                                                    "description": "Cool",
+                                                },
+                                            ],
+                                        },
+                                        {
+                                            "question": "Pick extras",
+                                            "header": "Extras",
+                                            "multiSelect": True,
+                                            "options": [
+                                                {
+                                                    "label": "Alpha",
+                                                    "description": "First",
+                                                },
+                                                {
+                                                    "label": "Beta",
+                                                    "description": "Second",
+                                                },
+                                            ],
+                                        },
+                                    ],
+                                }
+                            )
+                            triggered = True
+                        if "__emit_tool__" in text_content:
+                            await websocket.send_json(
+                                {
+                                    "type": "assistant",
+                                    "message": {
+                                        "role": "assistant",
+                                        "id": "msg-1",
+                                        "content": [
+                                            {
+                                                "type": "tool_use",
+                                                "id": "toolu-1",
+                                                "name": "Bash",
+                                                "input": {
+                                                    "command": "ls",
+                                                    "description": "list",
+                                                },
+                                            }
+                                        ],
+                                    },
+                                }
+                            )
+                            await websocket.send_json(
+                                {
+                                    "type": "user",
+                                    "message": {
+                                        "role": "user",
+                                        "content": [
+                                            {
+                                                "type": "tool_result",
+                                                "tool_use_id": "toolu-1",
+                                                "content": "file-a\nfile-b",
+                                            }
+                                        ],
+                                    },
+                                }
+                            )
+                            triggered = True
+                        if triggered:
+                            continue
+
                     # Log image blocks for debugging
                     for block in content:
                         if block.get("type") == "image":
@@ -733,10 +1232,54 @@ async def handle_stream_websocket(
                     await session.write_message(command)
                     print(f"[Stream] COMMAND sent to CLI: {command}")
 
+            elif msg_type == "control":
+                # Forward control messages to Claude CLI (initialize, interrupt, set_*).
+                subtype = payload.get("subtype")
+
+                if subtype == "initialize":
+                    # Frontend capability handshake; avoid sending to CLI to prevent startup errors.
+                    session._capabilities = payload.get("capabilities", {})
+                    await websocket.send_json(
+                        {"type": "system", "subtype": "echo", "payload": payload}
+                    )
+                    continue
+
+                if subtype == "set_permission_mode":
+                    requested_mode = payload.get("mode")
+                    mode_map = {
+                        "default": "ask",
+                        "acceptEdits": "act",
+                        "plan": "plan",
+                        "bypassPermissions": "act",
+                        "dontAsk": "act",
+                        "delegate": "ask",
+                    }
+                    if requested_mode:
+                        session._mode = mode_map.get(requested_mode, session._mode)
+
+                if subtype == "set_model":
+                    model_name = payload.get("model")
+                    if model_name:
+                        options = getattr(session, "_options", None) or {}
+                        options["model"] = model_name
+                        session._options = options
+
+                if subtype == "set_max_thinking_tokens":
+                    max_tokens = payload.get("max_thinking_tokens")
+                    if max_tokens is not None:
+                        options = getattr(session, "_options", None) or {}
+                        options["max_thinking_tokens"] = max_tokens
+                        session._options = options
+
+                await session.write_json(payload)
+
             elif msg_type == "control_response":
                 # Handle control_response from UI (for permission prompts)
                 # UI can send either full CLI format or a simplified payload.
                 if isinstance(payload.get("response"), dict):
+                    await session.write_json(payload)
+                    continue
+                if payload.get("answers") is not None:
                     await session.write_json(payload)
                     continue
 
@@ -746,9 +1289,6 @@ async def handle_stream_websocket(
                 allow = payload.get("allow")
                 tool_input = payload.get("tool_input", {})
                 updated_input = payload.get("updatedInput") or payload.get("updated_input")
-                permission_suggestions = payload.get("permission_suggestions") or payload.get(
-                    "permissionSuggestions"
-                )
                 permission_suggestions = payload.get("permission_suggestions") or payload.get(
                     "permissionSuggestions"
                 )
@@ -768,10 +1308,6 @@ async def handle_stream_websocket(
                 is_deny = behavior_text in ("deny", "reject", "block")
                 updated_value = updated_input if updated_input is not None else tool_input
 
-                print(
-                    f"[Stream] Control response: request_id={request_id} behavior={behavior_value}"
-                )
-
                 if not is_deny:
                     response_payload = {
                         "type": "control_response",
@@ -784,10 +1320,6 @@ async def handle_stream_websocket(
                             },
                         },
                     }
-                    if permission_suggestions:
-                        response_payload["response"]["response"]["permission_suggestions"] = (
-                            permission_suggestions
-                        )
                     if permission_suggestions is not None:
                         response_payload["response"]["response"]["permission_suggestions"] = (
                             permission_suggestions
@@ -804,7 +1336,39 @@ async def handle_stream_websocket(
                             },
                         },
                     }
+
                 await session.write_json(response_payload)
+
+                # Persist permission suggestions to settings files
+                # The CLI subprocess cannot reliably write to settings files, so we must do it here
+                if permission_suggestions and not is_deny:
+                    session_suggestions, persist_suggestions = _split_permission_suggestions(
+                        permission_suggestions
+                    )
+                    if persist_suggestions:
+                        await _persist_permission_suggestions(persist_suggestions, session.cwd)
+                    # Apply session-only mode changes immediately.
+                    for suggestion in session_suggestions:
+                        if suggestion.get("type") != "setMode":
+                            continue
+                        suggested_mode = suggestion.get("mode")
+                        if not suggested_mode:
+                            continue
+                        session._mode = _map_permission_mode(suggested_mode) or session._mode
+                        await session.write_json(
+                            {
+                                "type": "control",
+                                "subtype": "set_permission_mode",
+                                "mode": suggested_mode,
+                            }
+                        )
+                        await session.broadcast(
+                            {
+                                "type": "control",
+                                "subtype": "set_permission_mode",
+                                "mode": suggested_mode,
+                            }
+                        )
 
             elif msg_type == "approval_response":
                 # Legacy approval response handler - convert to control_response format

@@ -45,6 +45,16 @@ const EditToolRenderer = ({
         <DiffView lines={diffLines} />
       ) : oldContent && newContent ? (
         <SimpleDiff oldContent={oldContent} newContent={newContent} />
+      ) : status === 'pending' ? (
+        <div
+          style={{
+            color: 'var(--chat-text-muted, #858585)',
+            fontSize: '13px',
+            fontStyle: 'italic',
+          }}
+        >
+          Waiting for permission...
+        </div>
       ) : status === 'running' ? (
         <div
           style={{
@@ -53,7 +63,12 @@ const EditToolRenderer = ({
             fontStyle: 'italic',
           }}
         >
-          Editing file...
+          Editing file
+          <span className="claude-waiting-dots" aria-hidden="true">
+            <span>.</span>
+            <span>.</span>
+            <span>.</span>
+          </span>
         </div>
       ) : null}
     </ToolUseBlock>

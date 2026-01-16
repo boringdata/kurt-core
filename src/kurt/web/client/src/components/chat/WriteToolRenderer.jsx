@@ -19,6 +19,7 @@ const WriteToolRenderer = ({
   const fileName = filePath?.split('/').pop() || filePath
   const lines = lineCount || (content ? content.split('\n').length : 0)
   const subtitle = lines > 0 ? `${lines} line${lines !== 1 ? 's' : ''}` : null
+  const isStreaming = ['pending', 'running', 'streaming'].includes(status)
 
   return (
     <ToolUseBlock
@@ -32,7 +33,7 @@ const WriteToolRenderer = ({
       {error ? (
         <ToolError message={error} />
       ) : content ? (
-        <ToolOutput>
+        <ToolOutput streaming={isStreaming}>
           <pre
             style={{
               margin: 0,
@@ -44,6 +45,16 @@ const WriteToolRenderer = ({
             {content}
           </pre>
         </ToolOutput>
+      ) : status === 'pending' ? (
+        <div
+          style={{
+            color: 'var(--chat-text-muted, #858585)',
+            fontSize: '13px',
+            fontStyle: 'italic',
+          }}
+        >
+          Waiting for permission...
+        </div>
       ) : status === 'running' ? (
         <div
           style={{
@@ -52,7 +63,12 @@ const WriteToolRenderer = ({
             fontStyle: 'italic',
           }}
         >
-          Writing file...
+          Writing file
+          <span className="claude-waiting-dots" aria-hidden="true">
+            <span>.</span>
+            <span>.</span>
+            <span>.</span>
+          </span>
         </div>
       ) : null}
     </ToolUseBlock>
