@@ -20,6 +20,7 @@ def register_all_models():
     """
     # Infrastructure models (defined below)
     from kurt.db.models import LLMTrace  # noqa: F401
+    from kurt.db.workspace_models import Workspace, WorkspaceMember  # noqa: F401
     from kurt.workflows.domain_analytics.models import (  # noqa: F401
         AnalyticsDomain,
         PageAnalytics,

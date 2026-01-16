@@ -137,6 +137,14 @@ if is_cloud_auth_enabled():
     app.middleware("http")(auth_middleware_setup)
 
 
+# --- API Routers ---
+# Import and include API routers
+from kurt.web.api import github_webhooks, workspaces  # noqa: E402
+
+app.include_router(workspaces.router)
+app.include_router(github_webhooks.router)
+
+
 # --- Production static file serving ---
 # Detect if built frontend assets exist
 CLIENT_DIST = Path(__file__).parent.parent / "client" / "dist"
