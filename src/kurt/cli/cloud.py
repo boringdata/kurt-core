@@ -315,11 +315,13 @@ def status_cmd():
 
     # Auth status
     creds = load_credentials()
+    token_was_expired = False
     if creds:
         console.print("[green]✓ Authenticated[/green]")
         console.print(f"  Email: {creds.email or 'N/A'}")
         console.print(f"  User ID: {creds.user_id}")
         if creds.is_expired():
+            token_was_expired = True
             console.print("  Token: [yellow]expired (will refresh on next use)[/yellow]")
         else:
             console.print("  Token: [green]active[/green]")
@@ -378,9 +380,31 @@ def status_cmd():
         if mode == "cloud_postgres" and workspace_id and creds:
             try:
                 import json
+                import time
                 import urllib.request
 
-                from kurt.cli.auth.credentials import get_cloud_api_url
+                from kurt.cli.auth.commands import refresh_access_token
+                from kurt.cli.auth.credentials import (
+                    Credentials,
+                    get_cloud_api_url,
+                    save_credentials,
+                )
+
+                # Refresh token if expired
+                if creds.is_expired() and creds.refresh_token:
+                    result = refresh_access_token(creds.refresh_token)
+                    if result:
+                        creds = Credentials(
+                            access_token=result["access_token"],
+                            refresh_token=result.get("refresh_token", creds.refresh_token),
+                            user_id=result.get("user_id", creds.user_id),
+                            email=result.get("email", creds.email),
+                            workspace_id=creds.workspace_id,
+                            expires_at=int(time.time()) + result.get("expires_in", 3600),
+                        )
+                        save_credentials(creds)
+                        if token_was_expired:
+                            console.print("  [dim]Token refreshed[/dim]")
 
                 cloud_url = get_cloud_api_url()
                 url = f"{cloud_url}/api/v1/workspaces/{workspace_id}"
