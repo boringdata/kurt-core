@@ -31,20 +31,20 @@ def get_session_for_request(request: Request):
     """Get appropriate database session based on request context.
 
     Returns:
-        Session or SupabaseSession depending on whether running in cloud mode
+        Session using PostgreSQL connection (cloud or local mode)
     """
+    import os
     from contextlib import contextmanager
 
-    from kurt.db import managed_session
+    from sqlalchemy import create_engine, text
+    from sqlmodel import Session
 
     # Check for Authorization header (cloud mode)
     auth_header = request.headers.get("Authorization")
 
     if auth_header and auth_header.startswith("Bearer "):
-        # Cloud mode: create Supabase session from JWT
+        # Cloud mode: use direct PostgreSQL connection with RLS
         import jwt
-
-        from kurt.db.cloud import SupabaseClient, SupabaseSession
 
         token = auth_header.split(" ", 1)[1]
         payload = jwt.decode(token, options={"verify_signature": False})
@@ -54,24 +54,27 @@ def get_session_for_request(request: Request):
         user_id = payload.get("sub")
 
         if workspace_id and user_id:
-            # Create Supabase client using token for auth
-            client = SupabaseClient.from_access_token(token)
+            # Use direct PostgreSQL connection from environment
+            database_url = os.environ.get("DATABASE_URL")
+            if not database_url:
+                raise ValueError("DATABASE_URL environment variable required for cloud mode")
+
+            # Create engine and session
+            engine = create_engine(database_url)
 
             @contextmanager
-            def _cloud_session():
-                session = SupabaseSession(
-                    client=client,
-                    workspace_id=workspace_id,
-                    user_id=user_id,
-                )
-                try:
+            def _postgres_session():
+                with Session(engine) as session:
+                    # Set RLS context variables for workspace isolation
+                    session.exec(text(f"SET app.workspace_id = '{workspace_id}'"))
+                    session.exec(text(f"SET app.user_id = '{user_id}'"))
                     yield session
-                finally:
-                    session.close()
 
-            return _cloud_session()
+            return _postgres_session()
 
     # Local mode: use managed_session (SQLite/PostgreSQL)
+    from kurt.db import managed_session
+
     return managed_session()
 
 
