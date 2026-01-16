@@ -1,5 +1,6 @@
 """Hatch build hook to compile frontend before packaging."""
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -14,6 +15,11 @@ class FrontendBuildHook(BuildHookInterface):
 
     def initialize(self, version, build_data):
         """Run npm build before packaging."""
+        # Skip if SKIP_FRONTEND_BUILD env var is set (for CI/serverless environments)
+        if os.environ.get("SKIP_FRONTEND_BUILD"):
+            self.app.display_info("Skipping frontend build (SKIP_FRONTEND_BUILD set)")
+            return
+
         # Only build for wheel target
         if self.target_name != "wheel":
             return
