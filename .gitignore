@@ -1,13 +1,15 @@
 # Python
 
-**pycache**/  
-\*.py\[cod\]  
-\*$py.class  
-\*.so  
-.Python  
-build/  
-develop-eggs/  
-dist/  
+**pycache**/
+\*.py\[cod\]
+\*$py.class
+\*.so
+.Python
+build/
+develop-eggs/
+dist/
+# Exception: Allow frontend dist (pre-built for Vercel deployment)
+!src/kurt/web/client/dist/
 downloads/  
 eggs/  
 .eggs/  
