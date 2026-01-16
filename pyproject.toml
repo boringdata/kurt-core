@@ -49,6 +49,7 @@ api = [
     "websockets>=12.0",
     "ptyprocess>=0.7",
     "pyjwt>=2.8.0",  # For cloud mode JWT decoding
+    "psycopg2-binary>=2.9.0",  # For PostgreSQL connection in cloud mode
 ]
 # S3 storage support
 storage = [
