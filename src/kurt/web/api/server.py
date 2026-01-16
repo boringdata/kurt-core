@@ -200,22 +200,6 @@ def api_config():
         }
 
 
-@app.get("/api/debug/env")
-def api_debug_env():
-    """Debug endpoint to check environment variables."""
-    import os
-
-    database_url = os.environ.get("DATABASE_URL", "NOT_SET")
-    return {
-        "database_url_set": database_url != "NOT_SET",
-        "database_url_prefix": database_url[:20] if database_url != "NOT_SET" else None,
-        "is_postgresql": database_url.startswith("postgresql")
-        if database_url != "NOT_SET"
-        else False,
-        "all_env_keys": sorted([k for k in os.environ.keys() if not k.startswith("_")])[:20],
-    }
-
-
 @app.get("/api/status")
 def api_status(request: Request):
     """
@@ -254,35 +238,24 @@ def api_list_documents(
     Used by both CLI (in cloud mode) and web UI.
     """
     import logging
-    import sys
     import traceback
     from dataclasses import asdict
 
     from kurt.documents import DocumentFilters, DocumentRegistry
 
     try:
-        print("DEBUG: Starting documents API", file=sys.stderr)
         filters = DocumentFilters(
             fetch_status=status,
             limit=limit,
             offset=offset,
             url_contains=url_pattern,
         )
-        print("DEBUG: Created filters", file=sys.stderr)
 
         registry = DocumentRegistry()
-        print("DEBUG: Created registry", file=sys.stderr)
-
         with get_session_for_request(request) as session:
-            print(f"DEBUG: Got session: {type(session)}", file=sys.stderr)
             docs = registry.list(session, filters)
-            print(f"DEBUG: Got {len(docs)} documents", file=sys.stderr)
-            result = [asdict(doc) for doc in docs]
-            print("DEBUG: Serialized documents", file=sys.stderr)
-            return result
+            return [asdict(doc) for doc in docs]
     except Exception as e:
-        print(f"DEBUG: Exception occurred: {e}", file=sys.stderr)
-        print(f"DEBUG: Traceback: {traceback.format_exc()}", file=sys.stderr)
         logging.error(f"Documents API error: {e}")
         logging.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Documents query failed: {str(e)}")
