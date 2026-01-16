@@ -159,11 +159,21 @@ def api_status():
     Returns document counts, status breakdown, and domain distribution.
     Used by both CLI (in cloud mode) and web UI.
     """
+    import logging
+    import traceback
+
+    from fastapi import HTTPException
+
     from kurt.db import managed_session
     from kurt.status.queries import get_status_data
 
-    with managed_session() as session:
-        return get_status_data(session)
+    try:
+        with managed_session() as session:
+            return get_status_data(session)
+    except Exception as e:
+        logging.error(f"Status API error: {e}")
+        logging.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Status query failed: {str(e)}")
 
 
 @app.get("/api/documents")
