@@ -11,7 +11,6 @@ import struct
 import time
 from typing import TYPE_CHECKING, Any, Callable
 
-import litellm
 from dbos import DBOS, Queue
 
 from .hooks import NoopStepHooks, StepHooks
@@ -53,6 +52,8 @@ def _calculate_embedding_cost(response: Any, model: str | None) -> float:
     if not model:
         return 0.0
     try:
+        import litellm  # noqa: F401
+
         return float(
             litellm.response_cost_calculator(
                 response_object=response,
@@ -62,6 +63,11 @@ def _calculate_embedding_cost(response: Any, model: str | None) -> float:
                 optional_params={},
             )
         )
+    except ImportError as e:
+        raise ImportError(
+            "litellm is required for embedding cost calculation. "
+            "Install with: pip install kurt-core[workflows]"
+        ) from e
     except Exception:
         return 0.0
 
@@ -232,6 +238,14 @@ class EmbeddingStep:
                     prepared_texts.append(text)
 
                 # Call embedding API
+                try:
+                    import litellm  # noqa: F401
+                except ImportError as e:
+                    raise ImportError(
+                        "litellm is required for embeddings. "
+                        "Install with: pip install kurt-core[workflows]"
+                    ) from e
+
                 kwargs = {
                     "model": step_instance._resolved_model,
                     "input": prepared_texts,
@@ -420,6 +434,13 @@ def generate_embeddings(
             api_key = settings.api_key
 
     start = time.time()
+
+    try:
+        import litellm  # noqa: F401
+    except ImportError as e:
+        raise ImportError(
+            "litellm is required for embeddings. " "Install with: pip install kurt-core[workflows]"
+        ) from e
 
     kwargs = {"model": model, "input": texts}
     if api_base:
