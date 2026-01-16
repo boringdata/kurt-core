@@ -50,6 +50,10 @@ export default function Terminal({
   const fitAddonRef = useRef(null)
   const socketRef = useRef(null)
   const isActiveRef = useRef(isActive)
+  const onFirstPromptRef = useRef(onFirstPrompt)
+  const onSessionStartedRef = useRef(onSessionStarted)
+  const onResumeMissingRef = useRef(onResumeMissing)
+  const onBannerShownRef = useRef(onBannerShown)
   const inputBufferRef = useRef('')
   const firstPromptSentRef = useRef(false)
   const sessionStartedRef = useRef(false)
@@ -90,6 +94,13 @@ export default function Terminal({
   }, [isActive])
 
   useEffect(() => {
+    onFirstPromptRef.current = onFirstPrompt
+    onSessionStartedRef.current = onSessionStarted
+    onResumeMissingRef.current = onResumeMissing
+    onBannerShownRef.current = onBannerShown
+  }, [onFirstPrompt, onSessionStarted, onResumeMissing, onBannerShown])
+
+  useEffect(() => {
     if (!containerRef.current) return
 
     const term = new XTerm({
@@ -121,6 +132,7 @@ export default function Terminal({
     let reconnectTimer = null
     let connectionStarted = false
     let retryCount = 0
+    let disposed = false
     const MAX_RETRIES = 10
     const INITIAL_RETRY_DELAY = 500
 
@@ -171,7 +183,7 @@ export default function Terminal({
             term.writeln(
               `\r\n[bridge] No saved conversation found. Starting a new session...\r\n`,
             )
-            onResumeMissing?.()
+            onResumeMissingRef.current?.()
           }
           return
         }
@@ -195,7 +207,7 @@ export default function Terminal({
             term.writeln(
               `\r\n[bridge] No saved conversation found. Starting a new session...\r\n`,
             )
-            onResumeMissing?.()
+            onResumeMissingRef.current?.()
           }
           term.write(payload.data)
         }
@@ -214,9 +226,9 @@ export default function Terminal({
         if (isActiveRef.current) {
           sendResize()
         }
-        if (onSessionStarted && !sessionStartedRef.current) {
+        if (onSessionStartedRef.current && !sessionStartedRef.current) {
           sessionStartedRef.current = true
-          onSessionStarted()
+          onSessionStartedRef.current()
         }
       })
 
@@ -260,7 +272,7 @@ export default function Terminal({
     window.addEventListener('beforeunload', handlePageUnload)
 
     const captureFirstPrompt = (data) => {
-      if (!onFirstPrompt || firstPromptSentRef.current) return
+      if (!onFirstPromptRef.current || firstPromptSentRef.current) return
       // eslint-disable-next-line no-control-regex
       const sanitized = data.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')
       let buffer = inputBufferRef.current
@@ -270,7 +282,7 @@ export default function Terminal({
           const prompt = buffer.trim()
           if (prompt) {
             firstPromptSentRef.current = true
-            onFirstPrompt(prompt)
+            onFirstPromptRef.current(prompt)
           }
           buffer = ''
         } else if (char === '\u007f') {
@@ -307,7 +319,7 @@ export default function Terminal({
     }
 
     const attemptOpen = () => {
-      if (openedRef.current || !isActiveRef.current) return
+      if (disposed || openedRef.current || !isActiveRef.current) return
       if (!canOpen()) {
         openRetryRef.current = window.setTimeout(attemptOpen, 60)
         return
@@ -344,11 +356,6 @@ export default function Terminal({
         })
       })
 
-      if (bannerMessage) {
-        term.writeln(`\r\n[bridge] ${bannerMessage}\r\n`)
-        onBannerShown?.()
-      }
-
       connect()
     }
 
@@ -362,6 +369,7 @@ export default function Terminal({
       window.removeEventListener('resize', resizeListener)
       window.removeEventListener('beforeunload', handlePageUnload)
       shouldReconnect = false
+      disposed = true
       if (reconnectTimer) {
         window.clearTimeout(reconnectTimer)
       }
@@ -373,7 +381,15 @@ export default function Terminal({
       }
       term.dispose()
     }
-  }, [])
+  }, [providerKey, sessionId, sessionName, resume])
+
+  useEffect(() => {
+    if (!bannerMessage) return
+    const term = termRef.current
+    if (!term) return
+    term.writeln(`\r\n[bridge] ${bannerMessage}\r\n`)
+    onBannerShownRef.current?.()
+  }, [bannerMessage])
 
   return <div className="terminal" ref={containerRef} />
 }

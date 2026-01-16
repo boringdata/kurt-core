@@ -9,6 +9,8 @@ import ToolUseBlock, { ToolOutput, ToolError, InlineCode } from './ToolUseBlock'
  * - Line numbers and highlighted matches
  */
 
+const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
 const GrepToolRenderer = ({
   pattern,
   path,
@@ -201,10 +203,5 @@ const HighlightedContent = ({ content, pattern }) => {
     return content
   }
 }
-
-/**
- * Escape special regex characters
- */
-const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 export default GrepToolRenderer

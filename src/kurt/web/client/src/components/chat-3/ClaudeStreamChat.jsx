@@ -9,6 +9,7 @@ import {
   useAssistantApi,
   useMessage,
   useThread,
+  useAssistantState,
 } from '@assistant-ui/react'
 import ChatPanel, { chatThemeVars } from '../chat/ChatPanel'
 import MessageList, { Messages, EmptyState } from '../chat/MessageList'
@@ -42,6 +43,38 @@ const DEFAULT_SLASH_COMMANDS = [
   { id: 'permissions', label: '/permissions', description: 'Manage permissions' },
   { id: 'memory', label: '/memory', description: 'Manage memory/context' },
 ]
+
+const HISTORY_STORAGE_PREFIX = 'kurt-web-claude-stream-history'
+const HISTORY_LIMIT = 200
+
+const getHistoryKey = (sessionId) => {
+  if (!sessionId) return null
+  return `${HISTORY_STORAGE_PREFIX}-${sessionId}`
+}
+
+const loadStoredHistory = (sessionId) => {
+  const key = getHistoryKey(sessionId)
+  if (!key) return []
+  try {
+    const raw = localStorage.getItem(key)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed
+  } catch {
+    return []
+  }
+}
+
+const saveStoredHistory = (sessionId, messages) => {
+  const key = getHistoryKey(sessionId)
+  if (!key) return
+  try {
+    localStorage.setItem(key, JSON.stringify(messages))
+  } catch {
+    // Ignore storage errors
+  }
+}
 
 const normalizeSlashCommands = (commands) => {
   if (!Array.isArray(commands)) return DEFAULT_SLASH_COMMANDS
@@ -636,7 +669,9 @@ const useClaudeStreamRuntime = (
         queueRef.current?.push(payload)
         const waiter = waitersRef.current?.shift()
         if (waiter) waiter()
-      } catch {}
+      } catch {
+        // Ignore JSON parse errors
+      }
     }
     return ws
   }, [currentSessionId])
@@ -1716,6 +1751,69 @@ const ComposerShell = ({
       </div>
     </ComposerPrimitive.Root>
   )
+}
+
+const normalizeHistoryMessage = (message) => {
+  if (!message || (message.role !== 'user' && message.role !== 'assistant')) {
+    return null
+  }
+  const content = Array.isArray(message.content)
+    ? message.content
+    : message.content
+      ? [{ type: 'text', text: String(message.content) }]
+      : []
+  return {
+    role: message.role,
+    content,
+  }
+}
+
+const HistoryHydrator = ({ sessionId }) => {
+  const api = useAssistantApi()
+  const messageCount = useAssistantState(({ thread }) => thread.messages.length)
+  const hydratedRef = useRef(false)
+
+  useEffect(() => {
+    hydratedRef.current = false
+  }, [sessionId])
+
+  useEffect(() => {
+    if (!sessionId || hydratedRef.current) return
+    if (messageCount > 0) {
+      hydratedRef.current = true
+      return
+    }
+    const stored = loadStoredHistory(sessionId)
+      .map(normalizeHistoryMessage)
+      .filter(Boolean)
+    if (!stored.length) {
+      hydratedRef.current = true
+      return
+    }
+    stored.forEach((message) => {
+      api.thread().append(message)
+    })
+    hydratedRef.current = true
+  }, [api, messageCount, sessionId])
+
+  return null
+}
+
+const HistoryPersister = ({ sessionId }) => {
+  const thread = useThread()
+  const messages = useAssistantState(({ thread }) => thread.messages)
+
+  useEffect(() => {
+    if (!sessionId) return
+    if (thread.isRunning) return
+    const normalized = messages
+      .map(normalizeHistoryMessage)
+      .filter(Boolean)
+      .slice(-HISTORY_LIMIT)
+    saveStoredHistory(sessionId, normalized)
+  }, [messages, sessionId, thread.isRunning])
+
+  return null
 }
 
 const extractMarkdownImages = (text, imageCache) => {
@@ -2886,6 +2984,8 @@ export default function ClaudeStreamChat({
     <div style={{ width: '100%', height: '100%', overflow: 'hidden' }}>
       <style>{chatThemeVars}</style>
       <AssistantRuntimeProvider runtime={runtime}>
+        <HistoryHydrator sessionId={currentSessionId || sessionName} />
+        <HistoryPersister sessionId={currentSessionId || sessionName} />
         <Thread
           sessionLabel={sessionLabel}
           activeSessionId={currentSessionId || sessionName}

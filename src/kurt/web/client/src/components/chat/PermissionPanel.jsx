@@ -33,6 +33,295 @@ const DESTINATION_TITLES = {
 }
 const DESTINATION_ORDER = ['localSettings', 'userSettings', 'projectSettings', 'session']
 
+const styles = {
+  container: {
+    backgroundColor: 'var(--chat-panel-bg, #252526)',
+    border: '1px solid var(--chat-border, #454545)',
+    borderRadius: 'var(--chat-radius-md, 8px)',
+    padding: 'var(--chat-spacing-md, 12px)',
+    margin: 'var(--chat-spacing-md, 12px)',
+  },
+  title: {
+    color: 'var(--chat-text, #cccccc)',
+    fontSize: '14px',
+    fontWeight: 500,
+    marginBottom: 'var(--chat-spacing-sm, 8px)',
+  },
+  toolInfo: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    marginBottom: 'var(--chat-spacing-sm, 8px)',
+    fontSize: '13px',
+    flexWrap: 'wrap',
+  },
+  toolBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px',
+    color: 'white',
+    padding: '3px 8px',
+    borderRadius: '4px',
+    fontSize: '11px',
+    fontWeight: 500,
+  },
+  toolIcon: {
+    fontSize: '12px',
+  },
+  primaryInfo: {
+    color: 'var(--chat-text, #cccccc)',
+    fontFamily: 'monospace',
+    fontSize: '12px',
+    wordBreak: 'break-all',
+  },
+  secondaryInfo: {
+    color: 'var(--chat-text-muted, #858585)',
+    fontSize: '12px',
+    marginBottom: 'var(--chat-spacing-sm, 8px)',
+    fontStyle: 'italic',
+  },
+  diffContainer: {
+    backgroundColor: '#1a1a1a',
+    border: '1px solid var(--chat-border, #454545)',
+    borderRadius: '4px',
+    padding: '8px',
+    marginBottom: 'var(--chat-spacing-sm, 8px)',
+    maxHeight: '200px',
+    overflowY: 'auto',
+    fontFamily: 'monospace',
+    fontSize: '12px',
+  },
+  diffLine: {
+    whiteSpace: 'pre',
+    color: 'var(--chat-text-muted, #858585)',
+  },
+  diffAdded: {
+    backgroundColor: 'rgba(46, 160, 67, 0.15)',
+    color: '#3fb950',
+  },
+  diffRemoved: {
+    backgroundColor: 'rgba(248, 81, 73, 0.15)',
+    color: '#f85149',
+  },
+  diffHunk: {
+    color: '#8b949e',
+    backgroundColor: 'rgba(56, 139, 253, 0.1)',
+  },
+  codeContainer: {
+    backgroundColor: '#1a1a1a',
+    border: '1px solid var(--chat-border, #454545)',
+    borderRadius: '4px',
+    padding: '8px',
+    marginBottom: 'var(--chat-spacing-sm, 8px)',
+    maxHeight: '200px',
+    overflowY: 'auto',
+  },
+  codeContent: {
+    margin: 0,
+    fontFamily: 'monospace',
+    fontSize: '12px',
+    color: 'var(--chat-text-muted, #858585)',
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-all',
+  },
+  options: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+  },
+  option: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '8px 12px',
+    backgroundColor: 'transparent',
+    border: '1px solid var(--chat-border, #454545)',
+    borderRadius: 'var(--chat-radius-sm, 4px)',
+    cursor: 'pointer',
+    textAlign: 'left',
+    color: 'var(--chat-text, #cccccc)',
+    fontSize: '14px',
+    transition: 'background-color 0.15s',
+  },
+  optionSelected: {
+    backgroundColor: 'var(--chat-accent, #0078d4)',
+    borderColor: 'var(--chat-accent, #0078d4)',
+    color: 'white',
+  },
+  optionDisabled: {
+    opacity: 0.6,
+    cursor: 'not-allowed',
+  },
+  optionNumber: {
+    opacity: 0.7,
+    fontSize: '13px',
+  },
+  optionLabel: {
+    flex: 1,
+  },
+  customForm: {
+    marginTop: 'var(--chat-spacing-sm, 8px)',
+  },
+  customInput: {
+    width: '100%',
+    padding: '8px 12px',
+    backgroundColor: 'var(--chat-input-bg, #3c3c3c)',
+    border: '1px solid var(--chat-border, #454545)',
+    borderRadius: 'var(--chat-radius-sm, 4px)',
+    color: 'var(--chat-text-muted, #858585)',
+    fontSize: '14px',
+    outline: 'none',
+    boxSizing: 'border-box',
+  },
+  destinationLink: {
+    textDecoration: 'underline',
+    textDecorationStyle: 'dotted',
+    cursor: 'pointer',
+  },
+  destinationStatic: {
+    textDecoration: 'none',
+    cursor: 'default',
+  },
+  bashCommand: {
+    marginBottom: 'var(--chat-spacing-sm, 8px)',
+  },
+  bashCommandInput: {
+    fontFamily: 'monospace',
+    fontSize: '12px',
+    backgroundColor: 'var(--chat-input-bg, #3c3c3c)',
+    border: '1px solid var(--chat-border, #454545)',
+    borderRadius: '4px',
+    padding: '6px 8px',
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-word',
+    outline: 'none',
+  },
+  questionContainer: {
+    border: '1px solid var(--chat-border, #454545)',
+    borderRadius: '6px',
+    marginBottom: 'var(--chat-spacing-sm, 8px)',
+    overflow: 'hidden',
+  },
+  questionNav: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'var(--chat-panel-bg, #252526)',
+    borderBottom: '1px solid var(--chat-border, #454545)',
+    padding: '6px 8px',
+  },
+  questionTabs: {
+    display: 'flex',
+    gap: '6px',
+    flexWrap: 'wrap',
+  },
+  questionTab: {
+    border: '1px solid transparent',
+    borderRadius: '4px',
+    padding: '4px 6px',
+    background: 'transparent',
+    color: 'var(--chat-text-muted, #858585)',
+    cursor: 'pointer',
+    fontSize: '12px',
+  },
+  questionTabActive: {
+    borderColor: 'var(--chat-accent, #0078d4)',
+    color: 'var(--chat-text, #cccccc)',
+  },
+  questionTabAnswered: {
+    color: 'var(--chat-text, #cccccc)',
+  },
+  questionClose: {
+    background: 'transparent',
+    border: 'none',
+    color: 'var(--chat-text-muted, #858585)',
+    cursor: 'pointer',
+    fontSize: '16px',
+    padding: '0 4px',
+  },
+  questionBody: {
+    padding: '10px',
+  },
+  questionTitle: {
+    color: 'var(--chat-text, #cccccc)',
+    fontWeight: 600,
+    marginBottom: '8px',
+  },
+  questionOptions: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+  },
+  questionOption: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '8px',
+    padding: '8px',
+    borderRadius: '4px',
+    border: '1px solid var(--chat-border, #454545)',
+    background: 'transparent',
+    color: 'var(--chat-text, #cccccc)',
+    cursor: 'pointer',
+    textAlign: 'left',
+  },
+  questionOptionSelected: {
+    borderColor: 'var(--chat-accent, #0078d4)',
+    backgroundColor: 'rgba(0, 120, 212, 0.2)',
+  },
+  questionOptionConfirming: {
+    borderColor: '#3fb950',
+  },
+  questionOptionControl: {
+    marginTop: '4px',
+  },
+  questionOptionContent: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+    flex: 1,
+  },
+  questionOptionLabel: {
+    fontWeight: 500,
+  },
+  questionOptionDescription: {
+    color: 'var(--chat-text-muted, #858585)',
+    fontSize: '12px',
+  },
+  checkbox: {
+    width: '14px',
+    height: '14px',
+    border: '1px solid var(--chat-border, #454545)',
+    borderRadius: '2px',
+    display: 'inline-block',
+  },
+  checkboxChecked: {
+    backgroundColor: 'var(--chat-accent, #0078d4)',
+  },
+  radio: {
+    width: '14px',
+    height: '14px',
+    border: '1px solid var(--chat-border, #454545)',
+    borderRadius: '50%',
+    display: 'inline-block',
+  },
+  radioChecked: {
+    backgroundColor: 'var(--chat-accent, #0078d4)',
+  },
+  otherInput: {
+    marginTop: '6px',
+    padding: '6px 8px',
+    borderRadius: '4px',
+    border: '1px solid var(--chat-border, #454545)',
+    backgroundColor: 'var(--chat-input-bg, #3c3c3c)',
+    color: 'var(--chat-text, #cccccc)',
+    fontSize: '12px',
+  },
+  questionEmpty: {
+    color: 'var(--chat-text-muted, #858585)',
+    fontSize: '12px',
+  },
+}
+
 const normalizeToolName = (name) => String(name || '').replace(/[^a-z0-9]/gi, '').toLowerCase()
 const basenameFromPath = (value) => {
   if (!value) return ''
@@ -151,6 +440,7 @@ const buildPermissionTitle = (toolName, toolInput) => {
   if (toolName) return `Do you want to proceed with ${toolName}?`
   return 'Do you want to proceed?'
 }
+
 
 const DiffViewer = ({ diff }) => {
   if (!diff) return null
@@ -750,295 +1040,6 @@ const PermissionPanel = ({
       )}
     </div>
   )
-}
-
-const styles = {
-  container: {
-    backgroundColor: 'var(--chat-panel-bg, #252526)',
-    border: '1px solid var(--chat-border, #454545)',
-    borderRadius: 'var(--chat-radius-md, 8px)',
-    padding: 'var(--chat-spacing-md, 12px)',
-    margin: 'var(--chat-spacing-md, 12px)',
-  },
-  title: {
-    color: 'var(--chat-text, #cccccc)',
-    fontSize: '14px',
-    fontWeight: 500,
-    marginBottom: 'var(--chat-spacing-sm, 8px)',
-  },
-  toolInfo: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    marginBottom: 'var(--chat-spacing-sm, 8px)',
-    fontSize: '13px',
-    flexWrap: 'wrap',
-  },
-  toolBadge: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '4px',
-    color: 'white',
-    padding: '3px 8px',
-    borderRadius: '4px',
-    fontSize: '11px',
-    fontWeight: 500,
-  },
-  toolIcon: {
-    fontSize: '12px',
-  },
-  primaryInfo: {
-    color: 'var(--chat-text, #cccccc)',
-    fontFamily: 'monospace',
-    fontSize: '12px',
-    wordBreak: 'break-all',
-  },
-  secondaryInfo: {
-    color: 'var(--chat-text-muted, #858585)',
-    fontSize: '12px',
-    marginBottom: 'var(--chat-spacing-sm, 8px)',
-    fontStyle: 'italic',
-  },
-  diffContainer: {
-    backgroundColor: '#1a1a1a',
-    border: '1px solid var(--chat-border, #454545)',
-    borderRadius: '4px',
-    padding: '8px',
-    marginBottom: 'var(--chat-spacing-sm, 8px)',
-    maxHeight: '200px',
-    overflowY: 'auto',
-    fontFamily: 'monospace',
-    fontSize: '12px',
-  },
-  diffLine: {
-    whiteSpace: 'pre',
-    color: 'var(--chat-text-muted, #858585)',
-  },
-  diffAdded: {
-    backgroundColor: 'rgba(46, 160, 67, 0.15)',
-    color: '#3fb950',
-  },
-  diffRemoved: {
-    backgroundColor: 'rgba(248, 81, 73, 0.15)',
-    color: '#f85149',
-  },
-  diffHunk: {
-    color: '#8b949e',
-    backgroundColor: 'rgba(56, 139, 253, 0.1)',
-  },
-  codeContainer: {
-    backgroundColor: '#1a1a1a',
-    border: '1px solid var(--chat-border, #454545)',
-    borderRadius: '4px',
-    padding: '8px',
-    marginBottom: 'var(--chat-spacing-sm, 8px)',
-    maxHeight: '200px',
-    overflowY: 'auto',
-  },
-  codeContent: {
-    margin: 0,
-    fontFamily: 'monospace',
-    fontSize: '12px',
-    color: 'var(--chat-text-muted, #858585)',
-    whiteSpace: 'pre-wrap',
-    wordBreak: 'break-all',
-  },
-  options: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px',
-  },
-  option: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '8px 12px',
-    backgroundColor: 'transparent',
-    border: '1px solid var(--chat-border, #454545)',
-    borderRadius: 'var(--chat-radius-sm, 4px)',
-    cursor: 'pointer',
-    textAlign: 'left',
-    color: 'var(--chat-text, #cccccc)',
-    fontSize: '14px',
-    transition: 'background-color 0.15s',
-  },
-  optionSelected: {
-    backgroundColor: 'var(--chat-accent, #0078d4)',
-    borderColor: 'var(--chat-accent, #0078d4)',
-    color: 'white',
-  },
-  optionDisabled: {
-    opacity: 0.6,
-    cursor: 'not-allowed',
-  },
-  optionNumber: {
-    opacity: 0.7,
-    fontSize: '13px',
-  },
-  optionLabel: {
-    flex: 1,
-  },
-  customForm: {
-    marginTop: 'var(--chat-spacing-sm, 8px)',
-  },
-  customInput: {
-    width: '100%',
-    padding: '8px 12px',
-    backgroundColor: 'var(--chat-input-bg, #3c3c3c)',
-    border: '1px solid var(--chat-border, #454545)',
-    borderRadius: 'var(--chat-radius-sm, 4px)',
-    color: 'var(--chat-text-muted, #858585)',
-    fontSize: '14px',
-    outline: 'none',
-    boxSizing: 'border-box',
-  },
-  destinationLink: {
-    textDecoration: 'underline',
-    textDecorationStyle: 'dotted',
-    cursor: 'pointer',
-  },
-  destinationStatic: {
-    textDecoration: 'none',
-    cursor: 'default',
-  },
-  bashCommand: {
-    marginBottom: 'var(--chat-spacing-sm, 8px)',
-  },
-  bashCommandInput: {
-    fontFamily: 'monospace',
-    fontSize: '12px',
-    backgroundColor: 'var(--chat-input-bg, #3c3c3c)',
-    border: '1px solid var(--chat-border, #454545)',
-    borderRadius: '4px',
-    padding: '6px 8px',
-    whiteSpace: 'pre-wrap',
-    wordBreak: 'break-word',
-    outline: 'none',
-  },
-  questionContainer: {
-    border: '1px solid var(--chat-border, #454545)',
-    borderRadius: '6px',
-    marginBottom: 'var(--chat-spacing-sm, 8px)',
-    overflow: 'hidden',
-  },
-  questionNav: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: 'var(--chat-panel-bg, #252526)',
-    borderBottom: '1px solid var(--chat-border, #454545)',
-    padding: '6px 8px',
-  },
-  questionTabs: {
-    display: 'flex',
-    gap: '6px',
-    flexWrap: 'wrap',
-  },
-  questionTab: {
-    border: '1px solid transparent',
-    borderRadius: '4px',
-    padding: '4px 6px',
-    background: 'transparent',
-    color: 'var(--chat-text-muted, #858585)',
-    cursor: 'pointer',
-    fontSize: '12px',
-  },
-  questionTabActive: {
-    borderColor: 'var(--chat-accent, #0078d4)',
-    color: 'var(--chat-text, #cccccc)',
-  },
-  questionTabAnswered: {
-    color: 'var(--chat-text, #cccccc)',
-  },
-  questionClose: {
-    background: 'transparent',
-    border: 'none',
-    color: 'var(--chat-text-muted, #858585)',
-    cursor: 'pointer',
-    fontSize: '16px',
-    padding: '0 4px',
-  },
-  questionBody: {
-    padding: '10px',
-  },
-  questionTitle: {
-    color: 'var(--chat-text, #cccccc)',
-    fontWeight: 600,
-    marginBottom: '8px',
-  },
-  questionOptions: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '6px',
-  },
-  questionOption: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: '8px',
-    padding: '8px',
-    borderRadius: '4px',
-    border: '1px solid var(--chat-border, #454545)',
-    background: 'transparent',
-    color: 'var(--chat-text, #cccccc)',
-    cursor: 'pointer',
-    textAlign: 'left',
-  },
-  questionOptionSelected: {
-    borderColor: 'var(--chat-accent, #0078d4)',
-    backgroundColor: 'rgba(0, 120, 212, 0.2)',
-  },
-  questionOptionConfirming: {
-    borderColor: '#3fb950',
-  },
-  questionOptionControl: {
-    marginTop: '4px',
-  },
-  questionOptionContent: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '2px',
-    flex: 1,
-  },
-  questionOptionLabel: {
-    fontWeight: 500,
-  },
-  questionOptionDescription: {
-    color: 'var(--chat-text-muted, #858585)',
-    fontSize: '12px',
-  },
-  checkbox: {
-    width: '14px',
-    height: '14px',
-    border: '1px solid var(--chat-border, #454545)',
-    borderRadius: '2px',
-    display: 'inline-block',
-  },
-  checkboxChecked: {
-    backgroundColor: 'var(--chat-accent, #0078d4)',
-  },
-  radio: {
-    width: '14px',
-    height: '14px',
-    border: '1px solid var(--chat-border, #454545)',
-    borderRadius: '50%',
-    display: 'inline-block',
-  },
-  radioChecked: {
-    backgroundColor: 'var(--chat-accent, #0078d4)',
-  },
-  otherInput: {
-    marginTop: '6px',
-    padding: '6px 8px',
-    borderRadius: '4px',
-    border: '1px solid var(--chat-border, #454545)',
-    backgroundColor: 'var(--chat-input-bg, #3c3c3c)',
-    color: 'var(--chat-text, #cccccc)',
-    fontSize: '12px',
-  },
-  questionEmpty: {
-    color: 'var(--chat-text-muted, #858585)',
-    fontSize: '12px',
-  },
 }
 
 export default PermissionPanel

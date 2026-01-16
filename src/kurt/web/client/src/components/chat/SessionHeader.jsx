@@ -7,28 +7,6 @@
  * - Clean horizontal layout with border below
  */
 
-const SessionHeader = ({
-  title = 'New conversation',
-  onTitleClick,
-  onNewSession,
-  showDropdown = true,
-}) => {
-  return (
-    <div style={styles.container}>
-      {/* Session title with dropdown */}
-      <button onClick={onTitleClick} style={styles.titleButton}>
-        <span style={styles.title}>{title}</span>
-        {showDropdown && <span style={styles.dropdown}>˅</span>}
-      </button>
-
-      {/* New session button */}
-      <button onClick={onNewSession} style={styles.newButton} title="New conversation">
-        +
-      </button>
-    </div>
-  )
-}
-
 const styles = {
   container: {
     display: 'flex',
@@ -70,6 +48,28 @@ const styles = {
     cursor: 'pointer',
     borderRadius: 'var(--chat-radius-sm, 4px)',
   },
+}
+
+const SessionHeader = ({
+  title = 'New conversation',
+  onTitleClick,
+  onNewSession,
+  showDropdown = true,
+}) => {
+  return (
+    <div style={styles.container}>
+      {/* Session title with dropdown */}
+      <button onClick={onTitleClick} style={styles.titleButton}>
+        <span style={styles.title}>{title}</span>
+        {showDropdown && <span style={styles.dropdown}>˅</span>}
+      </button>
+
+      {/* New session button */}
+      <button onClick={onNewSession} style={styles.newButton} title="New conversation">
+        +
+      </button>
+    </div>
+  )
 }
 
 export default SessionHeader

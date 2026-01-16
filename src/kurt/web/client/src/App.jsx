@@ -319,6 +319,7 @@ export default function App() {
   const centerGroupRef = useRef(null)
   const isInitialized = useRef(false)
   const layoutRestored = useRef(false)
+  const ensureCorePanelsRef = useRef(null)
   const [projectRoot, setProjectRoot] = useState(null) // null = not loaded yet, '' = loaded but empty
   const projectRootRef = useRef(null) // Stable ref for callbacks
 
@@ -1105,6 +1106,10 @@ export default function App() {
     if (!hasSavedLayout || invalidLayoutFound) {
       ensureCorePanels()
     }
+    ensureCorePanelsRef.current = () => {
+      ensureCorePanels()
+      applyLockedPanels()
+    }
 
     // Apply initial panel sizes for fresh layout
     // (Restored layouts will have sizes reapplied in the layout restoration effect)
@@ -1281,6 +1286,72 @@ export default function App() {
     layoutRestorationRan.current = true
 
     const savedLayout = loadLayout(projectRoot)
+    if (!savedLayout) {
+      if (ensureCorePanelsRef.current) {
+        ensureCorePanelsRef.current()
+        layoutRestored.current = true
+        requestAnimationFrame(() => {
+          const ftGroup = dockApi.getPanel('filetree')?.group
+          const tGroup = dockApi.getPanel('terminal')?.group
+          const wGroup = dockApi.getPanel('workflows')?.group
+
+          if (ftGroup) {
+            const ftApi = dockApi.getGroup(ftGroup.id)?.api
+            if (ftApi) {
+              if (collapsed.filetree) {
+                ftApi.setConstraints({ minimumWidth: 48, maximumWidth: 48 })
+                ftApi.setSize({ width: 48 })
+              } else {
+                ftApi.setConstraints({ minimumWidth: 180, maximumWidth: Infinity })
+                ftApi.setSize({ width: panelSizesRef.current.filetree })
+              }
+            }
+          }
+          if (tGroup) {
+            const tApi = dockApi.getGroup(tGroup.id)?.api
+            if (tApi) {
+              if (collapsed.terminal) {
+                tApi.setConstraints({ minimumWidth: 48, maximumWidth: 48 })
+                tApi.setSize({ width: 48 })
+              } else {
+                tApi.setConstraints({ minimumWidth: 250, maximumWidth: Infinity })
+                tApi.setSize({ width: panelSizesRef.current.terminal })
+              }
+            }
+          }
+          if (wGroup) {
+            const wApi = dockApi.getGroup(wGroup.id)?.api
+            if (wApi) {
+              if (collapsed.workflows) {
+                wApi.setConstraints({ minimumHeight: 36, maximumHeight: 36 })
+                wApi.setSize({ height: 36 })
+              } else {
+                wApi.setConstraints({ minimumHeight: 100, maximumHeight: Infinity })
+                wApi.setSize({ height: panelSizesRef.current.workflows })
+              }
+            }
+          }
+
+          const shellPanel = dockApi.getPanel('shell')
+          const shellGroup = shellPanel?.group
+          if (shellGroup && shellGroup !== wGroup) {
+            const sApi = dockApi.getGroup(shellGroup.id)?.api
+            if (sApi) {
+              if (collapsed.workflows) {
+                sApi.setConstraints({ minimumHeight: 36, maximumHeight: 36 })
+                sApi.setSize({ height: 36 })
+              } else {
+                sApi.setConstraints({ minimumHeight: 100, maximumHeight: Infinity })
+                sApi.setSize({ height: panelSizesRef.current.workflows })
+              }
+            }
+          }
+
+          collapsedEffectRan.current = true
+        })
+      }
+      return
+    }
     if (savedLayout && typeof dockApi.fromJSON === 'function') {
       // Since onReady skips panel creation when a saved layout exists,
       // we can directly call fromJSON without clearing first

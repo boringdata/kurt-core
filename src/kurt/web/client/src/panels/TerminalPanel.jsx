@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Terminal from '../components/Terminal'
-import ChatView from '../components/chat/ChatView'
 import ClaudeStreamChat from '../components/chat-3/ClaudeStreamChat'
 
 const SESSION_STORAGE_KEY = 'kurt-web-terminal-sessions'
@@ -73,18 +72,6 @@ const getFileName = (path) => {
   return parts[parts.length - 1]
 }
 
-// Build WebSocket URL for chat mode
-const buildChatSocketUrl = (sessionId, provider) => {
-  // Always use the Vite dev server proxy (localhost:5173)
-  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-  const wsBase = `${protocol}://${window.location.host}`
-  const params = new URLSearchParams()
-  if (sessionId) params.set('session_id', sessionId)
-  params.set('resume', '1') // Always try to resume in chat mode
-  if (provider) params.set('provider', provider)
-  return `${wsBase}/ws/pty?${params}`
-}
-
 export default function TerminalPanel({ params }) {
   const { collapsed, onToggleCollapse, approvals, onFocusReview, onDecision, normalizeApprovalPath } = params || {}
   const terminalCounter = useRef(1)
@@ -97,7 +84,6 @@ export default function TerminalPanel({ params }) {
       return 'cli'
     }
   })
-  const [chatSocket, setChatSocket] = useState(null)
   const [sessions, setSessions] = useState(() => {
     const saved = loadSessions()
     if (saved) {
@@ -233,55 +219,6 @@ export default function TerminalPanel({ params }) {
     }
   }, [chatInterface])
 
-  // Manage chat WebSocket connection
-  useEffect(() => {
-    console.log('[ChatSocket] Effect triggered:', { chatInterface, activeId })
-    if (chatInterface === 'web' || !activeId) {
-      // Close existing socket when in Web mode or no active session
-      setChatSocket((prev) => {
-        if (prev) {
-          console.log('[ChatSocket] Closing existing socket')
-          prev.close()
-        }
-        return null
-      })
-      return
-    }
-
-    const activeSession = sessions.find((s) => s.id === activeId)
-    if (!activeSession) {
-      console.log('[ChatSocket] No active session found')
-      return
-    }
-
-    // Connect to PTY WebSocket for chat mode
-    const url = buildChatSocketUrl(activeSession.sessionId, activeSession.provider)
-    console.log('[ChatSocket] Connecting to:', url)
-    const socket = new WebSocket(url)
-
-    socket.addEventListener('open', () => {
-      console.log('[ChatSocket] Connection opened')
-      // Send initial resize
-      socket.send(JSON.stringify({ type: 'resize', cols: 80, rows: 24 }))
-      // Update state to trigger re-render
-      setChatSocket(socket)
-    })
-
-    socket.addEventListener('error', (err) => {
-      console.error('[ChatSocket] WebSocket error:', err)
-    })
-
-    socket.addEventListener('close', (event) => {
-      console.log('[ChatSocket] Connection closed:', event.code, event.reason)
-    })
-
-    return () => {
-      console.log('[ChatSocket] Cleanup - closing socket')
-      socket.close()
-      setChatSocket(null)
-    }
-  }, [chatInterface, activeId, sessions])
-
   if (collapsed) {
     return (
       <div className="panel-content terminal-panel-content terminal-collapsed">
@@ -413,29 +350,48 @@ export default function TerminalPanel({ params }) {
           <div className="terminal-body">
             {sessions.map((session) => {
               const isActive = session.id === activeId
-              const style = { display: isActive ? 'flex' : 'none' }
+              const className = `terminal-instance${isActive ? ' active' : ''}`
 
               // CLI: Show ChatView
               if (chatInterface === 'cli') {
                 return (
-                  <div key={session.id} style={style} className="terminal-instance">
-                    {chatSocket && (
-                      <ChatView
-                        socket={chatSocket}
-                        sessionId={session.sessionId}
-                        onSendInput={(prompt) => handleFirstPrompt(session.id, prompt)}
-                      />
-                    )}
+                  <div key={session.id} className={className}>
+                    <Terminal
+                      isActive={isActive}
+                      provider={session.provider}
+                      sessionId={session.sessionId}
+                      sessionName={session.title}
+                      resume={session.resume}
+                      bannerMessage={session.bannerMessage}
+                      onBannerShown={() => handleBannerShown(session.id)}
+                      onResumeMissing={() => handleResumeMissing(session.id)}
+                      onFirstPrompt={(prompt) => handleFirstPrompt(session.id, prompt)}
+                    />
                   </div>
                 )
               }
 
               // WEB: Show ClaudeStreamChat
               return (
-                <div key={session.id} style={style} className="terminal-instance">
+                <div key={session.id} className={className}>
                   <ClaudeStreamChat
                     initialSessionId={session.sessionId}
                     provider={session.provider}
+                    resume={session.resume}
+                    onSessionStarted={(newSessionId) => {
+                      if (!newSessionId) return
+                      setSessions((prev) =>
+                        prev.map((s) =>
+                          s.id === session.id
+                            ? {
+                                ...s,
+                                sessionId: newSessionId,
+                                resume: true,
+                              }
+                            : s,
+                        ),
+                      )
+                    }}
                   />
                 </div>
               )

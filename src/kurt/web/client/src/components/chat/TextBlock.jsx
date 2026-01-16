@@ -12,49 +12,94 @@ import { useMemo } from 'react'
  * - Blockquotes
  */
 
-const TextBlock = ({ text, className = '' }) => {
-  const rendered = useMemo(() => {
-    if (!text) return null
-    return parseMarkdown(text)
-  }, [text])
-
-  return (
-    <div
-      className={`text-block ${className}`}
-      style={{
-        color: 'var(--chat-text, #cccccc)',
-        fontSize: '14px',
-        lineHeight: '1.6',
-        wordBreak: 'break-word',
-      }}
-    >
-      {rendered}
-    </div>
-  )
-}
+/**
+ * Inline code span
+ */
+const InlineCode = ({ children }) => (
+  <code
+    style={{
+      backgroundColor: 'var(--chat-input-bg, #3c3c3c)',
+      color: '#e6b450', // Yellow/gold for inline code
+      padding: '2px 6px',
+      borderRadius: '3px',
+      fontFamily: 'var(--font-mono)',
+      fontSize: '13px',
+    }}
+  >
+    {children}
+  </code>
+)
 
 /**
- * Simple markdown parser - converts markdown to React elements
+ * Parse inline markdown (bold, italic, code, links)
  */
-const parseMarkdown = (text) => {
-  // Split into blocks (paragraphs, code blocks, lists)
-  const blocks = splitIntoBlocks(text)
+const parseInline = (text) => {
+  if (!text) return null
 
-  return blocks.map((block, i) => {
-    if (block.type === 'code') {
-      return <CodeBlock key={i} code={block.content} language={block.language} />
+  const elements = []
+  let remaining = text
+  let key = 0
+
+  while (remaining) {
+    // Inline code
+    const codeMatch = remaining.match(/^`([^`]+)`/)
+    if (codeMatch) {
+      elements.push(<InlineCode key={key++}>{codeMatch[1]}</InlineCode>)
+      remaining = remaining.slice(codeMatch[0].length)
+      continue
     }
-    if (block.type === 'blockquote') {
-      return <BlockQuote key={i}>{parseInline(block.content)}</BlockQuote>
+
+    // Bold
+    const boldMatch = remaining.match(/^\*\*([^*]+)\*\*/)
+    if (boldMatch) {
+      elements.push(<strong key={key++}>{boldMatch[1]}</strong>)
+      remaining = remaining.slice(boldMatch[0].length)
+      continue
     }
-    if (block.type === 'list') {
-      return <List key={i} items={block.items} ordered={block.ordered} />
+
+    // Italic
+    const italicMatch = remaining.match(/^\*([^*]+)\*/)
+    if (italicMatch) {
+      elements.push(<em key={key++}>{italicMatch[1]}</em>)
+      remaining = remaining.slice(italicMatch[0].length)
+      continue
     }
-    if (block.type === 'table') {
-      return <Table key={i} headers={block.headers} rows={block.rows} />
+
+    // Links
+    const linkMatch = remaining.match(/^\[([^\]]+)\]\(([^)]+)\)/)
+    if (linkMatch) {
+      elements.push(
+        <a
+          key={key++}
+          href={linkMatch[2]}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            color: 'var(--chat-accent, #0078d4)',
+            textDecoration: 'underline',
+          }}
+        >
+          {linkMatch[1]}
+        </a>
+      )
+      remaining = remaining.slice(linkMatch[0].length)
+      continue
     }
-    return <Paragraph key={i}>{parseInline(block.content)}</Paragraph>
-  })
+
+    // Plain text until next special character
+    const plainMatch = remaining.match(/^[^`*[]+/)
+    if (plainMatch) {
+      elements.push(plainMatch[0])
+      remaining = remaining.slice(plainMatch[0].length)
+      continue
+    }
+
+    // Single special character (not part of markdown syntax)
+    elements.push(remaining[0])
+    remaining = remaining.slice(1)
+  }
+
+  return elements
 }
 
 /**
@@ -121,10 +166,10 @@ const splitIntoBlocks = (text) => {
     }
 
     // Unordered list
-    if (/^[\-\*]\s/.test(line)) {
+    if (/^[-*]\s/.test(line)) {
       const items = []
-      while (i < lines.length && /^[\-\*]\s/.test(lines[i])) {
-        items.push(lines[i].replace(/^[\-\*]\s/, ''))
+      while (i < lines.length && /^[-*]\s/.test(lines[i])) {
+        items.push(lines[i].replace(/^[-*]\s/, ''))
         i++
       }
       blocks.push({ type: 'list', items, ordered: false })
@@ -146,7 +191,7 @@ const splitIntoBlocks = (text) => {
     if (line.trim()) {
       const paragraphLines = []
       while (i < lines.length && lines[i].trim() && !lines[i].startsWith('```') &&
-             !lines[i].startsWith('> ') && !/^[\-\*]\s/.test(lines[i]) &&
+             !lines[i].startsWith('> ') && !/^[-*]\s/.test(lines[i]) &&
              !/^\d+\.\s/.test(lines[i])) {
         paragraphLines.push(lines[i])
         i++
@@ -162,94 +207,49 @@ const splitIntoBlocks = (text) => {
 }
 
 /**
- * Parse inline markdown (bold, italic, code, links)
+ * Simple markdown parser - converts markdown to React elements
  */
-const parseInline = (text) => {
-  if (!text) return null
+const parseMarkdown = (text) => {
+  // Split into blocks (paragraphs, code blocks, lists)
+  const blocks = splitIntoBlocks(text)
 
-  const elements = []
-  let remaining = text
-  let key = 0
-
-  while (remaining) {
-    // Inline code
-    const codeMatch = remaining.match(/^`([^`]+)`/)
-    if (codeMatch) {
-      elements.push(<InlineCode key={key++}>{codeMatch[1]}</InlineCode>)
-      remaining = remaining.slice(codeMatch[0].length)
-      continue
+  return blocks.map((block, i) => {
+    if (block.type === 'code') {
+      return <CodeBlock key={i} code={block.content} language={block.language} />
     }
-
-    // Bold
-    const boldMatch = remaining.match(/^\*\*([^*]+)\*\*/)
-    if (boldMatch) {
-      elements.push(<strong key={key++}>{boldMatch[1]}</strong>)
-      remaining = remaining.slice(boldMatch[0].length)
-      continue
+    if (block.type === 'blockquote') {
+      return <BlockQuote key={i}>{parseInline(block.content)}</BlockQuote>
     }
-
-    // Italic
-    const italicMatch = remaining.match(/^\*([^*]+)\*/)
-    if (italicMatch) {
-      elements.push(<em key={key++}>{italicMatch[1]}</em>)
-      remaining = remaining.slice(italicMatch[0].length)
-      continue
+    if (block.type === 'list') {
+      return <List key={i} items={block.items} ordered={block.ordered} />
     }
-
-    // Links
-    const linkMatch = remaining.match(/^\[([^\]]+)\]\(([^)]+)\)/)
-    if (linkMatch) {
-      elements.push(
-        <a
-          key={key++}
-          href={linkMatch[2]}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            color: 'var(--chat-accent, #0078d4)',
-            textDecoration: 'underline',
-          }}
-        >
-          {linkMatch[1]}
-        </a>
-      )
-      remaining = remaining.slice(linkMatch[0].length)
-      continue
+    if (block.type === 'table') {
+      return <Table key={i} headers={block.headers} rows={block.rows} />
     }
-
-    // Plain text until next special character
-    const plainMatch = remaining.match(/^[^`*\[]+/)
-    if (plainMatch) {
-      elements.push(plainMatch[0])
-      remaining = remaining.slice(plainMatch[0].length)
-      continue
-    }
-
-    // Single special character (not part of markdown syntax)
-    elements.push(remaining[0])
-    remaining = remaining.slice(1)
-  }
-
-  return elements
+    return <Paragraph key={i}>{parseInline(block.content)}</Paragraph>
+  })
 }
 
-/**
- * Inline code span
- */
-const InlineCode = ({ children }) => (
-  <code
-    style={{
-      backgroundColor: 'var(--chat-input-bg, #3c3c3c)',
-      color: '#e6b450', // Yellow/gold for inline code
-      padding: '2px 6px',
-      borderRadius: '3px',
-      fontFamily: 'var(--font-mono)',
-      fontSize: '13px',
-    }}
-  >
-    {children}
-  </code>
-)
+const TextBlock = ({ text, className = '' }) => {
+  const rendered = useMemo(() => {
+    if (!text) return null
+    return parseMarkdown(text)
+  }, [text])
+
+  return (
+    <div
+      className={`text-block ${className}`}
+      style={{
+        color: 'var(--chat-text, #cccccc)',
+        fontSize: '14px',
+        lineHeight: '1.6',
+        wordBreak: 'break-word',
+      }}
+    >
+      {rendered}
+    </div>
+  )
+}
 
 /**
  * Code block with language indicator

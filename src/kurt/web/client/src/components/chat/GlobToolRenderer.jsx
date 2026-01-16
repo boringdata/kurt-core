@@ -9,6 +9,28 @@ import ToolUseBlock, { ToolError, InlineCode } from './ToolUseBlock'
  * - Collapsible file list for many results
  */
 
+/**
+ * Get icon based on file extension
+ */
+const getFileIcon = (filename) => {
+  const ext = filename.split('.').pop()?.toLowerCase()
+
+  const icons = {
+    js: '📄',
+    jsx: '⚛️',
+    ts: '📘',
+    tsx: '⚛️',
+    py: '🐍',
+    md: '📝',
+    json: '📋',
+    css: '🎨',
+    html: '🌐',
+    default: '📄',
+  }
+
+  return icons[ext] || icons.default
+}
+
 const GlobToolRenderer = ({
   pattern,
   files = [],
@@ -92,27 +114,5 @@ const FileList = ({ files }) => (
     ))}
   </div>
 )
-
-/**
- * Get icon based on file extension
- */
-const getFileIcon = (filename) => {
-  const ext = filename.split('.').pop()?.toLowerCase()
-
-  const icons = {
-    js: '📄',
-    jsx: '⚛️',
-    ts: '📘',
-    tsx: '⚛️',
-    py: '🐍',
-    md: '📝',
-    json: '📋',
-    css: '🎨',
-    html: '🌐',
-    default: '📄',
-  }
-
-  return icons[ext] || icons.default
-}
 
 export default GlobToolRenderer

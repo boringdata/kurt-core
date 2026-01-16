@@ -38,6 +38,58 @@ const SAMPLE_COMMANDS = [
   },
 ]
 
+// Menu styles
+const menuStyles = {
+  container: {
+    position: 'absolute',
+    bottom: '100%',
+    left: '12px',
+    right: '12px',
+    backgroundColor: 'var(--chat-panel-bg, #252526)',
+    border: '1px solid var(--chat-border, #454545)',
+    borderRadius: '8px',
+    maxHeight: '200px',
+    overflowY: 'auto',
+    marginBottom: '8px',
+    zIndex: 10,
+  },
+  header: {
+    padding: '8px 12px 4px',
+    color: 'var(--chat-text-muted, #858585)',
+    fontSize: '11px',
+    fontWeight: 600,
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
+  },
+  item: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    width: '100%',
+    padding: '8px 12px',
+    backgroundColor: 'transparent',
+    border: 'none',
+    color: 'var(--chat-text, #cccccc)',
+    fontSize: '13px',
+    cursor: 'pointer',
+    textAlign: 'left',
+  },
+  itemSelected: {
+    backgroundColor: '#0078d4',
+    color: 'white',
+  },
+  icon: {
+    fontSize: '14px',
+    width: '20px',
+    textAlign: 'center',
+  },
+  description: {
+    marginLeft: 'auto',
+    color: 'var(--chat-text-muted, #858585)',
+    fontSize: '12px',
+  },
+}
+
 const ChatView = ({ socket, sessionId, onSendInput }) => {
   const { messages, isStreaming, onUserInput, onPtyOutput, onHistory, reset } =
     usePtyMessages()
@@ -511,57 +563,5 @@ const AssistantMessageSimple = ({ message, isStreaming }) => (
     </div>
   </div>
 )
-
-// Menu styles
-const menuStyles = {
-  container: {
-    position: 'absolute',
-    bottom: '100%',
-    left: '12px',
-    right: '12px',
-    backgroundColor: 'var(--chat-panel-bg, #252526)',
-    border: '1px solid var(--chat-border, #454545)',
-    borderRadius: '8px',
-    maxHeight: '200px',
-    overflowY: 'auto',
-    marginBottom: '8px',
-    zIndex: 10,
-  },
-  header: {
-    padding: '8px 12px 4px',
-    color: 'var(--chat-text-muted, #858585)',
-    fontSize: '11px',
-    fontWeight: 600,
-    textTransform: 'uppercase',
-    letterSpacing: '0.5px',
-  },
-  item: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    width: '100%',
-    padding: '8px 12px',
-    backgroundColor: 'transparent',
-    border: 'none',
-    color: 'var(--chat-text, #cccccc)',
-    fontSize: '13px',
-    cursor: 'pointer',
-    textAlign: 'left',
-  },
-  itemSelected: {
-    backgroundColor: '#0078d4',
-    color: 'white',
-  },
-  icon: {
-    fontSize: '14px',
-    width: '20px',
-    textAlign: 'center',
-  },
-  description: {
-    marginLeft: 'auto',
-    color: 'var(--chat-text-muted, #858585)',
-    fontSize: '12px',
-  },
-}
 
 export default ChatView
