@@ -254,24 +254,35 @@ def api_list_documents(
     Used by both CLI (in cloud mode) and web UI.
     """
     import logging
+    import sys
     import traceback
     from dataclasses import asdict
 
     from kurt.documents import DocumentFilters, DocumentRegistry
 
     try:
+        print("DEBUG: Starting documents API", file=sys.stderr)
         filters = DocumentFilters(
             fetch_status=status,
             limit=limit,
             offset=offset,
             url_contains=url_pattern,
         )
+        print("DEBUG: Created filters", file=sys.stderr)
 
         registry = DocumentRegistry()
+        print("DEBUG: Created registry", file=sys.stderr)
+
         with get_session_for_request(request) as session:
+            print(f"DEBUG: Got session: {type(session)}", file=sys.stderr)
             docs = registry.list(session, filters)
-            return [asdict(doc) for doc in docs]
+            print(f"DEBUG: Got {len(docs)} documents", file=sys.stderr)
+            result = [asdict(doc) for doc in docs]
+            print("DEBUG: Serialized documents", file=sys.stderr)
+            return result
     except Exception as e:
+        print(f"DEBUG: Exception occurred: {e}", file=sys.stderr)
+        print(f"DEBUG: Traceback: {traceback.format_exc()}", file=sys.stderr)
         logging.error(f"Documents API error: {e}")
         logging.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Documents query failed: {str(e)}")
