@@ -404,8 +404,18 @@ def status_cmd():
                     # Display GitHub repository if linked
                     if workspace.get("github_repo"):
                         console.print(f"  GitHub: https://github.com/{workspace['github_repo']}")
+            except urllib.error.HTTPError as e:
+                # Try to read error body
+                try:
+                    import json as json_module
+
+                    error_body = json_module.loads(e.read().decode())
+                    console.print(
+                        f"  [dim]API Error ({e.code}): {error_body.get('detail', error_body)}[/dim]"
+                    )
+                except Exception:
+                    console.print(f"  [dim]Could not fetch workspace details: HTTP {e.code}[/dim]")
             except Exception as e:
-                # Debug: show error to help troubleshoot
                 console.print(f"  [dim]Could not fetch workspace details: {e}[/dim]")
     else:
         console.print("[yellow]No kurt.config found[/yellow]")
