@@ -223,6 +223,8 @@ def api_list_documents(
 
     Used by both CLI (in cloud mode) and web UI.
     """
+    from dataclasses import asdict
+
     from kurt.documents import DocumentFilters, DocumentRegistry
 
     filters = DocumentFilters(
@@ -235,7 +237,7 @@ def api_list_documents(
     registry = DocumentRegistry()
     with get_session_for_request(request) as session:
         docs = registry.list(session, filters)
-        return [doc.model_dump() for doc in docs]
+        return [asdict(doc) for doc in docs]
 
 
 @app.get("/api/documents/count")
@@ -268,6 +270,8 @@ def api_get_document(request: Request, document_id: str):
 
     Used by both CLI (in cloud mode) and web UI.
     """
+    from dataclasses import asdict
+
     from kurt.documents import DocumentRegistry
 
     registry = DocumentRegistry()
@@ -275,7 +279,7 @@ def api_get_document(request: Request, document_id: str):
         doc = registry.get(session, document_id)
         if doc is None:
             raise HTTPException(status_code=404, detail="Document not found")
-        return doc.model_dump()
+        return asdict(doc)
 
 
 @app.get("/api/tree")
