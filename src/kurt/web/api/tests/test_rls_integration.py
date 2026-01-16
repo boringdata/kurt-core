@@ -79,28 +79,6 @@ class TestRLSContextPropagation:
                 for call in execute_calls:
                     assert "SET LOCAL" not in str(call)
 
-    def test_supabase_session_skips_rls(self, tmp_project):
-        """Test SupabaseSession skips SET LOCAL (RLS handled by PostgREST)."""
-        from kurt.db import managed_session
-        from kurt.db.cloud import SupabaseSession
-        from kurt.db.tenant import set_workspace_context
-
-        # Set workspace context
-        set_workspace_context(workspace_id="ws-456", user_id="user-123")
-
-        # Create a mock SupabaseSession
-        mock_supabase_session = MagicMock(spec=SupabaseSession)
-
-        with patch("kurt.db.database.get_session") as mock_get_session:
-            mock_get_session.return_value = mock_supabase_session
-
-            with managed_session():
-                pass
-
-            # SET LOCAL should NOT be called for SupabaseSession
-            # (RLS is handled by PostgREST via JWT)
-            mock_supabase_session.execute.assert_not_called()
-
 
 class TestSQLInjectionProtection:
     """Test SQL injection protection in RLS context."""

@@ -1,4 +1,4 @@
-"""Status queries using repository pattern (works in local and cloud modes)."""
+"""Status queries using repository pattern."""
 
 from __future__ import annotations
 
@@ -10,17 +10,14 @@ from kurt.db.repository import BaseRepository
 if TYPE_CHECKING:
     from sqlmodel import Session
 
-    from kurt.db.cloud import SupabaseSession
-
 
 class StatusRepository(BaseRepository):
     """Repository for status statistics.
 
-    Provides cloud-aware methods for getting document counts and aggregations.
-    Works in both SQLite/PostgreSQL and PostgREST (cloud) modes.
+    Provides methods for getting document counts and aggregations.
     """
 
-    def __init__(self, session: "Session | SupabaseSession"):
+    def __init__(self, session: "Session"):
         super().__init__(session)
 
     def get_document_counts(self) -> dict[str, int]:
@@ -76,15 +73,14 @@ class StatusRepository(BaseRepository):
         return domains
 
 
-def get_status_data(session: "Session | SupabaseSession") -> dict:
+def get_status_data(session: "Session") -> dict:
     """
     Gather all status information using repository pattern.
 
-    This function works in both local (SQLite/PostgreSQL) and cloud modes.
-    In cloud mode, it's called by the API endpoint on kurt-cloud backend.
+    In cloud mode, this function is called by the kurt-cloud API endpoint.
 
     Args:
-        session: SQLModel or SupabaseSession
+        session: SQLModel session
 
     Returns:
         Dict with status data including document counts and domain distribution

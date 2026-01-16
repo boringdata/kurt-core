@@ -3,7 +3,10 @@
 Supported database backends:
 - SQLite (local development): .kurt/kurt.sqlite
 - PostgreSQL (production): Direct connection via DATABASE_URL
-- Kurt Cloud: Supabase PostgREST via DATABASE_URL="kurt"
+
+Cloud mode (DATABASE_URL="kurt"):
+- CLI commands route to kurt-cloud API via HTTP
+- Backend uses direct PostgreSQL connection
 
 Usage:
     from kurt.db import get_database_client, managed_session
@@ -16,13 +19,8 @@ Usage:
         session.add(LLMTrace(...))
 """
 
-from kurt.db.base import DatabaseClient, KurtCloudAuthError, get_database_client
-from kurt.db.cloud import (
-    CloudDatabaseClient,
-    SupabaseClient,
-    SupabaseSession,
-    get_cloud_client,
-)
+from kurt.db.base import DatabaseClient, get_database_client
+from kurt.db.cloud_api import KurtCloudAuthError
 from kurt.db.database import (
     async_session_scope,
     dispose_async_resources,
@@ -61,11 +59,6 @@ __all__ = [
     "DatabaseClient",
     "get_database_client",
     "KurtCloudAuthError",
-    # Cloud-specific
-    "CloudDatabaseClient",
-    "SupabaseClient",
-    "SupabaseSession",
-    "get_cloud_client",
     # Session management
     "get_session",
     "init_database",

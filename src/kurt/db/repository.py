@@ -1,10 +1,7 @@
-"""Base repository class with cloud-aware query methods.
+"""Base repository class for database queries.
 
-This module provides base classes for domain repositories that need to work
-in both local (SQLite/PostgreSQL) and cloud (PostgREST) modes.
-
-The repository pattern encapsulates data access logic and provides a clean
-abstraction over the underlying storage mechanism.
+This module provides base classes for domain repositories that encapsulate
+data access logic and provide a clean abstraction over database operations.
 """
 
 from __future__ import annotations
@@ -15,17 +12,14 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar
 if TYPE_CHECKING:
     from sqlmodel import Session
 
-    from kurt.db.cloud import SupabaseSession
-
 T = TypeVar("T")
 
 
 class BaseRepository(ABC, Generic[T]):
-    """Base repository with cloud-aware query methods.
+    """Base repository with common query helper methods.
 
-    Provides helper methods that work in both SQL (SQLite/PostgreSQL) and
-    cloud (PostgREST) modes by detecting the session type and routing to
-    the appropriate implementation.
+    Provides helper methods for common database queries like counting and
+    selecting columns, using standard SQLModel/SQLAlchemy queries.
 
     Usage:
         class MyRepository(BaseRepository):
@@ -38,18 +32,11 @@ class BaseRepository(ABC, Generic[T]):
                 return {"total": total, "active": active}
     """
 
-    def __init__(self, session: "Session | SupabaseSession"):
+    def __init__(self, session: "Session"):
         self._session = session
-        self._is_cloud = self._detect_cloud_mode()
-
-    def _detect_cloud_mode(self) -> bool:
-        """Check if session is SupabaseSession."""
-        from kurt.db.cloud import SupabaseSession
-
-        return isinstance(self._session, SupabaseSession)
 
     def _count(self, model: type, filters: dict[str, Any] | None = None) -> int:
-        """Count records - works in all modes.
+        """Count records.
 
         Args:
             model: The SQLModel model class
@@ -58,17 +45,13 @@ class BaseRepository(ABC, Generic[T]):
         Returns:
             Count of matching records
         """
-        if self._is_cloud:
-            table = self._get_table_name(model)
-            return self._session._client.count(table, filters=filters)
-        else:
-            from sqlmodel import func, select
+        from sqlmodel import func, select
 
-            stmt = select(func.count()).select_from(model)
-            if filters:
-                for key, value in filters.items():
-                    stmt = stmt.where(getattr(model, key) == value)
-            return self._session.exec(stmt).one()
+        stmt = select(func.count()).select_from(model)
+        if filters:
+            for key, value in filters.items():
+                stmt = stmt.where(getattr(model, key) == value)
+        return self._session.exec(stmt).one()
 
     def _select_column(
         self,
@@ -77,7 +60,7 @@ class BaseRepository(ABC, Generic[T]):
         filters: dict[str, Any] | None = None,
         limit: int | None = None,
     ) -> list:
-        """Select single column - works in all modes.
+        """Select single column.
 
         Args:
             model: The SQLModel model class
@@ -88,22 +71,15 @@ class BaseRepository(ABC, Generic[T]):
         Returns:
             List of column values
         """
-        if self._is_cloud:
-            table = self._get_table_name(model)
-            rows = self._session._client.select(
-                table, columns=column, filters=filters, limit=limit or 10000
-            )
-            return [row[column] for row in rows if column in row]
-        else:
-            from sqlmodel import select
+        from sqlmodel import select
 
-            stmt = select(getattr(model, column))
-            if filters:
-                for key, value in filters.items():
-                    stmt = stmt.where(getattr(model, key) == value)
-            if limit:
-                stmt = stmt.limit(limit)
-            return self._session.exec(stmt).all()
+        stmt = select(getattr(model, column))
+        if filters:
+            for key, value in filters.items():
+                stmt = stmt.where(getattr(model, key) == value)
+        if limit:
+            stmt = stmt.limit(limit)
+        return self._session.exec(stmt).all()
 
     def _get_table_name(self, model: type) -> str:
         """Get table name from model.

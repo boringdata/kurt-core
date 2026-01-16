@@ -258,7 +258,7 @@ def check_migrations_needed() -> bool:
     """
     # Skip migration check in cloud mode - migrations are managed via kurt-cloud scripts
     try:
-        from kurt.db.cloud import is_cloud_mode
+        from kurt.db.tenant import is_cloud_mode
 
         if is_cloud_mode():
             return False

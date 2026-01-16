@@ -60,12 +60,6 @@ def _get_database_url_from_config() -> str | None:
     return None
 
 
-class KurtCloudAuthError(Exception):
-    """Raised when Kurt Cloud authentication fails or is missing."""
-
-    pass
-
-
 def get_database_client() -> DatabaseClient:
     """
     Factory function to get the appropriate database client.
@@ -75,9 +69,11 @@ def get_database_client() -> DatabaseClient:
     2. kurt.config DATABASE_URL field
 
     Values:
-    - "kurt": Returns CloudDatabaseClient (uses Supabase PostgREST)
     - "postgresql://...": Returns PostgreSQLClient (direct connection)
-    - None or empty: Returns SQLiteClient (local .kurt/kurt.sqlite)
+    - None, empty, or "kurt": Returns SQLiteClient (local .kurt/kurt.sqlite)
+
+    Note: In cloud mode (DATABASE_URL="kurt"), CLI commands check is_cloud_mode()
+    and route to API before calling this function, so SQLiteClient is never used.
 
     Returns:
         DatabaseClient: Appropriate client for the environment
@@ -90,21 +86,6 @@ def get_database_client() -> DatabaseClient:
     # Priority 2: Config file
     if not database_url:
         database_url = _get_database_url_from_config()
-
-    # Handle "kurt" magic value - use CloudDatabaseClient
-    if database_url == "kurt":
-        try:
-            from kurt.db.cloud import CloudDatabaseClient
-
-            return CloudDatabaseClient()
-        except ImportError as e:
-            missing_module = str(e).split("'")[1] if "'" in str(e) else "unknown"
-            raise ImportError(
-                f"Kurt Cloud mode requires additional dependencies.\n"
-                f"Missing module: {missing_module}\n\n"
-                f"Install with: uv pip install 'kurt[cloud]'\n"
-                f"Or install all extras: uv pip install 'kurt[all]'"
-            ) from e
 
     # PostgreSQL direct connection
     if database_url and database_url.startswith("postgres"):
@@ -121,7 +102,7 @@ def get_database_client() -> DatabaseClient:
                 f"Or install all extras: uv pip install 'kurt[all]'"
             ) from e
 
-    # Default: SQLite
+    # Default: SQLite (also used as fallback for DATABASE_URL="kurt")
     from kurt.db.sqlite import SQLiteClient
 
     return SQLiteClient()

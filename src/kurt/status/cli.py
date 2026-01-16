@@ -172,7 +172,7 @@ def _get_status_data() -> dict:
     Local mode: Direct SQLAlchemy queries
     Cloud mode: HTTP request to kurt-cloud API
     """
-    from kurt.db.cloud import is_cloud_mode
+    from kurt.db.tenant import is_cloud_mode
 
     if is_cloud_mode():
         # Cloud mode: Call kurt-cloud API

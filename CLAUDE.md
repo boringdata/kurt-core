@@ -29,28 +29,19 @@ Kurt supports three database modes via `DATABASE_URL` in `kurt.config`:
    - Full SQL support including views and JOINs
    - Use for self-hosted PostgreSQL or local Postgres
 
-3. **Kurt Cloud (PostgREST via Supabase)**
+3. **Kurt Cloud**
    ```
    DATABASE_URL="kurt"
    ```
-   - Uses PostgREST API (not direct SQL)
    - Automatic multi-tenancy via RLS
    - Requires `kurt cloud login` for authentication
-   - JOINs use database VIEWs (e.g., `document_lifecycle`)
-   - PostgREST quirks: returns string 'null' for NULL values
+   - CLI commands route through kurt-cloud API
 
-### Database Views for Cloud Mode
+### Cloud Mode Architecture: CLI → Web API → PostgreSQL
 
-When using Kurt Cloud (PostgREST), complex JOINs must be pre-defined as database VIEWs:
-- **document_lifecycle**: Joins `map_documents` ⟕ `fetch_documents`
-- Views are detected in `SupabaseSession._exec_join_query()` and used automatically
-- RLS policies apply to views automatically
+**Purpose**: Provide cloud-hosted backend with API-based access for CLI commands.
 
-### Cloud Mode Architecture: CLI → Web API → Queries
-
-**Problem**: PostgREST API cannot execute arbitrary SQLAlchemy queries (COUNT, aggregations, complex JOINs fail).
-
-**Solution**: CLI routes to web API in cloud mode, which runs SQLAlchemy queries server-side.
+**Solution**: CLI routes to web API in cloud mode, which runs SQLAlchemy queries server-side using direct PostgreSQL connection.
 
 **Architecture**:
 ```
@@ -96,7 +87,7 @@ web/api/
 - ✅ Single API definition (`web/api/server.py`)
 - ✅ No duplication between CLI API and web UI API
 - ✅ `kurt serve` uses same API that kurt-cloud hosts
-- ✅ Better performance (one HTTP call vs multiple PostgREST queries)
+- ✅ Direct PostgreSQL access on backend
 
 **When adding new features**:
 1. Use existing registry/service classes OR create `module/queries.py` with SQLAlchemy queries
@@ -158,19 +149,19 @@ def managed_session():
 - ✅ Context variables (`set_workspace_context`) propagate across async boundaries
 - ✅ Parameterized queries prevent SQL injection (`SET LOCAL app.user_id = :user_id`)
 - ✅ Local mode (SQLite) skips RLS - no overhead
-- ✅ SupabaseSession skips RLS - handled by PostgREST
+- ✅ Cloud mode uses direct PostgreSQL with RLS
 - ✅ Tests verify SQL injection protection and context propagation
 
 **Files**:
 - `src/kurt/db/tenant.py` - Context management and `set_rls_context()`
 - `src/kurt/db/database.py` - `managed_session()` calls `set_rls_context()`
 - `src/kurt/web/api/auth.py` - Middleware sets context from JWT
-- `src/kurt/web/api/tests/test_rls_integration.py` - RLS tests (5 tests passing)
+- `src/kurt/web/api/tests/test_rls_integration.py` - RLS tests (4 tests passing)
 
 **Security**:
 - SQL injection prevented via parameterized queries
 - Workspace isolation enforced at database level
-- JWT validation via Supabase auth API
+- JWT validation via auth API
 
 ## Principles
 
@@ -336,7 +327,7 @@ python scripts/run_core_migrations.py
 
 ### SQL Migrations (Deprecated)
 
-**Do NOT use manual SQL migrations** (e.g., `supabase/migrations/*.sql`). Use Alembic exclusively for consistency and version control.
+**Do NOT use manual SQL migrations**. Use Alembic exclusively for consistency and version control.
 
 ## Testing
 

@@ -94,33 +94,29 @@ def managed_session(session: Optional[Session] = None):
     Works with all database backends:
     - SQLite: Standard SQLModel session
     - PostgreSQL: SQLModel session + RLS context via SET LOCAL
-    - Cloud: SupabaseSession (RLS via JWT claims, no SET LOCAL needed)
 
     Args:
         session: Optional existing session to use (will NOT be closed/committed)
 
     Yields:
-        Session: Database session (or SupabaseSession in cloud mode)
+        Session: Database session
 
     Example:
         with managed_session() as session:
             session.add(LLMTrace(workflow_id="123", ...))
             # Auto-commits on exit, rolls back on exception
     """
-    from kurt.db.cloud import SupabaseSession
     from kurt.db.tenant import set_rls_context
 
     if session is not None:
-        # Set RLS context on existing session (skip for SupabaseSession)
-        if not isinstance(session, SupabaseSession):
-            set_rls_context(session)
+        # Set RLS context on existing session
+        set_rls_context(session)
         yield session
     else:
         _session = get_session()
         try:
-            # Set RLS context for PostgreSQL mode (skip for SupabaseSession)
-            if not isinstance(_session, SupabaseSession):
-                set_rls_context(_session)
+            # Set RLS context for PostgreSQL mode
+            set_rls_context(_session)
             yield _session
             _session.commit()
         except Exception:

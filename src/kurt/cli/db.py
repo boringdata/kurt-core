@@ -268,10 +268,14 @@ def import_cmd(
 
             if not dry_run:
                 if cloud_mode:
-                    # Cloud mode: use Supabase client directly
-                    imported, skipped, errors = _import_via_supabase(
-                        table_name, records, workspace_id, user_id, skip_duplicates
+                    # Cloud mode no longer uses PostgREST - use direct PostgreSQL connection
+                    console.print(
+                        "[red]Error: Cloud mode (DATABASE_URL='kurt') is not supported for import.[/red]"
                     )
+                    console.print("\n[dim]To import data into Kurt Cloud:[/dim]")
+                    console.print("[dim]1. Set DATABASE_URL to direct PostgreSQL connection[/dim]")
+                    console.print("[dim]2. Re-run this command[/dim]")
+                    raise click.Abort()
                 else:
                     # PostgreSQL mode: use raw SQL
                     imported, skipped, errors = _import_via_sql(
@@ -322,111 +326,6 @@ def import_cmd(
     console.print()
     console.print(f"[dim]Data imported to workspace: {workspace_id}[/dim]")
     console.print(f"[dim]User ID: {user_id}[/dim]")
-
-
-def _import_via_supabase(
-    table_name: str,
-    records: list[dict],
-    workspace_id: str,
-    user_id: str,
-    skip_duplicates: bool,
-) -> tuple[int, int, int]:
-    """Import records via Supabase PostgREST API.
-
-    Returns (imported, skipped, errors) counts.
-    """
-    from kurt.db.cloud import get_cloud_client
-
-    client = get_cloud_client()
-
-    imported = 0
-    skipped = 0
-    errors = 0
-
-    # Batch records for efficiency
-    batch_size = 100
-    batch = []
-
-    for record in records:
-        # Add tenant fields
-        record["user_id"] = user_id
-        record["workspace_id"] = workspace_id
-
-        # Remove None values (Supabase doesn't like explicit nulls for missing cols)
-        record = {k: v for k, v in record.items() if v is not None}
-
-        batch.append(record)
-
-        if len(batch) >= batch_size:
-            imp, skip, err = _flush_supabase_batch(client, table_name, batch, skip_duplicates)
-            imported += imp
-            skipped += skip
-            errors += err
-            batch = []
-
-    # Flush remaining
-    if batch:
-        imp, skip, err = _flush_supabase_batch(client, table_name, batch, skip_duplicates)
-        imported += imp
-        skipped += skip
-        errors += err
-
-    return imported, skipped, errors
-
-
-def _flush_supabase_batch(
-    client,
-    table_name: str,
-    batch: list[dict],
-    skip_duplicates: bool,
-) -> tuple[int, int, int]:
-    """Flush a batch of records to Supabase.
-
-    Returns (imported, skipped, errors) counts.
-    """
-    imported = 0
-    skipped = 0
-    errors = 0
-
-    # Normalize batch: ensure all records have same keys (PostgREST requirement)
-    all_keys = set()
-    for record in batch:
-        all_keys.update(record.keys())
-
-    normalized_batch = []
-    for record in batch:
-        normalized = {k: record.get(k) for k in all_keys}
-        normalized_batch.append(normalized)
-
-    try:
-        # Use upsert to handle duplicates gracefully
-        result = client.supabase.upsert(table_name, normalized_batch)
-        imported = len(result)
-        skipped = len(batch) - imported
-    except Exception as e:
-        # If batch fails, try individual inserts
-        error_msg = str(e)
-        # Handle various error cases by falling back to individual inserts
-        if any(
-            err_type in error_msg.lower()
-            for err_type in ["duplicate", "conflict", "pgrst102", "must match"]
-        ):
-            # Try one by one
-            for record in batch:
-                try:
-                    client.supabase.upsert(table_name, record)
-                    imported += 1
-                except Exception as rec_err:
-                    rec_msg = str(rec_err).lower()
-                    if skip_duplicates and ("duplicate" in rec_msg or "conflict" in rec_msg):
-                        skipped += 1
-                    else:
-                        errors += 1
-        else:
-            console.print(f"[red]Batch error: {e}[/red]")
-            errors = len(batch)
-
-    return imported, skipped, errors
 
 
 def _import_via_sql(
@@ -545,33 +444,13 @@ def status_cmd():
 
     try:
         if is_cloud_mode():
-            # Use Supabase client for counting (raw SQL not supported)
-            from kurt.db.cloud import get_cloud_client
-
-            client = get_cloud_client()
-            for table_name in MIGRATABLE_TABLES + OPTIONAL_TABLES:
-                try:
-                    # Use count RPC or fetch with Prefer: count=exact header
-                    import httpx
-
-                    url = f"{client.supabase.base_url}/rest/v1/{table_name}"
-                    headers = client.supabase.headers.copy()
-                    headers["Prefer"] = "count=exact"
-                    headers["Range-Unit"] = "items"
-                    resp = httpx.head(url, headers=headers, timeout=30.0)
-                    # Count is in Content-Range header: "0-N/total"
-                    content_range = resp.headers.get("Content-Range", "")
-                    if "/" in content_range:
-                        count = content_range.split("/")[-1]
-                        table.add_row(table_name, count)
-                    else:
-                        # Fallback: just count returned rows (may be limited)
-                        result = (
-                            client.supabase.table(table_name).select("*").limit(10000).execute()
-                        )
-                        table.add_row(table_name, str(len(result.data)))
-                except Exception:
-                    table.add_row(table_name, "[dim]N/A[/dim]")
+            # Cloud mode no longer uses PostgREST - use direct PostgreSQL connection
+            console.print(
+                "\n[yellow]Warning: 'db info' not available in cloud mode (DATABASE_URL='kurt')[/yellow]"
+            )
+            console.print(
+                "[dim]Set DATABASE_URL to direct PostgreSQL connection to view table statistics.[/dim]\n"
+            )
         else:
             # Use raw SQL for local databases
             with managed_session() as session:
