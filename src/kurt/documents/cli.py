@@ -305,7 +305,7 @@ def _list_documents_from_api(filters):
     if filters.url_contains:
         params["url_pattern"] = filters.url_contains
 
-    data = api_request("/api/documents", params)
+    data = api_request("/core/api/documents", params)
     return [DocumentView(**doc) for doc in data]
 
 
@@ -364,7 +364,7 @@ def _get_document_from_api(identifier: str):
     from kurt.documents.models import DocumentView
 
     try:
-        data = api_request(f"/api/documents/{identifier}")
+        data = api_request(f"/core/api/documents/{identifier}")
         return DocumentView(**data)
     except requests.exceptions.HTTPError as e:
         if e.response.status_code == 404:

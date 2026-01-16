@@ -196,12 +196,12 @@ def _get_status_data_from_api() -> dict:
     """
     Get status data from web API (cloud mode).
 
-    Calls the same /api/status endpoint that the web UI uses.
+    Calls the /core/api/status endpoint (kurt-core mounted at /core prefix).
     In cloud mode, this is hosted on kurt-cloud.
     """
     from kurt.db.cloud_api import api_request
 
-    return api_request("/api/status")
+    return api_request("/core/api/status")
 
 
 def _generate_status_markdown(data: dict) -> str:
