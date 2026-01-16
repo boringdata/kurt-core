@@ -160,7 +160,6 @@ def api_status(request: Request):
     Used by both CLI (in cloud mode) and web UI.
     """
     import logging
-    import os
     import traceback
 
     from fastapi import HTTPException
@@ -169,22 +168,29 @@ def api_status(request: Request):
     from kurt.status.queries import get_status_data
 
     try:
-        # Check if running in cloud mode (when DATABASE_URL not set, use cloud session)
-        is_cloud_mode = os.environ.get("DATABASE_URL") == "kurt" or not os.environ.get(
-            "DATABASE_URL"
-        )
+        # Check for Authorization header (cloud mode)
+        auth_header = request.headers.get("Authorization")
 
-        if is_cloud_mode and hasattr(request.state, "workspace_id"):
-            # Cloud mode: create Supabase session using workspace_id from middleware
+        if auth_header and auth_header.startswith("Bearer "):
+            # Cloud mode: decode token to get workspace_id
+            import jwt
+
             from kurt.db.cloud import SupabaseSession
 
-            workspace_id = request.state.workspace_id
-            session = SupabaseSession(workspace_id=workspace_id)
-            return get_status_data(session)
-        else:
-            # Local mode: use managed_session (SQLite/PostgreSQL)
-            with managed_session() as session:
+            token = auth_header.split(" ", 1)[1]
+
+            # Decode token (we don't verify here since middleware already did)
+            # We just need to extract the workspace_id claim
+            payload = jwt.decode(token, options={"verify_signature": False})
+            workspace_id = payload.get("workspace_id")
+
+            if workspace_id:
+                session = SupabaseSession(workspace_id=workspace_id)
                 return get_status_data(session)
+
+        # Local mode: use managed_session (SQLite/PostgreSQL)
+        with managed_session() as session:
+            return get_status_data(session)
     except Exception as e:
         logging.error(f"Status API error: {e}")
         logging.error(traceback.format_exc())
