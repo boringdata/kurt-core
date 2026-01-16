@@ -730,7 +730,11 @@ def workspaces_cmd():
     import json
     import urllib.request
 
-    from kurt.cli.auth.credentials import ensure_fresh_token, get_cloud_api_url
+    from kurt.cli.auth.credentials import (
+        ensure_fresh_token,
+        get_cloud_api_url,
+        get_workspace_paths,
+    )
     from kurt.config import config_file_exists, load_config
 
     # Check auth and refresh token if needed
@@ -791,6 +795,13 @@ def workspaces_cmd():
 
         console.print(f"  [{role_color}]{role:6}[/{role_color}]  {name}{current_marker}")
         console.print(f"          [dim]{ws_id}[/dim]")
+
+        # Show local paths associated with this workspace
+        paths = get_workspace_paths(ws_id)
+        if paths:
+            for path in paths:
+                console.print(f"          [dim]📁 {path}[/dim]")
+
         console.print()
 
     console.print("[dim]Use 'kurt cloud use <workspace_id>' to switch workspaces[/dim]")
