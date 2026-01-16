@@ -194,6 +194,22 @@ def api_config():
         }
 
 
+@app.get("/api/debug/env")
+def api_debug_env():
+    """Debug endpoint to check environment variables."""
+    import os
+
+    database_url = os.environ.get("DATABASE_URL", "NOT_SET")
+    return {
+        "database_url_set": database_url != "NOT_SET",
+        "database_url_prefix": database_url[:20] if database_url != "NOT_SET" else None,
+        "is_postgresql": database_url.startswith("postgresql")
+        if database_url != "NOT_SET"
+        else False,
+        "all_env_keys": sorted([k for k in os.environ.keys() if not k.startswith("_")])[:20],
+    }
+
+
 @app.get("/api/status")
 def api_status(request: Request):
     """
