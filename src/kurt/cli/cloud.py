@@ -590,6 +590,7 @@ def use_cmd(workspace_id: str):
         Credentials,
         get_cloud_api_url,
         load_credentials,
+        register_workspace_path,
         save_credentials,
     )
     from kurt.config import config_file_exists, get_config_file_path
@@ -656,6 +657,11 @@ def use_cmd(workspace_id: str):
     )
     save_credentials(creds)
 
+    # Register current project path with this workspace
+    if config_file_exists():
+        project_path = str(get_config_file_path().parent.absolute())
+        register_workspace_path(workspace_id, project_path, workspace.get("name"))
+
     console.print()
     console.print(f"[green]✓ Switched to workspace: {workspace.get('name', workspace_id)}[/green]")
     console.print(f"  Role: {workspace.get('role', 'member')}")
@@ -664,18 +670,27 @@ def use_cmd(workspace_id: str):
 
 @cloud_group.command(name="workspace-create")
 @click.argument("name")
-def workspace_create_cmd(name: str):
+@click.option("--github-repo", required=True, help="GitHub repository (owner/repo format)")
+def workspace_create_cmd(name: str, github_repo: str):
     """Create a new workspace.
 
     Creates a workspace in Kurt Cloud. You will be the owner.
 
     Example:
-        kurt cloud workspace-create "My Project"
+        kurt cloud workspace-create "My Project" --github-repo boringdata/kurt-demo
     """
     import json
+    import re
     import urllib.request
 
-    from kurt.cli.auth.credentials import get_cloud_api_url, load_credentials
+    from kurt.cli.auth.credentials import (
+        Credentials,
+        get_cloud_api_url,
+        load_credentials,
+        register_workspace_path,
+        save_credentials,
+    )
+    from kurt.config import config_file_exists, get_config_file_path
 
     # Check auth
     creds = load_credentials()
@@ -688,7 +703,7 @@ def workspace_create_cmd(name: str):
     cloud_url = get_cloud_api_url()
     url = f"{cloud_url}/api/v1/workspaces"
 
-    data = json.dumps({"name": name}).encode()
+    data = json.dumps({"name": name, "github_repo": github_repo}).encode()
     req = urllib.request.Request(url, data=data, method="POST")
     req.add_header("Content-Type", "application/json")
     req.add_header("Authorization", f"Bearer {creds.access_token}")
@@ -697,10 +712,49 @@ def workspace_create_cmd(name: str):
         with urllib.request.urlopen(req, timeout=10) as resp:
             workspace = json.loads(resp.read().decode())
 
+        workspace_id = workspace.get("id")
+
+        # Automatically switch to the new workspace
+        # Update local config file
+        if config_file_exists():
+            config_path = get_config_file_path()
+            content = config_path.read_text()
+
+            if re.search(r"^WORKSPACE_ID\s*=", content, re.MULTILINE):
+                content = re.sub(
+                    r"^WORKSPACE_ID\s*=.*$",
+                    f'WORKSPACE_ID="{workspace_id}"',
+                    content,
+                    flags=re.MULTILINE,
+                )
+            else:
+                content += f'\nWORKSPACE_ID="{workspace_id}"\n'
+
+            config_path.write_text(content)
+
+            # Register current project path with this workspace
+            project_path = str(config_path.parent.absolute())
+            register_workspace_path(workspace_id, project_path, workspace.get("name"))
+
+        # Update credentials with new workspace_id
+        creds = Credentials(
+            access_token=creds.access_token,
+            refresh_token=creds.refresh_token,
+            user_id=creds.user_id,
+            email=creds.email,
+            workspace_id=workspace_id,
+            expires_at=creds.expires_at,
+        )
+        save_credentials(creds)
+
         console.print()
         console.print(f"[green]✓ Created workspace: {workspace.get('name', name)}[/green]")
-        console.print(f"  ID: {workspace.get('id')}")
+        console.print(f"  ID: {workspace_id}")
         console.print(f"  Role: {workspace.get('role', 'owner')}")
+        if workspace.get("github_repo"):
+            console.print(f"  GitHub: https://github.com/{workspace['github_repo']}")
+        if config_file_exists():
+            console.print("  [dim]Automatically switched to this workspace[/dim]")
 
     except urllib.error.HTTPError as e:
         try:
