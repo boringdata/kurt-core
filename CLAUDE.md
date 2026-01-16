@@ -828,6 +828,28 @@ Rule of thumb: If storing `WORKFLOW.PARAM=value` in `kurt.config` file doesn't m
 
 Agent workflows execute Claude Code CLI as a subprocess inside DBOS workflows. They're defined as Markdown files with YAML frontmatter in `workflows/` (configurable via `PATH_WORKFLOWS` in `kurt.config`).
 
+### Directory Structure
+
+Three distinct directories for agent-related files:
+
+1. **`src/kurt/agents/templates/`** - Agent prompt templates
+   - Static prompt files for agent operations
+   - Example: `setup-github-workspace.md`, `plan-template.md`
+   - Shipped with the product
+   - Used by agent CLI for specific tasks
+
+2. **`src/kurt/workflows/agents/`** - Agent workflow system implementation
+   - Parser, executor, registry, scheduler
+   - CLI commands (`kurt agents list`, `kurt agents run`)
+   - Tests for the workflow system
+   - This is the **code** that runs user workflows
+
+3. **`/workflows/`** (project root) - User-defined workflows (development testing only)
+   - Gitignored via `/workflows/`
+   - Used for testing during development
+   - In production, users create workflows in their own project directories
+   - Configured via `PATH_WORKFLOWS` in `kurt.config`
+
 ### Workflow Definition Format
 
 ```markdown
