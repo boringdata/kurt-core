@@ -411,29 +411,9 @@ def status_cmd():
         if mode == "cloud_postgres" and workspace_id and creds:
             try:
                 import json
-                import time
                 import urllib.request
 
-                from kurt.cli.auth.commands import refresh_access_token
-                from kurt.cli.auth.credentials import (
-                    Credentials,
-                    get_cloud_api_url,
-                    save_credentials,
-                )
-
-                # Refresh token if expired
-                if creds.is_expired() and creds.refresh_token:
-                    result = refresh_access_token(creds.refresh_token)
-                    if result:
-                        creds = Credentials(
-                            access_token=result["access_token"],
-                            refresh_token=result.get("refresh_token", creds.refresh_token),
-                            user_id=result.get("user_id", creds.user_id),
-                            email=result.get("email", creds.email),
-                            workspace_id=creds.workspace_id,
-                            expires_at=int(time.time()) + result.get("expires_in", 3600),
-                        )
-                        save_credentials(creds)
+                from kurt.cli.auth.credentials import get_cloud_api_url
 
                 cloud_url = get_cloud_api_url()
                 url = f"{cloud_url}/api/v1/workspaces/{workspace_id}"
@@ -447,8 +427,9 @@ def status_cmd():
                     # Display GitHub repository if linked
                     if workspace.get("github_repo"):
                         console.print(f"  GitHub: https://github.com/{workspace['github_repo']}")
-            except Exception:
-                pass  # Silently ignore if can't fetch workspace details
+            except Exception as e:
+                # Debug: show error to help troubleshoot
+                console.print(f"  [dim]Could not fetch workspace details: {e}[/dim]")
     else:
         console.print("[yellow]No kurt.config found[/yellow]")
         console.print("[dim]Run 'kurt init' to initialize a project[/dim]")
