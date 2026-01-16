@@ -23,8 +23,14 @@ from kurt.web.api.pty_bridge import handle_pty_websocket
 from kurt.web.api.storage import LocalStorage, S3Storage
 
 # Ensure working directory is project root (when running from worktree)
-project_root = Path(os.environ.get("KURT_PROJECT_ROOT", Path.cwd())).expanduser().resolve()
-os.chdir(project_root)
+# Skip in cloud deployments where filesystem may be read-only
+try:
+    project_root = Path(os.environ.get("KURT_PROJECT_ROOT", Path.cwd())).expanduser().resolve()
+    if project_root.exists():
+        os.chdir(project_root)
+except Exception:
+    # Skip chdir in environments where it's not needed (e.g., Vercel)
+    pass
 
 
 def get_session_for_request(request: Request):
