@@ -14,6 +14,7 @@
     "test:ui": "vitest --ui"
   },
   "dependencies": {
+    "@remotion/player": "^4.0.250",
     "@tiptap/core": "^3.15.2",
     "@tiptap/extension-highlight": "^3.15.2",
     "@tiptap/extension-image": "^3.15.3",
@@ -29,11 +30,13 @@
     "@tiptap/starter-kit": "^3.15.2",
     "diff": "^8.0.2",
     "dockview-react": "^4.13.1",
+    "konva": "^9.3.18",
     "markdown-it": "^14.0.0",
     "prism-react-renderer": "^2.4.1",
     "react": "^18.2.0",
     "react-diff-view": "^3.2.0",
     "react-dom": "^18.2.0",
+    "react-konva": "^18.2.10",
     "react-simple-code-editor": "^0.14.1",
     "turndown": "^7.1.2",
     "turndown-plugin-gfm": "^1.0.2",

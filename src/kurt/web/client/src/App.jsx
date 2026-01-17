@@ -10,6 +10,8 @@ import EmptyPanel from './panels/EmptyPanel'
 import ReviewPanel from './panels/ReviewPanel'
 import WorkflowsPanel from './panels/WorkflowsPanel'
 import WorkflowTerminalPanel from './panels/WorkflowTerminalPanel'
+import ImageEditorPanel from './panels/ImageEditorPanel'
+import VideoEditorPanel from './panels/VideoEditorPanel'
 import DiffHighlightPOC from './components/DiffHighlightPOC'
 import TiptapDiffPOC from './components/TiptapDiffPOC'
 
@@ -28,6 +30,8 @@ const components = {
   review: ReviewPanel,
   workflows: WorkflowsPanel,
   workflowTerminal: WorkflowTerminalPanel,
+  imageEditor: ImageEditorPanel,
+  videoEditor: VideoEditorPanel,
 }
 
 const KNOWN_COMPONENTS = new Set(Object.keys(components))

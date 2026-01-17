@@ -3510,3 +3510,530 @@ html, body, #root {
   pointer-events: none !important;
   cursor: default !important;
 }
+
+/* =============================================================================
+   Image Editor Panel
+   ============================================================================= */
+
+.image-editor-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #1a1a2e;
+}
+
+.image-editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.image-editor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 12px;
+  background: #252538;
+  border-bottom: 1px solid #3a3a50;
+  flex-wrap: wrap;
+}
+
+.image-editor-toolbar .toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.image-editor-toolbar .toolbar-actions {
+  margin-left: auto;
+}
+
+.image-editor-toolbar .tool-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: #a0a0b0;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.image-editor-toolbar .tool-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.image-editor-toolbar .tool-btn.active {
+  background: #3b82f6;
+  color: #ffffff;
+  border-color: #2563eb;
+}
+
+.image-editor-toolbar .color-picker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #a0a0b0;
+}
+
+.image-editor-toolbar .color-picker input[type="color"] {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid #3a3a50;
+  border-radius: 4px;
+  cursor: pointer;
+  background: transparent;
+}
+
+.image-editor-toolbar .text-input {
+  padding: 4px 8px;
+  font-size: 12px;
+  border: 1px solid #3a3a50;
+  border-radius: 4px;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  width: 120px;
+}
+
+.image-editor-toolbar .text-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+}
+
+.image-editor-toolbar .action-btn {
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid #3a3a50;
+  border-radius: 4px;
+  background: #252538;
+  color: #e0e0e0;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.image-editor-toolbar .action-btn:hover {
+  background: #3a3a50;
+}
+
+.image-editor-toolbar .action-btn.primary {
+  background: #3b82f6;
+  border-color: #2563eb;
+  color: #ffffff;
+}
+
+.image-editor-toolbar .action-btn.primary:hover {
+  background: #2563eb;
+}
+
+.image-editor-toolbar .action-btn.danger {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.image-editor-toolbar .action-btn.danger:hover {
+  background: rgba(239, 68, 68, 0.3);
+}
+
+.image-editor-canvas {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+}
+
+.image-editor-canvas .canvas-loading,
+.image-editor-canvas .canvas-error {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 14px;
+  color: #a0a0b0;
+}
+
+.image-editor-canvas .canvas-error {
+  color: #ef4444;
+}
+
+/* Generate Dialog */
+.generate-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.generate-dialog {
+  background: #252538;
+  border: 1px solid #3a3a50;
+  border-radius: 8px;
+  padding: 20px;
+  width: 90%;
+  max-width: 500px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+}
+
+.generate-dialog h3 {
+  margin: 0 0 16px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.generate-dialog textarea {
+  width: 100%;
+  padding: 12px;
+  font-size: 14px;
+  font-family: inherit;
+  border: 1px solid #3a3a50;
+  border-radius: 6px;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  resize: vertical;
+  min-height: 100px;
+}
+
+.generate-dialog textarea:focus {
+  outline: none;
+  border-color: #3b82f6;
+}
+
+.generate-dialog textarea::placeholder {
+  color: #6b7280;
+}
+
+.generate-dialog .dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* =============================================================================
+   Video Editor Panel
+   ============================================================================= */
+
+.video-editor-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #1a1a2e;
+}
+
+.video-editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.video-player-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  position: relative;
+  min-height: 200px;
+}
+
+.video-player {
+  max-width: 100%;
+  max-height: 100%;
+  cursor: pointer;
+}
+
+.video-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: #a0a0b0;
+}
+
+.video-placeholder p {
+  margin: 0;
+  font-size: 14px;
+}
+
+.video-error {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #ef4444;
+  font-size: 14px;
+}
+
+/* Video Timeline */
+.video-timeline-container {
+  padding: 12px 16px;
+  background: #252538;
+  border-top: 1px solid #3a3a50;
+}
+
+.video-timeline {
+  position: relative;
+  height: 32px;
+  background: #1a1a2e;
+  border-radius: 4px;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.video-timeline:hover {
+  background: #20203a;
+}
+
+.timeline-trim-region {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: rgba(59, 130, 246, 0.2);
+  pointer-events: none;
+}
+
+.timeline-progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: rgba(59, 130, 246, 0.4);
+  pointer-events: none;
+}
+
+.timeline-marker {
+  position: absolute;
+  top: 0;
+  width: 2px;
+  height: 100%;
+  pointer-events: none;
+}
+
+.timeline-marker.current {
+  background: #ffffff;
+  box-shadow: 0 0 4px rgba(255, 255, 255, 0.5);
+}
+
+.timeline-marker.trim-start,
+.timeline-marker.trim-end {
+  width: 4px;
+  background: #3b82f6;
+  border-radius: 2px;
+}
+
+.timeline-times {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 11px;
+  color: #a0a0b0;
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+/* Video Controls */
+.video-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: 12px 16px;
+  background: #252538;
+  border-top: 1px solid #3a3a50;
+}
+
+.video-controls .controls-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.video-controls .control-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #a0a0b0;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.video-controls .control-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.video-controls .control-btn.play-btn {
+  width: 48px;
+  height: 48px;
+  background: #3b82f6;
+  color: #ffffff;
+}
+
+.video-controls .control-btn.play-btn:hover {
+  background: #2563eb;
+}
+
+.video-controls .volume-slider {
+  width: 80px;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: #3a3a50;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.video-controls .volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  background: #3b82f6;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.video-controls .speed-select {
+  padding: 4px 8px;
+  font-size: 12px;
+  border: 1px solid #3a3a50;
+  border-radius: 4px;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  cursor: pointer;
+}
+
+.video-controls .speed-select:focus {
+  outline: none;
+  border-color: #3b82f6;
+}
+
+/* Video Edit Tools */
+.video-edit-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+  background: #1e1e2e;
+  border-top: 1px solid #3a3a50;
+  flex-wrap: wrap;
+}
+
+.video-edit-tools .trim-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.video-edit-tools .trim-label {
+  color: #a0a0b0;
+  font-weight: 500;
+}
+
+.video-edit-tools .trim-time {
+  font-family: 'IBM Plex Mono', monospace;
+  color: #e0e0e0;
+  background: #252538;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.video-edit-tools .trim-separator {
+  color: #6b7280;
+}
+
+.video-edit-tools .tool-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid #3a3a50;
+  border-radius: 4px;
+  background: #252538;
+  color: #e0e0e0;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.video-edit-tools .tool-btn:hover {
+  background: #3a3a50;
+}
+
+.video-edit-tools .edit-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.video-edit-tools .action-btn {
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid #3a3a50;
+  border-radius: 4px;
+  background: #252538;
+  color: #e0e0e0;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.video-edit-tools .action-btn:hover {
+  background: #3a3a50;
+}
+
+.video-edit-tools .action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Empty state for panels */
+.panel-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.panel-empty .empty-state {
+  text-align: center;
+  color: #a0a0b0;
+}
+
+.panel-empty .empty-state p {
+  margin: 8px 0 0;
+  font-size: 14px;
+}
+
+.panel-empty .empty-state .hint {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.panel-error {
+  padding: 12px 16px;
+  background: rgba(239, 68, 68, 0.1);
+  border-bottom: 1px solid rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+  font-size: 13px;
+}
