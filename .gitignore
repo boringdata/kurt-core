@@ -82,8 +82,8 @@ yarn-error.log\*
 kurt-demo/
 kurt-demo2/
 
-# Agent workflow definitions (user-specific)
-workflows/
+# Agent workflow definitions (user-specific, top-level only)
+/workflows/
 
 # Reports (local demo reports)
 reports/

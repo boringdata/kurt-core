@@ -200,6 +200,104 @@ def api_delete_file(path: str = Query(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# MIME type mapping for common media files
+MEDIA_MIME_TYPES = {
+    # Images
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".avif": "image/avif",
+    ".svg": "image/svg+xml",
+    ".bmp": "image/bmp",
+    ".tiff": "image/tiff",
+    ".tif": "image/tiff",
+    ".ico": "image/x-icon",
+    # Videos
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
+    ".mov": "video/quicktime",
+    ".avi": "video/x-msvideo",
+    ".mkv": "video/x-matroska",
+    ".m4v": "video/x-m4v",
+    ".ogv": "video/ogg",
+    # Audio
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".ogg": "audio/ogg",
+    ".m4a": "audio/mp4",
+    ".flac": "audio/flac",
+    ".aac": "audio/aac",
+}
+
+
+@app.get("/api/file/raw")
+def api_get_file_raw(path: str = Query(...)):
+    """Serve raw binary files (images, videos, audio) directly."""
+    try:
+        # Validate path to prevent directory traversal
+        resolved = (Path.cwd() / path).resolve()
+        if not str(resolved).startswith(str(Path.cwd())):
+            raise HTTPException(status_code=400, detail="Invalid path")
+
+        if not resolved.exists():
+            raise HTTPException(status_code=404, detail="File not found")
+
+        if not resolved.is_file():
+            raise HTTPException(status_code=400, detail="Path is not a file")
+
+        # Determine MIME type
+        ext = resolved.suffix.lower()
+        media_type = MEDIA_MIME_TYPES.get(ext, "application/octet-stream")
+
+        return FileResponse(
+            path=resolved,
+            media_type=media_type,
+            filename=resolved.name,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class BinaryFilePayload(BaseModel):
+    content_base64: str  # Base64 encoded binary content
+    filename: str | None = None
+
+
+@app.put("/api/file/raw")
+def api_put_file_raw(path: str = Query(...), payload: BinaryFilePayload = None):
+    """Save raw binary files (for image/video editor exports)."""
+    import base64
+
+    try:
+        if payload is None:
+            raise HTTPException(status_code=400, detail="No payload provided")
+
+        # Validate path to prevent directory traversal
+        resolved = (Path.cwd() / path).resolve()
+        if not str(resolved).startswith(str(Path.cwd())):
+            raise HTTPException(status_code=400, detail="Invalid path")
+
+        # Ensure parent directory exists
+        resolved.parent.mkdir(parents=True, exist_ok=True)
+
+        # Decode and save binary content
+        try:
+            content = base64.b64decode(payload.content_base64)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid base64 content")
+
+        resolved.write_bytes(content)
+        return {"path": path, "status": "ok", "size": len(content)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/file/rename")
 def api_rename_file(payload: RenamePayload):
     try:
@@ -868,6 +966,306 @@ def api_git_show(path: str = Query(..., description="File path relative to repo 
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- Media API endpoints ---
+
+
+class MediaGeneratePayload(BaseModel):
+    prompt: str
+    model: str | None = None
+    provider: str | None = None  # fal, leonardo, replicate, runway
+    width: int = 1024
+    height: int = 1024
+    num_images: int = 1
+    negative_prompt: str | None = None
+    # Video-specific
+    image_url: str | None = None
+    duration: int = 5
+
+
+class MediaEditPayload(BaseModel):
+    input_path: str
+    output_path: str | None = None
+    operation: str  # resize, crop, rotate, filter, trim, convert
+    # Operation-specific params
+    width: int | None = None
+    height: int | None = None
+    scale: float | None = None
+    preset: str | None = None  # 480p, 720p, 1080p, 4k
+    quality: int = 85
+    # Crop params
+    x: int = 0
+    y: int = 0
+    gravity: str | None = None
+    # Rotate params
+    degrees: float = 90
+    background: str = "white"
+    # Filter params
+    filter_name: str | None = None
+    # Trim params
+    start: str | None = None
+    end: str | None = None
+    duration_seconds: float | None = None
+    # Convert params
+    format: str | None = None
+
+
+@app.post("/api/media/generate/image")
+async def api_media_generate_image(payload: MediaGeneratePayload):
+    """Generate an image using AI.
+
+    Supports providers: fal (default), leonardo, replicate
+    """
+    try:
+        from kurt.services.ai_generation import AIGenerationService
+
+        service = AIGenerationService()
+        try:
+            result = await service.generate_image(
+                prompt=payload.prompt,
+                model=payload.model,
+                provider=payload.provider,
+                width=payload.width,
+                height=payload.height,
+                num_images=payload.num_images,
+                negative_prompt=payload.negative_prompt,
+            )
+        finally:
+            await service.close()
+
+        if not result.success:
+            raise HTTPException(status_code=400, detail=result.error)
+
+        return {
+            "success": True,
+            "url": result.url,
+            "urls": result.urls,
+            "provider": result.provider,
+            "model": result.model,
+            "job_id": result.job_id,
+        }
+    except HTTPException:
+        raise
+    except ImportError as e:
+        raise HTTPException(status_code=503, detail=f"Media service not available: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/media/generate/video")
+async def api_media_generate_video(payload: MediaGeneratePayload):
+    """Generate a video using AI.
+
+    Supports providers: fal (default), runway, replicate
+    """
+    try:
+        from kurt.services.ai_generation import AIGenerationService
+
+        service = AIGenerationService()
+        try:
+            result = await service.generate_video(
+                prompt=payload.prompt,
+                image_url=payload.image_url,
+                model=payload.model,
+                provider=payload.provider,
+                duration=payload.duration,
+            )
+        finally:
+            await service.close()
+
+        if not result.success:
+            raise HTTPException(status_code=400, detail=result.error)
+
+        return {
+            "success": True,
+            "url": result.url,
+            "provider": result.provider,
+            "model": result.model,
+            "job_id": result.job_id,
+        }
+    except HTTPException:
+        raise
+    except ImportError as e:
+        raise HTTPException(status_code=503, detail=f"Media service not available: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/media/edit")
+async def api_media_edit(payload: MediaEditPayload):
+    """Edit an image or video file.
+
+    Operations: resize, crop, rotate, filter, trim, convert
+    """
+    try:
+        from kurt.services.media_edit import MediaEditService
+
+        service = MediaEditService()
+        result = None
+
+        if payload.operation == "resize":
+            # Detect if image or video based on extension
+            path = Path(payload.input_path)
+            image_exts = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".tiff", ".avif"}
+            if path.suffix.lower() in image_exts:
+                result = await service.resize_image(
+                    payload.input_path,
+                    output_path=payload.output_path,
+                    width=payload.width,
+                    height=payload.height,
+                    scale=payload.scale,
+                    quality=payload.quality,
+                )
+            else:
+                result = await service.resize_video(
+                    payload.input_path,
+                    output_path=payload.output_path,
+                    width=payload.width,
+                    height=payload.height,
+                    preset=payload.preset,
+                )
+
+        elif payload.operation == "crop":
+            result = await service.crop_image(
+                payload.input_path,
+                output_path=payload.output_path,
+                width=payload.width,
+                height=payload.height,
+                x=payload.x,
+                y=payload.y,
+                gravity=payload.gravity,
+            )
+
+        elif payload.operation == "rotate":
+            result = await service.rotate_image(
+                payload.input_path,
+                output_path=payload.output_path,
+                degrees=payload.degrees,
+                background=payload.background,
+            )
+
+        elif payload.operation == "filter":
+            if not payload.filter_name:
+                raise HTTPException(status_code=400, detail="filter_name required for filter operation")
+            result = await service.apply_filter(
+                payload.input_path,
+                output_path=payload.output_path,
+                filter_name=payload.filter_name,
+            )
+
+        elif payload.operation == "trim":
+            result = await service.trim_video(
+                payload.input_path,
+                output_path=payload.output_path,
+                start=payload.start,
+                end=payload.end,
+                duration=payload.duration_seconds,
+            )
+
+        elif payload.operation == "convert":
+            if not payload.format:
+                raise HTTPException(status_code=400, detail="format required for convert operation")
+            result = await service.convert(
+                payload.input_path,
+                output_path=payload.output_path,
+                format=payload.format,
+                quality=payload.quality,
+            )
+
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown operation: {payload.operation}. "
+                "Supported: resize, crop, rotate, filter, trim, convert",
+            )
+
+        if result is None:
+            raise HTTPException(status_code=500, detail="Operation returned no result")
+
+        if not result.success:
+            raise HTTPException(status_code=400, detail=result.error)
+
+        return {
+            "success": True,
+            "output_path": result.output_path,
+            "command": result.command,
+        }
+    except HTTPException:
+        raise
+    except ImportError as e:
+        raise HTTPException(status_code=503, detail=f"Media service not available: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/media/info")
+async def api_media_info(path: str = Query(...)):
+    """Get information about a media file."""
+    try:
+        from kurt.services.media_edit import MediaEditService
+
+        service = MediaEditService()
+        info = await service.get_info(path)
+
+        return {
+            "path": info.path,
+            "format": info.format,
+            "width": info.width,
+            "height": info.height,
+            "duration": info.duration,
+            "fps": info.fps,
+            "size_bytes": info.size_bytes,
+        }
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="File not found")
+    except ImportError as e:
+        raise HTTPException(status_code=503, detail=f"Media service not available: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/media/providers")
+def api_media_providers():
+    """Get available AI providers and their configuration status."""
+    providers = [
+        {
+            "name": "fal",
+            "display_name": "fal.ai",
+            "env_var": "FAL_KEY",
+            "configured": bool(os.environ.get("FAL_KEY")),
+            "capabilities": ["image", "video"],
+        },
+        {
+            "name": "leonardo",
+            "display_name": "Leonardo.ai",
+            "env_var": "LEONARDO_API_KEY",
+            "configured": bool(os.environ.get("LEONARDO_API_KEY")),
+            "capabilities": ["image"],
+        },
+        {
+            "name": "replicate",
+            "display_name": "Replicate",
+            "env_var": "REPLICATE_API_TOKEN",
+            "configured": bool(os.environ.get("REPLICATE_API_TOKEN")),
+            "capabilities": ["image", "video"],
+        },
+        {
+            "name": "runway",
+            "display_name": "Runway",
+            "env_var": "RUNWAY_API_KEY",
+            "configured": bool(os.environ.get("RUNWAY_API_KEY")),
+            "capabilities": ["video"],
+        },
+    ]
+
+    # Check for FFmpeg and ImageMagick
+    tools = {
+        "ffmpeg": which("ffmpeg") is not None,
+        "imagemagick": which("magick") is not None or which("convert") is not None,
+    }
+
+    return {"providers": providers, "tools": tools}
 
 
 # --- Workflow API endpoints ---

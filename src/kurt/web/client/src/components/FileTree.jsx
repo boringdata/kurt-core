@@ -17,7 +17,20 @@ const formatSectionLabel = (path) => {
   return name.charAt(0).toUpperCase() + name.slice(1)
 }
 
-export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRenamed, onFileMoved, projectRoot, activeFile, creatingFile, onFileCreated, onCancelCreate }) {
+// Media file type detection
+const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'tiff', 'tif', 'bmp', 'svg']
+const VIDEO_EXTENSIONS = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'm4v', 'ogv']
+
+const getFileExtension = (path) => {
+  const parts = path.split('.')
+  return parts.length > 1 ? parts.pop().toLowerCase() : ''
+}
+
+const isImageFile = (path) => IMAGE_EXTENSIONS.includes(getFileExtension(path))
+const isVideoFile = (path) => VIDEO_EXTENSIONS.includes(getFileExtension(path))
+const isMediaFile = (path) => isImageFile(path) || isVideoFile(path)
+
+export default function FileTree({ onOpen, onOpenToSide, onOpenImageEditor, onOpenVideoEditor, onOpenMediaFile, onFileDeleted, onFileRenamed, onFileMoved, projectRoot, activeFile, creatingFile, onFileCreated, onCancelCreate }) {
   const [entries, setEntries] = useState([])
   const [expandedDirs, setExpandedDirs] = useState({})
   const [searchQuery, setSearchQuery] = useState('')
@@ -210,7 +223,12 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
         }))
       }
     } else {
-      onOpen(entry.path)
+      // Route media files to their respective editors
+      if (onOpenMediaFile && isMediaFile(entry.path)) {
+        onOpenMediaFile(entry.path)
+      } else {
+        onOpen(entry.path)
+      }
     }
   }
 
@@ -850,6 +868,16 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
                   <div className="context-menu-item" onClick={() => { onOpenToSide?.(contextMenu.entry.path); setContextMenu(null) }}>
                     Open to the Side
                   </div>
+                  {isImageFile(contextMenu.entry.path) && onOpenImageEditor && (
+                    <div className="context-menu-item" onClick={() => { onOpenImageEditor(contextMenu.entry.path); setContextMenu(null) }}>
+                      Open in Image Editor
+                    </div>
+                  )}
+                  {isVideoFile(contextMenu.entry.path) && onOpenVideoEditor && (
+                    <div className="context-menu-item" onClick={() => { onOpenVideoEditor(contextMenu.entry.path); setContextMenu(null) }}>
+                      Open in Video Editor
+                    </div>
+                  )}
                   <div className="context-menu-separator" />
                 </>
               )}

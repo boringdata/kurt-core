@@ -10,6 +10,8 @@ import EmptyPanel from './panels/EmptyPanel'
 import ReviewPanel from './panels/ReviewPanel'
 import WorkflowsPanel from './panels/WorkflowsPanel'
 import WorkflowTerminalPanel from './panels/WorkflowTerminalPanel'
+import ImageEditorPanel from './panels/ImageEditorPanel'
+import VideoEditorPanel from './panels/VideoEditorPanel'
 import DiffHighlightPOC from './components/DiffHighlightPOC'
 import TiptapDiffPOC from './components/TiptapDiffPOC'
 
@@ -28,6 +30,8 @@ const components = {
   review: ReviewPanel,
   workflows: WorkflowsPanel,
   workflowTerminal: WorkflowTerminalPanel,
+  imageEditor: ImageEditorPanel,
+  videoEditor: VideoEditorPanel,
 }
 
 const KNOWN_COMPONENTS = new Set(Object.keys(components))
@@ -148,6 +152,18 @@ const getFileName = (path) => {
   const parts = path.split('/')
   return parts[parts.length - 1]
 }
+
+// Media file type detection
+const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'tiff', 'tif', 'bmp', 'svg']
+const VIDEO_EXTENSIONS = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'm4v', 'ogv']
+
+const getFileExtension = (path) => {
+  const parts = path.split('.')
+  return parts.length > 1 ? parts.pop().toLowerCase() : ''
+}
+
+const isImageFile = (path) => IMAGE_EXTENSIONS.includes(getFileExtension(path))
+const isVideoFile = (path) => VIDEO_EXTENSIONS.includes(getFileExtension(path))
 
 const LAYOUT_VERSION = 21 // Increment to force layout reset
 
@@ -821,6 +837,142 @@ export default function App() {
     [dockApi, openFileAtPosition]
   )
 
+  // Open image file in image editor panel
+  const openImageEditor = useCallback(
+    (path) => {
+      if (!dockApi) return
+
+      const panelId = `imageEditor-${path}`
+      const existingPanel = dockApi.getPanel(panelId)
+
+      if (existingPanel) {
+        existingPanel.api.setActive()
+        return
+      }
+
+      const emptyPanel = dockApi.getPanel('empty-center')
+      const workflowsPanel = dockApi.getPanel('workflows')
+      const centerGroup = centerGroupRef.current
+
+      // Find existing editor panels to add as sibling tab
+      const allPanels = Array.isArray(dockApi.panels) ? dockApi.panels : []
+      const existingEditorPanel = allPanels.find(p =>
+        p.id.startsWith('editor-') || p.id.startsWith('imageEditor-') || p.id.startsWith('videoEditor-')
+      )
+
+      let position
+      if (existingEditorPanel?.group) {
+        position = { referenceGroup: existingEditorPanel.group }
+      } else if (centerGroup) {
+        position = { referenceGroup: centerGroup }
+      } else if (emptyPanel?.group) {
+        position = { referenceGroup: emptyPanel.group }
+      } else if (workflowsPanel?.group) {
+        position = { direction: 'above', referenceGroup: workflowsPanel.group }
+      } else {
+        position = { direction: 'right', referencePanel: 'filetree' }
+      }
+
+      const panel = dockApi.addPanel({
+        id: panelId,
+        component: 'imageEditor',
+        title: `🖼 ${getFileName(path)}`,
+        position,
+        params: { path },
+      })
+
+      if (emptyPanel) {
+        emptyPanel.api.close()
+      }
+
+      if (panel?.group) {
+        panel.group.header.hidden = false
+        centerGroupRef.current = panel.group
+        panel.group.api.setConstraints({
+          minimumHeight: 200,
+          maximumHeight: Infinity,
+        })
+      }
+    },
+    [dockApi]
+  )
+
+  // Open video file in video editor panel
+  const openVideoEditor = useCallback(
+    (path) => {
+      if (!dockApi) return
+
+      const panelId = `videoEditor-${path}`
+      const existingPanel = dockApi.getPanel(panelId)
+
+      if (existingPanel) {
+        existingPanel.api.setActive()
+        return
+      }
+
+      const emptyPanel = dockApi.getPanel('empty-center')
+      const workflowsPanel = dockApi.getPanel('workflows')
+      const centerGroup = centerGroupRef.current
+
+      // Find existing editor panels to add as sibling tab
+      const allPanels = Array.isArray(dockApi.panels) ? dockApi.panels : []
+      const existingEditorPanel = allPanels.find(p =>
+        p.id.startsWith('editor-') || p.id.startsWith('imageEditor-') || p.id.startsWith('videoEditor-')
+      )
+
+      let position
+      if (existingEditorPanel?.group) {
+        position = { referenceGroup: existingEditorPanel.group }
+      } else if (centerGroup) {
+        position = { referenceGroup: centerGroup }
+      } else if (emptyPanel?.group) {
+        position = { referenceGroup: emptyPanel.group }
+      } else if (workflowsPanel?.group) {
+        position = { direction: 'above', referenceGroup: workflowsPanel.group }
+      } else {
+        position = { direction: 'right', referencePanel: 'filetree' }
+      }
+
+      const panel = dockApi.addPanel({
+        id: panelId,
+        component: 'videoEditor',
+        title: `🎬 ${getFileName(path)}`,
+        position,
+        params: { path },
+      })
+
+      if (emptyPanel) {
+        emptyPanel.api.close()
+      }
+
+      if (panel?.group) {
+        panel.group.header.hidden = false
+        centerGroupRef.current = panel.group
+        panel.group.api.setConstraints({
+          minimumHeight: 200,
+          maximumHeight: Infinity,
+        })
+      }
+    },
+    [dockApi]
+  )
+
+  // Smart file opener that routes to appropriate editor based on file type
+  const openMediaFile = useCallback(
+    (path) => {
+      if (isImageFile(path)) {
+        openImageEditor(path)
+        return true
+      }
+      if (isVideoFile(path)) {
+        openVideoEditor(path)
+        return true
+      }
+      return false
+    },
+    [openImageEditor, openVideoEditor]
+  )
+
   useEffect(() => {
     if (!dockApi || !approvalsLoaded) return
     const pendingIds = new Set(approvals.map((req) => req.id))
@@ -1456,6 +1608,9 @@ export default function App() {
         onOpenFile: openFile,
         onOpenFileToSide: openFileToSide,
         onOpenDiff: openDiff,
+        onOpenImageEditor: openImageEditor,
+        onOpenVideoEditor: openVideoEditor,
+        onOpenMediaFile: openMediaFile,
         projectRoot,
         activeFile,
         activeDiffFile,
@@ -1463,7 +1618,7 @@ export default function App() {
         onToggleCollapse: toggleFiletree,
       })
     }
-  }, [dockApi, openFile, openFileToSide, openDiff, projectRoot, activeFile, activeDiffFile, collapsed.filetree, toggleFiletree])
+  }, [dockApi, openFile, openFileToSide, openDiff, openImageEditor, openVideoEditor, openMediaFile, projectRoot, activeFile, activeDiffFile, collapsed.filetree, toggleFiletree])
 
   // Helper to focus a review panel
   const focusReviewPanel = useCallback(
