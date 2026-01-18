@@ -47,6 +47,14 @@ export default function VideoEditor({
   const [generatePrompt, setGeneratePrompt] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
   const [error, setError] = useState(null)
+  // Text overlays
+  const [textOverlays, setTextOverlays] = useState([])
+  const [showTextDialog, setShowTextDialog] = useState(false)
+  const [newTextOverlay, setNewTextOverlay] = useState({ text: '', position: 'bottom', startTime: 0, endTime: 5 })
+  // Loop mode
+  const [loopMode, setLoopMode] = useState(false)
+  // Zoom level for timeline
+  const [timelineZoom, setTimelineZoom] = useState(1)
 
   // Initialize video metadata
   useEffect(() => {
@@ -122,6 +130,27 @@ export default function VideoEditor({
     if (!video) return
     video.currentTime = Math.max(0, Math.min(duration, video.currentTime + seconds))
   }, [duration])
+
+  // Frame-by-frame navigation (assuming 30fps)
+  const stepFrame = useCallback((direction) => {
+    const video = videoRef.current
+    if (!video) return
+    const frameTime = 1 / 30 // Assume 30fps
+    video.currentTime = Math.max(0, Math.min(duration, video.currentTime + (frameTime * direction)))
+  }, [duration])
+
+  // Jump to start/end
+  const jumpToStart = useCallback(() => {
+    const video = videoRef.current
+    if (!video) return
+    video.currentTime = trimStart
+  }, [trimStart])
+
+  const jumpToEnd = useCallback(() => {
+    const video = videoRef.current
+    if (!video) return
+    video.currentTime = trimEnd
+  }, [trimEnd])
 
   // Set trim markers
   const setTrimMarker = useCallback((type) => {
@@ -250,10 +279,26 @@ export default function VideoEditor({
           togglePlay()
           break
         case 'ArrowLeft':
-          skip(-5)
+          if (e.shiftKey) {
+            stepFrame(-1) // Frame back
+          } else {
+            skip(-5)
+          }
           break
         case 'ArrowRight':
-          skip(5)
+          if (e.shiftKey) {
+            stepFrame(1) // Frame forward
+          } else {
+            skip(5)
+          }
+          break
+        case 'ArrowUp':
+          e.preventDefault()
+          setVolume((v) => Math.min(1, v + 0.1))
+          break
+        case 'ArrowDown':
+          e.preventDefault()
+          setVolume((v) => Math.max(0, v - 0.1))
           break
         case 'm':
           setIsMuted(!isMuted)
@@ -264,12 +309,27 @@ export default function VideoEditor({
         case 'o':
           setTrimMarker('end')
           break
+        case 'l':
+          setLoopMode(!loopMode)
+          break
+        case 'Home':
+          jumpToStart()
+          break
+        case 'End':
+          jumpToEnd()
+          break
+        case ',':
+          stepFrame(-1) // Previous frame
+          break
+        case '.':
+          stepFrame(1) // Next frame
+          break
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [togglePlay, skip, isMuted, setTrimMarker])
+  }, [togglePlay, skip, stepFrame, isMuted, setTrimMarker, loopMode, jumpToStart, jumpToEnd])
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0
   const trimStartPercent = duration > 0 ? (trimStart / duration) * 100 : 0
@@ -456,6 +516,59 @@ export default function VideoEditor({
               </button>
             </div>
 
+            <div className="frame-controls">
+              <button
+                type="button"
+                className="tool-btn"
+                onClick={jumpToStart}
+                title="Jump to start (Home)"
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                  <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="tool-btn"
+                onClick={() => stepFrame(-1)}
+                title="Previous frame (,)"
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                  <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="tool-btn"
+                onClick={() => stepFrame(1)}
+                title="Next frame (.)"
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                  <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="tool-btn"
+                onClick={jumpToEnd}
+                title="Jump to end (End)"
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                  <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className={`tool-btn ${loopMode ? 'active' : ''}`}
+                onClick={() => setLoopMode(!loopMode)}
+                title="Toggle loop (L)"
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                  <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z" />
+                </svg>
+              </button>
+            </div>
+
             <div className="edit-actions">
               <button
                 type="button"
@@ -464,6 +577,13 @@ export default function VideoEditor({
                 disabled={isProcessing}
               >
                 Extract Frame
+              </button>
+              <button
+                type="button"
+                className="action-btn"
+                onClick={() => setShowTextDialog(true)}
+              >
+                Add Text
               </button>
               <button
                 type="button"
@@ -510,6 +630,121 @@ export default function VideoEditor({
           </div>
         </div>
       )}
+
+      {/* Text Overlay Dialog */}
+      {showTextDialog && (
+        <div className="generate-dialog-overlay" onClick={() => setShowTextDialog(false)}>
+          <div className="generate-dialog text-overlay-dialog" onClick={(e) => e.stopPropagation()}>
+            <h3>Add Text Overlay</h3>
+            <div className="text-overlay-form">
+              <label>
+                Text:
+                <input
+                  type="text"
+                  value={newTextOverlay.text}
+                  onChange={(e) => setNewTextOverlay({ ...newTextOverlay, text: e.target.value })}
+                  placeholder="Enter text..."
+                  autoFocus
+                />
+              </label>
+              <label>
+                Position:
+                <select
+                  value={newTextOverlay.position}
+                  onChange={(e) => setNewTextOverlay({ ...newTextOverlay, position: e.target.value })}
+                >
+                  <option value="top">Top</option>
+                  <option value="center">Center</option>
+                  <option value="bottom">Bottom</option>
+                </select>
+              </label>
+              <div className="time-range">
+                <label>
+                  Start:
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max={duration}
+                    value={newTextOverlay.startTime}
+                    onChange={(e) => setNewTextOverlay({ ...newTextOverlay, startTime: Number(e.target.value) })}
+                  />
+                </label>
+                <label>
+                  End:
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max={duration}
+                    value={newTextOverlay.endTime}
+                    onChange={(e) => setNewTextOverlay({ ...newTextOverlay, endTime: Number(e.target.value) })}
+                  />
+                </label>
+              </div>
+            </div>
+            <div className="dialog-actions">
+              <button
+                type="button"
+                className="action-btn"
+                onClick={() => setShowTextDialog(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="action-btn primary"
+                onClick={() => {
+                  if (newTextOverlay.text.trim()) {
+                    setTextOverlays([...textOverlays, {
+                      id: `text-${Date.now()}`,
+                      ...newTextOverlay,
+                    }])
+                    setNewTextOverlay({ text: '', position: 'bottom', startTime: currentTime, endTime: Math.min(currentTime + 5, duration) })
+                    setShowTextDialog(false)
+                  }
+                }}
+                disabled={!newTextOverlay.text.trim()}
+              >
+                Add Text
+              </button>
+            </div>
+
+            {/* List of existing overlays */}
+            {textOverlays.length > 0 && (
+              <div className="text-overlay-list">
+                <h4>Text Overlays</h4>
+                {textOverlays.map((overlay) => (
+                  <div key={overlay.id} className="text-overlay-item">
+                    <span>{overlay.text}</span>
+                    <span className="overlay-time">{formatTime(overlay.startTime)} - {formatTime(overlay.endTime)}</span>
+                    <button
+                      type="button"
+                      className="overlay-delete-btn"
+                      onClick={() => setTextOverlays(textOverlays.filter((o) => o.id !== overlay.id))}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Text Overlays Displayed on Video */}
+      {videoSrc && textOverlays
+        .filter((overlay) => currentTime >= overlay.startTime && currentTime <= overlay.endTime)
+        .map((overlay) => (
+          <div
+            key={overlay.id}
+            className={`video-text-overlay video-text-overlay-${overlay.position}`}
+          >
+            {overlay.text}
+          </div>
+        ))
+      }
     </div>
   )
 }

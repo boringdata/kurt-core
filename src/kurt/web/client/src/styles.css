@@ -3726,6 +3726,112 @@ html, body, #root {
   margin-top: 16px;
 }
 
+/* Brush size control */
+.brush-size {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: #a0a0b0;
+}
+
+.brush-size input[type="range"] {
+  width: 80px;
+  height: 4px;
+  -webkit-appearance: none;
+  background: #3a3a50;
+  border-radius: 2px;
+}
+
+.brush-size input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  background: #3b82f6;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+/* Filter Panel */
+.filter-panel {
+  position: absolute;
+  top: 60px;
+  right: 16px;
+  width: 220px;
+  background: #252538;
+  border: 1px solid #3a3a50;
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  z-index: 100;
+}
+
+.filter-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.filter-panel-header h4 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #e0e0e0;
+}
+
+.filter-reset-btn {
+  background: none;
+  border: none;
+  color: #3b82f6;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.filter-reset-btn:hover {
+  background: rgba(59, 130, 246, 0.2);
+}
+
+.filter-control {
+  margin-bottom: 10px;
+}
+
+.filter-control:last-child {
+  margin-bottom: 0;
+}
+
+.filter-control label {
+  display: block;
+  font-size: 11px;
+  color: #a0a0b0;
+  margin-bottom: 4px;
+}
+
+.filter-control input[type="range"] {
+  width: 100%;
+  height: 4px;
+  -webkit-appearance: none;
+  background: #3a3a50;
+  border-radius: 2px;
+}
+
+.filter-control input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  background: #3b82f6;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+/* Disabled tool button */
+.tool-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* =============================================================================
    Video Editor Panel
    ============================================================================= */
@@ -4005,6 +4111,170 @@ html, body, #root {
 .video-edit-tools .action-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Frame controls */
+.video-edit-tools .frame-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.video-edit-tools .frame-controls .tool-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+}
+
+.video-edit-tools .frame-controls .tool-btn.active {
+  background: #3b82f6;
+  border-color: #3b82f6;
+}
+
+/* Text Overlay Dialog */
+.text-overlay-dialog {
+  max-width: 400px;
+}
+
+.text-overlay-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.text-overlay-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: #a0a0b0;
+}
+
+.text-overlay-form input[type="text"],
+.text-overlay-form select {
+  padding: 8px 12px;
+  font-size: 14px;
+  border: 1px solid #3a3a50;
+  border-radius: 4px;
+  background: #1a1a2e;
+  color: #e0e0e0;
+}
+
+.text-overlay-form input[type="text"]:focus,
+.text-overlay-form select:focus {
+  outline: none;
+  border-color: #3b82f6;
+}
+
+.text-overlay-form .time-range {
+  display: flex;
+  gap: 12px;
+}
+
+.text-overlay-form .time-range label {
+  flex: 1;
+}
+
+.text-overlay-form .time-range input[type="number"] {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 13px;
+  border: 1px solid #3a3a50;
+  border-radius: 4px;
+  background: #1a1a2e;
+  color: #e0e0e0;
+}
+
+/* Text Overlay List */
+.text-overlay-list {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #3a3a50;
+}
+
+.text-overlay-list h4 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #a0a0b0;
+}
+
+.text-overlay-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: #1a1a2e;
+  border-radius: 4px;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.text-overlay-item span:first-child {
+  flex: 1;
+  color: #e0e0e0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.text-overlay-item .overlay-time {
+  color: #6b7280;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+}
+
+.text-overlay-item .overlay-delete-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #6b7280;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.text-overlay-item .overlay-delete-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+/* Video Text Overlays on player */
+.video-text-overlay {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 16px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #ffffff;
+  font-size: 18px;
+  font-weight: 500;
+  text-align: center;
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 10;
+  max-width: 80%;
+}
+
+.video-text-overlay-top {
+  top: 32px;
+}
+
+.video-text-overlay-center {
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.video-text-overlay-bottom {
+  bottom: 32px;
 }
 
 /* Empty state for panels */

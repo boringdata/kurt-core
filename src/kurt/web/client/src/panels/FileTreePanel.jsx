@@ -3,7 +3,7 @@ import FileTree from '../components/FileTree'
 import GitChangesView from '../components/GitChangesView'
 
 export default function FileTreePanel({ params }) {
-  const { onOpenFile, onOpenFileToSide, onOpenDiff, projectRoot, activeFile, activeDiffFile, collapsed, onToggleCollapse } = params
+  const { onOpenFile, onOpenFileToSide, onOpenDiff, onOpenImageEditor, onOpenVideoEditor, onOpenMediaFile, projectRoot, activeFile, activeDiffFile, collapsed, onToggleCollapse } = params
   const [creatingFile, setCreatingFile] = useState(false)
   const [viewMode, setViewMode] = useState('files') // 'files' | 'changes'
   const fileTreeRef = useRef(null)
@@ -100,6 +100,9 @@ export default function FileTreePanel({ params }) {
           ref={fileTreeRef}
           onOpen={onOpenFile}
           onOpenToSide={onOpenFileToSide}
+          onOpenImageEditor={onOpenImageEditor}
+          onOpenVideoEditor={onOpenVideoEditor}
+          onOpenMediaFile={onOpenMediaFile}
           projectRoot={projectRoot}
           activeFile={activeFile}
           creatingFile={creatingFile}

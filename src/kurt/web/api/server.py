@@ -200,6 +200,104 @@ def api_delete_file(path: str = Query(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# MIME type mapping for common media files
+MEDIA_MIME_TYPES = {
+    # Images
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".avif": "image/avif",
+    ".svg": "image/svg+xml",
+    ".bmp": "image/bmp",
+    ".tiff": "image/tiff",
+    ".tif": "image/tiff",
+    ".ico": "image/x-icon",
+    # Videos
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
+    ".mov": "video/quicktime",
+    ".avi": "video/x-msvideo",
+    ".mkv": "video/x-matroska",
+    ".m4v": "video/x-m4v",
+    ".ogv": "video/ogg",
+    # Audio
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".ogg": "audio/ogg",
+    ".m4a": "audio/mp4",
+    ".flac": "audio/flac",
+    ".aac": "audio/aac",
+}
+
+
+@app.get("/api/file/raw")
+def api_get_file_raw(path: str = Query(...)):
+    """Serve raw binary files (images, videos, audio) directly."""
+    try:
+        # Validate path to prevent directory traversal
+        resolved = (Path.cwd() / path).resolve()
+        if not str(resolved).startswith(str(Path.cwd())):
+            raise HTTPException(status_code=400, detail="Invalid path")
+
+        if not resolved.exists():
+            raise HTTPException(status_code=404, detail="File not found")
+
+        if not resolved.is_file():
+            raise HTTPException(status_code=400, detail="Path is not a file")
+
+        # Determine MIME type
+        ext = resolved.suffix.lower()
+        media_type = MEDIA_MIME_TYPES.get(ext, "application/octet-stream")
+
+        return FileResponse(
+            path=resolved,
+            media_type=media_type,
+            filename=resolved.name,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class BinaryFilePayload(BaseModel):
+    content_base64: str  # Base64 encoded binary content
+    filename: str | None = None
+
+
+@app.put("/api/file/raw")
+def api_put_file_raw(path: str = Query(...), payload: BinaryFilePayload = None):
+    """Save raw binary files (for image/video editor exports)."""
+    import base64
+
+    try:
+        if payload is None:
+            raise HTTPException(status_code=400, detail="No payload provided")
+
+        # Validate path to prevent directory traversal
+        resolved = (Path.cwd() / path).resolve()
+        if not str(resolved).startswith(str(Path.cwd())):
+            raise HTTPException(status_code=400, detail="Invalid path")
+
+        # Ensure parent directory exists
+        resolved.parent.mkdir(parents=True, exist_ok=True)
+
+        # Decode and save binary content
+        try:
+            content = base64.b64decode(payload.content_base64)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid base64 content")
+
+        resolved.write_bytes(content)
+        return {"path": path, "status": "ok", "size": len(content)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/file/rename")
 def api_rename_file(payload: RenamePayload):
     try:

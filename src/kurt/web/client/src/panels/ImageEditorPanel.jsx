@@ -50,34 +50,9 @@ export default function ImageEditorPanel({ params: initialParams, api }) {
       return
     }
 
-    // Load image via API (convert to data URL)
-    const loadImage = async () => {
-      try {
-        // For local files, we need to fetch as binary and create a blob URL
-        const response = await fetch(apiUrl(`/api/file?path=${encodeURIComponent(path)}`))
-        if (!response.ok) {
-          throw new Error('Failed to load file')
-        }
-
-        // Check if it's actually binary image data or text
-        const contentType = response.headers.get('content-type')
-        if (contentType?.includes('application/json')) {
-          // The API returns JSON with content - we need to handle this differently
-          // For now, construct a file URL
-          setImageSrc(`${apiBase}/api/file/raw?path=${encodeURIComponent(path)}`)
-        } else {
-          const blob = await response.blob()
-          const url = URL.createObjectURL(blob)
-          setImageSrc(url)
-        }
-        setError(null)
-      } catch (err) {
-        setError(err.message)
-        setImageSrc(null)
-      }
-    }
-
-    loadImage()
+    // Use the raw file endpoint to load the image directly
+    setImageSrc(`${apiBase}/api/file/raw?path=${encodeURIComponent(path)}`)
+    setError(null)
   }, [path, url])
 
   // Track container size for responsive canvas
@@ -99,9 +74,42 @@ export default function ImageEditorPanel({ params: initialParams, api }) {
   }, [])
 
   const handleSave = useCallback(async (dataUrl) => {
-    // Convert data URL to blob and save
-    // This would need backend support for saving binary files
-    console.log('Save not implemented yet')
+    if (!path) {
+      alert('No file path - cannot save')
+      return
+    }
+
+    try {
+      // Extract base64 content from data URL
+      // Format: data:image/png;base64,<data>
+      const base64Data = dataUrl.split(',')[1]
+      if (!base64Data) {
+        throw new Error('Invalid image data')
+      }
+
+      // Determine output path (save alongside original with _edited suffix)
+      const ext = path.split('.').pop()
+      const basePath = path.replace(/\.[^.]+$/, '')
+      const outputPath = `${basePath}_edited.${ext}`
+
+      const response = await fetch(apiUrl(`/api/file/raw?path=${encodeURIComponent(outputPath)}`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content_base64: base64Data,
+          filename: outputPath.split('/').pop(),
+        }),
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.detail || 'Failed to save image')
+      }
+
+      alert(`Image saved to: ${outputPath}`)
+    } catch (err) {
+      alert(`Save failed: ${err.message}`)
+    }
   }, [path])
 
   const handleGenerate = useCallback((generatedUrl) => {
