@@ -377,6 +377,23 @@ def status_cmd():
         config = load_config()
         workspace_id = config.WORKSPACE_ID
 
+        if not workspace_id and creds:
+            candidate_workspace_id = creds.workspace_id
+            if not candidate_workspace_id:
+                try:
+                    from kurt.cli.auth.commands import get_user_info
+
+                    user_info = get_user_info(creds.access_token)
+                    candidate_workspace_id = user_info.get("user_metadata", {}).get("workspace_id")
+                except Exception:
+                    candidate_workspace_id = None
+
+            if candidate_workspace_id:
+                from kurt.db.tenant import _set_workspace_id_in_config
+
+                if _set_workspace_id_in_config(candidate_workspace_id):
+                    workspace_id = candidate_workspace_id
+
         if workspace_id:
             console.print(f"Workspace ID: {workspace_id}")
         else:

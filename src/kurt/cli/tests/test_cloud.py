@@ -165,6 +165,25 @@ class TestStatusCommand:
         assert "Authenticated" in result.output
         assert mock_credentials.email in result.output
 
+    def test_status_auto_fills_workspace_id(self, cli_runner: CliRunner, mock_credentials, tmp_path: Path):
+        """Test status auto-fills WORKSPACE_ID when missing."""
+        config_file = tmp_path / "kurt.config"
+        config_file.write_text('DATABASE_URL="postgresql://localhost/db"\n')
+
+        with (
+            patch("kurt.cli.auth.credentials.load_credentials", return_value=mock_credentials),
+            patch("kurt.cli.auth.credentials.ensure_fresh_token", return_value=mock_credentials),
+            patch("kurt.config.base.get_config_file_path", return_value=config_file),
+            patch("kurt.config.get_config_file_path", return_value=config_file),
+            patch("kurt.db.get_mode", return_value="postgres"),
+        ):
+            result = cli_runner.invoke(cloud_group, ["status"])
+
+        assert result.exit_code == 0
+        content = config_file.read_text()
+        assert f'WORKSPACE_ID="{mock_credentials.workspace_id}"' in content
+        assert f"Workspace ID: {mock_credentials.workspace_id}" in result.output
+
 
 # =============================================================================
 # Whoami Command
