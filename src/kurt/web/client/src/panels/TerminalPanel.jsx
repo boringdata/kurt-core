@@ -378,6 +378,7 @@ export default function TerminalPanel({ params }) {
                     initialSessionId={session.sessionId}
                     provider={session.provider}
                     resume={session.resume}
+                    showSessionPicker={false}
                     onSessionStarted={(newSessionId) => {
                       if (!newSessionId) return
                       setSessions((prev) =>

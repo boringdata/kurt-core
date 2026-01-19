@@ -61,10 +61,20 @@ const ToolUseBlock = ({
         <span
           style={{
             color: bulletColor,
-            fontSize: '8px',
-            lineHeight: '22px',
+            fontSize: '7px',
+            lineHeight: 1,
             flexShrink: 0,
-            marginTop: '2px',
+            marginTop: '4px',
+            marginLeft: '-8px',
+            width: '8px',
+            height: '8px',
+            background: '#1e1e1e',
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            position: 'relative',
+            zIndex: 2,
           }}
         >
           ●
@@ -140,7 +150,7 @@ const ToolUseBlock = ({
       {(!collapsible || isExpanded) && children && (
         <div
           style={{
-            marginLeft: '16px', // Align with text after bullet
+            marginLeft: '16px', // Align with text after bullet (0px bullet margin + 8px bullet width + 8px gap)
             paddingLeft: 'var(--chat-spacing-sm, 8px)',
           }}
         >
