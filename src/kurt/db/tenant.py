@@ -312,7 +312,7 @@ def set_rls_context(session: "Session") -> None:
 
     Call this at the start of each request/session when in cloud mode.
     RLS policies use these variables to filter data:
-        user_id = current_setting('app.user_id', true)::uuid
+        workspace_id = current_setting('app.workspace_id', true)
 
     Args:
         session: SQLAlchemy session to configure

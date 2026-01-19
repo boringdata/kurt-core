@@ -503,7 +503,7 @@ def invite_cmd(email: str, role: str):
     """Invite a user to your workspace.
 
     Sends an invite to the specified email address.
-    They can accept by logging in and running 'kurt cloud join'.
+    They can accept by logging in and configuring the shared workspace.
 
     Example:
         kurt cloud invite user@example.com
@@ -556,7 +556,8 @@ def invite_cmd(email: str, role: str):
         console.print()
         console.print("[dim]They can accept by:[/dim]")
         console.print("  1. Run 'kurt cloud login'")
-        console.print(f"  2. Run 'kurt cloud join {workspace_id}'")
+        console.print("  2. Add WORKSPACE_ID and DATABASE_URL to kurt.config")
+        console.print("  3. Run 'kurt admin migrate apply'")
 
     except urllib.error.HTTPError as e:
         try:

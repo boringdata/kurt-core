@@ -56,10 +56,13 @@ SHARED POSTGRESQL SETUP (TEAM OWNER)
 3. ADD TO kurt.config:
    DATABASE_URL="postgresql://user:pass@host:5432/dbname"
 
-4. RUN MIGRATIONS:
+4. ENABLE CLOUD AUTH (RLS):
+   export KURT_CLOUD_AUTH=true
+
+5. RUN MIGRATIONS:
    kurt admin migrate apply
 
-5. VERIFY:
+6. VERIFY:
    kurt db status
 
 ═══════════════════════════════════════════════════════════════════
@@ -71,14 +74,11 @@ SHOW INVITE INFO:
 
 This displays the WORKSPACE_ID and DATABASE_URL to share.
 
-TEAM MEMBER JOINS:
+TEAM MEMBER SETUP:
   1. kurt cloud login (with their email)
   2. Add shared WORKSPACE_ID and DATABASE_URL to their kurt.config
-  3. kurt admin migrate apply
-  4. kurt cloud join <WORKSPACE_ID>
-
-Or use the join command directly:
-  kurt cloud join <WORKSPACE_ID>
+  3. export KURT_CLOUD_AUTH=true
+  4. kurt admin migrate apply
 
 ═══════════════════════════════════════════════════════════════════
 MIGRATE FROM SQLITE TO SHARED POSTGRES
@@ -87,10 +87,11 @@ MIGRATE FROM SQLITE TO SHARED POSTGRES
 EXPORT LOCAL DATA:
   kurt db export --output my-backup.json --pretty
 
-SET DATABASE_URL in kurt.config (see above)
+SET DATABASE_URL and WORKSPACE_ID in kurt.config (see above)
+export KURT_CLOUD_AUTH=true
 
 IMPORT TO POSTGRESQL:
-  kurt db import my-backup.json
+  kurt db import my-backup.json --workspace-id <WORKSPACE_ID>
 
 Your local SQLite database remains unchanged as a backup.
 

@@ -481,10 +481,13 @@ kurt cloud login
 # 2. Add to kurt.config:
 DATABASE_URL="postgresql://user:pass@host:5432/dbname"
 
-# 3. Run migrations
+# 3. Enable cloud auth (RLS)
+export KURT_CLOUD_AUTH=true
+
+# 4. Run migrations
 kurt admin migrate apply
 
-# 4. Invite team members
+# 5. Invite team members
 kurt cloud invite teammate@example.com
 ```
 
@@ -498,8 +501,8 @@ kurt cloud login
 # WORKSPACE_ID="..."
 # DATABASE_URL="..."
 
-# 3. Join the workspace
-kurt cloud join <WORKSPACE_ID>
+# 3. Enable cloud auth (RLS)
+export KURT_CLOUD_AUTH=true
 
 # 4. Run migrations
 kurt admin migrate apply
@@ -515,10 +518,11 @@ kurt cloud status
 # Export from SQLite
 kurt db export --output backup.json --pretty
 
-# Set DATABASE_URL (see above)
+# Set DATABASE_URL and WORKSPACE_ID (see above)
+export KURT_CLOUD_AUTH=true
 
 # Import to Postgres
-kurt db import backup.json
+kurt db import backup.json --workspace-id <WORKSPACE_ID>
 ```
 
 For detailed instructions: `kurt show cloud-setup`
@@ -551,10 +555,8 @@ When user requests specific actions, run the appropriate workflow command:
 | List format templates | `kurt show format-templates` |
 | Check database status | `kurt db status` |
 | Export data | `kurt db export --output backup.json` |
-| Import data | `kurt db import backup.json` |
+| Import data | `kurt db import backup.json --workspace-id <WORKSPACE_ID>` |
 | Login to cloud | `kurt cloud login` |
 | Check cloud status | `kurt cloud status` |
 | Invite team member | `kurt cloud invite <email>` |
-| Join workspace | `kurt cloud join <WORKSPACE_ID>` |
 | Database/cloud setup | `kurt show cloud-setup` |
-

@@ -191,18 +191,18 @@ def import_cmd(
     dry_run: bool,
     skip_duplicates: bool,
 ):
-    """Import data from JSON export into PostgreSQL or Kurt Cloud.
+    """Import data from JSON export into PostgreSQL.
 
     Imports data exported with 'kurt db export' into the current
     database, tagged with the specified workspace ID.
 
-    For cloud mode (DATABASE_URL="kurt"):
-    - Valid authentication (kurt cloud login)
+    Kurt Cloud API import (DATABASE_URL="kurt") is not supported.
+    Use a direct PostgreSQL connection instead.
 
     For local PostgreSQL:
     - DATABASE_URL pointing to PostgreSQL
     - KURT_CLOUD_AUTH=true
-    - Valid authentication (kurt auth login)
+    - Valid authentication (kurt cloud login)
 
     Example:
         kurt db import kurt-export.json --workspace-id ws-123
