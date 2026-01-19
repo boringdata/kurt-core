@@ -28,13 +28,15 @@ venv/
 ENV/  
 env/
 .env
+*.env.local
 
 # IDEs
 
-.vscode/  
-.idea/  
-\*.swp  
-\*.swo  
+.vscode/
+.idea/
+.claude/
+\*.swp
+\*.swo
 \*~
 
 # Testing
@@ -92,3 +94,7 @@ reports/
 specs/
 claude-webview-poc/
 vscode-source/**
+
+# Temporary/test files
+perm-test.txt
+reverse_vscode.md
