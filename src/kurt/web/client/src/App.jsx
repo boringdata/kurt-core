@@ -222,7 +222,7 @@ const loadLayout = (projectRoot) => {
     }
 
     return parsed
-  } catch (e) {
+  } catch {
     return null
   }
 }
@@ -309,7 +309,6 @@ export default function App() {
   const [tabs, setTabs] = useState({}) // path -> { content, isDirty }
   const [approvals, setApprovals] = useState([])
   const [approvalsLoaded, setApprovalsLoaded] = useState(false)
-  const [_gitStatus, setGitStatus] = useState({})
   const [activeFile, setActiveFile] = useState(null)
   const [activeDiffFile, setActiveDiffFile] = useState(null)
   const [collapsed, setCollapsed] = useState(loadCollapsedState)
@@ -521,23 +520,7 @@ export default function App() {
     }
   }, [dockApi, collapsed])
 
-  // Fetch git status
-  const fetchGitStatus = useCallback(() => {
-    fetch(apiUrl('/api/git/status'))
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.available && data.files) {
-          setGitStatus(data.files)
-        }
-      })
-      .catch(() => {})
-  }, [])
-
-  useEffect(() => {
-    fetchGitStatus()
-    const interval = setInterval(fetchGitStatus, 5000)
-    return () => clearInterval(interval)
-  }, [fetchGitStatus])
+  // Git status polling removed - not currently used in UI
 
   // Fetch approvals
   useEffect(() => {
@@ -1504,7 +1487,7 @@ export default function App() {
           // Reset the collapsed effect flag so it doesn't override on first toggle
           collapsedEffectRan.current = true
         })
-      } catch (error) {
+      } catch {
         layoutRestored.current = false
       }
     }
@@ -1723,7 +1706,7 @@ export default function App() {
       }
 
       openFileAtPosition(path, dropPosition)
-    } catch (e) {
+    } catch {
       // Ignore parse errors
     }
   }
