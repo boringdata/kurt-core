@@ -25,21 +25,10 @@ from kurt.web.api.stream_bridge import (
 class TestBuildStreamArgs:
     """Test build_stream_args function."""
 
-    def test_adds_print_flag(self):
-        """Should add --print flag for stream-json input format."""
+    def test_no_print_flag(self):
+        """Should not add --print flag (VSCode extension doesn't use it)."""
         args = build_stream_args([], None, False)
-        assert "--print" in args
-
-    def test_does_not_duplicate_print_flag(self):
-        """Should not add --print if already present."""
-        args = build_stream_args(["--print"], None, False)
-        assert args.count("--print") == 1
-
-    def test_does_not_duplicate_p_flag(self):
-        """Should not add --print if -p already present."""
-        args = build_stream_args(["-p"], None, False)
         assert "--print" not in args
-        assert "-p" in args
 
     def test_adds_output_format_stream_json(self):
         """Should add --output-format stream-json."""
@@ -87,23 +76,17 @@ class TestBuildStreamArgs:
         assert "--model" in args
         assert "sonnet" in args
 
-    def test_adds_settings_if_file_exists(self, tmp_path):
-        """Should add --settings if .claude/settings.json exists."""
-        # Create .claude/settings.json
-        claude_dir = tmp_path / ".claude"
-        claude_dir.mkdir()
-        settings_file = claude_dir / "settings.json"
-        settings_file.write_text("{}")
+    def test_adds_setting_sources(self):
+        """Should add --setting-sources to load user/project/local settings."""
+        args = build_stream_args([], None, False)
+        assert "--setting-sources" in args
+        idx = args.index("--setting-sources")
+        assert args[idx + 1] == "user,project,local"
 
-        args = build_stream_args([], None, False, cwd=str(tmp_path))
-        assert "--settings" in args
-        idx = args.index("--settings")
-        assert args[idx + 1] == str(settings_file)
-
-    def test_no_settings_if_file_missing(self, tmp_path):
-        """Should not add --settings if file doesn't exist."""
-        args = build_stream_args([], None, False, cwd=str(tmp_path))
-        assert "--settings" not in args
+    def test_no_duplicate_setting_sources(self):
+        """Should not duplicate --setting-sources if already present."""
+        args = build_stream_args(["--setting-sources", "user"], None, False)
+        assert args.count("--setting-sources") == 1
 
 
 # ============================================================================
@@ -168,9 +151,10 @@ class TestStreamSession:
 
         assert written_json == {
             "type": "user",
+            "session_id": "",  # Required by stream-json protocol
             "message": {
                 "role": "user",
-                "content": "Hello world",
+                "content": [{"type": "text", "text": "Hello world"}],
             },
         }
 
@@ -197,15 +181,15 @@ class TestStreamSession:
         client2.send_json.assert_called_once_with(payload)
 
     @pytest.mark.asyncio
-    async def test_broadcast_stores_in_history(self):
-        """Should store broadcast messages in history."""
+    async def test_broadcast_does_not_store_history(self):
+        """Should not store history (CLI handles it via --resume)."""
         session = StreamSession("claude", [], "/tmp")
 
         payload = {"type": "test", "data": "hello"}
         await session.broadcast(payload)
 
-        assert len(session.history) == 1
-        assert session.history[0] == payload
+        # History storage removed - CLI handles conversation history
+        assert len(session.history) == 0
 
     @pytest.mark.asyncio
     async def test_broadcast_removes_dead_clients(self):
