@@ -1,137 +1,21 @@
 """Show Kurt Cloud setup and migration instructions."""
 
+from pathlib import Path
+
 import click
 
 from kurt.admin.telemetry.decorators import track_command
+
+
+def _get_template_path() -> Path:
+    """Get path to cloud setup template file."""
+    return Path(__file__).parent / "templates" / "cloud-setup.txt"
 
 
 @click.command()
 @track_command
 def cloud_setup_cmd():
     """Show instructions for Kurt Cloud setup and migration."""
-    content = """
-═══════════════════════════════════════════════════════════════════
-KURT CLOUD SETUP
-═══════════════════════════════════════════════════════════════════
-
-Kurt supports three database modes:
-  • Local SQLite (default) - .kurt/kurt.sqlite
-  • Shared PostgreSQL - Team collaboration with shared Supabase/Postgres
-  • Kurt Cloud (future) - Fully managed with GitHub integration
-
-═══════════════════════════════════════════════════════════════════
-UPGRADING FROM OLDER VERSIONS
-═══════════════════════════════════════════════════════════════════
-
-If upgrading from a version before multi-tenant support:
-
-1. BACKUP YOUR DATA FIRST:
-   kurt db export --output backup-before-upgrade.json --pretty
-
-2. RUN MIGRATIONS:
-   kurt admin migrate apply
-
-   This adds multi-tenant columns (user_id, workspace_id) to tables.
-
-3. LOGIN TO ASSOCIATE YOUR DATA:
-   kurt cloud login
-
-4. VERIFY:
-   kurt db status
-
-═══════════════════════════════════════════════════════════════════
-AUTHENTICATION
-═══════════════════════════════════════════════════════════════════
-
-LOGIN (required for shared database):
-  kurt cloud login
-
-  Opens browser for authentication via Kurt Cloud.
-  Your user_id is used to tag all data you create.
-
-CHECK STATUS:
-  kurt cloud status
-
-LOGOUT:
-  kurt cloud logout
-
-═══════════════════════════════════════════════════════════════════
-SHARED POSTGRESQL SETUP (TEAM OWNER)
-═══════════════════════════════════════════════════════════════════
-
-1. LOGIN TO KURT CLOUD:
-   kurt cloud login
-
-2. GET A DATABASE URL:
-   From Supabase, Neon, or your Postgres provider
-
-3. ADD TO kurt.config:
-   DATABASE_URL="postgresql://user:pass@host:5432/dbname"
-
-4. RUN MIGRATIONS:
-   kurt admin migrate apply
-
-5. VERIFY:
-   kurt db status
-
-═══════════════════════════════════════════════════════════════════
-INVITE TEAM MEMBERS
-═══════════════════════════════════════════════════════════════════
-
-SHOW INVITE INFO:
-  kurt cloud invite user@example.com
-
-This displays the WORKSPACE_ID and DATABASE_URL to share.
-
-TEAM MEMBER JOINS:
-  1. kurt cloud login (with their email)
-  2. Add shared WORKSPACE_ID and DATABASE_URL to their kurt.config
-  3. kurt admin migrate apply
-  4. kurt cloud join <WORKSPACE_ID>
-
-Or use the join command directly:
-  kurt cloud join <WORKSPACE_ID>
-
-═══════════════════════════════════════════════════════════════════
-MIGRATE FROM SQLITE TO SHARED POSTGRES
-═══════════════════════════════════════════════════════════════════
-
-EXPORT LOCAL DATA:
-  kurt db export --output my-backup.json --pretty
-
-SET DATABASE_URL in kurt.config (see above)
-
-IMPORT TO POSTGRESQL:
-  kurt db import my-backup.json
-
-Your local SQLite database remains unchanged as a backup.
-
-═══════════════════════════════════════════════════════════════════
-DATA MANAGEMENT
-═══════════════════════════════════════════════════════════════════
-
-EXPORT DATA (backup):
-  kurt db export --output my-backup.json --pretty
-
-IMPORT DATA:
-  kurt db import my-backup.json
-
-═══════════════════════════════════════════════════════════════════
-KURT CLOUD (FUTURE)
-═══════════════════════════════════════════════════════════════════
-
-Full Kurt Cloud will provide:
-  • Managed database with automatic backups
-  • GitHub App integration for repo access
-  • Web dashboard for team management
-  • Scheduled agent workflows
-
-REQUIREMENTS (not yet implemented):
-  • GitHub OAuth or GitHub App installation
-  • Kurt Cloud account and subscription
-
-For now, use shared PostgreSQL for team collaboration.
-
-═══════════════════════════════════════════════════════════════════
-"""
+    template_path = _get_template_path()
+    content = template_path.read_text()
     click.echo(content.strip())
