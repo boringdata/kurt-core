@@ -209,6 +209,8 @@ def fetch_cmd(
         import hashlib
         from pathlib import Path
 
+        from sqlmodel import select
+
         from kurt.db import managed_session
         from kurt.workflows.map.models import MapDocument, MapStatus
 

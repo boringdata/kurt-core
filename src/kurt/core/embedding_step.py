@@ -18,6 +18,12 @@ from .hooks import NoopStepHooks, StepHooks
 if TYPE_CHECKING:
     import pandas as pd
 
+# Import litellm at module level for test monkeypatching
+try:
+    import litellm
+except ImportError:
+    litellm = None  # type: ignore
+
 logger = logging.getLogger(__name__)
 
 
@@ -51,9 +57,12 @@ def _extract_usage_tokens(response: Any) -> tuple[int, int]:
 def _calculate_embedding_cost(response: Any, model: str | None) -> float:
     if not model:
         return 0.0
+    if litellm is None:
+        raise ImportError(
+            "litellm is required for embedding cost calculation. "
+            "Install with: pip install kurt-core[workflows]"
+        )
     try:
-        import litellm  # noqa: F401
-
         return float(
             litellm.response_cost_calculator(
                 response_object=response,
@@ -63,11 +72,6 @@ def _calculate_embedding_cost(response: Any, model: str | None) -> float:
                 optional_params={},
             )
         )
-    except ImportError as e:
-        raise ImportError(
-            "litellm is required for embedding cost calculation. "
-            "Install with: pip install kurt-core[workflows]"
-        ) from e
     except Exception:
         return 0.0
 
@@ -238,13 +242,11 @@ class EmbeddingStep:
                     prepared_texts.append(text)
 
                 # Call embedding API
-                try:
-                    import litellm  # noqa: F401
-                except ImportError as e:
+                if litellm is None:
                     raise ImportError(
                         "litellm is required for embeddings. "
                         "Install with: pip install kurt-core[workflows]"
-                    ) from e
+                    )
 
                 kwargs = {
                     "model": step_instance._resolved_model,
@@ -435,12 +437,10 @@ def generate_embeddings(
 
     start = time.time()
 
-    try:
-        import litellm  # noqa: F401
-    except ImportError as e:
+    if litellm is None:
         raise ImportError(
-            "litellm is required for embeddings. " "Install with: pip install kurt-core[workflows]"
-        ) from e
+            "litellm is required for embeddings. Install with: pip install kurt-core[workflows]"
+        )
 
     kwargs = {"model": model, "input": texts}
     if api_base:
