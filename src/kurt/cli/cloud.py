@@ -216,24 +216,39 @@ def login_cmd():
         from kurt.config import config_file_exists, get_config_file_path, load_config
 
         if config_file_exists():
+            import re
+            import uuid as uuid_module
+
             config = load_config()
             workspace_id = config.WORKSPACE_ID
+            config_path = get_config_file_path()
+            content = config_path.read_text()
+            updated = False
 
             # Fallback: auto-generate WORKSPACE_ID if missing
             if not workspace_id:
-                import re
-                import uuid as uuid_module
-
                 workspace_id = str(uuid_module.uuid4())
-                config_path = get_config_file_path()
-                content = config_path.read_text()
-
-                # Append WORKSPACE_ID to config
                 if not re.search(r"^WORKSPACE_ID\s*=", content, re.MULTILINE):
                     content += (
                         f'\n# Auto-generated workspace identifier\nWORKSPACE_ID="{workspace_id}"\n'
                     )
-                    config_path.write_text(content)
+                    updated = True
+
+            # Enable cloud auth when DATABASE_URL is configured
+            if config.DATABASE_URL:
+                if re.search(r"^CLOUD_AUTH\s*=", content, re.MULTILINE):
+                    content = re.sub(
+                        r"^CLOUD_AUTH\s*=.*$",
+                        "CLOUD_AUTH=true",
+                        content,
+                        flags=re.MULTILINE,
+                    )
+                else:
+                    content += "\n# Cloud auth for shared databases\nCLOUD_AUTH=true\n"
+                updated = True
+
+            if updated:
+                config_path.write_text(content)
     except Exception:
         pass
 

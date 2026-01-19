@@ -279,9 +279,5 @@ class TestModeDetectionWithRealEnv:
             assert get_mode() == "postgres"
 
         # kurt-cloud
-        with patch.dict(
-            os.environ,
-            {"DATABASE_URL": "postgresql://localhost/db", "KURT_CLOUD_AUTH": "true"},
-            clear=True,
-        ):
+        with patch.dict(os.environ, {"DATABASE_URL": "kurt"}, clear=True):
             assert get_mode() == "kurt-cloud"

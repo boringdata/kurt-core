@@ -135,6 +135,10 @@ class KurtConfig(BaseModel):
         default=True,
         description="Enable telemetry collection (can be disabled via DO_NOT_TRACK or KURT_TELEMETRY_DISABLED env vars)",
     )
+    CLOUD_AUTH: bool = Field(
+        default=False,
+        description="Enable cloud auth and RLS for shared PostgreSQL or Kurt Cloud",
+    )
 
     # Workspace identification
     # Generated automatically at `kurt init` - unique ID for this workspace
@@ -172,6 +176,16 @@ class KurtConfig(BaseModel):
         if isinstance(v, str):
             return v.lower() in ("true", "1", "yes", "on")
         # For any other type, convert to bool
+        return bool(v)
+
+    @field_validator("CLOUD_AUTH", mode="before")
+    @classmethod
+    def validate_cloud_auth(cls, v: Any) -> bool:
+        """Convert various string representations to boolean."""
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, str):
+            return v.lower() in ("true", "1", "yes", "on")
         return bool(v)
 
     def _get_project_root(self) -> Path:
@@ -363,6 +377,8 @@ def create_config(
         f.write("\n# Telemetry Configuration\n")
         # Write boolean as True/False (not "True"/"False" string)
         f.write(f"TELEMETRY_ENABLED={config.TELEMETRY_ENABLED}\n")
+        f.write("\n# Cloud Auth Configuration\n")
+        f.write(f"CLOUD_AUTH={config.CLOUD_AUTH}\n")
         f.write("\n# Workspace Configuration\n")
         f.write(f'WORKSPACE_ID="{config.WORKSPACE_ID}"\n')
 
@@ -422,6 +438,13 @@ def update_config(config: KurtConfig) -> None:
         f.write("\n# Telemetry Configuration\n")
         # Write boolean as True/False (not "True"/"False" string)
         f.write(f"TELEMETRY_ENABLED={config.TELEMETRY_ENABLED}\n")
+        f.write("\n# Cloud Auth Configuration\n")
+        f.write(f"CLOUD_AUTH={config.CLOUD_AUTH}\n")
+        f.write("\n# Workspace Configuration\n")
+        if config.WORKSPACE_ID:
+            f.write(f'WORKSPACE_ID="{config.WORKSPACE_ID}"\n')
+        if config.DATABASE_URL:
+            f.write(f'DATABASE_URL="{config.DATABASE_URL}"\n')
 
         # Write extra fields (analytics, CMS, module configs, etc.)
         # Pydantic v2 stores extra fields in __pydantic_extra__

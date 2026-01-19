@@ -18,6 +18,7 @@ from kurt.db.tenant import (
     get_workspace_context,
     get_workspace_id,
     init_workspace_from_config,
+    is_cloud_auth_enabled,
     is_cloud_mode,
     is_multi_tenant,
     is_postgres,
@@ -115,20 +116,35 @@ class TestModeDetection:
     def test_is_cloud_mode_false_by_default(self):
         """Test is_cloud_mode returns False with no env vars."""
         with patch.dict(os.environ, {}, clear=True):
-            os.environ.pop("KURT_CLOUD_AUTH", None)
             assert is_cloud_mode() is False
 
-    def test_is_cloud_mode_true_when_enabled(self):
-        """Test is_cloud_mode returns True with KURT_CLOUD_AUTH=true."""
-        with patch.dict(os.environ, {"KURT_CLOUD_AUTH": "true"}, clear=True):
+    def test_is_cloud_mode_true_with_kurt_database_url(self):
+        """Test is_cloud_mode returns True with DATABASE_URL='kurt'."""
+        with patch.dict(os.environ, {"DATABASE_URL": "kurt"}, clear=True):
             assert is_cloud_mode() is True
 
-    def test_is_cloud_mode_case_insensitive(self):
-        """Test is_cloud_mode handles case variations."""
+    def test_is_cloud_auth_enabled_true_with_env(self):
+        """Test is_cloud_auth_enabled returns True with KURT_CLOUD_AUTH=true."""
+        with patch.dict(os.environ, {"KURT_CLOUD_AUTH": "true"}, clear=True):
+            assert is_cloud_auth_enabled() is True
+
+    def test_is_cloud_auth_enabled_case_insensitive(self):
+        """Test is_cloud_auth_enabled handles case variations."""
         with patch.dict(os.environ, {"KURT_CLOUD_AUTH": "TRUE"}, clear=True):
-            assert is_cloud_mode() is True
+            assert is_cloud_auth_enabled() is True
         with patch.dict(os.environ, {"KURT_CLOUD_AUTH": "True"}, clear=True):
-            assert is_cloud_mode() is True
+            assert is_cloud_auth_enabled() is True
+
+    def test_is_cloud_auth_enabled_true_with_config(self):
+        """Test is_cloud_auth_enabled returns True with CLOUD_AUTH=true in config."""
+        from kurt.config.base import KurtConfig
+
+        with patch("kurt.config.config_file_exists", return_value=True):
+            with patch(
+                "kurt.config.load_config",
+                return_value=KurtConfig(CLOUD_AUTH=True),
+            ):
+                assert is_cloud_auth_enabled() is True
 
     def test_is_postgres_false_by_default(self):
         """Test is_postgres returns False with no DATABASE_URL."""
@@ -171,12 +187,8 @@ class TestGetMode:
             assert get_mode() == "postgres"
 
     def test_kurt_cloud_mode(self):
-        """Test kurt-cloud mode with DATABASE_URL and auth enabled."""
-        with patch.dict(
-            os.environ,
-            {"DATABASE_URL": "postgresql://localhost/db", "KURT_CLOUD_AUTH": "true"},
-            clear=True,
-        ):
+        """Test kurt-cloud mode with DATABASE_URL='kurt'."""
+        with patch.dict(os.environ, {"DATABASE_URL": "kurt"}, clear=True):
             assert get_mode() == "kurt-cloud"
 
 

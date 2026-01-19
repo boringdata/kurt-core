@@ -482,7 +482,7 @@ kurt cloud login
 DATABASE_URL="postgresql://user:pass@host:5432/dbname"
 
 # 3. Enable cloud auth (RLS)
-export KURT_CLOUD_AUTH=true
+# CLOUD_AUTH=true  # in kurt.config (auto-set after login when DATABASE_URL is set)
 
 # 4. Run migrations
 kurt admin migrate apply
@@ -502,7 +502,7 @@ kurt cloud login
 # DATABASE_URL="..."
 
 # 3. Enable cloud auth (RLS)
-export KURT_CLOUD_AUTH=true
+# CLOUD_AUTH=true  # in kurt.config (auto-set after login when DATABASE_URL is set)
 
 # 4. Run migrations
 kurt admin migrate apply
@@ -518,8 +518,7 @@ kurt cloud status
 # Export from SQLite
 kurt db export --output backup.json --pretty
 
-# Set DATABASE_URL and WORKSPACE_ID (see above)
-export KURT_CLOUD_AUTH=true
+# Set DATABASE_URL, WORKSPACE_ID, and CLOUD_AUTH=true (see above)
 
 # Import to Postgres
 kurt db import backup.json --workspace-id <WORKSPACE_ID>
