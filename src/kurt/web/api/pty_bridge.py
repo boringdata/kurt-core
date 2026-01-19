@@ -36,6 +36,7 @@ class PTYSession:
         cols: int = 60,
         rows: int = 30,
         extra_env: Optional[dict[str, str]] = None,
+        no_color: bool = False,
     ):
         self.cmd = cmd
         self.args = args
@@ -43,24 +44,41 @@ class PTYSession:
         self.cols = cols
         self.rows = rows
         self.extra_env = extra_env or {}
+        self.no_color = no_color
         self.pty: Optional[ptyprocess.PtyProcess] = None
         self._read_task: Optional[asyncio.Task] = None
 
-    def spawn(self) -> None:
+    def spawn(self, no_color: bool = False) -> None:
         """Spawn the PTY process."""
         env = os.environ.copy()
-        env.update(
-            {
-                "TERM": env.get("TERM", "xterm-256color"),
-                "COLORTERM": env.get("COLORTERM", "truecolor"),
-                "FORCE_COLOR": env.get("FORCE_COLOR", "1"),
-                # Signal to Claude Code hooks that this session is running from web UI
-                "CLAUDE_CODE_REMOTE": "true",
-                # Set terminal dimensions for tools that check env vars (like rich)
-                "COLUMNS": str(self.cols),
-                "LINES": str(self.rows),
-            }
-        )
+
+        if no_color:
+            # Disable colors for cleaner output parsing
+            env.update(
+                {
+                    "TERM": "dumb",
+                    "NO_COLOR": "1",
+                    "FORCE_COLOR": "0",
+                    # Signal to Claude Code hooks that this session is running from web UI
+                    "CLAUDE_CODE_REMOTE": "true",
+                    # Set terminal dimensions for tools that check env vars (like rich)
+                    "COLUMNS": str(self.cols),
+                    "LINES": str(self.rows),
+                }
+            )
+        else:
+            env.update(
+                {
+                    "TERM": env.get("TERM", "xterm-256color"),
+                    "COLORTERM": env.get("COLORTERM", "truecolor"),
+                    "FORCE_COLOR": env.get("FORCE_COLOR", "1"),
+                    # Signal to Claude Code hooks that this session is running from web UI
+                    "CLAUDE_CODE_REMOTE": "true",
+                    # Set terminal dimensions for tools that check env vars (like rich)
+                    "COLUMNS": str(self.cols),
+                    "LINES": str(self.rows),
+                }
+            )
         # Add extra environment variables (e.g., session info for hooks)
         env.update(self.extra_env)
 
@@ -211,7 +229,7 @@ class SharedSession:
         self.idle_task = asyncio.create_task(_cleanup())
 
     async def start(self) -> None:
-        self.session.spawn()
+        self.session.spawn(no_color=self.session.no_color)
 
         async def on_data(data: bytes) -> None:
             text = data.decode("utf-8", errors="replace")
@@ -269,9 +287,17 @@ def build_claude_args(
     force_new: bool,
     fork_session: Optional[str],
     cwd: Optional[str] = None,
+    json_mode: bool = False,
 ) -> list[str]:
     """Build Claude CLI arguments based on session parameters."""
     args = list(base_args)
+
+    # Add JSON streaming mode for structured I/O
+    if json_mode:
+        if "--output-format" not in args:
+            args.extend(["--output-format", "stream-json"])
+        if "--input-format" not in args:
+            args.extend(["--input-format", "stream-json"])
 
     # Add --settings flag if project has .claude/settings.json
     if cwd:
@@ -398,6 +424,12 @@ async def handle_pty_websocket(
     kurt_subcommand = params.get("kurt_subcommand", "")
     kurt_args_raw = params.get("kurt_args", "[]")
 
+    # Color mode - no_color=1 disables ANSI codes for cleaner parsing
+    no_color = params.get("no_color", "0") in ("1", "true")
+
+    # JSON mode - json_mode=1 uses --output-format stream-json --input-format stream-json
+    json_mode = params.get("json_mode", "0") in ("1", "true")
+
     # Select command and build args based on provider
     if provider == "shell":
         # Plain shell terminal - use user's default shell
@@ -423,7 +455,13 @@ async def handle_pty_websocket(
     else:
         cmd = os.environ.get("KURT_CLAUDE_CMD", "claude")
         args = build_claude_args(
-            base_args or [], session_id, resume, force_new, fork_session, cwd=cwd
+            base_args or [],
+            session_id,
+            resume,
+            force_new,
+            fork_session,
+            cwd=cwd,
+            json_mode=json_mode,
         )
 
     extra_env = {
@@ -451,6 +489,7 @@ async def handle_pty_websocket(
                 args=args,
                 cwd=cwd or os.getcwd(),
                 extra_env=extra_env,
+                no_color=no_color,
             )
             shared = SharedSession(session_id, session)
             _SESSION_REGISTRY[session_id] = shared

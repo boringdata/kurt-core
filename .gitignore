@@ -28,13 +28,15 @@ venv/
 ENV/  
 env/
 .env
+*.env.local
 
 # IDEs
 
-.vscode/  
-.idea/  
-\*.swp  
-\*.swo  
+.vscode/
+.idea/
+.claude/
+\*.swp
+\*.swo
 \*~
 
 # Testing
@@ -82,8 +84,8 @@ yarn-error.log\*
 kurt-demo/
 kurt-demo2/
 
-# Agent workflow definitions (user-specific)
-workflows/
+# Agent workflow definitions (user-specific) - only top-level
+/workflows/
 
 # Reports (local demo reports)
 reports/
@@ -91,3 +93,8 @@ reports/
 # Specs (local workflow specs)
 specs/
 claude-webview-poc/
+vscode-source/**
+
+# Temporary/test files
+perm-test.txt
+reverse_vscode.md

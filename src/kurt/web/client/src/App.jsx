@@ -10,10 +10,9 @@ import EmptyPanel from './panels/EmptyPanel'
 import ReviewPanel from './panels/ReviewPanel'
 import WorkflowsPanel from './panels/WorkflowsPanel'
 import WorkflowTerminalPanel from './panels/WorkflowTerminalPanel'
-import DiffHighlightPOC from './components/DiffHighlightPOC'
-import TiptapDiffPOC from './components/TiptapDiffPOC'
+import ClaudeStreamChat from './components/chat/ClaudeStreamChat'
 
-// POC mode - add ?poc=diff or ?poc=tiptap-diff to URL to test
+// POC mode - add ?poc=chat, ?poc=diff, or ?poc=tiptap-diff to URL to test
 const POC_MODE = new URLSearchParams(window.location.search).get('poc')
 
 const apiBase = import.meta.env.VITE_API_URL || ''
@@ -173,7 +172,7 @@ const loadSavedTabs = (projectRoot) => {
     if (saved) {
       return JSON.parse(saved)
     }
-  } catch (e) {
+  } catch {
     // Ignore parse errors
   }
   return []
@@ -183,7 +182,7 @@ const loadSavedTabs = (projectRoot) => {
 const saveTabs = (projectRoot, paths) => {
   try {
     localStorage.setItem(getStorageKey(projectRoot, 'tabs'), JSON.stringify(paths))
-  } catch (e) {
+  } catch {
     // Ignore storage errors
   }
 }
@@ -223,7 +222,7 @@ const loadLayout = (projectRoot) => {
     }
 
     return parsed
-  } catch (e) {
+  } catch {
     return null
   }
 }
@@ -256,7 +255,7 @@ const saveLayout = (projectRoot, layout) => {
   try {
     const layoutWithVersion = { ...layout, version: LAYOUT_VERSION }
     localStorage.setItem(getStorageKey(projectRoot, 'layout'), JSON.stringify(layoutWithVersion))
-  } catch (e) {
+  } catch {
     // Ignore storage errors
   }
 }
@@ -271,7 +270,7 @@ const loadCollapsedState = () => {
     if (saved) {
       return JSON.parse(saved)
     }
-  } catch (e) {
+  } catch {
     // Ignore parse errors
   }
   return { filetree: false, terminal: false, workflows: false }
@@ -280,7 +279,7 @@ const loadCollapsedState = () => {
 const saveCollapsedState = (state) => {
   try {
     localStorage.setItem(SIDEBAR_COLLAPSED_KEY, JSON.stringify(state))
-  } catch (e) {
+  } catch {
     // Ignore storage errors
   }
 }
@@ -291,7 +290,7 @@ const loadPanelSizes = () => {
     if (saved) {
       return JSON.parse(saved)
     }
-  } catch (e) {
+  } catch {
     // Ignore parse errors
   }
   return { filetree: 280, terminal: 400, workflows: 250 }
@@ -300,7 +299,7 @@ const loadPanelSizes = () => {
 const savePanelSizes = (sizes) => {
   try {
     localStorage.setItem(PANEL_SIZES_KEY, JSON.stringify(sizes))
-  } catch (e) {
+  } catch {
     // Ignore storage errors
   }
 }
@@ -310,7 +309,6 @@ export default function App() {
   const [tabs, setTabs] = useState({}) // path -> { content, isDirty }
   const [approvals, setApprovals] = useState([])
   const [approvalsLoaded, setApprovalsLoaded] = useState(false)
-  const [gitStatus, setGitStatus] = useState({})
   const [activeFile, setActiveFile] = useState(null)
   const [activeDiffFile, setActiveDiffFile] = useState(null)
   const [collapsed, setCollapsed] = useState(loadCollapsedState)
@@ -320,6 +318,7 @@ export default function App() {
   const centerGroupRef = useRef(null)
   const isInitialized = useRef(false)
   const layoutRestored = useRef(false)
+  const ensureCorePanelsRef = useRef(null)
   const [projectRoot, setProjectRoot] = useState(null) // null = not loaded yet, '' = loaded but empty
   const projectRootRef = useRef(null) // Stable ref for callbacks
 
@@ -521,23 +520,7 @@ export default function App() {
     }
   }, [dockApi, collapsed])
 
-  // Fetch git status
-  const fetchGitStatus = useCallback(() => {
-    fetch(apiUrl('/api/git/status'))
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.available && data.files) {
-          setGitStatus(data.files)
-        }
-      })
-      .catch(() => {})
-  }, [])
-
-  useEffect(() => {
-    fetchGitStatus()
-    const interval = setInterval(fetchGitStatus, 5000)
-    return () => clearInterval(interval)
-  }, [fetchGitStatus])
+  // Git status polling removed - not currently used in UI
 
   // Fetch approvals
   useEffect(() => {
@@ -784,7 +767,7 @@ export default function App() {
   )
 
   const openDiff = useCallback(
-    (path, status) => {
+    (path, _status) => {
       if (!dockApi) return
 
       const panelId = `editor-${path}`
@@ -1064,6 +1047,7 @@ export default function App() {
     // We check localStorage directly since projectRoot isn't available yet
     // Look for any layout key that might match
     let hasSavedLayout = false
+    let invalidLayoutFound = false
     try {
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i)
@@ -1071,10 +1055,27 @@ export default function App() {
           const raw = localStorage.getItem(key)
           if (raw) {
             const parsed = JSON.parse(raw)
-            // Check version, panels exist, and structure is valid
-            if (parsed?.version >= LAYOUT_VERSION && parsed?.panels && validateLayoutStructure(parsed)) {
+            const hasValidVersion = parsed?.version >= LAYOUT_VERSION
+            const hasPanels = !!parsed?.panels
+            const hasValidStructure = validateLayoutStructure(parsed)
+
+            // Check if layout is valid
+            if (hasValidVersion && hasPanels && hasValidStructure) {
               hasSavedLayout = true
               break
+            }
+
+            // Invalid layout detected - clean up and reload
+            if (!hasValidStructure || !hasValidVersion || !hasPanels) {
+              console.warn('[Layout] Invalid layout detected in onReady, clearing and reloading:', key)
+              localStorage.removeItem(key)
+              // Clear related session storage
+              const prefix = key.replace('-layout', '')
+              localStorage.removeItem(`${prefix}-tabs`)
+              localStorage.removeItem('kurt-web-terminal-sessions')
+              localStorage.removeItem('kurt-web-terminal-active')
+              localStorage.removeItem('kurt-web-terminal-chat-interface')
+              invalidLayoutFound = true
             }
           }
         }
@@ -1085,8 +1086,12 @@ export default function App() {
 
     // Only create fresh panels if no saved layout exists
     // Otherwise, layout restoration will handle panel creation
-    if (!hasSavedLayout) {
+    if (!hasSavedLayout || invalidLayoutFound) {
       ensureCorePanels()
+    }
+    ensureCorePanelsRef.current = () => {
+      ensureCorePanels()
+      applyLockedPanels()
     }
 
     // Apply initial panel sizes for fresh layout
@@ -1264,6 +1269,72 @@ export default function App() {
     layoutRestorationRan.current = true
 
     const savedLayout = loadLayout(projectRoot)
+    if (!savedLayout) {
+      if (ensureCorePanelsRef.current) {
+        ensureCorePanelsRef.current()
+        layoutRestored.current = true
+        requestAnimationFrame(() => {
+          const ftGroup = dockApi.getPanel('filetree')?.group
+          const tGroup = dockApi.getPanel('terminal')?.group
+          const wGroup = dockApi.getPanel('workflows')?.group
+
+          if (ftGroup) {
+            const ftApi = dockApi.getGroup(ftGroup.id)?.api
+            if (ftApi) {
+              if (collapsed.filetree) {
+                ftApi.setConstraints({ minimumWidth: 48, maximumWidth: 48 })
+                ftApi.setSize({ width: 48 })
+              } else {
+                ftApi.setConstraints({ minimumWidth: 180, maximumWidth: Infinity })
+                ftApi.setSize({ width: panelSizesRef.current.filetree })
+              }
+            }
+          }
+          if (tGroup) {
+            const tApi = dockApi.getGroup(tGroup.id)?.api
+            if (tApi) {
+              if (collapsed.terminal) {
+                tApi.setConstraints({ minimumWidth: 48, maximumWidth: 48 })
+                tApi.setSize({ width: 48 })
+              } else {
+                tApi.setConstraints({ minimumWidth: 250, maximumWidth: Infinity })
+                tApi.setSize({ width: panelSizesRef.current.terminal })
+              }
+            }
+          }
+          if (wGroup) {
+            const wApi = dockApi.getGroup(wGroup.id)?.api
+            if (wApi) {
+              if (collapsed.workflows) {
+                wApi.setConstraints({ minimumHeight: 36, maximumHeight: 36 })
+                wApi.setSize({ height: 36 })
+              } else {
+                wApi.setConstraints({ minimumHeight: 100, maximumHeight: Infinity })
+                wApi.setSize({ height: panelSizesRef.current.workflows })
+              }
+            }
+          }
+
+          const shellPanel = dockApi.getPanel('shell')
+          const shellGroup = shellPanel?.group
+          if (shellGroup && shellGroup !== wGroup) {
+            const sApi = dockApi.getGroup(shellGroup.id)?.api
+            if (sApi) {
+              if (collapsed.workflows) {
+                sApi.setConstraints({ minimumHeight: 36, maximumHeight: 36 })
+                sApi.setSize({ height: 36 })
+              } else {
+                sApi.setConstraints({ minimumHeight: 100, maximumHeight: Infinity })
+                sApi.setSize({ height: panelSizesRef.current.workflows })
+              }
+            }
+          }
+
+          collapsedEffectRan.current = true
+        })
+      }
+      return
+    }
     if (savedLayout && typeof dockApi.fromJSON === 'function') {
       // Since onReady skips panel creation when a saved layout exists,
       // we can directly call fromJSON without clearing first
@@ -1416,7 +1487,7 @@ export default function App() {
           // Reset the collapsed effect flag so it doesn't override on first toggle
           collapsedEffectRan.current = true
         })
-      } catch (error) {
+      } catch {
         layoutRestored.current = false
       }
     }
@@ -1635,17 +1706,13 @@ export default function App() {
       }
 
       openFileAtPosition(path, dropPosition)
-    } catch (e) {
+    } catch {
       // Ignore parse errors
     }
   }
 
-  // POC mode for testing diff highlighting
-  if (POC_MODE === 'diff') {
-    return <DiffHighlightPOC />
-  }
-  if (POC_MODE === 'tiptap-diff') {
-    return <TiptapDiffPOC />
+  if (POC_MODE === 'chat') {
+    return <ClaudeStreamChat />
   }
 
   // Build className with collapsed state flags for CSS targeting

@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Terminal from '../components/Terminal'
+import ClaudeStreamChat from '../components/chat/ClaudeStreamChat'
 
 const SESSION_STORAGE_KEY = 'kurt-web-terminal-sessions'
+const VIEW_MODE_KEY = 'kurt-web-terminal-view-mode'
 const ACTIVE_SESSION_KEY = 'kurt-web-terminal-active'
+const CHAT_INTERFACE_KEY = 'kurt-web-terminal-chat-interface'
 const PROVIDERS = [
   { id: 'claude', label: 'Claude' },
   { id: 'codex', label: 'Codex' },
@@ -72,6 +75,15 @@ const getFileName = (path) => {
 export default function TerminalPanel({ params }) {
   const { collapsed, onToggleCollapse, approvals, onFocusReview, onDecision, normalizeApprovalPath } = params || {}
   const terminalCounter = useRef(1)
+  // Always in chat mode (removed raw/chat toggle)
+  const viewMode = 'chat'
+  const [chatInterface, setChatInterface] = useState(() => {
+    try {
+      return localStorage.getItem(CHAT_INTERFACE_KEY) || 'cli'
+    } catch {
+      return 'cli'
+    }
+  })
   const [sessions, setSessions] = useState(() => {
     const saved = loadSessions()
     if (saved) {
@@ -198,6 +210,15 @@ export default function TerminalPanel({ params }) {
     }
   }, [sessions, activeId])
 
+  // Save chat interface preference
+  useEffect(() => {
+    try {
+      localStorage.setItem(CHAT_INTERFACE_KEY, chatInterface)
+    } catch {
+      // Ignore storage errors
+    }
+  }, [chatInterface])
+
   if (collapsed) {
     return (
       <div className="panel-content terminal-panel-content terminal-collapsed">
@@ -283,6 +304,25 @@ export default function TerminalPanel({ params }) {
                 </option>
               ))}
             </select>
+            {/* CLI/Web toggle */}
+            <div className="view-mode-toggle" style={{ marginLeft: '8px' }}>
+              <button
+                type="button"
+                className={`view-mode-btn ${chatInterface === 'cli' ? 'active' : ''}`}
+                onClick={() => setChatInterface('cli')}
+                title="CLI chat interface"
+              >
+                CLI
+              </button>
+              <button
+                type="button"
+                className={`view-mode-btn ${chatInterface === 'web' ? 'active' : ''}`}
+                onClick={() => setChatInterface('web')}
+                title="Web chat interface"
+              >
+                Web
+              </button>
+            </div>
             <button
               type="button"
               className="terminal-copy-id"
@@ -308,25 +348,62 @@ export default function TerminalPanel({ params }) {
             </button>
           </div>
           <div className="terminal-body">
-            {sessions.map((session) => (
-              <div
-                key={session.id}
-                className={`terminal-instance ${session.id === activeId ? 'active' : ''}`}
-              >
-                <Terminal
-                  key={`${session.id}-${session.sessionId}-${session.provider}-${session.resume}`}
-                  isActive={session.id === activeId}
-                  provider={session.provider}
-                  sessionId={session.sessionId}
-                  sessionName={session.title}
-                  resume={Boolean(session.resume)}
-                  onFirstPrompt={(prompt) => handleFirstPrompt(session.id, prompt)}
-                  onResumeMissing={() => handleResumeMissing(session.id)}
-                  bannerMessage={session.bannerMessage}
-                  onBannerShown={() => handleBannerShown(session.id)}
-                />
-              </div>
-            ))}
+            {sessions.map((session) => {
+              const isActive = session.id === activeId
+              const className = `terminal-instance${isActive ? ' active' : ''}`
+
+              // CLI: Show PTY terminal stream
+              if (chatInterface === 'cli') {
+                return (
+                  <div key={session.id} className={className}>
+                    <Terminal
+                      isActive={isActive}
+                      provider={session.provider}
+                      sessionId={session.sessionId}
+                      sessionName={session.title}
+                      resume={session.resume}
+                      onSessionStarted={() => {
+                        setSessions((prev) =>
+                          prev.map((s) =>
+                            s.id === session.id ? { ...s, resume: true } : s,
+                          ),
+                        )
+                      }}
+                      bannerMessage={session.bannerMessage}
+                      onBannerShown={() => handleBannerShown(session.id)}
+                      onResumeMissing={() => handleResumeMissing(session.id)}
+                      onFirstPrompt={(prompt) => handleFirstPrompt(session.id, prompt)}
+                    />
+                  </div>
+                )
+              }
+
+              // WEB: Show ClaudeStreamChat
+              return (
+                <div key={session.id} className={className}>
+                  <ClaudeStreamChat
+                    initialSessionId={session.sessionId}
+                    provider={session.provider}
+                    resume={session.resume}
+                    showSessionPicker={false}
+                    onSessionStarted={(newSessionId) => {
+                      if (!newSessionId) return
+                      setSessions((prev) =>
+                        prev.map((s) =>
+                          s.id === session.id
+                            ? {
+                                ...s,
+                                sessionId: newSessionId,
+                                resume: true,
+                              }
+                            : s,
+                        ),
+                      )
+                    }}
+                  />
+                </div>
+              )
+            })}
           </div>
         </>
       )}

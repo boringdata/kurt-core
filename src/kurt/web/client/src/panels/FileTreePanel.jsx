@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react'
+import React, { useState } from 'react'
 import FileTree from '../components/FileTree'
 import GitChangesView from '../components/GitChangesView'
 
@@ -6,7 +6,6 @@ export default function FileTreePanel({ params }) {
   const { onOpenFile, onOpenFileToSide, onOpenDiff, projectRoot, activeFile, activeDiffFile, collapsed, onToggleCollapse } = params
   const [creatingFile, setCreatingFile] = useState(false)
   const [viewMode, setViewMode] = useState('files') // 'files' | 'changes'
-  const fileTreeRef = useRef(null)
 
   const handleNewFile = () => {
     setCreatingFile(true)
@@ -97,7 +96,6 @@ export default function FileTreePanel({ params }) {
       </div>
       {viewMode === 'files' ? (
         <FileTree
-          ref={fileTreeRef}
           onOpen={onOpenFile}
           onOpenToSide={onOpenFileToSide}
           projectRoot={projectRoot}
