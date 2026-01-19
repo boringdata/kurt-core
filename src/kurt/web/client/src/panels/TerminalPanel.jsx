@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Terminal from '../components/Terminal'
-import ClaudeStreamChat from '../components/chat-3/ClaudeStreamChat'
+import ClaudeStreamChat from '../components/chat/ClaudeStreamChat'
 
 const SESSION_STORAGE_KEY = 'kurt-web-terminal-sessions'
 const VIEW_MODE_KEY = 'kurt-web-terminal-view-mode'
@@ -352,7 +352,7 @@ export default function TerminalPanel({ params }) {
               const isActive = session.id === activeId
               const className = `terminal-instance${isActive ? ' active' : ''}`
 
-              // CLI: Show ChatView
+              // CLI: Show PTY terminal stream
               if (chatInterface === 'cli') {
                 return (
                   <div key={session.id} className={className}>

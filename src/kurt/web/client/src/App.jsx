@@ -10,9 +10,9 @@ import EmptyPanel from './panels/EmptyPanel'
 import ReviewPanel from './panels/ReviewPanel'
 import WorkflowsPanel from './panels/WorkflowsPanel'
 import WorkflowTerminalPanel from './panels/WorkflowTerminalPanel'
-import ClaudeStreamChat from './components/chat-3/ClaudeStreamChat'
+import ClaudeStreamChat from './components/chat/ClaudeStreamChat'
 
-// POC mode - add ?poc=diff or ?poc=tiptap-diff to URL to test
+// POC mode - add ?poc=chat, ?poc=diff, or ?poc=tiptap-diff to URL to test
 const POC_MODE = new URLSearchParams(window.location.search).get('poc')
 
 const apiBase = import.meta.env.VITE_API_URL || ''
@@ -1711,7 +1711,7 @@ export default function App() {
     }
   }
 
-  if (POC_MODE === 'chat-3') {
+  if (POC_MODE === 'chat') {
     return <ClaudeStreamChat />
   }
 
