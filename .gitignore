@@ -94,3 +94,4 @@ reports/
 specs/
 claude-webview-poc/
 .vercel
+test.db
