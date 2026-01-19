@@ -1607,6 +1607,7 @@ const ComposerShell = ({
           </div>
         )}
         <ComposerPrimitive.Input
+          asChild
           ref={inputRef}
           autoFocus
           placeholder={isConnected ? 'Reply...' : 'Connecting...'}
@@ -1647,7 +1648,9 @@ const ComposerShell = ({
               }
             }
           }}
-        />
+        >
+          <textarea />
+        </ComposerPrimitive.Input>
         <div className="claude-input-actions">
           <div className="claude-input-left">
             <label className="claude-icon-button" title="Attach image">
