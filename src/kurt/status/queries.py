@@ -1,81 +1,17 @@
-"""Status queries using repository pattern."""
+"""Status queries using direct SQLModel queries."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
-from kurt.db.repository import BaseRepository
-
 if TYPE_CHECKING:
     from sqlmodel import Session
 
 
-class StatusRepository(BaseRepository):
-    """Repository for status statistics.
-
-    Provides methods for getting document counts and aggregations.
-    """
-
-    def __init__(self, session: "Session"):
-        super().__init__(session)
-
-    def get_document_counts(self) -> dict[str, int]:
-        """Get document count statistics.
-
-        Returns:
-            Dict with total, fetched, error, and not_fetched counts
-        """
-        from kurt.workflows.fetch.models import FetchDocument, FetchStatus
-        from kurt.workflows.map.models import MapDocument
-
-        # Total documents
-        total = self._count(MapDocument)
-
-        # Fetched successfully
-        fetched = self._count(FetchDocument, filters={"status": FetchStatus.SUCCESS.value})
-
-        # Failed fetches
-        error = self._count(FetchDocument, filters={"status": FetchStatus.ERROR.value})
-
-        # Not yet fetched
-        not_fetched = total - fetched - error
-
-        return {
-            "total": total,
-            "fetched": fetched,
-            "error": error,
-            "not_fetched": not_fetched,
-        }
-
-    def get_domains_distribution(self, limit: int = 10000) -> dict[str, int]:
-        """Get document counts by domain.
-
-        Args:
-            limit: Maximum number of URLs to fetch for analysis
-
-        Returns:
-            Dict mapping domain names to document counts
-        """
-        from kurt.workflows.map.models import MapDocument
-
-        urls = self._select_column(MapDocument, "source_url", limit=limit)
-
-        domains: dict[str, int] = {}
-        for url in urls:
-            if url:
-                try:
-                    domain = urlparse(url).netloc
-                    domains[domain] = domains.get(domain, 0) + 1
-                except Exception:
-                    pass
-
-        return domains
-
-
 def get_status_data(session: "Session") -> dict:
     """
-    Gather all status information using repository pattern.
+    Gather all status information.
 
     In cloud mode, this function is called by the kurt-cloud API endpoint.
 
@@ -85,18 +21,51 @@ def get_status_data(session: "Session") -> dict:
     Returns:
         Dict with status data including document counts and domain distribution
     """
-    repo = StatusRepository(session)
-    counts = repo.get_document_counts()
-    domains = repo.get_domains_distribution()
+    from sqlmodel import func, select
+
+    from kurt.workflows.fetch.models import FetchDocument, FetchStatus
+    from kurt.workflows.map.models import MapDocument
+
+    # Total documents
+    total = session.exec(select(func.count()).select_from(MapDocument)).one()
+
+    # Fetched successfully
+    fetched = session.exec(
+        select(func.count())
+        .select_from(FetchDocument)
+        .where(FetchDocument.status == FetchStatus.SUCCESS.value)
+    ).one()
+
+    # Failed fetches
+    error = session.exec(
+        select(func.count())
+        .select_from(FetchDocument)
+        .where(FetchDocument.status == FetchStatus.ERROR.value)
+    ).one()
+
+    # Not yet fetched
+    not_fetched = total - fetched - error
+
+    # Get domain distribution
+    urls = session.exec(select(MapDocument.source_url).limit(10000)).all()
+
+    domains: dict[str, int] = {}
+    for url in urls:
+        if url:
+            try:
+                domain = urlparse(url).netloc
+                domains[domain] = domains.get(domain, 0) + 1
+            except Exception:
+                pass
 
     return {
         "initialized": True,
         "documents": {
-            "total": counts["total"],
+            "total": total,
             "by_status": {
-                "fetched": counts["fetched"],
-                "not_fetched": counts["not_fetched"],
-                "error": counts["error"],
+                "fetched": fetched,
+                "not_fetched": not_fetched,
+                "error": error,
             },
             "by_domain": domains,
         },
