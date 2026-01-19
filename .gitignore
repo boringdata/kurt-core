@@ -28,13 +28,15 @@ venv/
 ENV/  
 env/
 .env
+*.env.local
 
 # IDEs
 
-.vscode/  
-.idea/  
-\*.swp  
-\*.swo  
+.vscode/
+.idea/
+.claude/
+\*.swp
+\*.swo
 \*~
 
 # Testing
@@ -96,3 +98,9 @@ test.db
 
 # BD (Beads) workflow tool
 .beads/
+
+vscode-source/**
+
+# Temporary/test files
+perm-test.txt
+reverse_vscode.md
