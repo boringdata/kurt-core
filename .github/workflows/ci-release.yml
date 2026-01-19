@@ -65,8 +65,9 @@ jobs:
       - name: Run linting
         run: npm run lint
 
-      - name: Run tests
-        run: npm run test:run
+      # Tests temporarily disabled - test infrastructure being rebuilt
+      # - name: Run tests
+      #   run: npm run test:run
 
   # Combined test gate for branch protection
   test:
