@@ -157,21 +157,21 @@ class TestModeDetection:
 class TestGetMode:
     """Tests for get_mode function."""
 
-    def test_local_sqlite_mode(self):
-        """Test local_sqlite mode when no DATABASE_URL."""
+    def test_sqlite_mode(self):
+        """Test sqlite mode when no DATABASE_URL."""
         with patch.dict(os.environ, {}, clear=True):
             os.environ.pop("DATABASE_URL", None)
             os.environ.pop("KURT_CLOUD_AUTH", None)
             assert get_mode() == "sqlite"
 
-    def test_local_postgres_mode(self):
-        """Test local_postgres mode with DATABASE_URL but no auth."""
+    def test_postgres_mode(self):
+        """Test postgres mode with DATABASE_URL but no auth."""
         with patch.dict(os.environ, {"DATABASE_URL": "postgresql://localhost/db"}, clear=True):
             os.environ.pop("KURT_CLOUD_AUTH", None)
             assert get_mode() == "postgres"
 
-    def test_cloud_postgres_mode(self):
-        """Test cloud_postgres mode with DATABASE_URL and auth enabled."""
+    def test_kurt_cloud_mode(self):
+        """Test kurt-cloud mode with DATABASE_URL and auth enabled."""
         with patch.dict(
             os.environ,
             {"DATABASE_URL": "postgresql://localhost/db", "KURT_CLOUD_AUTH": "true"},

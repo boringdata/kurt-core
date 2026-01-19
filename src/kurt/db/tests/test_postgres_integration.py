@@ -267,18 +267,18 @@ class TestModeDetectionWithRealEnv:
         """Test all three modes are correctly detected."""
         from kurt.db.tenant import get_mode
 
-        # local_sqlite (default)
+        # sqlite (default)
         with patch.dict(os.environ, {}, clear=True):
             os.environ.pop("DATABASE_URL", None)
             os.environ.pop("KURT_CLOUD_AUTH", None)
             assert get_mode() == "sqlite"
 
-        # local_postgres
+        # postgres
         with patch.dict(os.environ, {"DATABASE_URL": "postgresql://localhost/db"}, clear=True):
             os.environ.pop("KURT_CLOUD_AUTH", None)
             assert get_mode() == "postgres"
 
-        # cloud_postgres
+        # kurt-cloud
         with patch.dict(
             os.environ,
             {"DATABASE_URL": "postgresql://localhost/db", "KURT_CLOUD_AUTH": "true"},

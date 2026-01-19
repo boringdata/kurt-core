@@ -76,11 +76,23 @@ web/api/
 - `queries.py` contains pure SQLAlchemy - works in all modes
   - For simple modules (status), create dedicated `queries.py`
   - For complex modules (documents), use existing registry/service classes directly
-- `cli.py` checks `is_cloud_mode()` and routes to queries/registry or web API
+- `cli.py` uses `route_by_mode()` helper to route to queries/registry (local) or web API (cloud)
 - `web/api/server.py` defines ALL endpoints (used by CLI and web UI)
 - Kurt-cloud hosts `web/api/server.py` (single FastAPI app)
 - **No PostgREST emulation** - direct PostgreSQL on backend
 - **Single API** - CLI and web UI use same endpoints
+
+**Generic Routing Pattern**:
+```python
+from kurt.db.routing import route_by_mode
+
+# Route function call based on database mode
+result = route_by_mode(local_fn, cloud_fn, *args, **kwargs)
+
+# Example:
+def _get_data(filters):
+    return route_by_mode(_get_from_db, _get_from_api, filters)
+```
 
 **Benefits**:
 - ✅ Single source of truth for SQL queries

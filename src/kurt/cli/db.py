@@ -385,7 +385,7 @@ def status_cmd():
     """Show database status and mode.
 
     Displays:
-    - Current operating mode (local_sqlite, local_postgres, cloud_postgres)
+    - Current operating mode (sqlite, postgres, kurt-cloud)
     - Database connection info
     - Table counts
     """
