@@ -4,6 +4,9 @@ Revision ID: 007_rls_session
 Revises: 006_rls
 Create Date: 2026-01-15
 
+Note: Only applies to shared PostgreSQL mode.
+Skipped on SQLite and Kurt Cloud (workspace schemas use schema isolation).
+
 The previous RLS policies only used auth.uid() which works for Supabase SDK
 connections but not for direct PostgreSQL connections (CLI via pooler).
 
@@ -47,6 +50,15 @@ def upgrade() -> None:
     if context.get_context().dialect.name != "postgresql":
         return
 
+    # Skip in cloud mode (workspace schemas) - schema isolation handles multi-tenancy
+    conn = op.get_bind()
+    result = conn.execute("SELECT current_schema()")
+    current_schema = result.scalar()
+
+    if current_schema and current_schema.startswith("ws_"):
+        return
+
+    # Apply RLS for shared PostgreSQL mode
     for table in TABLES_WITH_TENANT:
         # Drop old policy
         op.execute(f"DROP POLICY IF EXISTS tenant_isolation ON {table}")
@@ -72,6 +84,15 @@ def downgrade() -> None:
     if context.get_context().dialect.name != "postgresql":
         return
 
+    # Skip in cloud mode (workspace schemas)
+    conn = op.get_bind()
+    result = conn.execute("SELECT current_schema()")
+    current_schema = result.scalar()
+
+    if current_schema and current_schema.startswith("ws_"):
+        return
+
+    # Downgrade RLS for shared PostgreSQL mode
     for table in TABLES_WITH_TENANT:
         # Revert to auth.uid()-only policy
         op.execute(f"DROP POLICY IF EXISTS tenant_isolation ON {table}")

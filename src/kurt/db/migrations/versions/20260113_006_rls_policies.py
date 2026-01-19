@@ -4,7 +4,8 @@ Revision ID: 006_rls
 Revises: 005_add_tenant
 Create Date: 2026-01-13
 
-Note: This migration only runs on PostgreSQL. SQLite will skip it.
+Note: This migration only runs on shared PostgreSQL mode.
+Skipped on SQLite and Kurt Cloud (workspace schemas use schema isolation).
 RLS policies ensure users can only see their own data based on user_id.
 """
 
@@ -34,6 +35,15 @@ def upgrade() -> None:
     if context.get_context().dialect.name != "postgresql":
         return
 
+    # Skip in cloud mode (workspace schemas) - schema isolation handles multi-tenancy
+    conn = op.get_bind()
+    result = conn.execute("SELECT current_schema()")
+    current_schema = result.scalar()
+
+    if current_schema and current_schema.startswith("ws_"):
+        return
+
+    # Apply RLS for shared PostgreSQL mode
     for table in TABLES_WITH_TENANT:
         # Enable RLS on the table
         op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
@@ -50,6 +60,15 @@ def downgrade() -> None:
     if context.get_context().dialect.name != "postgresql":
         return
 
+    # Skip in cloud mode (workspace schemas)
+    conn = op.get_bind()
+    result = conn.execute("SELECT current_schema()")
+    current_schema = result.scalar()
+
+    if current_schema and current_schema.startswith("ws_"):
+        return
+
+    # Downgrade RLS for shared PostgreSQL mode
     for table in TABLES_WITH_TENANT:
         op.execute(f"DROP POLICY IF EXISTS tenant_isolation ON {table}")
         op.execute(f"ALTER TABLE {table} DISABLE ROW LEVEL SECURITY")

@@ -6,6 +6,14 @@ Create Date: 2026-01-16
 
 This migration switches tenant isolation from user_id to workspace_id so
 members of the same workspace can see shared data.
+
+Behavior by mode:
+- SQLite: Skipped (RLS not supported)
+- Shared PostgreSQL: RLS policies applied to public schema tables
+- Kurt Cloud: Skipped (workspace schemas use schema isolation, not RLS)
+
+The migration detects workspace schemas (ws_*) and skips RLS policy creation
+since schema-based isolation provides stronger security guarantees.
 """
 
 from typing import Sequence, Union
@@ -34,6 +42,17 @@ def upgrade() -> None:
     if context.get_context().dialect.name != "postgresql":
         return
 
+    # Skip in cloud mode (workspace schemas) - schema isolation handles multi-tenancy
+    # Check if running in a workspace schema (ws_*)
+    conn = op.get_bind()
+    result = conn.execute("SELECT current_schema()")
+    current_schema = result.scalar()
+
+    if current_schema and current_schema.startswith("ws_"):
+        # Cloud mode: schema-based isolation, no RLS needed
+        return
+
+    # Apply RLS for shared PostgreSQL mode (all workspaces share public schema)
     for table in TABLES_WITH_TENANT:
         op.execute(f"DROP POLICY IF EXISTS tenant_isolation ON {table}")
         op.execute(f"""
@@ -53,6 +72,15 @@ def downgrade() -> None:
     if context.get_context().dialect.name != "postgresql":
         return
 
+    # Skip in cloud mode (workspace schemas)
+    conn = op.get_bind()
+    result = conn.execute("SELECT current_schema()")
+    current_schema = result.scalar()
+
+    if current_schema and current_schema.startswith("ws_"):
+        return
+
+    # Downgrade RLS for shared PostgreSQL mode
     for table in TABLES_WITH_TENANT:
         op.execute(f"DROP POLICY IF EXISTS tenant_isolation ON {table}")
         op.execute(f"""
