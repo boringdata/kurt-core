@@ -20,13 +20,63 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from kurt.web.api.auth import auth_middleware_setup, is_cloud_auth_enabled
 from kurt.web.api.pty_bridge import build_claude_args, handle_pty_websocket
 from kurt.web.api.storage import LocalStorage, S3Storage
 from kurt.web.api.stream_bridge import handle_stream_websocket
 
 # Ensure working directory is project root (when running from worktree)
-project_root = Path(os.environ.get("KURT_PROJECT_ROOT", Path.cwd())).expanduser().resolve()
-os.chdir(project_root)
+# Skip in cloud deployments where filesystem may be read-only
+try:
+    project_root = Path(os.environ.get("KURT_PROJECT_ROOT", Path.cwd())).expanduser().resolve()
+    if project_root.exists():
+        os.chdir(project_root)
+except Exception:
+    # Skip chdir in environments where it's not needed (e.g., Vercel)
+    pass
+
+
+def get_session_for_request(request: Request):
+    """Get database session for API request.
+
+    In cloud mode (when DATABASE_URL env var is set), uses PostgreSQL.
+    In local mode, uses SQLite via managed_session.
+
+    Returns:
+        Session for database queries
+    """
+    import logging
+    import os
+    from contextlib import contextmanager
+
+    # Check if DATABASE_URL is set (cloud/PostgreSQL mode)
+    database_url = os.environ.get("DATABASE_URL")
+
+    logging.info(f"DATABASE_URL present: {database_url is not None}")
+    if database_url:
+        logging.info(f"DATABASE_URL value: {database_url[:20]}...")
+        logging.info(f"Starts with 'postgresql': {database_url.startswith('postgresql')}")
+
+    if database_url and database_url.startswith("postgresql"):
+        # Cloud mode: direct PostgreSQL connection
+        logging.info("Using PostgreSQL connection")
+        from sqlalchemy import create_engine
+        from sqlmodel import Session
+
+        engine = create_engine(database_url)
+
+        @contextmanager
+        def _postgres_session():
+            with Session(engine) as session:
+                yield session
+
+        return _postgres_session()
+
+    # Local mode: use managed_session (SQLite)
+    logging.warning("Falling back to managed_session (SQLite)")
+    from kurt.db import managed_session
+
+    return managed_session()
 
 
 class FilePayload(BaseModel):
@@ -99,6 +149,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add auth middleware for cloud mode (KURT_CLOUD_AUTH=true)
+if is_cloud_auth_enabled():
+    app.middleware("http")(auth_middleware_setup)
 
 
 # --- Production static file serving ---
@@ -183,6 +237,109 @@ def api_config():
                 "kurt": ".kurt",
             },
         }
+
+
+@app.get("/api/status")
+def api_status(request: Request):
+    """
+    Get comprehensive project status.
+
+    Returns document counts, status breakdown, and domain distribution.
+    Used by both CLI (in cloud mode) and web UI.
+    """
+    import logging
+    import traceback
+
+    from fastapi import HTTPException
+
+    from kurt.status.queries import get_status_data
+
+    try:
+        with get_session_for_request(request) as session:
+            return get_status_data(session)
+    except Exception as e:
+        logging.error(f"Status API error: {e}")
+        logging.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Status query failed: {str(e)}")
+
+
+@app.get("/api/documents")
+def api_list_documents(
+    request: Request,
+    status: Optional[str] = None,
+    limit: Optional[int] = None,
+    offset: Optional[int] = None,
+    url_pattern: Optional[str] = None,
+):
+    """
+    List documents with optional filters.
+
+    Used by both CLI (in cloud mode) and web UI.
+    """
+    import logging
+    import traceback
+    from dataclasses import asdict
+
+    from kurt.documents import DocumentFilters, DocumentRegistry
+
+    try:
+        filters = DocumentFilters(
+            fetch_status=status,
+            limit=limit,
+            offset=offset,
+            url_contains=url_pattern,
+        )
+
+        registry = DocumentRegistry()
+        with get_session_for_request(request) as session:
+            docs = registry.list(session, filters)
+            return [asdict(doc) for doc in docs]
+    except Exception as e:
+        logging.error(f"Documents API error: {e}")
+        logging.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Documents query failed: {str(e)}")
+
+
+@app.get("/api/documents/count")
+def api_count_documents(
+    request: Request,
+    status: Optional[str] = None,
+    url_pattern: Optional[str] = None,
+):
+    """
+    Count documents matching filters.
+
+    Used by both CLI (in cloud mode) and web UI.
+    """
+    from kurt.documents import DocumentFilters, DocumentRegistry
+
+    filters = DocumentFilters(
+        fetch_status=status,
+        url_contains=url_pattern,
+    )
+
+    registry = DocumentRegistry()
+    with get_session_for_request(request) as session:
+        return {"count": registry.count(session, filters)}
+
+
+@app.get("/api/documents/{document_id}")
+def api_get_document(request: Request, document_id: str):
+    """
+    Get a single document's full lifecycle view.
+
+    Used by both CLI (in cloud mode) and web UI.
+    """
+    from dataclasses import asdict
+
+    from kurt.documents import DocumentRegistry
+
+    registry = DocumentRegistry()
+    with get_session_for_request(request) as session:
+        doc = registry.get(session, document_id)
+        if doc is None:
+            raise HTTPException(status_code=404, detail="Document not found")
+        return asdict(doc)
 
 
 @app.get("/api/tree")
@@ -1108,7 +1265,7 @@ def api_list_workflows(
     parent_id: Optional[str] = Query(None, description="Filter by parent workflow ID"),
 ):
     """List workflows with optional filtering."""
-    from kurt.core.status import read_workflow_events
+    from kurt.core.status import get_dbos_table_names, read_workflow_events
 
     session = _get_db_session()
     if session is None:
@@ -1117,8 +1274,13 @@ def api_list_workflows(
     try:
         from sqlalchemy import text
 
+        # Get schema-qualified table names for DBOS tables
+        tables = get_dbos_table_names()
+        ws_table = tables["workflow_status"]
+        we_table = tables["workflow_events"]
+
         # Join with workflow_events to get parent_workflow_id
-        sql = """
+        sql = f"""
             SELECT
                 ws.workflow_uuid,
                 ws.name,
@@ -1126,8 +1288,8 @@ def api_list_workflows(
                 ws.created_at,
                 ws.updated_at,
                 we.value as parent_workflow_id
-            FROM workflow_status ws
-            LEFT JOIN workflow_events we
+            FROM {ws_table} ws
+            LEFT JOIN {we_table} we
                 ON ws.workflow_uuid = we.workflow_uuid
                 AND we.key = 'parent_workflow_id'
         """
@@ -1234,6 +1396,8 @@ def api_list_workflows(
 @app.get("/api/workflows/{workflow_id}")
 def api_get_workflow(workflow_id: str):
     """Get detailed workflow information."""
+    from kurt.core.status import get_dbos_table_names
+
     session = _get_db_session()
     if session is None:
         raise HTTPException(status_code=503, detail="Database not available")
@@ -1241,10 +1405,11 @@ def api_get_workflow(workflow_id: str):
     try:
         from sqlalchemy import text
 
-        sql = """
+        tables = get_dbos_table_names()
+        sql = f"""
             SELECT workflow_uuid, name, status, created_at, updated_at,
                    authenticated_user, output, error
-            FROM workflow_status
+            FROM {tables["workflow_status"]}
             WHERE workflow_uuid LIKE :workflow_id || '%'
             LIMIT 1
         """
@@ -1293,6 +1458,8 @@ def api_cancel_workflow(workflow_id: str):
 @app.get("/api/workflows/{workflow_id}/status")
 def api_get_workflow_status(workflow_id: str):
     """Get live workflow status with progress information."""
+    from kurt.core.status import get_dbos_table_names
+
     session = _get_db_session()
     if session is None:
         raise HTTPException(status_code=503, detail="Database not available")
@@ -1300,9 +1467,10 @@ def api_get_workflow_status(workflow_id: str):
     try:
         from sqlalchemy import text
 
+        tables = get_dbos_table_names()
         # Get full workflow ID from prefix
-        sql = text("""
-            SELECT workflow_uuid FROM workflow_status
+        sql = text(f"""
+            SELECT workflow_uuid FROM {tables["workflow_status"]}
             WHERE workflow_uuid LIKE :workflow_id || '%'
             LIMIT 1
         """)
@@ -1334,6 +1502,8 @@ def api_get_step_logs(
     limit: int = Query(100, le=500),
 ):
     """Get workflow logs from DBOS streams, optionally filtered by step."""
+    from kurt.core.status import get_dbos_table_names
+
     session = _get_db_session()
     if session is None:
         raise HTTPException(status_code=503, detail="Database not available")
@@ -1341,9 +1511,10 @@ def api_get_step_logs(
     try:
         from sqlalchemy import text
 
+        tables = get_dbos_table_names()
         # Get full workflow ID from prefix
-        sql = text("""
-            SELECT workflow_uuid FROM workflow_status
+        sql = text(f"""
+            SELECT workflow_uuid FROM {tables["workflow_status"]}
             WHERE workflow_uuid LIKE :workflow_id || '%'
             LIMIT 1
         """)
@@ -1375,6 +1546,8 @@ async def api_stream_workflow_status(workflow_id: str):
 
     from fastapi.responses import StreamingResponse
 
+    from kurt.core.status import get_dbos_table_names
+
     session = _get_db_session()
     if session is None:
         raise HTTPException(status_code=503, detail="Database not available")
@@ -1382,9 +1555,10 @@ async def api_stream_workflow_status(workflow_id: str):
     try:
         from sqlalchemy import text
 
+        tables = get_dbos_table_names()
         # Get full workflow ID from prefix
-        sql = text("""
-            SELECT workflow_uuid, status FROM workflow_status
+        sql = text(f"""
+            SELECT workflow_uuid, status FROM {tables["workflow_status"]}
             WHERE workflow_uuid LIKE :workflow_id || '%'
             LIMIT 1
         """)
@@ -1442,6 +1616,8 @@ async def api_stream_workflow_logs(workflow_id: str):
 
     from fastapi.responses import StreamingResponse
 
+    from kurt.core.status import get_dbos_table_names
+
     session = _get_db_session()
     if session is None:
         raise HTTPException(status_code=503, detail="Database not available")
@@ -1449,9 +1625,10 @@ async def api_stream_workflow_logs(workflow_id: str):
     try:
         from sqlalchemy import text
 
+        tables = get_dbos_table_names()
         # Get full workflow ID and status
-        sql = text("""
-            SELECT workflow_uuid, status FROM workflow_status
+        sql = text(f"""
+            SELECT workflow_uuid, status FROM {tables["workflow_status"]}
             WHERE workflow_uuid LIKE :workflow_id || '%'
             LIMIT 1
         """)
@@ -1489,7 +1666,9 @@ async def api_stream_workflow_logs(workflow_id: str):
                 check_session = _get_db_session()
                 if check_session:
                     result = check_session.execute(
-                        text("SELECT status FROM workflow_status WHERE workflow_uuid = :id"),
+                        text(
+                            f"SELECT status FROM {tables['workflow_status']} WHERE workflow_uuid = :id"
+                        ),
                         {"id": full_id},
                     )
                     status_row = result.fetchone()
@@ -1529,6 +1708,8 @@ def api_get_workflow_logs(
     limit: int = Query(500, le=5000),
 ):
     """Read workflow log file in chunks."""
+    from kurt.core.status import get_dbos_table_names
+
     # First, get the full workflow ID from the database
     session = _get_db_session()
     full_id = workflow_id
@@ -1537,7 +1718,8 @@ def api_get_workflow_logs(
         try:
             from sqlalchemy import text
 
-            sql = "SELECT workflow_uuid FROM workflow_status WHERE workflow_uuid LIKE :workflow_id || '%' LIMIT 1"
+            tables = get_dbos_table_names()
+            sql = f"SELECT workflow_uuid FROM {tables['workflow_status']} WHERE workflow_uuid LIKE :workflow_id || '%' LIMIT 1"
             result = session.execute(text(sql), {"workflow_id": workflow_id})
             row = result.fetchone()
             if row:

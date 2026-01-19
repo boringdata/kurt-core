@@ -1,6 +1,26 @@
-"""Database module for kurt - models, database connection, and migrations."""
+"""Database module for kurt - models, database connection, and migrations.
+
+Supported database backends:
+- SQLite (local development): .kurt/kurt.sqlite
+- PostgreSQL (production): Direct connection via DATABASE_URL
+
+Cloud mode (DATABASE_URL="kurt"):
+- CLI commands route to kurt-cloud API via HTTP
+- Backend uses direct PostgreSQL connection
+
+Usage:
+    from kurt.db import get_database_client, managed_session
+
+    # Auto-detect backend from DATABASE_URL
+    db = get_database_client()
+
+    # Use managed_session for CRUD operations
+    with managed_session() as session:
+        session.add(LLMTrace(...))
+"""
 
 from kurt.db.base import DatabaseClient, get_database_client
+from kurt.db.cloud_api import KurtCloudAuthError
 from kurt.db.database import (
     async_session_scope,
     dispose_async_resources,
@@ -17,11 +37,29 @@ from kurt.db.models import (
     TenantMixin,
     TimestampMixin,
 )
+from kurt.db.tenant import (
+    clear_workspace_context,
+    get_mode,
+    get_user_id,
+    get_workspace_context,
+    get_workspace_id,
+    init_workspace_from_config,
+    is_cloud_auth_enabled,
+    is_cloud_mode,
+    is_multi_tenant,
+    is_postgres,
+    load_context_from_credentials,
+    register_tenant_listeners,
+    require_workspace_id,
+    set_rls_context,
+    set_workspace_context,
+)
 
 __all__ = [
-    # Database client
+    # Database clients
     "DatabaseClient",
     "get_database_client",
+    "KurtCloudAuthError",
     # Session management
     "get_session",
     "init_database",
@@ -37,4 +75,20 @@ __all__ = [
     "ConfidenceMixin",
     # Infrastructure models
     "LLMTrace",
+    # Tenant context
+    "set_workspace_context",
+    "clear_workspace_context",
+    "get_workspace_context",
+    "get_workspace_id",
+    "get_user_id",
+    "require_workspace_id",
+    "is_multi_tenant",
+    "is_cloud_mode",
+    "is_cloud_auth_enabled",
+    "is_postgres",
+    "get_mode",
+    "init_workspace_from_config",
+    "load_context_from_credentials",
+    "register_tenant_listeners",
+    "set_rls_context",
 ]

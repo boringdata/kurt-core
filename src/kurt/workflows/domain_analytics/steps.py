@@ -214,7 +214,11 @@ def persist_domain_analytics(
 
         for row in rows:
             # Check by normalized URL
-            existing = session.query(PageAnalytics).filter(PageAnalytics.url == row["url"]).first()
+            from sqlmodel import select
+
+            existing = session.exec(
+                select(PageAnalytics).where(PageAnalytics.url == row["url"])
+            ).first()
 
             if existing:
                 # Update existing record

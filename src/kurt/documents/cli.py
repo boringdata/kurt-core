@@ -68,8 +68,7 @@ def list_cmd(
         kurt content list --with-status FETCHED     # List fetched documents
         kurt content list --format json             # JSON output for agents
     """
-    from kurt.db import managed_session
-    from kurt.documents import DocumentFilters, DocumentRegistry
+    from kurt.documents import DocumentFilters
     from kurt.workflows.fetch.models import FetchStatus
 
     # Build filters
@@ -92,10 +91,8 @@ def list_cmd(
         else:
             filters.fetch_status = status_map.get(with_status.upper())
 
-    # Query documents
-    registry = DocumentRegistry()
-    with managed_session() as session:
-        docs = registry.list(session, filters)
+    # Query documents (routes to local or cloud)
+    docs = _list_documents(filters)
 
     if output_format == "json":
         print_json([_doc_to_dict(d) for d in docs])
@@ -139,33 +136,8 @@ def get_cmd(identifier: str, output_format: str):
         kurt content get abc123              # Get by partial ID
         kurt content get https://example.com # Get by URL
     """
-    from kurt.db import managed_session
-    from kurt.documents import DocumentFilters, DocumentRegistry
-
-    # Try to find by ID or URL
-    registry = DocumentRegistry()
-    with managed_session() as session:
-        # First try exact ID match
-        doc = registry.get(session, identifier)
-
-        # If not found, try URL match or partial ID
-        if not doc:
-            if identifier.startswith(("http://", "https://")):
-                # URL match
-                filters = DocumentFilters(url_contains=identifier, limit=1)
-                docs = registry.list(session, filters)
-            else:
-                # Partial document ID match - query directly with LIKE
-                from sqlmodel import select
-
-                from kurt.workflows.map.models import MapDocument
-
-                query = (
-                    select(MapDocument).where(MapDocument.document_id.contains(identifier)).limit(1)
-                )
-                map_doc = session.exec(query).first()
-                docs = [registry.get(session, map_doc.document_id)] if map_doc else []
-            doc = docs[0] if docs else None
+    # Query document (routes to local or cloud)
+    doc = _get_document(identifier)
 
     if not doc:
         if output_format == "json":
@@ -290,6 +262,108 @@ content_group.add_command(map_cmd, "map")
 # =============================================================================
 # Helpers
 # =============================================================================
+
+
+def _list_documents(filters):
+    """
+    List documents - routes to local queries or cloud API based on mode.
+
+    Local mode: Direct SQLAlchemy queries
+    Cloud mode: HTTP request to kurt-cloud API
+    """
+    from kurt.db.routing import route_by_mode
+
+    return route_by_mode(_list_documents_from_db, _list_documents_from_api, filters)
+
+
+def _list_documents_from_db(filters):
+    """Get documents using direct database queries (local mode)."""
+    from kurt.db import managed_session
+    from kurt.documents import DocumentRegistry
+
+    registry = DocumentRegistry()
+    with managed_session() as session:
+        return registry.list(session, filters)
+
+
+def _list_documents_from_api(filters):
+    """Get documents from web API (cloud mode)."""
+    from kurt.db.cloud_api import api_request
+    from kurt.documents.models import DocumentView
+
+    # Build query parameters - only include what DocumentFilters actually has
+    params = {}
+    if filters.fetch_status:
+        params["status"] = str(filters.fetch_status)
+    if filters.limit:
+        params["limit"] = filters.limit
+    if filters.offset:
+        params["offset"] = filters.offset
+    if filters.url_contains:
+        params["url_pattern"] = filters.url_contains
+
+    data = api_request("/core/api/documents", params)
+    return [DocumentView(**doc) for doc in data]
+
+
+def _get_document(identifier: str):
+    """
+    Get document by ID - routes to local queries or cloud API based on mode.
+
+    Local mode: Direct SQLAlchemy queries with fallback to partial ID match
+    Cloud mode: HTTP request to kurt-cloud API
+    """
+    from kurt.db.routing import route_by_mode
+
+    return route_by_mode(_get_document_from_db, _get_document_from_api, identifier)
+
+
+def _get_document_from_db(identifier: str):
+    """Get document using direct database queries (local mode)."""
+    from kurt.db import managed_session
+    from kurt.documents import DocumentFilters, DocumentRegistry
+
+    registry = DocumentRegistry()
+    with managed_session() as session:
+        # First try exact ID match
+        doc = registry.get(session, identifier)
+
+        # If not found, try URL match or partial ID
+        if not doc:
+            if identifier.startswith(("http://", "https://")):
+                # URL match
+                filters = DocumentFilters(url_contains=identifier, limit=1)
+                docs = registry.list(session, filters)
+            else:
+                # Partial document ID match - query directly with LIKE
+                from sqlmodel import select
+
+                from kurt.workflows.map.models import MapDocument
+
+                query = (
+                    select(MapDocument).where(MapDocument.document_id.contains(identifier)).limit(1)
+                )
+                map_doc = session.exec(query).first()
+                docs = [registry.get(session, map_doc.document_id)] if map_doc else []
+            doc = docs[0] if docs else None
+
+    return doc
+
+
+def _get_document_from_api(identifier: str):
+    """Get document from web API (cloud mode)."""
+    import requests
+
+    from kurt.db.cloud_api import api_request
+    from kurt.documents.models import DocumentView
+
+    try:
+        data = api_request(f"/core/api/documents/{identifier}")
+        return DocumentView(**data)
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 404:
+            return None
+        raise
 
 
 def _doc_to_dict(doc) -> dict:

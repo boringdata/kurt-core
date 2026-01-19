@@ -8,12 +8,12 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from kurt.cli.status import status
 from kurt.core.tests.conftest import (
     assert_cli_success,
     assert_output_contains,
     invoke_cli,
 )
+from kurt.status import status
 
 # Check if migrations module exists
 try:

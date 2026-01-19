@@ -1,13 +1,13 @@
 # Python
 
-**pycache**/  
-\*.py\[cod\]  
-\*$py.class  
-\*.so  
-.Python  
-build/  
-develop-eggs/  
-dist/  
+**pycache**/
+\*.py\[cod\]
+\*$py.class
+\*.so
+.Python
+build/
+develop-eggs/
+dist/
 downloads/  
 eggs/  
 .eggs/  
@@ -84,7 +84,7 @@ yarn-error.log\*
 kurt-demo/
 kurt-demo2/
 
-# Agent workflow definitions (user-specific) - only top-level
+# Agent workflow definitions (user-specific, root directory only)
 /workflows/
 
 # Reports (local demo reports)
@@ -93,6 +93,12 @@ reports/
 # Specs (local workflow specs)
 specs/
 claude-webview-poc/
+.vercel
+test.db
+
+# BD (Beads) workflow tool
+.beads/
+
 vscode-source/**
 
 # Temporary/test files

@@ -83,7 +83,7 @@ def status(output_format: str, hook_cc: bool):
         # Check for pending migrations
         migration_info = _check_pending_migrations()
 
-        # Get status data
+        # Get status data (routes to local or cloud)
         status_data = _get_status_data()
         status_data["migrations"] = migration_info
 
@@ -114,9 +114,9 @@ def _auto_init_hook():
         "hookSpecificOutput": {
             "hookEventName": "SessionStart",
             "additionalContext": (
-                "**Kurt initialized**\n\n"
-                "- Configuration: `kurt.config`\n"
-                "- Database: `.kurt/kurt.sqlite`\n\n"
+                "**Kurt initialized**\\n\\n"
+                "- Configuration: `kurt.config`\\n"
+                "- Database: `.kurt/kurt.sqlite`\\n\\n"
                 "Get started: `kurt content fetch <url>`"
             ),
         },
@@ -166,57 +166,46 @@ def _handle_hook_output():
 
 
 def _get_status_data() -> dict:
-    """Gather all status information."""
-    from urllib.parse import urlparse
+    """
+    Get status data - routes to local queries or cloud API based on mode.
 
+    Local mode: Direct SQLAlchemy queries
+    Cloud mode: HTTP request to kurt-cloud API
+    """
+    from kurt.db.routing import route_by_mode
+
+    return route_by_mode(_get_status_data_from_db, _get_status_data_from_api)
+
+
+def _get_status_data_from_db() -> dict:
+    """Get status data using direct database queries (local mode)."""
     from kurt.db import managed_session
-    from kurt.workflows.fetch.models import FetchDocument, FetchStatus
-    from kurt.workflows.map.models import MapDocument
+
+    from .queries import get_status_data
 
     with managed_session() as session:
-        # Total documents from map table
-        total = session.query(MapDocument).count()
+        return get_status_data(session)
 
-        # Fetch status counts
-        fetched = (
-            session.query(FetchDocument).filter(FetchDocument.status == FetchStatus.SUCCESS).count()
-        )
-        error = (
-            session.query(FetchDocument).filter(FetchDocument.status == FetchStatus.ERROR).count()
-        )
-        not_fetched = total - fetched - error
 
-        # Documents by domain
-        docs = session.query(MapDocument.source_url).all()
-        domains: dict[str, int] = {}
-        for (url,) in docs:
-            if url:
-                try:
-                    domain = urlparse(url).netloc
-                    domains[domain] = domains.get(domain, 0) + 1
-                except Exception:
-                    pass
+def _get_status_data_from_api() -> dict:
+    """
+    Get status data from web API (cloud mode).
 
-    return {
-        "initialized": True,
-        "documents": {
-            "total": total,
-            "by_status": {
-                "fetched": fetched,
-                "not_fetched": not_fetched,
-                "error": error,
-            },
-            "by_domain": domains,
-        },
-    }
+    Calls the /core/api/status endpoint (kurt-core mounted at /core prefix).
+    In cloud mode, this is hosted on kurt-cloud.
+    """
+    from kurt.db.cloud_api import api_request
+
+    return api_request("/core/api/status")
 
 
 def _generate_status_markdown(data: dict) -> str:
     """Generate markdown summary of status."""
-    lines = ["# Kurt Status\n"]
+    lines = ["# Kurt Status", ""]
 
     docs = data.get("documents", {})
-    lines.append(f"## Documents: {docs.get('total', 0)}\n")
+    lines.append(f"## Documents: {docs.get('total', 0)}")
+    lines.append("")
 
     by_status = docs.get("by_status", {})
     lines.append(f"- Fetched: {by_status.get('fetched', 0)}")
@@ -225,7 +214,9 @@ def _generate_status_markdown(data: dict) -> str:
 
     by_domain = docs.get("by_domain", {})
     if by_domain:
-        lines.append("\n## By Domain\n")
+        lines.append("")
+        lines.append("## By Domain")
+        lines.append("")
         for domain, count in sorted(by_domain.items(), key=lambda x: -x[1])[:10]:
             lines.append(f"- {domain}: {count}")
 

@@ -9,14 +9,20 @@ from __future__ import annotations
 import logging
 import struct
 import time
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
-import litellm
-import numpy as np
-import pandas as pd
 from dbos import DBOS, Queue
 
 from .hooks import NoopStepHooks, StepHooks
+
+if TYPE_CHECKING:
+    import pandas as pd
+
+# Import litellm at module level for test monkeypatching
+try:
+    import litellm
+except ImportError:
+    litellm = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +57,11 @@ def _extract_usage_tokens(response: Any) -> tuple[int, int]:
 def _calculate_embedding_cost(response: Any, model: str | None) -> float:
     if not model:
         return 0.0
+    if litellm is None:
+        raise ImportError(
+            "litellm is required for embedding cost calculation. "
+            "Install with: pip install kurt-core[workflows]"
+        )
     try:
         return float(
             litellm.response_cost_calculator(
@@ -67,6 +78,12 @@ def _calculate_embedding_cost(response: Any, model: str | None) -> float:
 
 def embedding_to_bytes(embedding: list[float]) -> bytes:
     """Convert embedding vector to bytes for database storage."""
+    try:
+        import numpy as np
+    except ImportError as e:
+        raise ImportError(
+            "numpy is required for embeddings. Install with: pip install kurt-core[workflows]"
+        ) from e
     return np.array(embedding, dtype=np.float32).tobytes()
 
 
@@ -225,6 +242,12 @@ class EmbeddingStep:
                     prepared_texts.append(text)
 
                 # Call embedding API
+                if litellm is None:
+                    raise ImportError(
+                        "litellm is required for embeddings. "
+                        "Install with: pip install kurt-core[workflows]"
+                    )
+
                 kwargs = {
                     "model": step_instance._resolved_model,
                     "input": prepared_texts,
@@ -296,6 +319,13 @@ class EmbeddingStep:
         Returns:
             DataFrame with output_column containing embeddings
         """
+        try:
+            import pandas  # noqa: F401
+        except ImportError as e:
+            raise ImportError(
+                "pandas is required for EmbeddingStep. Install with: pip install kurt-core[workflows]"
+            ) from e
+
         total = len(df)
         texts = df[self.input_column].tolist()
 
@@ -406,6 +436,11 @@ def generate_embeddings(
             api_key = settings.api_key
 
     start = time.time()
+
+    if litellm is None:
+        raise ImportError(
+            "litellm is required for embeddings. Install with: pip install kurt-core[workflows]"
+        )
 
     kwargs = {"model": model, "input": texts}
     if api_base:

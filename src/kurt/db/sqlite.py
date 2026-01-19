@@ -17,7 +17,15 @@ logger = logging.getLogger(__name__)
 
 @event.listens_for(Engine, "connect")
 def _set_sqlite_pragmas(dbapi_conn, connection_record):
-    """Configure SQLite for better performance."""
+    """Configure SQLite for better performance.
+
+    Only applies to SQLite connections - skips PostgreSQL and other databases.
+    """
+    # Check if this is a SQLite connection by checking the module name
+    conn_module = type(dbapi_conn).__module__
+    if "sqlite" not in conn_module.lower():
+        return
+
     cursor = dbapi_conn.cursor()
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("PRAGMA busy_timeout=30000")

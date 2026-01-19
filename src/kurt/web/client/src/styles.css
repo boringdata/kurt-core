@@ -2697,6 +2697,23 @@ html, body, #root {
   color: #6b7280;
 }
 
+.workflow-tokens {
+  margin-top: 4px;
+}
+
+.workflow-token-count {
+  font-family: 'IBM Plex Mono', monospace;
+  color: #7c3aed;
+  font-size: 12px;
+}
+
+.workflow-cost {
+  font-family: 'IBM Plex Mono', monospace;
+  color: #059669;
+  font-weight: 500;
+  font-size: 12px;
+}
+
 .workflow-step-box {
   border: 1px solid #e5e7eb;
   border-radius: 4px;

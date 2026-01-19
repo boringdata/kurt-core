@@ -3,6 +3,7 @@
 import click
 
 from .analytics_setup import analytics_setup_cmd
+from .cloud_setup import cloud_setup_cmd
 from .cms_setup import cms_setup_cmd
 from .discovery_methods import discovery_methods_cmd
 from .feedback_workflow import feedback_workflow_cmd
@@ -33,6 +34,7 @@ def show():
     - discovery-methods: Methods for discovering existing content
     - cms-setup: CMS integration setup
     - analytics-setup: Analytics integration setup
+    - cloud-setup: Kurt Cloud setup and migration
     """
     pass
 
@@ -49,6 +51,7 @@ show.add_command(feedback_workflow_cmd, name="feedback-workflow")
 show.add_command(discovery_methods_cmd, name="discovery-methods")
 show.add_command(cms_setup_cmd, name="cms-setup")
 show.add_command(analytics_setup_cmd, name="analytics-setup")
+show.add_command(cloud_setup_cmd, name="cloud-setup")
 
 # Export for lazy loading
 show_group = show

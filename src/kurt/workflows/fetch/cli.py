@@ -178,6 +178,8 @@ def fetch_cmd(
     if urls:
         import hashlib
 
+        from sqlmodel import select
+
         from kurt.db import managed_session
         from kurt.workflows.map.models import MapDocument, MapStatus
 
@@ -185,7 +187,9 @@ def fetch_cmd(
         with managed_session() as session:
             for url in url_list:
                 # Check if document exists
-                existing = session.query(MapDocument).filter(MapDocument.source_url == url).first()
+                existing = session.exec(
+                    select(MapDocument).where(MapDocument.source_url == url)
+                ).first()
                 if not existing:
                     # Generate document_id from URL hash
                     doc_id = hashlib.sha256(url.encode()).hexdigest()[:12]
@@ -205,6 +209,8 @@ def fetch_cmd(
         import hashlib
         from pathlib import Path
 
+        from sqlmodel import select
+
         from kurt.db import managed_session
         from kurt.workflows.map.models import MapDocument, MapStatus
 
@@ -214,9 +220,9 @@ def fetch_cmd(
                 # Resolve to absolute path
                 abs_path = str(Path(file_path).resolve())
                 # Check if document exists
-                existing = (
-                    session.query(MapDocument).filter(MapDocument.source_url == abs_path).first()
-                )
+                existing = session.exec(
+                    select(MapDocument).where(MapDocument.source_url == abs_path)
+                ).first()
                 if not existing:
                     # Generate document_id from path hash
                     doc_id = hashlib.sha256(abs_path.encode()).hexdigest()[:12]

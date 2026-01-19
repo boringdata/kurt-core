@@ -1,5 +1,6 @@
 """Hatch build hook to compile frontend before packaging."""
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -14,23 +15,40 @@ class FrontendBuildHook(BuildHookInterface):
 
     def initialize(self, version, build_data):
         """Run npm build before packaging."""
+        # Skip if SKIP_FRONTEND_BUILD env var is set (for CI/serverless environments)
+        if os.environ.get("SKIP_FRONTEND_BUILD"):
+            self.app.display_info("Skipping frontend build (SKIP_FRONTEND_BUILD set)")
+            return
+
         # Only build for wheel target
         if self.target_name != "wheel":
             return
 
         client_dir = Path(self.root) / "src" / "kurt" / "web" / "client"
+
+        # Skip if client directory doesn't exist (shallow clone, API-only install, etc.)
         if not client_dir.exists():
-            self.app.display_warning(f"Client directory not found: {client_dir}")
+            self.app.display_info(
+                f"Client directory not found: {client_dir} - skipping frontend build"
+            )
             return
 
         package_json = client_dir / "package.json"
         if not package_json.exists():
-            self.app.display_warning(f"package.json not found: {package_json}")
+            self.app.display_info(
+                f"package.json not found: {package_json} - skipping frontend build"
+            )
+            return
+
+        # Check if dist already exists (pre-built or cached)
+        dist_dir = client_dir / "dist"
+        if dist_dir.exists() and (dist_dir / "index.html").exists():
+            self.app.display_info("Frontend already built - skipping build")
             return
 
         # Check if npm is available
         if not shutil.which("npm"):
-            self.app.display_warning("npm not found - skipping frontend build")
+            self.app.display_info("npm not found - skipping frontend build")
             return
 
         self.app.display_info("Building frontend client...")

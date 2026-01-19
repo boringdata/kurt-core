@@ -216,3 +216,16 @@ class TestMigrationUtils:
         from kurt.db.migrations.utils import check_migrations_needed
 
         assert check_migrations_needed() is False
+
+    def test_check_migrations_needed_cloud_mode(self, tmp_project_no_migrations: Path, monkeypatch):
+        """Test check_migrations_needed returns False in cloud mode."""
+        from kurt.db.migrations.utils import check_migrations_needed
+
+        # Write config file with DATABASE_URL="kurt" to simulate cloud mode
+        config_file = tmp_project_no_migrations / "kurt.config"
+        config_content = config_file.read_text()
+        config_content += '\nDATABASE_URL="kurt"\n'
+        config_file.write_text(config_content)
+
+        # Should return False in cloud mode (migrations managed separately)
+        assert check_migrations_needed() is False

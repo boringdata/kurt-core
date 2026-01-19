@@ -439,6 +439,102 @@ Users can customize Kurt's system in several ways:
 
 ---
 
+## Database Management
+
+Kurt stores all your indexed content, research, and project data in a local SQLite database at `.kurt/kurt.sqlite`. Each workspace has a unique `WORKSPACE_ID` (auto-generated at `kurt init`) that tags all data.
+
+For detailed cloud setup instructions, run: `kurt show cloud-setup`
+
+### Check Database Status
+
+```bash
+kurt db status
+```
+
+This shows:
+- Current mode (sqlite, cloud, or postgresql)
+- Table row counts
+- Workspace ID
+
+### Export and Import Data
+
+**Export current data:**
+```bash
+kurt db export --output my-backup.json --pretty
+```
+
+**Import data:**
+```bash
+kurt db import my-backup.json
+```
+
+### Team Collaboration (Shared PostgreSQL)
+
+For team collaboration, use a shared PostgreSQL database with user authentication.
+
+**Team Owner Setup:**
+
+```bash
+# 1. Login to Kurt Cloud
+kurt cloud login
+
+# 2. Add to kurt.config:
+DATABASE_URL="postgresql://user:pass@host:5432/dbname"
+
+# 3. Enable cloud auth (RLS)
+# CLOUD_AUTH=true  # in kurt.config (auto-set after login when DATABASE_URL is set)
+
+# 4. Run migrations
+kurt admin migrate apply
+
+# 5. Invite team members
+kurt cloud invite teammate@example.com
+```
+
+**Team Member Setup:**
+
+```bash
+# 1. Login with your email
+kurt cloud login
+
+# 2. Add shared config (from team owner)
+# DATABASE_URL="..."
+# WORKSPACE_ID auto-fills on login if provided by cloud; otherwise set it manually
+
+# 3. Enable cloud auth (RLS)
+# CLOUD_AUTH=true  # in kurt.config (auto-set after login when DATABASE_URL is set)
+
+# 4. Run migrations
+kurt admin migrate apply
+```
+
+**Check status:**
+```bash
+kurt cloud status
+```
+
+**Migrate existing data:**
+```bash
+# Export from SQLite
+kurt db export --output backup.json --pretty
+
+# Set DATABASE_URL, WORKSPACE_ID, and CLOUD_AUTH=true (see above)
+
+# Import to Postgres
+kurt db import backup.json --workspace-id <WORKSPACE_ID>
+```
+
+For detailed instructions: `kurt show cloud-setup`
+
+### Kurt Cloud (Future)
+
+Full Kurt Cloud with managed hosting will provide:
+- GitHub App integration for repo access
+- Web dashboard for team management
+- Scheduled agent workflows
+
+---
+
 ## Workflows Reference
 
 When user requests specific actions, run the appropriate workflow command:
@@ -456,4 +552,10 @@ When user requests specific actions, run the appropriate workflow command:
 | Setup analytics integration | `kurt show analytics-setup` |
 | View source gathering strategy | `kurt show source-gathering` |
 | List format templates | `kurt show format-templates` |
-
+| Check database status | `kurt db status` |
+| Export data | `kurt db export --output backup.json` |
+| Import data | `kurt db import backup.json --workspace-id <WORKSPACE_ID>` |
+| Login to cloud | `kurt cloud login` |
+| Check cloud status | `kurt cloud status` |
+| Invite team member | `kurt cloud invite <email>` |
+| Database/cloud setup | `kurt show cloud-setup` |
