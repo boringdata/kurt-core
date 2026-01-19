@@ -20,22 +20,57 @@ Kurt supports three database modes via `DATABASE_URL` in `kurt.config`:
    - No server required
    - Single-user, local files only
    - Views and JOINs work natively
+   - **DBOS Schema:** Separate `dbos` schema for organization
+   - **Isolation:** Single user (no multi-tenancy)
 
 2. **PostgreSQL (Direct Connection)**
    ```
    DATABASE_URL="postgresql://user:pass@host:5432/dbname"
+   CLOUD_AUTH=true  # Optional: enables RLS policies
    ```
-   - Direct PostgreSQL connection
+   - Direct PostgreSQL connection for team collaboration
    - Full SQL support including views and JOINs
-   - Use for self-hosted PostgreSQL or local Postgres
+   - Use for self-hosted PostgreSQL or shared Postgres
+   - **DBOS Schema:** Separate `dbos` schema (shared by all workspaces)
+   - **Isolation:** RLS policies on tables (filter by workspace_id)
+   - **Limitation:** DBOS tables not workspace-filtered (shared)
 
 3. **Kurt Cloud**
    ```
    DATABASE_URL="kurt"
    ```
-   - Automatic multi-tenancy via RLS
+   - Fully managed multi-tenant SaaS
    - Requires `kurt cloud login` for authentication
    - CLI commands route through kurt-cloud API
+   - **DBOS Schema:** No separate schema - lives in workspace schema
+   - **Isolation:** PostgreSQL schema-based (ws_<id> per workspace)
+   - **Security:** Database-level isolation via dedicated DB user + search_path
+
+### DBOS Schema Configuration
+
+The DBOS initialization in `src/kurt/core/dbos.py` automatically configures the schema based on mode:
+
+```python
+from kurt.db.tenant import is_cloud_mode
+
+# In kurt-cloud mode (DATABASE_URL="kurt"), DBOS uses workspace schema via search_path
+# In local/postgres modes, use separate "dbos" schema for organization
+dbos_schema = None if is_cloud_mode() else "dbos"
+
+config = DBOSConfig(
+    name="kurt",
+    database_url=db_url,
+    dbos_system_schema=dbos_schema,  # None or "dbos"
+)
+```
+
+**Why different schemas per mode?**
+
+| Mode | DBOS Schema | Reason |
+|------|-------------|--------|
+| SQLite | `dbos` | Separates DBOS tables from user tables for clarity |
+| PostgreSQL | `dbos` | Shared DBOS tables across workspaces (limitation: no workspace filtering on DBOS tables) |
+| Kurt Cloud | `None` (uses workspace schema) | Complete isolation - each workspace has own DBOS tables in `ws_<id>` schema |
 
 ### Cloud Mode Architecture: CLI → Web API → PostgreSQL
 

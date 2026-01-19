@@ -24,6 +24,11 @@ def _dbos_has_instance() -> bool:
 def init_dbos() -> None:
     """
     Initialize DBOS using kurt's database configuration.
+
+    Schema behavior:
+    - Local SQLite: Uses separate "dbos" schema for organization
+    - Cloud PostgreSQL: DBOS tables live in workspace schema (ws_<id>)
+      via search_path, no separate schema needed
     """
     global _dbos_initialized
 
@@ -34,12 +39,19 @@ def init_dbos() -> None:
     init_database()
     db_url = get_database_client().get_database_url()
 
+    # Check if running in cloud mode (per-workspace schema isolation)
+    from kurt.db.tenant import is_cloud_mode
+
+    # In kurt-cloud mode (DATABASE_URL="kurt"), DBOS uses workspace schema via search_path
+    # In local/postgres modes, use separate "dbos" schema for organization
+    dbos_schema = None if is_cloud_mode() else "dbos"
+
     config = DBOSConfig(
         name="kurt",
         database_url=db_url,
         log_level="ERROR",
         run_admin_server=False,
-        dbos_system_schema="dbos",  # Isolate DBOS tables in their own schema
+        dbos_system_schema=dbos_schema,
     )
 
     try:
