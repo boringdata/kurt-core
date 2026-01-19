@@ -5,10 +5,8 @@ import {
   useLocalRuntime,
   MessagePrimitive,
   ComposerPrimitive,
-  useComposer,
   useAssistantApi,
   useMessage,
-  useThread,
   useAssistantState,
 } from '@assistant-ui/react'
 import ChatPanel, { chatThemeVars } from './ChatPanel'
@@ -1297,10 +1295,10 @@ const ComposerShell = ({
   slashCommands,
   onError,
 }) => {
-  const composer = useComposer()
   const api = useAssistantApi()
-  const thread = useThread()
-  const isRunning = thread.isRunning
+  const composerApi = useMemo(() => api.composer(), [api])
+  const composerText = useAssistantState(({ composer }) => composer.text)
+  const isRunning = useAssistantState(({ thread }) => thread.isRunning)
   const [showSlashMenu, setShowSlashMenu] = useState(false)
   const [showAtMenu, setShowAtMenu] = useState(false)
   const [menuFilter, setMenuFilter] = useState('')
@@ -1311,9 +1309,12 @@ const ComposerShell = ({
   const modeIcon = (modeLabel || 'M').charAt(0).toUpperCase()
 
   const inputRef = useRef(null)
+  const focusInput = useCallback(() => {
+    inputRef.current?.focus?.()
+  }, [])
 
   const applyComposerText = useCallback((nextText) => {
-    composer?.setText?.(nextText)
+    composerApi?.setText?.(nextText)
     if (inputRef.current) {
       const nativeSetter = Object.getOwnPropertyDescriptor(
         window.HTMLTextAreaElement.prototype,
@@ -1324,11 +1325,11 @@ const ComposerShell = ({
         inputRef.current.dispatchEvent(new Event('input', { bubbles: true }))
       }
     }
-  }, [composer])
+  }, [composerApi])
 
   const appendAttachmentsToText = useCallback(() => {
     if (attachments.length === 0) return
-    const currentText = composer?.text || ''
+    const currentText = composerText || ''
     const hasImage = attachments.some((img) => currentText.includes(img.dataUrl))
     if (hasImage) return
     const markdown = attachments
@@ -1346,7 +1347,7 @@ const ComposerShell = ({
       : markdown
     applyComposerText(nextText)
     setAttachments([])
-  }, [attachments, composer, setAttachments, applyComposerText, onRegisterImages])
+  }, [attachments, composerText, setAttachments, applyComposerText, onRegisterImages])
   const slashMenuRef = useRef(null)
   const selectedItemRef = useRef(null)
 
@@ -1420,7 +1421,7 @@ const ComposerShell = ({
         return [...prev, item]
       })
       // Clear the @ from input
-      const currentText = composer?.text || ''
+      const currentText = composerText || ''
       const atIndex = currentText.lastIndexOf('@')
       if (atIndex >= 0) {
         const newText = currentText.slice(0, atIndex).trimEnd()
@@ -1431,7 +1432,7 @@ const ComposerShell = ({
       const newValue = `${item.label} `
       applyComposerText(newValue)
     }
-    composer?.focus?.()
+    focusInput()
     setShowSlashMenu(false)
     setShowAtMenu(false)
   }
@@ -1696,7 +1697,7 @@ const ComposerShell = ({
               onMouseDown={(event) => {
                 event.preventDefault()
                 event.stopPropagation()
-                const currentText = composer?.text || ''
+                const currentText = composerText || ''
                 if (!currentText.endsWith('/')) {
                   applyComposerText(`${currentText}/`)
                 }
@@ -1705,7 +1706,7 @@ const ComposerShell = ({
                 setSelectedIndex(0)
                 setMenuFilter('')
                 setMenuNavigated(false)
-                setTimeout(() => composer?.focus?.(), 0)
+                setTimeout(() => focusInput(), 0)
               }}
             >
               /
@@ -1717,7 +1718,7 @@ const ComposerShell = ({
               onMouseDown={(event) => {
                 event.preventDefault()
                 event.stopPropagation()
-                const currentText = composer?.text || ''
+                const currentText = composerText || ''
                 if (!currentText.endsWith('@')) {
                   applyComposerText(`${currentText}@`)
                 }
@@ -1726,7 +1727,7 @@ const ComposerShell = ({
                 setSelectedIndex(0)
                 setMenuFilter('')
                 setMenuNavigated(false)
-                setTimeout(() => composer?.focus?.(), 0)
+                setTimeout(() => focusInput(), 0)
               }}
             >
               @
@@ -1850,18 +1851,18 @@ const normalizeHistoryMessage = (message) => {
 }
 
 const HistoryPersister = ({ sessionId }) => {
-  const thread = useThread()
   const messages = useAssistantState(({ thread }) => thread.messages)
+  const isRunning = useAssistantState(({ thread }) => thread.isRunning)
 
   useEffect(() => {
     if (!sessionId) return
-    if (thread.isRunning) return
+    if (isRunning) return
     const normalized = messages
       .map(normalizeHistoryMessage)
       .filter(Boolean)
       .slice(-HISTORY_LIMIT)
     saveStoredHistory(sessionId, normalized)
-  }, [messages, sessionId, thread.isRunning])
+  }, [messages, sessionId, isRunning])
 
   return null
 }

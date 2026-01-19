@@ -3,6 +3,38 @@ import { Terminal as XTerm } from 'xterm'
 import { FitAddon } from 'xterm-addon-fit'
 import 'xterm/css/xterm.css'
 
+const HISTORY_STORAGE_PREFIX = 'kurt-web-pty-history'
+const HISTORY_LIMIT_BYTES = 200000
+
+const getHistoryKey = (sessionId) => {
+  if (!sessionId) return null
+  return `${HISTORY_STORAGE_PREFIX}-${sessionId}`
+}
+
+const loadStoredHistory = (sessionId) => {
+  const key = getHistoryKey(sessionId)
+  if (!key) return ''
+  try {
+    const raw = localStorage.getItem(key)
+    return typeof raw === 'string' ? raw : ''
+  } catch {
+    return ''
+  }
+}
+
+const saveStoredHistory = (sessionId, text) => {
+  const key = getHistoryKey(sessionId)
+  if (!key) return
+  const normalized = text.length > HISTORY_LIMIT_BYTES
+    ? text.slice(-HISTORY_LIMIT_BYTES)
+    : text
+  try {
+    localStorage.setItem(key, normalized)
+  } catch {
+    // Ignore storage errors
+  }
+}
+
 const buildSocketUrl = (sessionId, resume, forceNew, provider, sessionName) => {
   const apiBase = import.meta.env.VITE_API_URL || ''
   let wsBase
@@ -62,6 +94,11 @@ export default function Terminal({
   const rendererReadyRef = useRef(false)
   const openAttemptRef = useRef(null)
   const openRetryRef = useRef(null)
+  const renderFallbackRef = useRef(null)
+  const resizeObserverRef = useRef(null)
+  const historyBufferRef = useRef('')
+  const historyFallbackTimerRef = useRef(null)
+  const historySourceRef = useRef(null)
   const providerKey = (provider || 'claude').toLowerCase()
   const providerLabel =
     providerKey === 'codex'
@@ -103,6 +140,14 @@ export default function Terminal({
   useEffect(() => {
     if (!containerRef.current) return
 
+    openedRef.current = false
+    rendererReadyRef.current = false
+    sessionStartedRef.current = false
+    firstPromptSentRef.current = false
+    inputBufferRef.current = ''
+    historyBufferRef.current = ''
+    historySourceRef.current = null
+
     const term = new XTerm({
       cursorBlink: true,
       convertEol: false,
@@ -135,6 +180,8 @@ export default function Terminal({
     let disposed = false
     const MAX_RETRIES = 10
     const INITIAL_RETRY_DELAY = 500
+    const storedHistory = loadStoredHistory(sessionId)
+    historyBufferRef.current = storedHistory
 
     const sendResize = () => {
       if (!isActiveRef.current || !openedRef.current) return
@@ -169,14 +216,33 @@ export default function Terminal({
       socketRef.current = socket
       let resumeMissingNotified = false
 
-      socket.addEventListener('message', (event) => {
-        let payload
-        try {
-          payload = JSON.parse(event.data)
-        } catch {
-          payload = { type: 'output', data: event.data }
+      const applyHistory = (source, chunk) => {
+        if (!chunk) return
+        if (!historyAppliedRef.current) {
+          historyAppliedRef.current = true
+          historySourceRef.current = source
+          historyBufferRef.current = ''
+          term.reset()
         }
+        historyBufferRef.current += chunk
+        if (historyBufferRef.current.length > HISTORY_LIMIT_BYTES) {
+          historyBufferRef.current = historyBufferRef.current.slice(-HISTORY_LIMIT_BYTES)
+        }
+        term.write(chunk)
+        saveStoredHistory(sessionId, historyBufferRef.current)
+      }
 
+      const appendOutput = (chunk) => {
+        if (!chunk) return
+        historyBufferRef.current += chunk
+        if (historyBufferRef.current.length > HISTORY_LIMIT_BYTES) {
+          historyBufferRef.current = historyBufferRef.current.slice(-HISTORY_LIMIT_BYTES)
+        }
+        term.write(chunk)
+        saveStoredHistory(sessionId, historyBufferRef.current)
+      }
+
+      const handlePayload = (payload) => {
         if (payload.type === 'session_not_found') {
           if (resume && !resumeMissingNotified) {
             resumeMissingNotified = true
@@ -189,11 +255,14 @@ export default function Terminal({
         }
 
         if (payload.type === 'history' && typeof payload.data === 'string') {
-          if (!historyAppliedRef.current) {
-            historyAppliedRef.current = true
-            term.reset()
+          if (historySourceRef.current === 'local') {
+            return
           }
-          term.write(payload.data)
+          if (historyFallbackTimerRef.current) {
+            window.clearTimeout(historyFallbackTimerRef.current)
+            historyFallbackTimerRef.current = null
+          }
+          applyHistory('server', payload.data)
           return
         }
 
@@ -209,7 +278,7 @@ export default function Terminal({
             )
             onResumeMissingRef.current?.()
           }
-          term.write(payload.data)
+          appendOutput(payload.data)
         }
 
         if (payload.type === 'error') {
@@ -220,6 +289,38 @@ export default function Terminal({
           const code = payload.code ?? 'unknown'
           term.writeln(`\r\n[bridge] ${providerLabel} CLI exited (${code}).\r\n`)
         }
+      }
+
+      const handleRaw = (raw) => {
+        let payload
+        try {
+          payload = JSON.parse(raw)
+        } catch {
+          payload = { type: 'output', data: raw }
+        }
+        handlePayload(payload)
+      }
+
+      socket.addEventListener('message', (event) => {
+        const data = event.data
+        if (typeof data === 'string') {
+          handleRaw(data)
+          return
+        }
+        if (data instanceof ArrayBuffer) {
+          handleRaw(new TextDecoder().decode(data))
+          return
+        }
+        if (data instanceof Blob) {
+          data
+            .text()
+            .then(handleRaw)
+            .catch(() => {
+              handleRaw('')
+            })
+          return
+        }
+        handleRaw(String(data ?? ''))
       })
 
       socket.addEventListener('open', () => {
@@ -229,6 +330,16 @@ export default function Terminal({
         if (onSessionStartedRef.current && !sessionStartedRef.current) {
           sessionStartedRef.current = true
           onSessionStartedRef.current()
+        }
+        if (storedHistory && !historyAppliedRef.current) {
+          historyFallbackTimerRef.current = window.setTimeout(() => {
+            if (historyAppliedRef.current || historySourceRef.current === 'server') return
+            historySourceRef.current = 'local'
+            historyAppliedRef.current = true
+            historyBufferRef.current = storedHistory
+            term.reset()
+            term.write(storedHistory)
+          }, 200)
         }
       })
 
@@ -266,6 +377,19 @@ export default function Terminal({
       if (socket?.readyState === WebSocket.OPEN && isActiveRef.current) {
         sendResize()
       }
+    }
+
+    const resizeObserver =
+      typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(() => {
+            if (!isActiveRef.current) return
+            sendResize()
+          })
+        : null
+
+    if (resizeObserver) {
+      resizeObserver.observe(containerRef.current)
+      resizeObserverRef.current = resizeObserver
     }
 
     window.addEventListener('resize', resizeListener)
@@ -333,28 +457,55 @@ export default function Terminal({
         return
       }
 
-      // Wait for renderer to be fully ready before marking as ready
-      // Use multiple frames to ensure xterm's internal state is settled
+      const finalizeRenderer = () => {
+        if (rendererReadyRef.current || disposed) return
+        rendererReadyRef.current = true
+        try {
+          fitAddon.fit()
+          if (isActiveRef.current) {
+            term.focus()
+          }
+        } catch {
+          // Ignore fit errors while the renderer is initializing.
+        }
+        if (isActiveRef.current) {
+          sendResize()
+        }
+      }
+
+      // Wait for renderer to be fully ready before marking as ready.
+      // Use multiple frames to ensure xterm's internal state is settled.
       const renderSubscription = term.onRender(() => {
         renderSubscription.dispose()
-        // Double requestAnimationFrame to ensure renderer is fully initialized
+        if (renderFallbackRef.current) {
+          window.clearTimeout(renderFallbackRef.current)
+          renderFallbackRef.current = null
+        }
+        // Double requestAnimationFrame to ensure renderer is fully initialized.
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
-            rendererReadyRef.current = true
-            try {
-              fitAddon.fit()
-              if (isActiveRef.current) {
-                term.focus()
-              }
-            } catch {
-              // Ignore fit errors while the renderer is initializing.
-            }
-            if (isActiveRef.current) {
-              sendResize()
-            }
+            finalizeRenderer()
           })
         })
       })
+
+      renderFallbackRef.current = window.setTimeout(() => {
+        finalizeRenderer()
+      }, 120)
+
+      if (document?.fonts?.ready) {
+        document.fonts.ready.then(() => {
+          if (disposed || !openedRef.current) return
+          try {
+            fitAddon.fit()
+          } catch {
+            // Ignore fit errors while the renderer is initializing.
+          }
+          if (isActiveRef.current) {
+            sendResize()
+          }
+        })
+      }
 
       connect()
     }
@@ -376,6 +527,18 @@ export default function Terminal({
       if (openRetryRef.current) {
         window.clearTimeout(openRetryRef.current)
       }
+      if (renderFallbackRef.current) {
+        window.clearTimeout(renderFallbackRef.current)
+        renderFallbackRef.current = null
+      }
+      if (historyFallbackTimerRef.current) {
+        window.clearTimeout(historyFallbackTimerRef.current)
+        historyFallbackTimerRef.current = null
+      }
+      if (resizeObserverRef.current) {
+        resizeObserverRef.current.disconnect()
+        resizeObserverRef.current = null
+      }
       if (socketRef.current) {
         socketRef.current.close()
       }
@@ -391,5 +554,12 @@ export default function Terminal({
     onBannerShownRef.current?.()
   }, [bannerMessage])
 
-  return <div className="terminal" ref={containerRef} />
+  return (
+    <div
+      className="terminal"
+      ref={containerRef}
+      tabIndex={0}
+      onMouseDown={() => termRef.current?.focus()}
+    />
+  )
 }

@@ -362,6 +362,13 @@ export default function TerminalPanel({ params }) {
                       sessionId={session.sessionId}
                       sessionName={session.title}
                       resume={session.resume}
+                      onSessionStarted={() => {
+                        setSessions((prev) =>
+                          prev.map((s) =>
+                            s.id === session.id ? { ...s, resume: true } : s,
+                          ),
+                        )
+                      }}
                       bannerMessage={session.bannerMessage}
                       onBannerShown={() => handleBannerShown(session.id)}
                       onResumeMissing={() => handleResumeMissing(session.id)}
