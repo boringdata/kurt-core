@@ -172,7 +172,7 @@ const loadSavedTabs = (projectRoot) => {
     if (saved) {
       return JSON.parse(saved)
     }
-  } catch (e) {
+  } catch {
     // Ignore parse errors
   }
   return []
@@ -182,7 +182,7 @@ const loadSavedTabs = (projectRoot) => {
 const saveTabs = (projectRoot, paths) => {
   try {
     localStorage.setItem(getStorageKey(projectRoot, 'tabs'), JSON.stringify(paths))
-  } catch (e) {
+  } catch {
     // Ignore storage errors
   }
 }
@@ -255,7 +255,7 @@ const saveLayout = (projectRoot, layout) => {
   try {
     const layoutWithVersion = { ...layout, version: LAYOUT_VERSION }
     localStorage.setItem(getStorageKey(projectRoot, 'layout'), JSON.stringify(layoutWithVersion))
-  } catch (e) {
+  } catch {
     // Ignore storage errors
   }
 }
@@ -270,7 +270,7 @@ const loadCollapsedState = () => {
     if (saved) {
       return JSON.parse(saved)
     }
-  } catch (e) {
+  } catch {
     // Ignore parse errors
   }
   return { filetree: false, terminal: false, workflows: false }
@@ -279,7 +279,7 @@ const loadCollapsedState = () => {
 const saveCollapsedState = (state) => {
   try {
     localStorage.setItem(SIDEBAR_COLLAPSED_KEY, JSON.stringify(state))
-  } catch (e) {
+  } catch {
     // Ignore storage errors
   }
 }
@@ -290,7 +290,7 @@ const loadPanelSizes = () => {
     if (saved) {
       return JSON.parse(saved)
     }
-  } catch (e) {
+  } catch {
     // Ignore parse errors
   }
   return { filetree: 280, terminal: 400, workflows: 250 }
@@ -299,7 +299,7 @@ const loadPanelSizes = () => {
 const savePanelSizes = (sizes) => {
   try {
     localStorage.setItem(PANEL_SIZES_KEY, JSON.stringify(sizes))
-  } catch (e) {
+  } catch {
     // Ignore storage errors
   }
 }
@@ -309,7 +309,7 @@ export default function App() {
   const [tabs, setTabs] = useState({}) // path -> { content, isDirty }
   const [approvals, setApprovals] = useState([])
   const [approvalsLoaded, setApprovalsLoaded] = useState(false)
-  const [gitStatus, setGitStatus] = useState({})
+  const [_gitStatus, setGitStatus] = useState({})
   const [activeFile, setActiveFile] = useState(null)
   const [activeDiffFile, setActiveDiffFile] = useState(null)
   const [collapsed, setCollapsed] = useState(loadCollapsedState)
@@ -784,7 +784,7 @@ export default function App() {
   )
 
   const openDiff = useCallback(
-    (path, status) => {
+    (path, _status) => {
       if (!dockApi) return
 
       const panelId = `editor-${path}`
