@@ -95,3 +95,6 @@ specs/
 claude-webview-poc/
 .vercel
 test.db
+
+# BD (Beads) workflow tool
+.beads/
