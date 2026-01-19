@@ -12,20 +12,6 @@ class KurtCloudAuthError(Exception):
     pass
 
 
-def get_api_base_url() -> str:
-    """Get Kurt Cloud API base URL.
-
-    Returns:
-        str: API base URL (e.g., "https://kurt-cloud.vercel.app")
-
-    Raises:
-        KurtCloudAuthError: If not logged in or invalid configuration
-    """
-    from kurt.cli.auth.credentials import get_cloud_api_url
-
-    return get_cloud_api_url()
-
-
 def get_auth_token() -> str:
     """Get Kurt Cloud authentication token.
 
@@ -35,10 +21,10 @@ def get_auth_token() -> str:
     Raises:
         KurtCloudAuthError: If not logged in or token expired
     """
-    from kurt.cli.auth.credentials import load_credentials
+    from kurt.cli.auth.credentials import ensure_fresh_token
 
-    creds = load_credentials()
-    if not creds or not creds.access_token:
+    creds = ensure_fresh_token()
+    if not creds or not creds.access_token or creds.is_expired():
         raise KurtCloudAuthError("Kurt Cloud session expired. Run 'kurt cloud login' to refresh.")
 
     return creds.access_token
@@ -60,7 +46,9 @@ def api_request(endpoint: str, params: dict | None = None):
     """
     import requests
 
-    api_base = get_api_base_url()
+    from kurt.cli.auth.credentials import get_cloud_api_url
+
+    api_base = get_cloud_api_url()
     token = get_auth_token()
 
     response = requests.get(
@@ -69,5 +57,12 @@ def api_request(endpoint: str, params: dict | None = None):
         headers={"Authorization": f"Bearer {token}"},
         timeout=30,
     )
+    if response.status_code == 401:
+        raise KurtCloudAuthError("Kurt Cloud session expired. Run 'kurt cloud login' to refresh.")
     response.raise_for_status()
-    return response.json()
+    if not response.content:
+        return None
+    try:
+        return response.json()
+    except ValueError:
+        return response.text
