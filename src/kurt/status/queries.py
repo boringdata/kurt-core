@@ -47,16 +47,42 @@ def get_status_data(session: "Session") -> dict:
     not_fetched = total - fetched - error
 
     # Get domain distribution
-    urls = session.exec(select(MapDocument.source_url).limit(10000)).all()
+    # Use SQL GROUP BY for PostgreSQL, fall back to Python parsing for SQLite
+    from sqlalchemy import text
 
-    domains: dict[str, int] = {}
-    for url in urls:
-        if url:
-            try:
-                domain = urlparse(url).netloc
-                domains[domain] = domains.get(domain, 0) + 1
-            except Exception:
-                pass
+    # Check if we're using PostgreSQL (has better regex support)
+    try:
+        dialect_name = session.get_bind().dialect.name
+        is_postgres = dialect_name == "postgresql"
+    except Exception:
+        is_postgres = False
+
+    if is_postgres:
+        # PostgreSQL: Extract domain using SQL regex and GROUP BY
+        # Pattern: https://example.com/path -> example.com
+        query = text("""
+            SELECT
+                substring(source_url from '://([^/]+)') as domain,
+                COUNT(*) as count
+            FROM map_documents
+            WHERE source_url IS NOT NULL
+            GROUP BY domain
+            ORDER BY count DESC
+            LIMIT 100
+        """)
+        result = session.exec(query)
+        domains = {row[0]: row[1] for row in result if row[0]}
+    else:
+        # SQLite: Fall back to Python parsing (regex support limited)
+        urls = session.exec(select(MapDocument.source_url).limit(10000)).all()
+        domains = {}
+        for url in urls:
+            if url:
+                try:
+                    domain = urlparse(url).netloc
+                    domains[domain] = domains.get(domain, 0) + 1
+                except Exception:
+                    pass
 
     return {
         "initialized": True,
