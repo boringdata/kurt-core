@@ -31,6 +31,22 @@ const findContent = (content, predicate) => {
   return content.find(predicate)
 }
 
+const extractResultText = (payload) => {
+  const raw = payload?.result
+  if (!raw) return ''
+  if (typeof raw === 'string') return raw
+  if (typeof raw?.text === 'string') return raw.text
+  if (typeof raw?.message === 'string') return raw.message
+  if (typeof raw?.result === 'string') return raw.result
+  const content = raw?.content
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    const textPart = content.find((part) => part?.type === 'text')
+    if (textPart?.text) return textPart.text
+  }
+  return ''
+}
+
 const DEFAULT_SLASH_COMMANDS = [
   { id: 'help', label: '/help', description: 'Show available commands' },
   { id: 'clear', label: '/clear', description: 'Clear the chat' },
@@ -830,6 +846,7 @@ const useClaudeStreamRuntime = (
       const toolSignature = new Set()
       const seenUuids = new Set() // Track seen message uuids to avoid duplicates
       let latestCommandOutput = null // Track latest command output (for slash commands, show only the last)
+      let hasAssistantText = false
       let running = true
       const scheduleStatusChange = (toolPart, fromStatus, toStatus, delayMs) => {
         setTimeout(() => {
@@ -848,9 +865,15 @@ const useClaudeStreamRuntime = (
         console.log('[ClaudeStream] <<', payload.type, payload.subtype || '', payload.uuid?.slice(0, 8) || '')
 
         if (payload.type === 'assistant') {
-          const content = payload.message?.content || []
+          const rawContent = payload.message?.content
+          if (typeof rawContent === 'string') {
+            parts.push({ type: 'text', text: rawContent })
+            textPartIndex = parts.length - 1
+            hasAssistantText = true
+          }
+          const content = Array.isArray(rawContent) ? rawContent : []
           content.forEach((part) => {
-            if (part.type === 'text') {
+            if (part.type === 'text' || part.type === 'output_text') {
               if (textPartIndex === -1) {
                 parts.push({ type: 'text', text: part.text || '' })
                 textPartIndex = parts.length - 1
@@ -858,6 +881,7 @@ const useClaudeStreamRuntime = (
                 const existing = parts[textPartIndex]
                 existing.text = mergeStreamText(existing.text || '', part.text || '')
               }
+              hasAssistantText = true
             }
             if (part.type === 'tool_use') {
               // Skip if we already have this exact tool by ID
@@ -1023,6 +1047,12 @@ const useClaudeStreamRuntime = (
         if (payload.type === 'result') {
           running = false
 
+          const finalText = extractResultText(payload)
+          if (finalText && !hasAssistantText) {
+            parts.push({ type: 'text', text: finalText })
+            textPartIndex = parts.length - 1
+          }
+
           // Add the latest command output (if any) now that we have the final result
           if (latestCommandOutput) {
             console.log('[ClaudeStream] Adding final output:', latestCommandOutput.slice(0, 50))
@@ -1149,6 +1179,7 @@ const AssistantMessage = () => {
 
   return (
     <MessagePrimitive.Root
+      className="claude-message-assistant"
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -1477,7 +1508,7 @@ const ComposerShell = ({
 
   return (
     <ComposerPrimitive.Root className="claude-input">
-      <div className="claude-input-box" ref={slashMenuRef}>
+      <div className="claude-input-box" data-mode={mode} ref={slashMenuRef}>
         {(showSlashMenu || showAtMenu) && (
           <div className="claude-menu">
             {showSlashMenu &&
@@ -1753,50 +1784,66 @@ const ComposerShell = ({
   )
 }
 
+const formatToolSummary = (part) => {
+  const name = part?.name || 'Tool'
+  const input = part?.input || {}
+  const output = part?.output || ''
+  const status = part?.status === 'error' ? ' (error)' : ''
+  const toolName = String(name)
+  let header = toolName
+
+  const path = input.path || input.file_path
+  if (toolName.toLowerCase() === 'bash' && input.command) {
+    header = `Bash: ${input.command}${status}`
+  } else if (toolName.toLowerCase() === 'read' && path) {
+    const lines = part?.lineCount ? ` (${part.lineCount} lines)` : ''
+    header = `Read: ${path}${lines}${status}`
+  } else if ((toolName.toLowerCase() === 'write' || toolName.toLowerCase() === 'edit') && path) {
+    header = `${toolName}: ${path}${status}`
+  } else if (path) {
+    header = `${toolName}: ${path}${status}`
+  } else if (status) {
+    header = `${toolName}${status}`
+  }
+
+  if (output) {
+    return `${header}\n\`\`\`\n${output}\n\`\`\``
+  }
+  return header
+}
+
 const normalizeHistoryMessage = (message) => {
   if (!message || (message.role !== 'user' && message.role !== 'assistant')) {
     return null
   }
-  const content = Array.isArray(message.content)
+  const raw = Array.isArray(message.content)
     ? message.content
     : message.content
       ? [{ type: 'text', text: String(message.content) }]
       : []
+  const textParts = []
+
+  raw.forEach((part) => {
+    if (!part) return
+    if (part.type === 'text' || part.type === 'output_text') {
+      if (part.text) {
+        textParts.push({ type: 'text', text: part.text })
+      }
+      return
+    }
+    if (part.type === 'tool_use') {
+      const summary = formatToolSummary(part)
+      if (summary) {
+        textParts.push({ type: 'text', text: summary })
+      }
+    }
+  })
+
+  if (textParts.length === 0) return null
   return {
     role: message.role,
-    content,
+    content: textParts,
   }
-}
-
-const HistoryHydrator = ({ sessionId }) => {
-  const api = useAssistantApi()
-  const messageCount = useAssistantState(({ thread }) => thread.messages.length)
-  const hydratedRef = useRef(false)
-
-  useEffect(() => {
-    hydratedRef.current = false
-  }, [sessionId])
-
-  useEffect(() => {
-    if (!sessionId || hydratedRef.current) return
-    if (messageCount > 0) {
-      hydratedRef.current = true
-      return
-    }
-    const stored = loadStoredHistory(sessionId)
-      .map(normalizeHistoryMessage)
-      .filter(Boolean)
-    if (!stored.length) {
-      hydratedRef.current = true
-      return
-    }
-    stored.forEach((message) => {
-      api.thread().append(message)
-    })
-    hydratedRef.current = true
-  }, [api, messageCount, sessionId])
-
-  return null
 }
 
 const HistoryPersister = ({ sessionId }) => {
@@ -1814,6 +1861,15 @@ const HistoryPersister = ({ sessionId }) => {
   }, [messages, sessionId, thread.isRunning])
 
   return null
+}
+
+const RuntimeProvider = ({ adapter, initialMessages, runtimeKey, children }) => {
+  const runtime = useLocalRuntime(adapter, { initialMessages })
+  return (
+    <AssistantRuntimeProvider key={runtimeKey} runtime={runtime}>
+      {children}
+    </AssistantRuntimeProvider>
+  )
 }
 
 const extractMarkdownImages = (text, imageCache) => {
@@ -2003,14 +2059,8 @@ const ErrorLogModal = ({ isOpen, errors, onClear, onClose }) => {
 
 const ThinkingIndicator = () => (
   <div className="claude-status" role="status" aria-live="polite">
-    <span className="mark">✳</span>
-    <span className="claude-thinking-spinner" aria-hidden="true" />
-    <span>Claude is thinking</span>
-    <span className="claude-thinking-dots" aria-hidden="true">
-      <span>.</span>
-      <span>.</span>
-      <span>.</span>
-    </span>
+    <span className="claude-thinking-spinner">✳</span>
+    <span>Thinking...</span>
   </div>
 )
 
@@ -2070,7 +2120,7 @@ const Thread = ({
   }, [showSessionPicker, showSessionDropdown, setShowSessionDropdown])
 
   return (
-    <ChatPanel>
+    <ChatPanel className="chat-panel-light">
       <div className="claude-stream-header">
         <div className="claude-stream-title">
           <span className="mark">✳</span>
@@ -2098,42 +2148,40 @@ const Thread = ({
         />
       )}
 
-      <div style={{ position: 'relative' }} ref={sessionDropdownRef}>
-        <SessionHeader
-          title={sessionLabel}
-          onTitleClick={
-            showSessionPicker
-              ? () => setShowSessionDropdown((prev) => !prev)
-              : undefined
-          }
-          onNewSession={showSessionPicker ? onNewSession : undefined}
-          showDropdown={showSessionPicker}
-        />
-        {showSessionPicker && showSessionDropdown && (
-          <div className="claude-session-dropdown">
-            {sessions.length === 0 ? (
-              <div className="claude-session-item empty">No other sessions</div>
-            ) : (
-              sessions.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  className={`claude-session-item ${s.id === activeSessionId ? 'active' : ''}`}
-                  onClick={() => {
-                    onSelectSession(s.id)
-                    setShowSessionDropdown(false)
-                  }}
-                >
-                  <span className="claude-session-id">{s.id.slice(0, 8)}...</span>
-                  <span className="claude-session-meta">
-                    {s.clients} client{s.clients !== 1 ? 's' : ''}
-                  </span>
-                </button>
-              ))
-            )}
-          </div>
-        )}
-      </div>
+      {showSessionPicker && (
+        <div style={{ position: 'relative' }} ref={sessionDropdownRef}>
+          <SessionHeader
+            title={sessionLabel}
+            onTitleClick={() => setShowSessionDropdown((prev) => !prev)}
+            onNewSession={onNewSession}
+            showDropdown={true}
+          />
+          {showSessionDropdown && (
+            <div className="claude-session-dropdown">
+              {sessions.length === 0 ? (
+                <div className="claude-session-item empty">No other sessions</div>
+              ) : (
+                sessions.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    className={`claude-session-item ${s.id === activeSessionId ? 'active' : ''}`}
+                    onClick={() => {
+                      onSelectSession(s.id)
+                      setShowSessionDropdown(false)
+                    }}
+                  >
+                    <span className="claude-session-id">{s.id.slice(0, 8)}...</span>
+                    <span className="claude-session-meta">
+                      {s.clients} client{s.clients !== 1 ? 's' : ''}
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       <MessageList>
         <EmptyState>
@@ -2704,7 +2752,6 @@ export default function ClaudeStreamChat({
     handleLastMessageChange,
     imageCache,
   )
-  const runtime = useLocalRuntime(adapter)
   const streamStartedRef = useRef(false)
 
   useEffect(() => {
@@ -2980,11 +3027,20 @@ export default function ClaudeStreamChat({
     return formatSessionLabel(id, sessions)
   }, [currentSessionId, sessionName, sessions])
 
+  const historySeed = useMemo(() => {
+    const sessionKey = currentSessionId || sessionName
+    if (!sessionKey) return []
+    return loadStoredHistory(sessionKey)
+      .map(normalizeHistoryMessage)
+      .filter(Boolean)
+  }, [currentSessionId, sessionName])
+
+  const runtimeKey = currentSessionId || sessionName || 'new'
+
   return (
     <div style={{ width: '100%', height: '100%', overflow: 'hidden' }}>
       <style>{chatThemeVars}</style>
-      <AssistantRuntimeProvider runtime={runtime}>
-        <HistoryHydrator sessionId={currentSessionId || sessionName} />
+      <RuntimeProvider adapter={adapter} initialMessages={historySeed} runtimeKey={runtimeKey}>
         <HistoryPersister sessionId={currentSessionId || sessionName} />
         <Thread
           sessionLabel={sessionLabel}
@@ -3043,7 +3099,7 @@ export default function ClaudeStreamChat({
           onClear={clearErrorLog}
           onClose={() => setShowErrorLog(false)}
         />
-      </AssistantRuntimeProvider>
+      </RuntimeProvider>
     </div>
   )
 }
