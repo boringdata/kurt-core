@@ -182,7 +182,7 @@ class TestStatusFunctional:
         result = invoke_cli(cli_runner, db_group, ["status"])
         assert_cli_success(result)
         assert_output_contains(result, "Database Status")
-        assert_output_contains(result, "local_sqlite")
+        assert_output_contains(result, "sqlite")
         assert_output_contains(result, "PostgreSQL: No")
 
     def test_status_shows_table_counts(self, cli_runner: CliRunner, tmp_project_with_docs: Path):
@@ -485,7 +485,7 @@ class TestStatusWithPostgres:
                 result = invoke_cli(cli_runner, db_group, ["status"])
 
         assert_cli_success(result)
-        assert_output_contains(result, "local_postgres")
+        assert_output_contains(result, "postgres")
         assert_output_contains(result, "PostgreSQL: Yes")
 
     def test_status_shows_cloud_mode(self, cli_runner: CliRunner, pg_engine):
@@ -503,7 +503,7 @@ class TestStatusWithPostgres:
                 result = invoke_cli(cli_runner, db_group, ["status"])
 
         assert_cli_success(result)
-        assert_output_contains(result, "cloud_postgres")
+        assert_output_contains(result, "kurt-cloud")
         assert_output_contains(result, "Cloud Auth: Enabled")
 
 

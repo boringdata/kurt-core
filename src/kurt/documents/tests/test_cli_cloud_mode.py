@@ -18,15 +18,15 @@ from kurt.documents.cli import content_group
 def mock_cloud_mode_with_data(tmp_project_with_docs):
     """Mock cloud mode environment with API responses."""
     # Mock is_cloud_mode to return True
-    with patch("kurt.db.cloud.is_cloud_mode") as mock_is_cloud:
+    with patch("kurt.db.tenant.is_cloud_mode") as mock_is_cloud:
         mock_is_cloud.return_value = True
 
         # Mock API base URL
-        with patch("kurt.db.cloud.get_api_base_url") as mock_api_url:
+        with patch("kurt.db.cloud_api.get_api_base_url") as mock_api_url:
             mock_api_url.return_value = "http://testserver"
 
             # Mock auth token
-            with patch("kurt.db.cloud.get_auth_token") as mock_token:
+            with patch("kurt.db.cloud_api.get_auth_token") as mock_token:
                 mock_token.return_value = "test-token"
 
                 # Mock requests.get to return realistic API responses

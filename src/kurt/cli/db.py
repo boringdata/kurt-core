@@ -78,7 +78,7 @@ def export_cmd(output: Optional[str], include_traces: bool, pretty: bool):
 
     # Check we're in SQLite mode
     mode = get_mode()
-    if mode != "local_sqlite":
+    if mode != "sqlite":
         console.print("[red]Error: Export only works in local SQLite mode[/red]")
         console.print(f"[dim]Current mode: {mode}[/dim]")
         raise click.Abort()
@@ -211,7 +211,7 @@ def import_cmd(
 
     # Check database mode
     mode = get_mode()
-    if mode == "local_sqlite":
+    if mode == "sqlite":
         console.print("[red]Error: Import requires PostgreSQL or cloud database[/red]")
         console.print("[dim]Set DATABASE_URL to PostgreSQL or 'kurt' for cloud mode[/dim]")
         raise click.Abort()
@@ -418,9 +418,9 @@ def status_cmd():
 
     # Mode info
     mode_colors = {
-        "local_sqlite": "blue",
-        "local_postgres": "yellow",
-        "cloud_postgres": "green",
+        "sqlite": "blue",
+        "postgres": "yellow",
+        "kurt-cloud": "green",
     }
     color = mode_colors.get(mode, "white")
     console.print(f"Mode: [{color}]{mode}[/{color}]")

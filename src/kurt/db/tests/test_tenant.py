@@ -162,13 +162,13 @@ class TestGetMode:
         with patch.dict(os.environ, {}, clear=True):
             os.environ.pop("DATABASE_URL", None)
             os.environ.pop("KURT_CLOUD_AUTH", None)
-            assert get_mode() == "local_sqlite"
+            assert get_mode() == "sqlite"
 
     def test_local_postgres_mode(self):
         """Test local_postgres mode with DATABASE_URL but no auth."""
         with patch.dict(os.environ, {"DATABASE_URL": "postgresql://localhost/db"}, clear=True):
             os.environ.pop("KURT_CLOUD_AUTH", None)
-            assert get_mode() == "local_postgres"
+            assert get_mode() == "postgres"
 
     def test_cloud_postgres_mode(self):
         """Test cloud_postgres mode with DATABASE_URL and auth enabled."""
@@ -177,7 +177,7 @@ class TestGetMode:
             {"DATABASE_URL": "postgresql://localhost/db", "KURT_CLOUD_AUTH": "true"},
             clear=True,
         ):
-            assert get_mode() == "cloud_postgres"
+            assert get_mode() == "kurt-cloud"
 
 
 class TestRLSContext:

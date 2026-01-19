@@ -271,12 +271,9 @@ def _list_documents(filters):
     Local mode: Direct SQLAlchemy queries
     Cloud mode: HTTP request to kurt-cloud API
     """
-    from kurt.db.tenant import is_cloud_mode
+    from kurt.db.routing import route_by_mode
 
-    if is_cloud_mode():
-        return _list_documents_from_api(filters)
-    else:
-        return _list_documents_from_db(filters)
+    return route_by_mode(_list_documents_from_db, _list_documents_from_api, filters)
 
 
 def _list_documents_from_db(filters):
@@ -316,12 +313,9 @@ def _get_document(identifier: str):
     Local mode: Direct SQLAlchemy queries with fallback to partial ID match
     Cloud mode: HTTP request to kurt-cloud API
     """
-    from kurt.db.tenant import is_cloud_mode
+    from kurt.db.routing import route_by_mode
 
-    if is_cloud_mode():
-        return _get_document_from_api(identifier)
-    else:
-        return _get_document_from_db(identifier)
+    return route_by_mode(_get_document_from_db, _get_document_from_api, identifier)
 
 
 def _get_document_from_db(identifier: str):

@@ -163,16 +163,16 @@ def get_mode() -> str:
     """Get current operating mode.
 
     Returns:
-        "local_sqlite" - Default CLI usage with SQLite
-        "local_postgres" - Local testing with PostgreSQL
-        "cloud_postgres" - Production SaaS with auth + RLS
+        "sqlite" - Default CLI usage with SQLite
+        "postgres" - Local testing with PostgreSQL
+        "kurt-cloud" - Production SaaS with auth + RLS
     """
     if not is_postgres():
-        return "local_sqlite"
+        return "sqlite"
     elif is_cloud_mode():
-        return "cloud_postgres"
+        return "kurt-cloud"
     else:
-        return "local_postgres"
+        return "postgres"
 
 
 # =============================================================================

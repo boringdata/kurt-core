@@ -158,7 +158,7 @@ class TestStatusCommand:
             patch("kurt.cli.auth.credentials.load_credentials", return_value=mock_credentials),
             patch("kurt.config.config_file_exists", return_value=True),
             patch("kurt.config.load_config", return_value=mock_config),
-            patch("kurt.db.get_mode", return_value="local_sqlite"),
+            patch("kurt.db.get_mode", return_value="sqlite"),
         ):
             result = cli_runner.invoke(cloud_group, ["status"])
         assert result.exit_code == 0

@@ -271,12 +271,12 @@ class TestModeDetectionWithRealEnv:
         with patch.dict(os.environ, {}, clear=True):
             os.environ.pop("DATABASE_URL", None)
             os.environ.pop("KURT_CLOUD_AUTH", None)
-            assert get_mode() == "local_sqlite"
+            assert get_mode() == "sqlite"
 
         # local_postgres
         with patch.dict(os.environ, {"DATABASE_URL": "postgresql://localhost/db"}, clear=True):
             os.environ.pop("KURT_CLOUD_AUTH", None)
-            assert get_mode() == "local_postgres"
+            assert get_mode() == "postgres"
 
         # cloud_postgres
         with patch.dict(
@@ -284,4 +284,4 @@ class TestModeDetectionWithRealEnv:
             {"DATABASE_URL": "postgresql://localhost/db", "KURT_CLOUD_AUTH": "true"},
             clear=True,
         ):
-            assert get_mode() == "cloud_postgres"
+            assert get_mode() == "kurt-cloud"

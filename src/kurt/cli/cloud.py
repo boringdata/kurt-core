@@ -352,9 +352,9 @@ def status_cmd():
         # Database mode
         mode = get_mode()
         mode_display = {
-            "local_sqlite": "Local SQLite (.kurt/kurt.sqlite)",
-            "local_postgres": "Shared PostgreSQL",
-            "cloud_postgres": "Kurt Cloud (managed)",
+            "sqlite": "Local SQLite (.kurt/kurt.sqlite)",
+            "postgres": "Shared PostgreSQL",
+            "kurt-cloud": "Kurt Cloud (managed)",
         }.get(mode, mode)
         console.print(f"Database: {mode_display}")
 
@@ -385,7 +385,7 @@ def status_cmd():
             console.print(f"  URL: {masked}")
 
         # Fetch workspace details from cloud if in cloud mode
-        if mode == "cloud_postgres" and workspace_id and creds:
+        if mode == "kurt-cloud" and workspace_id and creds:
             try:
                 import json
                 import urllib.request
