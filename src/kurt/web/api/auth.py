@@ -43,14 +43,11 @@ def is_cloud_auth_enabled() -> bool:
 
 @lru_cache(maxsize=1)
 def get_supabase_config() -> dict[str, str]:
-    """Get Supabase configuration from environment or hardcoded defaults."""
+    """Get Supabase configuration from environment."""
     return {
-        "url": os.environ.get("SUPABASE_URL", "https://hnhlfropgnbskbsojgts.supabase.co"),
-        "anon_key": os.environ.get(
-            "SUPABASE_ANON_KEY",
-            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhuaGxmcm9wZ25ic2tic29qZ3RzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTU3Nzg4NTQsImV4cCI6MjA3MTM1NDg1NH0.oYJMF5XA5k68UOWOjDsg0AM85EyKmtAoCQsyuc61s0I",
-        ),
-        "jwt_secret": os.environ.get("SUPABASE_JWT_SECRET", ""),
+        "url": os.environ.get("SUPABASE_URL", "").strip(),
+        "anon_key": os.environ.get("SUPABASE_ANON_KEY", "").strip(),
+        "jwt_secret": os.environ.get("SUPABASE_JWT_SECRET", "").strip(),
     }
 
 
@@ -71,6 +68,11 @@ def verify_token_with_supabase(token: str) -> dict[str, Any]:
     token revocation and session validity.
     """
     config = get_supabase_config()
+    if not config["url"] or not config["anon_key"]:
+        raise HTTPException(
+            status_code=500,
+            detail="Supabase not configured. Set SUPABASE_URL and SUPABASE_ANON_KEY.",
+        )
     url = f"{config['url']}/auth/v1/user"
 
     req = urllib.request.Request(url)

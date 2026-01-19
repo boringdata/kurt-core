@@ -80,8 +80,8 @@ class TestIsCloudAuthEnabled:
 class TestGetSupabaseConfig:
     """Tests for get_supabase_config function."""
 
-    def test_returns_hardcoded_defaults(self):
-        """Test returns hardcoded defaults when env vars not set."""
+    def test_returns_empty_defaults(self):
+        """Test returns empty defaults when env vars not set."""
         # Clear cache to ensure fresh config
         get_supabase_config.cache_clear()
 
@@ -95,9 +95,9 @@ class TestGetSupabaseConfig:
             assert "url" in config
             assert "anon_key" in config
             assert "jwt_secret" in config
-            # Should have hardcoded defaults
-            assert config["url"].startswith("https://")
-            assert "supabase.co" in config["url"]
+            assert config["url"] == ""
+            assert config["anon_key"] == ""
+            assert config["jwt_secret"] == ""
 
     def test_uses_env_vars_when_set(self):
         """Test uses environment variables when set."""
