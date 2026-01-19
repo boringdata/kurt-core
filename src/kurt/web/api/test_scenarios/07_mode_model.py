@@ -18,11 +18,15 @@ async def run():
         args.ws_url, session_id, args.mode, args.resume, args.verbose
     )
     await ws.send(json.dumps({"type": "control", "subtype": "set_model", "model": args.model}))
-    await ws.send(json.dumps({
-        "type": "control",
-        "subtype": "set_max_thinking_tokens",
-        "max_thinking_tokens": args.max_thinking,
-    }))
+    await ws.send(
+        json.dumps(
+            {
+                "type": "control",
+                "subtype": "set_max_thinking_tokens",
+                "max_thinking_tokens": args.max_thinking,
+            }
+        )
+    )
 
     print(f"session_id={session_id}")
     print("sent=ok")

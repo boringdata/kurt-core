@@ -26,11 +26,15 @@ async def run():
     else:
         print("connected=timeout")
 
-    await ws.send(json.dumps({
-        "type": "control",
-        "subtype": "initialize",
-        "capabilities": {"permissions": True, "file_diffs": True, "user_questions": True},
-    }))
+    await ws.send(
+        json.dumps(
+            {
+                "type": "control",
+                "subtype": "initialize",
+                "capabilities": {"permissions": True, "file_diffs": True, "user_questions": True},
+            }
+        )
+    )
 
     await ws.close()
     reader_task.cancel()
