@@ -233,38 +233,49 @@ def init_workspace_from_config() -> bool:
     return False
 
 
-def _ensure_workspace_id_in_config() -> Optional[str]:
-    """Generate and save WORKSPACE_ID if missing from config.
-
-    Returns:
-        The workspace ID (existing or newly generated), or None on error.
-    """
+def _set_workspace_id_in_config(workspace_id: str, overwrite: bool = False) -> bool:
+    """Set WORKSPACE_ID in kurt.config if missing (or overwrite if requested)."""
     import re
-    import uuid
 
     try:
         from kurt.config import get_config_file_path
 
         config_path = get_config_file_path()
         if not config_path.exists():
-            return None
+            return False
 
         content = config_path.read_text()
 
-        # Check if already has WORKSPACE_ID
         if re.search(r"^WORKSPACE_ID\s*=", content, re.MULTILINE):
-            return None  # Already exists, let caller handle
+            if not overwrite:
+                return False
+            content = re.sub(
+                r"^WORKSPACE_ID\s*=.*$",
+                f'WORKSPACE_ID="{workspace_id}"',
+                content,
+                flags=re.MULTILINE,
+            )
+        else:
+            content += f'\n# Auto-generated workspace identifier\nWORKSPACE_ID="{workspace_id}"\n'
 
-        # Generate new workspace ID
-        workspace_id = str(uuid.uuid4())
-
-        # Append to config file
-        content += f'\n# Auto-generated workspace identifier\nWORKSPACE_ID="{workspace_id}"\n'
         config_path.write_text(content)
-
-        return workspace_id
+        return True
     except Exception:
-        return None
+        return False
+
+
+def _ensure_workspace_id_in_config() -> Optional[str]:
+    """Generate and save WORKSPACE_ID if missing from config.
+
+    Returns:
+        The workspace ID (existing or newly generated), or None on error.
+    """
+    import uuid
+
+    workspace_id = str(uuid.uuid4())
+    if _set_workspace_id_in_config(workspace_id):
+        return workspace_id
+    return None
 
 
 def load_context_from_credentials() -> bool:
@@ -284,16 +295,20 @@ def load_context_from_credentials() -> bool:
             return False
 
         # Get workspace_id from config (preferred) or credentials
-        workspace_id = creds.workspace_id
-        if not workspace_id:
-            try:
-                from kurt.config import config_file_exists, load_config
+        workspace_id = None
+        try:
+            from kurt.config import config_file_exists, load_config
 
-                if config_file_exists():
-                    config = load_config()
-                    workspace_id = config.WORKSPACE_ID
-            except Exception:
-                pass
+            if config_file_exists():
+                config = load_config()
+                workspace_id = config.WORKSPACE_ID
+        except Exception:
+            workspace_id = None
+
+        if not workspace_id:
+            workspace_id = creds.workspace_id
+            if workspace_id:
+                _set_workspace_id_in_config(workspace_id)
 
         # Fall back to user_id if no workspace_id
         if not workspace_id:

@@ -498,8 +498,8 @@ kurt cloud invite teammate@example.com
 kurt cloud login
 
 # 2. Add shared config (from team owner)
-# WORKSPACE_ID="..."
 # DATABASE_URL="..."
+# WORKSPACE_ID auto-fills on login if provided by cloud; otherwise set it manually
 
 # 3. Enable cloud auth (RLS)
 # CLOUD_AUTH=true  # in kurt.config (auto-set after login when DATABASE_URL is set)

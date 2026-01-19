@@ -76,7 +76,8 @@ This displays the WORKSPACE_ID and DATABASE_URL to share.
 
 TEAM MEMBER SETUP:
   1. kurt cloud login (with their email)
-  2. Add shared WORKSPACE_ID and DATABASE_URL to their kurt.config
+  2. Add shared DATABASE_URL to their kurt.config
+     (WORKSPACE_ID auto-fills on login if provided by cloud; otherwise set it manually)
   3. CLOUD_AUTH=true  # in kurt.config (auto-set after login when DATABASE_URL is set)
   4. kurt admin migrate apply
 

@@ -11,6 +11,7 @@ import pytest
 from kurt.db.tenant import (
     WorkspaceContext,
     _ensure_workspace_id_in_config,
+    _set_workspace_id_in_config,
     add_workspace_filter,
     clear_workspace_context,
     get_mode,
@@ -363,6 +364,42 @@ class TestEnsureWorkspaceIdInConfig:
 
         # Should detect existing ID even with spaces
         assert result is None
+
+    def test_set_workspace_id_in_config_adds_when_missing(self, tmp_path: Path):
+        """Test setting workspace ID when missing."""
+        config_file = tmp_path / "kurt.config"
+        config_file.write_text('OPENAI_API_KEY="sk-test"\n')
+
+        with patch("kurt.config.get_config_file_path", return_value=config_file):
+            updated = _set_workspace_id_in_config("ws-new")
+
+        assert updated is True
+        content = config_file.read_text()
+        assert 'WORKSPACE_ID="ws-new"' in content
+
+    def test_set_workspace_id_in_config_skips_when_present(self, tmp_path: Path):
+        """Test set_workspace_id_in_config does not overwrite by default."""
+        config_file = tmp_path / "kurt.config"
+        config_file.write_text('WORKSPACE_ID="ws-old"\n')
+
+        with patch("kurt.config.get_config_file_path", return_value=config_file):
+            updated = _set_workspace_id_in_config("ws-new")
+
+        assert updated is False
+        content = config_file.read_text()
+        assert 'WORKSPACE_ID="ws-old"' in content
+
+    def test_set_workspace_id_in_config_overwrites_when_requested(self, tmp_path: Path):
+        """Test set_workspace_id_in_config overwrites when requested."""
+        config_file = tmp_path / "kurt.config"
+        config_file.write_text('WORKSPACE_ID="ws-old"\n')
+
+        with patch("kurt.config.get_config_file_path", return_value=config_file):
+            updated = _set_workspace_id_in_config("ws-new", overwrite=True)
+
+        assert updated is True
+        content = config_file.read_text()
+        assert 'WORKSPACE_ID="ws-new"' in content
 
 
 class TestInitWorkspaceFromConfig:

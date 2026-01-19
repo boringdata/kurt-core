@@ -210,8 +210,17 @@ def login_cmd():
         except Exception:
             pass
 
-    # Get workspace_id from local config, generate if missing
+    # Get workspace_id from cloud (if available) or local config
     workspace_id = None
+    server_workspace_id = None
+    try:
+        from kurt.cli.auth.commands import get_user_info
+
+        user_info = get_user_info(tokens["access_token"])
+        server_workspace_id = user_info.get("user_metadata", {}).get("workspace_id")
+    except Exception:
+        pass
+
     try:
         from kurt.config import config_file_exists, get_config_file_path, load_config
 
@@ -225,14 +234,20 @@ def login_cmd():
             content = config_path.read_text()
             updated = False
 
-            # Fallback: auto-generate WORKSPACE_ID if missing
             if not workspace_id:
-                workspace_id = str(uuid_module.uuid4())
-                if not re.search(r"^WORKSPACE_ID\s*=", content, re.MULTILINE):
+                workspace_id = server_workspace_id or str(uuid_module.uuid4())
+                if re.search(r"^WORKSPACE_ID\s*=", content, re.MULTILINE):
+                    content = re.sub(
+                        r"^WORKSPACE_ID\s*=.*$",
+                        f'WORKSPACE_ID="{workspace_id}"',
+                        content,
+                        flags=re.MULTILINE,
+                    )
+                else:
                     content += (
                         f'\n# Auto-generated workspace identifier\nWORKSPACE_ID="{workspace_id}"\n'
                     )
-                    updated = True
+                updated = True
 
             # Enable cloud auth when DATABASE_URL is configured
             if config.DATABASE_URL:
@@ -251,6 +266,9 @@ def login_cmd():
                 config_path.write_text(content)
     except Exception:
         pass
+
+    if not workspace_id:
+        workspace_id = server_workspace_id
 
     creds = Credentials(
         access_token=tokens["access_token"],
