@@ -62,7 +62,7 @@ class TestCloudGroupHelp:
         """Test all expected commands are registered."""
         result = cli_runner.invoke(cloud_group, ["--help"])
         assert result.exit_code == 0
-        # Check all commands are listed
+        # Check visible commands are listed (workspaces and members are hidden)
         expected_commands = [
             "login",
             "logout",
@@ -70,8 +70,7 @@ class TestCloudGroupHelp:
             "whoami",
             "invite",
             "use",
-            "workspaces",
-            "members",
+            "workspace-create",
         ]
         for cmd in expected_commands:
             assert cmd in result.output, f"Command '{cmd}' not found in help"
