@@ -15,7 +15,7 @@ Avatar Click → Dropdown Menu:
 ┌─────────────────────────┐
 │ My Workspace            │  ← workspace name (read-only)
 ├─────────────────────────┤
-│ Manage workspace    →   │  ← link to management
+│ Manage workspace    →   │  ← stub: console.log (future: link to management)
 └─────────────────────────┘
 ```
 

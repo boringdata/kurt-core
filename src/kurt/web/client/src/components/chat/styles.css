@@ -804,6 +804,35 @@
   color: var(--color-text-inverse);
 }
 
+.claude-menu-item-wrapper {
+  position: relative;
+}
+
+.claude-menu-item.has-submenu .desc {
+  font-weight: 500;
+}
+
+.claude-submenu {
+  position: absolute;
+  left: 100%;
+  top: 0;
+  min-width: 160px;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 50;
+  margin-left: var(--space-1);
+}
+
+.claude-submenu .claude-menu-item {
+  padding: var(--space-2) var(--space-3);
+}
+
+.claude-submenu .claude-menu-item.current {
+  background: var(--color-bg-tertiary);
+}
+
 /* User attachments in messages */
 .claude-user-attachments {
   display: flex;

@@ -53,11 +53,17 @@ const SLASH_MENU_GROUPS = [
   { id: 'commands', label: 'Commands' },
 ]
 
+const MODEL_OPTIONS = [
+  { id: 'sonnet', label: 'Sonnet', value: 'sonnet', description: 'Recommended' },
+  { id: 'opus', label: 'Opus', value: 'opus', description: 'Most capable' },
+  { id: 'haiku', label: 'Haiku', value: 'haiku', description: 'Fastest' },
+]
+
 const DEFAULT_SLASH_COMMANDS = [
   // Context
   { id: 'clear', label: '/clear', description: 'Clear the conversation', group: 'context' },
   // Model
-  { id: 'model', label: '/model', description: 'Switch AI model', group: 'model' },
+  { id: 'model', label: '/model', description: 'Switch AI model', group: 'model', hasSubmenu: true },
   { id: 'thinking', label: '/thinking', description: 'Toggle thinking mode', group: 'model', isToggle: true },
   // Customize (CLI-only items marked)
   { id: 'memory', label: '/memory', description: 'Manage memory/context', group: 'customize' },
@@ -1294,6 +1300,7 @@ const ComposerShell = ({
   slashCommands,
   onError,
   isThinkingEnabled,
+  currentModel,
 }) => {
   const api = useAssistantApi()
   const composerApi = useMemo(() => api.composer(), [api])
@@ -1301,6 +1308,7 @@ const ComposerShell = ({
   const isRunning = useAssistantState(({ thread }) => thread.isRunning)
   const [showSlashMenu, setShowSlashMenu] = useState(false)
   const [showAtMenu, setShowAtMenu] = useState(false)
+  const [showModelSubmenu, setShowModelSubmenu] = useState(false)
   const [menuFilter, setMenuFilter] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [menuNavigated, setMenuNavigated] = useState(false)
@@ -1427,6 +1435,14 @@ const ComposerShell = ({
         const newText = currentText.slice(0, atIndex).trimEnd()
         applyComposerText(newText)
       }
+    } else if (item.hasSubmenu && item.id === 'model') {
+      // Show model submenu instead of inserting
+      setShowModelSubmenu(true)
+      return
+    } else if (item.isModelOption) {
+      // Model option selected - insert /model command
+      const newValue = `/model ${item.value} `
+      applyComposerText(newValue)
     } else {
       // Slash command - insert text
       let newValue = `${item.label} `
@@ -1439,6 +1455,7 @@ const ComposerShell = ({
     focusInput()
     setShowSlashMenu(false)
     setShowAtMenu(false)
+    setShowModelSubmenu(false)
   }
 
   const handleKeyDown = (event) => {
@@ -1529,27 +1546,54 @@ const ComposerShell = ({
                       flatIdx += 1
                       const isToggleItem = cmd.isToggle && cmd.id === 'thinking'
                       const toggleState = isToggleItem ? isThinkingEnabled : false
+                      const isModelItem = cmd.hasSubmenu && cmd.id === 'model'
+                      const modelLabel = currentModel ? MODEL_OPTIONS.find((m) => currentModel.includes(m.value))?.label : null
                       return (
-                        <button
-                          key={cmd.id}
-                          ref={idx === selectedIndex ? selectedItemRef : null}
-                          className={`claude-menu-item ${idx === selectedIndex ? 'selected' : ''}${cmd.cliOnly ? ' cli-only' : ''}${isToggleItem ? ' toggle-item' : ''}`}
-                          onPointerDown={(event) => {
-                            event.preventDefault()
-                            event.stopPropagation()
-                            handleMenuSelect(cmd, 'slash')
-                          }}
-                          type="button"
-                        >
-                          <span>{cmd.label}</span>
-                          {isToggleItem ? (
-                            <span className={`toggle-indicator ${toggleState ? 'on' : 'off'}`}>
-                              {toggleState ? 'On' : 'Off'}
-                            </span>
-                          ) : (
-                            <span className="desc">{cmd.description}</span>
+                        <div key={cmd.id} className="claude-menu-item-wrapper">
+                          <button
+                            ref={idx === selectedIndex ? selectedItemRef : null}
+                            className={`claude-menu-item ${idx === selectedIndex ? 'selected' : ''}${cmd.cliOnly ? ' cli-only' : ''}${isToggleItem ? ' toggle-item' : ''}${isModelItem ? ' has-submenu' : ''}`}
+                            onPointerDown={(event) => {
+                              event.preventDefault()
+                              event.stopPropagation()
+                              handleMenuSelect(cmd, 'slash')
+                            }}
+                            type="button"
+                          >
+                            <span>{cmd.label}</span>
+                            {isToggleItem ? (
+                              <span className={`toggle-indicator ${toggleState ? 'on' : 'off'}`}>
+                                {toggleState ? 'On' : 'Off'}
+                              </span>
+                            ) : isModelItem ? (
+                              <span className="desc">{modelLabel || 'Default'} ›</span>
+                            ) : (
+                              <span className="desc">{cmd.description}</span>
+                            )}
+                          </button>
+                          {isModelItem && showModelSubmenu && (
+                            <div className="claude-submenu">
+                              {MODEL_OPTIONS.map((model) => {
+                                const isSelected = currentModel && currentModel.includes(model.value)
+                                return (
+                                  <button
+                                    key={model.id}
+                                    className={`claude-menu-item${isSelected ? ' current' : ''}`}
+                                    onPointerDown={(event) => {
+                                      event.preventDefault()
+                                      event.stopPropagation()
+                                      handleMenuSelect({ ...model, isModelOption: true }, 'slash')
+                                    }}
+                                    type="button"
+                                  >
+                                    <span>{model.label}</span>
+                                    <span className="desc">{model.description}{isSelected ? ' ✓' : ''}</span>
+                                  </button>
+                                )
+                              })}
+                            </div>
                           )}
-                        </button>
+                        </div>
                       )
                     })}
                   </div>
@@ -2127,6 +2171,7 @@ const Thread = ({
   slashCommands,
   onError,
   isThinkingEnabled,
+  currentModel,
 }) => {
   const [showModeMenu, setShowModeMenu] = useState(false)
   const sessionDropdownRef = useRef(null)
@@ -2264,6 +2309,7 @@ const Thread = ({
         slashCommands={slashCommands}
         onError={onError}
         isThinkingEnabled={isThinkingEnabled}
+        currentModel={currentModel}
       />
     </ChatPanel>
   )
@@ -2774,6 +2820,7 @@ export default function ClaudeStreamChat({
           slashCommands={slashCommands}
           onError={logError}
           isThinkingEnabled={isThinkingEnabled}
+          currentModel={cliOptions.model}
         />
         <ErrorLogModal
           isOpen={showErrorLog}

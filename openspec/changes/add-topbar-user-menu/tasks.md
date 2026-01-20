@@ -33,15 +33,36 @@
   - If local: show ThemeToggle only (current behavior)
 
 - [ ] **3.2** Wire "Manage workspace" action
-  - Opens workspace management (kurt-cloud URL or modal - TBD)
-  - For now: `window.open()` to cloud dashboard
+  - For now: `console.log("Manage workspace clicked", workspaceId)` as stub
+  - Future: opens workspace management modal or navigates to kurt-cloud dashboard
+  - Add TODO comment in code for future implementation
 
-### Phase 4: Validation
+### Phase 4: Unit Tests
 
-- [ ] **4.1** Manual test: local mode shows theme toggle only
-- [ ] **4.2** Manual test: cloud mode shows avatar + menu
-- [ ] **4.3** Manual test: menu shows correct workspace name
-- [ ] **4.4** Manual test: "Manage workspace" navigates correctly
+- [ ] **4.1** Add unit test for `/api/me` endpoint
+  - Test local mode returns `{ is_cloud_mode: false }`
+  - Test cloud mode with auth returns user + workspace
+  - Test cloud mode without auth returns `{ is_cloud_mode: true, user: null }`
+
+- [ ] **4.2** Add unit test for `UserMenu.jsx` component
+  - Test avatar renders first letter of email
+  - Test dropdown opens on click
+  - Test dropdown closes on outside click
+  - Test workspace name displays correctly
+
+### Phase 5: E2E Validation (via Claude Chrome Plugin)
+
+- [ ] **5.1** E2E test: local mode
+  - Navigate to web UI
+  - Verify only theme toggle visible in top bar
+  - Verify no avatar present
+
+- [ ] **5.2** E2E test: cloud mode
+  - Navigate to web UI (with auth)
+  - Verify avatar displays with correct letter
+  - Click avatar → verify dropdown opens
+  - Verify workspace name in dropdown
+  - Click "Manage workspace" → verify console.log or alert (stub action)
 
 ## Dependencies
 - Requires auth middleware active in cloud mode
