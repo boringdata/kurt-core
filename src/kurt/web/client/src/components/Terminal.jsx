@@ -134,6 +134,7 @@ export default function Terminal({
   const historyFallbackTimerRef = useRef(null)
   const historySourceRef = useRef(null)
   // Always use Claude as provider
+  const providerKey = 'claude'
   const providerLabel = 'Claude'
 
   useEffect(() => {

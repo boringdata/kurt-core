@@ -290,7 +290,7 @@
   align-items: center;
   gap: var(--space-2);
   color: var(--color-text-primary);
-  font-size: var(--text-base);
+  font-size: var(--text-sm);
   padding: var(--space-2) var(--space-4) var(--space-2) 26px;
   position: relative;
   z-index: 2;
@@ -302,6 +302,8 @@
   font-size: 8px;
   position: absolute;
   left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
   width: 8px;
   height: 8px;
   background: var(--color-bg-primary);
@@ -383,7 +385,7 @@
   border: none;
   outline: none;
   color: var(--color-text-primary);
-  font-size: var(--text-base);
+  font-size: var(--text-sm);
   font-family: inherit;
   resize: none;
   line-height: var(--leading-normal);
