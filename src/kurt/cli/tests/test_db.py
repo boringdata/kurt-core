@@ -488,12 +488,9 @@ class TestStatusWithPostgres:
         assert_output_contains(result, "postgres")
         assert_output_contains(result, "PostgreSQL: Yes")
 
-    def test_status_shows_cloud_auth(self, cli_runner: CliRunner, pg_engine):
-        """Test status shows cloud auth enabled when KURT_CLOUD_AUTH is set."""
-        with patch.dict(
-            os.environ,
-            {"DATABASE_URL": str(pg_engine.url), "KURT_CLOUD_AUTH": "true"},
-        ):
+    def test_status_shows_cloud_mode(self, cli_runner: CliRunner):
+        """Test status shows cloud mode when DATABASE_URL is 'kurt'."""
+        with patch.dict(os.environ, {"DATABASE_URL": "kurt"}):
             with patch("kurt.db.managed_session") as mock_session:
                 mock_ctx = MagicMock()
                 mock_session.return_value.__enter__ = MagicMock(return_value=mock_ctx)
@@ -503,8 +500,7 @@ class TestStatusWithPostgres:
                 result = invoke_cli(cli_runner, db_group, ["status"])
 
         assert_cli_success(result)
-        assert_output_contains(result, "postgres")
-        assert_output_contains(result, "Cloud Auth: Enabled")
+        assert_output_contains(result, "kurt-cloud")
 
 
 # ============================================================================

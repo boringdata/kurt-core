@@ -267,7 +267,7 @@ def load_context_from_credentials() -> bool:
     """Load workspace context from stored CLI credentials.
 
     Call this at CLI startup to set context from `kurt cloud login` credentials.
-    Uses the stored user_id and workspace_id (from kurt.config).
+    Uses the stored user_id and workspace_id from kurt.config (single source of truth).
 
     Returns:
         True if context was set, False if no credentials or not logged in.
@@ -279,7 +279,7 @@ def load_context_from_credentials() -> bool:
         if creds is None:
             return False
 
-        # Get workspace_id from config (preferred) or credentials
+        # Get workspace_id from config (single source of truth)
         workspace_id = None
         try:
             from kurt.config import config_file_exists, load_config
@@ -290,12 +290,7 @@ def load_context_from_credentials() -> bool:
         except Exception:
             workspace_id = None
 
-        if not workspace_id:
-            workspace_id = creds.workspace_id
-            if workspace_id:
-                _set_workspace_id_in_config(workspace_id)
-
-        # Fall back to user_id if no workspace_id
+        # Fall back to user_id if no workspace_id in config
         if not workspace_id:
             workspace_id = creds.user_id
 

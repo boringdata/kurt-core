@@ -128,7 +128,7 @@ describe('UserMenu', () => {
       const avatar = screen.getByRole('button', { name: 'User menu' })
       fireEvent.click(avatar)
 
-      expect(screen.getByText('My Workspace')).toBeInTheDocument()
+      expect(screen.getByText('workspace: My Workspace')).toBeInTheDocument()
     })
 
     it('hides workspace when name looks like UUID', () => {
@@ -214,7 +214,8 @@ describe('UserMenu', () => {
       const avatar = screen.getByRole('button', { name: 'User menu' })
       fireEvent.click(avatar)
 
-      expect(screen.getByRole('menuitem')).toBeInTheDocument()
+      const menuItems = screen.getAllByRole('menuitem')
+      expect(menuItems).toHaveLength(1) // Manage workspace
     })
   })
 

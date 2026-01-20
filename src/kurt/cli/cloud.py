@@ -270,12 +270,12 @@ def login_cmd():
     if not workspace_id:
         workspace_id = server_workspace_id
 
+    # Save credentials (auth only, no workspace_id - that's in kurt.config)
     creds = Credentials(
         access_token=tokens["access_token"],
         refresh_token=tokens.get("refresh_token", ""),
         user_id=user_id,
         email=email,
-        workspace_id=workspace_id,
         expires_at=expires_at,
     )
     save_credentials(creds)
@@ -293,7 +293,7 @@ def login_cmd():
     console.print(f"[green]✓ Logged in as {creds.email or creds.user_id}[/green]")
     console.print(f"[dim]User ID: {creds.user_id}[/dim]")
     if workspace_id:
-        console.print(f"[dim]Workspace: {workspace_id}[/dim]")
+        console.print(f"[dim]Workspace (from config): {workspace_id}[/dim]")
 
 
 @cloud_group.command(name="logout")
@@ -377,22 +377,22 @@ def status_cmd():
         config = load_config()
         workspace_id = config.WORKSPACE_ID
 
+        # If workspace_id not in config, try to get from user metadata via cloud API
         if not workspace_id and creds:
-            candidate_workspace_id = creds.workspace_id
-            if not candidate_workspace_id:
-                try:
-                    from kurt.cli.auth.commands import get_user_info
+            try:
+                from kurt.cli.auth.commands import get_user_info
 
-                    user_info = get_user_info(creds.access_token)
-                    candidate_workspace_id = user_info.get("user_metadata", {}).get("workspace_id")
-                except Exception:
-                    candidate_workspace_id = None
+                user_info = get_user_info(creds.access_token)
+                candidate_workspace_id = user_info.get("user_metadata", {}).get(
+                    "workspace_id"
+                )
+                if candidate_workspace_id:
+                    from kurt.db.tenant import _set_workspace_id_in_config
 
-            if candidate_workspace_id:
-                from kurt.db.tenant import _set_workspace_id_in_config
-
-                if _set_workspace_id_in_config(candidate_workspace_id):
-                    workspace_id = candidate_workspace_id
+                    if _set_workspace_id_in_config(candidate_workspace_id):
+                        workspace_id = candidate_workspace_id
+            except Exception:
+                pass
 
         if workspace_id:
             console.print(f"Workspace ID: {workspace_id}")
@@ -638,11 +638,9 @@ def use_cmd(workspace_id: str):
     import urllib.request
 
     from kurt.cli.auth.credentials import (
-        Credentials,
         get_cloud_api_url,
         load_credentials,
         register_workspace_path,
-        save_credentials,
     )
     from kurt.config import config_file_exists, get_config_file_path
 
@@ -697,16 +695,7 @@ def use_cmd(workspace_id: str):
 
         config_path.write_text(content)
 
-    # Update credentials with new workspace_id
-    creds = Credentials(
-        access_token=creds.access_token,
-        refresh_token=creds.refresh_token,
-        user_id=creds.user_id,
-        email=creds.email,
-        workspace_id=workspace_id,
-        expires_at=creds.expires_at,
-    )
-    save_credentials(creds)
+    # Note: workspace_id is stored only in kurt.config, not in credentials
 
     # Register current project path with this workspace
     if config_file_exists():
@@ -735,11 +724,9 @@ def workspace_create_cmd(name: str, github_repo: str):
     import urllib.request
 
     from kurt.cli.auth.credentials import (
-        Credentials,
         get_cloud_api_url,
         load_credentials,
         register_workspace_path,
-        save_credentials,
     )
     from kurt.config import config_file_exists, get_config_file_path
 
@@ -787,16 +774,7 @@ def workspace_create_cmd(name: str, github_repo: str):
             project_path = str(config_path.parent.absolute())
             register_workspace_path(workspace_id, project_path, workspace.get("name"))
 
-        # Update credentials with new workspace_id
-        creds = Credentials(
-            access_token=creds.access_token,
-            refresh_token=creds.refresh_token,
-            user_id=creds.user_id,
-            email=creds.email,
-            workspace_id=workspace_id,
-            expires_at=creds.expires_at,
-        )
-        save_credentials(creds)
+        # Note: workspace_id is stored only in kurt.config, not in credentials
 
         console.print()
         console.print(f"[green]✓ Created workspace: {workspace.get('name', name)}[/green]")

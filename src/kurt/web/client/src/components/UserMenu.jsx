@@ -56,7 +56,7 @@ export default function UserMenu({ email, workspaceName, workspaceId }) {
       {isOpen && (
         <div className="user-menu-dropdown" role="menu">
           <div className="user-menu-email">{email}</div>
-          {showWorkspace && <div className="user-menu-workspace">{workspaceName}</div>}
+          {showWorkspace && <div className="user-menu-workspace">workspace: {workspaceName}</div>}
           <div className="user-menu-divider" />
           <button
             className="user-menu-item"

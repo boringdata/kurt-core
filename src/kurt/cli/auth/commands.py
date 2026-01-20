@@ -78,8 +78,12 @@ def status() -> None:
     click.echo(f"Logged in as: {creds.email or creds.user_id}")
     click.echo(f"User ID: {creds.user_id}")
 
-    if creds.workspace_id:
-        click.echo(f"Workspace: {creds.workspace_id}")
+    # Workspace comes from project config (kurt.config), not credentials
+    from kurt.cli.auth.credentials import get_workspace_id_from_config
+
+    workspace_id = get_workspace_id_from_config()
+    if workspace_id:
+        click.echo(f"Workspace: {workspace_id}")
 
     if creds.is_expired():
         click.echo("Status: Token expired (will refresh on next use)")
@@ -107,7 +111,6 @@ def whoami() -> None:
                 refresh_token=result.get("refresh_token", creds.refresh_token),
                 user_id=result.get("user_id", creds.user_id),
                 email=result.get("email", creds.email),
-                workspace_id=creds.workspace_id,
                 expires_at=int(time.time()) + result.get("expires_in", 3600),
             )
             save_credentials(creds)
