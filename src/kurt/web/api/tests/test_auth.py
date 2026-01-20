@@ -9,7 +9,6 @@ from kurt.web.api.auth import (
     AuthUser,
     extract_bearer_token,
     get_supabase_config,
-    is_cloud_auth_enabled,
 )
 
 
@@ -46,35 +45,6 @@ class TestAuthUser:
 
         assert "user_id=user-123" in repr_str
         assert "email=test@example.com" in repr_str
-
-
-class TestIsCloudAuthEnabled:
-    """Tests for is_cloud_auth_enabled function."""
-
-    def test_disabled_by_default(self):
-        """Test cloud auth is disabled by default."""
-        with patch.dict(os.environ, {}, clear=True):
-            os.environ.pop("KURT_CLOUD_AUTH", None)
-            assert is_cloud_auth_enabled() is False
-
-    def test_enabled_when_true(self):
-        """Test cloud auth enabled with KURT_CLOUD_AUTH=true."""
-        with patch.dict(os.environ, {"KURT_CLOUD_AUTH": "true"}, clear=True):
-            assert is_cloud_auth_enabled() is True
-
-    def test_case_insensitive(self):
-        """Test KURT_CLOUD_AUTH is case insensitive."""
-        with patch.dict(os.environ, {"KURT_CLOUD_AUTH": "TRUE"}, clear=True):
-            assert is_cloud_auth_enabled() is True
-        with patch.dict(os.environ, {"KURT_CLOUD_AUTH": "True"}, clear=True):
-            assert is_cloud_auth_enabled() is True
-
-    def test_disabled_with_other_values(self):
-        """Test cloud auth disabled with non-true values."""
-        with patch.dict(os.environ, {"KURT_CLOUD_AUTH": "false"}, clear=True):
-            assert is_cloud_auth_enabled() is False
-        with patch.dict(os.environ, {"KURT_CLOUD_AUTH": "1"}, clear=True):
-            assert is_cloud_auth_enabled() is False
 
 
 class TestGetSupabaseConfig:

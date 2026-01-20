@@ -2,8 +2,6 @@
 
 This module provides JWT verification and tenant context setup
 for cloud deployments with Supabase authentication.
-
-Only active when KURT_CLOUD_AUTH=true.
 """
 
 from __future__ import annotations
@@ -15,6 +13,8 @@ from functools import lru_cache
 from typing import Any, Optional
 
 from fastapi import HTTPException, Request
+
+from kurt.db.tenant import is_cloud_auth_enabled  # noqa: F401 - re-exported
 
 
 class AuthUser:
@@ -34,11 +34,6 @@ class AuthUser:
 
     def __repr__(self) -> str:
         return f"<AuthUser(user_id={self.user_id}, email={self.email})>"
-
-
-def is_cloud_auth_enabled() -> bool:
-    """Check if cloud auth mode is enabled."""
-    return os.environ.get("KURT_CLOUD_AUTH", "").lower() == "true"
 
 
 @lru_cache(maxsize=1)
