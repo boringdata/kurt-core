@@ -15,7 +15,7 @@ export default function UserMenu({ email, workspaceName, workspaceId }) {
   // Get first letter of email (uppercase) for avatar
   const avatarLetter = email ? email.charAt(0).toUpperCase() : '?'
 
-  // Show workspace name if available, otherwise hide
+  // Show workspace name if available (not a UUID)
   const showWorkspace = workspaceName && !workspaceName.includes('-')
 
   // Close dropdown when clicking outside
