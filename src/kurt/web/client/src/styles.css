@@ -106,6 +106,10 @@
   --color-violet-light: #a78bfa;
   --color-indigo: #6366f1;
   --color-diff-divider: #374151;
+  --color-diff-add-bg: #dcfce7;
+  --color-diff-add-text: #166534;
+  --color-diff-remove-bg: #fee2e2;
+  --color-diff-remove-text: #991b1b;
 
   /* ---------- Shadows ---------- */
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
@@ -188,6 +192,10 @@
   --color-violet-light: #c4b5fd;
   --color-indigo: #818cf8;
   --color-diff-divider: #4b5563;
+  --color-diff-add-bg: #14532d;
+  --color-diff-add-text: #86efac;
+  --color-diff-remove-bg: #450a0a;
+  --color-diff-remove-text: #fca5a5;
 
   /* Shadows (subtle glow) */
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
@@ -1343,26 +1351,26 @@ html, body, #root {
 .terminal-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 /* View mode toggle (Raw/Chat) */
 .view-mode-toggle {
   display: flex;
-  background: var(--vscode-input-background);
-  border-radius: 4px;
+  background: var(--color-bg-tertiary);
+  border-radius: var(--radius-sm);
   overflow: hidden;
 }
 
 .view-mode-btn {
-  padding: 2px 8px;
-  font-size: 11px;
+  padding: 2px var(--space-2);
+  font-size: var(--text-xs);
   border: none;
   background: transparent;
-  color: var(--vscode-foreground);
+  color: var(--color-text-primary);
   cursor: pointer;
   opacity: 0.6;
-  transition: opacity 0.15s, background 0.15s;
+  transition: opacity var(--transition-fast), background var(--transition-fast);
 }
 
 .view-mode-btn:hover {
@@ -1370,8 +1378,8 @@ html, body, #root {
 }
 
 .view-mode-btn.active {
-  background: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
+  background: var(--color-accent);
+  color: var(--color-text-inverse);
   opacity: 1;
 }
 
@@ -1427,7 +1435,7 @@ html, body, #root {
 
 .terminal {
   height: 100%;
-  padding: 12px;
+  padding: var(--space-3);
   box-sizing: border-box;
 }
 
@@ -1724,7 +1732,7 @@ html, body, #root {
 /* Added line - green background */
 .diff-editor-wrapper .ProseMirror .diff-line-added,
 .diff-line-added {
-  background-color: rgba(46, 160, 67, 0.15) !important;
+  background-color: var(--color-diff-add-bg) !important;
   border-left: 3px solid var(--color-git-added);
 }
 
@@ -1734,14 +1742,14 @@ html, body, #root {
 .diff-line-added h1,
 .diff-line-added h2,
 .diff-line-added h3 {
-  background-color: rgba(46, 160, 67, 0.15) !important;
+  background-color: var(--color-diff-add-bg) !important;
   border-left: 3px solid var(--color-git-added);
-  color: var(--color-git-added) !important;
+  color: var(--color-diff-add-text) !important;
 }
 
 /* Deleted lines block - red */
 .diff-deleted-block {
-  background-color: rgba(248, 81, 73, 0.15);
+  background-color: var(--color-diff-remove-bg);
   border-left: 3px solid var(--color-git-deleted);
   margin: 0;
   padding: 0;
@@ -1915,17 +1923,17 @@ html, body, #root {
 
 .terminal-approval-banner .approval-banner-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .terminal-approval-banner .approval-banner-actions button {
-  border-radius: 6px;
-  padding: 5px 12px;
-  font-size: 12px;
-  font-weight: 500;
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
   border: none;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background var(--transition-fast);
 }
 
 .terminal-approval-banner .approval-deny {
@@ -3265,7 +3273,7 @@ html, body, #root {
 
 .workflows-terminal-body .terminal {
   flex: 1;
-  padding: 8px;
+  padding: var(--space-2);
   box-sizing: border-box;
 }
 
@@ -3284,7 +3292,7 @@ html, body, #root {
 
 .workflow-terminal-panel .workflow-terminal {
   flex: 1;
-  padding: 10px;
+  padding: var(--space-2);
   box-sizing: border-box;
 }
 
