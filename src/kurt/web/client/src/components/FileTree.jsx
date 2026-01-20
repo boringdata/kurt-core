@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react'
-import { Search, X, Folder, FolderOpen, File, FolderInput, RefreshCw } from 'lucide-react'
+import { Search, X, Folder, FolderOpen, File, FolderInput, RefreshCw, ChevronRight, ChevronDown, MoreHorizontal } from 'lucide-react'
 
 const apiBase = import.meta.env.VITE_API_URL || ''
 const apiUrl = (path) => `${apiBase}${path}`
@@ -508,7 +508,7 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
         className="file-item file-item-new"
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
       >
-        <span className="file-item-icon">📄</span>
+        <span className="file-item-icon"><File size={14} /></span>
         <input
           ref={newFileInputRef}
           type="text"
@@ -546,7 +546,7 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
             onDrop={(event) => handleDrop(event, e)}
           >
             <span className="file-item-icon">
-              {e.is_dir ? (expandedDirs[e.path] ? '📂' : '📁') : '📄'}
+              {e.is_dir ? (expandedDirs[e.path] ? <FolderOpen size={14} /> : <Folder size={14} />) : <File size={14} />}
             </span>
             {isRenaming ? (
               <input
@@ -630,7 +630,7 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
         sections[key] = {
           path,
           label: formatSectionLabel(path),
-          icon: SECTION_ICONS[key] || '📁',
+          icon: SECTION_ICONS[key] || Folder,
           entries: [],
         }
         usedPaths.add(path)
@@ -667,7 +667,7 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
       sections.other = {
         path: null,
         label: 'Other',
-        icon: '···',
+        icon: MoreHorizontal,
         entries: otherEntries,
       }
     }
@@ -687,8 +687,8 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
           className={`file-tree-section-header ${hasChanges ? 'has-changes' : ''}`}
           onClick={() => toggleSection(sectionKey)}
         >
-          <span className="section-collapse-icon">{isCollapsed ? '▶' : '▼'}</span>
-          <span className="section-icon">{section.icon}</span>
+          <span className="section-collapse-icon">{isCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}</span>
+          <span className="section-icon">{React.createElement(section.icon, { size: 14 })}</span>
           <span className="section-label">{section.label}</span>
           {hasChanges && <span className="dir-changes-dot" title="Contains changes" />}
         </div>

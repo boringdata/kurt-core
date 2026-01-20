@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Image, FileText, Loader2, Sparkles, RotateCcw, RefreshCw, Settings } from 'lucide-react'
+import { Image, FileText, Loader2, Sparkles, RotateCcw, RefreshCw, Settings, MoreHorizontal } from 'lucide-react'
 import {
   AssistantIf,
   AssistantRuntimeProvider,
@@ -2108,6 +2108,18 @@ const Thread = ({
     }
   }, [showSessionPicker, showSessionDropdown, setShowSessionDropdown])
 
+  // Close overflow menu when clicking outside
+  useEffect(() => {
+    if (!showOverflowMenu) return
+    const handleClickOutside = (event) => {
+      if (overflowMenuRef.current && !overflowMenuRef.current.contains(event.target)) {
+        setShowOverflowMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showOverflowMenu])
+
   return (
     <ChatPanel className="chat-panel-light">
       <div className="claude-stream-header">
@@ -2115,16 +2127,31 @@ const Thread = ({
           <Sparkles className="mark" size={16} />
           <span>Claude Code</span>
         </div>
-        <div className="claude-stream-header-actions">
-          <button type="button" title="Rewind files" onClick={onOpenRewind}>
-            <RotateCcw size={14} />
+        <div className="claude-stream-header-actions" ref={overflowMenuRef}>
+          <button
+            type="button"
+            className="overflow-menu-btn"
+            title="More options"
+            onClick={() => setShowOverflowMenu(!showOverflowMenu)}
+          >
+            <MoreHorizontal size={16} />
           </button>
-          <button type="button" title="Restart session" onClick={onRestartSession}>
-            <RefreshCw size={14} />
-          </button>
-          <button type="button" title="Session settings" onClick={onOpenSettings}>
-            <Settings size={14} />
-          </button>
+          {showOverflowMenu && (
+            <div className="overflow-menu">
+              <button type="button" onClick={() => { onOpenRewind(); setShowOverflowMenu(false); }}>
+                <RotateCcw size={14} />
+                <span>Rewind files</span>
+              </button>
+              <button type="button" onClick={() => { onRestartSession(); setShowOverflowMenu(false); }}>
+                <RefreshCw size={14} />
+                <span>Restart session</span>
+              </button>
+              <button type="button" onClick={() => { onOpenSettings(); setShowOverflowMenu(false); }}>
+                <Settings size={14} />
+                <span>Settings</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
       {errorBanner && (
@@ -2482,6 +2509,8 @@ export default function ClaudeStreamChat({
   const [errorLog, setErrorLog] = useState([])
   const [activeError, setActiveError] = useState(null)
   const [showErrorLog, setShowErrorLog] = useState(false)
+  const [showOverflowMenu, setShowOverflowMenu] = useState(false)
+  const overflowMenuRef = useRef(null)
   const retryMessageRef = useRef(null)
   const pendingRewindIdRef = useRef(null)
   const modeChangeRef = useRef(false)
