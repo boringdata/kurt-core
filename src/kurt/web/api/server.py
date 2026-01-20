@@ -20,6 +20,8 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from kurt.cli.auth.credentials import get_cloud_api_url, load_credentials
+from kurt.db.tenant import is_cloud_mode
 from kurt.web.api.auth import (
     auth_middleware_setup,
     get_authenticated_user,
@@ -248,28 +250,45 @@ def api_me(request: Request):
     """Get current user context.
 
     Returns mode and user information:
-    - Local mode: { "is_cloud_mode": false }
+    - Local mode (no credentials): { "is_cloud_mode": false }
+    - Local mode (with CLI credentials): { "is_cloud_mode": true, "user": {...}, "workspace": {...} }
     - Cloud mode (authenticated): { "is_cloud_mode": true, "user": {...}, "workspace": {...} }
     - Cloud mode (no auth): { "is_cloud_mode": true, "user": null }
     """
-    if not is_cloud_auth_enabled():
-        return {"is_cloud_mode": False}
+    # If running in cloud mode, handle auth via JWT
+    if is_cloud_mode():
+        user = get_authenticated_user(request)
+        if user is None:
+            return {"is_cloud_mode": True, "user": None}
 
-    user = get_authenticated_user(request)
-    if user is None:
-        return {"is_cloud_mode": True, "user": None}
+        return {
+            "is_cloud_mode": True,
+            "user": {
+                "id": user.user_id,
+                "email": user.email,
+            },
+            "workspace": {
+                "id": user.workspace_id,
+                "name": user.workspace_id,
+            },
+        }
 
-    return {
-        "is_cloud_mode": True,
-        "user": {
-            "id": user.user_id,
-            "email": user.email,
-        },
-        "workspace": {
-            "id": user.workspace_id,
-            "name": user.workspace_id,  # Using workspace_id as name for now
-        },
-    }
+    # Local mode: check for CLI credentials (~/.kurt/credentials.json)
+    creds = load_credentials()
+    if creds and creds.email:
+        return {
+            "is_cloud_mode": True,
+            "user": {
+                "id": creds.user_id,
+                "email": creds.email,
+            },
+            "workspace": {
+                "id": creds.workspace_id,
+                "name": creds.workspace_id,
+            },
+        }
+
+    return {"is_cloud_mode": False}
 
 
 @app.get("/api/status")
