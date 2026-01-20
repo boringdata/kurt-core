@@ -638,11 +638,9 @@ def use_cmd(workspace_id: str):
     import urllib.request
 
     from kurt.cli.auth.credentials import (
-        Credentials,
         get_cloud_api_url,
         load_credentials,
         register_workspace_path,
-        save_credentials,
     )
     from kurt.config import config_file_exists, get_config_file_path
 
@@ -726,11 +724,9 @@ def workspace_create_cmd(name: str, github_repo: str):
     import urllib.request
 
     from kurt.cli.auth.credentials import (
-        Credentials,
         get_cloud_api_url,
         load_credentials,
         register_workspace_path,
-        save_credentials,
     )
     from kurt.config import config_file_exists, get_config_file_path
 
