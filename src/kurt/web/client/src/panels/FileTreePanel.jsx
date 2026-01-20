@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { ChevronRight, ChevronLeft, FolderOpen, GitBranch, FilePlus } from 'lucide-react'
+import { ChevronRight, ChevronLeft, FolderOpen, GitBranch, Plus } from 'lucide-react'
 import FileTree from '../components/FileTree'
 import GitChangesView from '../components/GitChangesView'
 
@@ -70,7 +70,7 @@ export default function FileTreePanel({ params }) {
               title="New File"
               aria-label="New File"
             >
-              <FilePlus size={12} />
+              <Plus size={14} />
             </button>
           )}
           <button
