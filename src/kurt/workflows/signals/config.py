@@ -10,8 +10,8 @@ from kurt.config import ConfigParam, StepConfig
 class SignalsConfig(StepConfig):
     """Configuration for signals monitoring workflow."""
 
-    source: Literal["reddit", "hackernews", "feeds"] = ConfigParam(
-        description="Signal source: reddit, hackernews, or feeds"
+    source: Literal["reddit", "hackernews", "feeds", "apify"] = ConfigParam(
+        description="Signal source: reddit, hackernews, feeds, or apify"
     )
 
     # Reddit options
@@ -24,6 +24,16 @@ class SignalsConfig(StepConfig):
     feed_url: str | None = ConfigParam(
         default=None,
         description="RSS/Atom feed URL",
+    )
+
+    # Apify options
+    apify_query: str | None = ConfigParam(
+        default=None,
+        description="Search query for Apify (required if source=apify)",
+    )
+    apify_platform: Literal["twitter", "linkedin", "threads"] = ConfigParam(
+        default="twitter",
+        description="Social platform to search via Apify",
     )
 
     # Common filters

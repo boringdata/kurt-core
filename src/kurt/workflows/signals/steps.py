@@ -10,6 +10,7 @@ from dbos import DBOS
 
 from kurt.db import managed_session
 from kurt.integrations.research.monitoring import (
+    ApifyAdapter,
     FeedAdapter,
     HackerNewsAdapter,
     RedditAdapter,
@@ -93,6 +94,47 @@ def fetch_signals_step(config_dict: dict[str, Any]) -> dict[str, Any]:
             keywords=keywords or None,
             limit=config.limit,
         )
+
+    elif config.source == "apify":
+        if not config.apify_query:
+            raise ValueError("apify_query is required for apify source")
+
+        # Get Apify config from research config
+        from kurt.integrations.research.config import get_source_config, source_configured
+
+        if not source_configured("apify"):
+            raise ValueError(
+                "Apify not configured. Run: kurt integrations research onboard --source apify"
+            )
+
+        apify_config = get_source_config("apify")
+        adapter = ApifyAdapter(apify_config)
+
+        # Use platform-specific method
+        if config.apify_platform == "twitter":
+            signals = adapter.search_twitter(
+                query=config.apify_query,
+                max_items=config.limit,
+                keywords=keywords or None,
+            )
+        elif config.apify_platform == "linkedin":
+            signals = adapter.search_linkedin(
+                query=config.apify_query,
+                max_items=config.limit,
+                keywords=keywords or None,
+            )
+        elif config.apify_platform == "threads":
+            signals = adapter.search_threads(
+                query=config.apify_query,
+                max_items=config.limit,
+                keywords=keywords or None,
+            )
+        else:
+            signals = adapter.fetch_signals(
+                query=config.apify_query,
+                max_items=config.limit,
+                keywords=keywords or None,
+            )
 
     else:
         raise ValueError(f"Unknown signal source: {config.source}")

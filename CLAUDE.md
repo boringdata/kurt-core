@@ -998,3 +998,269 @@ Context about the task.
 | Quick task | 5-10 | 50,000 | 120 |
 | Standard | 15-25 | 150,000 | 600 |
 | Complex | 30-50 | 300,000 | 1800 |
+
+---
+
+## YAML Workflows (Multi-Step Pipelines)
+
+YAML workflows enable deterministic, multi-step pipelines with Python, LLM, and agentic steps. Unlike agent workflows (which are open-ended Claude Code sessions), YAML workflows have explicit steps with defined inputs, outputs, and data flow.
+
+### Workflow Definition Format
+
+```yaml
+# workflows/my-pipeline.yaml
+name: my-pipeline
+title: My Processing Pipeline
+description: |
+  Description of what this workflow does.
+
+# Input parameters with validation
+inputs:
+  source_url:
+    type: string
+    required: true
+    description: URL to process
+  max_items:
+    type: integer
+    default: 100
+    min: 1
+    max: 1000
+  dry_run:
+    type: boolean
+    default: false
+
+# Optional scheduling
+schedule:
+  cron: "0 9 * * 1-5"  # Weekdays at 9am
+  enabled: true
+
+# User-space database tables (auto-created)
+tables:
+  processed_items:
+    columns:
+      - name: id
+        type: integer
+        primary_key: true
+      - name: source_url
+        type: string
+      - name: title
+        type: string
+      - name: summary
+        type: string
+        nullable: true
+      - name: keywords
+        type: json
+        default: []
+    indexes:
+      - columns: [source_url]
+
+tags: [processing, example]
+
+# Steps (executed in order)
+steps:
+  - name: fetch
+    type: python
+    code: |
+      # Python code with access to inputs, steps, tables
+      result = {"items": [...]}
+
+  - name: enrich
+    type: llm
+    model: claude-sonnet-4-20250514
+    prompt: |
+      Analyze: {item.content}
+    output_schema:
+      summary: string
+      keywords: list[string]
+    input: steps.fetch.items  # Fan-out over items
+    concurrency: 3
+
+  - name: review
+    type: agentic
+    condition: inputs.use_agent_review  # Conditional execution
+    model: claude-sonnet-4-20250514
+    max_turns: 10
+    allowed_tools: [Read, Write]
+    prompt: "Review the enriched items..."
+```
+
+### Step Types
+
+#### Python Step
+Executes inline Python code with access to workflow context:
+
+```yaml
+- name: process
+  type: python
+  code: |
+    # Available context:
+    # - inputs: workflow input parameters
+    # - steps: results from previous steps
+    # - tables: generated SQLModel classes
+    # - datetime, time, json modules
+
+    result = {
+        "processed": transform(inputs["data"]),
+        "count": len(steps["fetch"]["items"]),
+    }
+```
+
+#### LLM Step
+Direct LLM API call with structured output:
+
+```yaml
+- name: analyze
+  type: llm
+  model: claude-sonnet-4-20250514
+  prompt: |
+    Analyze: {item.content}
+    Return JSON with summary and keywords.
+  output_schema:
+    summary: string
+    keywords: list[string]
+  input: steps.fetch.items  # Fan-out (optional)
+  concurrency: 5  # Parallel calls
+```
+
+#### Agentic Step
+Runs Claude Code subprocess for complex tasks:
+
+```yaml
+- name: review
+  type: agentic
+  condition: inputs.use_review  # Conditional
+  model: claude-sonnet-4-20250514
+  max_turns: 10
+  allowed_tools: [Bash, Read, Write]
+  max_tokens: 100000
+  max_time: 300
+  prompt: |
+    Review items in steps["enrich"] and improve quality.
+    Save report to review_output.md.
+```
+
+### Input Types
+
+| Type | Python | Validation |
+|------|--------|------------|
+| `string` | `str` | - |
+| `integer` | `int` | `min`, `max` |
+| `float` | `float` | `min`, `max` |
+| `boolean` | `bool` | - |
+
+### Column Types (Tables)
+
+| Type | SQLAlchemy | Notes |
+|------|------------|-------|
+| `string` | `String` | - |
+| `integer` | `Integer` | - |
+| `float` | `Float` | - |
+| `boolean` | `Boolean` | - |
+| `json` | `JSON` | For lists/dicts |
+| `datetime` | `DateTime` | - |
+
+### Data Flow
+
+Steps can reference previous step outputs using dot notation:
+
+```yaml
+# Reference entire result
+input: steps.fetch
+
+# Reference nested value
+input: steps.fetch.items
+
+# In prompt templates
+prompt: "Process {steps.fetch.count} items from {inputs.source_url}"
+```
+
+### Conditional Execution
+
+Use `condition` to skip steps based on inputs or previous results:
+
+```yaml
+- name: expensive_step
+  type: llm
+  condition: inputs.enable_expensive  # Python expression
+  # ...
+
+- name: error_handler
+  type: python
+  condition: steps.main.status == "error"
+  # ...
+```
+
+### CLI Commands
+
+```bash
+# List all workflows (agent + YAML)
+kurt workflows defs list
+kurt workflows defs list --type yaml
+kurt workflows defs list --tag processing
+
+# Show workflow details
+kurt workflows defs show my-pipeline
+
+# Validate workflow files
+kurt workflows defs validate
+kurt workflows defs validate workflows/my.yaml
+
+# Run a workflow
+kurt workflows defs run my-pipeline --input source_url=https://example.com
+kurt workflows defs run my-pipeline --foreground
+
+# Initialize with examples
+kurt workflows defs init --type yaml
+kurt workflows defs init --type both
+```
+
+### Module Structure
+
+```
+src/kurt/workflows/
+├── yaml_parser.py     # YAML parsing (Pydantic models)
+├── yaml_executor.py   # DBOS workflow execution
+├── yaml_tables.py     # Dynamic SQLModel generation
+├── registry.py        # Unified discovery (agent + YAML)
+└── cli.py             # CLI commands (optional)
+```
+
+### Running Programmatically
+
+```python
+from kurt.workflows import run_yaml_definition
+
+# Background execution
+result = run_yaml_definition("my-pipeline", inputs={"source_url": "..."})
+print(result["workflow_id"])
+
+# Foreground execution
+result = run_yaml_definition("my-pipeline", background=False)
+print(result["status"], result["results"])
+```
+
+### Table Auto-Generation
+
+Tables defined in YAML are automatically converted to SQLModel classes:
+
+1. Tables are prefixed with `user_<workflow_name>_` to avoid conflicts
+2. `TimestampMixin` is automatically added (created_at, updated_at)
+3. Tables are created during database initialization
+4. Access via `tables.<table_name>` in Python steps
+
+### Security Considerations
+
+- **Python code**: Runs in sandboxed DBOS step context
+- **Agentic steps**: Inherit permission model from agent workflows
+- **Table names**: Auto-prefixed with `user_` to avoid conflicts
+
+### YAML vs Agent Workflows
+
+| Aspect | YAML Workflows | Agent Workflows |
+|--------|----------------|-----------------|
+| Definition | `.yaml` files | `.md` files |
+| Structure | Explicit steps | Open-ended prompt |
+| Data flow | Deterministic | Agent-controlled |
+| Best for | Pipelines, ETL | Creative tasks, exploration |
+| Tables | Declarative | None |
+| LLM calls | Structured output | Free-form |
