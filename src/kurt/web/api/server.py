@@ -20,7 +20,11 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from kurt.web.api.auth import auth_middleware_setup, is_cloud_auth_enabled
+from kurt.web.api.auth import (
+    auth_middleware_setup,
+    get_authenticated_user,
+    is_cloud_auth_enabled,
+)
 from kurt.web.api.pty_bridge import build_claude_args, handle_pty_websocket
 from kurt.web.api.storage import LocalStorage, S3Storage
 from kurt.web.api.stream_bridge import handle_stream_websocket
@@ -237,6 +241,35 @@ def api_config():
                 "kurt": ".kurt",
             },
         }
+
+
+@app.get("/api/me")
+def api_me(request: Request):
+    """Get current user context.
+
+    Returns mode and user information:
+    - Local mode: { "is_cloud_mode": false }
+    - Cloud mode (authenticated): { "is_cloud_mode": true, "user": {...}, "workspace": {...} }
+    - Cloud mode (no auth): { "is_cloud_mode": true, "user": null }
+    """
+    if not is_cloud_auth_enabled():
+        return {"is_cloud_mode": False}
+
+    user = get_authenticated_user(request)
+    if user is None:
+        return {"is_cloud_mode": True, "user": None}
+
+    return {
+        "is_cloud_mode": True,
+        "user": {
+            "id": user.user_id,
+            "email": user.email,
+        },
+        "workspace": {
+            "id": user.workspace_id,
+            "name": user.workspace_id,  # Using workspace_id as name for now
+        },
+    }
 
 
 @app.get("/api/status")

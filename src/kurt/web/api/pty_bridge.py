@@ -20,6 +20,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 MAX_HISTORY_BYTES = int(os.environ.get("KURT_PTY_HISTORY_BYTES", "200000"))
 IDLE_TTL_SECONDS = int(os.environ.get("KURT_PTY_IDLE_TTL", "30"))
+MAX_SESSIONS = int(os.environ.get("KURT_PTY_MAX_SESSIONS", "20"))
 
 _SESSION_REGISTRY: dict[str, "SharedSession"] = {}
 _SESSION_REGISTRY_LOCK = asyncio.Lock()
@@ -108,15 +109,23 @@ class PTYSession:
         if self.pty and self.pty.isalive():
             self.pty.setwinsize(rows, cols)
 
-    def kill(self) -> None:
-        """Kill the PTY process."""
+    def kill(self, force: bool = False) -> None:
+        """Kill the PTY process.
+
+        Args:
+            force: If True, kill immediately without graceful shutdown.
+        """
         if self._read_task:
             self._read_task.cancel()
-        if self.pty and self.pty.isalive():
+        if self.pty:
             try:
-                self.pty.terminate(force=True)
+                if self.pty.isalive():
+                    self.pty.terminate(force=force or True)
+                # Close PTY file descriptor to free resources
+                self.pty.close()
             except Exception:
                 pass
+            self.pty = None
 
     async def read_loop(self, on_data, on_exit) -> None:
         """Async loop to read from PTY and call callbacks."""
@@ -263,17 +272,25 @@ class SharedSession:
         self.read_task = asyncio.create_task(self.session.read_loop(on_data, on_exit))
         self.session._read_task = self.read_task
 
-    async def terminate(self) -> None:
+    async def terminate(self, force: bool = False) -> None:
+        """Terminate the session and clean up.
+
+        Args:
+            force: If True, kill immediately without graceful shutdown.
+        """
         if self.idle_task:
             self.idle_task.cancel()
             self.idle_task = None
+        if self.read_task:
+            self.read_task.cancel()
+            self.read_task = None
         for client in list(self.clients):
             try:
                 await client.close()
             except Exception:
                 pass
         self.clients.clear()
-        self.session.kill()
+        self.session.kill(force=force)
         async with _SESSION_REGISTRY_LOCK:
             existing = _SESSION_REGISTRY.get(self.session_id)
             if existing is self:
@@ -469,21 +486,40 @@ async def handle_pty_websocket(
         "KURT_SESSION_NAME": session_name,
     }
 
-    stale: Optional[SharedSession] = None
+    stale: list[SharedSession] = []
     created = False
 
     async with _SESSION_REGISTRY_LOCK:
         existing = _SESSION_REGISTRY.get(session_id)
         if force_new and existing:
-            stale = existing
+            stale.append(existing)
             _SESSION_REGISTRY.pop(session_id, None)
             existing = None
         if existing and existing.is_alive():
             shared = existing
         else:
             if existing:
-                stale = existing
+                stale.append(existing)
                 _SESSION_REGISTRY.pop(session_id, None)
+
+            # Enforce max sessions limit - evict idle sessions if at capacity
+            while len(_SESSION_REGISTRY) >= MAX_SESSIONS:
+                # Find sessions with no clients (idle)
+                idle_sessions = [
+                    (sid, sess) for sid, sess in _SESSION_REGISTRY.items()
+                    if not sess.clients
+                ]
+                if idle_sessions:
+                    # Evict first idle session
+                    evict_id, evict_sess = idle_sessions[0]
+                    print(f"[PTY] Evicting idle session {evict_id} (at max {MAX_SESSIONS})")
+                    stale.append(evict_sess)
+                    _SESSION_REGISTRY.pop(evict_id, None)
+                else:
+                    # No idle sessions - reject connection
+                    print(f"[PTY] Max sessions ({MAX_SESSIONS}) reached, no idle to evict")
+                    break
+
             session = PTYSession(
                 cmd=cmd,
                 args=args,
@@ -495,8 +531,9 @@ async def handle_pty_websocket(
             _SESSION_REGISTRY[session_id] = shared
             created = True
 
-    if stale:
-        await stale.terminate()
+    # Clean up stale sessions with force kill to free FDs immediately
+    for stale_session in stale:
+        await stale_session.terminate(force=True)
 
     if created:
         try:

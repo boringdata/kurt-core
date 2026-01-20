@@ -2,6 +2,39 @@ import { useEffect, useRef } from 'react'
 import { Terminal as XTerm } from 'xterm'
 import { FitAddon } from 'xterm-addon-fit'
 import 'xterm/css/xterm.css'
+import { useTheme } from '../hooks/useTheme'
+
+// Terminal color schemes for light/dark mode
+const TERMINAL_THEMES = {
+  light: {
+    background: '#f8fafc',
+    foreground: '#111827',
+    cursor: '#111827',
+    selectionBackground: '#bfdbfe',
+    black: '#0f172a',
+    red: '#dc2626',
+    green: '#16a34a',
+    yellow: '#f59e0b',
+    blue: '#2563eb',
+    magenta: '#db2777',
+    cyan: '#0891b2',
+    white: '#e2e8f0',
+  },
+  dark: {
+    background: '#0f172a',
+    foreground: '#e2e8f0',
+    cursor: '#e2e8f0',
+    selectionBackground: '#334155',
+    black: '#0f172a',
+    red: '#ef4444',
+    green: '#22c55e',
+    yellow: '#f59e0b',
+    blue: '#3b82f6',
+    magenta: '#ec4899',
+    cyan: '#06b6d4',
+    white: '#f1f5f9',
+  },
+}
 
 const buildWorkflowSocketUrl = (workflowId) => {
   const apiBase = import.meta.env.VITE_API_URL || ''
@@ -25,11 +58,20 @@ const buildWorkflowSocketUrl = (workflowId) => {
 
 export default function WorkflowTerminalPanel({ params }) {
   const { workflowId } = params || {}
+  const { theme: appTheme } = useTheme()
   const containerRef = useRef(null)
   const termRef = useRef(null)
   const fitAddonRef = useRef(null)
   const socketRef = useRef(null)
   const openedRef = useRef(false)
+
+  // Update terminal theme when app theme changes
+  useEffect(() => {
+    const term = termRef.current
+    if (!term) return
+    const newTheme = TERMINAL_THEMES[appTheme] || TERMINAL_THEMES.dark
+    term.options.theme = newTheme
+  }, [appTheme])
 
   useEffect(() => {
     if (!containerRef.current || !workflowId) return
@@ -39,20 +81,7 @@ export default function WorkflowTerminalPanel({ params }) {
       convertEol: true,
       fontFamily: '"IBM Plex Mono", "SFMono-Regular", Menlo, monospace',
       fontSize: 13,
-      theme: {
-        background: '#0f172a',
-        foreground: '#e2e8f0',
-        cursor: '#e2e8f0',
-        selection: '#334155',
-        black: '#0f172a',
-        red: '#ef4444',
-        green: '#22c55e',
-        yellow: '#f59e0b',
-        blue: '#3b82f6',
-        magenta: '#ec4899',
-        cyan: '#06b6d4',
-        white: '#f1f5f9',
-      },
+      theme: TERMINAL_THEMES[appTheme] || TERMINAL_THEMES.dark,
     })
 
     const fitAddon = new FitAddon()

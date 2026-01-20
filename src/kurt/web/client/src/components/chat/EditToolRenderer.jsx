@@ -48,7 +48,7 @@ const EditToolRenderer = ({
       ) : status === 'pending' ? (
         <div
           style={{
-            color: 'var(--chat-text-muted, #858585)',
+            color: 'var(--chat-text-muted)',
             fontSize: '13px',
             fontStyle: 'italic',
           }}
@@ -58,7 +58,7 @@ const EditToolRenderer = ({
       ) : status === 'running' ? (
         <div
           style={{
-            color: 'var(--chat-text-muted, #858585)',
+            color: 'var(--chat-text-muted)',
             fontSize: '13px',
             fontStyle: 'italic',
           }}
@@ -94,16 +94,16 @@ const DiffView = ({ lines }) => (
       const isHeader = line.startsWith('@@') || line.startsWith('---') || line.startsWith('+++')
 
       let bgColor = 'transparent'
-      let textColor = 'var(--chat-text, #cccccc)'
+      let textColor = 'var(--chat-text)'
 
       if (isAddition) {
-        bgColor = 'rgba(137, 209, 133, 0.2)'
-        textColor = '#89d185'
+        bgColor = 'var(--chat-diff-add-bg)'
+        textColor = 'var(--chat-diff-add-text)'
       } else if (isDeletion) {
-        bgColor = 'rgba(244, 135, 113, 0.2)'
-        textColor = '#f48771'
+        bgColor = 'var(--chat-diff-remove-bg)'
+        textColor = 'var(--chat-diff-remove-text)'
       } else if (isHeader) {
-        textColor = 'var(--chat-text-muted, #858585)'
+        textColor = 'var(--chat-text-muted)'
       }
 
       return (
@@ -146,9 +146,9 @@ const SimpleDiff = ({ oldContent, newContent }) => {
         <div
           key={`old-${i}`}
           style={{
-            backgroundColor: 'rgba(244, 135, 113, 0.2)',
+            backgroundColor: 'var(--chat-diff-remove-bg)',
             padding: '0 8px',
-            color: '#f48771',
+            color: 'var(--chat-diff-remove-text)',
             whiteSpace: 'pre-wrap',
             wordBreak: 'break-word',
           }}
@@ -161,9 +161,9 @@ const SimpleDiff = ({ oldContent, newContent }) => {
         <div
           key={`new-${i}`}
           style={{
-            backgroundColor: 'rgba(137, 209, 133, 0.2)',
+            backgroundColor: 'var(--chat-diff-add-bg)',
             padding: '0 8px',
-            color: '#89d185',
+            color: 'var(--chat-diff-add-text)',
             whiteSpace: 'pre-wrap',
             wordBreak: 'break-word',
           }}

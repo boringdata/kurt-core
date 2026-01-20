@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
+import { Loader2, Check } from 'lucide-react'
 import Editor from 'react-simple-code-editor'
 import { Highlight, themes } from 'prism-react-renderer'
 
@@ -135,9 +136,7 @@ export default function CodeEditor({
         <div className="code-editor-status">
           {isSaving ? (
             <span className="save-status-saving">
-              <svg className="save-spinner" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83" />
-              </svg>
+              <Loader2 className="save-spinner" size={14} />
             </span>
           ) : isDirty ? (
             <span className="save-status-dirty" title="Unsaved changes">
@@ -145,9 +144,7 @@ export default function CodeEditor({
             </span>
           ) : (
             <span className="save-status-saved" title="Saved">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
+              <Check size={14} />
             </span>
           )}
         </div>
@@ -163,11 +160,11 @@ export default function CodeEditor({
           textareaClassName="code-editor-textarea"
           preClassName="code-editor-pre"
           style={{
-            fontFamily: "'IBM Plex Mono', Monaco, 'Courier New', monospace",
+            fontFamily: "var(--font-mono)",
             fontSize: 13,
             lineHeight: 1.5,
-            backgroundColor: '#1e1e1e',
-            color: '#d4d4d4',
+            backgroundColor: 'var(--color-pre-bg)',
+            color: 'var(--color-pre-text)',
             minHeight: '100%',
           }}
         />

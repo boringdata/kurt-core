@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Image, FileText, Loader2, Sparkles, ChevronLeft } from 'lucide-react'
 import {
   AssistantIf,
   AssistantRuntimeProvider,
@@ -45,17 +46,38 @@ const extractResultText = (payload) => {
   return ''
 }
 
+const SLASH_MENU_GROUPS = [
+  { id: 'context', label: 'Context' },
+  { id: 'model', label: 'Model' },
+  { id: 'customize', label: 'Customize' },
+  { id: 'commands', label: 'Commands' },
+]
+
+const MODEL_OPTIONS = [
+  { id: 'sonnet', label: 'Sonnet', value: 'sonnet', description: 'Recommended' },
+  { id: 'opus', label: 'Opus', value: 'opus', description: 'Most capable' },
+  { id: 'haiku', label: 'Haiku', value: 'haiku', description: 'Fastest' },
+]
+
 const DEFAULT_SLASH_COMMANDS = [
-  { id: 'help', label: '/help', description: 'Show available commands' },
-  { id: 'clear', label: '/clear', description: 'Clear the chat' },
-  { id: 'compact', label: '/compact', description: 'Compact conversation' },
-  { id: 'init', label: '/init', description: 'Initialize project' },
-  { id: 'cost', label: '/cost', description: 'Show token usage' },
-  { id: 'model', label: '/model', description: 'Switch AI model' },
-  { id: 'config', label: '/config', description: 'Open settings' },
-  { id: 'terminal', label: '/terminal', description: 'Switch to CLI mode' },
-  { id: 'permissions', label: '/permissions', description: 'Manage permissions' },
-  { id: 'memory', label: '/memory', description: 'Manage memory/context' },
+  // Context
+  { id: 'clear', label: '/clear', description: 'Clear the conversation', group: 'context' },
+  // Model
+  { id: 'model', label: '/model', description: 'Switch AI model', group: 'model', hasSubmenu: true },
+  { id: 'thinking', label: '/thinking', description: 'Toggle thinking mode', group: 'model', isToggle: true },
+  // Customize (CLI-only items marked)
+  { id: 'memory', label: '/memory', description: 'Manage memory/context', group: 'customize' },
+  { id: 'permissions', label: '/permissions', description: 'Manage permissions', group: 'customize' },
+  { id: 'mcp', label: '/mcp', description: 'MCP servers (CLI)', group: 'customize', cliOnly: true },
+  { id: 'hooks', label: '/hooks', description: 'Hooks (CLI)', group: 'customize', cliOnly: true },
+  { id: 'agents', label: '/agents', description: 'Agents (CLI)', group: 'customize', cliOnly: true },
+  // Commands
+  { id: 'help', label: '/help', description: 'Show available commands', group: 'commands' },
+  { id: 'compact', label: '/compact', description: 'Compact conversation', group: 'commands' },
+  { id: 'cost', label: '/cost', description: 'Show token usage', group: 'commands' },
+  { id: 'init', label: '/init', description: 'Initialize project', group: 'commands' },
+  { id: 'terminal', label: '/terminal', description: 'Switch to CLI mode', group: 'commands' },
+  { id: 'restart', label: '/restart', description: 'Restart session', group: 'commands', isAction: true },
 ]
 
 const HISTORY_STORAGE_PREFIX = 'kurt-web-claude-stream-history'
@@ -92,21 +114,27 @@ const saveStoredHistory = (sessionId, messages) => {
 
 const normalizeSlashCommands = (commands) => {
   if (!Array.isArray(commands)) return DEFAULT_SLASH_COMMANDS
-  const seen = new Set()
-  const normalized = commands
+  // Always start with all default commands
+  const defaultIds = new Set(DEFAULT_SLASH_COMMANDS.map((cmd) => cmd.id))
+  // Add any extra commands from backend that aren't in defaults
+  const extraCommands = commands
     .map((name) => String(name || '').trim())
     .filter(Boolean)
     .filter((name) => {
-      if (seen.has(name)) return false
-      seen.add(name)
-      return true
+      // Normalize: strip leading / for comparison
+      const normalized = name.startsWith('/') ? name.slice(1) : name
+      return !defaultIds.has(normalized)
     })
-    .map((name) => ({
-      id: name,
-      label: name.startsWith('/') ? name : `/${name}`,
-      description: 'Command',
-    }))
-  return normalized.length ? normalized : DEFAULT_SLASH_COMMANDS
+    .map((name) => {
+      const normalized = name.startsWith('/') ? name.slice(1) : name
+      return {
+        id: normalized,
+        label: `/${normalized}`,
+        description: 'Plugin command',
+        group: 'commands',
+      }
+    })
+  return [...DEFAULT_SLASH_COMMANDS, ...extraCommands]
 }
 
 const CLI_OPTIONS_KEY = 'kurt-web-claude-cli-options'
@@ -427,10 +455,14 @@ const useClaudeStreamRuntime = (
   onUserMessageId,
   onLastMessageChange,
   imageCache,
+  clearComposerRef,
+  onSettingsSync,
+  clearHistoryRef,
 ) => {
   const wsRef = useRef(null)
   const queueRef = useRef([])
   const waitersRef = useRef([])
+  const closedRef = useRef(false)
   const modeRef = useRef(mode)
   const optionsRef = useRef(cliOptions)
   const resumeRef = useRef(Boolean(resume))
@@ -442,6 +474,7 @@ const useClaudeStreamRuntime = (
   const permissionToolRef = useRef(new Map())
   const [sessionName, setSessionName] = useState('New conversation')
   const [isConnected, setIsConnected] = useState(false)
+  const [restartCounter, setRestartCounter] = useState(0)
 
   useEffect(() => {
     return () => {
@@ -478,6 +511,23 @@ const useClaudeStreamRuntime = (
     imageCacheRef.current = imageCache
   }, [imageCache])
 
+  // Clear conversation history (for /clear command)
+  const clearHistory = useCallback(() => {
+    const sessionKey = currentSessionId || sessionName
+    if (sessionKey) {
+      const key = getHistoryKey(sessionKey)
+      if (key) localStorage.removeItem(key)
+    }
+    setRestartCounter((c) => c + 1)
+  }, [currentSessionId, sessionName])
+
+  // Expose clearHistory via ref for use in adapter
+  useEffect(() => {
+    if (clearHistoryRef) {
+      clearHistoryRef.current = clearHistory
+    }
+  }, [clearHistoryRef, clearHistory])
+
   const lastModeRef = useRef(null)
   const lastOptionsKeyRef = useRef(null)
   const lastAttachmentKeyRef = useRef('')
@@ -502,17 +552,21 @@ const useClaudeStreamRuntime = (
 
     // Close existing connection if switching sessions or mode
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.close()
+      const oldWs = wsRef.current
+      wsRef.current = null // Prevent auto-reconnect from old WebSocket
+      oldWs.close()
     }
 
     return new Promise((resolve, reject) => {
       const shouldForceNew = optionsChanged || attachmentsChanged
-      const ws = new WebSocket(
-        buildWsUrl(sessionId, useMode, shouldForceNew, shouldResume, optionsRef.current, fileSpecs)
-      )
+      const url = buildWsUrl(sessionId, useMode, shouldForceNew, shouldResume, optionsRef.current, fileSpecs)
+      console.log('[ClaudeStream] Connecting to:', url)
+      const ws = new WebSocket(url)
       wsRef.current = ws
+      closedRef.current = false
 
       ws.onopen = () => {
+        console.log('[ClaudeStream] Connected successfully')
         if (wsRef.current !== ws) return
         setIsConnected(true)
         if (fileSpecKey) {
@@ -529,11 +583,32 @@ const useClaudeStreamRuntime = (
         }))
         resolve(ws)
       }
-      ws.onclose = () => {
+      ws.onclose = (event) => {
+        console.log('[ClaudeStream] WebSocket closed:', event.code, event.reason)
         if (wsRef.current !== ws) return
         setIsConnected(false)
+        // Mark as closed and flush pending waiters to unblock the generator
+        closedRef.current = true
+        while (waitersRef.current.length > 0) {
+          const waiter = waitersRef.current.shift()
+          waiter()
+        }
+        // Auto-reconnect only for abnormal close (1006 = connection lost)
+        // Don't reconnect for 1000 (normal close) or 1001 (going away) - those are intentional
+        if (event.code === 1006) {
+          console.log('[ClaudeStream] Connection lost, auto-reconnecting in 1 second...')
+          setTimeout(() => {
+            if (wsRef.current === null || wsRef.current.readyState === WebSocket.CLOSED) {
+              console.log('[ClaudeStream] Attempting reconnection...')
+              connect(sessionId, useMode, false).catch((err) => {
+                console.error('[ClaudeStream] Reconnection failed:', err)
+              })
+            }
+          }, 1000)
+        }
       }
       ws.onerror = (event) => {
+        console.error('[ClaudeStream] WebSocket error:', event)
         if (wsRef.current !== ws) return
         setIsConnected(false)
         onError?.({
@@ -561,6 +636,10 @@ const useClaudeStreamRuntime = (
         if (payload.type === 'system' && payload.subtype === 'connected' && payload.session_id) {
           setSessionName(payload.session_id)
           setCurrentSessionId(payload.session_id)
+          // Sync settings from backend
+          if (payload.settings) {
+            onSettingsSync?.(payload.settings)
+          }
         }
         if (payload.type === 'system' && payload.subtype === 'error') {
           onError?.({
@@ -590,11 +669,17 @@ const useClaudeStreamRuntime = (
             wsRef.current = null
           }
           setIsConnected(false)
-          // Generate new session ID and reconnect without resume
+          // Generate new session ID and reconnect
           const newSessionId = crypto.randomUUID()
           setCurrentSessionId(newSessionId)
           resumeRef.current = false
-          // Connect will be triggered by the state change via useEffect
+          // Explicitly reconnect after state update
+          setTimeout(() => {
+            console.log('[ClaudeStream] Reconnecting with new session:', newSessionId)
+            connect(newSessionId, modeRef.current, false).catch((err) => {
+              console.error('[ClaudeStream] Reconnect failed:', err)
+            })
+          }, 100)
           return
         }
 
@@ -609,12 +694,23 @@ const useClaudeStreamRuntime = (
         }
       }
     })
-  }, [setCurrentSessionId, onControlMessage, onError, onSlashCommands])
+  }, [setCurrentSessionId, onControlMessage, onError, onSlashCommands, onSettingsSync])
 
   const nextPayload = useCallback(async () => {
+    // If connection is closed and queue is empty, return null to signal termination
+    if (closedRef.current && queueRef.current.length === 0) {
+      return null
+    }
     if (queueRef.current.length) return queueRef.current.shift()
     return new Promise((resolve) => {
-      waitersRef.current.push(() => resolve(queueRef.current.shift()))
+      waitersRef.current.push(() => {
+        // Check again after being woken up - might be due to close
+        if (closedRef.current && queueRef.current.length === 0) {
+          resolve(null)
+        } else {
+          resolve(queueRef.current.shift())
+        }
+      })
     })
   }, [])
 
@@ -636,6 +732,8 @@ const useClaudeStreamRuntime = (
 
   // Force restart session (e.g., after permission change)
   const restartSession = useCallback(() => {
+    // Increment counter to force runtime reset and clear chat history
+    setRestartCounter(c => c + 1)
     if (wsRef.current) {
       wsRef.current.close()
       wsRef.current = null
@@ -671,6 +769,11 @@ const useClaudeStreamRuntime = (
     }
     ws.onclose = () => {
       if (wsRef.current !== ws) return
+      setIsConnected(false)
+    }
+    ws.onerror = (event) => {
+      if (wsRef.current !== ws) return
+      console.error('[ClaudeStream] WebSocket error during restart:', event)
       setIsConnected(false)
     }
     ws.onmessage = (event) => {
@@ -746,15 +849,24 @@ const useClaudeStreamRuntime = (
   }, [])
 
   const sendControlMessage = useCallback((subtype, payload = {}) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      console.warn('[ClaudeStream] Cannot send control - WebSocket not connected')
-      return
+    const trySend = (attempt = 0) => {
+      const ws = wsRef.current
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'control',
+          subtype,
+          ...payload,
+        }))
+        return
+      }
+      if (attempt < 10) {
+        // Retry up to 10 times (5 seconds total)
+        setTimeout(() => trySend(attempt + 1), 500)
+      } else {
+        console.warn('[ClaudeStream] Control message failed - connection not established after retries')
+      }
     }
-    wsRef.current.send(JSON.stringify({
-      type: 'control',
-      subtype,
-      ...payload,
-    }))
+    trySend()
   }, [])
 
   // Send a message directly (for retry)
@@ -804,9 +916,24 @@ const useClaudeStreamRuntime = (
       if (trimmed.startsWith('/')) {
         const cmd = trimmed.split(' ')[0].toLowerCase()
 
-        // Handle frontend commands locally
+        // Handle /clear - send to CLI AND reset frontend
         if (cmd === '/clear') {
-          yield { content: [{ type: 'text', text: 'Chat cleared.' }] }
+          // Send to CLI so it clears its conversation state
+          ws.send(JSON.stringify({
+            type: 'user',
+            message: { role: 'user', content: [{ type: 'text', text: '/clear' }] },
+            mode: modeRef.current,
+          }))
+          // Clear frontend state after a brief delay to let CLI process
+          setTimeout(() => {
+            clearHistoryRef?.current?.()
+          }, 100)
+          return
+        }
+
+        if (cmd === '/restart') {
+          clearComposerRef?.current?.()
+          restartSession()
           return
         }
 
@@ -857,6 +984,12 @@ const useClaudeStreamRuntime = (
       while (running) {
         if (abortSignal?.aborted) break
         const payload = await nextPayload()
+        // null means connection closed - exit the loop
+        if (payload === null) {
+          console.log('[ClaudeStream] Connection closed, ending stream')
+          onStreamingChange?.(false)
+          break
+        }
         if (!payload) continue
 
         // Log ALL incoming messages
@@ -871,6 +1004,19 @@ const useClaudeStreamRuntime = (
           }
           const content = Array.isArray(rawContent) ? rawContent : []
           content.forEach((part) => {
+            // Handle thinking content blocks - wrap in <thinking> tags for TextBlock
+            if (part.type === 'thinking') {
+              const thinkingText = `<thinking>${part.thinking || ''}</thinking>\n\n`
+              if (textPartIndex === -1) {
+                parts.push({ type: 'text', text: thinkingText })
+                textPartIndex = parts.length - 1
+              } else {
+                const existing = parts[textPartIndex]
+                // Prepend thinking to existing text
+                existing.text = thinkingText + (existing.text || '')
+              }
+              hasAssistantText = true
+            }
             if (part.type === 'text' || part.type === 'output_text') {
               if (textPartIndex === -1) {
                 parts.push({ type: 'text', text: part.text || '' })
@@ -1095,6 +1241,7 @@ const useClaudeStreamRuntime = (
     sendQuestionResponse,
     sendMessage,
     restartSession,
+    restartCounter,
     sendControlMessage,
   }
 }
@@ -1190,7 +1337,7 @@ const AssistantMessage = () => {
             <div key={`text-${index}`} className="claude-assistant-line">
               <span
                 className="claude-assistant-bullet"
-                style={{ color: isStreaming ? '#ae5630' : '#858585' }}
+                style={{ color: isStreaming ? 'var(--chat-accent)' : 'var(--chat-text-muted)' }}
               >
                 ●
               </span>
@@ -1255,25 +1402,9 @@ const formatBytes = (value) => {
   return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`
 }
 
-const ImageIcon = () => (
-  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-    <rect x="3" y="5" width="18" height="14" rx="2" ry="2" fill="none" stroke="currentColor" strokeWidth="1.5" />
-    <circle cx="8" cy="10" r="1.5" fill="currentColor" />
-    <path d="M21 16l-5-5-4 4-2-2-5 5" fill="none" stroke="currentColor" strokeWidth="1.5" />
-  </svg>
-)
+const ImageIcon = () => <Image size={16} aria-hidden="true" />
 
-const FileIcon = () => (
-  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-    <path
-      d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-    />
-    <path d="M14 3v5h5" fill="none" stroke="currentColor" strokeWidth="1.5" />
-  </svg>
-)
+const FileIcon = () => <FileText size={16} aria-hidden="true" />
 
 const INLINE_IMAGE_LIMIT = 80000
 
@@ -1294,6 +1425,12 @@ const ComposerShell = ({
   onRegisterImages,
   slashCommands,
   onError,
+  isThinkingEnabled,
+  currentModel,
+  onRestartSession,
+  onToggleThinking,
+  onModelSelect,
+  clearComposerRef,
 }) => {
   const api = useAssistantApi()
   const composerApi = useMemo(() => api.composer(), [api])
@@ -1301,6 +1438,7 @@ const ComposerShell = ({
   const isRunning = useAssistantState(({ thread }) => thread.isRunning)
   const [showSlashMenu, setShowSlashMenu] = useState(false)
   const [showAtMenu, setShowAtMenu] = useState(false)
+  const [showModelSubmenu, setShowModelSubmenu] = useState(false)
   const [menuFilter, setMenuFilter] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [menuNavigated, setMenuNavigated] = useState(false)
@@ -1311,6 +1449,23 @@ const ComposerShell = ({
   const inputRef = useRef(null)
   const focusInput = useCallback(() => {
     inputRef.current?.focus?.()
+  }, [])
+
+  // Resizable input height with localStorage persistence
+  const STORAGE_KEY = 'claude-input-height'
+  const [inputHeight, setInputHeight] = useState(() => {
+    const saved = localStorage.getItem(STORAGE_KEY)
+    return saved ? parseInt(saved, 10) : null
+  })
+
+  const handleInputResize = useCallback(() => {
+    if (inputRef.current) {
+      const height = inputRef.current.offsetHeight
+      if (height > 0) {
+        setInputHeight(height)
+        localStorage.setItem(STORAGE_KEY, String(height))
+      }
+    }
   }, [])
 
   const applyComposerText = useCallback((nextText) => {
@@ -1326,6 +1481,13 @@ const ComposerShell = ({
       }
     }
   }, [composerApi])
+
+  // Set up clearComposerRef to allow external clearing of the input
+  useEffect(() => {
+    if (clearComposerRef) {
+      clearComposerRef.current = () => applyComposerText('')
+    }
+  }, [clearComposerRef, applyComposerText])
 
   const appendAttachmentsToText = useCallback(() => {
     if (attachments.length === 0) return
@@ -1427,6 +1589,34 @@ const ComposerShell = ({
         const newText = currentText.slice(0, atIndex).trimEnd()
         applyComposerText(newText)
       }
+    } else if (item.hasSubmenu && item.id === 'model') {
+      // Show model submenu instead of inserting
+      setShowModelSubmenu(true)
+      return
+    } else if (item.isModelOption) {
+      // Model option selected - call handler directly
+      console.log('[MenuSelect] Model option selected:', item.value, item.label, 'onModelSelect:', typeof onModelSelect)
+      onModelSelect?.(item.value, item.label)
+      // Clear slash command from input
+      const currentText = composerText || ''
+      const slashIndex = currentText.lastIndexOf('/')
+      if (slashIndex >= 0) {
+        const newText = currentText.slice(0, slashIndex).trimEnd()
+        applyComposerText(newText)
+      }
+    } else if (item.isAction && item.id === 'restart') {
+      // Restart action - call handler directly and clear input
+      onRestartSession?.()
+      // Clear after React updates
+      requestAnimationFrame(() => {
+        applyComposerText('')
+        composerApi?.setText?.('')
+      })
+    } else if (item.isToggle && item.id === 'thinking') {
+      // Thinking toggle - call handler directly, keep menu open
+      onToggleThinking?.()
+      // Keep menu open so user can see the toggle change (don't clear input)
+      return
     } else {
       // Slash command - insert text
       const newValue = `${item.label} `
@@ -1435,6 +1625,7 @@ const ComposerShell = ({
     focusInput()
     setShowSlashMenu(false)
     setShowAtMenu(false)
+    setShowModelSubmenu(false)
   }
 
   const handleKeyDown = (event) => {
@@ -1456,8 +1647,12 @@ const ComposerShell = ({
         event.preventDefault()
         if (list.length > 0) {
           const index = menuNavigated ? selectedIndex : 0
-          handleMenuSelect(list[index], showAtMenu ? 'at' : 'slash')
-          setMenuNavigated(false)
+          const item = list[index]
+          handleMenuSelect(item, showAtMenu ? 'at' : 'slash')
+          // Don't reset navigation if it's a toggle (menu stays open)
+          if (!(item.isToggle && item.id === 'thinking')) {
+            setMenuNavigated(false)
+          }
           return
         }
         setShowSlashMenu(false)
@@ -1512,23 +1707,92 @@ const ComposerShell = ({
       <div className="claude-input-box" data-mode={mode} ref={slashMenuRef}>
         {(showSlashMenu || showAtMenu) && (
           <div className="claude-menu">
-            {showSlashMenu &&
-              filteredCommands.map((cmd, idx) => (
+            {showSlashMenu && (showModelSubmenu ? (
+              // Model selector view - replaces the main menu
+              <div className="claude-menu-section">
                 <button
-                  key={cmd.id}
-                  ref={idx === selectedIndex ? selectedItemRef : null}
-                  className={`claude-menu-item ${idx === selectedIndex ? 'selected' : ''}`}
+                  className="claude-menu-back"
                   onPointerDown={(event) => {
                     event.preventDefault()
                     event.stopPropagation()
-                    handleMenuSelect(cmd, 'slash')
+                    setShowModelSubmenu(false)
                   }}
                   type="button"
                 >
-                  <span>{cmd.label}</span>
-                  <span className="desc">{cmd.description}</span>
+                  <ChevronLeft size={16} />
+                  <span>Model</span>
                 </button>
-              ))}
+                {MODEL_OPTIONS.map((model, idx) => {
+                  const isSelected = currentModel && currentModel.includes(model.value)
+                  return (
+                    <button
+                      key={model.id}
+                      ref={idx === selectedIndex ? selectedItemRef : null}
+                      className={`claude-menu-item${idx === selectedIndex ? ' selected' : ''}${isSelected ? ' current' : ''}`}
+                      onPointerDown={(event) => {
+                        console.log('[ModelBtn] pointerdown:', model.value)
+                        event.preventDefault()
+                        event.stopPropagation()
+                        handleMenuSelect({ ...model, isModelOption: true }, 'slash')
+                      }}
+                      onClick={(event) => {
+                        console.log('[ModelBtn] click:', model.value)
+                        event.preventDefault()
+                        event.stopPropagation()
+                        handleMenuSelect({ ...model, isModelOption: true }, 'slash')
+                      }}
+                      type="button"
+                    >
+                      <span>{model.label}</span>
+                      <span className="desc">{model.description}{isSelected ? ' ✓' : ''}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            ) : (() => {
+              // Main slash menu view
+              let flatIdx = 0
+              return SLASH_MENU_GROUPS.map((group) => {
+                const groupCommands = filteredCommands.filter((cmd) => cmd.group === group.id)
+                if (groupCommands.length === 0) return null
+                return (
+                  <div key={group.id} className="claude-menu-section">
+                    <div className="claude-menu-group">{group.label}</div>
+                    {groupCommands.map((cmd) => {
+                      const idx = flatIdx
+                      flatIdx += 1
+                      const isToggleItem = cmd.isToggle && cmd.id === 'thinking'
+                      const toggleState = isToggleItem ? isThinkingEnabled : false
+                      const isModelItem = cmd.hasSubmenu && cmd.id === 'model'
+                      return (
+                        <button
+                          key={cmd.id}
+                          ref={idx === selectedIndex ? selectedItemRef : null}
+                          className={`claude-menu-item ${idx === selectedIndex ? 'selected' : ''}${cmd.cliOnly ? ' cli-only' : ''}${isToggleItem ? ' toggle-item' : ''}${isModelItem ? ' has-submenu' : ''}`}
+                          onPointerDown={(event) => {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            handleMenuSelect(cmd, 'slash')
+                          }}
+                          type="button"
+                        >
+                          <span>{cmd.label}</span>
+                          {isToggleItem ? (
+                            <span className={`toggle-indicator ${toggleState ? 'on' : 'off'}`}>
+                              {toggleState ? 'On' : 'Off'}
+                            </span>
+                          ) : isModelItem ? (
+                            <span className="desc">{currentModel || 'default'} ›</span>
+                          ) : (
+                            <span className="desc">{cmd.description}</span>
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )
+              })
+            })())}
             {showAtMenu &&
               searchedFiles.map((file, idx) => (
                 <button
@@ -1595,7 +1859,7 @@ const ComposerShell = ({
           <div className="claude-context-files">
             {contextFiles.map((file) => (
               <div key={file.id} className="claude-context-pill">
-                <span className="claude-context-pill-icon">📄</span>
+                <span className="claude-context-pill-icon"><FileText size={14} /></span>
                 <span className="claude-context-pill-label">{file.label}</span>
                 <button
                   type="button"
@@ -1650,7 +1914,10 @@ const ComposerShell = ({
             }
           }}
         >
-          <textarea />
+          <textarea
+            style={inputHeight ? { height: `${inputHeight}px` } : undefined}
+            onMouseUp={handleInputResize}
+          />
         </ComposerPrimitive.Input>
         <div className="claude-input-actions">
           <div className="claude-input-left">
@@ -1867,10 +2134,10 @@ const HistoryPersister = ({ sessionId }) => {
   return null
 }
 
-const RuntimeProvider = ({ adapter, initialMessages, runtimeKey, children }) => {
+const RuntimeProvider = ({ adapter, initialMessages, children }) => {
   const runtime = useLocalRuntime(adapter, { initialMessages })
   return (
-    <AssistantRuntimeProvider key={runtimeKey} runtime={runtime}>
+    <AssistantRuntimeProvider runtime={runtime}>
       {children}
     </AssistantRuntimeProvider>
   )
@@ -1953,51 +2220,11 @@ const UserMessageWithImages = ({ imageCache }) => {
   )
 }
 
-const ErrorBanner = ({
-  error,
-  onDismiss,
-  onViewLog,
-  onRetry,
-  onRestart,
-}) => {
+const ErrorBanner = ({ error }) => {
   if (!error) return null
-  const suggestions = Array.isArray(error.suggestions)
-    ? error.suggestions
-    : (error.suggestion ? [error.suggestion] : [])
   return (
     <div className="claude-error-banner" role="alert">
-      <div className="claude-error-header">
-        <div className="claude-error-title">{error.title || 'Something went wrong'}</div>
-        {error.timestamp && (
-          <div className="claude-error-time">{formatErrorTime(error.timestamp)}</div>
-        )}
-      </div>
-      {error.detail && <div className="claude-error-detail">{error.detail}</div>}
-      {suggestions.length > 0 && (
-        <ul className="claude-error-suggestions">
-          {suggestions.map((item, index) => (
-            <li key={`${item}-${index}`}>{item}</li>
-          ))}
-        </ul>
-      )}
-      <div className="claude-error-actions">
-        {error.canRetry && (
-          <button type="button" className="claude-error-button" onClick={onRetry}>
-            Retry connection
-          </button>
-        )}
-        {error.canRestart && (
-          <button type="button" className="claude-error-button ghost" onClick={onRestart}>
-            Restart session
-          </button>
-        )}
-        <button type="button" className="claude-error-button ghost" onClick={onViewLog}>
-          View log
-        </button>
-        <button type="button" className="claude-error-button ghost" onClick={onDismiss}>
-          Dismiss
-        </button>
-      </div>
+      <div className="claude-error-title">{error.title || 'Connection error'}</div>
     </div>
   )
 }
@@ -2063,7 +2290,7 @@ const ErrorLogModal = ({ isOpen, errors, onClear, onClose }) => {
 
 const ThinkingIndicator = () => (
   <div className="claude-status" role="status" aria-live="polite">
-    <span className="claude-thinking-spinner">✳</span>
+    <Loader2 className="claude-thinking-spinner" size={16} />
     <span>Thinking...</span>
   </div>
 )
@@ -2091,16 +2318,16 @@ const Thread = ({
   approvalRequest,
   onApprovalDecision,
   errorBanner,
-  onDismissError,
-  onViewErrorLog,
-  onRetryConnection,
   imageCache,
   onRegisterImages,
-  onOpenSettings,
   onRestartSession,
-  onOpenRewind,
   slashCommands,
   onError,
+  isThinkingEnabled,
+  currentModel,
+  onToggleThinking,
+  onModelSelect,
+  clearComposerRef,
 }) => {
   const [showModeMenu, setShowModeMenu] = useState(false)
   const sessionDropdownRef = useRef(null)
@@ -2125,32 +2352,7 @@ const Thread = ({
 
   return (
     <ChatPanel className="chat-panel-light">
-      <div className="claude-stream-header">
-        <div className="claude-stream-title">
-          <span className="mark">✳</span>
-          <span>Claude Code</span>
-        </div>
-        <div className="claude-stream-header-actions">
-          <button type="button" title="Rewind files" onClick={onOpenRewind}>
-            ↶
-          </button>
-          <button type="button" title="Restart session" onClick={onRestartSession}>
-            ↻
-          </button>
-          <button type="button" title="Session settings" onClick={onOpenSettings}>
-            ⚙
-          </button>
-        </div>
-      </div>
-      {errorBanner && (
-        <ErrorBanner
-          error={errorBanner}
-          onDismiss={onDismissError}
-          onViewLog={onViewErrorLog}
-          onRetry={onRetryConnection}
-          onRestart={onRestartSession}
-        />
-      )}
+      {errorBanner && <ErrorBanner error={errorBanner} />}
 
       {showSessionPicker && (
         <div style={{ position: 'relative' }} ref={sessionDropdownRef}>
@@ -2190,7 +2392,7 @@ const Thread = ({
       <MessageList>
         <EmptyState>
           <div className="claude-stream-empty">
-            <span className="mark">✳</span>
+            <Sparkles className="mark" size={24} />
             <div className="headline">Claude Code</div>
             <div className="hint">Type /model to pick the right tool for the job.</div>
           </div>
@@ -2238,224 +2440,14 @@ const Thread = ({
         onRegisterImages={onRegisterImages}
         slashCommands={slashCommands}
         onError={onError}
+        isThinkingEnabled={isThinkingEnabled}
+        currentModel={currentModel}
+        onRestartSession={onRestartSession}
+        onToggleThinking={onToggleThinking}
+        onModelSelect={onModelSelect}
+        clearComposerRef={clearComposerRef}
       />
     </ChatPanel>
-  )
-}
-
-const SessionSettingsModal = ({ isOpen, options, onClose, onSave }) => {
-  const [draft, setDraft] = useState(options)
-
-  useEffect(() => {
-    if (isOpen) {
-      setDraft(options)
-    }
-  }, [isOpen, options])
-
-  if (!isOpen) return null
-
-  const updateDraft = (key, value) => {
-    setDraft((prev) => ({ ...prev, [key]: value }))
-  }
-
-  return (
-    <div className="claude-settings-overlay" onClick={onClose}>
-      <div
-        className="claude-settings-modal"
-        onClick={(event) => event.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-      >
-        <div className="claude-settings-header">
-          <div>
-            <div className="claude-settings-title">CLI startup options</div>
-            <div className="claude-settings-subtitle">
-              Applied on restart for this session.
-            </div>
-          </div>
-          <button type="button" className="claude-settings-close" onClick={onClose}>
-            ×
-          </button>
-        </div>
-        <div className="claude-settings-body">
-          <label className="claude-settings-label">
-            Model
-            <input
-              className="claude-settings-input"
-              value={draft.model}
-              onChange={(event) => updateDraft('model', event.target.value)}
-              placeholder="claude-sonnet-4-20250514"
-            />
-          </label>
-          <label className="claude-settings-label">
-            Max thinking tokens
-            <input
-              className="claude-settings-input"
-              type="number"
-              min="0"
-              value={draft.maxThinkingTokens}
-              onChange={(event) => updateDraft('maxThinkingTokens', event.target.value)}
-              placeholder="e.g. 5000"
-            />
-          </label>
-          <label className="claude-settings-label">
-            Max turns
-            <input
-              className="claude-settings-input"
-              type="number"
-              min="0"
-              value={draft.maxTurns}
-              onChange={(event) => updateDraft('maxTurns', event.target.value)}
-              placeholder="e.g. 20"
-            />
-          </label>
-          <label className="claude-settings-label">
-            Max budget (USD)
-            <input
-              className="claude-settings-input"
-              type="number"
-              min="0"
-              step="0.01"
-              value={draft.maxBudgetUsd}
-              onChange={(event) => updateDraft('maxBudgetUsd', event.target.value)}
-              placeholder="e.g. 1.50"
-            />
-          </label>
-          <label className="claude-settings-label">
-            Allowed tools (comma-separated)
-            <input
-              className="claude-settings-input"
-              value={draft.allowedTools}
-              onChange={(event) => updateDraft('allowedTools', event.target.value)}
-              placeholder="Bash,Read,Write"
-            />
-          </label>
-          <label className="claude-settings-label">
-            Disallowed tools (comma-separated)
-            <input
-              className="claude-settings-input"
-              value={draft.disallowedTools}
-              onChange={(event) => updateDraft('disallowedTools', event.target.value)}
-              placeholder="WebSearch,WebFetch"
-            />
-          </label>
-        </div>
-        <div className="claude-settings-actions">
-          <button
-            type="button"
-            className="claude-settings-button ghost"
-            onClick={() => setDraft({ ...DEFAULT_CLI_OPTIONS })}
-          >
-            Reset
-          </button>
-          <div className="claude-settings-spacer" />
-          <button type="button" className="claude-settings-button ghost" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="claude-settings-button primary"
-            onClick={() => onSave(draft)}
-          >
-            Save
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-const RewindModal = ({
-  isOpen,
-  lastUserMessage,
-  lastUserMessageId,
-  status,
-  result,
-  error,
-  onPreview,
-  onApply,
-  onClose,
-}) => {
-  if (!isOpen) return null
-
-  const messageText = lastUserMessage?.text || ''
-  const previewText = messageText.length > 140 ? `${messageText.slice(0, 140)}…` : messageText
-  const fileDiffs = result?.file_diffs || result?.fileDiffs || []
-  const canSubmit = Boolean(lastUserMessageId) && status === 'idle'
-
-  return (
-    <div className="claude-settings-overlay" onClick={onClose}>
-      <div
-        className="claude-settings-modal claude-rewind-modal"
-        onClick={(event) => event.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-      >
-        <div className="claude-settings-header">
-          <h3>Rewind files</h3>
-          <button type="button" className="claude-settings-close" onClick={onClose}>
-            ×
-          </button>
-        </div>
-        <div className="claude-settings-body">
-          <div className="claude-rewind-summary">
-            <div className="claude-rewind-label">Last user message</div>
-            <div className="claude-rewind-text">
-              {previewText || 'No recent message'}
-            </div>
-            {lastUserMessageId && (
-              <div className="claude-rewind-id">Message ID: {lastUserMessageId}</div>
-            )}
-          </div>
-          {!lastUserMessageId && (
-            <div className="claude-rewind-status">Send a message to enable rewind.</div>
-          )}
-          {status !== 'idle' && (
-            <div className="claude-rewind-status">
-              Waiting for Claude CLI… ({status === 'preview' ? 'preview' : 'apply'})
-            </div>
-          )}
-          {error && <div className="claude-rewind-error">{error}</div>}
-          {fileDiffs.length > 0 && (
-            <div className="claude-rewind-diffs">
-              {fileDiffs.map((diff, index) => (
-                <div key={`${diff.file_path || diff.filePath || 'file'}-${index}`}>
-                  <div className="claude-rewind-file">
-                    {diff.file_path || diff.filePath || 'file'}
-                  </div>
-                  <pre className="claude-rewind-diff">{diff.diff || diff.patch || ''}</pre>
-                </div>
-              ))}
-            </div>
-          )}
-          {result && fileDiffs.length === 0 && (
-            <pre className="claude-rewind-diff">{JSON.stringify(result, null, 2)}</pre>
-          )}
-        </div>
-        <div className="claude-settings-actions">
-          <button
-            type="button"
-            className="claude-settings-button ghost"
-            onClick={onPreview}
-            disabled={!canSubmit}
-          >
-            Preview changes
-          </button>
-          <div className="claude-settings-spacer" />
-          <button type="button" className="claude-settings-button ghost" onClick={onClose}>
-            Close
-          </button>
-          <button
-            type="button"
-            className="claude-settings-button primary"
-            onClick={onApply}
-            disabled={!canSubmit}
-          >
-            Rewind files
-          </button>
-        </div>
-      </div>
-    </div>
   )
 }
 
@@ -2484,21 +2476,14 @@ export default function ClaudeStreamChat({
     return { ...DEFAULT_CLI_OPTIONS }
   })
   const [fileAttachments, setFileAttachments] = useState([])
-  const [showSettings, setShowSettings] = useState(false)
   const [approvalRequest, setApprovalRequest] = useState(null)
   const [imageCache, setImageCache] = useState({})
-  const [lastUserMessage, setLastUserMessage] = useState(null)
-  const [lastUserMessageId, setLastUserMessageId] = useState(null)
   const [slashCommands, setSlashCommands] = useState(DEFAULT_SLASH_COMMANDS)
-  const [showRewindModal, setShowRewindModal] = useState(false)
-  const [rewindStatus, setRewindStatus] = useState('idle')
-  const [rewindResult, setRewindResult] = useState(null)
-  const [rewindError, setRewindError] = useState('')
   const [errorLog, setErrorLog] = useState([])
   const [activeError, setActiveError] = useState(null)
   const [showErrorLog, setShowErrorLog] = useState(false)
+  const [toastMessage, setToastMessage] = useState(null)
   const retryMessageRef = useRef(null)
-  const pendingRewindIdRef = useRef(null)
   const modeChangeRef = useRef(false)
 
   // Update session ID when initialSessionId prop changes
@@ -2554,6 +2539,8 @@ export default function ClaudeStreamChat({
   const sendApprovalResponseRef = useRef(null)
   const sendQuestionResponseRef = useRef(null)
   const sendControlMessageRef = useRef(null)
+  const clearComposerRef = useRef(null)
+  const clearHistoryRef = useRef(null)
   const handleStreamingChange = useCallback((event) => {
     // Handle boolean (start/stop streaming)
     if (typeof event === 'boolean') {
@@ -2654,30 +2641,7 @@ export default function ClaudeStreamChat({
 
   const handleControlMessage = useCallback((payload) => {
     const subtype = payload?.subtype
-    const pendingRewindId = pendingRewindIdRef.current
-    const responsePayload = payload?.response?.subtype ? payload.response : payload
-    const isRewindResponse = (
-      subtype === 'rewind_files' ||
-      payload?.response?.subtype === 'rewind_files' ||
-      (pendingRewindId && payload?.request_id === pendingRewindId)
-    )
 
-    if (isRewindResponse) {
-      setRewindResult(responsePayload)
-      setRewindStatus('idle')
-      setRewindError('')
-      pendingRewindIdRef.current = null
-      setShowRewindModal(true)
-      return
-    }
-
-    if (subtype === 'error' && pendingRewindId && payload?.request_id === pendingRewindId) {
-      const errorMessage = payload?.error?.message || payload?.message || 'Rewind failed'
-      setRewindError(String(errorMessage))
-      setRewindStatus('idle')
-      pendingRewindIdRef.current = null
-      return
-    }
     if (subtype === 'error') {
       logError({
         title: 'Claude control error',
@@ -2716,16 +2680,29 @@ export default function ClaudeStreamChat({
   }, [])
 
   const handleLastMessageChange = useCallback((msg) => {
-    setLastUserMessage(msg)
     retryMessageRef.current = msg
   }, [])
 
-  const handleUserMessageId = useCallback((messageId) => {
-    setLastUserMessageId(messageId)
+  const handleUserMessageId = useCallback(() => {
+    // No longer tracking user message ID (rewind modal removed)
   }, [])
 
   const handleSlashCommands = useCallback((commands) => {
     setSlashCommands(normalizeSlashCommands(commands))
+  }, [])
+
+  const handleSettingsSync = useCallback((settings) => {
+    if (!settings) return
+    setCliOptions((prev) => {
+      const next = { ...prev }
+      if (settings.max_thinking_tokens !== undefined && settings.max_thinking_tokens !== null) {
+        next.maxThinkingTokens = String(settings.max_thinking_tokens)
+      }
+      if (settings.model) {
+        next.model = String(settings.model)
+      }
+      return next
+    })
   }, [])
 
   const {
@@ -2737,6 +2714,7 @@ export default function ClaudeStreamChat({
     sendQuestionResponse,
     sendMessage,
     restartSession,
+    restartCounter,
     sendControlMessage,
   } = useClaudeStreamRuntime(
     currentSessionId,
@@ -2755,6 +2733,9 @@ export default function ClaudeStreamChat({
     handleUserMessageId,
     handleLastMessageChange,
     imageCache,
+    clearComposerRef,
+    handleSettingsSync,
+    clearHistoryRef,
   )
   const streamStartedRef = useRef(false)
 
@@ -2845,47 +2826,39 @@ export default function ClaudeStreamChat({
     setApprovalRequest(null)
   }, [approvalRequest, mode, applyModeChange])
 
-  const handleSaveSettings = useCallback((nextOptions, onComplete) => {
-    const merged = { ...DEFAULT_CLI_OPTIONS, ...nextOptions }
-    const previous = normalizeStoredOptions(cliOptions)
-    const next = normalizeStoredOptions(merged)
-    const requiresRestart = (
-      previous.allowedTools !== next.allowedTools ||
-      previous.disallowedTools !== next.disallowedTools ||
-      previous.maxTurns !== next.maxTurns ||
-      previous.maxBudgetUsd !== next.maxBudgetUsd
-    )
-    const modelChanged = previous.model !== next.model
-    const thinkingChanged = previous.maxThinkingTokens !== next.maxThinkingTokens
-
-    setCliOptions(merged)
-    setShowSettings(false)
-
-    if (modelChanged && next.model) {
-      sendControlMessageRef.current?.('set_model', { model: next.model })
-    }
-    if (thinkingChanged && next.maxThinkingTokens) {
-      const parsed = Number(next.maxThinkingTokens)
-      if (!Number.isNaN(parsed)) {
-        sendControlMessageRef.current?.('set_max_thinking_tokens', {
-          max_thinking_tokens: parsed,
-        })
-      }
-    }
-
-    if (requiresRestart) {
-      requestAnimationFrame(() => {
-        restartSession()
-        onComplete?.()
-      })
-      return
-    }
-    onComplete?.()
-  }, [cliOptions, restartSession])
-
   const handleRestartSession = useCallback(() => {
     restartSession()
+    setToastMessage('Session restarted')
+    setTimeout(() => setToastMessage(null), 1500)
   }, [restartSession])
+
+  const handleToggleThinking = useCallback(() => {
+    const currentValue = Number(cliOptions.maxThinkingTokens) || 0
+    const newValue = currentValue > 0 ? 0 : 10000 // Toggle between off (0) and on (10000)
+    console.log('[Thinking] Toggle:', { currentValue, newValue, raw: cliOptions.maxThinkingTokens })
+    sendControlMessageRef.current?.('set_max_thinking_tokens', {
+      max_thinking_tokens: newValue,
+    })
+    setCliOptions((prev) => ({
+      ...prev,
+      maxThinkingTokens: String(newValue),
+    }))
+  }, [cliOptions.maxThinkingTokens])
+
+  const handleModelSelect = useCallback((modelValue, modelLabel) => {
+    console.log('[ModelSelect] Called with:', modelValue, modelLabel)
+    console.log('[ModelSelect] sendControlMessageRef:', sendControlMessageRef.current)
+    sendControlMessageRef.current?.('set_model', { model: modelValue })
+    setCliOptions((prev) => {
+      console.log('[ModelSelect] Setting model in cliOptions:', modelValue)
+      return {
+        ...prev,
+        model: modelValue,
+      }
+    })
+    setToastMessage(`Model: ${modelLabel}`)
+    setTimeout(() => setToastMessage(null), 1500)
+  }, [])
 
   const handleNewSession = useCallback(async () => {
     const newId = await createNewSession()
@@ -2973,53 +2946,6 @@ export default function ClaudeStreamChat({
 
   const isUploadingAttachments = fileAttachments.some((attachment) => attachment.status === 'uploading')
 
-  const openRewindModal = useCallback(() => {
-    setShowRewindModal(true)
-  }, [])
-  const closeRewindModal = useCallback(() => {
-    setShowRewindModal(false)
-    setRewindStatus('idle')
-    setRewindResult(null)
-    setRewindError('')
-    pendingRewindIdRef.current = null
-  }, [])
-  const requestRewind = useCallback((dryRun) => {
-    if (!lastUserMessageId) {
-      setRewindError('No user message available to rewind.')
-      logError({
-        title: 'Rewind unavailable',
-        detail: 'No user message was found to rewind.',
-        suggestions: ['Send a message first, then try again.'],
-        source: 'rewind',
-        canRetry: false,
-        canRestart: false,
-      })
-      return
-    }
-    if (!sendControlMessageRef.current) {
-      setRewindError('Rewind is unavailable while disconnected.')
-      logError({
-        title: 'Rewind unavailable',
-        detail: 'The session is disconnected.',
-        suggestions: ['Reconnect and retry rewind.'],
-        source: 'rewind',
-        canRetry: true,
-        canRestart: true,
-      })
-      return
-    }
-    const requestId = `rewind-${Date.now()}`
-    pendingRewindIdRef.current = requestId
-    setRewindStatus(dryRun ? 'preview' : 'apply')
-    setRewindResult(null)
-    setRewindError('')
-    sendControlMessageRef.current('rewind_files', {
-      request_id: requestId,
-      user_message_id: lastUserMessageId,
-      dry_run: Boolean(dryRun),
-    })
-  }, [lastUserMessageId, logError])
-
   const handleRetryConnection = useCallback(() => {
     if (!currentSessionId) return
     switchSession(currentSessionId, true)
@@ -3037,14 +2963,17 @@ export default function ClaudeStreamChat({
     return loadStoredHistory(sessionKey)
       .map(normalizeHistoryMessage)
       .filter(Boolean)
-  }, [currentSessionId, sessionName])
+  }, [currentSessionId, sessionName, restartCounter])
 
-  const runtimeKey = currentSessionId || sessionName || 'new'
+  const runtimeKey = `${currentSessionId || sessionName || 'new'}-${restartCounter}`
+
+  // Determine if thinking mode is enabled based on maxThinkingTokens
+  const isThinkingEnabled = Boolean(cliOptions.maxThinkingTokens && Number(cliOptions.maxThinkingTokens) > 0)
 
   return (
     <div style={{ width: '100%', height: '100%', overflow: 'hidden' }}>
       <style>{chatThemeVars}</style>
-      <RuntimeProvider adapter={adapter} initialMessages={historySeed} runtimeKey={runtimeKey}>
+      <RuntimeProvider key={runtimeKey} adapter={adapter} initialMessages={historySeed}>
         <HistoryPersister sessionId={currentSessionId || sessionName} />
         <Thread
           sessionLabel={sessionLabel}
@@ -3069,33 +2998,16 @@ export default function ClaudeStreamChat({
           approvalRequest={approvalRequest}
           onApprovalDecision={handleApprovalDecision}
           errorBanner={activeError}
-          onDismissError={dismissError}
-          onViewErrorLog={() => setShowErrorLog(true)}
-          onRetryConnection={handleRetryConnection}
           imageCache={imageCache}
           onRegisterImages={handleRegisterImages}
-          onOpenSettings={() => setShowSettings(true)}
           onRestartSession={handleRestartSession}
-          onOpenRewind={openRewindModal}
           slashCommands={slashCommands}
           onError={logError}
-        />
-        <SessionSettingsModal
-          isOpen={showSettings}
-          options={cliOptions}
-          onClose={() => setShowSettings(false)}
-          onSave={handleSaveSettings}
-        />
-        <RewindModal
-          isOpen={showRewindModal}
-          lastUserMessage={lastUserMessage}
-          lastUserMessageId={lastUserMessageId}
-          status={rewindStatus}
-          result={rewindResult}
-          error={rewindError}
-          onPreview={() => requestRewind(true)}
-          onApply={() => requestRewind(false)}
-          onClose={closeRewindModal}
+          isThinkingEnabled={isThinkingEnabled}
+          currentModel={cliOptions.model}
+          onToggleThinking={handleToggleThinking}
+          onModelSelect={handleModelSelect}
+          clearComposerRef={clearComposerRef}
         />
         <ErrorLogModal
           isOpen={showErrorLog}
@@ -3103,6 +3015,9 @@ export default function ClaudeStreamChat({
           onClear={clearErrorLog}
           onClose={() => setShowErrorLog(false)}
         />
+        {toastMessage && (
+          <div className="toast-notification">{toastMessage}</div>
+        )}
       </RuntimeProvider>
     </div>
   )

@@ -2,6 +2,39 @@ import React, { useEffect, useRef } from 'react'
 import { Terminal as XTerm } from 'xterm'
 import { FitAddon } from 'xterm-addon-fit'
 import 'xterm/css/xterm.css'
+import { useTheme } from '../hooks/useTheme'
+
+// Terminal color schemes for light/dark mode
+const TERMINAL_THEMES = {
+  light: {
+    background: '#f8fafc',
+    foreground: '#111827',
+    cursor: '#111827',
+    selectionBackground: '#bfdbfe',
+    black: '#0f172a',
+    red: '#dc2626',
+    green: '#16a34a',
+    yellow: '#f59e0b',
+    blue: '#2563eb',
+    magenta: '#db2777',
+    cyan: '#0891b2',
+    white: '#e2e8f0',
+  },
+  dark: {
+    background: '#0f172a',
+    foreground: '#e2e8f0',
+    cursor: '#e2e8f0',
+    selectionBackground: '#334155',
+    black: '#0f172a',
+    red: '#ef4444',
+    green: '#22c55e',
+    yellow: '#f59e0b',
+    blue: '#3b82f6',
+    magenta: '#ec4899',
+    cyan: '#06b6d4',
+    white: '#f1f5f9',
+  },
+}
 
 const HISTORY_STORAGE_PREFIX = 'kurt-web-pty-history'
 const HISTORY_LIMIT_BYTES = 200000
@@ -77,6 +110,7 @@ export default function Terminal({
   bannerMessage,
   onBannerShown,
 }) {
+  const { theme: appTheme } = useTheme()
   const containerRef = useRef(null)
   const termRef = useRef(null)
   const fitAddonRef = useRef(null)
@@ -99,13 +133,9 @@ export default function Terminal({
   const historyBufferRef = useRef('')
   const historyFallbackTimerRef = useRef(null)
   const historySourceRef = useRef(null)
-  const providerKey = (provider || 'claude').toLowerCase()
-  const providerLabel =
-    providerKey === 'codex'
-      ? 'Codex'
-      : providerKey === 'claude'
-        ? 'Claude'
-        : `${providerKey.charAt(0).toUpperCase()}${providerKey.slice(1)}`
+  // Always use Claude as provider
+  const providerKey = 'claude'
+  const providerLabel = 'Claude'
 
   useEffect(() => {
     isActiveRef.current = isActive
@@ -137,6 +167,13 @@ export default function Terminal({
     onBannerShownRef.current = onBannerShown
   }, [onFirstPrompt, onSessionStarted, onResumeMissing, onBannerShown])
 
+  // Update terminal theme when app theme changes
+  useEffect(() => {
+    if (termRef.current) {
+      termRef.current.options.theme = TERMINAL_THEMES[appTheme] || TERMINAL_THEMES.light
+    }
+  }, [appTheme])
+
   useEffect(() => {
     if (!containerRef.current) return
 
@@ -153,20 +190,7 @@ export default function Terminal({
       convertEol: false,
       fontFamily: '"IBM Plex Mono", "SFMono-Regular", Menlo, monospace',
       fontSize: 13,
-      theme: {
-        background: '#f8fafc',
-        foreground: '#111827',
-        cursor: '#111827',
-        selectionBackground: '#bfdbfe',
-        black: '#0f172a',
-        red: '#dc2626',
-        green: '#16a34a',
-        yellow: '#f59e0b',
-        blue: '#2563eb',
-        magenta: '#db2777',
-        cyan: '#0891b2',
-        white: '#e2e8f0',
-      },
+      theme: TERMINAL_THEMES[appTheme] || TERMINAL_THEMES.light,
     })
     const fitAddon = new FitAddon()
     term.loadAddon(fitAddon)
@@ -553,6 +577,14 @@ export default function Terminal({
     term.writeln(`\r\n[bridge] ${bannerMessage}\r\n`)
     onBannerShownRef.current?.()
   }, [bannerMessage])
+
+  // Update terminal theme when app theme changes
+  useEffect(() => {
+    const term = termRef.current
+    if (!term) return
+    const newTheme = TERMINAL_THEMES[appTheme] || TERMINAL_THEMES.light
+    term.options.theme = newTheme
+  }, [appTheme])
 
   return (
     <div

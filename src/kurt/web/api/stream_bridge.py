@@ -24,6 +24,15 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 MAX_HISTORY_LINES = int(os.environ.get("KURT_STREAM_HISTORY_LINES", "1000"))
 IDLE_TTL_SECONDS = int(os.environ.get("KURT_STREAM_IDLE_TTL", "60"))
+MAX_SESSIONS = int(os.environ.get("KURT_STREAM_MAX_SESSIONS", "20"))
+
+# Default slash commands to send to frontend on connect
+# These match the frontend's DEFAULT_SLASH_COMMANDS
+DEFAULT_SLASH_COMMANDS = [
+    "clear", "model", "thinking", "memory", "permissions",
+    "mcp", "hooks", "agents", "help", "compact", "cost",
+    "init", "terminal", "restart"
+]
 
 _SESSION_REGISTRY: dict[str, "StreamSession"] = {}
 _SESSION_REGISTRY_LOCK = asyncio.Lock()
@@ -281,6 +290,7 @@ class StreamSession:
         self._started = False
         self._terminated = False
         self._mode: Optional[str] = None  # Track current permission mode
+        self._last_init_message: Optional[dict[str, Any]] = None  # Store init for resumed clients
 
     def is_alive(self) -> bool:
         return self.proc is not None and self.proc.returncode is None
@@ -500,6 +510,11 @@ class StreamSession:
                         subtype = payload.get("subtype", "")
                         # Log every message from CLI
                         print(f"[Stream] CLI>>> type={msg_type} subtype={subtype}")
+                        # Log and store init messages with slash_commands for resumed clients
+                        if msg_type == "system" and subtype == "init":
+                            slash_cmds = payload.get("slash_commands", [])
+                            print(f"[Stream] INIT>>> slash_commands count={len(slash_cmds)}: {slash_cmds[:5]}...")
+                            self._last_init_message = payload  # Store for new clients on resume
                         keys = list(payload.keys())
 
                         # Handle control_request/control_cancel_request from CLI (permission prompts)
@@ -602,8 +617,12 @@ class StreamSession:
         self._read_task = asyncio.create_task(read_stdout())
         self._stderr_task = asyncio.create_task(read_stderr())
 
-    async def terminate(self) -> None:
-        """Terminate the session and clean up."""
+    async def terminate(self, force: bool = False) -> None:
+        """Terminate the session and clean up.
+
+        Args:
+            force: If True, kill immediately without graceful shutdown.
+        """
         if self._terminated:
             return
         self._terminated = True
@@ -621,13 +640,35 @@ class StreamSession:
             self._stderr_task = None
 
         if self.proc:
+            # Close subprocess pipes to free file descriptors
+            if self.proc.stdin:
+                try:
+                    self.proc.stdin.close()
+                except Exception:
+                    pass
+            if self.proc.stdout:
+                try:
+                    self.proc.stdout.feed_eof()
+                except Exception:
+                    pass
+            if self.proc.stderr:
+                try:
+                    self.proc.stderr.feed_eof()
+                except Exception:
+                    pass
+
             if self.proc.returncode is None:
                 try:
-                    self.proc.terminate()
-                    try:
-                        await asyncio.wait_for(self.proc.wait(), timeout=2.0)
-                    except asyncio.TimeoutError:
+                    if force:
+                        # Kill immediately for stale sessions
                         self.proc.kill()
+                    else:
+                        # Graceful shutdown with short timeout
+                        self.proc.terminate()
+                        try:
+                            await asyncio.wait_for(self.proc.wait(), timeout=1.0)
+                        except asyncio.TimeoutError:
+                            self.proc.kill()
                 except Exception:
                     pass
             self.proc = None
@@ -899,7 +940,7 @@ async def handle_stream_websocket(
                     return part.get("text", "")
         return ""
 
-    stale: Optional[StreamSession] = None
+    stale: list[StreamSession] = []
     created = False
 
     # Check registry FIRST to determine if session already exists
@@ -926,7 +967,7 @@ async def handle_stream_websocket(
         }
 
         if force_new and existing:
-            stale = existing
+            stale.append(existing)
             _SESSION_REGISTRY.pop(session_id, None)
             existing = None
             # Use --resume to preserve conversation history
@@ -939,7 +980,7 @@ async def handle_stream_websocket(
             existing_options = getattr(existing, "_options", None)
             if existing_mode != mode or existing_options != requested_options:
                 print("[Stream] Session options changed; will resume with new settings")
-                stale = existing
+                stale.append(existing)
                 _SESSION_REGISTRY.pop(session_id, None)
                 existing = None
                 # Use --resume to preserve conversation history
@@ -949,10 +990,28 @@ async def handle_stream_websocket(
             session = existing
         else:
             if existing:
-                stale = existing
+                stale.append(existing)
                 _SESSION_REGISTRY.pop(session_id, None)
                 # Existing but dead session - Claude CLI knows about it
                 should_resume = True
+
+            # Enforce max sessions limit - evict idle sessions if at capacity
+            while len(_SESSION_REGISTRY) >= MAX_SESSIONS:
+                # Find sessions with no clients (idle)
+                idle_sessions = [
+                    (sid, sess) for sid, sess in _SESSION_REGISTRY.items()
+                    if not sess.clients
+                ]
+                if idle_sessions:
+                    # Evict first idle session
+                    evict_id, evict_sess = idle_sessions[0]
+                    print(f"[Stream] Evicting idle session {evict_id} (at max {MAX_SESSIONS})")
+                    stale.append(evict_sess)
+                    _SESSION_REGISTRY.pop(evict_id, None)
+                else:
+                    # No idle sessions - reject connection
+                    print(f"[Stream] Max sessions ({MAX_SESSIONS}) reached, no idle to evict")
+                    break
 
             # Build args with the correct resume flag
             # - Frontend tracks whether session is new or should be resumed
@@ -989,9 +1048,9 @@ async def handle_stream_websocket(
             _SESSION_REGISTRY[session_id] = session
             created = True
 
-    # Clean up stale session
-    if stale:
-        await stale.terminate()
+    # Clean up stale sessions with force kill to free FDs immediately
+    for stale_session in stale:
+        await stale_session.terminate(force=True)
 
     # Add client BEFORE starting read loop so errors can be broadcast
     await session.add_client(websocket)
@@ -1027,15 +1086,27 @@ async def handle_stream_websocket(
             await session.terminate()
             return
 
-    # Send connection confirmation
+    # Send connection confirmation with current settings
+    current_options = getattr(session, "_options", None) or {}
+    # Default to "sonnet" if no model explicitly set (Claude Code's default)
+    effective_model = current_options.get("model") or "sonnet"
     await websocket.send_json(
         {
             "type": "system",
             "subtype": "connected",
             "session_id": session_id,
             "resumed": not created and not force_new,
+            "settings": {
+                "max_thinking_tokens": current_options.get("max_thinking_tokens"),
+                "model": effective_model,
+            },
         }
     )
+
+    # For resumed sessions, send stored init message so client gets slash_commands
+    if not created and session._last_init_message:
+        print("[Stream] Sending stored init message to resumed client")
+        await websocket.send_json(session._last_init_message)
 
     try:
         while True:

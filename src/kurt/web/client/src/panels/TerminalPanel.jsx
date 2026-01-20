@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { ChevronLeft, ChevronRight, Copy, Plus, X } from 'lucide-react'
 import Terminal from '../components/Terminal'
 import ClaudeStreamChat from '../components/chat/ClaudeStreamChat'
 
@@ -6,10 +7,6 @@ const SESSION_STORAGE_KEY = 'kurt-web-terminal-sessions'
 const VIEW_MODE_KEY = 'kurt-web-terminal-view-mode'
 const ACTIVE_SESSION_KEY = 'kurt-web-terminal-active'
 const CHAT_INTERFACE_KEY = 'kurt-web-terminal-chat-interface'
-const PROVIDERS = [
-  { id: 'claude', label: 'Claude' },
-  { id: 'codex', label: 'Codex' },
-]
 const DEFAULT_PROVIDER = 'claude'
 
 const createSessionId = () => {
@@ -45,26 +42,18 @@ const loadActiveSession = () => {
 const normalizeSession = (session, fallbackId) => {
   const { bannerMessage, ...rest } = session
   const id = Number(rest.id) || fallbackId
-  const provider =
-    typeof rest.provider === 'string' ? rest.provider.toLowerCase() : DEFAULT_PROVIDER
+  // Always use claude as provider (migration from old codex sessions)
   return {
     ...rest,
     id,
     title: rest.title || `Session ${id}`,
-    provider,
+    provider: DEFAULT_PROVIDER,
     sessionId: rest.sessionId || createSessionId(),
   }
 }
 
 const serializeSessions = (sessions) =>
   sessions.map(({ bannerMessage, resume, ...session }) => session)
-
-const getProviderLabel = (provider) => {
-  const match = PROVIDERS.find((item) => item.id === provider)
-  if (match) return match.label
-  if (!provider) return 'Claude'
-  return `${provider.charAt(0).toUpperCase()}${provider.slice(1)}`
-}
 
 const getFileName = (path) => {
   if (!path) return ''
@@ -79,9 +68,9 @@ export default function TerminalPanel({ params }) {
   const viewMode = 'chat'
   const [chatInterface, setChatInterface] = useState(() => {
     try {
-      return localStorage.getItem(CHAT_INTERFACE_KEY) || 'cli'
+      return localStorage.getItem(CHAT_INTERFACE_KEY) || 'web'
     } catch {
-      return 'cli'
+      return 'web'
     }
   })
   const [sessions, setSessions] = useState(() => {
@@ -108,7 +97,6 @@ export default function TerminalPanel({ params }) {
     if (saved === 0) return 0
     return null
   })
-  const [newProvider, setNewProvider] = useState(DEFAULT_PROVIDER)
 
   const formatPrompt = useCallback((prompt) => {
     const cleaned = prompt.replace(/\s+/g, ' ').trim()
@@ -135,7 +123,7 @@ export default function TerminalPanel({ params }) {
     const next = {
       id: nextId,
       title: `Session ${nextId}`,
-      provider: newProvider,
+      provider: DEFAULT_PROVIDER,
       sessionId: createSessionId(),
       resume: false,
     }
@@ -229,9 +217,7 @@ export default function TerminalPanel({ params }) {
           title="Expand agent panel"
           aria-label="Expand agent panel"
         >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M10 3.5L5.5 8L10 12.5V3.5Z" />
-          </svg>
+          <ChevronLeft size={16} />
         </button>
         <div className="sidebar-collapsed-label">Agent</div>
       </div>
@@ -248,50 +234,24 @@ export default function TerminalPanel({ params }) {
           title="Collapse agent panel"
           aria-label="Collapse agent panel"
         >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M6 3.5L10.5 8L6 12.5V3.5Z" />
-          </svg>
+          <ChevronRight size={16} />
         </button>
-        <div className="terminal-title">
-          <span className="status-dot" />
-          Agent Sessions
-        </div>
-        <div className="terminal-actions">
-          <select
-            id="terminal-provider-select"
-            className="terminal-select terminal-provider-select"
-            value={newProvider}
-            onChange={(event) => setNewProvider(event.target.value)}
-            aria-label="Provider"
-          >
-            {PROVIDERS.map((provider) => (
-              <option key={provider.id} value={provider.id}>
-                {provider.label}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            className="terminal-new terminal-new-icon"
-            onClick={addSession}
-            aria-label="New session"
-            title="New session"
-          >
-            <span aria-hidden="true">+</span>
-          </button>
-        </div>
-      </div>
-      {sessions.length === 0 ? (
-        <div className="terminal-empty">
-          <p>No active sessions.</p>
-          <button type="button" className="terminal-new" onClick={addSession}>
-            Start new session
-          </button>
-        </div>
-      ) : (
-        <>
-          <div className="terminal-session-bar">
-            <label htmlFor="terminal-session-select">Session</label>
+        {sessions.length === 0 ? (
+          <>
+            <span className="terminal-title-text">Agent</span>
+            <div className="terminal-header-spacer" />
+            <button
+              type="button"
+              className="terminal-icon-btn"
+              onClick={addSession}
+              aria-label="New session"
+              title="New session"
+            >
+              <Plus size={16} />
+            </button>
+          </>
+        ) : (
+          <>
             <select
               id="terminal-session-select"
               className="terminal-select"
@@ -300,12 +260,11 @@ export default function TerminalPanel({ params }) {
             >
               {sessions.map((session) => (
                 <option key={session.id} value={session.id}>
-                  {`${session.title} (${getProviderLabel(session.provider)}) - ${session.sessionId.slice(0, 8)}`}
+                  {`${session.title} - ${session.sessionId.slice(0, 8)}`}
                 </option>
               ))}
             </select>
-            {/* CLI/Web toggle */}
-            <div className="view-mode-toggle" style={{ marginLeft: '8px' }}>
+            <div className="view-mode-toggle">
               <button
                 type="button"
                 className={`view-mode-btn ${chatInterface === 'cli' ? 'active' : ''}`}
@@ -323,9 +282,10 @@ export default function TerminalPanel({ params }) {
                 Web
               </button>
             </div>
+            <div className="terminal-header-spacer" />
             <button
               type="button"
-              className="terminal-copy-id"
+              className="terminal-icon-btn"
               onClick={() => {
                 const active = sessions.find((s) => s.id === activeId)
                 if (active?.sessionId) {
@@ -334,19 +294,29 @@ export default function TerminalPanel({ params }) {
               }}
               title={sessions.find((s) => s.id === activeId)?.sessionId || 'Copy session ID'}
             >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z" />
-                <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z" />
-              </svg>
+              <Copy size={14} />
             </button>
             <button
               type="button"
-              className="terminal-close-button"
-              onClick={() => closeSession(activeId)}
+              className="terminal-icon-btn"
+              onClick={addSession}
+              aria-label="New session"
+              title="New session"
             >
-              Close
+              <Plus size={16} />
             </button>
-          </div>
+            <button
+              type="button"
+              className="terminal-icon-btn terminal-close-btn"
+              onClick={() => closeSession(activeId)}
+              title="Close session"
+            >
+              <X size={16} />
+            </button>
+          </>
+        )}
+      </div>
+      {sessions.length > 0 && (
           <div className="terminal-body">
             {sessions.map((session) => {
               const isActive = session.id === activeId
@@ -405,7 +375,6 @@ export default function TerminalPanel({ params }) {
               )
             })}
           </div>
-        </>
       )}
       {Array.isArray(approvals) && approvals.length > 0 && (
         <div className="review-list">

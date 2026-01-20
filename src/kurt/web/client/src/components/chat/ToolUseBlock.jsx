@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 
 /**
  * ToolUseBlock - Wrapper component for tool use displays
@@ -16,12 +17,12 @@ import { useState } from 'react'
  * - Tool name in bold, then description
  */
 
-// Status colors matching VSCode Claude Code extension
+// Status colors use CSS variables from chatThemeVars
 const STATUS_COLORS = {
-  running: '#858585',     // Grey - in progress
-  complete: '#89d185',    // Green - success
-  error: '#f48771',       // Red - error
-  pending: '#858585',     // Grey - waiting
+  running: 'var(--chat-text-muted)',   // Grey - in progress
+  complete: 'var(--chat-success)',     // Green - success
+  error: 'var(--chat-error)',          // Red - error
+  pending: 'var(--chat-text-muted)',   // Grey - waiting
 }
 
 const ToolUseBlock = ({
@@ -64,11 +65,11 @@ const ToolUseBlock = ({
             fontSize: '7px',
             lineHeight: 1,
             flexShrink: 0,
-            marginTop: '4px',
+            marginTop: '5px',
             marginLeft: '-8px',
             width: '8px',
             height: '8px',
-            background: '#1e1e1e',
+            background: 'var(--chat-bg)',
             borderRadius: '50%',
             display: 'flex',
             alignItems: 'center',
@@ -99,7 +100,7 @@ const ToolUseBlock = ({
             <span
               style={{
                 fontWeight: 600,
-                color: 'var(--chat-text, #cccccc)',
+                color: 'var(--chat-text)',
                 fontSize: '14px',
               }}
             >
@@ -108,7 +109,7 @@ const ToolUseBlock = ({
             {description && (
               <span
                 style={{
-                  color: 'var(--chat-text-muted, #858585)',
+                  color: 'var(--chat-text-muted)',
                   fontSize: '14px',
                   fontFamily: 'var(--font-mono)',
                 }}
@@ -121,12 +122,12 @@ const ToolUseBlock = ({
             {collapsible && (
               <span
                 style={{
-                  color: 'var(--chat-text-muted, #858585)',
+                  color: 'var(--chat-text-muted)',
                   fontSize: '12px',
                   marginLeft: 'auto',
                 }}
               >
-                {isExpanded ? '▼' : '▶'}
+                {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
               </span>
             )}
           </div>
@@ -135,7 +136,7 @@ const ToolUseBlock = ({
           {subtitle && (
             <span
               style={{
-                color: 'var(--chat-text-muted, #858585)',
+                color: 'var(--chat-text-muted)',
                 fontSize: '13px',
                 marginTop: '2px',
               }}
@@ -168,12 +169,12 @@ export const ToolOutput = ({ children, style = {}, className = '' }) => (
   <div
     className={className}
     style={{
-      backgroundColor: 'var(--chat-input-bg, #3c3c3c)',
+      backgroundColor: 'var(--chat-input-bg)',
       borderRadius: 'var(--chat-radius-sm, 4px)',
       padding: 'var(--chat-spacing-sm, 8px) var(--chat-spacing-md, 12px)',
       fontSize: '13px',
       fontFamily: 'var(--font-mono)',
-      color: 'var(--chat-text, #cccccc)',
+      color: 'var(--chat-text)',
       overflow: 'auto',
       maxHeight: '300px',
       ...style,
@@ -198,7 +199,7 @@ export const ToolCommand = ({ command, language }) => (
     {language && (
       <span
         style={{
-          color: 'var(--chat-text-muted, #858585)',
+          color: 'var(--chat-text-muted)',
           fontSize: '11px',
           textTransform: 'lowercase',
         }}
@@ -210,8 +211,8 @@ export const ToolCommand = ({ command, language }) => (
       style={{
         fontFamily: 'var(--font-mono)',
         fontSize: '13px',
-        color: 'var(--chat-text, #cccccc)',
-        backgroundColor: 'var(--chat-input-bg, #3c3c3c)',
+        color: 'var(--chat-text)',
+        backgroundColor: 'var(--chat-input-bg)',
         padding: '2px 6px',
         borderRadius: '3px',
       }}
@@ -227,13 +228,13 @@ export const ToolCommand = ({ command, language }) => (
 export const ToolError = ({ message }) => (
   <div
     style={{
-      color: 'var(--chat-error, #f48771)',
+      color: 'var(--chat-error)',
       fontSize: '13px',
       fontFamily: 'var(--font-mono)',
       padding: 'var(--chat-spacing-sm, 8px)',
-      backgroundColor: 'rgba(244, 135, 113, 0.1)',
+      backgroundColor: 'var(--chat-error-bg)',
       borderRadius: 'var(--chat-radius-sm, 4px)',
-      borderLeft: '3px solid var(--chat-error, #f48771)',
+      borderLeft: '3px solid var(--chat-error)',
     }}
   >
     {message}
@@ -246,8 +247,8 @@ export const ToolError = ({ message }) => (
 export const InlineCode = ({ children }) => (
   <code
     style={{
-      backgroundColor: 'var(--chat-input-bg, #3c3c3c)',
-      color: '#e6b450', // Yellow/gold for inline code
+      backgroundColor: 'var(--chat-input-bg)',
+      color: 'var(--chat-code-inline)',
       padding: '2px 6px',
       borderRadius: '3px',
       fontFamily: 'var(--font-mono)',

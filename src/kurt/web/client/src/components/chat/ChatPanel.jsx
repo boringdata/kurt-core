@@ -23,9 +23,9 @@ const ChatPanel = forwardRef(({ children, className = '', ...props }, ref) => {
         flexDirection: 'column',
         width: '100%',
         height: '100%',
-        backgroundColor: 'var(--chat-bg, #1e1e1e)',
-        color: 'var(--chat-text, #cccccc)',
-        fontFamily: 'var(--font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif)',
+        backgroundColor: 'var(--chat-bg)',
+        color: 'var(--chat-text)',
+        fontFamily: 'var(--font-family)',
         fontSize: '13px',
         lineHeight: '1.5',
         overflow: 'hidden',
@@ -39,31 +39,41 @@ const ChatPanel = forwardRef(({ children, className = '', ...props }, ref) => {
 
 ChatPanel.displayName = 'ChatPanel'
 
-// CSS Variables for theming
+// CSS Variables for theming - maps chat tokens to main design tokens
 export const chatThemeVars = `
   :root {
-    /* VSCode-style dark theme */
-    --chat-bg: #1e1e1e;
-    --chat-panel-bg: #252526;
-    --chat-input-bg: #3c3c3c;
-    --chat-text: #cccccc;
-    --chat-text-muted: #858585;
-    --chat-accent: #0078d4;
-    --chat-success: #89d185;
-    --chat-error: #f48771;
-    --chat-warning: #cca700;
-    --chat-border: #454545;
-    --chat-user-bubble: #393937;
-    --chat-spacing-xs: 4px;
-    --chat-spacing-sm: 8px;
-    --chat-spacing-md: 12px;
-    --chat-spacing-lg: 16px;
-    --chat-spacing-xl: 24px;
-    --chat-radius-sm: 4px;
-    --chat-radius-md: 8px;
-    --chat-radius-lg: 12px;
-    --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    --font-mono: "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas, monospace;
+    /* Light theme - maps to main design tokens */
+    --chat-bg: var(--color-bg-secondary);
+    --chat-panel-bg: var(--color-bg-primary);
+    --chat-input-bg: var(--color-bg-tertiary);
+    --chat-code-bg: var(--color-bg-tertiary);
+    --chat-text: var(--color-text-primary);
+    --chat-text-muted: var(--color-text-secondary);
+    --chat-text-tertiary: var(--color-text-tertiary);
+    --chat-accent: var(--color-accent);
+    --chat-success: var(--color-success);
+    --chat-success-bg: var(--color-success-light);
+    --chat-error: var(--color-error);
+    --chat-error-bg: var(--color-error-light);
+    --chat-warning: var(--color-warning);
+    --chat-info: var(--color-info);
+    --chat-border: var(--color-border);
+    --chat-user-bubble: var(--color-bg-tertiary);
+    --chat-code-inline: var(--color-accent);
+    --chat-diff-add-bg: var(--color-diff-add-bg);
+    --chat-diff-add-text: var(--color-diff-add-text);
+    --chat-diff-remove-bg: var(--color-diff-remove-bg);
+    --chat-diff-remove-text: var(--color-diff-remove-text);
+    --chat-spacing-xs: var(--space-1);
+    --chat-spacing-sm: var(--space-2);
+    --chat-spacing-md: var(--space-3);
+    --chat-spacing-lg: var(--space-4);
+    --chat-spacing-xl: var(--space-6);
+    --chat-radius-sm: var(--radius-sm);
+    --chat-radius-md: var(--radius-md);
+    --chat-radius-lg: var(--radius-lg);
+    --font-family: var(--font-sans);
+    --font-mono: var(--font-mono);
   }
 `
 

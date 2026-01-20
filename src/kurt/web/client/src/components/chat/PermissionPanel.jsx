@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Terminal, Pencil, PenLine, BookOpen, Search, Globe, Bot, Settings } from 'lucide-react'
 
 /**
  * PermissionPanel - Displays permission request with options
@@ -35,14 +36,14 @@ const DESTINATION_ORDER = ['localSettings', 'userSettings', 'projectSettings', '
 
 const styles = {
   container: {
-    backgroundColor: 'var(--chat-panel-bg, #252526)',
-    border: '1px solid var(--chat-border, #454545)',
+    backgroundColor: 'var(--chat-panel-bg)',
+    border: '1px solid var(--chat-border)',
     borderRadius: 'var(--chat-radius-md, 8px)',
     padding: 'var(--chat-spacing-md, 12px)',
     margin: 'var(--chat-spacing-md, 12px)',
   },
   title: {
-    color: 'var(--chat-text, #cccccc)',
+    color: 'var(--chat-text)',
     fontSize: '14px',
     fontWeight: 500,
     marginBottom: 'var(--chat-spacing-sm, 8px)',
@@ -69,20 +70,20 @@ const styles = {
     fontSize: '12px',
   },
   primaryInfo: {
-    color: 'var(--chat-text, #cccccc)',
+    color: 'var(--chat-text)',
     fontFamily: 'monospace',
     fontSize: '12px',
     wordBreak: 'break-all',
   },
   secondaryInfo: {
-    color: 'var(--chat-text-muted, #858585)',
+    color: 'var(--chat-text-muted)',
     fontSize: '12px',
     marginBottom: 'var(--chat-spacing-sm, 8px)',
     fontStyle: 'italic',
   },
   diffContainer: {
-    backgroundColor: '#1a1a1a',
-    border: '1px solid var(--chat-border, #454545)',
+    backgroundColor: 'var(--color-pre-bg)',
+    border: '1px solid var(--chat-border)',
     borderRadius: '4px',
     padding: '8px',
     marginBottom: 'var(--chat-spacing-sm, 8px)',
@@ -93,23 +94,23 @@ const styles = {
   },
   diffLine: {
     whiteSpace: 'pre',
-    color: 'var(--chat-text-muted, #858585)',
+    color: 'var(--chat-text-muted)',
   },
   diffAdded: {
-    backgroundColor: 'rgba(46, 160, 67, 0.15)',
-    color: '#3fb950',
+    backgroundColor: 'var(--chat-diff-add-bg)',
+    color: 'var(--chat-diff-add-text)',
   },
   diffRemoved: {
-    backgroundColor: 'rgba(248, 81, 73, 0.15)',
-    color: '#f85149',
+    backgroundColor: 'var(--chat-diff-remove-bg)',
+    color: 'var(--chat-diff-remove-text)',
   },
   diffHunk: {
-    color: '#8b949e',
-    backgroundColor: 'rgba(56, 139, 253, 0.1)',
+    color: 'var(--chat-info)',
+    backgroundColor: 'var(--color-info-light)',
   },
   codeContainer: {
-    backgroundColor: '#1a1a1a',
-    border: '1px solid var(--chat-border, #454545)',
+    backgroundColor: 'var(--color-pre-bg)',
+    border: '1px solid var(--chat-border)',
     borderRadius: '4px',
     padding: '8px',
     marginBottom: 'var(--chat-spacing-sm, 8px)',
@@ -120,7 +121,7 @@ const styles = {
     margin: 0,
     fontFamily: 'monospace',
     fontSize: '12px',
-    color: 'var(--chat-text-muted, #858585)',
+    color: 'var(--chat-text-muted)',
     whiteSpace: 'pre-wrap',
     wordBreak: 'break-all',
   },
@@ -135,17 +136,17 @@ const styles = {
     gap: '8px',
     padding: '8px 12px',
     backgroundColor: 'transparent',
-    border: '1px solid var(--chat-border, #454545)',
+    border: '1px solid var(--chat-border)',
     borderRadius: 'var(--chat-radius-sm, 4px)',
     cursor: 'pointer',
     textAlign: 'left',
-    color: 'var(--chat-text, #cccccc)',
+    color: 'var(--chat-text)',
     fontSize: '14px',
     transition: 'background-color 0.15s',
   },
   optionSelected: {
-    backgroundColor: 'var(--chat-accent, #0078d4)',
-    borderColor: 'var(--chat-accent, #0078d4)',
+    backgroundColor: 'var(--chat-accent)',
+    borderColor: 'var(--chat-accent)',
     color: 'white',
   },
   optionDisabled: {
@@ -165,10 +166,10 @@ const styles = {
   customInput: {
     width: '100%',
     padding: '8px 12px',
-    backgroundColor: 'var(--chat-input-bg, #3c3c3c)',
-    border: '1px solid var(--chat-border, #454545)',
+    backgroundColor: 'var(--chat-input-bg)',
+    border: '1px solid var(--chat-border)',
     borderRadius: 'var(--chat-radius-sm, 4px)',
-    color: 'var(--chat-text-muted, #858585)',
+    color: 'var(--chat-text-muted)',
     fontSize: '14px',
     outline: 'none',
     boxSizing: 'border-box',
@@ -188,8 +189,8 @@ const styles = {
   bashCommandInput: {
     fontFamily: 'monospace',
     fontSize: '12px',
-    backgroundColor: 'var(--chat-input-bg, #3c3c3c)',
-    border: '1px solid var(--chat-border, #454545)',
+    backgroundColor: 'var(--chat-input-bg)',
+    border: '1px solid var(--chat-border)',
     borderRadius: '4px',
     padding: '6px 8px',
     whiteSpace: 'pre-wrap',
@@ -197,7 +198,7 @@ const styles = {
     outline: 'none',
   },
   questionContainer: {
-    border: '1px solid var(--chat-border, #454545)',
+    border: '1px solid var(--chat-border)',
     borderRadius: '6px',
     marginBottom: 'var(--chat-spacing-sm, 8px)',
     overflow: 'hidden',
@@ -206,8 +207,8 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: 'var(--chat-panel-bg, #252526)',
-    borderBottom: '1px solid var(--chat-border, #454545)',
+    backgroundColor: 'var(--chat-panel-bg)',
+    borderBottom: '1px solid var(--chat-border)',
     padding: '6px 8px',
   },
   questionTabs: {
@@ -220,21 +221,21 @@ const styles = {
     borderRadius: '4px',
     padding: '4px 6px',
     background: 'transparent',
-    color: 'var(--chat-text-muted, #858585)',
+    color: 'var(--chat-text-muted)',
     cursor: 'pointer',
     fontSize: '12px',
   },
   questionTabActive: {
-    borderColor: 'var(--chat-accent, #0078d4)',
-    color: 'var(--chat-text, #cccccc)',
+    borderColor: 'var(--chat-accent)',
+    color: 'var(--chat-text)',
   },
   questionTabAnswered: {
-    color: 'var(--chat-text, #cccccc)',
+    color: 'var(--chat-text)',
   },
   questionClose: {
     background: 'transparent',
     border: 'none',
-    color: 'var(--chat-text-muted, #858585)',
+    color: 'var(--chat-text-muted)',
     cursor: 'pointer',
     fontSize: '16px',
     padding: '0 4px',
@@ -243,7 +244,7 @@ const styles = {
     padding: '10px',
   },
   questionTitle: {
-    color: 'var(--chat-text, #cccccc)',
+    color: 'var(--chat-text)',
     fontWeight: 600,
     marginBottom: '8px',
   },
@@ -258,18 +259,18 @@ const styles = {
     gap: '8px',
     padding: '8px',
     borderRadius: '4px',
-    border: '1px solid var(--chat-border, #454545)',
+    border: '1px solid var(--chat-border)',
     background: 'transparent',
-    color: 'var(--chat-text, #cccccc)',
+    color: 'var(--chat-text)',
     cursor: 'pointer',
     textAlign: 'left',
   },
   questionOptionSelected: {
-    borderColor: 'var(--chat-accent, #0078d4)',
-    backgroundColor: 'rgba(0, 120, 212, 0.2)',
+    borderColor: 'var(--chat-accent)',
+    backgroundColor: 'var(--color-info-bg)',
   },
   questionOptionConfirming: {
-    borderColor: '#3fb950',
+    borderColor: 'var(--chat-success)',
   },
   questionOptionControl: {
     marginTop: '4px',
@@ -284,40 +285,40 @@ const styles = {
     fontWeight: 500,
   },
   questionOptionDescription: {
-    color: 'var(--chat-text-muted, #858585)',
+    color: 'var(--chat-text-muted)',
     fontSize: '12px',
   },
   checkbox: {
     width: '14px',
     height: '14px',
-    border: '1px solid var(--chat-border, #454545)',
+    border: '1px solid var(--chat-border)',
     borderRadius: '2px',
     display: 'inline-block',
   },
   checkboxChecked: {
-    backgroundColor: 'var(--chat-accent, #0078d4)',
+    backgroundColor: 'var(--chat-accent)',
   },
   radio: {
     width: '14px',
     height: '14px',
-    border: '1px solid var(--chat-border, #454545)',
+    border: '1px solid var(--chat-border)',
     borderRadius: '50%',
     display: 'inline-block',
   },
   radioChecked: {
-    backgroundColor: 'var(--chat-accent, #0078d4)',
+    backgroundColor: 'var(--chat-accent)',
   },
   otherInput: {
     marginTop: '6px',
     padding: '6px 8px',
     borderRadius: '4px',
-    border: '1px solid var(--chat-border, #454545)',
-    backgroundColor: 'var(--chat-input-bg, #3c3c3c)',
-    color: 'var(--chat-text, #cccccc)',
+    border: '1px solid var(--chat-border)',
+    backgroundColor: 'var(--chat-input-bg)',
+    color: 'var(--chat-text)',
     fontSize: '12px',
   },
   questionEmpty: {
-    color: 'var(--chat-text-muted, #858585)',
+    color: 'var(--chat-text-muted)',
     fontSize: '12px',
   },
 }
@@ -491,8 +492,8 @@ const getToolDisplay = (toolName, toolInput) => {
   switch (name) {
     case 'bash':
       return {
-        icon: '⌘',
-        color: '#e5534b',
+        icon: <Terminal size={12} />,
+        color: 'var(--color-error)',
         primary: input.command,
         secondary: input.description,
         label: 'Command',
@@ -500,8 +501,8 @@ const getToolDisplay = (toolName, toolInput) => {
 
     case 'write':
       return {
-        icon: '✎',
-        color: '#3fb950',
+        icon: <Pencil size={12} />,
+        color: 'var(--color-success)',
         primary: input.file_path || input.path,
         secondary: input.content ? `${input.content.split('\n').length} lines` : null,
         label: 'Write File',
@@ -510,8 +511,8 @@ const getToolDisplay = (toolName, toolInput) => {
 
     case 'edit':
       return {
-        icon: '✏',
-        color: '#f0883e',
+        icon: <PenLine size={12} />,
+        color: 'var(--color-warning)',
         primary: input.file_path || input.path,
         secondary: null,
         label: 'Edit File',
@@ -519,8 +520,8 @@ const getToolDisplay = (toolName, toolInput) => {
 
     case 'read':
       return {
-        icon: '📖',
-        color: '#58a6ff',
+        icon: <BookOpen size={12} />,
+        color: 'var(--color-info)',
         primary: input.file_path || input.path,
         secondary: input.limit ? `Lines ${input.offset || 0}-${(input.offset || 0) + input.limit}` : null,
         label: 'Read File',
@@ -528,8 +529,8 @@ const getToolDisplay = (toolName, toolInput) => {
 
     case 'glob':
       return {
-        icon: '🔍',
-        color: '#a371f7',
+        icon: <Search size={12} />,
+        color: 'var(--color-violet-light)',
         primary: input.pattern,
         secondary: input.path ? `in ${input.path}` : null,
         label: 'Find Files',
@@ -537,8 +538,8 @@ const getToolDisplay = (toolName, toolInput) => {
 
     case 'grep':
       return {
-        icon: '🔎',
-        color: '#a371f7',
+        icon: <Search size={12} />,
+        color: 'var(--color-violet-light)',
         primary: input.pattern,
         secondary: input.path ? `in ${input.path}` : null,
         label: 'Search Content',
@@ -546,8 +547,8 @@ const getToolDisplay = (toolName, toolInput) => {
 
     case 'webfetch':
       return {
-        icon: '🌐',
-        color: '#79c0ff',
+        icon: <Globe size={12} />,
+        color: 'var(--color-info-vivid)',
         primary: input.url,
         secondary: input.prompt ? `"${input.prompt.slice(0, 50)}..."` : null,
         label: 'Fetch URL',
@@ -555,8 +556,8 @@ const getToolDisplay = (toolName, toolInput) => {
 
     case 'websearch':
       return {
-        icon: '🔎',
-        color: '#79c0ff',
+        icon: <Search size={12} />,
+        color: 'var(--color-info-vivid)',
         primary: input.query,
         secondary: null,
         label: 'Web Search',
@@ -564,8 +565,8 @@ const getToolDisplay = (toolName, toolInput) => {
 
     case 'task':
       return {
-        icon: '🤖',
-        color: '#f778ba',
+        icon: <Bot size={12} />,
+        color: 'var(--color-pink)',
         primary: input.subagent_type || 'agent',
         secondary: input.prompt ? `"${input.prompt.slice(0, 50)}..."` : null,
         label: 'Launch Agent',
@@ -573,8 +574,8 @@ const getToolDisplay = (toolName, toolInput) => {
 
     default:
       return {
-        icon: '⚙',
-        color: '#8b949e',
+        icon: <Settings size={12} />,
+        color: 'var(--color-text-secondary)',
         primary: Object.keys(input)[0] ? `${Object.keys(input)[0]}: ${Object.values(input)[0]}` : null,
         secondary: null,
         label: toolName || 'Tool',

@@ -1,7 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { DockviewReact, DockviewDefaultTab } from 'dockview-react'
 import 'dockview-react/dist/styles/dockview.css'
+import { ChevronDown, ChevronUp } from 'lucide-react'
 
+import { ThemeProvider } from './hooks/useTheme'
+import ThemeToggle from './components/ThemeToggle'
+import UserMenu from './components/UserMenu'
 import FileTreePanel from './panels/FileTreePanel'
 import EditorPanel from './panels/EditorPanel'
 import TerminalPanel from './panels/TerminalPanel'
@@ -321,6 +325,7 @@ export default function App() {
   const ensureCorePanelsRef = useRef(null)
   const [projectRoot, setProjectRoot] = useState(null) // null = not loaded yet, '' = loaded but empty
   const projectRootRef = useRef(null) // Stable ref for callbacks
+  const [userContext, setUserContext] = useState(null)
 
   // Toggle sidebar collapse - capture size before collapsing
   const toggleFiletree = useCallback(() => {
@@ -406,13 +411,11 @@ export default function App() {
           title={collapsed.workflows ? 'Expand panel' : 'Collapse panel'}
           aria-label={collapsed.workflows ? 'Expand panel' : 'Collapse panel'}
         >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-            {collapsed.workflows ? (
-              <path d="M3.5 6L8 10.5L12.5 6H3.5Z" />
-            ) : (
-              <path d="M3.5 10L8 5.5L12.5 10H3.5Z" />
-            )}
-          </svg>
+          {collapsed.workflows ? (
+            <ChevronDown size={14} />
+          ) : (
+            <ChevronUp size={14} />
+          )}
         </button>
       )
     },
@@ -1260,6 +1263,14 @@ export default function App() {
     fetchProjectRoot()
   }, [])
 
+  // Fetch user context for cloud mode detection and user menu
+  useEffect(() => {
+    fetch(apiUrl('/api/me'))
+      .then((res) => res.json())
+      .then((data) => setUserContext(data))
+      .catch(() => setUserContext({ is_cloud_mode: false }))
+  }, [])
+
   // Restore layout once projectRoot is loaded and dockApi is available
   const layoutRestorationRan = useRef(false)
   useEffect(() => {
@@ -1712,7 +1723,11 @@ export default function App() {
   }
 
   if (POC_MODE === 'chat') {
-    return <ClaudeStreamChat />
+    return (
+      <ThemeProvider>
+        <ClaudeStreamChat />
+      </ThemeProvider>
+    )
   }
 
   // Build className with collapsed state flags for CSS targeting
@@ -1724,14 +1739,28 @@ export default function App() {
   ].filter(Boolean).join(' ')
 
   return (
-    <DockviewReact
-      className={dockviewClassName}
-      components={components}
-      tabComponents={tabComponents}
-      rightHeaderActionsComponent={RightHeaderActions}
-      onReady={onReady}
-      showDndOverlay={showDndOverlay}
-      onDidDrop={onDidDrop}
-    />
+    <ThemeProvider>
+      <div className="app-container">
+        <div className="app-header">
+          <ThemeToggle />
+          {userContext?.is_cloud_mode && userContext?.user && (
+            <UserMenu
+              email={userContext.user.email}
+              workspaceName={userContext.workspace?.name || 'Workspace'}
+              workspaceId={userContext.workspace?.id || ''}
+            />
+          )}
+        </div>
+        <DockviewReact
+          className={dockviewClassName}
+          components={components}
+          tabComponents={tabComponents}
+          rightHeaderActionsComponent={RightHeaderActions}
+          onReady={onReady}
+          showDndOverlay={showDndOverlay}
+          onDidDrop={onDidDrop}
+        />
+      </div>
+    </ThemeProvider>
   )
 }

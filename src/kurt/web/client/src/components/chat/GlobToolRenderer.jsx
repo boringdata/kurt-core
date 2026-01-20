@@ -1,3 +1,4 @@
+import { FileText, FileCode, FileJson, FileType } from 'lucide-react'
 import ToolUseBlock, { ToolError, InlineCode } from './ToolUseBlock'
 
 /**
@@ -10,25 +11,25 @@ import ToolUseBlock, { ToolError, InlineCode } from './ToolUseBlock'
  */
 
 /**
- * Get icon based on file extension
+ * Get icon component based on file extension
  */
+const FILE_ICONS = {
+  js: FileCode,
+  jsx: FileCode,
+  ts: FileCode,
+  tsx: FileCode,
+  py: FileCode,
+  md: FileType,
+  json: FileJson,
+  css: FileCode,
+  html: FileCode,
+  default: FileText,
+}
+
 const getFileIcon = (filename) => {
   const ext = filename.split('.').pop()?.toLowerCase()
-
-  const icons = {
-    js: '📄',
-    jsx: '⚛️',
-    ts: '📘',
-    tsx: '⚛️',
-    py: '🐍',
-    md: '📝',
-    json: '📋',
-    css: '🎨',
-    html: '🌐',
-    default: '📄',
-  }
-
-  return icons[ext] || icons.default
+  const IconComponent = FILE_ICONS[ext] || FILE_ICONS.default
+  return <IconComponent size={14} />
 }
 
 const GlobToolRenderer = ({
@@ -59,7 +60,7 @@ const GlobToolRenderer = ({
       ) : status === 'running' ? (
         <div
           style={{
-            color: 'var(--chat-text-muted, #858585)',
+            color: 'var(--chat-text-muted)',
             fontSize: '13px',
             fontStyle: 'italic',
           }}
@@ -71,7 +72,7 @@ const GlobToolRenderer = ({
       ) : (
         <div
           style={{
-            color: 'var(--chat-text-muted, #858585)',
+            color: 'var(--chat-text-muted)',
             fontSize: '13px',
           }}
         >
@@ -102,11 +103,11 @@ const FileList = ({ files }) => (
           gap: '8px',
           fontSize: '13px',
           fontFamily: 'var(--font-mono)',
-          color: 'var(--chat-text, #cccccc)',
+          color: 'var(--chat-text)',
           padding: '2px 0',
         }}
       >
-        <span style={{ color: 'var(--chat-text-muted, #858585)', fontSize: '12px' }}>
+        <span style={{ color: 'var(--chat-text-muted)', fontSize: '12px' }}>
           {getFileIcon(file)}
         </span>
         <span>{file}</span>

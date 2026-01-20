@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
+import { ChevronDown } from 'lucide-react'
 import Editor from 'react-simple-code-editor'
 import { Highlight, themes } from 'prism-react-renderer'
 
@@ -133,17 +134,10 @@ export default function FrontmatterEditor({
     <div className={`frontmatter-editor ${isCollapsed ? 'collapsed' : ''} ${hasError ? 'has-error' : ''}`}>
       <div className="frontmatter-header" onClick={onToggleCollapse}>
         <button type="button" className="frontmatter-toggle" aria-label={isCollapsed ? 'Expand' : 'Collapse'}>
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
+          <ChevronDown
+            size={12}
             style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}
-          >
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
+          />
         </button>
         <span className="frontmatter-label">Metadata</span>
         {hasFrontmatter && (
@@ -194,11 +188,11 @@ export default function FrontmatterEditor({
                       className="frontmatter-input"
                       textareaClassName="frontmatter-textarea"
                       style={{
-                        fontFamily: "'IBM Plex Mono', Monaco, 'Courier New', monospace",
+                        fontFamily: "var(--font-mono)",
                         fontSize: 12,
                         lineHeight: 1.5,
-                        backgroundColor: '#1e1e1e',
-                        color: '#d4d4d4',
+                        backgroundColor: 'var(--color-pre-bg)',
+                        color: 'var(--color-pre-text)',
                         minHeight: '60px',
                       }}
                     />
@@ -224,11 +218,11 @@ export default function FrontmatterEditor({
                 className="frontmatter-input"
                 textareaClassName="frontmatter-textarea"
                 style={{
-                  fontFamily: "'IBM Plex Mono', Monaco, 'Courier New', monospace",
+                  fontFamily: "var(--font-mono)",
                   fontSize: 12,
                   lineHeight: 1.5,
-                  backgroundColor: '#1e1e1e',
-                  color: '#d4d4d4',
+                  backgroundColor: 'var(--color-pre-bg)',
+                  color: 'var(--color-pre-text)',
                   minHeight: '60px',
                 }}
               />
