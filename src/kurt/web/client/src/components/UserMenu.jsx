@@ -15,12 +15,8 @@ export default function UserMenu({ email, workspaceName, workspaceId }) {
   // Get first letter of email (uppercase) for avatar
   const avatarLetter = email ? email.charAt(0).toUpperCase() : '?'
 
-  // Format workspace display - show name or short ID
-  const workspaceDisplay = workspaceName && !workspaceName.includes('-')
-    ? workspaceName
-    : workspaceId
-      ? workspaceId.slice(0, 8) + '...'
-      : 'Workspace'
+  // Show workspace name if available, otherwise hide
+  const showWorkspace = workspaceName && !workspaceName.includes('-')
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -60,7 +56,7 @@ export default function UserMenu({ email, workspaceName, workspaceId }) {
       {isOpen && (
         <div className="user-menu-dropdown" role="menu">
           <div className="user-menu-email">{email}</div>
-          <div className="user-menu-workspace">{workspaceDisplay}</div>
+          {showWorkspace && <div className="user-menu-workspace">{workspaceName}</div>}
           <div className="user-menu-divider" />
           <button
             className="user-menu-item"

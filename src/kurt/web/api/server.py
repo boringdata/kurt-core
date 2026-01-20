@@ -244,6 +244,27 @@ def api_config():
         }
 
 
+def _fetch_workspace_name(workspace_id: str, access_token: str) -> Optional[str]:
+    """Fetch workspace name from cloud API."""
+    import json as json_module
+    import urllib.request
+
+    try:
+        cloud_url = get_cloud_api_url()
+        if not cloud_url:
+            return None
+
+        url = f"{cloud_url}/api/v1/workspaces/{workspace_id}"
+        req = urllib.request.Request(url)
+        req.add_header("Authorization", f"Bearer {access_token}")
+
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            workspace = json_module.loads(resp.read().decode())
+            return workspace.get("name")
+    except Exception:
+        return None
+
+
 @app.get("/api/me")
 def api_me(request: Request):
     """Get current user context.
@@ -256,19 +277,28 @@ def api_me(request: Request):
     # Try JWT auth first (cloud deployment with Supabase)
     user = get_authenticated_user(request)
     if user is not None:
+        workspace_name = user.workspace_id  # Default to ID
         return {
             "is_cloud_mode": True,
             "user": {"id": user.user_id, "email": user.email},
-            "workspace": {"id": user.workspace_id, "name": user.workspace_id},
+            "workspace": {"id": user.workspace_id, "name": workspace_name},
         }
 
     # Fallback: CLI credentials (~/.kurt/credentials.json)
     creds = load_credentials()
     if creds and creds.email:
+        # Try to fetch workspace name from cloud API
+        workspace_name = None
+        if creds.workspace_id and creds.access_token:
+            workspace_name = _fetch_workspace_name(creds.workspace_id, creds.access_token)
+
         return {
             "is_cloud_mode": True,
             "user": {"id": creds.user_id, "email": creds.email},
-            "workspace": {"id": creds.workspace_id, "name": creds.workspace_id},
+            "workspace": {
+                "id": creds.workspace_id,
+                "name": workspace_name,  # None if not fetched
+            },
         }
 
     # No auth available

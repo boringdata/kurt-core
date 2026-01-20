@@ -122,7 +122,7 @@ describe('UserMenu', () => {
       expect(screen.getByText('john@example.com')).toBeInTheDocument()
     })
 
-    it('displays workspace name when not a UUID', () => {
+    it('displays workspace name when available', () => {
       render(<UserMenu {...defaultProps} workspaceName="My Workspace" />)
 
       const avatar = screen.getByRole('button', { name: 'User menu' })
@@ -131,13 +131,14 @@ describe('UserMenu', () => {
       expect(screen.getByText('My Workspace')).toBeInTheDocument()
     })
 
-    it('displays shortened workspace ID when name is UUID', () => {
-      render(<UserMenu {...defaultProps} workspaceName="9459aaea-4d1e-4933-88f9-538646f60e7e" workspaceId="9459aaea-4d1e-4933-88f9-538646f60e7e" />)
+    it('hides workspace when name looks like UUID', () => {
+      render(<UserMenu {...defaultProps} workspaceName="9459aaea-4d1e-4933-88f9-538646f60e7e" />)
 
       const avatar = screen.getByRole('button', { name: 'User menu' })
       fireEvent.click(avatar)
 
-      expect(screen.getByText('9459aaea...')).toBeInTheDocument()
+      // Should not show UUID as workspace name
+      expect(screen.queryByText(/9459aaea/)).not.toBeInTheDocument()
     })
 
     it('displays manage workspace button', () => {
@@ -248,8 +249,8 @@ describe('UserMenu', () => {
       expect(document.querySelector('.user-menu-email')).toBeInTheDocument()
     })
 
-    it('applies user-menu-workspace class to workspace display', () => {
-      render(<UserMenu {...defaultProps} />)
+    it('applies user-menu-workspace class when workspace name available', () => {
+      render(<UserMenu {...defaultProps} workspaceName="My Workspace" />)
 
       const avatar = screen.getByRole('button', { name: 'User menu' })
       fireEvent.click(avatar)
