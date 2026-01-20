@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 
 /**
  * ToolUseBlock - Wrapper component for tool use displays
@@ -126,7 +127,7 @@ const ToolUseBlock = ({
                   marginLeft: 'auto',
                 }}
               >
-                {isExpanded ? '▼' : '▶'}
+                {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
               </span>
             )}
           </div>

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react'
-import { Check } from 'lucide-react'
+import { Check, FileText } from 'lucide-react'
 
 const apiBase = import.meta.env.VITE_API_URL || ''
 const apiUrl = (path) => `${apiBase}${path}`
@@ -126,7 +126,7 @@ export default function GitChangesView({ onOpenDiff, activeDiffFile }) {
                     className={`git-change-item ${isActive ? 'git-change-item-active' : ''}`}
                     onClick={() => handleFileClick(path, status)}
                   >
-                    <span className="git-change-icon">📄</span>
+                    <span className="git-change-icon"><FileText size={14} /></span>
                     <div className="git-change-info">
                       <span className={`git-change-name file-name-${status.toLowerCase()}`}>
                         {getFileName(path)}

@@ -714,7 +714,7 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
                       if (entry) handleClick(entry)
                     }}
                   >
-                    <span className="file-item-icon">📂</span>
+                    <span className="file-item-icon"><FolderOpen size={14} /></span>
                     <span className="file-item-name">Loading...</span>
                   </div>
                 )}

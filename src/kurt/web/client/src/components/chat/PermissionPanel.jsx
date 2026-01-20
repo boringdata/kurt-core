@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Terminal, Pencil, PenLine, BookOpen, Search, Globe, Bot, Settings } from 'lucide-react'
 
 /**
  * PermissionPanel - Displays permission request with options
@@ -491,7 +492,7 @@ const getToolDisplay = (toolName, toolInput) => {
   switch (name) {
     case 'bash':
       return {
-        icon: '⌘',
+        icon: <Terminal size={12} />,
         color: 'var(--color-error)',
         primary: input.command,
         secondary: input.description,
@@ -500,7 +501,7 @@ const getToolDisplay = (toolName, toolInput) => {
 
     case 'write':
       return {
-        icon: '✎',
+        icon: <Pencil size={12} />,
         color: 'var(--color-success)',
         primary: input.file_path || input.path,
         secondary: input.content ? `${input.content.split('\n').length} lines` : null,
@@ -510,7 +511,7 @@ const getToolDisplay = (toolName, toolInput) => {
 
     case 'edit':
       return {
-        icon: '✏',
+        icon: <PenLine size={12} />,
         color: 'var(--color-warning)',
         primary: input.file_path || input.path,
         secondary: null,
@@ -519,7 +520,7 @@ const getToolDisplay = (toolName, toolInput) => {
 
     case 'read':
       return {
-        icon: '📖',
+        icon: <BookOpen size={12} />,
         color: 'var(--color-info)',
         primary: input.file_path || input.path,
         secondary: input.limit ? `Lines ${input.offset || 0}-${(input.offset || 0) + input.limit}` : null,
@@ -528,7 +529,7 @@ const getToolDisplay = (toolName, toolInput) => {
 
     case 'glob':
       return {
-        icon: '🔍',
+        icon: <Search size={12} />,
         color: 'var(--color-violet-light)',
         primary: input.pattern,
         secondary: input.path ? `in ${input.path}` : null,
@@ -537,7 +538,7 @@ const getToolDisplay = (toolName, toolInput) => {
 
     case 'grep':
       return {
-        icon: '🔎',
+        icon: <Search size={12} />,
         color: 'var(--color-violet-light)',
         primary: input.pattern,
         secondary: input.path ? `in ${input.path}` : null,
@@ -546,7 +547,7 @@ const getToolDisplay = (toolName, toolInput) => {
 
     case 'webfetch':
       return {
-        icon: '🌐',
+        icon: <Globe size={12} />,
         color: 'var(--color-info-vivid)',
         primary: input.url,
         secondary: input.prompt ? `"${input.prompt.slice(0, 50)}..."` : null,
@@ -555,7 +556,7 @@ const getToolDisplay = (toolName, toolInput) => {
 
     case 'websearch':
       return {
-        icon: '🔎',
+        icon: <Search size={12} />,
         color: 'var(--color-info-vivid)',
         primary: input.query,
         secondary: null,
@@ -564,7 +565,7 @@ const getToolDisplay = (toolName, toolInput) => {
 
     case 'task':
       return {
-        icon: '🤖',
+        icon: <Bot size={12} />,
         color: 'var(--color-pink)',
         primary: input.subagent_type || 'agent',
         secondary: input.prompt ? `"${input.prompt.slice(0, 50)}..."` : null,
@@ -573,7 +574,7 @@ const getToolDisplay = (toolName, toolInput) => {
 
     default:
       return {
-        icon: '⚙',
+        icon: <Settings size={12} />,
         color: 'var(--color-text-secondary)',
         primary: Object.keys(input)[0] ? `${Object.keys(input)[0]}: ${Object.values(input)[0]}` : null,
         secondary: null,

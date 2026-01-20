@@ -1580,7 +1580,7 @@ const ComposerShell = ({
           <div className="claude-context-files">
             {contextFiles.map((file) => (
               <div key={file.id} className="claude-context-pill">
-                <span className="claude-context-pill-icon">📄</span>
+                <span className="claude-context-pill-icon"><FileText size={14} /></span>
                 <span className="claude-context-pill-label">{file.label}</span>
                 <button
                   type="button"
@@ -2088,7 +2088,9 @@ const Thread = ({
   onError,
 }) => {
   const [showModeMenu, setShowModeMenu] = useState(false)
+  const [showOverflowMenu, setShowOverflowMenu] = useState(false)
   const sessionDropdownRef = useRef(null)
+  const overflowMenuRef = useRef(null)
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -2509,8 +2511,6 @@ export default function ClaudeStreamChat({
   const [errorLog, setErrorLog] = useState([])
   const [activeError, setActiveError] = useState(null)
   const [showErrorLog, setShowErrorLog] = useState(false)
-  const [showOverflowMenu, setShowOverflowMenu] = useState(false)
-  const overflowMenuRef = useRef(null)
   const retryMessageRef = useRef(null)
   const pendingRewindIdRef = useRef(null)
   const modeChangeRef = useRef(false)

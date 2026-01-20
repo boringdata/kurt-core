@@ -1,3 +1,4 @@
+import { FileText, FileCode, FileJson, FileType } from 'lucide-react'
 import ToolUseBlock, { ToolError, InlineCode } from './ToolUseBlock'
 
 /**
@@ -10,25 +11,25 @@ import ToolUseBlock, { ToolError, InlineCode } from './ToolUseBlock'
  */
 
 /**
- * Get icon based on file extension
+ * Get icon component based on file extension
  */
+const FILE_ICONS = {
+  js: FileCode,
+  jsx: FileCode,
+  ts: FileCode,
+  tsx: FileCode,
+  py: FileCode,
+  md: FileType,
+  json: FileJson,
+  css: FileCode,
+  html: FileCode,
+  default: FileText,
+}
+
 const getFileIcon = (filename) => {
   const ext = filename.split('.').pop()?.toLowerCase()
-
-  const icons = {
-    js: '📄',
-    jsx: '⚛️',
-    ts: '📘',
-    tsx: '⚛️',
-    py: '🐍',
-    md: '📝',
-    json: '📋',
-    css: '🎨',
-    html: '🌐',
-    default: '📄',
-  }
-
-  return icons[ext] || icons.default
+  const IconComponent = FILE_ICONS[ext] || FILE_ICONS.default
+  return <IconComponent size={14} />
 }
 
 const GlobToolRenderer = ({

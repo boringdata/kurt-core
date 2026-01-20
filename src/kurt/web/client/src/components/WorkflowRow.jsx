@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Copy } from 'lucide-react'
+import { Copy, ChevronDown, ChevronRight } from 'lucide-react'
 
 const apiBase = import.meta.env.VITE_API_URL || ''
 const apiUrl = (path) => `${apiBase}${path}`
@@ -200,7 +200,7 @@ function StepBox({
           }
         }}
       >
-        <span className="workflow-step-box-toggle">{isExpanded ? '▼' : '▶'}</span>
+        <span className="workflow-step-box-toggle">{isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</span>
         <span className={`workflow-step-status ${statusClass}`} />
         <span className="workflow-step-box-title">{formatStepName(step.name)}</span>
         <span className="workflow-step-box-meta">
@@ -410,7 +410,7 @@ function WorkflowStepsSection({
         }}
       >
         <span className="workflow-section-toggle">
-          {stepsExpanded ? '▼' : '▶'}
+          {stepsExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         </span>
         <span className="workflow-section-label">Steps</span>
         <span className="workflow-section-preview">{summaryText}</span>
@@ -559,7 +559,7 @@ function WorkflowChildBox({
           }
         }}
       >
-        <span className="workflow-child-toggle">{isExpanded ? '▼' : '▶'}</span>
+        <span className="workflow-child-toggle">{isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</span>
         <span className={`workflow-status-badge ${getStatusBadgeClass(statusLabel)}`}>
           {statusLabel}
         </span>
@@ -792,7 +792,7 @@ export default function WorkflowRow({
           }
         }}
       >
-        <span className="workflow-expand-icon">{isExpanded ? '▼' : '▶'}</span>
+        <span className="workflow-expand-icon">{isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</span>
         <span
           className={`workflow-type-badge ${workflow.workflow_type === 'agent' ? 'workflow-type-agent' : 'workflow-type-tool'}`}
           title={workflow.workflow_type === 'agent' ? 'Agent workflow' : 'Tool workflow'}
