@@ -1322,6 +1322,10 @@ const AssistantMessage = () => {
   const content = message.content || []
   const isStreaming = message.status?.type === 'running'
 
+  // Find the index of the last text part to only show cursor there
+  const lastTextIndex = content.reduce((last, part, idx) =>
+    part.type === 'text' ? idx : last, -1)
+
   return (
     <MessagePrimitive.Root
       className="claude-message-assistant"
@@ -1333,6 +1337,7 @@ const AssistantMessage = () => {
     >
       {content.map((part, index) => {
         if (part.type === 'text') {
+          const isLastText = index === lastTextIndex
           return (
             <div key={`text-${index}`} className="claude-assistant-line">
               <span
@@ -1343,7 +1348,7 @@ const AssistantMessage = () => {
               </span>
               <div className="claude-assistant-text">
                 <TextBlock text={part.text} />
-                {isStreaming && (
+                {isStreaming && isLastText && (
                   <span className="claude-streaming-cursor" aria-hidden="true">
                     ▌
                   </span>
