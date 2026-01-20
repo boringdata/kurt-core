@@ -1451,6 +1451,23 @@ const ComposerShell = ({
     inputRef.current?.focus?.()
   }, [])
 
+  // Resizable input height with localStorage persistence
+  const STORAGE_KEY = 'claude-input-height'
+  const [inputHeight, setInputHeight] = useState(() => {
+    const saved = localStorage.getItem(STORAGE_KEY)
+    return saved ? parseInt(saved, 10) : null
+  })
+
+  const handleInputResize = useCallback(() => {
+    if (inputRef.current) {
+      const height = inputRef.current.offsetHeight
+      if (height > 0) {
+        setInputHeight(height)
+        localStorage.setItem(STORAGE_KEY, String(height))
+      }
+    }
+  }, [])
+
   const applyComposerText = useCallback((nextText) => {
     composerApi?.setText?.(nextText)
     if (inputRef.current) {
@@ -1897,7 +1914,10 @@ const ComposerShell = ({
             }
           }}
         >
-          <textarea />
+          <textarea
+            style={inputHeight ? { height: `${inputHeight}px` } : undefined}
+            onMouseUp={handleInputResize}
+          />
         </ComposerPrimitive.Input>
         <div className="claude-input-actions">
           <div className="claude-input-left">

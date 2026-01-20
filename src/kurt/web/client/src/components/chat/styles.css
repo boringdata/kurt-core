@@ -246,6 +246,7 @@
   font-size: var(--text-sm);
   line-height: var(--leading-tight);
   margin-left: -2px;
+  margin-top: var(--space-2);
 }
 
 .claude-user-context {
@@ -373,9 +374,10 @@
   color: var(--color-text-primary);
   font-size: var(--text-sm);
   font-family: inherit;
-  resize: none;
+  resize: vertical;
   line-height: var(--leading-normal);
   min-height: 24px;
+  max-height: 400px;
 }
 
 .claude-input-box textarea::placeholder {
@@ -1100,6 +1102,11 @@
 .markdown-content th {
   background: var(--color-bg-secondary);
   font-weight: var(--font-semibold);
+}
+
+/* Hide bullet for assistant lines that start with thinking block */
+.claude-assistant-line:has(.text-block > .thinking-block:first-child) > .claude-assistant-bullet {
+  display: none;
 }
 
 /* Thinking block - collapsible thinking content */
