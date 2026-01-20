@@ -107,13 +107,15 @@ describe('WorkflowRow', () => {
     it('shows expand icon in collapsed state', () => {
       render(<WorkflowRow {...defaultProps} isExpanded={false} />)
 
-      expect(screen.getByText('▶')).toBeInTheDocument()
+      // ChevronRight Lucide icon renders as SVG
+      expect(document.querySelector('.workflow-expand-icon svg')).toBeInTheDocument()
     })
 
     it('shows collapse icon in expanded state', () => {
       render(<WorkflowRow {...defaultProps} isExpanded={true} />)
 
-      expect(screen.getByText('▼')).toBeInTheDocument()
+      // ChevronDown Lucide icon renders as SVG
+      expect(document.querySelector('.workflow-expand-icon svg')).toBeInTheDocument()
     })
   })
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react'
-import { Search, X, Folder, FolderOpen, File, FolderInput, RefreshCw, ChevronRight, ChevronDown, MoreHorizontal } from 'lucide-react'
+import { Search, X, Folder, FolderOpen, File, FolderInput, RefreshCw, ChevronRight, ChevronDown, MoreHorizontal, Settings } from 'lucide-react'
 
 const apiBase = import.meta.env.VITE_API_URL || ''
 const apiUrl = (path) => `${apiBase}${path}`
@@ -793,7 +793,7 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
               onClick={() => onOpen(configFile.path)}
               onContextMenu={(event) => handleContextMenu(event, configFile)}
             >
-              <span className="file-item-icon">⚙️</span>
+              <span className="file-item-icon"><Settings size={14} /></span>
               <span className="file-item-name">{configFile.name}</span>
               {renderStatusBadge(getFileStatus(configFile.path))}
             </div>
