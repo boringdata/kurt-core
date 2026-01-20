@@ -1105,7 +1105,7 @@ async def handle_stream_websocket(
 
     # For resumed sessions, send stored init message so client gets slash_commands
     if not created and session._last_init_message:
-        print(f"[Stream] Sending stored init message to resumed client")
+        print("[Stream] Sending stored init message to resumed client")
         await websocket.send_json(session._last_init_message)
 
     try:
