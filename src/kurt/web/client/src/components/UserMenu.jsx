@@ -7,9 +7,8 @@ import { useState, useRef, useEffect } from 'react'
  * - email: User email for avatar letter and display
  * - workspaceName: Workspace name to display
  * - workspaceId: Workspace ID for actions
- * - onLogout: Callback when logout is clicked
  */
-export default function UserMenu({ email, workspaceName, workspaceId, onLogout }) {
+export default function UserMenu({ email, workspaceName, workspaceId }) {
   const [isOpen, setIsOpen] = useState(false)
   const menuRef = useRef(null)
 
@@ -40,13 +39,6 @@ export default function UserMenu({ email, workspaceName, workspaceId, onLogout }
   const handleManageWorkspace = () => {
     console.log('Manage workspace clicked', workspaceId)
     setIsOpen(false)
-  }
-
-  const handleLogout = () => {
-    setIsOpen(false)
-    if (onLogout) {
-      onLogout()
-    }
   }
 
   return (

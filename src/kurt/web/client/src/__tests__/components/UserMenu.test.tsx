@@ -166,42 +166,6 @@ describe('UserMenu', () => {
 
       consoleSpy.mockRestore()
     })
-
-    it('displays logout button', () => {
-      render(<UserMenu {...defaultProps} />)
-
-      const avatar = screen.getByRole('button', { name: 'User menu' })
-      fireEvent.click(avatar)
-
-      expect(screen.getByRole('menuitem', { name: 'Logout' })).toBeInTheDocument()
-    })
-
-    it('calls onLogout and closes dropdown when logout is clicked', () => {
-      const onLogout = vi.fn()
-      render(<UserMenu {...defaultProps} onLogout={onLogout} />)
-
-      const avatar = screen.getByRole('button', { name: 'User menu' })
-      fireEvent.click(avatar)
-
-      const logoutButton = screen.getByRole('menuitem', { name: 'Logout' })
-      fireEvent.click(logoutButton)
-
-      expect(screen.queryByRole('menu')).not.toBeInTheDocument()
-      expect(onLogout).toHaveBeenCalledTimes(1)
-    })
-
-    it('handles logout click without onLogout callback', () => {
-      render(<UserMenu {...defaultProps} />)
-
-      const avatar = screen.getByRole('button', { name: 'User menu' })
-      fireEvent.click(avatar)
-
-      const logoutButton = screen.getByRole('menuitem', { name: 'Logout' })
-      fireEvent.click(logoutButton)
-
-      // Should not throw, just close dropdown
-      expect(screen.queryByRole('menu')).not.toBeInTheDocument()
-    })
   })
 
   describe('Accessibility', () => {
@@ -251,7 +215,7 @@ describe('UserMenu', () => {
       fireEvent.click(avatar)
 
       const menuItems = screen.getAllByRole('menuitem')
-      expect(menuItems).toHaveLength(2) // Manage workspace + Logout
+      expect(menuItems).toHaveLength(1) // Manage workspace
     })
   })
 
