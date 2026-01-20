@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Image, FileText, Loader2, Sparkles } from 'lucide-react'
+import { Image, FileText, Loader2, Sparkles, ChevronLeft } from 'lucide-react'
 import {
   AssistantIf,
   AssistantRuntimeProvider,
@@ -449,6 +449,8 @@ const useClaudeStreamRuntime = (
   onUserMessageId,
   onLastMessageChange,
   imageCache,
+  clearComposerRef,
+  onSettingsSync,
 ) => {
   const wsRef = useRef(null)
   const queueRef = useRef([])
@@ -464,6 +466,7 @@ const useClaudeStreamRuntime = (
   const permissionToolRef = useRef(new Map())
   const [sessionName, setSessionName] = useState('New conversation')
   const [isConnected, setIsConnected] = useState(false)
+  const [restartCounter, setRestartCounter] = useState(0)
 
   useEffect(() => {
     return () => {
@@ -529,12 +532,13 @@ const useClaudeStreamRuntime = (
 
     return new Promise((resolve, reject) => {
       const shouldForceNew = optionsChanged || attachmentsChanged
-      const ws = new WebSocket(
-        buildWsUrl(sessionId, useMode, shouldForceNew, shouldResume, optionsRef.current, fileSpecs)
-      )
+      const url = buildWsUrl(sessionId, useMode, shouldForceNew, shouldResume, optionsRef.current, fileSpecs)
+      console.log('[ClaudeStream] Connecting to:', url)
+      const ws = new WebSocket(url)
       wsRef.current = ws
 
       ws.onopen = () => {
+        console.log('[ClaudeStream] Connected successfully')
         if (wsRef.current !== ws) return
         setIsConnected(true)
         if (fileSpecKey) {
@@ -551,11 +555,25 @@ const useClaudeStreamRuntime = (
         }))
         resolve(ws)
       }
-      ws.onclose = () => {
+      ws.onclose = (event) => {
+        console.log('[ClaudeStream] WebSocket closed:', event.code, event.reason)
         if (wsRef.current !== ws) return
         setIsConnected(false)
+        // Auto-reconnect after unexpected close (code 1000 = normal, 1001 = going away)
+        if (event.code === 1000 || event.code === 1001 || event.code === 1006) {
+          console.log('[ClaudeStream] Auto-reconnecting in 1 second...')
+          setTimeout(() => {
+            if (wsRef.current === null || wsRef.current.readyState === WebSocket.CLOSED) {
+              console.log('[ClaudeStream] Attempting reconnection...')
+              connect(sessionId, useMode, false).catch((err) => {
+                console.error('[ClaudeStream] Reconnection failed:', err)
+              })
+            }
+          }, 1000)
+        }
       }
       ws.onerror = (event) => {
+        console.error('[ClaudeStream] WebSocket error:', event)
         if (wsRef.current !== ws) return
         setIsConnected(false)
         onError?.({
@@ -583,6 +601,10 @@ const useClaudeStreamRuntime = (
         if (payload.type === 'system' && payload.subtype === 'connected' && payload.session_id) {
           setSessionName(payload.session_id)
           setCurrentSessionId(payload.session_id)
+          // Sync settings from backend
+          if (payload.settings) {
+            onSettingsSync?.(payload.settings)
+          }
         }
         if (payload.type === 'system' && payload.subtype === 'error') {
           onError?.({
@@ -612,11 +634,17 @@ const useClaudeStreamRuntime = (
             wsRef.current = null
           }
           setIsConnected(false)
-          // Generate new session ID and reconnect without resume
+          // Generate new session ID and reconnect
           const newSessionId = crypto.randomUUID()
           setCurrentSessionId(newSessionId)
           resumeRef.current = false
-          // Connect will be triggered by the state change via useEffect
+          // Explicitly reconnect after state update
+          setTimeout(() => {
+            console.log('[ClaudeStream] Reconnecting with new session:', newSessionId)
+            connect(newSessionId, modeRef.current, false).catch((err) => {
+              console.error('[ClaudeStream] Reconnect failed:', err)
+            })
+          }, 100)
           return
         }
 
@@ -631,7 +659,7 @@ const useClaudeStreamRuntime = (
         }
       }
     })
-  }, [setCurrentSessionId, onControlMessage, onError, onSlashCommands])
+  }, [setCurrentSessionId, onControlMessage, onError, onSlashCommands, onSettingsSync])
 
   const nextPayload = useCallback(async () => {
     if (queueRef.current.length) return queueRef.current.shift()
@@ -658,6 +686,8 @@ const useClaudeStreamRuntime = (
 
   // Force restart session (e.g., after permission change)
   const restartSession = useCallback(() => {
+    // Increment counter to force runtime reset and clear chat history
+    setRestartCounter(c => c + 1)
     if (wsRef.current) {
       wsRef.current.close()
       wsRef.current = null
@@ -693,6 +723,11 @@ const useClaudeStreamRuntime = (
     }
     ws.onclose = () => {
       if (wsRef.current !== ws) return
+      setIsConnected(false)
+    }
+    ws.onerror = (event) => {
+      if (wsRef.current !== ws) return
+      console.error('[ClaudeStream] WebSocket error during restart:', event)
       setIsConnected(false)
     }
     ws.onmessage = (event) => {
@@ -768,15 +803,24 @@ const useClaudeStreamRuntime = (
   }, [])
 
   const sendControlMessage = useCallback((subtype, payload = {}) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      console.warn('[ClaudeStream] Cannot send control - WebSocket not connected')
-      return
+    const trySend = (attempt = 0) => {
+      const ws = wsRef.current
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'control',
+          subtype,
+          ...payload,
+        }))
+        return
+      }
+      if (attempt < 10) {
+        // Retry up to 10 times (5 seconds total)
+        setTimeout(() => trySend(attempt + 1), 500)
+      } else {
+        console.warn('[ClaudeStream] Control message failed - connection not established after retries')
+      }
     }
-    wsRef.current.send(JSON.stringify({
-      type: 'control',
-      subtype,
-      ...payload,
-    }))
+    trySend()
   }, [])
 
   // Send a message directly (for retry)
@@ -829,6 +873,12 @@ const useClaudeStreamRuntime = (
         // Handle frontend commands locally
         if (cmd === '/clear') {
           yield { content: [{ type: 'text', text: 'Chat cleared.' }] }
+          return
+        }
+
+        if (cmd === '/restart') {
+          clearComposerRef?.current?.()
+          restartSession()
           return
         }
 
@@ -1117,6 +1167,7 @@ const useClaudeStreamRuntime = (
     sendQuestionResponse,
     sendMessage,
     restartSession,
+    restartCounter,
     sendControlMessage,
   }
 }
@@ -1303,6 +1354,9 @@ const ComposerShell = ({
   isThinkingEnabled,
   currentModel,
   onRestartSession,
+  onToggleThinking,
+  onModelSelect,
+  clearComposerRef,
 }) => {
   const api = useAssistantApi()
   const composerApi = useMemo(() => api.composer(), [api])
@@ -1336,6 +1390,13 @@ const ComposerShell = ({
       }
     }
   }, [composerApi])
+
+  // Set up clearComposerRef to allow external clearing of the input
+  useEffect(() => {
+    if (clearComposerRef) {
+      clearComposerRef.current = () => applyComposerText('')
+    }
+  }, [clearComposerRef, applyComposerText])
 
   const appendAttachmentsToText = useCallback(() => {
     if (attachments.length === 0) return
@@ -1442,19 +1503,32 @@ const ComposerShell = ({
       setShowModelSubmenu(true)
       return
     } else if (item.isModelOption) {
-      // Model option selected - insert /model command
-      const newValue = `/model ${item.value} `
-      applyComposerText(newValue)
+      // Model option selected - call handler directly
+      console.log('[MenuSelect] Model option selected:', item.value, item.label, 'onModelSelect:', typeof onModelSelect)
+      onModelSelect?.(item.value, item.label)
+      // Clear slash command from input
+      const currentText = composerText || ''
+      const slashIndex = currentText.lastIndexOf('/')
+      if (slashIndex >= 0) {
+        const newText = currentText.slice(0, slashIndex).trimEnd()
+        applyComposerText(newText)
+      }
     } else if (item.isAction && item.id === 'restart') {
-      // Restart action - call handler directly
+      // Restart action - call handler directly and clear input
       onRestartSession?.()
+      // Clear after React updates
+      requestAnimationFrame(() => {
+        applyComposerText('')
+        composerApi?.setText?.('')
+      })
+    } else if (item.isToggle && item.id === 'thinking') {
+      // Thinking toggle - call handler directly, keep menu open
+      onToggleThinking?.()
+      // Keep menu open so user can see the toggle change (don't clear input)
+      return
     } else {
       // Slash command - insert text
-      let newValue = `${item.label} `
-      // Handle thinking toggle specially
-      if (item.isToggle && item.id === 'thinking') {
-        newValue = isThinkingEnabled ? '/thinking off ' : '/thinking on '
-      }
+      const newValue = `${item.label} `
       applyComposerText(newValue)
     }
     focusInput()
@@ -1482,8 +1556,12 @@ const ComposerShell = ({
         event.preventDefault()
         if (list.length > 0) {
           const index = menuNavigated ? selectedIndex : 0
-          handleMenuSelect(list[index], showAtMenu ? 'at' : 'slash')
-          setMenuNavigated(false)
+          const item = list[index]
+          handleMenuSelect(item, showAtMenu ? 'at' : 'slash')
+          // Don't reset navigation if it's a toggle (menu stays open)
+          if (!(item.isToggle && item.id === 'thinking')) {
+            setMenuNavigated(false)
+          }
           return
         }
         setShowSlashMenu(false)
@@ -1538,7 +1616,50 @@ const ComposerShell = ({
       <div className="claude-input-box" data-mode={mode} ref={slashMenuRef}>
         {(showSlashMenu || showAtMenu) && (
           <div className="claude-menu">
-            {showSlashMenu && (() => {
+            {showSlashMenu && (showModelSubmenu ? (
+              // Model selector view - replaces the main menu
+              <div className="claude-menu-section">
+                <button
+                  className="claude-menu-back"
+                  onPointerDown={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    setShowModelSubmenu(false)
+                  }}
+                  type="button"
+                >
+                  <ChevronLeft size={16} />
+                  <span>Model</span>
+                </button>
+                {MODEL_OPTIONS.map((model, idx) => {
+                  const isSelected = currentModel && currentModel.includes(model.value)
+                  return (
+                    <button
+                      key={model.id}
+                      ref={idx === selectedIndex ? selectedItemRef : null}
+                      className={`claude-menu-item${idx === selectedIndex ? ' selected' : ''}${isSelected ? ' current' : ''}`}
+                      onPointerDown={(event) => {
+                        console.log('[ModelBtn] pointerdown:', model.value)
+                        event.preventDefault()
+                        event.stopPropagation()
+                        handleMenuSelect({ ...model, isModelOption: true }, 'slash')
+                      }}
+                      onClick={(event) => {
+                        console.log('[ModelBtn] click:', model.value)
+                        event.preventDefault()
+                        event.stopPropagation()
+                        handleMenuSelect({ ...model, isModelOption: true }, 'slash')
+                      }}
+                      type="button"
+                    >
+                      <span>{model.label}</span>
+                      <span className="desc">{model.description}{isSelected ? ' ✓' : ''}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            ) : (() => {
+              // Main slash menu view
               let flatIdx = 0
               return SLASH_MENU_GROUPS.map((group) => {
                 const groupCommands = filteredCommands.filter((cmd) => cmd.group === group.id)
@@ -1552,59 +1673,35 @@ const ComposerShell = ({
                       const isToggleItem = cmd.isToggle && cmd.id === 'thinking'
                       const toggleState = isToggleItem ? isThinkingEnabled : false
                       const isModelItem = cmd.hasSubmenu && cmd.id === 'model'
-                      const modelLabel = currentModel ? MODEL_OPTIONS.find((m) => currentModel.includes(m.value))?.label : null
                       return (
-                        <div key={cmd.id} className="claude-menu-item-wrapper">
-                          <button
-                            ref={idx === selectedIndex ? selectedItemRef : null}
-                            className={`claude-menu-item ${idx === selectedIndex ? 'selected' : ''}${cmd.cliOnly ? ' cli-only' : ''}${isToggleItem ? ' toggle-item' : ''}${isModelItem ? ' has-submenu' : ''}`}
-                            onPointerDown={(event) => {
-                              event.preventDefault()
-                              event.stopPropagation()
-                              handleMenuSelect(cmd, 'slash')
-                            }}
-                            type="button"
-                          >
-                            <span>{cmd.label}</span>
-                            {isToggleItem ? (
-                              <span className={`toggle-indicator ${toggleState ? 'on' : 'off'}`}>
-                                {toggleState ? 'On' : 'Off'}
-                              </span>
-                            ) : isModelItem ? (
-                              <span className="desc">{modelLabel || 'Default'} ›</span>
-                            ) : (
-                              <span className="desc">{cmd.description}</span>
-                            )}
-                          </button>
-                          {isModelItem && showModelSubmenu && (
-                            <div className="claude-submenu">
-                              {MODEL_OPTIONS.map((model) => {
-                                const isSelected = currentModel && currentModel.includes(model.value)
-                                return (
-                                  <button
-                                    key={model.id}
-                                    className={`claude-menu-item${isSelected ? ' current' : ''}`}
-                                    onPointerDown={(event) => {
-                                      event.preventDefault()
-                                      event.stopPropagation()
-                                      handleMenuSelect({ ...model, isModelOption: true }, 'slash')
-                                    }}
-                                    type="button"
-                                  >
-                                    <span>{model.label}</span>
-                                    <span className="desc">{model.description}{isSelected ? ' ✓' : ''}</span>
-                                  </button>
-                                )
-                              })}
-                            </div>
+                        <button
+                          key={cmd.id}
+                          ref={idx === selectedIndex ? selectedItemRef : null}
+                          className={`claude-menu-item ${idx === selectedIndex ? 'selected' : ''}${cmd.cliOnly ? ' cli-only' : ''}${isToggleItem ? ' toggle-item' : ''}${isModelItem ? ' has-submenu' : ''}`}
+                          onPointerDown={(event) => {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            handleMenuSelect(cmd, 'slash')
+                          }}
+                          type="button"
+                        >
+                          <span>{cmd.label}</span>
+                          {isToggleItem ? (
+                            <span className={`toggle-indicator ${toggleState ? 'on' : 'off'}`}>
+                              {toggleState ? 'On' : 'Off'}
+                            </span>
+                          ) : isModelItem ? (
+                            <span className="desc">{currentModel || 'default'} ›</span>
+                          ) : (
+                            <span className="desc">{cmd.description}</span>
                           )}
-                        </div>
+                        </button>
                       )
                     })}
                   </div>
                 )
               })
-            })()}
+            })())}
             {showAtMenu &&
               searchedFiles.map((file, idx) => (
                 <button
@@ -2177,6 +2274,9 @@ const Thread = ({
   onError,
   isThinkingEnabled,
   currentModel,
+  onToggleThinking,
+  onModelSelect,
+  clearComposerRef,
 }) => {
   const [showModeMenu, setShowModeMenu] = useState(false)
   const sessionDropdownRef = useRef(null)
@@ -2300,6 +2400,9 @@ const Thread = ({
         isThinkingEnabled={isThinkingEnabled}
         currentModel={currentModel}
         onRestartSession={onRestartSession}
+        onToggleThinking={onToggleThinking}
+        onModelSelect={onModelSelect}
+        clearComposerRef={clearComposerRef}
       />
     </ChatPanel>
   )
@@ -2336,6 +2439,7 @@ export default function ClaudeStreamChat({
   const [errorLog, setErrorLog] = useState([])
   const [activeError, setActiveError] = useState(null)
   const [showErrorLog, setShowErrorLog] = useState(false)
+  const [toastMessage, setToastMessage] = useState(null)
   const retryMessageRef = useRef(null)
   const modeChangeRef = useRef(false)
 
@@ -2392,6 +2496,7 @@ export default function ClaudeStreamChat({
   const sendApprovalResponseRef = useRef(null)
   const sendQuestionResponseRef = useRef(null)
   const sendControlMessageRef = useRef(null)
+  const clearComposerRef = useRef(null)
   const handleStreamingChange = useCallback((event) => {
     // Handle boolean (start/stop streaming)
     if (typeof event === 'boolean') {
@@ -2542,6 +2647,20 @@ export default function ClaudeStreamChat({
     setSlashCommands(normalizeSlashCommands(commands))
   }, [])
 
+  const handleSettingsSync = useCallback((settings) => {
+    if (!settings) return
+    setCliOptions((prev) => {
+      const next = { ...prev }
+      if (settings.max_thinking_tokens !== undefined && settings.max_thinking_tokens !== null) {
+        next.maxThinkingTokens = String(settings.max_thinking_tokens)
+      }
+      if (settings.model) {
+        next.model = String(settings.model)
+      }
+      return next
+    })
+  }, [])
+
   const {
     adapter,
     sessionName,
@@ -2551,6 +2670,7 @@ export default function ClaudeStreamChat({
     sendQuestionResponse,
     sendMessage,
     restartSession,
+    restartCounter,
     sendControlMessage,
   } = useClaudeStreamRuntime(
     currentSessionId,
@@ -2569,6 +2689,8 @@ export default function ClaudeStreamChat({
     handleUserMessageId,
     handleLastMessageChange,
     imageCache,
+    clearComposerRef,
+    handleSettingsSync,
   )
   const streamStartedRef = useRef(false)
 
@@ -2661,7 +2783,36 @@ export default function ClaudeStreamChat({
 
   const handleRestartSession = useCallback(() => {
     restartSession()
+    setToastMessage('Session restarted')
+    setTimeout(() => setToastMessage(null), 1500)
   }, [restartSession])
+
+  const handleToggleThinking = useCallback(() => {
+    const currentValue = Number(cliOptions.maxThinkingTokens) || 0
+    const newValue = currentValue > 0 ? 0 : 10000 // Toggle between off (0) and on (10000)
+    sendControlMessageRef.current?.('set_max_thinking_tokens', {
+      max_thinking_tokens: newValue,
+    })
+    setCliOptions((prev) => ({
+      ...prev,
+      maxThinkingTokens: String(newValue),
+    }))
+  }, [cliOptions.maxThinkingTokens])
+
+  const handleModelSelect = useCallback((modelValue, modelLabel) => {
+    console.log('[ModelSelect] Called with:', modelValue, modelLabel)
+    console.log('[ModelSelect] sendControlMessageRef:', sendControlMessageRef.current)
+    sendControlMessageRef.current?.('set_model', { model: modelValue })
+    setCliOptions((prev) => {
+      console.log('[ModelSelect] Setting model in cliOptions:', modelValue)
+      return {
+        ...prev,
+        model: modelValue,
+      }
+    })
+    setToastMessage(`Model: ${modelLabel}`)
+    setTimeout(() => setToastMessage(null), 1500)
+  }, [])
 
   const handleNewSession = useCallback(async () => {
     const newId = await createNewSession()
@@ -2811,6 +2962,9 @@ export default function ClaudeStreamChat({
           onError={logError}
           isThinkingEnabled={isThinkingEnabled}
           currentModel={cliOptions.model}
+          onToggleThinking={handleToggleThinking}
+          onModelSelect={handleModelSelect}
+          clearComposerRef={clearComposerRef}
         />
         <ErrorLogModal
           isOpen={showErrorLog}
@@ -2818,6 +2972,9 @@ export default function ClaudeStreamChat({
           onClear={clearErrorLog}
           onClose={() => setShowErrorLog(false)}
         />
+        {toastMessage && (
+          <div className="toast-notification">{toastMessage}</div>
+        )}
       </RuntimeProvider>
     </div>
   )
