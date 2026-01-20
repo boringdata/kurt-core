@@ -1431,6 +1431,7 @@ const ComposerShell = ({
   onToggleThinking,
   onModelSelect,
   clearComposerRef,
+  inputAreaHeight,
 }) => {
   const api = useAssistantApi()
   const composerApi = useMemo(() => api.composer(), [api])
@@ -1449,23 +1450,6 @@ const ComposerShell = ({
   const inputRef = useRef(null)
   const focusInput = useCallback(() => {
     inputRef.current?.focus?.()
-  }, [])
-
-  // Resizable input height with localStorage persistence
-  const STORAGE_KEY = 'claude-input-height'
-  const [inputHeight, setInputHeight] = useState(() => {
-    const saved = localStorage.getItem(STORAGE_KEY)
-    return saved ? parseInt(saved, 10) : null
-  })
-
-  const handleInputResize = useCallback(() => {
-    if (inputRef.current) {
-      const height = inputRef.current.offsetHeight
-      if (height > 0) {
-        setInputHeight(height)
-        localStorage.setItem(STORAGE_KEY, String(height))
-      }
-    }
   }, [])
 
   const applyComposerText = useCallback((nextText) => {
@@ -1703,7 +1687,7 @@ const ComposerShell = ({
   }
 
   return (
-    <ComposerPrimitive.Root className="claude-input">
+    <ComposerPrimitive.Root className="claude-input" style={inputAreaHeight ? { height: `${inputAreaHeight}px` } : undefined}>
       <div className="claude-input-box" data-mode={mode} ref={slashMenuRef}>
         {(showSlashMenu || showAtMenu) && (
           <div className="claude-menu">
@@ -1914,10 +1898,7 @@ const ComposerShell = ({
             }
           }}
         >
-          <textarea
-            style={inputHeight ? { height: `${inputHeight}px` } : undefined}
-            onMouseUp={handleInputResize}
-          />
+          <textarea />
         </ComposerPrimitive.Input>
         <div className="claude-input-actions">
           <div className="claude-input-left">
@@ -2332,6 +2313,49 @@ const Thread = ({
   const [showModeMenu, setShowModeMenu] = useState(false)
   const sessionDropdownRef = useRef(null)
 
+  // Resizable input area via drag handle
+  const INPUT_HEIGHT_KEY = 'claude-input-area-height'
+  const MIN_INPUT_HEIGHT = 100
+  const MAX_INPUT_HEIGHT = 500
+  const DEFAULT_INPUT_HEIGHT = 140
+
+  const [inputAreaHeight, setInputAreaHeight] = useState(() => {
+    const saved = localStorage.getItem(INPUT_HEIGHT_KEY)
+    return saved ? Math.max(MIN_INPUT_HEIGHT, Math.min(MAX_INPUT_HEIGHT, parseInt(saved, 10))) : DEFAULT_INPUT_HEIGHT
+  })
+  const [isDragging, setIsDragging] = useState(false)
+  const dragStartY = useRef(0)
+  const dragStartHeight = useRef(0)
+
+  const handleResizeStart = useCallback((e) => {
+    e.preventDefault()
+    setIsDragging(true)
+    dragStartY.current = e.clientY
+    dragStartHeight.current = inputAreaHeight
+  }, [inputAreaHeight])
+
+  useEffect(() => {
+    if (!isDragging) return
+
+    const handleMouseMove = (e) => {
+      const delta = dragStartY.current - e.clientY
+      const newHeight = Math.max(MIN_INPUT_HEIGHT, Math.min(MAX_INPUT_HEIGHT, dragStartHeight.current + delta))
+      setInputAreaHeight(newHeight)
+    }
+
+    const handleMouseUp = () => {
+      setIsDragging(false)
+      localStorage.setItem(INPUT_HEIGHT_KEY, String(inputAreaHeight))
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [isDragging, inputAreaHeight])
+
   // Close dropdown when clicking outside
   useEffect(() => {
     if (!showSessionPicker || !showSessionDropdown) return
@@ -2423,6 +2447,14 @@ const Thread = ({
           />
         </div>
       )}
+      {/* Resize handle between messages and input */}
+      <div
+        className={`claude-resize-handle${isDragging ? ' dragging' : ''}`}
+        onMouseDown={handleResizeStart}
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="Resize input area"
+      />
       <ComposerShell
         isConnected={isConnected}
         mode={mode}
@@ -2446,6 +2478,7 @@ const Thread = ({
         onToggleThinking={onToggleThinking}
         onModelSelect={onModelSelect}
         clearComposerRef={clearComposerRef}
+        inputAreaHeight={inputAreaHeight}
       />
     </ChatPanel>
   )

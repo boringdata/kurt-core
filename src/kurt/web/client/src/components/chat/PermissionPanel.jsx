@@ -53,7 +53,7 @@ const styles = {
     alignItems: 'center',
     gap: '8px',
     marginBottom: 'var(--chat-spacing-sm, 8px)',
-    fontSize: '13px',
+    fontSize: 'var(--text-sm)',
     flexWrap: 'wrap',
   },
   toolBadge: {
@@ -155,7 +155,7 @@ const styles = {
   },
   optionNumber: {
     opacity: 0.7,
-    fontSize: '13px',
+    fontSize: 'var(--text-sm)',
   },
   optionLabel: {
     flex: 1,

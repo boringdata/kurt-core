@@ -53,7 +53,7 @@ export const EmptyState = ({ children }) => {
           <div style={{ fontSize: '16px', fontWeight: 500, marginBottom: '8px' }}>
             Start a conversation
           </div>
-          <div style={{ fontSize: '13px', opacity: 0.7 }}>
+          <div style={{ fontSize: 'var(--text-sm)', opacity: 0.7 }}>
             Type a message to begin
           </div>
         </>

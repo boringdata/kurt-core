@@ -66,7 +66,7 @@ const BashToolRenderer = ({
             style={{
               display: 'block',
               fontFamily: 'var(--font-mono)',
-              fontSize: '13px',
+              fontSize: 'var(--text-sm)',
               color: 'var(--chat-text)',
               backgroundColor: 'var(--chat-input-bg)',
               padding: '8px 12px',
@@ -141,7 +141,7 @@ const BashToolRenderer = ({
         <div
           style={{
             color: 'var(--chat-text-muted)',
-            fontSize: '13px',
+            fontSize: 'var(--text-sm)',
             fontStyle: 'italic',
           }}
         >
@@ -154,7 +154,7 @@ const BashToolRenderer = ({
         <div
           style={{
             color: 'var(--chat-text-muted)',
-            fontSize: '13px',
+            fontSize: 'var(--text-sm)',
             fontStyle: 'italic',
           }}
         >

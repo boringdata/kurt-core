@@ -26,7 +26,7 @@ const ChatPanel = forwardRef(({ children, className = '', ...props }, ref) => {
         backgroundColor: 'var(--chat-bg)',
         color: 'var(--chat-text)',
         fontFamily: 'var(--font-family)',
-        fontSize: '13px',
+        fontSize: 'var(--text-sm)',
         lineHeight: '1.5',
         overflow: 'hidden',
       }}

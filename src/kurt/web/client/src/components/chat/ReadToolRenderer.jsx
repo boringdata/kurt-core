@@ -58,7 +58,7 @@ const ReadToolRenderer = ({
         <div
           style={{
             color: 'var(--chat-text-muted)',
-            fontSize: '13px',
+            fontSize: 'var(--text-sm)',
           }}
         >
           {lineCount} line{lineCount === 1 ? '' : 's'} read
@@ -67,7 +67,7 @@ const ReadToolRenderer = ({
         <div
           style={{
             color: 'var(--chat-text-muted)',
-            fontSize: '13px',
+            fontSize: 'var(--text-sm)',
             fontStyle: 'italic',
           }}
         >
