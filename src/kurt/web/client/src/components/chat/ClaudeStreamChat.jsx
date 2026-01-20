@@ -113,22 +113,30 @@ const saveStoredHistory = (sessionId, messages) => {
 }
 
 const normalizeSlashCommands = (commands) => {
+  console.log('[normalizeSlashCommands] received:', commands)
   if (!Array.isArray(commands)) return DEFAULT_SLASH_COMMANDS
-  const seen = new Set()
-  const normalized = commands
+  // Always start with all default commands
+  const defaultIds = new Set(DEFAULT_SLASH_COMMANDS.map((cmd) => cmd.id))
+  // Add any extra commands from backend that aren't in defaults
+  const extraCommands = commands
     .map((name) => String(name || '').trim())
     .filter(Boolean)
     .filter((name) => {
-      if (seen.has(name)) return false
-      seen.add(name)
-      return true
+      // Normalize: strip leading / for comparison
+      const normalized = name.startsWith('/') ? name.slice(1) : name
+      return !defaultIds.has(normalized)
     })
-    .map((name) => ({
-      id: name,
-      label: name.startsWith('/') ? name : `/${name}`,
-      description: 'Command',
-    }))
-  return normalized.length ? normalized : DEFAULT_SLASH_COMMANDS
+    .map((name) => {
+      const normalized = name.startsWith('/') ? name.slice(1) : name
+      return {
+        id: normalized,
+        label: `/${normalized}`,
+        description: 'Plugin command',
+        group: 'commands',
+      }
+    })
+  console.log('[normalizeSlashCommands] extraCommands:', extraCommands)
+  return [...DEFAULT_SLASH_COMMANDS, ...extraCommands]
 }
 
 const CLI_OPTIONS_KEY = 'kurt-web-claude-cli-options'
@@ -2249,9 +2257,6 @@ const Thread = ({
   approvalRequest,
   onApprovalDecision,
   errorBanner,
-  onDismissError,
-  onViewErrorLog,
-  onRetryConnection,
   imageCache,
   onRegisterImages,
   onRestartSession,
@@ -2286,15 +2291,7 @@ const Thread = ({
 
   return (
     <ChatPanel className="chat-panel-light">
-      {errorBanner && (
-        <ErrorBanner
-          error={errorBanner}
-          onDismiss={onDismissError}
-          onViewLog={onViewErrorLog}
-          onRetry={onRetryConnection}
-          onRestart={onRestartSession}
-        />
-      )}
+      {errorBanner && <ErrorBanner error={errorBanner} />}
 
       {showSessionPicker && (
         <div style={{ position: 'relative' }} ref={sessionDropdownRef}>
@@ -2937,9 +2934,6 @@ export default function ClaudeStreamChat({
           approvalRequest={approvalRequest}
           onApprovalDecision={handleApprovalDecision}
           errorBanner={activeError}
-          onDismissError={dismissError}
-          onViewErrorLog={() => setShowErrorLog(true)}
-          onRetryConnection={handleRetryConnection}
           imageCache={imageCache}
           onRegisterImages={handleRegisterImages}
           onRestartSession={handleRestartSession}
