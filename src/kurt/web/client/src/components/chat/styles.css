@@ -760,10 +760,19 @@
   box-shadow: var(--shadow-lg);
 }
 
+.claude-menu-section {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.claude-menu-section:last-child {
+  border-bottom: none;
+}
+
 .claude-menu-group {
-  padding: var(--space-2) var(--space-2) var(--space-1);
+  padding: var(--space-2) var(--space-3) var(--space-1);
   color: var(--color-text-tertiary);
   font-size: 11px;
+  font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -800,6 +809,14 @@
   margin-left: auto;
   color: var(--color-text-tertiary);
   font-size: var(--text-xs);
+}
+
+.claude-menu-item.cli-only {
+  opacity: 0.7;
+}
+
+.claude-menu-item.cli-only .desc {
+  font-style: italic;
 }
 
 /* User attachments in messages */

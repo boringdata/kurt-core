@@ -46,17 +46,30 @@ const extractResultText = (payload) => {
   return ''
 }
 
+const SLASH_MENU_GROUPS = [
+  { id: 'context', label: 'Context' },
+  { id: 'model', label: 'Model' },
+  { id: 'customize', label: 'Customize' },
+  { id: 'commands', label: 'Commands' },
+]
+
 const DEFAULT_SLASH_COMMANDS = [
-  { id: 'help', label: '/help', description: 'Show available commands' },
-  { id: 'clear', label: '/clear', description: 'Clear the chat' },
-  { id: 'compact', label: '/compact', description: 'Compact conversation' },
-  { id: 'init', label: '/init', description: 'Initialize project' },
-  { id: 'cost', label: '/cost', description: 'Show token usage' },
-  { id: 'model', label: '/model', description: 'Switch AI model' },
-  { id: 'config', label: '/config', description: 'Open settings' },
-  { id: 'terminal', label: '/terminal', description: 'Switch to CLI mode' },
-  { id: 'permissions', label: '/permissions', description: 'Manage permissions' },
-  { id: 'memory', label: '/memory', description: 'Manage memory/context' },
+  // Context
+  { id: 'clear', label: '/clear', description: 'Clear the conversation', group: 'context' },
+  // Model
+  { id: 'model', label: '/model', description: 'Switch AI model', group: 'model' },
+  // Customize (CLI-only items marked)
+  { id: 'memory', label: '/memory', description: 'Manage memory/context', group: 'customize' },
+  { id: 'permissions', label: '/permissions', description: 'Manage permissions', group: 'customize' },
+  { id: 'mcp', label: '/mcp', description: 'MCP servers (CLI)', group: 'customize', cliOnly: true },
+  { id: 'hooks', label: '/hooks', description: 'Hooks (CLI)', group: 'customize', cliOnly: true },
+  { id: 'agents', label: '/agents', description: 'Agents (CLI)', group: 'customize', cliOnly: true },
+  // Commands
+  { id: 'help', label: '/help', description: 'Show available commands', group: 'commands' },
+  { id: 'compact', label: '/compact', description: 'Compact conversation', group: 'commands' },
+  { id: 'cost', label: '/cost', description: 'Show token usage', group: 'commands' },
+  { id: 'init', label: '/init', description: 'Initialize project', group: 'commands' },
+  { id: 'terminal', label: '/terminal', description: 'Switch to CLI mode', group: 'commands' },
 ]
 
 const HISTORY_STORAGE_PREFIX = 'kurt-web-claude-stream-history'
@@ -1497,23 +1510,38 @@ const ComposerShell = ({
       <div className="claude-input-box" data-mode={mode} ref={slashMenuRef}>
         {(showSlashMenu || showAtMenu) && (
           <div className="claude-menu">
-            {showSlashMenu &&
-              filteredCommands.map((cmd, idx) => (
-                <button
-                  key={cmd.id}
-                  ref={idx === selectedIndex ? selectedItemRef : null}
-                  className={`claude-menu-item ${idx === selectedIndex ? 'selected' : ''}`}
-                  onPointerDown={(event) => {
-                    event.preventDefault()
-                    event.stopPropagation()
-                    handleMenuSelect(cmd, 'slash')
-                  }}
-                  type="button"
-                >
-                  <span>{cmd.label}</span>
-                  <span className="desc">{cmd.description}</span>
-                </button>
-              ))}
+            {showSlashMenu && (() => {
+              let flatIdx = 0
+              return SLASH_MENU_GROUPS.map((group) => {
+                const groupCommands = filteredCommands.filter((cmd) => cmd.group === group.id)
+                if (groupCommands.length === 0) return null
+                return (
+                  <div key={group.id} className="claude-menu-section">
+                    <div className="claude-menu-group">{group.label}</div>
+                    {groupCommands.map((cmd) => {
+                      const idx = flatIdx
+                      flatIdx += 1
+                      return (
+                        <button
+                          key={cmd.id}
+                          ref={idx === selectedIndex ? selectedItemRef : null}
+                          className={`claude-menu-item ${idx === selectedIndex ? 'selected' : ''}${cmd.cliOnly ? ' cli-only' : ''}`}
+                          onPointerDown={(event) => {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            handleMenuSelect(cmd, 'slash')
+                          }}
+                          type="button"
+                        >
+                          <span>{cmd.label}</span>
+                          <span className="desc">{cmd.description}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )
+              })
+            })()}
             {showAtMenu &&
               searchedFiles.map((file, idx) => (
                 <button
