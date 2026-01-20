@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react'
  * UserMenu - Avatar with dropdown menu for user and workspace actions
  *
  * Props:
- * - email: User email for avatar letter
+ * - email: User email for avatar letter and display
  * - workspaceName: Workspace name to display
  * - workspaceId: Workspace ID for actions
  */
@@ -14,6 +14,13 @@ export default function UserMenu({ email, workspaceName, workspaceId }) {
 
   // Get first letter of email (uppercase) for avatar
   const avatarLetter = email ? email.charAt(0).toUpperCase() : '?'
+
+  // Format workspace display - show name or short ID
+  const workspaceDisplay = workspaceName && !workspaceName.includes('-')
+    ? workspaceName
+    : workspaceId
+      ? workspaceId.slice(0, 8) + '...'
+      : 'Workspace'
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -52,7 +59,9 @@ export default function UserMenu({ email, workspaceName, workspaceId }) {
 
       {isOpen && (
         <div className="user-menu-dropdown" role="menu">
-          <div className="user-menu-workspace">{workspaceName}</div>
+          <div className="user-menu-email">{email}</div>
+          <div className="user-menu-workspace">{workspaceDisplay}</div>
+          <div className="user-menu-divider" />
           <button
             className="user-menu-item"
             onClick={handleManageWorkspace}
