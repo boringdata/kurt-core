@@ -455,6 +455,7 @@ const useClaudeStreamRuntime = (
   const wsRef = useRef(null)
   const queueRef = useRef([])
   const waitersRef = useRef([])
+  const closedRef = useRef(false)
   const modeRef = useRef(mode)
   const optionsRef = useRef(cliOptions)
   const resumeRef = useRef(Boolean(resume))
@@ -536,6 +537,7 @@ const useClaudeStreamRuntime = (
       console.log('[ClaudeStream] Connecting to:', url)
       const ws = new WebSocket(url)
       wsRef.current = ws
+      closedRef.current = false
 
       ws.onopen = () => {
         console.log('[ClaudeStream] Connected successfully')
@@ -559,6 +561,12 @@ const useClaudeStreamRuntime = (
         console.log('[ClaudeStream] WebSocket closed:', event.code, event.reason)
         if (wsRef.current !== ws) return
         setIsConnected(false)
+        // Mark as closed and flush pending waiters to unblock the generator
+        closedRef.current = true
+        while (waitersRef.current.length > 0) {
+          const waiter = waitersRef.current.shift()
+          waiter()
+        }
         // Auto-reconnect after unexpected close (code 1000 = normal, 1001 = going away)
         if (event.code === 1000 || event.code === 1001 || event.code === 1006) {
           console.log('[ClaudeStream] Auto-reconnecting in 1 second...')
@@ -662,9 +670,20 @@ const useClaudeStreamRuntime = (
   }, [setCurrentSessionId, onControlMessage, onError, onSlashCommands, onSettingsSync])
 
   const nextPayload = useCallback(async () => {
+    // If connection is closed and queue is empty, return null to signal termination
+    if (closedRef.current && queueRef.current.length === 0) {
+      return null
+    }
     if (queueRef.current.length) return queueRef.current.shift()
     return new Promise((resolve) => {
-      waitersRef.current.push(() => resolve(queueRef.current.shift()))
+      waitersRef.current.push(() => {
+        // Check again after being woken up - might be due to close
+        if (closedRef.current && queueRef.current.length === 0) {
+          resolve(null)
+        } else {
+          resolve(queueRef.current.shift())
+        }
+      })
     })
   }, [])
 
@@ -929,6 +948,12 @@ const useClaudeStreamRuntime = (
       while (running) {
         if (abortSignal?.aborted) break
         const payload = await nextPayload()
+        // null means connection closed - exit the loop
+        if (payload === null) {
+          console.log('[ClaudeStream] Connection closed, ending stream')
+          onStreamingChange?.(false)
+          break
+        }
         if (!payload) continue
 
         // Log ALL incoming messages
@@ -2126,51 +2151,11 @@ const UserMessageWithImages = ({ imageCache }) => {
   )
 }
 
-const ErrorBanner = ({
-  error,
-  onDismiss,
-  onViewLog,
-  onRetry,
-  onRestart,
-}) => {
+const ErrorBanner = ({ error }) => {
   if (!error) return null
-  const suggestions = Array.isArray(error.suggestions)
-    ? error.suggestions
-    : (error.suggestion ? [error.suggestion] : [])
   return (
     <div className="claude-error-banner" role="alert">
-      <div className="claude-error-header">
-        <div className="claude-error-title">{error.title || 'Something went wrong'}</div>
-        {error.timestamp && (
-          <div className="claude-error-time">{formatErrorTime(error.timestamp)}</div>
-        )}
-      </div>
-      {error.detail && <div className="claude-error-detail">{error.detail}</div>}
-      {suggestions.length > 0 && (
-        <ul className="claude-error-suggestions">
-          {suggestions.map((item, index) => (
-            <li key={`${item}-${index}`}>{item}</li>
-          ))}
-        </ul>
-      )}
-      <div className="claude-error-actions">
-        {error.canRetry && (
-          <button type="button" className="claude-error-button" onClick={onRetry}>
-            Retry connection
-          </button>
-        )}
-        {error.canRestart && (
-          <button type="button" className="claude-error-button ghost" onClick={onRestart}>
-            Restart session
-          </button>
-        )}
-        <button type="button" className="claude-error-button ghost" onClick={onViewLog}>
-          View log
-        </button>
-        <button type="button" className="claude-error-button ghost" onClick={onDismiss}>
-          Dismiss
-        </button>
-      </div>
+      <div className="claude-error-title">{error.title || 'Connection error'}</div>
     </div>
   )
 }
