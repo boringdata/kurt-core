@@ -113,7 +113,6 @@ const saveStoredHistory = (sessionId, messages) => {
 }
 
 const normalizeSlashCommands = (commands) => {
-  console.log('[normalizeSlashCommands] received:', commands)
   if (!Array.isArray(commands)) return DEFAULT_SLASH_COMMANDS
   // Always start with all default commands
   const defaultIds = new Set(DEFAULT_SLASH_COMMANDS.map((cmd) => cmd.id))
@@ -135,7 +134,6 @@ const normalizeSlashCommands = (commands) => {
         group: 'commands',
       }
     })
-  console.log('[normalizeSlashCommands] extraCommands:', extraCommands)
   return [...DEFAULT_SLASH_COMMANDS, ...extraCommands]
 }
 
@@ -459,6 +457,7 @@ const useClaudeStreamRuntime = (
   imageCache,
   clearComposerRef,
   onSettingsSync,
+  clearHistoryRef,
 ) => {
   const wsRef = useRef(null)
   const queueRef = useRef([])
@@ -511,6 +510,23 @@ const useClaudeStreamRuntime = (
   useEffect(() => {
     imageCacheRef.current = imageCache
   }, [imageCache])
+
+  // Clear conversation history (for /clear command)
+  const clearHistory = useCallback(() => {
+    const sessionKey = currentSessionId || sessionName
+    if (sessionKey) {
+      const key = getHistoryKey(sessionKey)
+      if (key) localStorage.removeItem(key)
+    }
+    setRestartCounter((c) => c + 1)
+  }, [currentSessionId, sessionName])
+
+  // Expose clearHistory via ref for use in adapter
+  useEffect(() => {
+    if (clearHistoryRef) {
+      clearHistoryRef.current = clearHistory
+    }
+  }, [clearHistoryRef, clearHistory])
 
   const lastModeRef = useRef(null)
   const lastOptionsKeyRef = useRef(null)
@@ -897,9 +913,18 @@ const useClaudeStreamRuntime = (
       if (trimmed.startsWith('/')) {
         const cmd = trimmed.split(' ')[0].toLowerCase()
 
-        // Handle frontend commands locally
+        // Handle /clear - send to CLI AND reset frontend
         if (cmd === '/clear') {
-          yield { content: [{ type: 'text', text: 'Chat cleared.' }] }
+          // Send to CLI so it clears its conversation state
+          ws.send(JSON.stringify({
+            type: 'user',
+            message: { role: 'user', content: [{ type: 'text', text: '/clear' }] },
+            mode: modeRef.current,
+          }))
+          // Clear frontend state after a brief delay to let CLI process
+          setTimeout(() => {
+            clearHistoryRef?.current?.()
+          }, 100)
           return
         }
 
@@ -976,6 +1001,19 @@ const useClaudeStreamRuntime = (
           }
           const content = Array.isArray(rawContent) ? rawContent : []
           content.forEach((part) => {
+            // Handle thinking content blocks - wrap in <thinking> tags for TextBlock
+            if (part.type === 'thinking') {
+              const thinkingText = `<thinking>${part.thinking || ''}</thinking>\n\n`
+              if (textPartIndex === -1) {
+                parts.push({ type: 'text', text: thinkingText })
+                textPartIndex = parts.length - 1
+              } else {
+                const existing = parts[textPartIndex]
+                // Prepend thinking to existing text
+                existing.text = thinkingText + (existing.text || '')
+              }
+              hasAssistantText = true
+            }
             if (part.type === 'text' || part.type === 'output_text') {
               if (textPartIndex === -1) {
                 parts.push({ type: 'text', text: part.text || '' })
@@ -2073,10 +2111,10 @@ const HistoryPersister = ({ sessionId }) => {
   return null
 }
 
-const RuntimeProvider = ({ adapter, initialMessages, runtimeKey, children }) => {
+const RuntimeProvider = ({ adapter, initialMessages, children }) => {
   const runtime = useLocalRuntime(adapter, { initialMessages })
   return (
-    <AssistantRuntimeProvider key={runtimeKey} runtime={runtime}>
+    <AssistantRuntimeProvider runtime={runtime}>
       {children}
     </AssistantRuntimeProvider>
   )
@@ -2479,6 +2517,7 @@ export default function ClaudeStreamChat({
   const sendQuestionResponseRef = useRef(null)
   const sendControlMessageRef = useRef(null)
   const clearComposerRef = useRef(null)
+  const clearHistoryRef = useRef(null)
   const handleStreamingChange = useCallback((event) => {
     // Handle boolean (start/stop streaming)
     if (typeof event === 'boolean') {
@@ -2673,6 +2712,7 @@ export default function ClaudeStreamChat({
     imageCache,
     clearComposerRef,
     handleSettingsSync,
+    clearHistoryRef,
   )
   const streamStartedRef = useRef(false)
 
@@ -2772,6 +2812,7 @@ export default function ClaudeStreamChat({
   const handleToggleThinking = useCallback(() => {
     const currentValue = Number(cliOptions.maxThinkingTokens) || 0
     const newValue = currentValue > 0 ? 0 : 10000 // Toggle between off (0) and on (10000)
+    console.log('[Thinking] Toggle:', { currentValue, newValue, raw: cliOptions.maxThinkingTokens })
     sendControlMessageRef.current?.('set_max_thinking_tokens', {
       max_thinking_tokens: newValue,
     })
@@ -2899,9 +2940,9 @@ export default function ClaudeStreamChat({
     return loadStoredHistory(sessionKey)
       .map(normalizeHistoryMessage)
       .filter(Boolean)
-  }, [currentSessionId, sessionName])
+  }, [currentSessionId, sessionName, restartCounter])
 
-  const runtimeKey = currentSessionId || sessionName || 'new'
+  const runtimeKey = `${currentSessionId || sessionName || 'new'}-${restartCounter}`
 
   // Determine if thinking mode is enabled based on maxThinkingTokens
   const isThinkingEnabled = Boolean(cliOptions.maxThinkingTokens && Number(cliOptions.maxThinkingTokens) > 0)
@@ -2909,7 +2950,7 @@ export default function ClaudeStreamChat({
   return (
     <div style={{ width: '100%', height: '100%', overflow: 'hidden' }}>
       <style>{chatThemeVars}</style>
-      <RuntimeProvider adapter={adapter} initialMessages={historySeed} runtimeKey={runtimeKey}>
+      <RuntimeProvider key={runtimeKey} adapter={adapter} initialMessages={historySeed}>
         <HistoryPersister sessionId={currentSessionId || sessionName} />
         <Thread
           sessionLabel={sessionLabel}
