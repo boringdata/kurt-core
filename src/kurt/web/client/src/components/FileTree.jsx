@@ -836,9 +836,28 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
         >
           {/* Root-level context menu (no entry) */}
           {!contextMenu.entry ? (
-            <div className="context-menu-item" onClick={() => handleNewFile('')}>
-              New File
-            </div>
+            <>
+              <div className="context-menu-item" onClick={() => handleNewFile('')}>
+                New File
+              </div>
+              {projectRoot && (
+                <>
+                  <div className="context-menu-separator" />
+                  <div className="context-menu-item" onClick={() => {
+                    navigator.clipboard.writeText('.').catch(() => {})
+                    setContextMenu(null)
+                  }}>
+                    Copy Relative Path
+                  </div>
+                  <div className="context-menu-item" onClick={() => {
+                    navigator.clipboard.writeText(projectRoot).catch(() => {})
+                    setContextMenu(null)
+                  }}>
+                    Copy Path
+                  </div>
+                </>
+              )}
+            </>
           ) : (
             <>
               {!contextMenu.entry.is_dir && (
