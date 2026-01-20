@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Image, FileText, Loader2, Sparkles, RefreshCw } from 'lucide-react'
+import { Image, FileText, Loader2, Sparkles } from 'lucide-react'
 import {
   AssistantIf,
   AssistantRuntimeProvider,
@@ -77,6 +77,7 @@ const DEFAULT_SLASH_COMMANDS = [
   { id: 'cost', label: '/cost', description: 'Show token usage', group: 'commands' },
   { id: 'init', label: '/init', description: 'Initialize project', group: 'commands' },
   { id: 'terminal', label: '/terminal', description: 'Switch to CLI mode', group: 'commands' },
+  { id: 'restart', label: '/restart', description: 'Restart session', group: 'commands', isAction: true },
 ]
 
 const HISTORY_STORAGE_PREFIX = 'kurt-web-claude-stream-history'
@@ -1301,6 +1302,7 @@ const ComposerShell = ({
   onError,
   isThinkingEnabled,
   currentModel,
+  onRestartSession,
 }) => {
   const api = useAssistantApi()
   const composerApi = useMemo(() => api.composer(), [api])
@@ -1443,6 +1445,9 @@ const ComposerShell = ({
       // Model option selected - insert /model command
       const newValue = `/model ${item.value} `
       applyComposerText(newValue)
+    } else if (item.isAction && item.id === 'restart') {
+      // Restart action - call handler directly
+      onRestartSession?.()
     } else {
       // Slash command - insert text
       let newValue = `${item.label} `
@@ -2196,22 +2201,6 @@ const Thread = ({
 
   return (
     <ChatPanel className="chat-panel-light">
-      <div className="claude-stream-header">
-        <div className="claude-stream-title">
-          <Sparkles className="mark" size={16} />
-          <span>Claude Code</span>
-        </div>
-        <div className="claude-stream-header-actions">
-          <button
-            type="button"
-            className="overflow-menu-btn"
-            title="Restart session"
-            onClick={onRestartSession}
-          >
-            <RefreshCw size={14} />
-          </button>
-        </div>
-      </div>
       {errorBanner && (
         <ErrorBanner
           error={errorBanner}
@@ -2310,6 +2299,7 @@ const Thread = ({
         onError={onError}
         isThinkingEnabled={isThinkingEnabled}
         currentModel={currentModel}
+        onRestartSession={onRestartSession}
       />
     </ChatPanel>
   )
