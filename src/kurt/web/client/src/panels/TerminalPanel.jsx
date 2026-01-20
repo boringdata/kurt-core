@@ -68,9 +68,9 @@ export default function TerminalPanel({ params }) {
   const viewMode = 'chat'
   const [chatInterface, setChatInterface] = useState(() => {
     try {
-      return localStorage.getItem(CHAT_INTERFACE_KEY) || 'cli'
+      return localStorage.getItem(CHAT_INTERFACE_KEY) || 'web'
     } catch {
-      return 'cli'
+      return 'web'
     }
   })
   const [sessions, setSessions] = useState(() => {
