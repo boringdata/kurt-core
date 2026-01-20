@@ -137,7 +137,7 @@ const ToolUseBlock = ({
             <span
               style={{
                 color: 'var(--chat-text-muted)',
-                fontSize: '13px',
+                fontSize: 'var(--text-sm)',
                 marginTop: '2px',
               }}
             >
@@ -172,7 +172,7 @@ export const ToolOutput = ({ children, style = {}, className = '' }) => (
       backgroundColor: 'var(--chat-input-bg)',
       borderRadius: 'var(--chat-radius-sm, 4px)',
       padding: 'var(--chat-spacing-sm, 8px) var(--chat-spacing-md, 12px)',
-      fontSize: '13px',
+      fontSize: 'var(--text-sm)',
       fontFamily: 'var(--font-mono)',
       color: 'var(--chat-text)',
       overflow: 'auto',
@@ -210,7 +210,7 @@ export const ToolCommand = ({ command, language }) => (
     <code
       style={{
         fontFamily: 'var(--font-mono)',
-        fontSize: '13px',
+        fontSize: 'var(--text-sm)',
         color: 'var(--chat-text)',
         backgroundColor: 'var(--chat-input-bg)',
         padding: '2px 6px',
@@ -229,7 +229,7 @@ export const ToolError = ({ message }) => (
   <div
     style={{
       color: 'var(--chat-error)',
-      fontSize: '13px',
+      fontSize: 'var(--text-sm)',
       fontFamily: 'var(--font-mono)',
       padding: 'var(--chat-spacing-sm, 8px)',
       backgroundColor: 'var(--chat-error-bg)',
@@ -252,7 +252,7 @@ export const InlineCode = ({ children }) => (
       padding: '2px 6px',
       borderRadius: '3px',
       fontFamily: 'var(--font-mono)',
-      fontSize: '13px',
+      fontSize: 'var(--text-sm)',
     }}
   >
     {children}

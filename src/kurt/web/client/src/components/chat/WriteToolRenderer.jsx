@@ -49,7 +49,7 @@ const WriteToolRenderer = ({
         <div
           style={{
             color: 'var(--chat-text-muted)',
-            fontSize: '13px',
+            fontSize: 'var(--text-sm)',
             fontStyle: 'italic',
           }}
         >
@@ -59,7 +59,7 @@ const WriteToolRenderer = ({
         <div
           style={{
             color: 'var(--chat-text-muted)',
-            fontSize: '13px',
+            fontSize: 'var(--text-sm)',
             fontStyle: 'italic',
           }}
         >

@@ -48,7 +48,7 @@ const GrepToolRenderer = ({
         <div
           style={{
             color: 'var(--chat-text-muted)',
-            fontSize: '13px',
+            fontSize: 'var(--text-sm)',
             fontStyle: 'italic',
           }}
         >
@@ -60,7 +60,7 @@ const GrepToolRenderer = ({
         <div
           style={{
             color: 'var(--chat-text-muted)',
-            fontSize: '13px',
+            fontSize: 'var(--text-sm)',
           }}
         >
           No matches found
@@ -135,7 +135,7 @@ const FileResult = ({ result, pattern }) => {
             key={i}
             style={{
               display: 'flex',
-              fontSize: '13px',
+              fontSize: 'var(--text-sm)',
               fontFamily: 'var(--font-mono)',
               lineHeight: '1.5',
             }}

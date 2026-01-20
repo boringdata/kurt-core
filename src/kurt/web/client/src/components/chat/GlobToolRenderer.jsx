@@ -61,7 +61,7 @@ const GlobToolRenderer = ({
         <div
           style={{
             color: 'var(--chat-text-muted)',
-            fontSize: '13px',
+            fontSize: 'var(--text-sm)',
             fontStyle: 'italic',
           }}
         >
@@ -73,7 +73,7 @@ const GlobToolRenderer = ({
         <div
           style={{
             color: 'var(--chat-text-muted)',
-            fontSize: '13px',
+            fontSize: 'var(--text-sm)',
           }}
         >
           No files found
@@ -101,7 +101,7 @@ const FileList = ({ files }) => (
           display: 'flex',
           alignItems: 'center',
           gap: '8px',
-          fontSize: '13px',
+          fontSize: 'var(--text-sm)',
           fontFamily: 'var(--font-mono)',
           color: 'var(--chat-text)',
           padding: '2px 0',

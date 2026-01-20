@@ -49,7 +49,7 @@ const EditToolRenderer = ({
         <div
           style={{
             color: 'var(--chat-text-muted)',
-            fontSize: '13px',
+            fontSize: 'var(--text-sm)',
             fontStyle: 'italic',
           }}
         >
@@ -59,7 +59,7 @@ const EditToolRenderer = ({
         <div
           style={{
             color: 'var(--chat-text-muted)',
-            fontSize: '13px',
+            fontSize: 'var(--text-sm)',
             fontStyle: 'italic',
           }}
         >
@@ -82,7 +82,7 @@ const DiffView = ({ lines }) => (
   <div
     style={{
       fontFamily: 'var(--font-mono)',
-      fontSize: '13px',
+      fontSize: 'var(--text-sm)',
       lineHeight: '1.5',
       borderRadius: 'var(--chat-radius-sm, 4px)',
       overflow: 'hidden',
@@ -135,7 +135,7 @@ const SimpleDiff = ({ oldContent, newContent }) => {
     <div
       style={{
         fontFamily: 'var(--font-mono)',
-        fontSize: '13px',
+        fontSize: 'var(--text-sm)',
         lineHeight: '1.5',
         borderRadius: 'var(--chat-radius-sm, 4px)',
         overflow: 'hidden',
