@@ -20,7 +20,11 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from kurt.cli.auth.credentials import get_cloud_api_url, load_credentials
+from kurt.cli.auth.credentials import (
+    get_cloud_api_url,
+    get_workspace_id_from_config,
+    load_credentials,
+)
 from kurt.db.tenant import is_cloud_mode
 from kurt.web.api.auth import (
     auth_middleware_setup,
@@ -284,19 +288,22 @@ def api_me(request: Request):
             "workspace": {"id": user.workspace_id, "name": workspace_name},
         }
 
-    # Fallback: CLI credentials (~/.kurt/credentials.json)
+    # Fallback: CLI credentials (~/.kurt/credentials.json) + config workspace
     creds = load_credentials()
     if creds and creds.email:
+        # Workspace ID comes from project config (kurt.config), not credentials
+        workspace_id = get_workspace_id_from_config()
+
         # Try to fetch workspace name from cloud API
         workspace_name = None
-        if creds.workspace_id and creds.access_token:
-            workspace_name = _fetch_workspace_name(creds.workspace_id, creds.access_token)
+        if workspace_id and creds.access_token:
+            workspace_name = _fetch_workspace_name(workspace_id, creds.access_token)
 
         return {
             "is_cloud_mode": True,
             "user": {"id": creds.user_id, "email": creds.email},
             "workspace": {
-                "id": creds.workspace_id,
+                "id": workspace_id,
                 "name": workspace_name,  # None if not fetched
             },
         }

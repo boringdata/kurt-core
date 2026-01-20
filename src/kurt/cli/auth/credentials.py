@@ -19,13 +19,16 @@ KURT_CLOUD_API_URL = "https://kurt-cloud.vercel.app"
 
 @dataclass
 class Credentials:
-    """Stored authentication credentials."""
+    """Stored authentication credentials.
+
+    Note: workspace_id is NOT stored here. It belongs in kurt.config (per-project).
+    Credentials are global (per-user), config is per-project.
+    """
 
     access_token: str
     refresh_token: str
     user_id: str
     email: Optional[str] = None
-    workspace_id: Optional[str] = None
     expires_at: Optional[int] = None  # Unix timestamp
 
     def is_expired(self) -> bool:
@@ -47,7 +50,6 @@ class Credentials:
             refresh_token=data["refresh_token"],
             user_id=data["user_id"],
             email=data.get("email"),
-            workspace_id=data.get("workspace_id"),
             expires_at=data.get("expires_at"),
         )
 
@@ -128,11 +130,27 @@ def ensure_fresh_token() -> Optional[Credentials]:
         refresh_token=result.get("refresh_token", creds.refresh_token),
         user_id=result.get("user_id", creds.user_id),
         email=result.get("email", creds.email),
-        workspace_id=creds.workspace_id,
         expires_at=int(datetime.now().timestamp()) + result.get("expires_in", 3600),
     )
     save_credentials(fresh_creds)
     return fresh_creds
+
+
+def get_workspace_id_from_config() -> Optional[str]:
+    """Get workspace ID from project config (kurt.config).
+
+    This is the source of truth for workspace_id.
+    Returns None if not in a project or WORKSPACE_ID not set.
+    """
+    try:
+        from kurt.config import config_file_exists, load_config
+
+        if config_file_exists():
+            config = load_config()
+            return config.WORKSPACE_ID
+    except Exception:
+        pass
+    return None
 
 
 # =============================================================================

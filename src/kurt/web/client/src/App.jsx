@@ -1271,6 +1271,11 @@ export default function App() {
       .catch(() => setUserContext({ is_cloud_mode: false }))
   }, [])
 
+  // Handle logout - clear user context (run 'kurt cloud logout' in terminal for full logout)
+  const handleLogout = () => {
+    setUserContext({ is_cloud_mode: userContext?.is_cloud_mode || false, user: null })
+  }
+
   // Restore layout once projectRoot is loaded and dockApi is available
   const layoutRestorationRan = useRef(false)
   useEffect(() => {
@@ -1748,6 +1753,7 @@ export default function App() {
               email={userContext.user.email}
               workspaceName={userContext.workspace?.name || 'Workspace'}
               workspaceId={userContext.workspace?.id || ''}
+              onLogout={handleLogout}
             />
           )}
         </div>

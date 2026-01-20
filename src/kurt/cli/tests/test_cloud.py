@@ -20,7 +20,10 @@ def cli_runner():
 
 @pytest.fixture
 def mock_credentials():
-    """Create mock credentials."""
+    """Create mock credentials.
+
+    Note: workspace_id is NOT stored in credentials (it's in kurt.config).
+    """
     from kurt.cli.auth.credentials import Credentials
 
     return Credentials(
@@ -28,7 +31,6 @@ def mock_credentials():
         refresh_token="test-refresh-456",
         user_id="user-789",
         email="test@example.com",
-        workspace_id="ws-abc",
         expires_at=9999999999,  # Far future
     )
 
@@ -166,9 +168,16 @@ class TestStatusCommand:
         assert mock_credentials.email in result.output
 
     def test_status_auto_fills_workspace_id(self, cli_runner: CliRunner, mock_credentials, tmp_path: Path):
-        """Test status auto-fills WORKSPACE_ID when missing."""
+        """Test status auto-fills WORKSPACE_ID from user metadata when missing."""
         config_file = tmp_path / "kurt.config"
         config_file.write_text('DATABASE_URL="postgresql://localhost/db"\n')
+
+        # Mock user info response with workspace_id in metadata
+        mock_user_info = {
+            "user_id": "user-789",
+            "email": "test@example.com",
+            "user_metadata": {"workspace_id": "ws-from-api"},
+        }
 
         with (
             patch("kurt.cli.auth.credentials.load_credentials", return_value=mock_credentials),
@@ -176,13 +185,14 @@ class TestStatusCommand:
             patch("kurt.config.base.get_config_file_path", return_value=config_file),
             patch("kurt.config.get_config_file_path", return_value=config_file),
             patch("kurt.db.get_mode", return_value="postgres"),
+            patch("kurt.cli.auth.commands.get_user_info", return_value=mock_user_info),
         ):
             result = cli_runner.invoke(cloud_group, ["status"])
 
         assert result.exit_code == 0
         content = config_file.read_text()
-        assert f'WORKSPACE_ID="{mock_credentials.workspace_id}"' in content
-        assert f"Workspace ID: {mock_credentials.workspace_id}" in result.output
+        assert 'WORKSPACE_ID="ws-from-api"' in content
+        assert "Workspace ID: ws-from-api" in result.output
 
 
 # =============================================================================
