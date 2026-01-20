@@ -24,7 +24,7 @@ const GrepToolRenderer = ({
     <>
       <InlineCode>{pattern}</InlineCode>
       {path && (
-        <span style={{ marginLeft: '6px', color: 'var(--chat-text-muted, #858585)' }}>
+        <span style={{ marginLeft: '6px', color: 'var(--chat-text-muted)' }}>
           in {path}
         </span>
       )}
@@ -47,7 +47,7 @@ const GrepToolRenderer = ({
       ) : status === 'running' ? (
         <div
           style={{
-            color: 'var(--chat-text-muted, #858585)',
+            color: 'var(--chat-text-muted)',
             fontSize: '13px',
             fontStyle: 'italic',
           }}
@@ -59,7 +59,7 @@ const GrepToolRenderer = ({
       ) : (
         <div
           style={{
-            color: 'var(--chat-text-muted, #858585)',
+            color: 'var(--chat-text-muted)',
             fontSize: '13px',
           }}
         >
@@ -72,7 +72,7 @@ const GrepToolRenderer = ({
           style={{
             marginTop: 'var(--chat-spacing-xs, 4px)',
             fontSize: '12px',
-            color: 'var(--chat-text-muted, #858585)',
+            color: 'var(--chat-text-muted)',
           }}
         >
           {totalMatches} match{totalMatches !== 1 ? 'es' : ''} in {results.length} file{results.length !== 1 ? 's' : ''}
@@ -114,7 +114,7 @@ const FileResult = ({ result, pattern }) => {
       <div
         style={{
           fontSize: '12px',
-          color: 'var(--chat-accent, #0078d4)',
+          color: 'var(--chat-accent)',
           fontFamily: 'var(--font-mono)',
           marginBottom: '4px',
         }}
@@ -125,7 +125,7 @@ const FileResult = ({ result, pattern }) => {
       {/* Matching lines */}
       <div
         style={{
-          backgroundColor: 'var(--chat-input-bg, #3c3c3c)',
+          backgroundColor: 'var(--chat-input-bg)',
           borderRadius: 'var(--chat-radius-sm, 4px)',
           overflow: 'hidden',
         }}
@@ -145,8 +145,8 @@ const FileResult = ({ result, pattern }) => {
               style={{
                 minWidth: '40px',
                 padding: '0 8px',
-                color: 'var(--chat-text-muted, #858585)',
-                backgroundColor: 'rgba(0, 0, 0, 0.2)',
+                color: 'var(--chat-text-muted)',
+                backgroundColor: 'var(--color-bg-active)',
                 textAlign: 'right',
                 flexShrink: 0,
               }}
@@ -157,7 +157,7 @@ const FileResult = ({ result, pattern }) => {
             <span
               style={{
                 padding: '0 8px',
-                color: 'var(--chat-text, #cccccc)',
+                color: 'var(--chat-text)',
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-word',
                 flex: 1,
@@ -188,8 +188,8 @@ const HighlightedContent = ({ content, pattern }) => {
         <mark
           key={i}
           style={{
-            backgroundColor: 'rgba(230, 180, 80, 0.4)',
-            color: '#e6b450',
+            backgroundColor: 'var(--color-highlight)',
+            color: 'var(--chat-code-inline)',
             borderRadius: '2px',
           }}
         >

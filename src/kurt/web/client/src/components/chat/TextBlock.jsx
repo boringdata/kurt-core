@@ -18,8 +18,8 @@ import { useMemo } from 'react'
 const InlineCode = ({ children }) => (
   <code
     style={{
-      backgroundColor: 'var(--chat-input-bg, #3c3c3c)',
-      color: '#e6b450', // Yellow/gold for inline code
+      backgroundColor: 'var(--chat-input-bg)',
+      color: 'var(--chat-code-inline)',
       padding: '2px 6px',
       borderRadius: '3px',
       fontFamily: 'var(--font-mono)',
@@ -75,7 +75,7 @@ const parseInline = (text) => {
           target="_blank"
           rel="noopener noreferrer"
           style={{
-            color: 'var(--chat-accent, #0078d4)',
+            color: 'var(--chat-accent)',
             textDecoration: 'underline',
           }}
         >
@@ -240,7 +240,7 @@ const TextBlock = ({ text, className = '' }) => {
     <div
       className={`text-block ${className}`}
       style={{
-        color: 'var(--chat-text, #cccccc)',
+        color: 'var(--chat-text)',
         fontSize: '14px',
         lineHeight: '1.6',
         wordBreak: 'break-word',
@@ -257,7 +257,7 @@ const TextBlock = ({ text, className = '' }) => {
 const CodeBlock = ({ code, language }) => (
   <div
     style={{
-      backgroundColor: 'var(--chat-input-bg, #3c3c3c)',
+      backgroundColor: 'var(--chat-input-bg)',
       borderRadius: 'var(--chat-radius-sm, 4px)',
       marginTop: 'var(--chat-spacing-sm, 8px)',
       marginBottom: 'var(--chat-spacing-sm, 8px)',
@@ -269,8 +269,8 @@ const CodeBlock = ({ code, language }) => (
         style={{
           padding: '6px 12px',
           fontSize: '11px',
-          color: 'var(--chat-text-muted, #858585)',
-          borderBottom: '1px solid var(--chat-border, #454545)',
+          color: 'var(--chat-text-muted)',
+          borderBottom: '1px solid var(--chat-border)',
           textTransform: 'lowercase',
         }}
       >
@@ -285,7 +285,7 @@ const CodeBlock = ({ code, language }) => (
         fontFamily: 'var(--font-mono)',
         fontSize: '13px',
         lineHeight: '1.5',
-        color: 'var(--chat-text, #cccccc)',
+        color: 'var(--chat-text)',
       }}
     >
       <code>{code}</code>
@@ -301,8 +301,8 @@ const BlockQuote = ({ children }) => (
     style={{
       margin: 'var(--chat-spacing-sm, 8px) 0',
       paddingLeft: '12px',
-      borderLeft: '3px solid var(--chat-border, #454545)',
-      color: 'var(--chat-text-muted, #858585)',
+      borderLeft: '3px solid var(--chat-border)',
+      color: 'var(--chat-text-muted)',
       fontStyle: 'italic',
     }}
   >
@@ -348,7 +348,7 @@ const Table = ({ headers, rows }) => (
       margin: 'var(--chat-spacing-sm, 8px) 0',
       borderRadius: 'var(--chat-radius-sm, 4px)',
       overflow: 'hidden',
-      border: '1px solid var(--chat-border, #454545)',
+      border: '1px solid var(--chat-border)',
     }}
   >
     <table
@@ -360,7 +360,7 @@ const Table = ({ headers, rows }) => (
       }}
     >
       <thead>
-        <tr style={{ backgroundColor: 'var(--chat-input-bg, #3c3c3c)' }}>
+        <tr style={{ backgroundColor: 'var(--chat-input-bg)' }}>
           {headers.map((header, i) => (
             <th
               key={i}
@@ -368,8 +368,8 @@ const Table = ({ headers, rows }) => (
                 padding: '8px 12px',
                 textAlign: 'left',
                 fontWeight: 600,
-                color: 'var(--chat-text, #cccccc)',
-                borderBottom: '1px solid var(--chat-border, #454545)',
+                color: 'var(--chat-text)',
+                borderBottom: '1px solid var(--chat-border)',
               }}
             >
               {parseInline(header)}
@@ -382,7 +382,7 @@ const Table = ({ headers, rows }) => (
           <tr
             key={i}
             style={{
-              backgroundColor: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)',
+              backgroundColor: i % 2 === 0 ? 'transparent' : 'var(--color-bg-hover)',
             }}
           >
             {row.map((cell, j) => (
@@ -390,8 +390,8 @@ const Table = ({ headers, rows }) => (
                 key={j}
                 style={{
                   padding: '8px 12px',
-                  color: 'var(--chat-text, #cccccc)',
-                  borderBottom: i < rows.length - 1 ? '1px solid var(--chat-border, #454545)' : 'none',
+                  color: 'var(--chat-text)',
+                  borderBottom: i < rows.length - 1 ? '1px solid var(--chat-border)' : 'none',
                 }}
               >
                 {parseInline(cell)}

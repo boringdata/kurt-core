@@ -163,11 +163,11 @@ export default function CodeEditor({
           textareaClassName="code-editor-textarea"
           preClassName="code-editor-pre"
           style={{
-            fontFamily: "'IBM Plex Mono', Monaco, 'Courier New', monospace",
+            fontFamily: "var(--font-mono)",
             fontSize: 13,
             lineHeight: 1.5,
-            backgroundColor: '#1e1e1e',
-            color: '#d4d4d4',
+            backgroundColor: 'var(--color-pre-bg)',
+            color: 'var(--color-pre-text)',
             minHeight: '100%',
           }}
         />

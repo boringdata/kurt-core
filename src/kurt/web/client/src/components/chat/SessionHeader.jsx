@@ -13,8 +13,8 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: '8px 16px',
-    borderBottom: '1px solid var(--chat-border, #454545)',
-    backgroundColor: 'var(--chat-bg, #1e1e1e)',
+    borderBottom: '1px solid var(--chat-border)',
+    backgroundColor: 'var(--chat-bg)',
   },
   titleButton: {
     display: 'flex',
@@ -27,12 +27,12 @@ const styles = {
     borderRadius: 'var(--chat-radius-sm, 4px)',
   },
   title: {
-    color: 'var(--chat-text, #cccccc)',
+    color: 'var(--chat-text)',
     fontSize: '14px',
     fontWeight: 400,
   },
   dropdown: {
-    color: 'var(--chat-text-muted, #858585)',
+    color: 'var(--chat-text-muted)',
     fontSize: '12px',
   },
   newButton: {
@@ -43,7 +43,7 @@ const styles = {
     justifyContent: 'center',
     backgroundColor: 'transparent',
     border: 'none',
-    color: 'var(--chat-text, #cccccc)',
+    color: 'var(--chat-text)',
     fontSize: '18px',
     cursor: 'pointer',
     borderRadius: 'var(--chat-radius-sm, 4px)',

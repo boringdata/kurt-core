@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { DockviewReact, DockviewDefaultTab } from 'dockview-react'
 import 'dockview-react/dist/styles/dockview.css'
 
+import { ThemeProvider } from './hooks/useTheme'
+import ThemeToggle from './components/ThemeToggle'
 import FileTreePanel from './panels/FileTreePanel'
 import EditorPanel from './panels/EditorPanel'
 import TerminalPanel from './panels/TerminalPanel'
@@ -1712,7 +1714,11 @@ export default function App() {
   }
 
   if (POC_MODE === 'chat') {
-    return <ClaudeStreamChat />
+    return (
+      <ThemeProvider>
+        <ClaudeStreamChat />
+      </ThemeProvider>
+    )
   }
 
   // Build className with collapsed state flags for CSS targeting
@@ -1724,14 +1730,21 @@ export default function App() {
   ].filter(Boolean).join(' ')
 
   return (
-    <DockviewReact
-      className={dockviewClassName}
-      components={components}
-      tabComponents={tabComponents}
-      rightHeaderActionsComponent={RightHeaderActions}
-      onReady={onReady}
-      showDndOverlay={showDndOverlay}
-      onDidDrop={onDidDrop}
-    />
+    <ThemeProvider>
+      <div className="app-container">
+        <div className="app-header">
+          <ThemeToggle />
+        </div>
+        <DockviewReact
+          className={dockviewClassName}
+          components={components}
+          tabComponents={tabComponents}
+          rightHeaderActionsComponent={RightHeaderActions}
+          onReady={onReady}
+          showDndOverlay={showDndOverlay}
+          onDidDrop={onDidDrop}
+        />
+      </div>
+    </ThemeProvider>
   )
 }

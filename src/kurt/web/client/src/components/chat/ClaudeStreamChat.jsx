@@ -1190,7 +1190,7 @@ const AssistantMessage = () => {
             <div key={`text-${index}`} className="claude-assistant-line">
               <span
                 className="claude-assistant-bullet"
-                style={{ color: isStreaming ? '#ae5630' : '#858585' }}
+                style={{ color: isStreaming ? 'var(--chat-accent)' : 'var(--chat-text-muted)' }}
               >
                 ●
               </span>

@@ -59,7 +59,7 @@ const GlobToolRenderer = ({
       ) : status === 'running' ? (
         <div
           style={{
-            color: 'var(--chat-text-muted, #858585)',
+            color: 'var(--chat-text-muted)',
             fontSize: '13px',
             fontStyle: 'italic',
           }}
@@ -71,7 +71,7 @@ const GlobToolRenderer = ({
       ) : (
         <div
           style={{
-            color: 'var(--chat-text-muted, #858585)',
+            color: 'var(--chat-text-muted)',
             fontSize: '13px',
           }}
         >
@@ -102,11 +102,11 @@ const FileList = ({ files }) => (
           gap: '8px',
           fontSize: '13px',
           fontFamily: 'var(--font-mono)',
-          color: 'var(--chat-text, #cccccc)',
+          color: 'var(--chat-text)',
           padding: '2px 0',
         }}
       >
-        <span style={{ color: 'var(--chat-text-muted, #858585)', fontSize: '12px' }}>
+        <span style={{ color: 'var(--chat-text-muted)', fontSize: '12px' }}>
           {getFileIcon(file)}
         </span>
         <span>{file}</span>

@@ -194,11 +194,11 @@ export default function FrontmatterEditor({
                       className="frontmatter-input"
                       textareaClassName="frontmatter-textarea"
                       style={{
-                        fontFamily: "'IBM Plex Mono', Monaco, 'Courier New', monospace",
+                        fontFamily: "var(--font-mono)",
                         fontSize: 12,
                         lineHeight: 1.5,
-                        backgroundColor: '#1e1e1e',
-                        color: '#d4d4d4',
+                        backgroundColor: 'var(--color-pre-bg)',
+                        color: 'var(--color-pre-text)',
                         minHeight: '60px',
                       }}
                     />
@@ -224,11 +224,11 @@ export default function FrontmatterEditor({
                 className="frontmatter-input"
                 textareaClassName="frontmatter-textarea"
                 style={{
-                  fontFamily: "'IBM Plex Mono', Monaco, 'Courier New', monospace",
+                  fontFamily: "var(--font-mono)",
                   fontSize: 12,
                   lineHeight: 1.5,
-                  backgroundColor: '#1e1e1e',
-                  color: '#d4d4d4',
+                  backgroundColor: 'var(--color-pre-bg)',
+                  color: 'var(--color-pre-text)',
                   minHeight: '60px',
                 }}
               />

@@ -57,7 +57,7 @@ const ReadToolRenderer = ({
       ) : hideContent && lineCount ? (
         <div
           style={{
-            color: 'var(--chat-text-muted, #858585)',
+            color: 'var(--chat-text-muted)',
             fontSize: '13px',
           }}
         >
@@ -66,7 +66,7 @@ const ReadToolRenderer = ({
       ) : status === 'running' ? (
         <div
           style={{
-            color: 'var(--chat-text-muted, #858585)',
+            color: 'var(--chat-text-muted)',
             fontSize: '13px',
             fontStyle: 'italic',
           }}

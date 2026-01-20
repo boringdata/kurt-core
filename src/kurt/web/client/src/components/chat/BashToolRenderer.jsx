@@ -55,7 +55,7 @@ const BashToolRenderer = ({
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              color: 'var(--chat-text-muted, #858585)',
+              color: 'var(--chat-text-muted)',
               fontSize: '12px',
               marginBottom: '4px',
             }}
@@ -67,8 +67,8 @@ const BashToolRenderer = ({
               display: 'block',
               fontFamily: 'var(--font-mono)',
               fontSize: '13px',
-              color: 'var(--chat-text, #cccccc)',
-              backgroundColor: 'var(--chat-input-bg, #3c3c3c)',
+              color: 'var(--chat-text)',
+              backgroundColor: 'var(--chat-input-bg)',
               padding: '8px 12px',
               borderRadius: 'var(--chat-radius-sm, 4px)',
               whiteSpace: 'pre-wrap',
@@ -129,7 +129,7 @@ const BashToolRenderer = ({
           style={{
             marginTop: 'var(--chat-spacing-xs, 4px)',
             fontSize: '12px',
-            color: 'var(--chat-error, #f48771)',
+            color: 'var(--chat-error)',
           }}
         >
           Exit code: {exitCode}
@@ -140,7 +140,7 @@ const BashToolRenderer = ({
       {status === 'pending' && !output && (
         <div
           style={{
-            color: 'var(--chat-text-muted, #858585)',
+            color: 'var(--chat-text-muted)',
             fontSize: '13px',
             fontStyle: 'italic',
           }}
@@ -153,7 +153,7 @@ const BashToolRenderer = ({
       {status === 'running' && !output && (
         <div
           style={{
-            color: 'var(--chat-text-muted, #858585)',
+            color: 'var(--chat-text-muted)',
             fontSize: '13px',
             fontStyle: 'italic',
           }}
