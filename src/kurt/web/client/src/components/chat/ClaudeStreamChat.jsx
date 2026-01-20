@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Image, FileText, Loader2, Sparkles, RefreshCw, MoreHorizontal } from 'lucide-react'
+import { Image, FileText, Loader2, Sparkles, RefreshCw } from 'lucide-react'
 import {
   AssistantIf,
   AssistantRuntimeProvider,
@@ -2129,9 +2129,7 @@ const Thread = ({
   isThinkingEnabled,
 }) => {
   const [showModeMenu, setShowModeMenu] = useState(false)
-  const [showOverflowMenu, setShowOverflowMenu] = useState(false)
   const sessionDropdownRef = useRef(null)
-  const overflowMenuRef = useRef(null)
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -2151,18 +2149,6 @@ const Thread = ({
     }
   }, [showSessionPicker, showSessionDropdown, setShowSessionDropdown])
 
-  // Close overflow menu when clicking outside
-  useEffect(() => {
-    if (!showOverflowMenu) return
-    const handleClickOutside = (event) => {
-      if (overflowMenuRef.current && !overflowMenuRef.current.contains(event.target)) {
-        setShowOverflowMenu(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [showOverflowMenu])
-
   return (
     <ChatPanel className="chat-panel-light">
       <div className="claude-stream-header">
@@ -2170,23 +2156,15 @@ const Thread = ({
           <Sparkles className="mark" size={16} />
           <span>Claude Code</span>
         </div>
-        <div className="claude-stream-header-actions" ref={overflowMenuRef}>
+        <div className="claude-stream-header-actions">
           <button
             type="button"
             className="overflow-menu-btn"
-            title="More options"
-            onClick={() => setShowOverflowMenu(!showOverflowMenu)}
+            title="Restart session"
+            onClick={onRestartSession}
           >
-            <MoreHorizontal size={16} />
+            <RefreshCw size={14} />
           </button>
-          {showOverflowMenu && (
-            <div className="overflow-menu">
-              <button type="button" onClick={() => { onRestartSession(); setShowOverflowMenu(false); }}>
-                <RefreshCw size={14} />
-                <span>Restart session</span>
-              </button>
-            </div>
-          )}
         </div>
       </div>
       {errorBanner && (

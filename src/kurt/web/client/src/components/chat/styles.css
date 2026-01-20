@@ -60,43 +60,6 @@
   color: var(--color-text-primary);
 }
 
-.overflow-menu {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  margin-top: var(--space-1);
-  min-width: 160px;
-  background: var(--color-bg-primary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg);
-  z-index: 100;
-  overflow: hidden;
-}
-
-.overflow-menu button {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  width: 100%;
-  padding: var(--space-2) var(--space-3);
-  background: transparent;
-  border: none;
-  color: var(--color-text-primary);
-  font-size: var(--text-sm);
-  text-align: left;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.overflow-menu button:hover {
-  background: var(--color-bg-hover);
-}
-
-.overflow-menu button svg {
-  color: var(--color-text-secondary);
-  flex-shrink: 0;
-}
 
 .claude-stream-subheader {
   display: flex;
