@@ -552,7 +552,9 @@ const useClaudeStreamRuntime = (
 
     // Close existing connection if switching sessions or mode
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.close()
+      const oldWs = wsRef.current
+      wsRef.current = null // Prevent auto-reconnect from old WebSocket
+      oldWs.close()
     }
 
     return new Promise((resolve, reject) => {
@@ -591,9 +593,10 @@ const useClaudeStreamRuntime = (
           const waiter = waitersRef.current.shift()
           waiter()
         }
-        // Auto-reconnect after unexpected close (code 1000 = normal, 1001 = going away)
-        if (event.code === 1000 || event.code === 1001 || event.code === 1006) {
-          console.log('[ClaudeStream] Auto-reconnecting in 1 second...')
+        // Auto-reconnect only for abnormal close (1006 = connection lost)
+        // Don't reconnect for 1000 (normal close) or 1001 (going away) - those are intentional
+        if (event.code === 1006) {
+          console.log('[ClaudeStream] Connection lost, auto-reconnecting in 1 second...')
           setTimeout(() => {
             if (wsRef.current === null || wsRef.current.readyState === WebSocket.CLOSED) {
               console.log('[ClaudeStream] Attempting reconnection...')
