@@ -95,10 +95,8 @@ class TestRLSContextSetting:
             set_workspace_context,
         )
 
-        with patch.dict(
-            os.environ,
-            {"KURT_CLOUD_AUTH": "true", "DATABASE_URL": "postgresql://localhost/db"},
-        ):
+        # Mock is_cloud_mode to enable RLS context setting for testing
+        with patch("kurt.db.tenant.is_cloud_mode", return_value=True):
             set_workspace_context(workspace_id="ws-test-123", user_id="user-test-456")
 
             try:
@@ -126,10 +124,8 @@ class TestRLSContextSetting:
             set_workspace_context,
         )
 
-        with patch.dict(
-            os.environ,
-            {"KURT_CLOUD_AUTH": "true", "DATABASE_URL": "postgresql://localhost/db"},
-        ):
+        # Mock is_cloud_mode to enable RLS context setting for testing
+        with patch("kurt.db.tenant.is_cloud_mode", return_value=True):
             # First transaction - set context
             with Session(pg_engine) as session1:
                 set_workspace_context(workspace_id="ws-1", user_id="user-1")
@@ -158,11 +154,8 @@ class TestManagedSessionWithPostgres:
         """Test managed_session sets RLS context in cloud mode."""
         from kurt.db.tenant import clear_workspace_context, set_workspace_context
 
-        # Patch get_session to return our test session
-        with patch.dict(
-            os.environ,
-            {"KURT_CLOUD_AUTH": "true", "DATABASE_URL": "postgresql://localhost/db"},
-        ):
+        # Mock is_cloud_mode to enable RLS context setting for testing
+        with patch("kurt.db.tenant.is_cloud_mode", return_value=True):
             set_workspace_context(workspace_id="ws-managed", user_id="user-managed")
 
             try:
