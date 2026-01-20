@@ -201,7 +201,7 @@ def import_cmd(
 
     For local PostgreSQL:
     - DATABASE_URL pointing to PostgreSQL
-    - CLOUD_AUTH=true in kurt.config (or KURT_CLOUD_AUTH=true env var)
+    - DATABASE_URL="kurt" in kurt.config
     - Valid authentication (kurt cloud login)
 
     Example:
@@ -395,7 +395,6 @@ def status_cmd():
         KurtCloudAuthError,
         get_database_client,
         get_mode,
-        is_cloud_auth_enabled,
         is_cloud_mode,
         is_postgres,
         managed_session,
@@ -426,7 +425,7 @@ def status_cmd():
     color = mode_colors.get(mode, "white")
     console.print(f"Mode: [{color}]{mode}[/{color}]")
     console.print(f"PostgreSQL: {'Yes' if is_postgres() else 'No'}")
-    console.print(f"Cloud Auth: {'Enabled' if is_cloud_auth_enabled() else 'Disabled'}")
+    console.print(f"Cloud Mode: {'Yes' if is_cloud_mode() else 'No'}")
 
     if is_postgres():
         db_url = os.environ.get("DATABASE_URL", "")

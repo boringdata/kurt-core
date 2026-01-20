@@ -25,7 +25,6 @@ from kurt.db.tenant import is_cloud_mode
 from kurt.web.api.auth import (
     auth_middleware_setup,
     get_authenticated_user,
-    is_cloud_auth_enabled,
 )
 from kurt.web.api.pty_bridge import build_claude_args, handle_pty_websocket
 from kurt.web.api.storage import LocalStorage, S3Storage
@@ -156,8 +155,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Add auth middleware for cloud mode (KURT_CLOUD_AUTH=true)
-if is_cloud_auth_enabled():
+# Add auth middleware for cloud mode (DATABASE_URL="kurt")
+if is_cloud_mode():
     app.middleware("http")(auth_middleware_setup)
 
 

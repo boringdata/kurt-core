@@ -132,21 +132,6 @@ def is_cloud_mode() -> bool:
     return False
 
 
-def is_cloud_auth_enabled() -> bool:
-    """Check if cloud auth/RLS should be enabled for database access."""
-    if os.environ.get("KURT_CLOUD_AUTH", "").lower() == "true":
-        return True
-    if is_cloud_mode():
-        return True
-    try:
-        from kurt.config import config_file_exists, load_config
-
-        if config_file_exists():
-            config = load_config()
-            return bool(getattr(config, "CLOUD_AUTH", False))
-    except Exception:
-        pass
-    return False
 
 
 def is_postgres() -> bool:
@@ -343,7 +328,7 @@ def set_rls_context(session: "Session") -> None:
     """
     from sqlalchemy import text
 
-    if not is_cloud_auth_enabled() or not is_postgres():
+    if not is_cloud_mode() or not is_postgres():
         return
 
     user_id = get_user_id()

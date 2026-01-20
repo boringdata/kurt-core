@@ -146,41 +146,25 @@ class TestExtractBearerToken:
 class TestApiMe:
     """Tests for /api/me endpoint."""
 
-    def test_local_mode_returns_is_cloud_mode_false(self):
-        """Test /api/me returns is_cloud_mode: false in local mode."""
+    def test_no_auth_no_credentials_returns_is_cloud_mode(self):
+        """Test /api/me returns is_cloud_mode status when no auth."""
         from fastapi.testclient import TestClient
 
         from kurt.web.api.server import app
 
-        # Ensure cloud auth is disabled
         with patch.dict(os.environ, {}, clear=True):
-            os.environ.pop("KURT_CLOUD_AUTH", None)
+            with patch("kurt.web.api.server.get_authenticated_user", return_value=None):
+                with patch("kurt.web.api.server.load_credentials", return_value=None):
+                    with patch("kurt.web.api.server.is_cloud_mode", return_value=False):
+                        client = TestClient(app)
+                        response = client.get("/api/me")
 
-            client = TestClient(app)
-            response = client.get("/api/me")
+                        assert response.status_code == 200
+                        data = response.json()
+                        assert data == {"is_cloud_mode": False, "user": None}
 
-            assert response.status_code == 200
-            data = response.json()
-            assert data == {"is_cloud_mode": False}
-
-    def test_cloud_mode_no_auth_returns_user_null(self):
-        """Test /api/me returns user: null in cloud mode without auth."""
-        from fastapi.testclient import TestClient
-
-        from kurt.web.api.server import app
-
-        with patch.dict(os.environ, {"KURT_CLOUD_AUTH": "true"}, clear=True):
-            with patch("kurt.web.api.server.is_cloud_auth_enabled", return_value=True):
-                with patch("kurt.web.api.server.get_authenticated_user", return_value=None):
-                    client = TestClient(app)
-                    response = client.get("/api/me")
-
-                    assert response.status_code == 200
-                    data = response.json()
-                    assert data == {"is_cloud_mode": True, "user": None}
-
-    def test_cloud_mode_with_auth_returns_user_info(self):
-        """Test /api/me returns user info in cloud mode with auth."""
+    def test_jwt_auth_returns_user_info(self):
+        """Test /api/me returns user info with JWT authentication."""
         from fastapi.testclient import TestClient
 
         from kurt.web.api.server import app
@@ -191,16 +175,13 @@ class TestApiMe:
             workspace_id="ws-456",
         )
 
-        with patch.dict(os.environ, {"KURT_CLOUD_AUTH": "true"}, clear=True):
-            with patch("kurt.web.api.server.is_cloud_auth_enabled", return_value=True):
-                with patch("kurt.web.api.server.get_authenticated_user", return_value=mock_user):
-                    client = TestClient(app)
-                    response = client.get("/api/me")
+        with patch("kurt.web.api.server.get_authenticated_user", return_value=mock_user):
+            client = TestClient(app)
+            response = client.get("/api/me")
 
-                    assert response.status_code == 200
-                    data = response.json()
-                    assert data["is_cloud_mode"] is True
-                    assert data["user"]["id"] == "user-123"
-                    assert data["user"]["email"] == "test@example.com"
-                    assert data["workspace"]["id"] == "ws-456"
-                    assert data["workspace"]["name"] == "ws-456"
+            assert response.status_code == 200
+            data = response.json()
+            assert data["is_cloud_mode"] is True
+            assert data["user"]["id"] == "user-123"
+            assert data["user"]["email"] == "test@example.com"
+            assert data["workspace"]["id"] == "ws-456"

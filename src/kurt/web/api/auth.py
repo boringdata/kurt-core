@@ -14,7 +14,7 @@ from typing import Any, Optional
 
 from fastapi import HTTPException, Request
 
-from kurt.db.tenant import is_cloud_auth_enabled  # noqa: F401 - re-exported
+from kurt.db.tenant import is_cloud_mode
 
 
 class AuthUser:
@@ -91,7 +91,7 @@ def get_authenticated_user(request: Request) -> Optional[AuthUser]:
     Returns None if not in cloud mode or no token provided.
     Raises HTTPException if token is invalid.
     """
-    if not is_cloud_auth_enabled():
+    if not is_cloud_mode():
         return None
 
     token = extract_bearer_token(request)
@@ -114,9 +114,9 @@ def require_authenticated_user(request: Request) -> AuthUser:
 
     Use this as a dependency for protected endpoints.
     """
-    if not is_cloud_auth_enabled():
+    if not is_cloud_mode():
         raise HTTPException(
-            status_code=500, detail="Auth required but KURT_CLOUD_AUTH is not enabled"
+            status_code=500, detail="Auth required but not in cloud mode"
         )
 
     token = extract_bearer_token(request)
@@ -146,7 +146,7 @@ async def auth_middleware_setup(request: Request, call_next):
     """
     from kurt.db.tenant import clear_workspace_context, set_workspace_context
 
-    if not is_cloud_auth_enabled():
+    if not is_cloud_mode():
         # Local mode - no auth required
         response = await call_next(request)
         return response
