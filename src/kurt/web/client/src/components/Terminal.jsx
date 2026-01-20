@@ -133,13 +133,8 @@ export default function Terminal({
   const historyBufferRef = useRef('')
   const historyFallbackTimerRef = useRef(null)
   const historySourceRef = useRef(null)
-  const providerKey = (provider || 'claude').toLowerCase()
-  const providerLabel =
-    providerKey === 'codex'
-      ? 'Codex'
-      : providerKey === 'claude'
-        ? 'Claude'
-        : `${providerKey.charAt(0).toUpperCase()}${providerKey.slice(1)}`
+  // Always use Claude as provider
+  const providerLabel = 'Claude'
 
   useEffect(() => {
     isActiveRef.current = isActive

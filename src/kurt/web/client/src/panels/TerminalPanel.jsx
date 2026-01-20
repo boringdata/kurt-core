@@ -41,13 +41,12 @@ const loadActiveSession = () => {
 const normalizeSession = (session, fallbackId) => {
   const { bannerMessage, ...rest } = session
   const id = Number(rest.id) || fallbackId
-  const provider =
-    typeof rest.provider === 'string' ? rest.provider.toLowerCase() : DEFAULT_PROVIDER
+  // Always use claude as provider (migration from old codex sessions)
   return {
     ...rest,
     id,
     title: rest.title || `Session ${id}`,
-    provider,
+    provider: DEFAULT_PROVIDER,
     sessionId: rest.sessionId || createSessionId(),
   }
 }
