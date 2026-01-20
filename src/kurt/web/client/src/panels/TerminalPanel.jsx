@@ -6,10 +6,6 @@ const SESSION_STORAGE_KEY = 'kurt-web-terminal-sessions'
 const VIEW_MODE_KEY = 'kurt-web-terminal-view-mode'
 const ACTIVE_SESSION_KEY = 'kurt-web-terminal-active'
 const CHAT_INTERFACE_KEY = 'kurt-web-terminal-chat-interface'
-const PROVIDERS = [
-  { id: 'claude', label: 'Claude' },
-  { id: 'codex', label: 'Codex' },
-]
 const DEFAULT_PROVIDER = 'claude'
 
 const createSessionId = () => {
@@ -59,13 +55,6 @@ const normalizeSession = (session, fallbackId) => {
 const serializeSessions = (sessions) =>
   sessions.map(({ bannerMessage, resume, ...session }) => session)
 
-const getProviderLabel = (provider) => {
-  const match = PROVIDERS.find((item) => item.id === provider)
-  if (match) return match.label
-  if (!provider) return 'Claude'
-  return `${provider.charAt(0).toUpperCase()}${provider.slice(1)}`
-}
-
 const getFileName = (path) => {
   if (!path) return ''
   const parts = path.split('/')
@@ -108,7 +97,6 @@ export default function TerminalPanel({ params }) {
     if (saved === 0) return 0
     return null
   })
-  const [newProvider, setNewProvider] = useState(DEFAULT_PROVIDER)
 
   const formatPrompt = useCallback((prompt) => {
     const cleaned = prompt.replace(/\s+/g, ' ').trim()
@@ -135,7 +123,7 @@ export default function TerminalPanel({ params }) {
     const next = {
       id: nextId,
       title: `Session ${nextId}`,
-      provider: newProvider,
+      provider: DEFAULT_PROVIDER,
       sessionId: createSessionId(),
       resume: false,
     }
@@ -257,19 +245,6 @@ export default function TerminalPanel({ params }) {
           Agent Sessions
         </div>
         <div className="terminal-actions">
-          <select
-            id="terminal-provider-select"
-            className="terminal-select terminal-provider-select"
-            value={newProvider}
-            onChange={(event) => setNewProvider(event.target.value)}
-            aria-label="Provider"
-          >
-            {PROVIDERS.map((provider) => (
-              <option key={provider.id} value={provider.id}>
-                {provider.label}
-              </option>
-            ))}
-          </select>
           <button
             type="button"
             className="terminal-new terminal-new-icon"
@@ -300,7 +275,7 @@ export default function TerminalPanel({ params }) {
             >
               {sessions.map((session) => (
                 <option key={session.id} value={session.id}>
-                  {`${session.title} (${getProviderLabel(session.provider)}) - ${session.sessionId.slice(0, 8)}`}
+                  {`${session.title} - ${session.sessionId.slice(0, 8)}`}
                 </option>
               ))}
             </select>
