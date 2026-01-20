@@ -86,6 +86,17 @@
   --color-git-modified: #e2c08d;
   --color-git-added: #73c991;
   --color-git-deleted: #f14c4c;
+  --color-git-modified-bg: rgba(226, 192, 141, 0.2);
+  --color-git-added-bg: rgba(115, 201, 145, 0.2);
+  --color-git-deleted-bg: rgba(241, 76, 76, 0.2);
+
+  /* Status badge backgrounds (15% opacity) */
+  --color-success-bg: rgba(22, 163, 74, 0.15);
+  --color-warning-bg: rgba(245, 158, 11, 0.15);
+  --color-error-bg: rgba(239, 68, 68, 0.15);
+  --color-info-bg: rgba(59, 130, 246, 0.15);
+  --color-neutral-bg: rgba(107, 114, 128, 0.15);
+  --color-violet-bg: rgba(139, 92, 246, 0.15);
 
   /* Selection/Highlight */
   --color-highlight: #fef08a;
@@ -104,7 +115,18 @@
   /* Accent variants */
   --color-violet: #7c3aed;
   --color-violet-light: #a78bfa;
+  --color-pink: #ec4899;
+  --color-pink-light: #f9a8d4;
+  --color-info-vivid: #60a5fa;
+
+  /* Mode colors */
+  --color-mode-act: #a28bff;
+  --color-mode-plan: #6fd3c1;
+  --color-mode-act-ring: rgba(162, 139, 255, 0.7);
+  --color-mode-plan-ring: rgba(111, 211, 193, 0.7);
   --color-indigo: #6366f1;
+  --color-overlay: rgba(0, 0, 0, 0.5);
+  --color-inset-shadow: rgba(0, 0, 0, 0.15);
   --color-diff-divider: #374151;
   --color-diff-add-bg: #dcfce7;
   --color-diff-add-text: #166534;
@@ -172,6 +194,17 @@
   --color-git-modified: #e2c08d;
   --color-git-added: #7ee787;
   --color-git-deleted: #ffa198;
+  --color-git-modified-bg: rgba(226, 192, 141, 0.25);
+  --color-git-added-bg: rgba(126, 231, 135, 0.25);
+  --color-git-deleted-bg: rgba(255, 161, 152, 0.25);
+
+  /* Status badge backgrounds (20% opacity for dark mode) */
+  --color-success-bg: rgba(34, 197, 94, 0.2);
+  --color-warning-bg: rgba(245, 158, 11, 0.2);
+  --color-error-bg: rgba(239, 68, 68, 0.2);
+  --color-info-bg: rgba(59, 130, 246, 0.2);
+  --color-neutral-bg: rgba(156, 163, 175, 0.2);
+  --color-violet-bg: rgba(167, 139, 250, 0.2);
 
   /* Selection/Highlight (dark) */
   --color-highlight: #854d0e;
@@ -190,12 +223,23 @@
   /* Accent variants */
   --color-violet: #a78bfa;
   --color-violet-light: #c4b5fd;
+  --color-pink: #f472b6;
+  --color-pink-light: #fbcfe8;
+  --color-info-vivid: #93c5fd;
   --color-indigo: #818cf8;
   --color-diff-divider: #4b5563;
   --color-diff-add-bg: #14532d;
   --color-diff-add-text: #86efac;
   --color-diff-remove-bg: #450a0a;
   --color-diff-remove-text: #fca5a5;
+
+  /* Mode colors (same in dark mode) */
+  --color-mode-act: #a28bff;
+  --color-mode-plan: #6fd3c1;
+  --color-mode-act-ring: rgba(162, 139, 255, 0.7);
+  --color-mode-plan-ring: rgba(111, 211, 193, 0.7);
+  --color-overlay: rgba(0, 0, 0, 0.7);
+  --color-inset-shadow: rgba(0, 0, 0, 0.3);
 
   /* Shadows (subtle glow) */
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
@@ -226,6 +270,18 @@ html, body, #root {
   font-family: var(--font-sans);
   color: var(--color-text-primary);
   background-color: var(--color-bg-primary);
+}
+
+/* Smooth theme transitions (applied via class after initial render) */
+.theme-transition,
+.theme-transition *,
+.theme-transition *::before,
+.theme-transition *::after {
+  transition: background-color var(--transition-normal),
+              color var(--transition-normal),
+              border-color var(--transition-normal),
+              fill var(--transition-normal),
+              stroke var(--transition-normal) !important;
 }
 
 /* Dockview fills root */
@@ -1152,23 +1208,23 @@ html, body, #root {
 }
 
 .git-status-modified {
-  background: rgba(226, 192, 141, 0.2);
+  background: var(--color-git-modified-bg);
   color: var(--color-git-modified);
 }
 
 .git-status-untracked,
 .git-status-new {
-  background: rgba(115, 201, 145, 0.2);
+  background: var(--color-git-added-bg);
   color: var(--color-git-added);
 }
 
 .git-status-added {
-  background: rgba(115, 201, 145, 0.2);
+  background: var(--color-git-added-bg);
   color: var(--color-git-added);
 }
 
 .git-status-deleted {
-  background: rgba(241, 76, 76, 0.2);
+  background: var(--color-git-deleted-bg);
   color: var(--color-git-deleted);
 }
 
@@ -1761,8 +1817,7 @@ html, body, #root {
   font-family: var(--font-mono);
   font-size: var(--text-sm);
   line-height: 1.6;
-  color: var(--color-git-deleted);
-  opacity: 0.9;
+  color: var(--color-diff-remove-text);
 }
 
 /* Copy button for deleted content */
@@ -2443,12 +2498,12 @@ html, body, #root {
 }
 
 .workflow-type-tool {
-  background: rgba(107, 114, 128, 0.15);
+  background: var(--color-neutral-bg);
   color: var(--color-text-tertiary);
 }
 
 .workflow-type-agent {
-  background: rgba(139, 92, 246, 0.15);
+  background: var(--color-violet-bg);
   color: var(--color-violet-light);
 }
 
@@ -2496,32 +2551,32 @@ html, body, #root {
 }
 
 .workflow-status-success {
-  background: rgba(22, 163, 74, 0.15);
+  background: var(--color-success-bg);
   color: var(--color-success-hover);
 }
 
 .workflow-status-warning {
-  background: rgba(245, 158, 11, 0.15);
+  background: var(--color-warning-bg);
   color: var(--color-warning);
 }
 
 .workflow-status-error {
-  background: rgba(239, 68, 68, 0.15);
+  background: var(--color-error-bg);
   color: var(--color-error);
 }
 
 .workflow-status-pending {
-  background: rgba(245, 158, 11, 0.15);
+  background: var(--color-warning-bg);
   color: var(--color-warning);
 }
 
 .workflow-status-enqueued {
-  background: rgba(59, 130, 246, 0.15);
+  background: var(--color-info-bg);
   color: var(--color-info);
 }
 
 .workflow-status-cancelled {
-  background: rgba(107, 114, 128, 0.15);
+  background: var(--color-neutral-bg);
   color: var(--color-text-secondary);
 }
 
@@ -3664,9 +3719,9 @@ html, body, #root {
 .frontmatter-badge {
   font-size: 9px;
   font-weight: var(--font-semibold);
-  padding: 2px 5px;
+  padding: 2px var(--space-1);
   border-radius: var(--radius-sm);
-  background: rgba(99, 102, 241, 0.15);
+  background: var(--color-info-bg);
   color: var(--color-indigo);
   text-transform: uppercase;
 }
@@ -3674,9 +3729,9 @@ html, body, #root {
 .frontmatter-error-badge {
   font-size: 9px;
   font-weight: var(--font-semibold);
-  padding: 2px 5px;
+  padding: 2px var(--space-1);
   border-radius: var(--radius-sm);
-  background: rgba(239, 68, 68, 0.15);
+  background: var(--color-error-bg);
   color: var(--color-error);
   text-transform: uppercase;
 }
@@ -3749,10 +3804,10 @@ html, body, #root {
 /* Frontmatter changed badge */
 .frontmatter-changed-badge {
   font-size: 9px;
-  font-weight: 600;
-  padding: 2px 5px;
-  border-radius: 3px;
-  background: rgba(34, 197, 94, 0.15);
+  font-weight: var(--font-semibold);
+  padding: 2px var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--color-success-bg);
   color: var(--color-success);
   text-transform: uppercase;
 }
@@ -3783,12 +3838,12 @@ html, body, #root {
 }
 
 .frontmatter-diff-original .frontmatter-diff-label {
-  background: rgba(248, 81, 73, 0.1);
+  background: var(--color-error-light);
   color: var(--color-error-hover);
 }
 
 .frontmatter-diff-current .frontmatter-diff-label {
-  background: rgba(34, 197, 94, 0.1);
+  background: var(--color-success-light);
   color: var(--color-success-hover);
 }
 
