@@ -58,6 +58,7 @@ const DEFAULT_SLASH_COMMANDS = [
   { id: 'clear', label: '/clear', description: 'Clear the conversation', group: 'context' },
   // Model
   { id: 'model', label: '/model', description: 'Switch AI model', group: 'model' },
+  { id: 'thinking', label: '/thinking', description: 'Toggle thinking mode', group: 'model', isToggle: true },
   // Customize (CLI-only items marked)
   { id: 'memory', label: '/memory', description: 'Manage memory/context', group: 'customize' },
   { id: 'permissions', label: '/permissions', description: 'Manage permissions', group: 'customize' },
@@ -1292,6 +1293,7 @@ const ComposerShell = ({
   onRegisterImages,
   slashCommands,
   onError,
+  isThinkingEnabled,
 }) => {
   const api = useAssistantApi()
   const composerApi = useMemo(() => api.composer(), [api])
@@ -1427,7 +1429,11 @@ const ComposerShell = ({
       }
     } else {
       // Slash command - insert text
-      const newValue = `${item.label} `
+      let newValue = `${item.label} `
+      // Handle thinking toggle specially
+      if (item.isToggle && item.id === 'thinking') {
+        newValue = isThinkingEnabled ? '/thinking off ' : '/thinking on '
+      }
       applyComposerText(newValue)
     }
     focusInput()
@@ -1521,11 +1527,13 @@ const ComposerShell = ({
                     {groupCommands.map((cmd) => {
                       const idx = flatIdx
                       flatIdx += 1
+                      const isToggleItem = cmd.isToggle && cmd.id === 'thinking'
+                      const toggleState = isToggleItem ? isThinkingEnabled : false
                       return (
                         <button
                           key={cmd.id}
                           ref={idx === selectedIndex ? selectedItemRef : null}
-                          className={`claude-menu-item ${idx === selectedIndex ? 'selected' : ''}${cmd.cliOnly ? ' cli-only' : ''}`}
+                          className={`claude-menu-item ${idx === selectedIndex ? 'selected' : ''}${cmd.cliOnly ? ' cli-only' : ''}${isToggleItem ? ' toggle-item' : ''}`}
                           onPointerDown={(event) => {
                             event.preventDefault()
                             event.stopPropagation()
@@ -1534,7 +1542,13 @@ const ComposerShell = ({
                           type="button"
                         >
                           <span>{cmd.label}</span>
-                          <span className="desc">{cmd.description}</span>
+                          {isToggleItem ? (
+                            <span className={`toggle-indicator ${toggleState ? 'on' : 'off'}`}>
+                              {toggleState ? 'On' : 'Off'}
+                            </span>
+                          ) : (
+                            <span className="desc">{cmd.description}</span>
+                          )}
                         </button>
                       )
                     })}
@@ -2112,6 +2126,7 @@ const Thread = ({
   onRestartSession,
   slashCommands,
   onError,
+  isThinkingEnabled,
 }) => {
   const [showModeMenu, setShowModeMenu] = useState(false)
   const [showOverflowMenu, setShowOverflowMenu] = useState(false)
@@ -2270,6 +2285,7 @@ const Thread = ({
         onRegisterImages={onRegisterImages}
         slashCommands={slashCommands}
         onError={onError}
+        isThinkingEnabled={isThinkingEnabled}
       />
     </ChatPanel>
   )
@@ -2740,6 +2756,9 @@ export default function ClaudeStreamChat({
 
   const runtimeKey = currentSessionId || sessionName || 'new'
 
+  // Determine if thinking mode is enabled based on maxThinkingTokens
+  const isThinkingEnabled = Boolean(cliOptions.maxThinkingTokens && Number(cliOptions.maxThinkingTokens) > 0)
+
   return (
     <div style={{ width: '100%', height: '100%', overflow: 'hidden' }}>
       <style>{chatThemeVars}</style>
@@ -2776,6 +2795,7 @@ export default function ClaudeStreamChat({
           onRestartSession={handleRestartSession}
           slashCommands={slashCommands}
           onError={logError}
+          isThinkingEnabled={isThinkingEnabled}
         />
         <ErrorLogModal
           isOpen={showErrorLog}
