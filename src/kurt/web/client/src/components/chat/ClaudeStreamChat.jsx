@@ -2473,12 +2473,11 @@ export default function ClaudeStreamChat({
   }, [])
 
   const handleLastMessageChange = useCallback((msg) => {
-    setLastUserMessage(msg)
     retryMessageRef.current = msg
   }, [])
 
-  const handleUserMessageId = useCallback((messageId) => {
-    setLastUserMessageId(messageId)
+  const handleUserMessageId = useCallback(() => {
+    // No longer tracking user message ID (rewind modal removed)
   }, [])
 
   const handleSlashCommands = useCallback((commands) => {
@@ -2601,44 +2600,6 @@ export default function ClaudeStreamChat({
     }
     setApprovalRequest(null)
   }, [approvalRequest, mode, applyModeChange])
-
-  const handleSaveSettings = useCallback((nextOptions, onComplete) => {
-    const merged = { ...DEFAULT_CLI_OPTIONS, ...nextOptions }
-    const previous = normalizeStoredOptions(cliOptions)
-    const next = normalizeStoredOptions(merged)
-    const requiresRestart = (
-      previous.allowedTools !== next.allowedTools ||
-      previous.disallowedTools !== next.disallowedTools ||
-      previous.maxTurns !== next.maxTurns ||
-      previous.maxBudgetUsd !== next.maxBudgetUsd
-    )
-    const modelChanged = previous.model !== next.model
-    const thinkingChanged = previous.maxThinkingTokens !== next.maxThinkingTokens
-
-    setCliOptions(merged)
-    setShowSettings(false)
-
-    if (modelChanged && next.model) {
-      sendControlMessageRef.current?.('set_model', { model: next.model })
-    }
-    if (thinkingChanged && next.maxThinkingTokens) {
-      const parsed = Number(next.maxThinkingTokens)
-      if (!Number.isNaN(parsed)) {
-        sendControlMessageRef.current?.('set_max_thinking_tokens', {
-          max_thinking_tokens: parsed,
-        })
-      }
-    }
-
-    if (requiresRestart) {
-      requestAnimationFrame(() => {
-        restartSession()
-        onComplete?.()
-      })
-      return
-    }
-    onComplete?.()
-  }, [cliOptions, restartSession])
 
   const handleRestartSession = useCallback(() => {
     restartSession()
