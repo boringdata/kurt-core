@@ -5,6 +5,7 @@ import { ChevronDown, ChevronUp } from 'lucide-react'
 
 import { ThemeProvider } from './hooks/useTheme'
 import ThemeToggle from './components/ThemeToggle'
+import UserMenu from './components/UserMenu'
 import FileTreePanel from './panels/FileTreePanel'
 import EditorPanel from './panels/EditorPanel'
 import TerminalPanel from './panels/TerminalPanel'
@@ -324,6 +325,7 @@ export default function App() {
   const ensureCorePanelsRef = useRef(null)
   const [projectRoot, setProjectRoot] = useState(null) // null = not loaded yet, '' = loaded but empty
   const projectRootRef = useRef(null) // Stable ref for callbacks
+  const [userContext, setUserContext] = useState(null)
 
   // Toggle sidebar collapse - capture size before collapsing
   const toggleFiletree = useCallback(() => {
@@ -1261,6 +1263,14 @@ export default function App() {
     fetchProjectRoot()
   }, [])
 
+  // Fetch user context for cloud mode detection and user menu
+  useEffect(() => {
+    fetch(apiUrl('/api/me'))
+      .then((res) => res.json())
+      .then((data) => setUserContext(data))
+      .catch(() => setUserContext({ is_cloud_mode: false }))
+  }, [])
+
   // Restore layout once projectRoot is loaded and dockApi is available
   const layoutRestorationRan = useRef(false)
   useEffect(() => {
@@ -1733,6 +1743,13 @@ export default function App() {
       <div className="app-container">
         <div className="app-header">
           <ThemeToggle />
+          {userContext?.is_cloud_mode && userContext?.user && (
+            <UserMenu
+              email={userContext.user.email}
+              workspaceName={userContext.workspace?.name || 'Workspace'}
+              workspaceId={userContext.workspace?.id || ''}
+            />
+          )}
         </div>
         <DockviewReact
           className={dockviewClassName}

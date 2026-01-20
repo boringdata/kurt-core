@@ -65,7 +65,7 @@ const ToolUseBlock = ({
             fontSize: '7px',
             lineHeight: 1,
             flexShrink: 0,
-            marginTop: '4px',
+            marginTop: '5px',
             marginLeft: '-8px',
             width: '8px',
             height: '8px',
