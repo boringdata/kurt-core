@@ -249,46 +249,31 @@ def api_config():
 def api_me(request: Request):
     """Get current user context.
 
-    Returns mode and user information:
-    - Local mode (no credentials): { "is_cloud_mode": false }
-    - Local mode (with CLI credentials): { "is_cloud_mode": true, "user": {...}, "workspace": {...} }
-    - Cloud mode (authenticated): { "is_cloud_mode": true, "user": {...}, "workspace": {...} }
-    - Cloud mode (no auth): { "is_cloud_mode": true, "user": null }
+    Priority:
+    1. JWT token in Authorization header (cloud deployment)
+    2. CLI credentials from ~/.kurt/credentials.json (local with cloud login)
+    3. No auth (local mode)
     """
-    # If running in cloud mode, handle auth via JWT
-    if is_cloud_mode():
-        user = get_authenticated_user(request)
-        if user is None:
-            return {"is_cloud_mode": True, "user": None}
-
+    # Try JWT auth first (cloud deployment with Supabase)
+    user = get_authenticated_user(request)
+    if user is not None:
         return {
             "is_cloud_mode": True,
-            "user": {
-                "id": user.user_id,
-                "email": user.email,
-            },
-            "workspace": {
-                "id": user.workspace_id,
-                "name": user.workspace_id,
-            },
+            "user": {"id": user.user_id, "email": user.email},
+            "workspace": {"id": user.workspace_id, "name": user.workspace_id},
         }
 
-    # Local mode: check for CLI credentials (~/.kurt/credentials.json)
+    # Fallback: CLI credentials (~/.kurt/credentials.json)
     creds = load_credentials()
     if creds and creds.email:
         return {
             "is_cloud_mode": True,
-            "user": {
-                "id": creds.user_id,
-                "email": creds.email,
-            },
-            "workspace": {
-                "id": creds.workspace_id,
-                "name": creds.workspace_id,
-            },
+            "user": {"id": creds.user_id, "email": creds.email},
+            "workspace": {"id": creds.workspace_id, "name": creds.workspace_id},
         }
 
-    return {"is_cloud_mode": False}
+    # No auth available
+    return {"is_cloud_mode": is_cloud_mode(), "user": None}
 
 
 @app.get("/api/status")
