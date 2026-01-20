@@ -1271,6 +1271,21 @@ export default function App() {
       .catch(() => setUserContext({ is_cloud_mode: false }))
   }, [])
 
+  // Set browser tab title to workspace name or folder name
+  useEffect(() => {
+    const workspaceName = userContext?.workspace?.name
+    // Use workspace name if available and not a UUID
+    if (workspaceName && !workspaceName.includes('-')) {
+      document.title = `${workspaceName} - Kurt`
+    } else if (projectRoot) {
+      // Fallback to folder name from projectRoot
+      const folderName = projectRoot.split('/').filter(Boolean).pop() || 'Kurt'
+      document.title = `${folderName} - Kurt`
+    } else {
+      document.title = 'Kurt'
+    }
+  }, [userContext?.workspace?.name, projectRoot])
+
   // Restore layout once projectRoot is loaded and dockApi is available
   const layoutRestorationRan = useRef(false)
   useEffect(() => {
