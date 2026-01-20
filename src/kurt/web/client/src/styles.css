@@ -1912,6 +1912,41 @@ html, body, #root {
   padding: 0 8px;
 }
 
+/* react-diff-view overrides for proper theming */
+.diff-content .diff-code-insert {
+  background-color: var(--color-diff-add-bg) !important;
+}
+
+.diff-content .diff-code-insert .diff-code {
+  color: var(--color-diff-add-text) !important;
+}
+
+.diff-content .diff-gutter-insert {
+  background-color: var(--color-diff-add-bg) !important;
+  color: var(--color-diff-add-text) !important;
+}
+
+.diff-content .diff-code-delete {
+  background-color: var(--color-diff-remove-bg) !important;
+}
+
+.diff-content .diff-code-delete .diff-code {
+  color: var(--color-diff-remove-text) !important;
+}
+
+.diff-content .diff-gutter-delete {
+  background-color: var(--color-diff-remove-bg) !important;
+  color: var(--color-diff-remove-text) !important;
+}
+
+.diff-content .diff-code {
+  color: var(--color-text-primary);
+}
+
+.diff-content .diff-gutter {
+  color: var(--color-text-tertiary);
+}
+
 .approval-panel {
   margin: var(--space-4);
   border: 1px solid var(--color-border);
