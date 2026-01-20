@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { Search, X, Folder, FolderOpen, File, FolderInput, RefreshCw, ChevronRight, ChevronDown, MoreHorizontal, Settings } from 'lucide-react'
 
 const apiBase = import.meta.env.VITE_API_URL || ''
@@ -827,7 +828,7 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
         </>
       )}
 
-      {contextMenu && (
+      {contextMenu && createPortal(
         <div
           className="context-menu"
           style={{ top: contextMenu.y, left: contextMenu.x }}
@@ -873,7 +874,8 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
               </div>
             </>
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Image, FileText, Loader2, Sparkles, RotateCcw, RefreshCw, Settings, MoreHorizontal } from 'lucide-react'
+import { Image, FileText, Loader2, Sparkles, RefreshCw, MoreHorizontal } from 'lucide-react'
 import {
   AssistantIf,
   AssistantRuntimeProvider,
@@ -2081,9 +2081,7 @@ const Thread = ({
   onRetryConnection,
   imageCache,
   onRegisterImages,
-  onOpenSettings,
   onRestartSession,
-  onOpenRewind,
   slashCommands,
   onError,
 }) => {
@@ -2140,17 +2138,9 @@ const Thread = ({
           </button>
           {showOverflowMenu && (
             <div className="overflow-menu">
-              <button type="button" onClick={() => { onOpenRewind(); setShowOverflowMenu(false); }}>
-                <RotateCcw size={14} />
-                <span>Rewind files</span>
-              </button>
               <button type="button" onClick={() => { onRestartSession(); setShowOverflowMenu(false); }}>
                 <RefreshCw size={14} />
                 <span>Restart session</span>
-              </button>
-              <button type="button" onClick={() => { onOpenSettings(); setShowOverflowMenu(false); }}>
-                <Settings size={14} />
-                <span>Settings</span>
               </button>
             </div>
           )}
@@ -2257,222 +2247,6 @@ const Thread = ({
   )
 }
 
-const SessionSettingsModal = ({ isOpen, options, onClose, onSave }) => {
-  const [draft, setDraft] = useState(options)
-
-  useEffect(() => {
-    if (isOpen) {
-      setDraft(options)
-    }
-  }, [isOpen, options])
-
-  if (!isOpen) return null
-
-  const updateDraft = (key, value) => {
-    setDraft((prev) => ({ ...prev, [key]: value }))
-  }
-
-  return (
-    <div className="claude-settings-overlay" onClick={onClose}>
-      <div
-        className="claude-settings-modal"
-        onClick={(event) => event.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-      >
-        <div className="claude-settings-header">
-          <div>
-            <div className="claude-settings-title">CLI startup options</div>
-            <div className="claude-settings-subtitle">
-              Applied on restart for this session.
-            </div>
-          </div>
-          <button type="button" className="claude-settings-close" onClick={onClose}>
-            ×
-          </button>
-        </div>
-        <div className="claude-settings-body">
-          <label className="claude-settings-label">
-            Model
-            <input
-              className="claude-settings-input"
-              value={draft.model}
-              onChange={(event) => updateDraft('model', event.target.value)}
-              placeholder="claude-sonnet-4-20250514"
-            />
-          </label>
-          <label className="claude-settings-label">
-            Max thinking tokens
-            <input
-              className="claude-settings-input"
-              type="number"
-              min="0"
-              value={draft.maxThinkingTokens}
-              onChange={(event) => updateDraft('maxThinkingTokens', event.target.value)}
-              placeholder="e.g. 5000"
-            />
-          </label>
-          <label className="claude-settings-label">
-            Max turns
-            <input
-              className="claude-settings-input"
-              type="number"
-              min="0"
-              value={draft.maxTurns}
-              onChange={(event) => updateDraft('maxTurns', event.target.value)}
-              placeholder="e.g. 20"
-            />
-          </label>
-          <label className="claude-settings-label">
-            Max budget (USD)
-            <input
-              className="claude-settings-input"
-              type="number"
-              min="0"
-              step="0.01"
-              value={draft.maxBudgetUsd}
-              onChange={(event) => updateDraft('maxBudgetUsd', event.target.value)}
-              placeholder="e.g. 1.50"
-            />
-          </label>
-          <label className="claude-settings-label">
-            Allowed tools (comma-separated)
-            <input
-              className="claude-settings-input"
-              value={draft.allowedTools}
-              onChange={(event) => updateDraft('allowedTools', event.target.value)}
-              placeholder="Bash,Read,Write"
-            />
-          </label>
-          <label className="claude-settings-label">
-            Disallowed tools (comma-separated)
-            <input
-              className="claude-settings-input"
-              value={draft.disallowedTools}
-              onChange={(event) => updateDraft('disallowedTools', event.target.value)}
-              placeholder="WebSearch,WebFetch"
-            />
-          </label>
-        </div>
-        <div className="claude-settings-actions">
-          <button
-            type="button"
-            className="claude-settings-button ghost"
-            onClick={() => setDraft({ ...DEFAULT_CLI_OPTIONS })}
-          >
-            Reset
-          </button>
-          <div className="claude-settings-spacer" />
-          <button type="button" className="claude-settings-button ghost" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="claude-settings-button primary"
-            onClick={() => onSave(draft)}
-          >
-            Save
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-const RewindModal = ({
-  isOpen,
-  lastUserMessage,
-  lastUserMessageId,
-  status,
-  result,
-  error,
-  onPreview,
-  onApply,
-  onClose,
-}) => {
-  if (!isOpen) return null
-
-  const messageText = lastUserMessage?.text || ''
-  const previewText = messageText.length > 140 ? `${messageText.slice(0, 140)}…` : messageText
-  const fileDiffs = result?.file_diffs || result?.fileDiffs || []
-  const canSubmit = Boolean(lastUserMessageId) && status === 'idle'
-
-  return (
-    <div className="claude-settings-overlay" onClick={onClose}>
-      <div
-        className="claude-settings-modal claude-rewind-modal"
-        onClick={(event) => event.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-      >
-        <div className="claude-settings-header">
-          <h3>Rewind files</h3>
-          <button type="button" className="claude-settings-close" onClick={onClose}>
-            ×
-          </button>
-        </div>
-        <div className="claude-settings-body">
-          <div className="claude-rewind-summary">
-            <div className="claude-rewind-label">Last user message</div>
-            <div className="claude-rewind-text">
-              {previewText || 'No recent message'}
-            </div>
-            {lastUserMessageId && (
-              <div className="claude-rewind-id">Message ID: {lastUserMessageId}</div>
-            )}
-          </div>
-          {!lastUserMessageId && (
-            <div className="claude-rewind-status">Send a message to enable rewind.</div>
-          )}
-          {status !== 'idle' && (
-            <div className="claude-rewind-status">
-              Waiting for Claude CLI… ({status === 'preview' ? 'preview' : 'apply'})
-            </div>
-          )}
-          {error && <div className="claude-rewind-error">{error}</div>}
-          {fileDiffs.length > 0 && (
-            <div className="claude-rewind-diffs">
-              {fileDiffs.map((diff, index) => (
-                <div key={`${diff.file_path || diff.filePath || 'file'}-${index}`}>
-                  <div className="claude-rewind-file">
-                    {diff.file_path || diff.filePath || 'file'}
-                  </div>
-                  <pre className="claude-rewind-diff">{diff.diff || diff.patch || ''}</pre>
-                </div>
-              ))}
-            </div>
-          )}
-          {result && fileDiffs.length === 0 && (
-            <pre className="claude-rewind-diff">{JSON.stringify(result, null, 2)}</pre>
-          )}
-        </div>
-        <div className="claude-settings-actions">
-          <button
-            type="button"
-            className="claude-settings-button ghost"
-            onClick={onPreview}
-            disabled={!canSubmit}
-          >
-            Preview changes
-          </button>
-          <div className="claude-settings-spacer" />
-          <button type="button" className="claude-settings-button ghost" onClick={onClose}>
-            Close
-          </button>
-          <button
-            type="button"
-            className="claude-settings-button primary"
-            onClick={onApply}
-            disabled={!canSubmit}
-          >
-            Rewind files
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 export default function ClaudeStreamChat({
   initialSessionId = null,
   provider = 'claude',
@@ -2498,21 +2272,13 @@ export default function ClaudeStreamChat({
     return { ...DEFAULT_CLI_OPTIONS }
   })
   const [fileAttachments, setFileAttachments] = useState([])
-  const [showSettings, setShowSettings] = useState(false)
   const [approvalRequest, setApprovalRequest] = useState(null)
   const [imageCache, setImageCache] = useState({})
-  const [lastUserMessage, setLastUserMessage] = useState(null)
-  const [lastUserMessageId, setLastUserMessageId] = useState(null)
   const [slashCommands, setSlashCommands] = useState(DEFAULT_SLASH_COMMANDS)
-  const [showRewindModal, setShowRewindModal] = useState(false)
-  const [rewindStatus, setRewindStatus] = useState('idle')
-  const [rewindResult, setRewindResult] = useState(null)
-  const [rewindError, setRewindError] = useState('')
   const [errorLog, setErrorLog] = useState([])
   const [activeError, setActiveError] = useState(null)
   const [showErrorLog, setShowErrorLog] = useState(false)
   const retryMessageRef = useRef(null)
-  const pendingRewindIdRef = useRef(null)
   const modeChangeRef = useRef(false)
 
   // Update session ID when initialSessionId prop changes
@@ -2668,30 +2434,7 @@ export default function ClaudeStreamChat({
 
   const handleControlMessage = useCallback((payload) => {
     const subtype = payload?.subtype
-    const pendingRewindId = pendingRewindIdRef.current
-    const responsePayload = payload?.response?.subtype ? payload.response : payload
-    const isRewindResponse = (
-      subtype === 'rewind_files' ||
-      payload?.response?.subtype === 'rewind_files' ||
-      (pendingRewindId && payload?.request_id === pendingRewindId)
-    )
 
-    if (isRewindResponse) {
-      setRewindResult(responsePayload)
-      setRewindStatus('idle')
-      setRewindError('')
-      pendingRewindIdRef.current = null
-      setShowRewindModal(true)
-      return
-    }
-
-    if (subtype === 'error' && pendingRewindId && payload?.request_id === pendingRewindId) {
-      const errorMessage = payload?.error?.message || payload?.message || 'Rewind failed'
-      setRewindError(String(errorMessage))
-      setRewindStatus('idle')
-      pendingRewindIdRef.current = null
-      return
-    }
     if (subtype === 'error') {
       logError({
         title: 'Claude control error',
@@ -2987,53 +2730,6 @@ export default function ClaudeStreamChat({
 
   const isUploadingAttachments = fileAttachments.some((attachment) => attachment.status === 'uploading')
 
-  const openRewindModal = useCallback(() => {
-    setShowRewindModal(true)
-  }, [])
-  const closeRewindModal = useCallback(() => {
-    setShowRewindModal(false)
-    setRewindStatus('idle')
-    setRewindResult(null)
-    setRewindError('')
-    pendingRewindIdRef.current = null
-  }, [])
-  const requestRewind = useCallback((dryRun) => {
-    if (!lastUserMessageId) {
-      setRewindError('No user message available to rewind.')
-      logError({
-        title: 'Rewind unavailable',
-        detail: 'No user message was found to rewind.',
-        suggestions: ['Send a message first, then try again.'],
-        source: 'rewind',
-        canRetry: false,
-        canRestart: false,
-      })
-      return
-    }
-    if (!sendControlMessageRef.current) {
-      setRewindError('Rewind is unavailable while disconnected.')
-      logError({
-        title: 'Rewind unavailable',
-        detail: 'The session is disconnected.',
-        suggestions: ['Reconnect and retry rewind.'],
-        source: 'rewind',
-        canRetry: true,
-        canRestart: true,
-      })
-      return
-    }
-    const requestId = `rewind-${Date.now()}`
-    pendingRewindIdRef.current = requestId
-    setRewindStatus(dryRun ? 'preview' : 'apply')
-    setRewindResult(null)
-    setRewindError('')
-    sendControlMessageRef.current('rewind_files', {
-      request_id: requestId,
-      user_message_id: lastUserMessageId,
-      dry_run: Boolean(dryRun),
-    })
-  }, [lastUserMessageId, logError])
-
   const handleRetryConnection = useCallback(() => {
     if (!currentSessionId) return
     switchSession(currentSessionId, true)
@@ -3088,28 +2784,9 @@ export default function ClaudeStreamChat({
           onRetryConnection={handleRetryConnection}
           imageCache={imageCache}
           onRegisterImages={handleRegisterImages}
-          onOpenSettings={() => setShowSettings(true)}
           onRestartSession={handleRestartSession}
-          onOpenRewind={openRewindModal}
           slashCommands={slashCommands}
           onError={logError}
-        />
-        <SessionSettingsModal
-          isOpen={showSettings}
-          options={cliOptions}
-          onClose={() => setShowSettings(false)}
-          onSave={handleSaveSettings}
-        />
-        <RewindModal
-          isOpen={showRewindModal}
-          lastUserMessage={lastUserMessage}
-          lastUserMessageId={lastUserMessageId}
-          status={rewindStatus}
-          result={rewindResult}
-          error={rewindError}
-          onPreview={() => requestRewind(true)}
-          onApply={() => requestRewind(false)}
-          onClose={closeRewindModal}
         />
         <ErrorLogModal
           isOpen={showErrorLog}
