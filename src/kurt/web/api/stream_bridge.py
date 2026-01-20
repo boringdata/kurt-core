@@ -26,6 +26,14 @@ MAX_HISTORY_LINES = int(os.environ.get("KURT_STREAM_HISTORY_LINES", "1000"))
 IDLE_TTL_SECONDS = int(os.environ.get("KURT_STREAM_IDLE_TTL", "60"))
 MAX_SESSIONS = int(os.environ.get("KURT_STREAM_MAX_SESSIONS", "20"))
 
+# Default slash commands to send to frontend on connect
+# These match the frontend's DEFAULT_SLASH_COMMANDS
+DEFAULT_SLASH_COMMANDS = [
+    "clear", "model", "thinking", "memory", "permissions",
+    "mcp", "hooks", "agents", "help", "compact", "cost",
+    "init", "terminal", "restart"
+]
+
 _SESSION_REGISTRY: dict[str, "StreamSession"] = {}
 _SESSION_REGISTRY_LOCK = asyncio.Lock()
 
@@ -282,6 +290,7 @@ class StreamSession:
         self._started = False
         self._terminated = False
         self._mode: Optional[str] = None  # Track current permission mode
+        self._last_init_message: Optional[dict[str, Any]] = None  # Store init for resumed clients
 
     def is_alive(self) -> bool:
         return self.proc is not None and self.proc.returncode is None
@@ -501,6 +510,11 @@ class StreamSession:
                         subtype = payload.get("subtype", "")
                         # Log every message from CLI
                         print(f"[Stream] CLI>>> type={msg_type} subtype={subtype}")
+                        # Log and store init messages with slash_commands for resumed clients
+                        if msg_type == "system" and subtype == "init":
+                            slash_cmds = payload.get("slash_commands", [])
+                            print(f"[Stream] INIT>>> slash_commands count={len(slash_cmds)}: {slash_cmds[:5]}...")
+                            self._last_init_message = payload  # Store for new clients on resume
                         keys = list(payload.keys())
 
                         # Handle control_request/control_cancel_request from CLI (permission prompts)
@@ -1088,6 +1102,11 @@ async def handle_stream_websocket(
             },
         }
     )
+
+    # For resumed sessions, send stored init message so client gets slash_commands
+    if not created and session._last_init_message:
+        print(f"[Stream] Sending stored init message to resumed client")
+        await websocket.send_json(session._last_init_message)
 
     try:
         while True:
