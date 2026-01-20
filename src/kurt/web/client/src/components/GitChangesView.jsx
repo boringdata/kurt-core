@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react'
+import { Check } from 'lucide-react'
 
 const apiBase = import.meta.env.VITE_API_URL || ''
 const apiUrl = (path) => `${apiBase}${path}`
@@ -89,7 +90,7 @@ export default function GitChangesView({ onOpenDiff, activeDiffFile }) {
     return (
       <div className="git-changes-view">
         <div className="git-changes-empty">
-          <span className="git-changes-empty-icon">✓</span>
+          <Check className="git-changes-empty-icon" size={24} />
           <span>No changes</span>
         </div>
       </div>

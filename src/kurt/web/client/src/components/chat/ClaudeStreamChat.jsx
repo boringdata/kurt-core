@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Image, FileText, Loader2, Sparkles, RotateCcw, RefreshCw, Settings } from 'lucide-react'
 import {
   AssistantIf,
   AssistantRuntimeProvider,
@@ -1255,25 +1256,9 @@ const formatBytes = (value) => {
   return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`
 }
 
-const ImageIcon = () => (
-  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-    <rect x="3" y="5" width="18" height="14" rx="2" ry="2" fill="none" stroke="currentColor" strokeWidth="1.5" />
-    <circle cx="8" cy="10" r="1.5" fill="currentColor" />
-    <path d="M21 16l-5-5-4 4-2-2-5 5" fill="none" stroke="currentColor" strokeWidth="1.5" />
-  </svg>
-)
+const ImageIcon = () => <Image size={16} aria-hidden="true" />
 
-const FileIcon = () => (
-  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-    <path
-      d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-    />
-    <path d="M14 3v5h5" fill="none" stroke="currentColor" strokeWidth="1.5" />
-  </svg>
-)
+const FileIcon = () => <FileText size={16} aria-hidden="true" />
 
 const INLINE_IMAGE_LIMIT = 80000
 
@@ -2063,7 +2048,7 @@ const ErrorLogModal = ({ isOpen, errors, onClear, onClose }) => {
 
 const ThinkingIndicator = () => (
   <div className="claude-status" role="status" aria-live="polite">
-    <span className="claude-thinking-spinner">✳</span>
+    <Loader2 className="claude-thinking-spinner" size={16} />
     <span>Thinking...</span>
   </div>
 )
@@ -2127,18 +2112,18 @@ const Thread = ({
     <ChatPanel className="chat-panel-light">
       <div className="claude-stream-header">
         <div className="claude-stream-title">
-          <span className="mark">✳</span>
+          <Sparkles className="mark" size={16} />
           <span>Claude Code</span>
         </div>
         <div className="claude-stream-header-actions">
           <button type="button" title="Rewind files" onClick={onOpenRewind}>
-            ↶
+            <RotateCcw size={14} />
           </button>
           <button type="button" title="Restart session" onClick={onRestartSession}>
-            ↻
+            <RefreshCw size={14} />
           </button>
           <button type="button" title="Session settings" onClick={onOpenSettings}>
-            ⚙
+            <Settings size={14} />
           </button>
         </div>
       </div>
@@ -2190,7 +2175,7 @@ const Thread = ({
       <MessageList>
         <EmptyState>
           <div className="claude-stream-empty">
-            <span className="mark">✳</span>
+            <Sparkles className="mark" size={24} />
             <div className="headline">Claude Code</div>
             <div className="hint">Type /model to pick the right tool for the job.</div>
           </div>

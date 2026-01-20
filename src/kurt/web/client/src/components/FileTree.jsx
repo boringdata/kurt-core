@@ -1,13 +1,14 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react'
+import { Search, X, Folder, FolderOpen, File, FolderInput, RefreshCw } from 'lucide-react'
 
 const apiBase = import.meta.env.VITE_API_URL || ''
 const apiUrl = (path) => `${apiBase}${path}`
 
 // Section icons by config key (not path name)
 const SECTION_ICONS = {
-  projects: '📁',
-  sources: '📥',
-  workflows: '🔄',
+  projects: Folder,
+  sources: FolderInput,
+  workflows: RefreshCw,
 }
 
 // Capitalize first letter for display
@@ -739,10 +740,7 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
   return (
     <div className="file-tree" onContextMenu={handleRootContextMenu}>
       <div className="search-box">
-        <svg className="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <circle cx="11" cy="11" r="8"/>
-          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-        </svg>
+        <Search className="search-icon" size={14} />
         <input
           type="text"
           className="search-input"
@@ -756,10 +754,7 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
             className="search-clear"
             onClick={() => setSearchQuery('')}
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="18" y1="6" x2="6" y2="18"/>
-              <line x1="6" y1="6" x2="18" y2="18"/>
-            </svg>
+            <X size={12} />
           </button>
         )}
       </div>

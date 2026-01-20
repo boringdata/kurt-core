@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { DockviewReact, DockviewDefaultTab } from 'dockview-react'
 import 'dockview-react/dist/styles/dockview.css'
+import { ChevronDown, ChevronUp } from 'lucide-react'
 
 import { ThemeProvider } from './hooks/useTheme'
 import ThemeToggle from './components/ThemeToggle'
@@ -408,13 +409,11 @@ export default function App() {
           title={collapsed.workflows ? 'Expand panel' : 'Collapse panel'}
           aria-label={collapsed.workflows ? 'Expand panel' : 'Collapse panel'}
         >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-            {collapsed.workflows ? (
-              <path d="M3.5 6L8 10.5L12.5 6H3.5Z" />
-            ) : (
-              <path d="M3.5 10L8 5.5L12.5 10H3.5Z" />
-            )}
-          </svg>
+          {collapsed.workflows ? (
+            <ChevronDown size={14} />
+          ) : (
+            <ChevronUp size={14} />
+          )}
         </button>
       )
     },

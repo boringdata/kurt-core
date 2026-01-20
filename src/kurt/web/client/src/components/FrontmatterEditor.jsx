@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
+import { ChevronDown } from 'lucide-react'
 import Editor from 'react-simple-code-editor'
 import { Highlight, themes } from 'prism-react-renderer'
 
