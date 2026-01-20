@@ -264,12 +264,26 @@
    Base Styles
    ========================================================================== */
 
+/* Universal box-sizing reset */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
 html, body, #root {
   height: 100%;
+  width: 100%;
   margin: 0;
+  padding: 0;
+  overflow: hidden;
   font-family: var(--font-sans);
   color: var(--color-text-primary);
   background-color: var(--color-bg-primary);
+}
+
+html {
+  /* Use dvh for mobile browser address bar, with vh fallback */
+  height: 100vh;
+  height: 100dvh;
 }
 
 /* Smooth theme transitions (applied via class after initial render) */

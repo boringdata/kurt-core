@@ -563,7 +563,7 @@
   color: var(--color-text-primary);
   border-radius: var(--radius-lg);
   padding: var(--space-1) var(--space-1);
-  font-size: var(--text-base);
+  font-size: var(--text-sm);
   cursor: pointer;
 }
 
