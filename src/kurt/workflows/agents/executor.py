@@ -381,6 +381,8 @@ def agent_execution_step(
     # This allows: from workflows.my_workflow.tools import my_tool
     if workflow_dir:
         workflow_path = Path(workflow_dir)
+        # Set KURT_WORKFLOW_DIR so agent tools can find models.py
+        env["KURT_WORKFLOW_DIR"] = str(workflow_path)
         # Add parent of workflows dir (project root) to PYTHONPATH
         # so imports like `from workflows.name.tools import func` work
         workflows_parent = workflow_path.parent.parent  # workflows/ -> project root

@@ -55,6 +55,22 @@ def tool():
     pass
 
 
+def _get_workflow_dir(workflow_dir: Path | None) -> Path | None:
+    """Get workflow directory from argument or KURT_WORKFLOW_DIR env var."""
+    import os
+
+    if workflow_dir is not None:
+        return workflow_dir
+
+    env_dir = os.environ.get("KURT_WORKFLOW_DIR")
+    if env_dir:
+        path = Path(env_dir)
+        if path.exists() and path.is_dir():
+            return path
+
+    return None
+
+
 @tool.command("save-to-db")
 @click.option(
     "--table",
@@ -70,7 +86,7 @@ def tool():
     "--workflow-dir",
     type=click.Path(exists=True, file_okay=False, path_type=Path),
     default=None,
-    help="Path to workflow directory containing models.py",
+    help="Path to workflow directory containing models.py (auto-detected from KURT_WORKFLOW_DIR if not set)",
 )
 @track_command
 def save_to_db(table: str, data: str, workflow_dir: Path | None) -> None:
@@ -86,6 +102,11 @@ def save_to_db(table: str, data: str, workflow_dir: Path | None) -> None:
         kurt agent tool save-to-db --table=results --data='[{"a": 1}, {"a": 2}]'
     """
     from kurt.core import SaveStep, get_model_by_table_name
+    from kurt.core.dbos import init_dbos
+
+    # Initialize DBOS for standalone CLI usage
+    # SaveStep uses @DBOS.transaction() which requires DBOS to be initialized
+    init_dbos()
 
     # Parse JSON data
     try:
@@ -103,9 +124,10 @@ def save_to_db(table: str, data: str, workflow_dir: Path | None) -> None:
         _output_error("Data must be a JSON object or array of objects")
         return
 
-    # Find the model by table name
+    # Find the model by table name (use env var fallback)
+    resolved_workflow_dir = _get_workflow_dir(workflow_dir)
     try:
-        model = get_model_by_table_name(table, workflow_dir=workflow_dir)
+        model = get_model_by_table_name(table, workflow_dir=resolved_workflow_dir)
     except ImportError as e:
         _output_error(f"Failed to load models.py: {e}")
         return
@@ -169,7 +191,7 @@ def save_to_db(table: str, data: str, workflow_dir: Path | None) -> None:
     "--workflow-dir",
     type=click.Path(exists=True, file_okay=False, path_type=Path),
     default=None,
-    help="Path to workflow directory containing models.py",
+    help="Path to workflow directory containing models.py (auto-detected from KURT_WORKFLOW_DIR if not set)",
 )
 @track_command
 def llm_cmd(
@@ -223,13 +245,14 @@ def llm_cmd(
         )
         return
 
-    # Resolve output schema
+    # Resolve output schema (use env var fallback for workflow dir)
+    resolved_workflow_dir = _get_workflow_dir(workflow_dir)
     output_schema = None
     if output_schema_name:
         try:
             from kurt.core.model_utils import _load_module_from_path
 
-            models_path = (workflow_dir or Path.cwd()) / "models.py"
+            models_path = (resolved_workflow_dir or Path.cwd()) / "models.py"
             if models_path.exists():
                 module = _load_module_from_path(models_path)
                 if module and hasattr(module, output_schema_name):

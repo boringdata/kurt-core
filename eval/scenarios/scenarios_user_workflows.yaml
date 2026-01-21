@@ -5,10 +5,10 @@
 
 scenarios:
   # ========================================================================
-  # Scenario 01: Create TOML Workflow with Minimal Guidance
+  # Scenario 01: Create TOML Workflow with DB Persistence
   # ========================================================================
-  - name: 01_create_toml_workflow_minimal
-    description: Agent creates a TOML workflow with minimal guidance, discovering docs via kurt show
+  - name: 01_create_workflow_with_db_persistence
+    description: Agent creates a DBOS workflow that fetches pricing data and saves to DB
     needs_claude_plugin: false
 
     setup_commands:
@@ -19,16 +19,35 @@ scenarios:
       Create a workflow called "competitor_tracker" for tracking competitor pricing.
 
       The workflow should:
-      1. Be a DBOS-driven workflow with steps
-      2. Include a fetch step to get data from URLs
-      3. Include an agent step to analyze the data
+      1. Be a DBOS-driven workflow with [steps.xxx] sections (NOT agent-driven with [agent])
+      2. Include a fetch step (type=function) to get data from a pricing page
+      3. Include an analyze step (type=agent) to analyze and save the data
       4. Include a models.py with a SQLModel table for results
-      5. Include a tools.py with DBOS step functions
+      5. Include a tools.py with @DBOS.step() functions
 
-      Use `kurt show workflow-create` to learn the format, then create the workflow.
-      You can also use `kurt show models-py` and `kurt show tools-py` for detailed guides.
+      Use `kurt show workflow-create` to learn the format.
+      Use `kurt show models-py` and `kurt show tools-py` for detailed guides.
+      Use `kurt show save-step` to learn about the save-to-db command.
 
-      After creating the workflow, validate it with `kurt agents validate`.
+      IMPORTANT REQUIREMENTS:
+      - Use this URL for the pricing page: https://stripe.com/pricing
+      - In tools.py, use ABSOLUTE imports (not relative):
+        CORRECT: `from workflows.competitor_tracker.models import CompetitorPricing`
+        WRONG: `from .models import CompetitorPricing`
+      - The workflow MUST have [steps.xxx] sections, NOT an [agent] section
+      - DO NOT convert to agent-driven format under any circumstances
+
+      After creating the workflow:
+      1. Validate it with `kurt agents validate`
+      2. Run the workflow with `kurt agents run competitor-tracker --foreground`
+      3. If there are import errors, fix them (use absolute imports) and re-run
+      4. Verify data was saved by checking the database:
+         ```bash
+         sqlite3 .kurt/kurt.sqlite "SELECT COUNT(*) FROM competitor_pricing;"
+         ```
+
+      The agent step MUST call `kurt agent tool save-to-db` to persist at least one record.
+      If there are any errors, fix them and retry. NEVER convert to agent-driven format.
 
     assertions:
       - type: FileExists
@@ -42,9 +61,6 @@ scenarios:
         content: "[workflow]"
       - type: FileContains
         path: workflows/competitor_tracker/workflow.toml
-        content: "name ="
-      - type: FileContains
-        path: workflows/competitor_tracker/workflow.toml
         content: "[steps."
       - type: FileContains
         path: workflows/competitor_tracker/tools.py
@@ -52,11 +68,17 @@ scenarios:
       - type: FileContains
         path: workflows/competitor_tracker/models.py
         content: "SQLModel"
-      - type: FileContains
-        path: workflows/competitor_tracker/models.py
-        content: "__tablename__"
       - type: ConversationContains
         text: "kurt agents validate"
+        case_sensitive: false
+      - type: ConversationContains
+        text: "kurt agents run"
+        case_sensitive: false
+      - type: ConversationContains
+        text: "save-to-db"
+        case_sensitive: false
+      - type: ConversationContains
+        text: "SELECT COUNT"
         case_sensitive: false
 
   # ========================================================================
