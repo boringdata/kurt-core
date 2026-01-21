@@ -95,15 +95,61 @@ def extract_title(html: str) -> str:
     return match.group(1) if match else "Untitled"
 ```
 
-### 3. Report Generation Step
+### 3. Database Save Step
+
+When saving data to custom SQLModel tables, **always call `ensure_tables()` first** to create the table if it doesn't exist:
+
+```python
+@DBOS.step()
+def save_results(context: dict) -> dict:
+    """Save analysis results to database."""
+    from kurt.db import managed_session, ensure_tables
+    from workflows.my_workflow.models import AnalysisResult  # Use ABSOLUTE import
+
+    # IMPORTANT: Ensure table exists before inserting
+    ensure_tables([AnalysisResult])
+
+    workflow_id = context["workflow_id"]
+    outputs = context.get("outputs", {})
+    items = outputs.get("analyze", {}).get("items", [])
+
+    saved = 0
+    errors = []
+
+    with managed_session() as session:
+        for idx, item in enumerate(items):
+            try:
+                result = AnalysisResult(
+                    workflow_id=workflow_id,
+                    name=item.get("name"),
+                    value=item.get("value"),
+                )
+                session.add(result)
+                saved += 1
+            except Exception as e:
+                errors.append({"idx": idx, "error": str(e)})
+        session.commit()
+
+    return {"saved": saved, "errors": errors, "status": "completed"}
+```
+
+**Key points:**
+- Use `ensure_tables([Model])` before any INSERT operations
+- Use **absolute imports** for models: `from workflows.my_workflow.models import X`
+- Do NOT use relative imports like `from .models import X` (they fail in DBOS context)
+
+### 4. Report Generation Step
 
 ```python
 @DBOS.step()
 def generate_report(context: dict) -> dict:
     """Generate final report from analysis."""
     from sqlmodel import select
-    from kurt.db import managed_session
-    from .models import AnalysisResult
+    from kurt.db import managed_session, ensure_tables
+    from workflows.my_workflow.models import AnalysisResult  # Use ABSOLUTE import
+
+    # Ensure table exists (safe to call even if it does)
+    ensure_tables([AnalysisResult])
 
     workflow_id = context["workflow_id"]
 
@@ -230,12 +276,65 @@ def fetch_pages(context: dict) -> dict:
 
 
 @DBOS.step()
+def save_analysis(context: dict) -> dict:
+    """Save analysis results from agent step."""
+    import json
+    import os
+    from datetime import datetime
+    from kurt.db import managed_session, ensure_tables
+    # IMPORTANT: Use ABSOLUTE import, not relative
+    from workflows.competitor_tracker.models import CompetitorAnalysis
+
+    # IMPORTANT: Ensure table exists before inserting
+    ensure_tables([CompetitorAnalysis])
+
+    workflow_id = context["workflow_id"]
+
+    # Read JSON file written by agent step
+    json_path = "/tmp/analysis_data.json"
+    if not os.path.exists(json_path):
+        return {"saved": 0, "error": "No data file found"}
+
+    with open(json_path) as f:
+        items = json.load(f)
+
+    saved = 0
+    errors = []
+
+    with managed_session() as session:
+        for idx, item in enumerate(items):
+            try:
+                analysis = CompetitorAnalysis(
+                    workflow_id=workflow_id,
+                    company=item.get("company"),
+                    website=item.get("website"),
+                    products=item.get("products", []),
+                    confidence_score=item.get("confidence", 0.0),
+                    analyzed_at=datetime.utcnow(),
+                )
+                session.add(analysis)
+                saved += 1
+            except Exception as e:
+                errors.append({"idx": idx, "error": str(e)})
+        session.commit()
+
+    # Clean up temp file
+    os.remove(json_path)
+
+    return {"saved": saved, "errors": errors, "status": "completed"}
+
+
+@DBOS.step()
 def generate_report(context: dict) -> dict:
     """Generate report from saved analysis."""
     from datetime import datetime
     from sqlmodel import select
-    from kurt.db import managed_session
-    from .models import CompetitorAnalysis
+    from kurt.db import managed_session, ensure_tables
+    # IMPORTANT: Use ABSOLUTE import, not relative
+    from workflows.competitor_tracker.models import CompetitorAnalysis
+
+    # Safe to call even if table exists
+    ensure_tables([CompetitorAnalysis])
 
     workflow_id = context["workflow_id"]
 
@@ -289,9 +388,11 @@ function = "generate_report"  # Calls generate_report() from tools.py
 
 ## Best Practices
 
-1. **Keep steps focused** - One task per step
-2. **Return serializable data** - Dicts with JSON-compatible values
-3. **Use context for data flow** - Access inputs and previous outputs
-4. **Handle errors gracefully** - Return error info or re-raise
-5. **Track progress** - Use `DBOS.set_event()` for long operations
-6. **Query saved data in report step** - Agent saves, function reads
+1. **Always use `ensure_tables()`** - Call before any INSERT operations to auto-create tables
+2. **Use ABSOLUTE imports** - `from workflows.my_workflow.models import X` (not `from .models`)
+3. **Keep steps focused** - One task per step
+4. **Return serializable data** - Dicts with JSON-compatible values
+5. **Use context for data flow** - Access inputs and previous outputs
+6. **Handle errors gracefully** - Return error info or re-raise
+7. **Track progress** - Use `DBOS.set_event()` for long operations
+8. **Query saved data in report step** - Agent saves, function reads
