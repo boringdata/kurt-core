@@ -586,7 +586,7 @@ def execute_steps_workflow(
     """
     from graphlib import TopologicalSorter
 
-    from .parser import ParsedWorkflow, StepConfig
+    from .parser import ParsedWorkflow
 
     definition = ParsedWorkflow.model_validate(definition_dict)
     workflow_id = DBOS.workflow_id
@@ -769,7 +769,6 @@ def execute_function_step(
     Returns:
         Function result
     """
-    import importlib
 
     workflow_dir = get_workflow_dir(workflow_name)
     if not workflow_dir:

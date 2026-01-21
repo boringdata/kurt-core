@@ -6,11 +6,10 @@ Tests dynamic SQLModel discovery and table creation.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
-from sqlmodel import Field, SQLModel, select
+from sqlmodel import select
 
 from kurt.core.model_utils import (
     ensure_all_workflow_tables,
@@ -18,7 +17,6 @@ from kurt.core.model_utils import (
     find_models_in_workflow,
     get_model_by_table_name,
 )
-
 
 # ============================================================================
 # Test Fixtures

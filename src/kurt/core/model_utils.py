@@ -13,7 +13,6 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import logging
-import os
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING

@@ -357,7 +357,7 @@ def _validate_dag(steps: dict[str, StepConfig], errors: list[str]) -> None:
 
     # Check for cycles using topological sort
     try:
-        from graphlib import TopologicalSorter, CycleError
+        from graphlib import CycleError, TopologicalSorter
 
         graph = {name: set(step.depends_on) for name, step in steps.items()}
         sorter = TopologicalSorter(graph)

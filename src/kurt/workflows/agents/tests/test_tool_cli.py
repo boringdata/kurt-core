@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -139,8 +138,9 @@ class TestSaveToDbCommand:
     @patch("kurt.workflows.agents.tool_cli.get_model_by_table_name")
     def test_save_single_object(self, mock_get_model, mock_save_step, cli_runner: CliRunner):
         """Test save-to-db with a single JSON object."""
-        from kurt.workflows.agents.tool_cli import tool
         from sqlmodel import SQLModel
+
+        from kurt.workflows.agents.tool_cli import tool
 
         # Create mock model
         class MockModel(SQLModel):
@@ -177,8 +177,9 @@ class TestSaveToDbCommand:
     @patch("kurt.workflows.agents.tool_cli.get_model_by_table_name")
     def test_save_array_of_objects(self, mock_get_model, mock_save_step, cli_runner: CliRunner):
         """Test save-to-db with an array of objects."""
-        from kurt.workflows.agents.tool_cli import tool
         from sqlmodel import SQLModel
+
+        from kurt.workflows.agents.tool_cli import tool
 
         class MockModel(SQLModel):
             __tablename__ = "items"
@@ -210,8 +211,9 @@ class TestSaveToDbCommand:
         self, mock_get_model, mock_save_step, cli_runner: CliRunner
     ):
         """Test save-to-db with validation errors."""
-        from kurt.workflows.agents.tool_cli import tool
         from sqlmodel import SQLModel
+
+        from kurt.workflows.agents.tool_cli import tool
 
         class MockModel(SQLModel):
             __tablename__ = "items"

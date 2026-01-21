@@ -16,7 +16,6 @@ from sqlmodel import Field, SQLModel
 from kurt.core.hooks import NoopStepHooks
 from kurt.core.save_step import SaveStep, _format_validation_errors
 
-
 # ============================================================================
 # Test Models
 # ============================================================================
@@ -199,7 +198,7 @@ class TestSaveRowsTransaction:
 
     def test_valid_rows_saved(self, mock_dbos, tmp_database):
         """Valid rows are saved to the database."""
-        step = SaveStep(name="save", model=TestEntity)
+        _step = SaveStep(name="save", model=TestEntity)  # noqa: F841
 
         # Re-register transaction to use the real function (not mocked)
         # and run it directly (not via DBOS)
@@ -373,7 +372,7 @@ class TestSaveStepIntegration:
         def test_workflow():
             return save_step.run([{"name": "Tracked", "value": 1.0}])
 
-        result = test_workflow()
+        _result = test_workflow()  # noqa: F841
 
         # Verify hooks were called
         assert len(recording_hooks.get_calls("on_start")) == 1

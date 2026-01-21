@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from textwrap import dedent
 
-
 # =============================================================================
 # Markdown Format Tests (Backwards Compatibility)
 # =============================================================================
@@ -462,8 +461,9 @@ class TestParseTomlWorkflow:
 
     def test_parse_toml_missing_workflow_section(self, tmp_path):
         """Test that missing [workflow] section raises error."""
-        from kurt.workflows.agents.parser import parse_workflow
         import pytest
+
+        from kurt.workflows.agents.parser import parse_workflow
 
         workflow_file = tmp_path / "missing-workflow.toml"
         workflow_file.write_text(
@@ -891,7 +891,7 @@ class TestParsedWorkflow:
 
     def test_is_agent_driven(self):
         """Test is_agent_driven property."""
-        from kurt.workflows.agents.parser import ParsedWorkflow, AgentConfig
+        from kurt.workflows.agents.parser import AgentConfig, ParsedWorkflow
 
         workflow = ParsedWorkflow(
             name="test",
@@ -918,7 +918,7 @@ class TestParsedWorkflow:
 
     def test_effective_prompt_from_agent(self):
         """Test effective_prompt returns agent.prompt for TOML."""
-        from kurt.workflows.agents.parser import ParsedWorkflow, AgentConfig
+        from kurt.workflows.agents.parser import AgentConfig, ParsedWorkflow
 
         workflow = ParsedWorkflow(
             name="test",
@@ -931,7 +931,7 @@ class TestParsedWorkflow:
 
     def test_effective_prompt_from_body(self):
         """Test effective_prompt returns body for Markdown."""
-        from kurt.workflows.agents.parser import ParsedWorkflow, AgentConfig
+        from kurt.workflows.agents.parser import AgentConfig, ParsedWorkflow
 
         workflow = ParsedWorkflow(
             name="test",
