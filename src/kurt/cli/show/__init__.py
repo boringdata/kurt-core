@@ -6,14 +6,19 @@ from .analytics_setup import analytics_setup_cmd
 from .cloud_setup import cloud_setup_cmd
 from .cms_setup import cms_setup_cmd
 from .discovery_methods import discovery_methods_cmd
+from .embedding_step import embedding_step_cmd
 from .feedback_workflow import feedback_workflow_cmd
 from .format_templates import format_templates_cmd
+from .llm_step import llm_step_cmd
+from .models_py import models_py_cmd
 from .plan_template_workflow import plan_template_workflow_cmd
 from .profile_workflow import profile_workflow_cmd
 from .project_workflow import project_workflow_cmd
+from .save_step import save_step_cmd
 from .source_gathering import source_gathering_cmd
 from .source_workflow import source_workflow_cmd
 from .template_workflow import template_workflow_cmd
+from .tools_py import tools_py_cmd
 from .workflow_create import workflow_create_cmd
 
 
@@ -23,7 +28,16 @@ def show():
     Show instructions and available options.
 
     \b
-    Available commands:
+    Workflow Tool Documentation:
+    - save-step: SaveStep database persistence documentation
+    - llm-step: LLMStep batch processing documentation
+    - embedding-step: EmbeddingStep vector embeddings documentation
+    - models-py: SQLModel table definitions guide
+    - tools-py: DBOS step functions guide
+    - workflow-create: Instructions for creating user workflows with tools
+
+    \b
+    Other Commands:
     - format-templates: List available format templates
     - source-gathering: Display source gathering strategy
     - project-workflow: Instructions for creating/editing projects
@@ -36,7 +50,6 @@ def show():
     - cms-setup: CMS integration setup
     - analytics-setup: Analytics integration setup
     - cloud-setup: Kurt Cloud setup and migration
-    - workflow-create: Instructions for creating user workflows with tools
     """
     pass
 
@@ -55,6 +68,13 @@ show.add_command(cms_setup_cmd, name="cms-setup")
 show.add_command(analytics_setup_cmd, name="analytics-setup")
 show.add_command(cloud_setup_cmd, name="cloud-setup")
 show.add_command(workflow_create_cmd, name="workflow-create")
+
+# Workflow tool documentation
+show.add_command(save_step_cmd, name="save-step")
+show.add_command(llm_step_cmd, name="llm-step")
+show.add_command(embedding_step_cmd, name="embedding-step")
+show.add_command(models_py_cmd, name="models-py")
+show.add_command(tools_py_cmd, name="tools-py")
 
 # Export for lazy loading
 show_group = show
