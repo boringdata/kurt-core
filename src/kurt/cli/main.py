@@ -43,6 +43,7 @@ class LazyGroup(click.Group):
         "research": ("kurt.workflows.research.cli", "research_group"),
         "signals": ("kurt.workflows.signals.cli", "signals_group"),
         "agents": ("kurt.workflows.agents.cli", "agents_group"),
+        "agent": ("kurt.workflows.agents.cli", "agent_group"),
         "admin": ("kurt.cli.admin", "admin"),
         "show": ("kurt.cli.show", "show_group"),
         "cloud": ("kurt.cli.cloud", "cloud_group"),

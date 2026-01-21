@@ -1,5 +1,6 @@
 from .core import LLMStep, llm_step
 from .dbos import destroy_dbos, init_dbos
+from .save_step import SaveStep
 from .display import (
     StepDisplay,
     is_display_enabled,
@@ -49,11 +50,18 @@ from .tracking import (
     track_step,
     update_step_progress,
 )
+from .model_utils import (
+    ensure_all_workflow_tables,
+    ensure_table_exists,
+    find_models_in_workflow,
+    get_model_by_table_name,
+)
 from .workflow_utils import store_parent_workflow_id, with_parent_workflow_id
 
 __all__ = [
     "LLMStep",
     "llm_step",
+    "SaveStep",
     "EmbeddingStep",
     "embedding_step",
     "generate_embeddings",
@@ -100,4 +108,8 @@ __all__ = [
     "print_info",
     "store_parent_workflow_id",
     "with_parent_workflow_id",
+    "get_model_by_table_name",
+    "ensure_table_exists",
+    "find_models_in_workflow",
+    "ensure_all_workflow_tables",
 ]

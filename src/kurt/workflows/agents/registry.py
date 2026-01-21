@@ -9,6 +9,9 @@ from kurt.config import get_config_or_default
 
 from .parser import ParsedWorkflow, parse_workflow, validate_workflow
 
+# Supported workflow file extensions (in priority order)
+WORKFLOW_EXTENSIONS = [".toml", ".md"]
+
 
 def get_workflows_dir() -> Path:
     """Get the workflows directory from config (default: workflows/)."""
@@ -21,26 +24,39 @@ def _find_workflow_files(workflows_dir: Path) -> list[Path]:
     Find all workflow definition files.
 
     Supports two structures:
-    - workflows/simple-workflow.md (flat file)
-    - workflows/complex_workflow/workflow.md (directory with tools)
+    - workflows/simple-workflow.toml or .md (flat file)
+    - workflows/complex_workflow/workflow.toml or .md (directory with tools)
+
+    Priority: .toml files take precedence over .md files with the same name.
 
     Returns:
-        List of paths to workflow.md files
+        List of paths to workflow files
     """
     if not workflows_dir.exists():
         return []
 
-    paths = []
+    # Track workflows by name to handle priority
+    # Key: workflow identifier (stem for flat, dir name for directory)
+    # Value: path to file
+    workflows: dict[str, Path] = {}
 
-    # Flat files: workflows/*.md
-    for path in workflows_dir.glob("*.md"):
-        paths.append(path)
+    # Flat files: workflows/*.toml and workflows/*.md
+    for ext in WORKFLOW_EXTENSIONS:
+        for path in workflows_dir.glob(f"*{ext}"):
+            stem = path.stem
+            # Only add if not already found (earlier extensions have priority)
+            if stem not in workflows:
+                workflows[stem] = path
 
-    # Directory structure: workflows/*/workflow.md
-    for path in workflows_dir.glob("*/workflow.md"):
-        paths.append(path)
+    # Directory structure: workflows/*/workflow.toml and workflows/*/workflow.md
+    for ext in WORKFLOW_EXTENSIONS:
+        for path in workflows_dir.glob(f"*/workflow{ext}"):
+            dir_name = path.parent.name
+            # Only add if not already found (earlier extensions have priority)
+            if dir_name not in workflows:
+                workflows[dir_name] = path
 
-    return sorted(set(paths))
+    return sorted(workflows.values())
 
 
 def get_workflow_dir(name: str) -> Optional[Path]:
@@ -59,8 +75,12 @@ def get_workflow_dir(name: str) -> Optional[Path]:
     # Convert kebab-case to snake_case for directory lookup
     dir_name = name.replace("-", "_")
     dir_path = workflows_dir / dir_name
-    if dir_path.is_dir() and (dir_path / "workflow.md").exists():
-        return dir_path
+
+    if dir_path.is_dir():
+        # Check for workflow file in priority order
+        for ext in WORKFLOW_EXTENSIONS:
+            if (dir_path / f"workflow{ext}").exists():
+                return dir_path
 
     return None
 
@@ -116,25 +136,27 @@ def get_definition(name: str) -> Optional[ParsedWorkflow]:
     if not workflows_dir.exists():
         return None
 
-    # Try directory structure first: workflows/{name}/workflow.md
+    # Try directory structure first: workflows/{name}/workflow.toml or .md
     dir_name = name.replace("-", "_")
-    dir_path = workflows_dir / dir_name / "workflow.md"
-    if dir_path.exists():
-        try:
-            parsed = parse_workflow(dir_path)
-            return parsed
-        except Exception:
-            pass
-
-    # Try exact filename match: workflows/{name}.md
-    exact_path = workflows_dir / f"{name}.md"
-    if exact_path.exists():
-        try:
-            parsed = parse_workflow(exact_path)
-            if parsed.name == name:
+    for ext in WORKFLOW_EXTENSIONS:
+        dir_path = workflows_dir / dir_name / f"workflow{ext}"
+        if dir_path.exists():
+            try:
+                parsed = parse_workflow(dir_path)
                 return parsed
-        except Exception:
-            pass
+            except Exception:
+                pass
+
+    # Try exact filename match: workflows/{name}.toml or .md
+    for ext in WORKFLOW_EXTENSIONS:
+        exact_path = workflows_dir / f"{name}{ext}"
+        if exact_path.exists():
+            try:
+                parsed = parse_workflow(exact_path)
+                if parsed.name == name:
+                    return parsed
+            except Exception:
+                pass
 
     # Otherwise scan all files for matching name
     for path in _find_workflow_files(workflows_dir):
