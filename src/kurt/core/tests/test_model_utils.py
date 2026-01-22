@@ -39,6 +39,7 @@ from sqlalchemy import JSON, Column
 class TestItem(SQLModel, table=True):
     """Test item model."""
     __tablename__ = "test_items"
+    __table_args__ = {"extend_existing": True}
 
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
@@ -48,6 +49,7 @@ class TestItem(SQLModel, table=True):
 class TestCategory(SQLModel, table=True):
     """Test category model."""
     __tablename__ = "test_categories"
+    __table_args__ = {"extend_existing": True}
 
     id: Optional[int] = Field(default=None, primary_key=True)
     category_name: str
@@ -78,6 +80,7 @@ from sqlalchemy import JSON, Column
 class CompetitorAnalysis(SQLModel, table=True):
     """Competitor analysis with JSON fields."""
     __tablename__ = "competitor_analysis"
+    __table_args__ = {"extend_existing": True}
 
     id: Optional[int] = Field(default=None, primary_key=True)
     workflow_id: str = Field(index=True)
@@ -104,6 +107,7 @@ from sqlmodel import Field, SQLModel
 class ItemA(SQLModel, table=True):
     """First item with duplicate table name."""
     __tablename__ = "items"
+    __table_args__ = {"extend_existing": True}
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
 
@@ -111,6 +115,7 @@ class ItemA(SQLModel, table=True):
 class ItemB(SQLModel, table=True):
     """Second item with same table name."""
     __tablename__ = "items"
+    __table_args__ = {"extend_existing": True}
     id: Optional[int] = Field(default=None, primary_key=True)
     label: str
 '''

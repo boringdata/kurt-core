@@ -227,8 +227,9 @@ def find_models_in_workflow(
         if attr is SQLModel:
             continue
 
-        # Only include actual table models (have __tablename__)
-        if hasattr(attr, "__tablename__"):
+        # Only include actual table models (have __table__, not just __tablename__)
+        # SQLModel classes without table=True don't have __table__
+        if hasattr(attr, "__table__"):
             models.append(attr)
 
     return models
