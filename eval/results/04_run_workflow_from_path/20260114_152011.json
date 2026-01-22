@@ -1,0 +1,93 @@
+{
+  "scenario": "04_run_workflow_from_path",
+  "passed": true,
+  "error": null,
+  "metrics": {
+    "usage": {
+      "input_tokens": 2,
+      "output_tokens": 640,
+      "total_tokens": 642
+    },
+    "timing": {
+      "start_time": 1768400371.745457,
+      "end_time": 1768400411.5708532,
+      "duration_seconds": 39.82539629936218
+    },
+    "conversation_turns": 6,
+    "tool_calls": [
+      {
+        "tool": "Write",
+        "params": {
+          "file_path": "/var/folders/yr/lv_0z6m15fg8llcm02_kw4m80000gn/T/kurt_eval_1n12v7yc/workflows/echo_test.md",
+          "content": "---\nname: echo-test\ntitle: Echo Test\ndescription: Simple echo test workflow\nagent:\n  model: claude-sonnet-4-20250514\n  max_turns: 3\n  allowed_tools:\n    - Bash\n  permission_mode: bypassPermissions\nguardrails:\n  max_tokens: 50000\n  max_time: 60\n---\n\n# Echo Test\n\nRun this command: echo \"Hello from workflow\"\n"
+        }
+      },
+      {
+        "tool": "Bash",
+        "params": {
+          "command": "cd /var/folders/yr/lv_0z6m15fg8llcm02_kw4m80000gn/T/kurt_eval_1n12v7yc && kurt agents validate",
+          "description": "Validate workflow agents"
+        }
+      },
+      {
+        "tool": "Bash",
+        "params": {
+          "command": "cd /var/folders/yr/lv_0z6m15fg8llcm02_kw4m80000gn/T/kurt_eval_1n12v7yc && kurt agents run workflows/echo_test.md --foreground",
+          "description": "Run echo test workflow",
+          "timeout": 120000
+        }
+      }
+    ],
+    "conversation": [
+      {
+        "role": "user",
+        "message": "Create a simple workflow and run it using path-based execution.\n\nStep 1: Create the workflow file\nCreate workflows/echo_test.md:\n```yaml\n---\nname: echo-test\ntitle: Echo Test\ndescription: Simple echo test workflow\nagent:\n  model: claude-sonnet-4-20250514\n  max_turns: 3\n  allowed_tools:\n    - Bash\n  permission_mode: bypassPermissions\nguardrails:\n  max_tokens: 50000\n  max_time: 60\n---\n\n# Echo Test\n\nRun this command: echo \"Hello from workflow\"\n```\n\nStep 2: Validate the workflow\n```bash\nkurt agents validate\n```\n\nStep 3: Run the workflow using the file path\n```bash\nkurt agents run workflows/echo_test.md --foreground\n```\n\nExecute all steps and report the results.\n"
+      },
+      {
+        "role": "agent",
+        "message": "I'll execute all three steps for you."
+      },
+      {
+        "role": "tool",
+        "message": "[Tool: Write] {\"file_path\": \"/var/folders/yr/lv_0z6m15fg8llcm02_kw4m80000gn/T/kurt_eval_1n12v7yc/workflows/echo_test.md\", \"content\": \"---\\nname: echo-test\\ntitle: Echo Test\\ndescription: Simple echo test workflow\\nagent:\\n  model: claude-sonnet-4-20250514\\n  max_turns: 3\\n  allowed_tools:\\n    - Bash\\n  permission_mode: bypassPermissions\\nguardrails:\\n  max_tokens: 50000\\n  max_time: 60\\n---\\n\\n# Echo Test\\n\\nRun this command: echo \\\"Hello from workflow\\\"\\n\"}"
+      },
+      {
+        "role": "tool",
+        "message": "[Tool: Bash] {\"command\": \"cd /var/folders/yr/lv_0z6m15fg8llcm02_kw4m80000gn/T/kurt_eval_1n12v7yc && kurt agents validate\", \"description\": \"Validate workflow agents\"}"
+      },
+      {
+        "role": "tool",
+        "message": "[Tool: Bash] {\"command\": \"cd /var/folders/yr/lv_0z6m15fg8llcm02_kw4m80000gn/T/kurt_eval_1n12v7yc && kurt agents run workflows/echo_test.md --foreground\", \"description\": \"Run echo test workflow\", \"timeout\": 120000}"
+      },
+      {
+        "role": "agent",
+        "message": "**Results Summary:**\n\n| Step | Action | Result |\n|------|--------|--------|\n| 1 | Created `workflows/echo_test.md` | \u2713 Success |\n| 2 | `kurt agents validate` | \u2713 Valid: 1 workflow (echo-test) |\n| 3 | `kurt agents run workflows/echo_test.md --foreground` | \u2713 Completed in 9.78s, 2 turns, 1 tool call |\n\nThe workflow was successfully created, validated, and executed using path-based execution."
+      }
+    ],
+    "tool_usage": {
+      "write": 1,
+      "bash": 2
+    }
+  },
+  "workspace": {
+    "command_outputs": [
+      {
+        "command": "KURT_TELEMETRY_DISABLED=1 uv run kurt init",
+        "index": 1,
+        "stdout": "Initializing Kurt project...\n\nKurt project already initialized \n(/private/var/folders/yr/lv_0z6m15fg8llcm02_kw4m80000gn/T/kurt_eval_1n12v7yc/kur\nt.config)\nReinitialize? (y/N): Error: EOF when reading a line\n",
+        "stderr": "Aborted!\n",
+        "returncode": 1,
+        "error": null
+      },
+      {
+        "command": "mkdir -p workflows",
+        "index": 2,
+        "stdout": "",
+        "stderr": "",
+        "returncode": 0,
+        "error": null
+      }
+    ]
+  },
+  "timestamp": "20260114_152011"
+}

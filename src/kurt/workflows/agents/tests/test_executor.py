@@ -400,3 +400,205 @@ class TestRunDefinition:
         assert result["status"] == "completed"
         mock_run_workflow.assert_called_once()
         assert mock_run_workflow.call_args[1]["background"] is False
+
+
+class TestToolExtraction:
+    """Tests for tool extraction from tools.py."""
+
+    def test_extract_tools_documentation(self, tmp_path):
+        """Test extracting tool documentation from tools.py."""
+        from kurt.workflows.agents.executor import _extract_tools_documentation
+
+        workflows_dir = tmp_path / "workflows"
+        workflow_dir = workflows_dir / "my_workflow"
+        workflow_dir.mkdir(parents=True)
+
+        # Create workflow.md
+        (workflow_dir / "workflow.md").write_text(
+            "---\nname: my-workflow\ntitle: My\nagent:\n  model: claude-sonnet-4-20250514\n---\nBody"
+        )
+
+        # Create tools.py with DBOS decorators
+        tools_content = '''
+"""Tools for my workflow."""
+
+from dbos import DBOS
+
+@DBOS.workflow()
+def analyze_data(url: str) -> dict:
+    """Analyze data from URL and return insights."""
+    return {"result": "analyzed"}
+
+@DBOS.step()
+def process_item(item: str, count: int = 1) -> list:
+    """Process a single item."""
+    return [item] * count
+
+def helper_function():
+    """This is not a tool."""
+    pass
+'''
+        (workflow_dir / "tools.py").write_text(tools_content)
+
+        with patch("kurt.workflows.agents.executor.get_workflow_dir") as mock_dir:
+            mock_dir.return_value = workflow_dir
+
+            result = _extract_tools_documentation("my-workflow")
+
+        assert "## Available Tools" in result
+        assert "`analyze_data(url: str)`" in result
+        assert "Analyze data from URL" in result
+        # Note: default values are not extracted by AST, just type annotations
+        assert "`process_item(item: str, count: int)`" in result
+        assert "Process a single item" in result
+        # helper_function should not be included
+        assert "helper_function" not in result
+
+    def test_extract_tools_no_tools_file(self, tmp_path):
+        """Test extraction when no tools.py exists."""
+        from kurt.workflows.agents.executor import _extract_tools_documentation
+
+        with patch("kurt.workflows.agents.executor.get_workflow_dir") as mock_dir:
+            mock_dir.return_value = tmp_path  # No tools.py here
+
+            result = _extract_tools_documentation("my-workflow")
+
+        assert result == ""
+
+    def test_extract_tools_no_workflow_dir(self):
+        """Test extraction when workflow dir doesn't exist."""
+        from kurt.workflows.agents.executor import _extract_tools_documentation
+
+        with patch("kurt.workflows.agents.executor.get_workflow_dir") as mock_dir:
+            mock_dir.return_value = None
+
+            result = _extract_tools_documentation("nonexistent")
+
+        assert result == ""
+
+    def test_get_tools_import_path(self, tmp_path):
+        """Test getting import path for tools."""
+        from kurt.workflows.agents.executor import _get_tools_import_path
+
+        workflows_dir = tmp_path / "workflows"
+        workflow_dir = workflows_dir / "competitor_tracker"
+        workflow_dir.mkdir(parents=True)
+        (workflow_dir / "tools.py").write_text("# tools")
+
+        with patch("kurt.workflows.agents.executor.get_workflow_dir") as mock_dir:
+            mock_dir.return_value = workflow_dir
+
+            result = _get_tools_import_path("competitor-tracker")
+
+        assert result == "workflows.competitor_tracker.tools"
+
+    def test_get_tools_import_path_no_tools(self):
+        """Test import path when no tools exist."""
+        from kurt.workflows.agents.executor import _get_tools_import_path
+
+        with patch("kurt.workflows.agents.executor.get_workflow_dir") as mock_dir:
+            mock_dir.return_value = None
+
+            result = _get_tools_import_path("nonexistent")
+
+        assert result is None
+
+
+class TestPythonPathSetup:
+    """Tests for PYTHONPATH setup in agent execution."""
+
+    @patch("shutil.which")
+    @patch("subprocess.run")
+    def test_pythonpath_set_for_workflow_with_tools(self, mock_run, mock_which, tmp_path):
+        """Test that PYTHONPATH is set when workflow_dir is provided."""
+        from kurt.workflows.agents.executor import agent_execution_step
+
+        mock_which.return_value = "/usr/bin/claude"
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = json.dumps({"num_turns": 1, "result": "done"})
+        mock_result.stderr = ""
+        mock_run.return_value = mock_result
+
+        workflow_dir = tmp_path / "workflows" / "my_workflow"
+        workflow_dir.mkdir(parents=True)
+
+        with patch("kurt.workflows.agents.executor.DBOS") as mock_dbos:
+            mock_dbos.workflow_id = "test-123"
+            mock_dbos.write_stream = MagicMock()
+            mock_dbos.set_event = MagicMock()
+
+            with patch(
+                "kurt.workflows.agents.executor._create_tool_tracking_settings"
+            ) as mock_create:
+                settings_file = tmp_path / "settings.json"
+                tool_log_file = tmp_path / "tools.jsonl"
+                settings_file.write_text("{}")
+                tool_log_file.write_text("")
+                mock_create.return_value = (str(settings_file), str(tool_log_file))
+
+                with patch("kurt.workflows.agents.executor._get_project_root") as mock_root:
+                    mock_root.return_value = str(tmp_path)
+
+                    agent_execution_step(
+                        prompt="Test",
+                        model="claude-sonnet-4-20250514",
+                        max_turns=5,
+                        allowed_tools=["Bash"],
+                        workflow_dir=str(workflow_dir),
+                    )
+
+        # Check PYTHONPATH was set
+        call_args = mock_run.call_args
+        env = call_args[1]["env"]
+        assert "PYTHONPATH" in env
+        # Should contain parent of workflows (project root)
+        assert str(tmp_path) in env["PYTHONPATH"]
+
+    @patch("shutil.which")
+    @patch("subprocess.run")
+    def test_pythonpath_not_set_without_workflow_dir(self, mock_run, mock_which, tmp_path):
+        """Test that PYTHONPATH is not modified when workflow_dir is None."""
+        from kurt.workflows.agents.executor import agent_execution_step
+
+        mock_which.return_value = "/usr/bin/claude"
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = json.dumps({"num_turns": 1, "result": "done"})
+        mock_result.stderr = ""
+        mock_run.return_value = mock_result
+
+        # Capture original PYTHONPATH if any
+        original_pythonpath = os.environ.get("PYTHONPATH", "")
+
+        with patch("kurt.workflows.agents.executor.DBOS") as mock_dbos:
+            mock_dbos.workflow_id = "test-123"
+            mock_dbos.write_stream = MagicMock()
+            mock_dbos.set_event = MagicMock()
+
+            with patch(
+                "kurt.workflows.agents.executor._create_tool_tracking_settings"
+            ) as mock_create:
+                settings_file = tmp_path / "settings.json"
+                tool_log_file = tmp_path / "tools.jsonl"
+                settings_file.write_text("{}")
+                tool_log_file.write_text("")
+                mock_create.return_value = (str(settings_file), str(tool_log_file))
+
+                with patch("kurt.workflows.agents.executor._get_project_root") as mock_root:
+                    mock_root.return_value = str(tmp_path)
+
+                    agent_execution_step(
+                        prompt="Test",
+                        model="claude-sonnet-4-20250514",
+                        max_turns=5,
+                        allowed_tools=["Bash"],
+                        workflow_dir=None,  # No workflow dir
+                    )
+
+        # Check PYTHONPATH wasn't modified beyond original
+        call_args = mock_run.call_args
+        env = call_args[1]["env"]
+        assert env.get("PYTHONPATH", "") == original_pythonpath

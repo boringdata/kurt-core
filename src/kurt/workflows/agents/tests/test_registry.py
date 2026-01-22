@@ -6,6 +6,115 @@ from textwrap import dedent
 from unittest.mock import patch
 
 
+class TestFindWorkflowFiles:
+    """Tests for _find_workflow_files function."""
+
+    def test_finds_toml_files(self, tmp_path):
+        """Test finding TOML workflow files."""
+        from kurt.workflows.agents.registry import _find_workflow_files
+
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+
+        # Create TOML workflow
+        toml_file = workflows_dir / "my-workflow.toml"
+        toml_file.write_text('[workflow]\nname = "my-workflow"\ntitle = "My Workflow"')
+
+        paths = _find_workflow_files(workflows_dir)
+
+        assert len(paths) == 1
+        assert paths[0].suffix == ".toml"
+
+    def test_finds_both_toml_and_md(self, tmp_path):
+        """Test finding both TOML and Markdown files."""
+        from kurt.workflows.agents.registry import _find_workflow_files
+
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+
+        # Create TOML workflow
+        (workflows_dir / "toml-workflow.toml").write_text(
+            '[workflow]\nname = "toml-workflow"\ntitle = "TOML"'
+        )
+
+        # Create Markdown workflow
+        (workflows_dir / "md-workflow.md").write_text(
+            "---\nname: md-workflow\ntitle: MD\n---\nBody"
+        )
+
+        paths = _find_workflow_files(workflows_dir)
+
+        assert len(paths) == 2
+        extensions = {p.suffix for p in paths}
+        assert extensions == {".toml", ".md"}
+
+    def test_toml_takes_precedence_over_md(self, tmp_path):
+        """Test that TOML files take precedence when both exist."""
+        from kurt.workflows.agents.registry import _find_workflow_files
+
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+
+        # Create both TOML and Markdown with same name
+        (workflows_dir / "my-workflow.toml").write_text(
+            '[workflow]\nname = "my-workflow"\ntitle = "TOML Version"'
+        )
+        (workflows_dir / "my-workflow.md").write_text(
+            "---\nname: my-workflow\ntitle: MD Version\n---\nBody"
+        )
+
+        paths = _find_workflow_files(workflows_dir)
+
+        assert len(paths) == 1
+        assert paths[0].suffix == ".toml"
+        assert paths[0].stem == "my-workflow"
+
+    def test_directory_toml_takes_precedence(self, tmp_path):
+        """Test that directory workflow.toml takes precedence over workflow.md."""
+        from kurt.workflows.agents.registry import _find_workflow_files
+
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+
+        # Create directory with both TOML and Markdown
+        dir_workflow = workflows_dir / "complex_workflow"
+        dir_workflow.mkdir()
+        (dir_workflow / "workflow.toml").write_text(
+            '[workflow]\nname = "complex-workflow"\ntitle = "TOML"'
+        )
+        (dir_workflow / "workflow.md").write_text(
+            "---\nname: complex-workflow\ntitle: MD\n---\nBody"
+        )
+
+        paths = _find_workflow_files(workflows_dir)
+
+        assert len(paths) == 1
+        assert paths[0].name == "workflow.toml"
+
+    def test_mixed_flat_and_directory_toml(self, tmp_path):
+        """Test finding both flat TOML files and directory TOML files."""
+        from kurt.workflows.agents.registry import _find_workflow_files
+
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+
+        # Flat TOML
+        (workflows_dir / "flat.toml").write_text(
+            '[workflow]\nname = "flat"\ntitle = "Flat"'
+        )
+
+        # Directory TOML
+        dir_workflow = workflows_dir / "dir_workflow"
+        dir_workflow.mkdir()
+        (dir_workflow / "workflow.toml").write_text(
+            '[workflow]\nname = "dir"\ntitle = "Dir"'
+        )
+
+        paths = _find_workflow_files(workflows_dir)
+
+        assert len(paths) == 2
+
+
 class TestListDefinitions:
     """Tests for list_definitions function."""
 
@@ -87,7 +196,7 @@ class TestListDefinitions:
         assert "workflow-2" in names
 
     def test_list_ignores_invalid_files(self, tmp_path):
-        """Test that invalid and non-markdown files are handled correctly."""
+        """Test that invalid and non-workflow files are handled correctly."""
         from kurt.workflows.agents.registry import list_definitions
 
         workflows_dir = tmp_path / "workflows"
@@ -112,7 +221,7 @@ class TestListDefinitions:
         no_frontmatter = workflows_dir / "simple.md"
         no_frontmatter.write_text("Just some text without frontmatter")
 
-        # Non-markdown file - should be ignored by glob("*.md")
+        # Non-workflow file - should be ignored by glob
         other_file = workflows_dir / "readme.txt"
         other_file.write_text("Not a workflow")
 
@@ -126,6 +235,77 @@ class TestListDefinitions:
         names = [w.name for w in result]
         assert "valid-workflow" in names
         assert "simple" in names  # Derived from filename
+
+    def test_list_toml_workflows(self, tmp_path):
+        """Test listing TOML workflow definitions."""
+        from kurt.workflows.agents.registry import list_definitions
+
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+
+        # Create TOML workflow
+        workflow_file = workflows_dir / "my-toml-workflow.toml"
+        workflow_file.write_text(
+            dedent("""
+            [workflow]
+            name = "my-toml-workflow"
+            title = "My TOML Workflow"
+
+            [agent]
+            model = "claude-sonnet-4-20250514"
+            prompt = "Do something"
+        """).strip()
+        )
+
+        with patch("kurt.workflows.agents.registry.get_workflows_dir") as mock_dir:
+            mock_dir.return_value = workflows_dir
+
+            result = list_definitions()
+
+        assert len(result) == 1
+        assert result[0].name == "my-toml-workflow"
+        assert result[0].title == "My TOML Workflow"
+
+    def test_list_mixed_toml_and_md(self, tmp_path):
+        """Test listing both TOML and Markdown workflows."""
+        from kurt.workflows.agents.registry import list_definitions
+
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+
+        # TOML workflow
+        (workflows_dir / "toml-workflow.toml").write_text(
+            dedent("""
+            [workflow]
+            name = "toml-workflow"
+            title = "TOML Workflow"
+
+            [agent]
+            prompt = "Do TOML things"
+        """).strip()
+        )
+
+        # Markdown workflow
+        (workflows_dir / "md-workflow.md").write_text(
+            dedent("""
+            ---
+            name: md-workflow
+            title: MD Workflow
+            ---
+
+            Do markdown things.
+        """).strip()
+        )
+
+        with patch("kurt.workflows.agents.registry.get_workflows_dir") as mock_dir:
+            mock_dir.return_value = workflows_dir
+
+            result = list_definitions()
+
+        assert len(result) == 2
+        names = [w.name for w in result]
+        assert "toml-workflow" in names
+        assert "md-workflow" in names
 
 
 class TestGetDefinition:
@@ -204,6 +384,71 @@ class TestGetDefinition:
 
         assert result is not None
         assert result.name == "actual-name"
+
+    def test_get_toml_definition(self, tmp_path):
+        """Test getting a TOML workflow definition."""
+        from kurt.workflows.agents.registry import get_definition
+
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+
+        workflow_file = workflows_dir / "my-toml.toml"
+        workflow_file.write_text(
+            dedent("""
+            [workflow]
+            name = "my-toml"
+            title = "My TOML Workflow"
+
+            [agent]
+            prompt = "Do something"
+        """).strip()
+        )
+
+        with patch("kurt.workflows.agents.registry.get_workflows_dir") as mock_dir:
+            mock_dir.return_value = workflows_dir
+
+            result = get_definition("my-toml")
+
+        assert result is not None
+        assert result.name == "my-toml"
+        assert result.title == "My TOML Workflow"
+
+    def test_toml_takes_precedence_in_get_definition(self, tmp_path):
+        """Test that TOML takes precedence over MD when both exist."""
+        from kurt.workflows.agents.registry import get_definition
+
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+
+        # Both TOML and MD with same name
+        (workflows_dir / "my-workflow.toml").write_text(
+            dedent("""
+            [workflow]
+            name = "my-workflow"
+            title = "TOML Version"
+
+            [agent]
+            prompt = "TOML prompt"
+        """).strip()
+        )
+        (workflows_dir / "my-workflow.md").write_text(
+            dedent("""
+            ---
+            name: my-workflow
+            title: MD Version
+            ---
+
+            MD body.
+        """).strip()
+        )
+
+        with patch("kurt.workflows.agents.registry.get_workflows_dir") as mock_dir:
+            mock_dir.return_value = workflows_dir
+
+            result = get_definition("my-workflow")
+
+        assert result is not None
+        assert result.title == "TOML Version"
 
 
 class TestValidateAll:
@@ -338,3 +583,297 @@ class TestEnsureWorkflowsDir:
         assert workflows_dir.exists()
         # Verify existing content wasn't deleted
         assert test_file.exists()
+
+
+class TestDirectoryStructure:
+    """Tests for workflows with directory structure (tools.py, schema.yaml)."""
+
+    def test_list_includes_directory_workflows(self, tmp_path):
+        """Test that list_definitions finds both flat and directory workflows."""
+        from kurt.workflows.agents.registry import list_definitions
+
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+
+        # Flat workflow
+        flat_file = workflows_dir / "flat-workflow.md"
+        flat_file.write_text(
+            dedent("""
+            ---
+            name: flat-workflow
+            title: Flat Workflow
+            agent:
+              model: claude-sonnet-4-20250514
+            ---
+
+            Flat body.
+        """).strip()
+        )
+
+        # Directory workflow
+        dir_workflow = workflows_dir / "complex_workflow"
+        dir_workflow.mkdir()
+        (dir_workflow / "workflow.md").write_text(
+            dedent("""
+            ---
+            name: complex-workflow
+            title: Complex Workflow
+            agent:
+              model: claude-sonnet-4-20250514
+            ---
+
+            Complex body.
+        """).strip()
+        )
+        (dir_workflow / "tools.py").write_text('"""Tools for complex workflow."""')
+
+        with patch("kurt.workflows.agents.registry.get_workflows_dir") as mock_dir:
+            mock_dir.return_value = workflows_dir
+
+            result = list_definitions()
+
+        assert len(result) == 2
+        names = [w.name for w in result]
+        assert "flat-workflow" in names
+        assert "complex-workflow" in names
+
+    def test_get_definition_from_directory(self, tmp_path):
+        """Test getting a workflow from directory structure."""
+        from kurt.workflows.agents.registry import get_definition
+
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+
+        # Directory workflow
+        dir_workflow = workflows_dir / "my_workflow"
+        dir_workflow.mkdir()
+        (dir_workflow / "workflow.md").write_text(
+            dedent("""
+            ---
+            name: my-workflow
+            title: My Workflow
+            agent:
+              model: claude-sonnet-4-20250514
+            ---
+
+            My body.
+        """).strip()
+        )
+
+        with patch("kurt.workflows.agents.registry.get_workflows_dir") as mock_dir:
+            mock_dir.return_value = workflows_dir
+
+            result = get_definition("my-workflow")
+
+        assert result is not None
+        assert result.name == "my-workflow"
+        assert result.title == "My Workflow"
+
+    def test_get_workflow_dir(self, tmp_path):
+        """Test get_workflow_dir returns path for directory workflows."""
+        from kurt.workflows.agents.registry import get_workflow_dir
+
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+
+        # Create directory workflow
+        dir_workflow = workflows_dir / "my_workflow"
+        dir_workflow.mkdir()
+        (dir_workflow / "workflow.md").write_text("---\nname: my-workflow\n---\nBody")
+
+        with patch("kurt.workflows.agents.registry.get_workflows_dir") as mock_dir:
+            mock_dir.return_value = workflows_dir
+
+            result = get_workflow_dir("my-workflow")
+
+        assert result == dir_workflow
+
+    def test_get_workflow_dir_returns_none_for_flat(self, tmp_path):
+        """Test get_workflow_dir returns None for flat file workflows."""
+        from kurt.workflows.agents.registry import get_workflow_dir
+
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+
+        # Flat workflow
+        (workflows_dir / "flat.md").write_text("---\nname: flat\n---\nBody")
+
+        with patch("kurt.workflows.agents.registry.get_workflows_dir") as mock_dir:
+            mock_dir.return_value = workflows_dir
+
+            result = get_workflow_dir("flat")
+
+        assert result is None
+
+    def test_has_tools(self, tmp_path):
+        """Test has_tools detects tools.py presence."""
+        from kurt.workflows.agents.registry import has_tools
+
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+
+        # Workflow with tools
+        with_tools = workflows_dir / "with_tools"
+        with_tools.mkdir()
+        (with_tools / "workflow.md").write_text("---\nname: with-tools\n---\nBody")
+        (with_tools / "tools.py").write_text("# tools")
+
+        # Workflow without tools
+        without_tools = workflows_dir / "without_tools"
+        without_tools.mkdir()
+        (without_tools / "workflow.md").write_text("---\nname: without-tools\n---\nBody")
+
+        with patch("kurt.workflows.agents.registry.get_workflows_dir") as mock_dir:
+            mock_dir.return_value = workflows_dir
+
+            assert has_tools("with-tools") is True
+            assert has_tools("without-tools") is False
+            assert has_tools("nonexistent") is False
+
+    def test_has_schema(self, tmp_path):
+        """Test has_schema detects schema.yaml presence."""
+        from kurt.workflows.agents.registry import has_schema
+
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+
+        # Workflow with schema
+        with_schema = workflows_dir / "with_schema"
+        with_schema.mkdir()
+        (with_schema / "workflow.md").write_text("---\nname: with-schema\n---\nBody")
+        (with_schema / "schema.yaml").write_text("tables: []")
+
+        # Workflow without schema
+        without_schema = workflows_dir / "without_schema"
+        without_schema.mkdir()
+        (without_schema / "workflow.md").write_text("---\nname: without-schema\n---\nBody")
+
+        with patch("kurt.workflows.agents.registry.get_workflows_dir") as mock_dir:
+            mock_dir.return_value = workflows_dir
+
+            assert has_schema("with-schema") is True
+            assert has_schema("without-schema") is False
+
+    def test_directory_workflow_with_toml(self, tmp_path):
+        """Test directory workflow with workflow.toml."""
+        from kurt.workflows.agents.registry import get_definition, get_workflow_dir, has_tools
+
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+
+        # Directory workflow with TOML
+        dir_workflow = workflows_dir / "toml_workflow"
+        dir_workflow.mkdir()
+        (dir_workflow / "workflow.toml").write_text(
+            dedent("""
+            [workflow]
+            name = "toml-workflow"
+            title = "TOML Directory Workflow"
+
+            [agent]
+            prompt = "Do directory things"
+        """).strip()
+        )
+        (dir_workflow / "tools.py").write_text("# tools")
+
+        with patch("kurt.workflows.agents.registry.get_workflows_dir") as mock_dir:
+            mock_dir.return_value = workflows_dir
+
+            result = get_definition("toml-workflow")
+            workflow_dir = get_workflow_dir("toml-workflow")
+            tools_exist = has_tools("toml-workflow")
+
+        assert result is not None
+        assert result.name == "toml-workflow"
+        assert workflow_dir == dir_workflow
+        assert tools_exist is True
+
+    def test_directory_toml_takes_precedence_over_md(self, tmp_path):
+        """Test that workflow.toml takes precedence over workflow.md in directory."""
+        from kurt.workflows.agents.registry import get_definition, list_definitions
+
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+
+        # Directory with both TOML and MD
+        dir_workflow = workflows_dir / "mixed_workflow"
+        dir_workflow.mkdir()
+        (dir_workflow / "workflow.toml").write_text(
+            dedent("""
+            [workflow]
+            name = "mixed-workflow"
+            title = "TOML Title"
+
+            [agent]
+            prompt = "TOML prompt"
+        """).strip()
+        )
+        (dir_workflow / "workflow.md").write_text(
+            dedent("""
+            ---
+            name: mixed-workflow
+            title: MD Title
+            ---
+
+            MD body.
+        """).strip()
+        )
+
+        with patch("kurt.workflows.agents.registry.get_workflows_dir") as mock_dir:
+            mock_dir.return_value = workflows_dir
+
+            result = get_definition("mixed-workflow")
+            all_defs = list_definitions()
+
+        assert result is not None
+        assert result.title == "TOML Title"
+        # Only one workflow should be found (TOML takes precedence)
+        assert len(all_defs) == 1
+        assert all_defs[0].title == "TOML Title"
+
+    def test_validate_all_includes_directory_workflows(self, tmp_path):
+        """Test validate_all validates both flat and directory workflows."""
+        from kurt.workflows.agents.registry import validate_all
+
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+
+        # Flat workflow
+        (workflows_dir / "flat.md").write_text(
+            dedent("""
+            ---
+            name: flat-workflow
+            title: Flat
+            agent:
+              model: claude-sonnet-4-20250514
+            ---
+
+            Flat body.
+        """).strip()
+        )
+
+        # Directory workflow
+        dir_workflow = workflows_dir / "dir_workflow"
+        dir_workflow.mkdir()
+        (dir_workflow / "workflow.md").write_text(
+            dedent("""
+            ---
+            name: dir-workflow
+            title: Dir
+            agent:
+              model: claude-sonnet-4-20250514
+            ---
+
+            Dir body.
+        """).strip()
+        )
+
+        with patch("kurt.workflows.agents.registry.get_workflows_dir") as mock_dir:
+            mock_dir.return_value = workflows_dir
+
+            result = validate_all()
+
+        assert len(result["valid"]) == 2
+        assert "flat-workflow" in result["valid"]
+        assert "dir-workflow" in result["valid"]
+        assert len(result["errors"]) == 0

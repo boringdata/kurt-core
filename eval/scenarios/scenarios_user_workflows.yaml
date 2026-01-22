@@ -1,0 +1,381 @@
+# Kurt Evaluation Scenarios - User Workflows with Custom Tools (TOML Format)
+#
+# Meta-eval: Agent creates a workflow and validates it follows TOML guidelines
+# Note: needs_claude_plugin=false because agents use `kurt show` commands for docs
+
+scenarios:
+  # ========================================================================
+  # Scenario 01: Create TOML Workflow with DB Persistence
+  # ========================================================================
+  - name: 01_create_workflow_with_db_persistence
+    description: Agent creates a DBOS workflow that fetches pricing data and saves to DB
+    needs_claude_plugin: false
+
+    setup_commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt init
+      - mkdir -p workflows
+
+    initial_prompt: |
+      Create a workflow called "competitor_tracker" for tracking competitor pricing.
+
+      The workflow should:
+      1. Be a DBOS-driven workflow with [steps.xxx] sections (NOT agent-driven with [agent])
+      2. Include a fetch step (type=function) to get data from a pricing page
+      3. Include an analyze step (type=agent) to analyze and save the data
+      4. Include a models.py with a SQLModel table for results
+      5. Include a tools.py with @DBOS.step() functions
+
+      Use `kurt show workflow-create` to learn the format.
+      Use `kurt show models-py` and `kurt show tools-py` for detailed guides.
+      Use `kurt show save-step` to learn about the save-to-db command.
+
+      IMPORTANT REQUIREMENTS:
+      - Use this URL for the pricing page: https://stripe.com/pricing
+      - In tools.py, use ABSOLUTE imports (not relative):
+        CORRECT: `from workflows.competitor_tracker.models import CompetitorPricing`
+        WRONG: `from .models import CompetitorPricing`
+      - The workflow MUST have [steps.xxx] sections, NOT an [agent] section
+      - DO NOT convert to agent-driven format under any circumstances
+
+      After creating the workflow:
+      1. Validate it with `kurt agents validate`
+      2. Run the workflow with `kurt agents run competitor-tracker --foreground`
+      3. If there are import errors, fix them (use absolute imports) and re-run
+      4. Verify data was saved by checking the database:
+         ```bash
+         sqlite3 .kurt/kurt.sqlite "SELECT COUNT(*) FROM competitor_pricing;"
+         ```
+
+      The agent step MUST call `kurt agent tool save-to-db` to persist at least one record.
+      If there are any errors, fix them and retry. NEVER convert to agent-driven format.
+
+    assertions:
+      - type: FileExists
+        path: workflows/competitor_tracker/workflow.toml
+      - type: FileExists
+        path: workflows/competitor_tracker/tools.py
+      - type: FileExists
+        path: workflows/competitor_tracker/models.py
+      - type: FileContains
+        path: workflows/competitor_tracker/workflow.toml
+        content: "[workflow]"
+      - type: FileContains
+        path: workflows/competitor_tracker/workflow.toml
+        content: "[steps."
+      - type: FileContains
+        path: workflows/competitor_tracker/tools.py
+        content: "@DBOS"
+      - type: FileContains
+        path: workflows/competitor_tracker/models.py
+        content: "SQLModel"
+      - type: ConversationContains
+        text: "kurt agents validate"
+        case_sensitive: false
+      - type: ConversationContains
+        text: "kurt agents run"
+        case_sensitive: false
+      - type: ConversationContains
+        text: "save-to-db"
+        case_sensitive: false
+      - type: ConversationContains
+        text: "SELECT COUNT"
+        case_sensitive: false
+
+  # ========================================================================
+  # Scenario 02: Create Agent-Driven TOML Workflow (Simple)
+  # ========================================================================
+  - name: 02_create_agent_driven_toml
+    description: Agent creates a simple agent-driven TOML workflow
+    needs_claude_plugin: false
+
+    setup_commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt init
+      - mkdir -p workflows
+
+    initial_prompt: |
+      Create a simple agent-driven workflow for code review.
+
+      Use `kurt show workflow-create` to learn the TOML format.
+
+      Requirements:
+      - Single TOML file (not a directory)
+      - Agent-driven (no steps, just [agent] section)
+      - Name it "code-reviewer"
+      - Use claude-sonnet-4-20250514 model
+      - Allow Bash, Read, Glob, Grep tools
+      - Include appropriate guardrails
+
+      After creating the workflow, validate it.
+
+    assertions:
+      - type: FileExists
+        path: workflows/code-reviewer.toml
+      - type: FileContains
+        path: workflows/code-reviewer.toml
+        content: "[workflow]"
+      - type: FileContains
+        path: workflows/code-reviewer.toml
+        content: "[agent]"
+      - type: FileContains
+        path: workflows/code-reviewer.toml
+        content: "claude-sonnet-4-20250514"
+      - type: FileContains
+        path: workflows/code-reviewer.toml
+        content: "[guardrails]"
+      - type: ConversationContains
+        text: "kurt agents validate"
+        case_sensitive: false
+
+  # ========================================================================
+  # Scenario 03: Create DBOS-Driven Workflow with Agent Tools
+  # ========================================================================
+  - name: 03_create_dbos_workflow_with_tools
+    description: Agent creates a DBOS-driven workflow using agent tools for persistence
+    needs_claude_plugin: false
+
+    setup_commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt init
+      - mkdir -p workflows
+
+    initial_prompt: |
+      Create a data processing workflow with database persistence.
+
+      Read the documentation first:
+      - `kurt show workflow-create` for the overall format
+      - `kurt show save-step` for database persistence
+      - `kurt show models-py` for SQLModel tables
+
+      Requirements:
+      1. Directory: workflows/data_processor/
+      2. DBOS-driven with [steps.xxx] sections
+      3. Step 1: type=function to fetch data
+      4. Step 2: type=agent to analyze and save using `kurt agent tool save-to-db`
+      5. Step 3: type=function to generate report
+      6. models.py with SQLModel table for storing analysis results
+      7. tools.py with DBOS step functions
+
+      The agent step prompt should include the `kurt agent tool save-to-db` command.
+
+      Validate when done.
+
+    assertions:
+      - type: FileExists
+        path: workflows/data_processor/workflow.toml
+      - type: FileExists
+        path: workflows/data_processor/tools.py
+      - type: FileExists
+        path: workflows/data_processor/models.py
+      - type: FileContains
+        path: workflows/data_processor/workflow.toml
+        content: "[steps.fetch]"
+      - type: FileContains
+        path: workflows/data_processor/workflow.toml
+        content: 'type = "function"'
+      - type: FileContains
+        path: workflows/data_processor/workflow.toml
+        content: 'type = "agent"'
+      - type: FileContains
+        path: workflows/data_processor/workflow.toml
+        content: "depends_on"
+      - type: FileContains
+        path: workflows/data_processor/workflow.toml
+        content: "kurt agent tool save-to-db"
+      - type: FileContains
+        path: workflows/data_processor/models.py
+        content: "table=True"
+      - type: ConversationContains
+        text: "kurt agents validate"
+        case_sensitive: false
+
+  # ========================================================================
+  # Scenario 04: Create and List TOML Workflows
+  # ========================================================================
+  - name: 04_create_and_list_workflows
+    description: Create TOML workflows and verify they are discovered
+    needs_claude_plugin: false
+
+    setup_commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt init
+      - mkdir -p workflows
+
+    initial_prompt: |
+      Create two TOML workflows and verify they are properly discovered.
+
+      Use `kurt show workflow-create` for the format.
+
+      Step 1: Create a flat workflow file
+      Create workflows/task_one.toml as an agent-driven workflow.
+
+      Step 2: Create a directory workflow
+      Create workflows/task_two/ with workflow.toml and tools.py.
+
+      Step 3: List all workflows
+      ```bash
+      kurt agents list
+      ```
+
+      Step 4: Show details of each workflow
+      ```bash
+      kurt agents show task-one
+      kurt agents show task-two
+      ```
+
+      Execute all steps and verify both workflows appear in the list.
+
+    assertions:
+      - type: FileExists
+        path: workflows/task_one.toml
+      - type: FileExists
+        path: workflows/task_two/workflow.toml
+      - type: FileExists
+        path: workflows/task_two/tools.py
+      - type: FileContains
+        path: workflows/task_one.toml
+        content: "[workflow]"
+      - type: FileContains
+        path: workflows/task_two/workflow.toml
+        content: "[workflow]"
+      - type: ConversationContains
+        text: "kurt agents list"
+        case_sensitive: false
+      - type: ConversationContains
+        text: "task-one"
+        case_sensitive: false
+      - type: ConversationContains
+        text: "task-two"
+        case_sensitive: false
+
+  # ========================================================================
+  # Scenario 05: Run TOML Workflow from Path
+  # ========================================================================
+  - name: 05_run_workflow_from_path
+    description: Create and run a TOML workflow using path-based execution
+    needs_claude_plugin: false
+
+    setup_commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt init
+      - mkdir -p workflows
+
+    initial_prompt: |
+      Create a simple TOML workflow and run it using path-based execution.
+
+      Use `kurt show workflow-create` for the format.
+
+      Step 1: Create the workflow file
+      Create workflows/echo_test.toml as an agent-driven workflow that:
+      - Runs a simple echo command
+      - Uses bypassPermissions
+      - Has reasonable guardrails
+
+      Step 2: Validate the workflow
+      ```bash
+      kurt agents validate
+      ```
+
+      Step 3: Run the workflow using the file path
+      ```bash
+      kurt agents run workflows/echo_test.toml --foreground
+      ```
+
+      Execute all steps and report the results.
+
+    assertions:
+      - type: FileExists
+        path: workflows/echo_test.toml
+      - type: FileContains
+        path: workflows/echo_test.toml
+        content: "[workflow]"
+      - type: FileContains
+        path: workflows/echo_test.toml
+        content: "[agent]"
+      - type: ConversationContains
+        text: "kurt agents validate"
+        case_sensitive: false
+      - type: ConversationContains
+        text: "kurt agents run"
+        case_sensitive: false
+
+  # ========================================================================
+  # Scenario 06: Create Workflow with LLM Step
+  # ========================================================================
+  - name: 06_create_workflow_with_llm_step
+    description: Agent creates a DBOS-driven workflow with type=llm step
+    needs_claude_plugin: false
+
+    setup_commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt init
+      - mkdir -p workflows
+
+    initial_prompt: |
+      Create a workflow that uses an LLM step for batch processing.
+
+      Read the documentation:
+      - `kurt show workflow-create` for the format
+      - `kurt show llm-step` for LLM batch processing
+
+      Requirements:
+      1. Directory: workflows/content_enricher/
+      2. DBOS-driven with steps
+      3. Include a type=llm step with prompt_template and output_schema
+      4. models.py with a Pydantic BaseModel for the LLM output schema
+
+      Validate when done.
+
+    assertions:
+      - type: FileExists
+        path: workflows/content_enricher/workflow.toml
+      - type: FileExists
+        path: workflows/content_enricher/models.py
+      - type: FileContains
+        path: workflows/content_enricher/workflow.toml
+        content: 'type = "llm"'
+      - type: FileContains
+        path: workflows/content_enricher/workflow.toml
+        content: "prompt_template"
+      - type: FileContains
+        path: workflows/content_enricher/workflow.toml
+        content: "output_schema"
+      - type: FileContains
+        path: workflows/content_enricher/models.py
+        content: "BaseModel"
+      - type: ConversationContains
+        text: "kurt agents validate"
+        case_sensitive: false
+
+  # ========================================================================
+  # Scenario 07: Create Workflow with Embedding Step
+  # ========================================================================
+  - name: 07_create_workflow_with_embedding
+    description: Agent creates a workflow using embedding generation
+    needs_claude_plugin: false
+
+    setup_commands:
+      - KURT_TELEMETRY_DISABLED=1 uv run kurt init
+      - mkdir -p workflows
+
+    initial_prompt: |
+      Create a workflow that generates embeddings for semantic search.
+
+      Read the documentation:
+      - `kurt show workflow-create` for the format
+      - `kurt show embedding-step` for embeddings
+
+      Requirements:
+      1. Directory: workflows/semantic_search/
+      2. Agent step that uses `kurt agent tool embedding` to generate vectors
+      3. Include the embedding command in the agent prompt
+
+      Validate when done.
+
+    assertions:
+      - type: FileExists
+        path: workflows/semantic_search/workflow.toml
+      - type: FileContains
+        path: workflows/semantic_search/workflow.toml
+        content: "[workflow]"
+      - type: FileContains
+        path: workflows/semantic_search/workflow.toml
+        content: "kurt agent tool embedding"
+      - type: ConversationContains
+        text: "kurt agents validate"
+        case_sensitive: false

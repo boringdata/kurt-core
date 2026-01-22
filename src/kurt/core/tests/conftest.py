@@ -160,6 +160,16 @@ def tmp_database(tmp_path: Path, monkeypatch, reset_dbos_state):
     Yields:
         Path: The temporary project directory
     """
+    # Clear SQLModel metadata to prevent pollution from previous tests
+    # This is necessary because SQLModel uses a global MetaData registry
+    from sqlmodel import SQLModel
+
+    # Store tables we want to keep (kurt core models)
+    from kurt.db.models import register_all_models
+
+    SQLModel.metadata.clear()
+    register_all_models()
+
     # Create .kurt directory structure
     kurt_dir = tmp_path / ".kurt"
     kurt_dir.mkdir(parents=True, exist_ok=True)

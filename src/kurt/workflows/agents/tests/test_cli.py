@@ -255,6 +255,66 @@ class TestRunCommand:
             trigger="manual",
         )
 
+    @patch("kurt.workflows.agents.executor.run_from_path")
+    def test_run_from_file_path(self, mock_run, cli_runner: CliRunner, tmp_path):
+        """Test run command with a file path."""
+        from kurt.workflows.agents.cli import agents_group
+
+        # Create a workflow file
+        workflow_file = tmp_path / "my-workflow.md"
+        workflow_file.write_text(
+            "---\nname: test\ntitle: Test\nagent:\n  model: claude-sonnet-4-20250514\n---\nBody"
+        )
+
+        mock_run.return_value = {"workflow_id": "wf-123", "status": "started"}
+
+        result = cli_runner.invoke(agents_group, ["run", str(workflow_file)])
+        assert result.exit_code == 0
+        assert "Workflow started" in result.output
+        mock_run.assert_called_once()
+        # Verify the path was passed
+        call_args = mock_run.call_args
+        assert str(workflow_file) in str(call_args)
+
+    @patch("kurt.workflows.agents.executor.run_from_path")
+    def test_run_from_directory_path(self, mock_run, cli_runner: CliRunner, tmp_path):
+        """Test run command with a directory path."""
+        from kurt.workflows.agents.cli import agents_group
+
+        # Create a workflow directory
+        workflow_dir = tmp_path / "my_workflow"
+        workflow_dir.mkdir()
+        (workflow_dir / "workflow.md").write_text(
+            "---\nname: test\ntitle: Test\nagent:\n  model: claude-sonnet-4-20250514\n---\nBody"
+        )
+
+        mock_run.return_value = {"workflow_id": "wf-123", "status": "started"}
+
+        result = cli_runner.invoke(agents_group, ["run", str(workflow_dir)])
+        assert result.exit_code == 0
+        assert "Workflow started" in result.output
+        mock_run.assert_called_once()
+
+    def test_run_from_directory_no_workflow_file(self, cli_runner: CliRunner, tmp_path):
+        """Test run command with a directory that has no workflow file."""
+        from kurt.workflows.agents.cli import agents_group
+
+        # Create empty directory
+        workflow_dir = tmp_path / "empty_workflow"
+        workflow_dir.mkdir()
+
+        result = cli_runner.invoke(agents_group, ["run", str(workflow_dir)])
+        assert result.exit_code != 0
+        assert "No workflow.toml or workflow.md found" in result.output
+
+    def test_run_from_nonexistent_path(self, cli_runner: CliRunner):
+        """Test run command with a path that doesn't exist."""
+        from kurt.workflows.agents.cli import agents_group
+
+        result = cli_runner.invoke(agents_group, ["run", "./nonexistent/workflow.md"])
+        assert result.exit_code != 0
+        assert "Path not found" in result.output
+
 
 class TestTrackToolCommand:
     """Tests for track-tool hidden command."""
@@ -324,7 +384,7 @@ class TestInitCommand:
     """Tests for init command."""
 
     def test_init_creates_example(self, cli_runner: CliRunner):
-        """Test init creates example workflow file."""
+        """Test init creates example workflow files (TOML and Markdown)."""
         from kurt.workflows.agents.cli import agents_group
 
         with cli_runner.isolated_filesystem():
@@ -338,11 +398,19 @@ class TestInitCommand:
 
                 result = cli_runner.invoke(agents_group, ["init"])
                 assert result.exit_code == 0
-                assert "Created example workflow" in result.output
+                assert "Created TOML example" in result.output
+                assert "Created Markdown example" in result.output
 
-                # Verify file was created
-                example_file = workflows_dir / "example-workflow.md"
-                assert example_file.exists()
-                content = example_file.read_text()
-                assert "name: example-workflow" in content
-                assert "{{task}}" in content
+                # Verify TOML file was created (new preferred format)
+                toml_file = workflows_dir / "example-workflow.toml"
+                assert toml_file.exists()
+                toml_content = toml_file.read_text()
+                assert 'name = "example-workflow"' in toml_content
+                assert "{{task}}" in toml_content
+
+                # Verify Markdown file was created (legacy format)
+                md_file = workflows_dir / "example-workflow-md.md"
+                assert md_file.exists()
+                md_content = md_file.read_text()
+                assert "name: example-workflow-md" in md_content
+                assert "{{task}}" in md_content
