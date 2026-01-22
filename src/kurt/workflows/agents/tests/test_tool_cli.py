@@ -102,8 +102,9 @@ class TestSaveToDbCommand:
         assert output["success"] is False
         assert "object or array" in output["error"]
 
-    @patch("kurt.workflows.agents.tool_cli.get_model_by_table_name")
-    def test_table_not_found(self, mock_get_model, cli_runner: CliRunner):
+    @patch("kurt.core.get_model_by_table_name")
+    @patch("kurt.core.dbos.init_dbos")
+    def test_table_not_found(self, mock_init_dbos, mock_get_model, cli_runner: CliRunner):
         """Test save-to-db when table not found."""
         from kurt.workflows.agents.tool_cli import tool
 
@@ -118,8 +119,9 @@ class TestSaveToDbCommand:
         assert output["success"] is False
         assert "not found" in output["error"]
 
-    @patch("kurt.workflows.agents.tool_cli.get_model_by_table_name")
-    def test_model_import_error(self, mock_get_model, cli_runner: CliRunner):
+    @patch("kurt.core.get_model_by_table_name")
+    @patch("kurt.core.dbos.init_dbos")
+    def test_model_import_error(self, mock_init_dbos, mock_get_model, cli_runner: CliRunner):
         """Test save-to-db when models.py cannot be imported."""
         from kurt.workflows.agents.tool_cli import tool
 
@@ -134,9 +136,10 @@ class TestSaveToDbCommand:
         assert output["success"] is False
         assert "Failed to load" in output["error"]
 
-    @patch("kurt.workflows.agents.tool_cli.SaveStep")
-    @patch("kurt.workflows.agents.tool_cli.get_model_by_table_name")
-    def test_save_single_object(self, mock_get_model, mock_save_step, cli_runner: CliRunner):
+    @patch("kurt.core.dbos.init_dbos")
+    @patch("kurt.core.SaveStep")
+    @patch("kurt.core.get_model_by_table_name")
+    def test_save_single_object(self, mock_get_model, mock_save_step, mock_init_dbos, cli_runner: CliRunner):
         """Test save-to-db with a single JSON object."""
         from sqlmodel import SQLModel
 
@@ -173,9 +176,10 @@ class TestSaveToDbCommand:
         mock_save_step.assert_called_once()
         mock_step_instance.run.assert_called_once_with([{"name": "Test"}])
 
-    @patch("kurt.workflows.agents.tool_cli.SaveStep")
-    @patch("kurt.workflows.agents.tool_cli.get_model_by_table_name")
-    def test_save_array_of_objects(self, mock_get_model, mock_save_step, cli_runner: CliRunner):
+    @patch("kurt.core.dbos.init_dbos")
+    @patch("kurt.core.SaveStep")
+    @patch("kurt.core.get_model_by_table_name")
+    def test_save_array_of_objects(self, mock_get_model, mock_save_step, mock_init_dbos, cli_runner: CliRunner):
         """Test save-to-db with an array of objects."""
         from sqlmodel import SQLModel
 
@@ -205,10 +209,11 @@ class TestSaveToDbCommand:
         assert output["saved"] == 3
         assert output["total_rows"] == 3
 
-    @patch("kurt.workflows.agents.tool_cli.SaveStep")
-    @patch("kurt.workflows.agents.tool_cli.get_model_by_table_name")
+    @patch("kurt.core.dbos.init_dbos")
+    @patch("kurt.core.SaveStep")
+    @patch("kurt.core.get_model_by_table_name")
     def test_save_with_validation_errors(
-        self, mock_get_model, mock_save_step, cli_runner: CliRunner
+        self, mock_get_model, mock_save_step, mock_init_dbos, cli_runner: CliRunner
     ):
         """Test save-to-db with validation errors."""
         from sqlmodel import SQLModel
@@ -365,7 +370,7 @@ class TestEmbeddingCommand:
         assert file_content["embeddings"] == []
         assert file_content["count"] == 0
 
-    @patch("kurt.workflows.agents.tool_cli.generate_embeddings")
+    @patch("kurt.core.generate_embeddings")
     def test_embedding_success(self, mock_generate, cli_runner: CliRunner, tmp_path):
         """Test embedding with successful generation."""
         from kurt.workflows.agents.tool_cli import tool
@@ -394,7 +399,7 @@ class TestEmbeddingCommand:
         assert len(file_content["embeddings"]) == 2
         assert file_content["count"] == 2
 
-    @patch("kurt.workflows.agents.tool_cli.generate_embeddings")
+    @patch("kurt.core.generate_embeddings")
     def test_embedding_with_custom_model(self, mock_generate, cli_runner: CliRunner, tmp_path):
         """Test embedding with custom model."""
         from kurt.workflows.agents.tool_cli import tool
@@ -424,7 +429,7 @@ class TestEmbeddingCommand:
         call_kwargs = mock_generate.call_args[1]
         assert call_kwargs["model"] == "text-embedding-3-small"
 
-    @patch("kurt.workflows.agents.tool_cli.generate_embeddings")
+    @patch("kurt.core.generate_embeddings")
     def test_embedding_max_chars_truncation(self, mock_generate, cli_runner: CliRunner, tmp_path):
         """Test embedding truncates texts to max_chars."""
         from kurt.workflows.agents.tool_cli import tool
@@ -454,7 +459,7 @@ class TestEmbeddingCommand:
         call_args = mock_generate.call_args[0]
         assert len(call_args[0][0]) == 100
 
-    @patch("kurt.workflows.agents.tool_cli.generate_embeddings")
+    @patch("kurt.core.generate_embeddings")
     def test_embedding_creates_parent_dirs(self, mock_generate, cli_runner: CliRunner, tmp_path):
         """Test embedding creates parent directories for output file."""
         from kurt.workflows.agents.tool_cli import tool
@@ -527,9 +532,9 @@ class TestToolIntegration:
 
         result = cli_runner.invoke(
             agent_group,
-            ["tool", "llm", "--prompt", "Test", "--data", "[]"],
+            ["tool", "llm", "--prompt", "Test", "--data", '[{"text": "hello"}]'],
         )
-        # Should fail because prompt has no placeholders
+        # Should fail because prompt has no placeholders (needs {field} syntax)
         output = json.loads(result.output)
         assert output["success"] is False
 
