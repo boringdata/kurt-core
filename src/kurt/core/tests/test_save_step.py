@@ -125,7 +125,7 @@ class TestSaveStepRunMocked:
         # Mock the transaction function to return expected result
         step._save_rows = Mock(return_value={"saved": 2, "errors": [], "table": "test_entities"})
 
-        with patch("kurt.core.save_step.ensure_tables"):
+        with patch("kurt.db.ensure_tables"):
             result = step.run([{"name": "A", "value": 1.0}, {"name": "B", "value": 2.0}])
 
         assert "saved" in result
@@ -137,7 +137,7 @@ class TestSaveStepRunMocked:
         step = SaveStep(name="save", model=TestEntity)
         step._save_rows = Mock(return_value={"saved": 0, "errors": [], "table": "test_entities"})
 
-        with patch("kurt.core.save_step.ensure_tables") as mock_ensure:
+        with patch("kurt.db.ensure_tables") as mock_ensure:
             step.run([])
             mock_ensure.assert_called_once_with([TestEntity])
 
@@ -146,7 +146,7 @@ class TestSaveStepRunMocked:
         step = SaveStep(name="save_test", model=TestEntity, hooks=recording_hooks)
         step._save_rows = Mock(return_value={"saved": 3, "errors": [], "table": "test_entities"})
 
-        with patch("kurt.core.save_step.ensure_tables"):
+        with patch("kurt.db.ensure_tables"):
             step.run([{}, {}, {}])
 
         start_calls = recording_hooks.get_calls("on_start")
@@ -166,7 +166,7 @@ class TestSaveStepRunMocked:
             }
         )
 
-        with patch("kurt.core.save_step.ensure_tables"):
+        with patch("kurt.db.ensure_tables"):
             step.run([{}, {}, {}])
 
         end_calls = recording_hooks.get_calls("on_end")
@@ -181,7 +181,7 @@ class TestSaveStepRunMocked:
         step = SaveStep(name="save", model=TestEntity)
         step._save_rows = Mock(return_value={"saved": 0, "errors": [], "table": "test_entities"})
 
-        with patch("kurt.core.save_step.ensure_tables"):
+        with patch("kurt.db.ensure_tables"):
             result = step.run([])
 
         assert result["saved"] == 0
@@ -243,7 +243,9 @@ class TestSaveRowsTransaction:
         with managed_session() as session:
             for idx, row in enumerate(rows):
                 try:
-                    instance = StrictEntity(**row)
+                    # Use model_validate for explicit validation
+                    # (SQLModel table models don't validate by default on __init__)
+                    instance = StrictEntity.model_validate(row)
                     session.add(instance)
                     session.flush()
                     saved += 1
@@ -280,12 +282,14 @@ class TestSaveRowsTransaction:
         with managed_session() as session:
             for idx, row in enumerate(rows):
                 try:
-                    instance = TestEntity(**row)
+                    # Use model_validate for explicit validation
+                    instance = TestEntity.model_validate(row)
                     session.add(instance)
                     session.flush()
                     saved += 1
                 except (ValidationError, Exception) as exc:
                     errors.append({"idx": idx, "error": str(exc)})
+                    session.rollback()  # Rollback to allow next iteration
 
         # Pydantic coerces types, so all 3 may succeed
         assert saved >= 1

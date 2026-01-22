@@ -101,8 +101,9 @@ class SaveStep:
             with managed_session() as session:
                 for idx, row in enumerate(rows):
                     try:
-                        # Validate and create model instance
-                        instance = step_instance.model(**row)
+                        # Explicitly validate using Pydantic's model_validate
+                        # (SQLModel table models don't validate by default on __init__)
+                        instance = step_instance.model.model_validate(row)
                         session.add(instance)
                         session.flush()  # Flush to catch DB-level errors early
                         saved += 1
