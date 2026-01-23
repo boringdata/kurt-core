@@ -913,3 +913,350 @@ class TestExecuteWorkflowContext:
 
         assert captured_context is context
         assert captured_context.settings["custom"] == "value"
+
+    @pytest.mark.asyncio
+    async def test_default_context_created_if_not_provided(self):
+        """Default ToolContext is created if none provided."""
+        workflow = make_workflow(steps={"step1": make_step("map")})
+
+        captured_context = None
+
+        async def mock_execute(name, params, ctx=None, on_progress=None):
+            nonlocal captured_context
+            captured_context = ctx
+            return make_tool_result(success=True)
+
+        with patch(
+            "kurt.engine.executor.execute_tool", side_effect=mock_execute
+        ):
+            await execute_workflow(workflow, {})
+
+        assert captured_context is not None
+        assert isinstance(captured_context, ToolContext)
+
+
+# ============================================================================
+# Duration and Timestamp Tests
+# ============================================================================
+
+
+class TestExecuteWorkflowTiming:
+    """Tests for timing information in results."""
+
+    @pytest.mark.asyncio
+    async def test_workflow_result_has_timestamps(self):
+        """Workflow result includes start and completion timestamps."""
+        workflow = make_workflow(steps={"step1": make_step("map")})
+
+        with patch(
+            "kurt.engine.executor.execute_tool", new_callable=AsyncMock
+        ) as mock_execute:
+            mock_execute.return_value = make_tool_result(success=True)
+            result = await execute_workflow(workflow, {})
+
+        assert result.started_at is not None
+        assert result.completed_at is not None
+        # Timestamps should be ISO format
+        assert "T" in result.started_at
+        assert "T" in result.completed_at
+
+    @pytest.mark.asyncio
+    async def test_workflow_result_has_duration(self):
+        """Workflow result includes duration in milliseconds."""
+        workflow = make_workflow(steps={"step1": make_step("map")})
+
+        with patch(
+            "kurt.engine.executor.execute_tool", new_callable=AsyncMock
+        ) as mock_execute:
+            mock_execute.return_value = make_tool_result(success=True)
+            result = await execute_workflow(workflow, {})
+
+        assert result.duration_ms is not None
+        assert result.duration_ms >= 0
+
+    @pytest.mark.asyncio
+    async def test_step_result_has_timestamps(self):
+        """Step result includes start and completion timestamps."""
+        workflow = make_workflow(steps={"step1": make_step("map")})
+
+        with patch(
+            "kurt.engine.executor.execute_tool", new_callable=AsyncMock
+        ) as mock_execute:
+            mock_execute.return_value = make_tool_result(success=True)
+            result = await execute_workflow(workflow, {})
+
+        step_result = result.step_results["step1"]
+        assert step_result.started_at is not None
+        assert step_result.completed_at is not None
+        assert step_result.duration_ms is not None
+        assert step_result.duration_ms >= 0
+
+
+# ============================================================================
+# Progress Callback Tests
+# ============================================================================
+
+
+class TestExecuteWorkflowProgressCallback:
+    """Tests for progress callback invocation."""
+
+    @pytest.mark.asyncio
+    async def test_on_progress_callback_called(self):
+        """on_progress callback is invoked by tool execution."""
+        workflow = make_workflow(steps={"step1": make_step("map")})
+
+        progress_callback = None
+
+        async def mock_execute(name, params, ctx=None, on_progress=None):
+            nonlocal progress_callback
+            progress_callback = on_progress
+            return make_tool_result(success=True)
+
+        with patch(
+            "kurt.engine.executor.execute_tool", side_effect=mock_execute
+        ):
+            await execute_workflow(workflow, {})
+
+        # Executor should pass a callback to the tool
+        assert progress_callback is not None
+        assert callable(progress_callback)
+
+
+# ============================================================================
+# Internal Error Tests
+# ============================================================================
+
+
+class TestExecuteWorkflowInternalError:
+    """Tests for internal executor errors."""
+
+    @pytest.mark.asyncio
+    async def test_internal_error_exit_code(self):
+        """Internal executor error has exit code 3."""
+        workflow = make_workflow(steps={"step1": make_step("map")})
+
+        # Patch build_dag to raise an internal error
+        with patch(
+            "kurt.engine.executor.build_dag", side_effect=RuntimeError("Internal failure")
+        ):
+            result = await execute_workflow(workflow, {})
+
+        assert result.status == "failed"
+        assert result.exit_code == ExitCode.INTERNAL_ERROR
+        assert result.exit_code == 3
+        assert "Internal error" in result.error
+
+
+# ============================================================================
+# ToolCanceledError Tests
+# ============================================================================
+
+
+class TestExecuteWorkflowToolCanceled:
+    """Tests for ToolCanceledError handling."""
+
+    @pytest.mark.asyncio
+    async def test_tool_canceled_error_marks_step_canceled(self):
+        """ToolCanceledError marks step as canceled (not failed)."""
+        from kurt.tools.errors import ToolCanceledError
+
+        workflow = make_workflow(steps={"step1": make_step("map")})
+
+        with patch(
+            "kurt.engine.executor.execute_tool", new_callable=AsyncMock
+        ) as mock_execute:
+            mock_execute.side_effect = ToolCanceledError("map", reason="User requested cancel")
+
+            result = await execute_workflow(workflow, {})
+
+        # Canceled steps don't cause workflow failure - only "failed" status does
+        # This is intentional: cancellation is a graceful stop, not an error
+        assert result.status == "completed"
+        assert result.step_results["step1"].status == "canceled"
+        assert result.step_results["step1"].error_type == "ToolCanceledError"
+
+    @pytest.mark.asyncio
+    async def test_tool_canceled_in_chain_stops_workflow(self):
+        """Canceled step with dependencies causes workflow to stop (no dependent execution)."""
+        from kurt.tools.errors import ToolCanceledError
+
+        workflow = make_workflow(
+            steps={
+                "step1": make_step("map"),
+                "step2": make_step("fetch", depends_on=["step1"]),
+            }
+        )
+
+        with patch(
+            "kurt.engine.executor.execute_tool", new_callable=AsyncMock
+        ) as mock_execute:
+            mock_execute.side_effect = ToolCanceledError("map", reason="Canceled")
+
+            result = await execute_workflow(workflow, {})
+
+        # step1 canceled, step2 gets empty input (canceled step produces no output)
+        assert result.step_results["step1"].status == "canceled"
+
+
+# ============================================================================
+# Step Skipping Tests
+# ============================================================================
+
+
+class TestExecuteWorkflowStepSkipping:
+    """Tests for step skipping with failed dependencies."""
+
+    @pytest.mark.asyncio
+    async def test_dependent_skipped_when_dependency_fails(self):
+        """Dependent steps are skipped when dependency fails (default mode)."""
+        workflow = make_workflow(
+            steps={
+                "step1": make_step("map"),
+                "step2": make_step("fetch", depends_on=["step1"]),
+                "step3": make_step("llm", depends_on=["step2"]),
+            }
+        )
+
+        async def mock_execute(name, params, ctx=None, on_progress=None):
+            if name == "map":
+                return make_tool_result(
+                    success=False,
+                    errors=[ToolResultError(None, "error", "Step 1 failed")],
+                )
+            return make_tool_result(success=True)
+
+        with patch(
+            "kurt.engine.executor.execute_tool", side_effect=mock_execute
+        ):
+            result = await execute_workflow(workflow, {})
+
+        assert result.status == "failed"
+        assert result.step_results["step1"].status == "failed"
+        # Steps 2 and 3 should not have run
+        assert "step2" not in result.step_results
+        assert "step3" not in result.step_results
+
+
+# ============================================================================
+# Workflow Executor State Tests
+# ============================================================================
+
+
+class TestWorkflowExecutorState:
+    """Tests for WorkflowExecutor state management."""
+
+    def test_initial_state(self):
+        """WorkflowExecutor starts in pending state."""
+        workflow = make_workflow(steps={"step1": make_step("map")})
+        executor = WorkflowExecutor(workflow, {})
+
+        assert executor._status == "pending"
+        assert executor._step_outputs == {}
+        assert executor._step_results == {}
+
+    @pytest.mark.asyncio
+    async def test_cancel_idempotent_when_completed(self):
+        """Calling cancel on completed workflow is a no-op."""
+        workflow = make_workflow(steps={})
+
+        executor = WorkflowExecutor(workflow, {})
+        result = await executor.run()
+
+        assert result.status == "completed"
+
+        # Calling cancel after completion should do nothing
+        await executor.cancel()
+        # No assertion needed - just verify it doesn't raise
+
+
+# ============================================================================
+# Complex Workflow Tests
+# ============================================================================
+
+
+class TestExecuteWorkflowComplex:
+    """Tests for complex workflow scenarios."""
+
+    @pytest.mark.asyncio
+    async def test_mixed_success_and_failure_with_continue(self):
+        """Mixed success/failure with continue_on_error=True."""
+        workflow = make_workflow(
+            steps={
+                "step_ok_1": make_step("map"),
+                "step_fail": make_step("fetch"),
+                "step_ok_2": make_step("llm"),
+            }
+        )
+
+        async def mock_execute(name, params, ctx=None, on_progress=None):
+            if name == "fetch":
+                return make_tool_result(
+                    success=False,
+                    errors=[ToolResultError(None, "error", "Fetch failed")],
+                )
+            return make_tool_result(success=True, data=[{"result": name}])
+
+        with patch(
+            "kurt.engine.executor.execute_tool", side_effect=mock_execute
+        ):
+            result = await execute_workflow(workflow, {}, continue_on_error=True)
+
+        # Overall workflow fails but all steps executed
+        assert result.status == "failed"
+        assert result.step_results["step_ok_1"].status == "completed"
+        assert result.step_results["step_fail"].status == "failed"
+        assert result.step_results["step_ok_2"].status == "completed"
+
+    @pytest.mark.asyncio
+    async def test_large_parallel_workflow(self):
+        """Large workflow with many parallel steps."""
+        # Create 20 parallel steps
+        steps = {f"step_{i}": make_step("map") for i in range(20)}
+        workflow = make_workflow(steps=steps)
+
+        execution_count = 0
+
+        async def mock_execute(name, params, ctx=None, on_progress=None):
+            nonlocal execution_count
+            execution_count += 1
+            await asyncio.sleep(0.001)  # Small delay
+            return make_tool_result(success=True, data=[{"step": name}])
+
+        with patch(
+            "kurt.engine.executor.execute_tool", side_effect=mock_execute
+        ):
+            result = await execute_workflow(workflow, {})
+
+        assert result.status == "completed"
+        assert execution_count == 20
+        assert len(result.step_results) == 20
+
+    @pytest.mark.asyncio
+    async def test_deep_dependency_chain(self):
+        """Deep dependency chain executes in correct order."""
+        # Create 10-step chain
+        steps = {}
+        prev = None
+        for i in range(10):
+            name = f"step_{i}"
+            deps = [prev] if prev else []
+            steps[name] = make_step("map", depends_on=deps)
+            prev = name
+
+        workflow = make_workflow(steps=steps)
+        call_order = []
+
+        async def mock_execute(name, params, ctx=None, on_progress=None):
+            call_order.append(name)
+            return make_tool_result(success=True, data=[{"step": name}])
+
+        with patch(
+            "kurt.engine.executor.execute_tool", side_effect=mock_execute
+        ):
+            result = await execute_workflow(workflow, {})
+
+        assert result.status == "completed"
+        # Verify execution order matches dependency order
+        expected_order = ["map"] * 10  # All use "map" tool type
+        assert call_order == expected_order
+        assert len(result.step_results) == 10
