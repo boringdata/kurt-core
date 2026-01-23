@@ -54,6 +54,31 @@ from kurt.db.tenant import (
     set_workspace_context,
 )
 
+# Dolt client and schema
+from kurt.db.dolt import (
+    # Client classes
+    DoltDB,
+    DoltTransaction,
+    QueryResult,
+    BranchInfo,
+    ConnectionPool,
+    # Exceptions
+    DoltError,
+    DoltConnectionError,
+    DoltQueryError,
+    DoltTransactionError,
+    DoltBranchError,
+    # Schema helpers
+    OBSERVABILITY_TABLES,
+    SCHEMA_FILE,
+    DoltDBProtocol,
+    check_schema_exists,
+    get_schema_sql,
+    get_table_ddl,
+    init_observability_schema,
+    split_sql_statements,
+)
+
 __all__ = [
     # Database clients
     "DatabaseClient",
@@ -89,4 +114,25 @@ __all__ = [
     "load_context_from_credentials",
     "register_tenant_listeners",
     "set_rls_context",
+    # Dolt client
+    "DoltDB",
+    "DoltTransaction",
+    "QueryResult",
+    "BranchInfo",
+    "ConnectionPool",
+    # Dolt exceptions
+    "DoltError",
+    "DoltConnectionError",
+    "DoltQueryError",
+    "DoltTransactionError",
+    "DoltBranchError",
+    # Dolt schema helpers
+    "DoltDBProtocol",
+    "OBSERVABILITY_TABLES",
+    "SCHEMA_FILE",
+    "get_schema_sql",
+    "split_sql_statements",
+    "init_observability_schema",
+    "check_schema_exists",
+    "get_table_ddl",
 ]

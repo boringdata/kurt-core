@@ -1,0 +1,200 @@
+"""
+Tool registry and execution.
+
+Provides:
+- TOOLS: Dictionary mapping tool names to Tool classes
+- register_tool(): Decorator for registering tools
+- get_tool(): Lookup tool by name
+- execute_tool(): Execute a tool with validation and error handling
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Any
+
+from pydantic import ValidationError
+
+from .base import ProgressCallback, Tool, ToolContext, ToolResult, ToolResultMetadata
+from .errors import (
+    ToolConfigError,
+    ToolExecutionError,
+    ToolInputError,
+    ToolNotFoundError,
+)
+
+# Global registry of tools
+# Maps tool name (step type) to Tool class
+# e.g., {"map": MapTool, "fetch": FetchTool, ...}
+TOOLS: dict[str, type[Tool]] = {}
+
+
+def register_tool(tool_class: type[Tool]) -> type[Tool]:
+    """
+    Decorator to register a tool class in the global registry.
+
+    Usage:
+        @register_tool
+        class MapTool(Tool[MapInput, MapOutput]):
+            name = "map"
+            ...
+
+    Args:
+        tool_class: Tool class to register
+
+    Returns:
+        The same tool class (for decorator chaining)
+
+    Raises:
+        ValueError: If tool name is missing or already registered
+    """
+    if not hasattr(tool_class, "name") or not tool_class.name:
+        raise ValueError(f"Tool class {tool_class.__name__} must define 'name' attribute")
+
+    name = tool_class.name
+    if name in TOOLS:
+        raise ValueError(
+            f"Tool '{name}' already registered by {TOOLS[name].__name__}"
+        )
+
+    TOOLS[name] = tool_class
+    return tool_class
+
+
+def get_tool(name: str) -> type[Tool]:
+    """
+    Get a tool class by name.
+
+    Args:
+        name: Tool name (e.g., 'map', 'fetch', 'llm')
+
+    Returns:
+        Tool class
+
+    Raises:
+        ToolNotFoundError: If tool name is not registered
+    """
+    if name not in TOOLS:
+        raise ToolNotFoundError(name)
+    return TOOLS[name]
+
+
+def list_tools() -> list[str]:
+    """
+    List all registered tool names.
+
+    Returns:
+        Sorted list of tool names
+    """
+    return sorted(TOOLS.keys())
+
+
+def get_tool_info(name: str) -> dict[str, Any]:
+    """
+    Get metadata about a registered tool.
+
+    Args:
+        name: Tool name
+
+    Returns:
+        Dictionary with tool metadata (name, description, input/output schemas)
+
+    Raises:
+        ToolNotFoundError: If tool name is not registered
+    """
+    tool_class = get_tool(name)
+    return {
+        "name": tool_class.name,
+        "description": tool_class.description,
+        "input_schema": (
+            tool_class.InputModel.model_json_schema()
+            if hasattr(tool_class, "InputModel") and tool_class.InputModel
+            else None
+        ),
+        "output_schema": (
+            tool_class.OutputModel.model_json_schema()
+            if hasattr(tool_class, "OutputModel") and tool_class.OutputModel
+            else None
+        ),
+    }
+
+
+async def execute_tool(
+    name: str,
+    params: dict[str, Any],
+    context: ToolContext | None = None,
+    on_progress: ProgressCallback | None = None,
+) -> ToolResult:
+    """
+    Execute a tool by name with the given parameters.
+
+    This is the main entry point for tool execution. It handles:
+    1. Tool lookup from registry
+    2. Input validation via Pydantic
+    3. Context creation if not provided
+    4. Execution with timing
+    5. Error wrapping
+
+    Args:
+        name: Tool name (e.g., 'map', 'fetch')
+        params: Input parameters as dictionary
+        context: Execution context (created if None)
+        on_progress: Optional progress callback
+
+    Returns:
+        ToolResult with success status, data, errors, and metadata
+
+    Raises:
+        ToolNotFoundError: If tool name is not registered
+        ToolConfigError: If params fail Pydantic validation
+        ToolExecutionError: If tool execution fails
+    """
+    # 1. Look up tool class
+    tool_class = get_tool(name)
+
+    # 2. Validate input parameters
+    try:
+        validated_params = tool_class.InputModel.model_validate(params)
+    except ValidationError as e:
+        raise ToolInputError(
+            tool_name=name,
+            message=str(e),
+            validation_errors=e.errors(),
+        ) from e
+
+    # 3. Create context if not provided
+    if context is None:
+        context = ToolContext()
+
+    # 4. Instantiate tool and execute with timing
+    tool = tool_class()
+    started_at = datetime.now(timezone.utc)
+
+    try:
+        result = await tool.run(validated_params, context, on_progress)
+    except Exception as e:
+        # Wrap unexpected errors in ToolExecutionError
+        if isinstance(e, (ToolExecutionError,)):
+            raise
+        raise ToolExecutionError(
+            tool_name=name,
+            message=str(e),
+            cause=e,
+        ) from e
+
+    completed_at = datetime.now(timezone.utc)
+
+    # 5. Add timing metadata if not already present
+    if result.metadata is None:
+        result.metadata = ToolResultMetadata.from_timestamps(started_at, completed_at)
+
+    return result
+
+
+def clear_registry() -> None:
+    """
+    Clear all registered tools.
+
+    Primarily used for testing to ensure clean state.
+    """
+    TOOLS.clear()

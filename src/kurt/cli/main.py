@@ -48,6 +48,7 @@ class LazyGroup(click.Group):
         "show": ("kurt.cli.show", "show_group"),
         "cloud": ("kurt.cli.cloud", "cloud_group"),
         "db": ("kurt.cli.db", "db_group"),
+        "branch": ("kurt.cli.branch", "branch_group"),
     },
 )
 @click.version_option(package_name="kurt-core", prog_name="kurt")
@@ -127,15 +128,47 @@ def _check_migrations():
         pass
 
 
+from kurt.cli.doctor import doctor_cmd, repair_cmd  # noqa: E402
 from kurt.cli.init import init  # noqa: E402
+from kurt.cli.merge import merge_cmd  # noqa: E402
+from kurt.cli.remote import pull_cmd, push_cmd  # noqa: E402
+from kurt.cli.tools import (  # noqa: E402
+    embed_cmd,
+    fetch_cmd,
+    llm_cmd,
+    map_cmd,
+    sql_cmd,
+    write_cmd,
+)
 from kurt.cli.update import update  # noqa: E402
 from kurt.cli.web import serve  # noqa: E402
+from kurt.cli.workflow import cancel_cmd, logs_cmd, run_cmd, status_cmd, test_cmd  # noqa: E402
 from kurt.status import status  # noqa: E402
 
 main.add_command(init)
 main.add_command(status)
 main.add_command(update)
 main.add_command(serve)
+main.add_command(pull_cmd, name="pull")
+main.add_command(push_cmd, name="push")
+main.add_command(merge_cmd, name="merge")
+main.add_command(doctor_cmd, name="doctor")
+main.add_command(repair_cmd, name="repair")
+
+# Workflow commands (top-level for ease of use)
+main.add_command(run_cmd, name="run")
+main.add_command(status_cmd, name="wf-status")  # Avoid conflict with existing 'status'
+main.add_command(logs_cmd, name="logs")
+main.add_command(cancel_cmd, name="cancel")
+main.add_command(test_cmd, name="test")
+
+# Direct tool CLI commands (top-level for piping support)
+main.add_command(map_cmd, name="map")
+main.add_command(fetch_cmd, name="fetch")
+main.add_command(llm_cmd, name="llm")
+main.add_command(embed_cmd, name="embed")
+main.add_command(write_cmd, name="write")
+main.add_command(sql_cmd, name="sql")
 
 
 if __name__ == "__main__":
