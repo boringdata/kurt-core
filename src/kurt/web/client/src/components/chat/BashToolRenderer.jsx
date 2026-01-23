@@ -47,34 +47,25 @@ const BashToolRenderer = ({
       {command && !compact && (
         <div
           style={{
-            marginBottom: 'var(--chat-spacing-sm, 8px)',
+            marginBottom: 'var(--space-2, 8px)',
           }}
         >
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              color: 'var(--chat-text-muted)',
-              fontSize: '12px',
-              marginBottom: '4px',
-            }}
-          >
-            <span>$</span>
-          </div>
           <code
             style={{
               display: 'block',
               fontFamily: 'var(--font-mono)',
               fontSize: 'var(--text-sm)',
               color: 'var(--chat-text)',
-              backgroundColor: 'var(--chat-input-bg)',
-              padding: '8px 12px',
-              borderRadius: 'var(--chat-radius-sm, 4px)',
+              backgroundColor: 'var(--chat-command-bg, var(--chat-input-bg))',
+              padding: 'var(--space-3, 12px) var(--space-4, 16px)',
+              borderRadius: 'var(--radius-md, 8px)',
               whiteSpace: 'pre-wrap',
               wordBreak: 'break-word',
+              border: '1px solid var(--chat-border)',
+              lineHeight: '1.5',
             }}
           >
+            <span style={{ color: 'var(--chat-text-tertiary)', marginRight: '8px', userSelect: 'none' }}>$</span>
             {command}
           </code>
         </div>

@@ -112,6 +112,10 @@
   --color-pre-bg: #1f2937;
   --color-pre-text: #f9fafb;
 
+  /* Tool output (light) */
+  --color-tool-bg: #f8fafc;
+  --color-command-bg: #f1f5f9;
+
   /* Accent variants */
   --color-violet: #7c3aed;
   --color-violet-light: #a78bfa;
@@ -159,26 +163,26 @@
 
 /* ---------- Dark Mode ---------- */
 [data-theme="dark"] {
-  /* Backgrounds */
-  --color-bg-primary: #171717;
-  --color-bg-secondary: #262626;
-  --color-bg-tertiary: #333333;
-  --color-bg-hover: #333333;
-  --color-bg-active: #404040;
+  /* Backgrounds - refined dark palette */
+  --color-bg-primary: #0f0f0f;
+  --color-bg-secondary: #1a1a1a;
+  --color-bg-tertiary: #262626;
+  --color-bg-hover: #2a2a2a;
+  --color-bg-active: #333333;
 
-  /* Text */
-  --color-text-primary: #f5f5f5;
-  --color-text-secondary: #a3a3a3;
-  --color-text-tertiary: #737373;
-  --color-text-inverse: #171717;
+  /* Text - better contrast */
+  --color-text-primary: #fafafa;
+  --color-text-secondary: #a1a1aa;
+  --color-text-tertiary: #71717a;
+  --color-text-inverse: #0f0f0f;
 
-  /* Borders */
-  --color-border: #404040;
-  --color-border-strong: #525252;
+  /* Borders - subtle */
+  --color-border: #2e2e2e;
+  --color-border-strong: #404040;
 
-  /* Accent (adjusted for dark) */
-  --color-accent: #f97316;
-  --color-accent-hover: #fb923c;
+  /* Accent (vibrant orange for dark) */
+  --color-accent: #fb923c;
+  --color-accent-hover: #fdba74;
   --color-accent-light: #431407;
 
   /* Semantic (dark) */
@@ -215,10 +219,14 @@
   --color-scrollbar: #4b5563;
   --color-scrollbar-hover: #6b7280;
 
-  /* Code blocks (dark) */
-  --color-code-bg: #262626;
-  --color-pre-bg: #0f172a;
-  --color-pre-text: #e2e8f0;
+  /* Code blocks (dark) - blue-tinted for code feel */
+  --color-code-bg: #1e1e2e;
+  --color-pre-bg: #11111b;
+  --color-pre-text: #cdd6f4;
+
+  /* Tool output (dark) - distinctive styling */
+  --color-tool-bg: #16161e;
+  --color-command-bg: #1a1b26;
 
   /* Accent variants */
   --color-violet: #a78bfa;
@@ -247,17 +255,17 @@
   --shadow-lg: 0 0 15px rgb(255 255 255 / 0.05);
   --shadow-xl: 0 0 25px rgb(255 255 255 / 0.08);
 
-  /* Syntax Highlighting (Dark) */
-  --syntax-keyword: #ff7b72;
-  --syntax-string: #a5d6ff;
-  --syntax-number: #79c0ff;
-  --syntax-comment: #8b949e;
-  --syntax-function: #d2a8ff;
-  --syntax-variable: #c9d1d9;
-  --syntax-operator: #ff7b72;
-  --syntax-class: #d2a8ff;
-  --syntax-property: #79c0ff;
-  --syntax-punctuation: #c9d1d9;
+  /* Syntax Highlighting (Dark) - Catppuccin-inspired */
+  --syntax-keyword: #cba6f7;
+  --syntax-string: #a6e3a1;
+  --syntax-number: #fab387;
+  --syntax-comment: #6c7086;
+  --syntax-function: #89b4fa;
+  --syntax-variable: #cdd6f4;
+  --syntax-operator: #89dceb;
+  --syntax-class: #f9e2af;
+  --syntax-property: #94e2d5;
+  --syntax-punctuation: #bac2de;
 }
 
 /* ==========================================================================
