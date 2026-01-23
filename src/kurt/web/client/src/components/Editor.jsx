@@ -14,11 +14,13 @@ import TaskList from '@tiptap/extension-task-list'
 import TaskItem from '@tiptap/extension-task-item'
 import TextAlign from '@tiptap/extension-text-align'
 import Highlight from '@tiptap/extension-highlight'
-import Image from '@tiptap/extension-image'
+import ImageResize from 'tiptap-extension-resize-image'
 import { Table } from '@tiptap/extension-table'
 import { TableRow } from '@tiptap/extension-table-row'
 import { TableCell } from '@tiptap/extension-table-cell'
 import { TableHeader } from '@tiptap/extension-table-header'
+import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
+import { common, createLowlight } from 'lowlight'
 import { Markdown } from '@tiptap/markdown'
 import { Extension } from '@tiptap/core'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
@@ -26,6 +28,9 @@ import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { diffLines, diffWords } from 'diff'
 import GitDiff from './GitDiff'
 import FrontmatterEditor, { parseFrontmatter, reconstructContent } from './FrontmatterEditor'
+
+// Create lowlight instance with common languages
+const lowlight = createLowlight(common)
 
 // Build a map of line changes with word-level diff info
 function buildDiffMap(originalContent, currentContent) {
@@ -583,7 +588,10 @@ export default function Editor({
   // This ensures both sides go through the exact same Tiptap schema
   const baseExtensions = useMemo(
     () => [
-      StarterKit,
+      StarterKit.configure({
+        // Disable default codeBlock, we use CodeBlockLowlight for syntax highlighting
+        codeBlock: false,
+      }),
       Underline,
       Link.configure({
         openOnClick: false,
@@ -602,7 +610,8 @@ export default function Editor({
         types: ['heading', 'paragraph'],
       }),
       Highlight,
-      Image.configure({
+      // ImageResize extension: supports paste, drag-drop, and resize handles
+      ImageResize.configure({
         inline: false,
         allowBase64: true,
         HTMLAttributes: {
@@ -618,6 +627,13 @@ export default function Editor({
       TableRow,
       TableCell,
       TableHeader,
+      // CodeBlockLowlight for syntax highlighting
+      CodeBlockLowlight.configure({
+        lowlight,
+        HTMLAttributes: {
+          class: 'editor-code-block',
+        },
+      }),
       // Official Tiptap Markdown extension for bidirectional markdown support
       Markdown.configure({
         // Preserve line breaks as <br> tags
