@@ -550,3 +550,222 @@ class TestToolIntegration:
         )
         output = json.loads(result.output)
         assert output["success"] is True
+
+
+# ============================================================================
+# Additional edge case tests
+# ============================================================================
+
+
+class TestSaveToDbEdgeCases:
+    """Additional edge case tests for save-to-db command."""
+
+    @patch("kurt.core.dbos.init_dbos")
+    @patch("kurt.core.SaveStep")
+    @patch("kurt.core.get_model_by_table_name")
+    def test_save_step_exception(
+        self, mock_get_model, mock_save_step, mock_init_dbos, cli_runner: CliRunner
+    ):
+        """Test save-to-db handles SaveStep exceptions."""
+        from sqlmodel import SQLModel
+
+        from kurt.workflows.agents.tool_cli import tool
+
+        class MockModel(SQLModel):
+            __tablename__ = "test"
+
+        mock_get_model.return_value = MockModel
+
+        mock_step_instance = MagicMock()
+        mock_step_instance.run.side_effect = Exception("Database connection error")
+        mock_save_step.return_value = mock_step_instance
+
+        result = cli_runner.invoke(
+            tool,
+            ["save-to-db", "--table", "test", "--data", '{"key": "value"}'],
+        )
+
+        output = json.loads(result.output)
+        assert output["success"] is False
+        assert "Failed to save" in output["error"]
+
+    @patch("kurt.core.get_model_by_table_name")
+    @patch("kurt.core.dbos.init_dbos")
+    def test_value_error_from_model_lookup(
+        self, mock_init_dbos, mock_get_model, cli_runner: CliRunner
+    ):
+        """Test save-to-db handles ValueError from model lookup."""
+        from kurt.workflows.agents.tool_cli import tool
+
+        mock_get_model.side_effect = ValueError("Invalid table configuration")
+
+        result = cli_runner.invoke(
+            tool,
+            ["save-to-db", "--table", "bad_config", "--data", '{"key": "value"}'],
+        )
+
+        output = json.loads(result.output)
+        assert output["success"] is False
+        assert "Invalid table configuration" in output["error"]
+
+    def test_workflow_dir_env_var(self, cli_runner: CliRunner, tmp_path, monkeypatch):
+        """Test save-to-db respects KURT_WORKFLOW_DIR env var."""
+        from kurt.workflows.agents.tool_cli import tool
+
+        workflow_dir = tmp_path / "my_workflow"
+        workflow_dir.mkdir()
+
+        monkeypatch.setenv("KURT_WORKFLOW_DIR", str(workflow_dir))
+
+        # This will fail because there's no models.py, but we verify the path is used
+        with patch("kurt.core.dbos.init_dbos"):
+            with patch("kurt.core.get_model_by_table_name") as mock_get:
+                mock_get.return_value = None
+
+                result = cli_runner.invoke(
+                    tool,
+                    ["save-to-db", "--table", "test", "--data", '{"key": "value"}'],
+                )
+
+                # Verify get_model_by_table_name was called with the workflow_dir
+                mock_get.assert_called_once()
+                call_kwargs = mock_get.call_args[1]
+                assert call_kwargs["workflow_dir"] == workflow_dir
+
+
+class TestLlmEdgeCases:
+    """Additional edge case tests for llm command."""
+
+    def test_prompt_with_multiple_placeholders(self, cli_runner: CliRunner):
+        """Test llm with multiple placeholders in prompt."""
+        from kurt.workflows.agents.tool_cli import tool
+
+        # This will fail at LLM execution step, but tests argument parsing
+        result = cli_runner.invoke(
+            tool,
+            [
+                "llm",
+                "--prompt",
+                "Title: {title}, Content: {content}",
+                "--data",
+                "[]",  # Empty data to avoid actual LLM call
+            ],
+        )
+        # Empty data should succeed with empty results
+        output = json.loads(result.output)
+        assert output["success"] is True
+        assert output["total"] == 0
+
+    def test_llm_concurrency_option(self, cli_runner: CliRunner):
+        """Test llm accepts concurrency option."""
+        from kurt.workflows.agents.tool_cli import tool
+
+        result = cli_runner.invoke(
+            tool,
+            [
+                "llm",
+                "--prompt",
+                "Test: {text}",
+                "--data",
+                "[]",
+                "--concurrency",
+                "5",
+            ],
+        )
+        output = json.loads(result.output)
+        assert output["success"] is True
+
+
+class TestEmbeddingEdgeCases:
+    """Additional edge case tests for embedding command."""
+
+    @patch("kurt.core.generate_embeddings")
+    def test_embedding_generation_failure(self, mock_generate, cli_runner: CliRunner, tmp_path):
+        """Test embedding handles generation failures gracefully."""
+        from kurt.workflows.agents.tool_cli import tool
+
+        output_file = tmp_path / "out.json"
+
+        mock_generate.side_effect = Exception("API rate limit exceeded")
+
+        result = cli_runner.invoke(
+            tool,
+            ["embedding", "--texts", '["Hello"]', "--output", str(output_file)],
+        )
+
+        output = json.loads(result.output)
+        assert output["success"] is False
+        assert "failed" in output["error"].lower()
+
+    def test_embedding_requires_output(self, cli_runner: CliRunner):
+        """Test embedding command requires --output option."""
+        from kurt.workflows.agents.tool_cli import tool
+
+        result = cli_runner.invoke(
+            tool,
+            ["embedding", "--texts", '["Hello"]'],
+        )
+        # Click should reject missing required option
+        assert result.exit_code != 0
+        assert "output" in result.output.lower()
+
+
+class TestMissingRequiredOptions:
+    """Tests for missing required CLI options."""
+
+    def test_save_to_db_missing_table(self, cli_runner: CliRunner):
+        """Test save-to-db requires --table option."""
+        from kurt.workflows.agents.tool_cli import tool
+
+        result = cli_runner.invoke(
+            tool,
+            ["save-to-db", "--data", '{"key": "value"}'],
+        )
+        assert result.exit_code != 0
+        assert "table" in result.output.lower()
+
+    def test_save_to_db_missing_data(self, cli_runner: CliRunner):
+        """Test save-to-db requires --data option."""
+        from kurt.workflows.agents.tool_cli import tool
+
+        result = cli_runner.invoke(
+            tool,
+            ["save-to-db", "--table", "test"],
+        )
+        assert result.exit_code != 0
+        assert "data" in result.output.lower()
+
+    def test_llm_missing_prompt(self, cli_runner: CliRunner):
+        """Test llm requires --prompt option."""
+        from kurt.workflows.agents.tool_cli import tool
+
+        result = cli_runner.invoke(
+            tool,
+            ["llm", "--data", '[{"text": "hello"}]'],
+        )
+        assert result.exit_code != 0
+        assert "prompt" in result.output.lower()
+
+    def test_llm_missing_data(self, cli_runner: CliRunner):
+        """Test llm requires --data option."""
+        from kurt.workflows.agents.tool_cli import tool
+
+        result = cli_runner.invoke(
+            tool,
+            ["llm", "--prompt", "Test: {text}"],
+        )
+        assert result.exit_code != 0
+        assert "data" in result.output.lower()
+
+    def test_embedding_missing_texts(self, cli_runner: CliRunner, tmp_path):
+        """Test embedding requires --texts option."""
+        from kurt.workflows.agents.tool_cli import tool
+
+        output_file = tmp_path / "out.json"
+
+        result = cli_runner.invoke(
+            tool,
+            ["embedding", "--output", str(output_file)],
+        )
+        assert result.exit_code != 0
+        assert "texts" in result.output.lower()
