@@ -303,6 +303,55 @@ html {
   display: flex;
 }
 
+
+/* ==========================================================================
+   Global Focus & Interaction Styles
+   ========================================================================== */
+
+/* Focus-visible ring with accent color */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* Remove default focus for mouse users */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Interactive element hover lift */
+.interactive-lift {
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.interactive-lift:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-button-hover);
+}
+
+/* Card-like containers */
+.card,
+.panel-card {
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  transition: box-shadow var(--transition-fast), border-color var(--transition-fast);
+}
+
+.card:hover,
+.panel-card:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--color-border-strong);
+}
+
+/* Inset panel effect for depth */
+.panel-inset {
+  background: var(--color-bg-tertiary);
+  box-shadow: var(--shadow-inset);
+  border-radius: var(--radius-md);
+}
+
 /* ==========================================================================
    App Layout
    ========================================================================== */
@@ -318,10 +367,13 @@ html {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  padding: var(--space-1) var(--space-2);
+  padding: var(--space-2) var(--space-3);
   background-color: var(--color-bg-secondary);
   border-bottom: 1px solid var(--color-border);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.04);
   flex-shrink: 0;
+  position: relative;
+  z-index: 10;
 }
 
 .app-container > .dockview-theme-abyss {
@@ -337,21 +389,34 @@ html {
   width: 32px;
   height: 32px;
   padding: 0;
-  border: none;
+  border: 1px solid transparent;
   background: transparent;
   border-radius: var(--radius-md);
   cursor: pointer;
   color: var(--color-text-secondary);
-  transition: background-color var(--transition-fast), color var(--transition-fast);
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--transition-fast);
 }
 
 .theme-toggle:hover {
   background-color: var(--color-bg-hover);
+  border-color: var(--color-border);
   color: var(--color-text-primary);
+  box-shadow: var(--shadow-button);
 }
 
 .theme-toggle:active {
   background-color: var(--color-bg-active);
+  transform: scale(0.95);
+}
+
+.theme-toggle:focus-visible {
+  box-shadow: var(--shadow-focus);
+  border-color: var(--color-accent);
 }
 
 .theme-toggle svg {
@@ -373,6 +438,7 @@ html {
   padding: var(--space-2);
   box-sizing: border-box;
   overflow: hidden;
+  box-shadow: inset -1px 0 0 var(--color-border);
 }
 
 /* Sidebar header with collapse button */
@@ -381,7 +447,7 @@ html {
   align-items: center;
   justify-content: space-between;
   padding: 2px 2px 4px 4px;
-  margin-bottom: 2px;
+  margin-bottom: var(--space-1);
 }
 
 .sidebar-title {
@@ -403,12 +469,23 @@ html {
   border-radius: var(--radius-sm);
   cursor: pointer;
   color: var(--color-text-secondary);
-  transition: background var(--transition-fast), color var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    transform var(--transition-fast);
 }
 
 .sidebar-toggle-btn:hover {
   background: var(--color-bg-active);
   color: var(--color-text-primary);
+}
+
+.sidebar-toggle-btn:active {
+  transform: scale(0.9);
+}
+
+.sidebar-toggle-btn:focus-visible {
+  box-shadow: var(--shadow-focus);
 }
 
 /* Sidebar header actions group */
@@ -429,12 +506,23 @@ html {
   border-radius: var(--radius-sm);
   cursor: pointer;
   color: var(--color-text-secondary);
-  transition: background var(--transition-fast), color var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    transform var(--transition-fast);
 }
 
 .sidebar-action-btn:hover {
   background: var(--color-bg-active);
   color: var(--color-text-primary);
+}
+
+.sidebar-action-btn:active {
+  transform: scale(0.9);
+}
+
+.sidebar-action-btn:focus-visible {
+  box-shadow: var(--shadow-focus);
 }
 
 /* Collapsed sidebar styles */
@@ -482,6 +570,8 @@ html {
   background: var(--color-bg-secondary);
   display: flex;
   flex-direction: column;
+  /* Subtle inner shadow for depth and visual separation */
+  box-shadow: inset 1px 0 0 var(--color-border);
 }
 
 /* Dockview theme customizations */
@@ -564,21 +654,24 @@ html {
   flex-direction: column;
   height: 100%;
   font-size: var(--text-xs);
+  background: linear-gradient(to bottom, var(--color-bg-secondary), var(--color-bg-primary));
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
 .file-tree-title {
-  margin: var(--space-1) var(--space-1) 2px;
-  font-size: var(--text-xs);
+  margin: var(--space-2) var(--space-2) var(--space-1);
+  font-size: 0.6875rem;
   font-weight: var(--font-semibold);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--color-text-secondary);
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
 }
 
 /* Sectioned file tree */
 .file-tree-sections {
   flex: 1;
   overflow: auto;
+  padding: 0 var(--space-1);
 }
 
 .file-tree-section {
@@ -588,21 +681,23 @@ html {
 .file-tree-section-header {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-1) var(--space-2);
+  gap: var(--space-2);
+  padding: var(--space-2);
   cursor: pointer;
   user-select: none;
   border-radius: var(--radius-sm);
   font-size: var(--text-xs);
   font-weight: var(--font-semibold);
   color: var(--color-text-primary);
-  background: var(--color-bg-secondary);
+  background: var(--color-bg-tertiary);
   border: 1px solid transparent;
+  transition: all var(--transition-fast);
 }
 
 .file-tree-section-header:hover {
-  background: var(--color-bg-tertiary);
+  background: var(--color-bg-hover);
   border-color: var(--color-border);
+  transform: translateX(1px);
 }
 
 .file-tree-section-header.has-changes {
@@ -612,20 +707,32 @@ html {
 .section-collapse-icon {
   font-size: 8px;
   color: var(--color-text-tertiary);
-  width: 10px;
+  width: 12px;
   text-align: center;
+  transition: transform var(--transition-fast);
+}
+
+.file-tree-section-header:not(.collapsed) .section-collapse-icon {
+  transform: rotate(90deg);
 }
 
 .section-icon {
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
+  color: var(--color-accent);
+  opacity: 0.9;
 }
 
 .section-label {
   flex: 1;
+  letter-spacing: 0.01em;
 }
 
 .file-tree-section-content {
-  padding-left: var(--space-1);
+  padding-left: var(--space-3);
+  margin-left: var(--space-2);
+  border-left: 1px solid var(--color-border);
+  overflow: hidden;
+  transition: max-height var(--transition-normal), opacity var(--transition-fast);
 }
 
 .section-folder-placeholder {
@@ -672,17 +779,24 @@ html {
 .search-box {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-1) var(--space-2);
-  margin-bottom: var(--space-1);
-  background: var(--color-bg-tertiary);
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  margin: var(--space-2);
+  background: var(--color-bg-primary);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  transition: all var(--transition-fast);
+}
+
+.search-box:hover {
+  border-color: var(--color-border-strong);
 }
 
 .search-box:focus-within {
-  border-color: var(--color-text-tertiary);
+  border-color: var(--color-accent);
   background: var(--color-bg-primary);
+  box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.15), 0 1px 2px 0 rgba(0, 0, 0, 0.05);
 }
 
 .search-icon {
@@ -1251,22 +1365,36 @@ html {
 .file-item {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
-  padding: 2px var(--space-1);
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  margin: 1px 0;
   cursor: pointer;
   font-size: var(--text-xs);
-  line-height: 1.4;
+  line-height: 1.5;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
 }
 
-.file-item:hover { background: var(--color-bg-tertiary) }
+.file-item:hover {
+  background: var(--color-bg-tertiary);
+  transform: translateX(2px);
+}
+
+.file-item:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(234, 88, 12, 0.2);
+}
 
 .file-item-active {
   background: var(--color-selected);
   font-weight: var(--font-medium);
+  border-left: 2px solid var(--color-accent);
+  padding-left: calc(var(--space-2) - 2px);
 }
 
 .file-item-active:hover {
   background: var(--color-selected-hover);
+  transform: none;
 }
 
 .file-item-new {
@@ -1275,10 +1403,11 @@ html {
 
 .file-item-icon {
   flex-shrink: 0;
-  font-size: var(--text-xs);
-  width: 14px;
+  font-size: var(--text-sm);
+  width: 16px;
   text-align: center;
-  color: var(--color-text-secondary);
+  color: var(--color-text-tertiary);
+  transition: color var(--transition-fast);
 }
 
 .file-item-name {
@@ -1286,6 +1415,7 @@ html {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: color var(--transition-fast);
 }
 
 .git-status-badge {
@@ -1350,12 +1480,13 @@ html {
 .context-menu {
   position: fixed;
   z-index: 1000;
-  min-width: 140px;
+  min-width: 160px;
   background: var(--color-bg-primary);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
   padding: var(--space-1) 0;
+  animation: contextMenuFadeIn var(--transition-fast) ease-out;
 }
 
 .context-menu-item {
@@ -1386,7 +1517,7 @@ html {
 /* Rename input */
 .rename-input {
   flex: 1;
-  border: 1px solid var(--color-info-hover);
+  border: 1px solid var(--color-accent);
   background: var(--color-bg-primary);
   padding: 2px var(--space-1);
   font-size: var(--text-sm);
@@ -1395,6 +1526,8 @@ html {
   outline: none;
   min-width: 0;
   color: var(--color-text-primary);
+  box-shadow: var(--shadow-focus);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 /* Drag and drop */
@@ -1445,25 +1578,68 @@ html {
   flex: 1;
 }
 
-/* Shell panel header */
+/* Shell panel header - matches terminal-header styling */
 .shell-header {
   display: flex;
   align-items: center;
-  padding: var(--space-1) var(--space-2);
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
   background: var(--color-bg-primary);
   border-bottom: 1px solid var(--color-border);
+  font-size: var(--text-sm);
 }
 
 .shell-session-bar {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
   flex: 1;
 }
 
 .shell-panel-content .terminal-select {
   flex: 1;
   min-width: 0;
+}
+
+/* Shell panel button styling - matches terminal-icon-btn */
+.terminal-copy-id {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.terminal-copy-id:hover {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+}
+
+.terminal-close-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-1) var(--space-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.terminal-close-button:hover {
+  background: var(--color-error-bg);
+  color: var(--color-error);
 }
 
 .terminal-header {
@@ -1627,31 +1803,64 @@ html {
   border-radius: var(--radius-full);
 }
 
+/* Modern dropdown styling for shell/session selector */
 .terminal-select {
   border: 1px solid var(--color-border);
-  background: var(--color-bg-primary);
+  background: var(--color-bg-secondary);
   color: var(--color-text-primary);
   padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-md);
+  padding-right: var(--space-4);
+  border-radius: var(--radius-sm);
   font-size: var(--text-xs);
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+}
+
+.terminal-select:hover {
+  border-color: var(--color-border-strong);
+  background: var(--color-bg-tertiary);
+}
+
+.terminal-select:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px var(--color-accent-light);
+}
+
+.terminal-select option {
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  padding: var(--space-1);
 }
 
 .terminal-new {
-  border: 1px solid var(--color-text-primary);
-  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-secondary);
   color: var(--color-text-primary);
   padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-sm);
   font-size: var(--text-xs);
+  font-weight: var(--font-medium);
   cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.terminal-new:hover {
+  background: var(--color-bg-tertiary);
+  border-color: var(--color-border-strong);
 }
 
 .terminal-new-icon {
   width: 28px;
   height: 28px;
-  border-radius: var(--radius-full);
-  background: var(--color-text-primary);
-  color: var(--color-text-inverse);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
   border: none;
   padding: 0;
   display: inline-flex;
@@ -1659,6 +1868,13 @@ html {
   justify-content: center;
   font-size: var(--text-base);
   line-height: 1;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.terminal-new-icon:hover {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
 }
 
 .terminal-instance {
@@ -1685,6 +1901,7 @@ html {
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  box-shadow: var(--shadow-card);
 }
 
 .diff-panel-inline {
@@ -1756,8 +1973,19 @@ html {
   border: 1px solid var(--color-border-strong);
   background: var(--color-bg-active);
   cursor: pointer;
-  transition: background var(--transition-fast), border-color var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
   padding: 0;
+}
+
+.switch:hover {
+  border-color: var(--color-text-tertiary);
+}
+
+.switch:focus-visible {
+  box-shadow: var(--shadow-focus);
 }
 
 .switch-thumb {
@@ -1769,12 +1997,17 @@ html {
   border-radius: var(--radius-full);
   background: var(--color-bg-primary);
   box-shadow: var(--shadow-sm);
-  transition: transform var(--transition-fast);
+  transition: transform var(--transition-normal) cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .switch.switch-on {
-  background: var(--color-text-primary);
-  border-color: var(--color-text-primary);
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.switch.switch-on:hover {
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
 }
 
 .switch.switch-on .switch-thumb {
@@ -3380,19 +3613,21 @@ html {
   color: var(--color-text-secondary);
 }
 
-/* Workflows Terminal (Right Pane) */
+/* Workflows Terminal (Right Pane) - consistent with terminal-header */
 .workflows-terminal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-1) var(--space-2);
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
   background: var(--color-bg-primary);
   border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
+  font-size: var(--text-sm);
 }
 
 .workflows-terminal-title {
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   font-weight: var(--font-semibold);
   color: var(--color-text-primary);
 }
@@ -3400,7 +3635,28 @@ html {
 .workflows-terminal-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
+}
+
+/* Workflows terminal action buttons - consistent with terminal-icon-btn */
+.workflows-terminal-actions button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.workflows-terminal-actions button:hover {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
 }
 
 .workflows-terminal-body {
@@ -4056,4 +4312,60 @@ html {
 
 .user-menu-item:hover {
   background: var(--color-bg-hover);
+}
+
+/* File item hover icon color */
+.file-item:hover .file-item-icon {
+  color: var(--color-text-secondary);
+}
+
+.file-item-icon.folder-icon {
+  color: var(--color-accent);
+  opacity: 0.85;
+}
+
+/* Nested file items - indentation levels */
+.file-item[data-depth="1"] { padding-left: calc(var(--space-2) + 12px); }
+.file-item[data-depth="2"] { padding-left: calc(var(--space-2) + 24px); }
+.file-item[data-depth="3"] { padding-left: calc(var(--space-2) + 36px); }
+.file-item[data-depth="4"] { padding-left: calc(var(--space-2) + 48px); }
+.file-item[data-depth="5"] { padding-left: calc(var(--space-2) + 60px); }
+
+/* Folder expand/collapse animation */
+.file-tree-folder-content {
+  overflow: hidden;
+  transition: max-height var(--transition-normal) ease-out, opacity var(--transition-fast);
+}
+
+.file-tree-folder-content.collapsed {
+  max-height: 0;
+  opacity: 0;
+}
+
+.file-tree-folder-content.expanded {
+  max-height: 2000px;
+  opacity: 1;
+}
+
+/* Folder chevron animation */
+.folder-chevron {
+  transition: transform var(--transition-fast);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+}
+
+.folder-chevron.expanded {
+  transform: rotate(90deg);
+}
+
+/* Context menu animation */
+@keyframes contextMenuFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
