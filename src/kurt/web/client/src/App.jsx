@@ -1756,16 +1756,22 @@ export default function App() {
   return (
     <ThemeProvider>
       <div className="app-container">
-        <div className="app-header">
-          <ThemeToggle />
-          {userContext?.is_cloud_mode && userContext?.user && (
-            <UserMenu
-              email={userContext.user.email}
-              workspaceName={userContext.workspace?.name || 'Workspace'}
-              workspaceId={userContext.workspace?.id || ''}
-            />
-          )}
-        </div>
+        <header className="app-header">
+          <div className="app-header-brand">
+            <div className="app-header-logo">K</div>
+            <span className="app-header-title">Kurt</span>
+          </div>
+          <div className="app-header-controls">
+            <ThemeToggle />
+            {userContext?.is_cloud_mode && userContext?.user && (
+              <UserMenu
+                email={userContext.user.email}
+                workspaceName={userContext.workspace?.name || 'Workspace'}
+                workspaceId={userContext.workspace?.id || ''}
+              />
+            )}
+          </div>
+        </header>
         <DockviewReact
           className={dockviewClassName}
           components={components}

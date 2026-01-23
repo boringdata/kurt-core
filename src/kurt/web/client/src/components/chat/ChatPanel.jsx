@@ -42,11 +42,13 @@ ChatPanel.displayName = 'ChatPanel'
 // CSS Variables for theming - maps chat tokens to main design tokens
 export const chatThemeVars = `
   :root {
-    /* Light theme - maps to main design tokens */
+    /* Chat theme - maps to main design tokens */
     --chat-bg: var(--color-bg-secondary);
     --chat-panel-bg: var(--color-bg-primary);
     --chat-input-bg: var(--color-bg-tertiary);
-    --chat-code-bg: var(--color-bg-tertiary);
+    --chat-code-bg: var(--color-code-bg);
+    --chat-tool-bg: var(--color-tool-bg);
+    --chat-command-bg: var(--color-command-bg);
     --chat-text: var(--color-text-primary);
     --chat-text-muted: var(--color-text-secondary);
     --chat-text-tertiary: var(--color-text-tertiary);

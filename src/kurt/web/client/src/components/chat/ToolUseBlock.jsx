@@ -169,14 +169,15 @@ export const ToolOutput = ({ children, style = {}, className = '' }) => (
   <div
     className={className}
     style={{
-      backgroundColor: 'var(--chat-input-bg)',
-      borderRadius: 'var(--chat-radius-sm, 4px)',
-      padding: 'var(--chat-spacing-sm, 8px) var(--chat-spacing-md, 12px)',
+      backgroundColor: 'var(--chat-tool-bg, var(--chat-input-bg))',
+      borderRadius: 'var(--radius-md, 8px)',
+      padding: 'var(--space-3, 12px) var(--space-4, 16px)',
       fontSize: 'var(--text-sm)',
       fontFamily: 'var(--font-mono)',
       color: 'var(--chat-text)',
       overflow: 'auto',
       maxHeight: '300px',
+      border: '1px solid var(--chat-border)',
       ...style,
     }}
   >
@@ -192,8 +193,8 @@ export const ToolCommand = ({ command, language }) => (
     style={{
       display: 'flex',
       alignItems: 'center',
-      gap: 'var(--chat-spacing-sm, 8px)',
-      marginBottom: 'var(--chat-spacing-xs, 4px)',
+      gap: 'var(--space-2, 8px)',
+      marginBottom: 'var(--space-1, 4px)',
     }}
   >
     {language && (
@@ -212,9 +213,10 @@ export const ToolCommand = ({ command, language }) => (
         fontFamily: 'var(--font-mono)',
         fontSize: 'var(--text-sm)',
         color: 'var(--chat-text)',
-        backgroundColor: 'var(--chat-input-bg)',
-        padding: '2px 6px',
-        borderRadius: '3px',
+        backgroundColor: 'var(--chat-command-bg, var(--chat-input-bg))',
+        padding: '4px 8px',
+        borderRadius: 'var(--radius-sm, 6px)',
+        border: '1px solid var(--chat-border)',
       }}
     >
       {command}
@@ -247,12 +249,13 @@ export const ToolError = ({ message }) => (
 export const InlineCode = ({ children }) => (
   <code
     style={{
-      backgroundColor: 'var(--chat-input-bg)',
+      backgroundColor: 'var(--chat-code-bg, var(--chat-input-bg))',
       color: 'var(--chat-code-inline)',
       padding: '2px 6px',
-      borderRadius: '3px',
+      borderRadius: 'var(--radius-sm, 6px)',
       fontFamily: 'var(--font-mono)',
-      fontSize: 'var(--text-sm)',
+      fontSize: '0.875em',
+      border: '1px solid var(--chat-border)',
     }}
   >
     {children}
