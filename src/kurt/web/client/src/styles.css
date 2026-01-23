@@ -1278,25 +1278,48 @@ html {
 .editor-content .tiptap pre {
   background: var(--color-pre-bg);
   color: var(--color-pre-text);
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
   overflow-x: auto;
   font-family: var(--font-mono);
   font-size: var(--text-sm);
-  margin: 0.5rem 0;
+  line-height: 1.6;
+  margin: var(--space-3) 0;
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-inset);
+  position: relative;
+}
+
+/* Code block language label (if present) */
+.editor-content .tiptap pre::before {
+  content: attr(data-language);
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 0 var(--radius-lg) 0 var(--radius-sm);
 }
 
 .editor-content .tiptap code {
   background: var(--color-code-bg);
-  padding: 2px var(--space-1);
+  color: var(--color-accent);
+  padding: 2px 6px;
   border-radius: var(--radius-sm);
   font-family: var(--font-mono);
   font-size: 0.875em;
+  border: 1px solid var(--color-border);
 }
 
 .editor-content .tiptap pre code {
   background: none;
   padding: 0;
+  color: inherit;
+  border: none;
 }
 
 .editor-content .tiptap mark {
