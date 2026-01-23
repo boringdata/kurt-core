@@ -223,8 +223,8 @@ class TestFetchParams:
                 FetchInput(url="https://test.com"),
             ]
         )
-        assert len(params.inputs) == 2
-        assert params.config.engine == "trafilatura"  # Default
+        assert len(params.get_inputs()) == 2
+        assert params.get_config().engine == "trafilatura"  # Default
 
     def test_with_custom_config(self):
         """Create params with custom config."""
@@ -232,8 +232,21 @@ class TestFetchParams:
             inputs=[FetchInput(url="https://example.com")],
             config=FetchConfig(engine="httpx", concurrency=10),
         )
-        assert params.config.engine == "httpx"
-        assert params.config.concurrency == 10
+        assert params.get_config().engine == "httpx"
+        assert params.get_config().concurrency == 10
+
+    def test_with_input_data(self):
+        """Create params with input_data (executor style)."""
+        params = FetchParams(
+            input_data=[
+                FetchInput(url="https://example.com"),
+            ],
+            engine="httpx",
+            concurrency=3,
+        )
+        assert len(params.get_inputs()) == 1
+        assert params.get_config().engine == "httpx"
+        assert params.get_config().concurrency == 3
 
 
 # ============================================================================
@@ -511,30 +524,30 @@ class TestFetchToolExecution:
         current_concurrent = 0
         lock = asyncio.Lock()
 
-        original_fetch = tool._fetch_single_url
-
         async def mock_fetch(url, config, timeout_s, semaphore, client):
             nonlocal max_concurrent, current_concurrent
-            async with lock:
-                current_concurrent += 1
-                if current_concurrent > max_concurrent:
-                    max_concurrent = current_concurrent
+            # The mock must use the semaphore to test concurrency control
+            async with semaphore:
+                async with lock:
+                    current_concurrent += 1
+                    if current_concurrent > max_concurrent:
+                        max_concurrent = current_concurrent
 
-            await asyncio.sleep(0.01)  # Small delay to allow overlap
+                await asyncio.sleep(0.01)  # Small delay to allow overlap
 
-            async with lock:
-                current_concurrent -= 1
+                async with lock:
+                    current_concurrent -= 1
 
-            return {
-                "url": url,
-                "content": "# Content",
-                "metadata": {"fingerprint": "abc"},
-                "content_hash": "abc123",
-                "status": "success",
-                "error": None,
-                "bytes_fetched": 100,
-                "latency_ms": 50,
-            }
+                return {
+                    "url": url,
+                    "content": "# Content",
+                    "metadata": {"fingerprint": "abc"},
+                    "content_hash": "abc123",
+                    "status": "success",
+                    "error": None,
+                    "bytes_fetched": 100,
+                    "latency_ms": 50,
+                }
 
         params = FetchParams(
             inputs=[FetchInput(url=f"https://example.com/{i}") for i in range(10)],

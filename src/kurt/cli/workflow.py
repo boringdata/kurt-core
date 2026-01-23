@@ -67,9 +67,10 @@ def _parse_input(input_str: str) -> tuple[str, Any]:
 
 def _get_dolt_db():
     """Get or create DoltDB instance."""
-    from kurt.config import get_config_value
+    import os
 
-    dolt_path = get_config_value("DOLT_PATH", ".dolt")
+    # DOLT_PATH should point to the repo root (containing .dolt), not .dolt itself
+    dolt_path = os.environ.get("DOLT_PATH", ".")
     from kurt.db.dolt import DoltDB
 
     db = DoltDB(dolt_path)

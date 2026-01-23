@@ -132,10 +132,95 @@ class FetchOutput(BaseModel):
 
 
 class FetchParams(BaseModel):
-    """Combined parameters for the fetch tool."""
+    """Combined parameters for the fetch tool.
 
-    inputs: list[FetchInput] = Field(..., description="List of URLs to fetch")
-    config: FetchConfig = Field(default_factory=FetchConfig, description="Fetch configuration")
+    Accepts two input styles:
+    1. Executor style (flat): input_data + config fields directly
+    2. Direct API style (nested): inputs + config
+
+    The executor passes:
+    - input_data: list of dicts with 'url' key (from upstream steps)
+    - Config fields directly: engine, concurrency, timeout_ms, etc.
+    """
+
+    # Input from upstream steps (executor passes "input_data")
+    # Also accepts "inputs" for direct API usage
+    input_data: list[FetchInput] = Field(
+        default_factory=list,
+        description="List of URLs to fetch (from upstream steps)",
+    )
+
+    # Alternative field name for direct API usage
+    inputs: list[FetchInput] = Field(
+        default_factory=list,
+        description="List of URLs to fetch (alternative to input_data)",
+    )
+
+    # Nested config for direct API usage
+    config: FetchConfig | None = Field(
+        default=None,
+        description="Fetch configuration (alternative to flat fields)",
+    )
+
+    # Config fields (flattened for executor compatibility)
+    engine: Literal["trafilatura", "httpx", "tavily", "firecrawl"] = Field(
+        default="trafilatura",
+        description="Fetch engine to use",
+    )
+    concurrency: int = Field(
+        default=5,
+        ge=1,
+        le=20,
+        description="Maximum parallel fetches (1-20)",
+    )
+    timeout_ms: int = Field(
+        default=30000,
+        ge=1000,
+        le=120000,
+        description="Request timeout in milliseconds",
+    )
+    retries: int = Field(
+        default=3,
+        ge=0,
+        le=10,
+        description="Maximum retry attempts",
+    )
+    retry_backoff_ms: int = Field(
+        default=1000,
+        ge=100,
+        le=60000,
+        description="Base backoff delay in milliseconds (exponential: delay * 2^attempt)",
+    )
+    embed: bool = Field(
+        default=False,
+        description="Generate embeddings after fetch",
+    )
+    content_dir: str | None = Field(
+        default=None,
+        description="Directory to save content (relative to project root)",
+    )
+
+    def get_inputs(self) -> list[FetchInput]:
+        """Get the input list from either input_data or inputs field."""
+        # Prefer input_data (from executor), fall back to inputs (from direct API)
+        if self.input_data:
+            return self.input_data
+        return self.inputs
+
+    def get_config(self) -> FetchConfig:
+        """Get config from nested config field or flat fields."""
+        # If nested config is provided, use it; otherwise build from flat fields
+        if self.config is not None:
+            return self.config
+        return FetchConfig(
+            engine=self.engine,
+            concurrency=self.concurrency,
+            timeout_ms=self.timeout_ms,
+            retries=self.retries,
+            retry_backoff_ms=self.retry_backoff_ms,
+            embed=self.embed,
+            content_dir=self.content_dir,
+        )
 
 
 # ============================================================================
@@ -516,8 +601,8 @@ class FetchTool(Tool[FetchParams, FetchOutput]):
         Returns:
             ToolResult with fetched URLs
         """
-        config = params.config
-        inputs = params.inputs
+        config = params.get_config()
+        inputs = params.get_inputs()
 
         if not inputs:
             return ToolResult(

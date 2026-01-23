@@ -11,10 +11,18 @@ import re
 from dataclasses import dataclass
 from typing import Any, Literal
 
-# Pattern to match {{var}} placeholders
-# Matches: {{name}}, {{ name }}, {{name_with_underscore}}
+# Pattern to match {{var}} and {{var:type}} placeholders
+# Matches: {{name}}, {{ name }}, {{name:int}}, {{name:float}}, {{name:bool}}, {{name:str}}
 # Does NOT match: \{{escaped}}
-_VAR_PATTERN = re.compile(r"(?<!\\)\{\{\s*(\w+)\s*\}\}")
+_VAR_PATTERN = re.compile(r"(?<!\\)\{\{\s*(\w+)(?::(\w+))?\s*\}\}")
+
+# Type coercion map
+_TYPE_MAP = {
+    "int": int,
+    "float": float,
+    "bool": bool,
+    "str": str,
+}
 
 # Pattern to match escaped braces \{{ or \}}
 _ESCAPE_PATTERN = re.compile(r"\\(\{\{|\}\})")
@@ -174,6 +182,7 @@ def _interpolate_string(
     if len(matches) == 1:
         match = matches[0]
         var_name = match.group(1)
+        type_hint = match.group(2)  # Optional type hint (e.g., "int")
 
         # Check for unknown variable
         if var_name not in valid_vars:
@@ -202,8 +211,12 @@ def _interpolate_string(
         # If entire string is just the placeholder (ignoring whitespace)
         if not prefix.strip() and not suffix.strip():
             value = inputs[var_name]
+            # Determine target type: explicit hint takes precedence over field type
+            coerce_type = target_type
+            if type_hint and type_hint in _TYPE_MAP:
+                coerce_type = _TYPE_MAP[type_hint]
             # Coerce to target type if specified
-            return _coerce_value(value, target_type, var_name, step_name, field_path)
+            return _coerce_value(value, coerce_type, var_name, step_name, field_path)
 
     # Multiple variables or partial string - always return string
     result = text
