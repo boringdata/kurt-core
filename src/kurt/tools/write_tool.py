@@ -114,10 +114,66 @@ class WriteOutput(BaseModel):
 
 
 class WriteParams(BaseModel):
-    """Combined parameters for the write tool."""
+    """Combined parameters for the write tool.
 
-    inputs: list[WriteInput] = Field(..., description="List of rows to write")
-    config: WriteConfig = Field(..., description="Write configuration")
+    Accepts two input styles:
+    1. Executor style (flat): input_data + table, mode, key at top level
+    2. Direct API style (nested): inputs + config=WriteConfig(...)
+    """
+
+    # For executor style (flat)
+    input_data: list[WriteInput | dict[str, Any]] = Field(
+        default_factory=list,
+        description="List of rows to write (from upstream steps)",
+    )
+
+    # For direct API style (nested)
+    inputs: list[WriteInput] = Field(
+        default_factory=list,
+        description="List of rows to write (alternative to input_data)",
+    )
+    config: WriteConfig | None = Field(
+        default=None,
+        description="Write configuration (alternative to flat fields)",
+    )
+
+    # Flat config fields for executor compatibility
+    table: str | None = Field(default=None, description="Target table name")
+    mode: Literal["insert", "upsert", "replace"] = Field(
+        default="insert",
+        description="Write mode",
+    )
+    key: str | list[str] | None = Field(
+        default=None,
+        description="Column(s) for upsert/replace operations",
+    )
+    continue_on_error: bool = Field(
+        default=False,
+        description="If True, continue processing after individual row errors",
+    )
+
+    def get_inputs(self) -> list[WriteInput]:
+        """Get the input list from either input_data or inputs field."""
+        if self.input_data:
+            # Convert dicts to WriteInput if needed
+            return [
+                WriteInput(row=item) if isinstance(item, dict) else item
+                for item in self.input_data
+            ]
+        return self.inputs
+
+    def get_config(self) -> WriteConfig:
+        """Get config from nested config field or flat fields."""
+        if self.config is not None:
+            return self.config
+        if self.table is None:
+            raise ValueError("Either 'config' or 'table' must be provided")
+        return WriteConfig(
+            table=self.table,
+            mode=self.mode,
+            key=self.key,
+            continue_on_error=self.continue_on_error,
+        )
 
 
 # ============================================================================
@@ -362,8 +418,8 @@ class WriteTool(Tool[WriteParams, WriteOutput]):
         Returns:
             ToolResult with written rows
         """
-        config = params.config
-        inputs = params.inputs
+        config = params.get_config()
+        inputs = params.get_inputs()
 
         if not inputs:
             return ToolResult(success=True, data=[])

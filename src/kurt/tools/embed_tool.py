@@ -110,10 +110,79 @@ class EmbedOutput(BaseModel):
 
 
 class EmbedParams(BaseModel):
-    """Combined parameters for the embed tool."""
+    """Combined parameters for the embed tool.
 
-    inputs: list[dict[str, Any]] = Field(..., description="List of input rows with text field")
-    config: EmbedConfig = Field(default_factory=EmbedConfig, description="Embed configuration")
+    Accepts two input styles:
+    1. Executor style (flat): input_data + model, text_field, etc. at top level
+    2. Direct API style (nested): inputs + config=EmbedConfig(...)
+    """
+
+    # For executor style (flat)
+    input_data: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="List of input rows with text field (from upstream steps)",
+    )
+
+    # For direct API style (nested)
+    inputs: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="List of input rows with text field (alternative to input_data)",
+    )
+    config: EmbedConfig | None = Field(
+        default=None,
+        description="Embed configuration (alternative to flat fields)",
+    )
+
+    # Flat config fields for executor compatibility
+    model: str = Field(
+        default="text-embedding-3-small",
+        description="Embedding model name",
+    )
+    text_field: str = Field(
+        default="content",
+        description="Field name in input containing text to embed",
+    )
+    provider: Literal["openai", "cohere", "voyage"] = Field(
+        default="openai",
+        description="Embedding provider to use",
+    )
+    batch_size: int = Field(
+        default=100,
+        ge=1,
+        le=2048,
+        description="Number of texts per API batch",
+    )
+    concurrency: int = Field(
+        default=2,
+        ge=1,
+        le=10,
+        description="Maximum parallel API calls",
+    )
+    max_chars: int = Field(
+        default=8000,
+        ge=100,
+        le=100000,
+        description="Maximum characters per text",
+    )
+
+    def get_inputs(self) -> list[dict[str, Any]]:
+        """Get the input list from either input_data or inputs field."""
+        if self.input_data:
+            return self.input_data
+        return self.inputs
+
+    def get_config(self) -> EmbedConfig:
+        """Get config from nested config field or flat fields."""
+        if self.config is not None:
+            return self.config
+        return EmbedConfig(
+            model=self.model,
+            text_field=self.text_field,
+            provider=self.provider,
+            batch_size=self.batch_size,
+            concurrency=self.concurrency,
+            max_chars=self.max_chars,
+        )
 
 
 # ============================================================================
@@ -423,8 +492,8 @@ class EmbedTool(Tool[EmbedParams, EmbedOutput]):
         Returns:
             ToolResult with embedded texts
         """
-        config = params.config
-        inputs = params.inputs
+        config = params.get_config()
+        inputs = params.get_inputs()
 
         if not inputs:
             return ToolResult(

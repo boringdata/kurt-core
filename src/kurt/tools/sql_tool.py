@@ -72,11 +72,51 @@ class SQLInput(BaseModel):
     """
     Input for SQL tool execution.
 
+    Accepts two input styles:
+    1. Executor style (flat): query, params, timeout_ms at top level
+    2. Direct API style (nested): config=SQLConfig(...)
+
     The SQL tool generates data from queries, so input is just the config.
     Input rows are not used - this is a data-generating tool.
     """
 
-    config: SQLConfig = Field(description="SQL query configuration")
+    # For executor style (flat) - these are passed directly from TOML config
+    input_data: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Input data from upstream steps (usually empty for SQL)",
+    )
+    query: str | None = Field(
+        default=None,
+        description="SQL query to execute (SELECT only)",
+    )
+    params: dict[str, Any] | None = Field(
+        default=None,
+        description="Named parameters to bind",
+    )
+    timeout_ms: int = Field(
+        default=30000,
+        ge=1000,
+        le=300000,
+        description="Query timeout in milliseconds",
+    )
+
+    # For direct API style (nested)
+    config: SQLConfig | None = Field(
+        default=None,
+        description="SQL query configuration (alternative to flat fields)",
+    )
+
+    def get_config(self) -> SQLConfig:
+        """Get config from nested config field or flat fields."""
+        if self.config is not None:
+            return self.config
+        if self.query is None:
+            raise ValueError("Either 'config' or 'query' must be provided")
+        return SQLConfig(
+            query=self.query,
+            params=self.params,
+            timeout_ms=self.timeout_ms,
+        )
 
 
 class SQLOutput(BaseModel):
@@ -217,7 +257,7 @@ class SQLTool(Tool[SQLInput, SQLOutput]):
             ToolResult with query results as list of dicts
         """
         result = ToolResult(success=True)
-        config = params.config
+        config = params.get_config()
 
         # Validate database connection
         if context.db is None:

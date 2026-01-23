@@ -109,16 +109,110 @@ class LLMConfig(BaseModel):
 
 
 class LLMParams(BaseModel):
-    """Combined parameters for the LLM tool."""
+    """Combined parameters for the LLM tool.
 
+    Accepts two input styles:
+    1. Executor style (flat): input_data + prompt, model, etc. at top level
+    2. Direct API style (nested): inputs + config=LLMConfig(...)
+    """
+
+    # For executor style (flat)
+    input_data: list[LLMInput | dict[str, Any]] = Field(
+        default_factory=list,
+        description="List of rows to process (from upstream steps)",
+    )
+
+    # For direct API style (nested)
     inputs: list[LLMInput] = Field(
-        ...,
-        description="List of rows to process",
+        default_factory=list,
+        description="List of rows to process (alternative to input_data)",
     )
-    config: LLMConfig = Field(
-        ...,
-        description="LLM configuration",
+    config: LLMConfig | None = Field(
+        default=None,
+        description="LLM configuration (alternative to flat fields)",
     )
+
+    # Flat config fields for executor compatibility
+    prompt: str | None = Field(
+        default=None,
+        description="Prompt template with {field} placeholders (alias for prompt_template)",
+    )
+    prompt_template: str | None = Field(
+        default=None,
+        description="Prompt template with {field} placeholders",
+    )
+    output_schema: str | None = Field(
+        default=None,
+        description="Pydantic model name for structured output",
+    )
+    model: str = Field(
+        default="gpt-4o-mini",
+        description="Model identifier",
+    )
+    provider: Literal["openai", "anthropic"] = Field(
+        default="openai",
+        description="LLM provider to use",
+    )
+    concurrency: int = Field(
+        default=3,
+        ge=1,
+        le=20,
+        description="Maximum parallel LLM calls",
+    )
+    timeout_ms: int = Field(
+        default=60000,
+        ge=1000,
+        le=300000,
+        description="Request timeout in milliseconds",
+    )
+    max_retries: int = Field(
+        default=DEFAULT_MAX_RETRIES,
+        ge=0,
+        le=10,
+        description="Maximum retry attempts for rate limits",
+    )
+    temperature: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=2.0,
+        description="Sampling temperature",
+    )
+    max_tokens: int = Field(
+        default=4096,
+        ge=1,
+        le=128000,
+        description="Maximum tokens in response",
+    )
+
+    def get_inputs(self) -> list[LLMInput]:
+        """Get the input list from either input_data or inputs field."""
+        if self.input_data:
+            # Convert dicts to LLMInput if needed
+            return [
+                LLMInput(row=item) if isinstance(item, dict) else item
+                for item in self.input_data
+            ]
+        return self.inputs
+
+    def get_config(self) -> LLMConfig:
+        """Get config from nested config field or flat fields."""
+        if self.config is not None:
+            return self.config
+        # Support both 'prompt' and 'prompt_template' for convenience
+        template = self.prompt_template or self.prompt
+        if template is None:
+            raise ValueError("Either 'config', 'prompt', or 'prompt_template' must be provided")
+        return LLMConfig(
+            prompt_template=template,
+            output_schema=self.output_schema,
+            model=self.model,
+            provider=self.provider,
+            concurrency=self.concurrency,
+            timeout_ms=self.timeout_ms,
+            max_retries=self.max_retries,
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+        )
 
 
 class LLMOutput(BaseModel):
@@ -756,8 +850,8 @@ class LLMTool(Tool[LLMParams, LLMOutput]):
         Returns:
             ToolResult with processed rows
         """
-        config = params.config
-        inputs = params.inputs
+        config = params.get_config()
+        inputs = params.get_inputs()
 
         if not inputs:
             return ToolResult(success=True, data=[])

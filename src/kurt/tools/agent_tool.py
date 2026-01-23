@@ -163,11 +163,82 @@ class AgentParams(BaseModel):
     """
     Combined parameters for agent tool execution.
 
-    Merges input data with configuration.
+    Accepts two input styles:
+    1. Executor style (flat): input_data + prompt, model, tools, etc. at top level
+    2. Direct API style (nested): input + config=AgentConfig(...)
     """
 
+    # For executor style (flat)
+    input_data: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Input data from upstream steps",
+    )
+
+    # For direct API style (nested)
     input: AgentInput = Field(default_factory=AgentInput)
-    config: AgentConfig
+    config: AgentConfig | None = Field(
+        default=None,
+        description="Agent configuration (alternative to flat fields)",
+    )
+
+    # Flat config fields for executor compatibility
+    prompt: str | None = Field(
+        default=None,
+        description="Task prompt for the agent",
+    )
+    tools: list[str] | None = Field(
+        default=None,
+        description="Allowed tools (null = all except 'agent')",
+    )
+    max_turns: int = Field(
+        default=10,
+        ge=1,
+        le=100,
+        description="Maximum conversation turns",
+    )
+    model: str = Field(
+        default="claude-sonnet-4-20250514",
+        description="Model to use for agent execution",
+    )
+    permission_mode: str = Field(
+        default="bypassPermissions",
+        description="Permission mode",
+    )
+    max_tokens: int = Field(
+        default=200000,
+        ge=1000,
+        le=1000000,
+        description="Maximum token budget",
+    )
+    timeout_seconds: int = Field(
+        default=300,
+        ge=10,
+        le=3600,
+        description="Maximum execution time in seconds",
+    )
+
+    def get_input(self) -> AgentInput:
+        """Get the input from either input_data or input field."""
+        if self.input_data:
+            # Use first row as context
+            return AgentInput(row=self.input_data[0] if self.input_data else None)
+        return self.input
+
+    def get_config(self) -> AgentConfig:
+        """Get config from nested config field or flat fields."""
+        if self.config is not None:
+            return self.config
+        if self.prompt is None:
+            raise ValueError("Either 'config' or 'prompt' must be provided")
+        return AgentConfig(
+            prompt=self.prompt,
+            tools=self.tools,
+            max_turns=self.max_turns,
+            model=self.model,
+            permission_mode=self.permission_mode,
+            max_tokens=self.max_tokens,
+            timeout_seconds=self.timeout_seconds,
+        )
 
 
 # ============================================================================
@@ -267,7 +338,8 @@ class AgentTool(Tool[AgentParams, AgentOutput]):
         Returns:
             ToolResult with agent output
         """
-        config = params.config
+        config = params.get_config()
+        agent_input = params.get_input()
         result = ToolResult(success=True)
         start_time = time.time()
 
@@ -331,8 +403,8 @@ class AgentTool(Tool[AgentParams, AgentOutput]):
 
             # Build prompt with optional context
             prompt = config.prompt
-            if params.input.row:
-                prompt = f"{prompt}\n\nContext:\n{json.dumps(params.input.row, indent=2)}"
+            if agent_input.row:
+                prompt = f"{prompt}\n\nContext:\n{json.dumps(agent_input.row, indent=2)}"
 
             cmd.append(prompt)
 

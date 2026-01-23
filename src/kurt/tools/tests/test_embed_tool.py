@@ -211,8 +211,8 @@ class TestEmbedParams:
                 {"content": "World"},
             ]
         )
-        assert len(params.inputs) == 2
-        assert params.config.model == "text-embedding-3-small"  # Default
+        assert len(params.get_inputs()) == 2
+        assert params.get_config().model == "text-embedding-3-small"  # Default
 
     def test_with_custom_config(self):
         """Create params with custom config."""
@@ -220,7 +220,17 @@ class TestEmbedParams:
             inputs=[{"content": "Hello"}],
             config=EmbedConfig(model="text-embedding-3-large", provider="openai"),
         )
-        assert params.config.model == "text-embedding-3-large"
+        assert params.get_config().model == "text-embedding-3-large"
+
+    def test_with_input_data(self):
+        """Create params with input_data (executor style)."""
+        params = EmbedParams(
+            input_data=[{"content": "Hello"}],
+            model="text-embedding-3-large",
+            provider="openai",
+        )
+        assert len(params.get_inputs()) == 1
+        assert params.get_config().model == "text-embedding-3-large"
 
 
 # ============================================================================
