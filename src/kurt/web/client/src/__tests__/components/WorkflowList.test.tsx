@@ -396,6 +396,64 @@ describe('WorkflowList', () => {
       const workflowCalls = fetchMock.mock.calls.filter(call => call[0].includes('/api/workflows'))
       expect(workflowCalls.some(call => call[0].includes('limit=50'))).toBe(true)
     })
+
+    it('shows load more button when page is full', async () => {
+      setupApiMocks({
+        '/api/workflows': { workflows: createWorkflowList(50) },
+      })
+
+      render(<WorkflowList {...defaultProps} />)
+
+      await new Promise(r => setTimeout(r, 10))
+
+      await waitFor(() => {
+        expect(screen.getByText(/load more/i)).toBeInTheDocument()
+      })
+    })
+
+    it('hides load more button when less than page size', async () => {
+      setupApiMocks({
+        '/api/workflows': { workflows: createWorkflowList(10) },
+      })
+
+      render(<WorkflowList {...defaultProps} />)
+
+      await new Promise(r => setTimeout(r, 10))
+
+      await waitFor(() => {
+        expect(screen.queryByText(/load more/i)).not.toBeInTheDocument()
+      })
+    })
+
+    it('loads more workflows when load more button is clicked', async () => {
+      const fetchMock = setupApiMocks({
+        '/api/workflows': (url: string) => {
+          // Simulate pagination
+          if (url.includes('offset=50')) {
+            return { workflows: createWorkflowList(10) }
+          }
+          return { workflows: createWorkflowList(50) }
+        },
+      })
+
+      render(<WorkflowList {...defaultProps} />)
+
+      await new Promise(r => setTimeout(r, 10))
+
+      await waitFor(() => {
+        expect(screen.getByText(/load more/i)).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByText(/load more/i))
+
+      await new Promise(r => setTimeout(r, 10))
+
+      // Verify offset parameter was used
+      await waitFor(() => {
+        const offsetCalls = fetchMock.mock.calls.filter(call => call[0].includes('offset=50'))
+        expect(offsetCalls.length).toBeGreaterThan(0)
+      })
+    })
   })
 
   describe('Cleanup', () => {

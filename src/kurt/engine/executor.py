@@ -16,22 +16,101 @@ Exit Codes:
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import IntEnum
-from typing import Any, Literal
+from pathlib import Path
+from typing import Any, Callable, Literal
 
 from kurt.engine.dag import build_dag
 from kurt.engine.interpolation import interpolate_step_config
 from kurt.engine.parser import StepDef, WorkflowDefinition
 from kurt.observability.tracking import track_event
-from kurt.tools.base import ToolContext, ToolResult
+from kurt.tools.base import ToolContext, ToolResult, ToolResultError
 from kurt.tools.errors import ToolCanceledError, ToolError
 from kurt.tools.registry import execute_tool
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Custom Function Loading
+# ============================================================================
+
+
+def _load_user_function(tools_path: Path, function_name: str) -> Callable:
+    """
+    Load a user-defined function from tools.py.
+
+    Args:
+        tools_path: Path to the tools.py file
+        function_name: Name of the function to load
+
+    Returns:
+        The callable function
+
+    Raises:
+        FileNotFoundError: If tools.py doesn't exist
+        AttributeError: If function doesn't exist in tools.py
+        ImportError: If tools.py has import errors
+    """
+    if not tools_path.exists():
+        raise FileNotFoundError(f"tools.py not found at {tools_path}")
+
+    spec = importlib.util.spec_from_file_location("tools", tools_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load module from {tools_path}")
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    if not hasattr(module, function_name):
+        raise AttributeError(
+            f"Function '{function_name}' not found in {tools_path}"
+        )
+
+    return getattr(module, function_name)
+
+
+async def _execute_user_function(
+    func: Callable,
+    context_dict: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Execute a user-defined function.
+
+    The function receives a context dict with:
+    - inputs: workflow input values
+    - input_data: data from upstream steps
+    - config: step config (if any)
+    - workflow_id: the run ID
+
+    The function should return a dict with results.
+
+    Args:
+        func: The function to execute
+        context_dict: Context passed to the function
+
+    Returns:
+        Dict with function results
+    """
+    # Check if function is async or sync
+    if asyncio.iscoroutinefunction(func):
+        result = await func(context_dict)
+    else:
+        # Run sync function in executor to not block event loop
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, func, context_dict)
+
+    # Normalize result to dict
+    if result is None:
+        return {}
+    if not isinstance(result, dict):
+        return {"result": result}
+    return result
 
 
 # Exit codes for CLI integration
@@ -167,6 +246,7 @@ class WorkflowExecutor:
         *,
         continue_on_error: bool = False,
         run_id: str | None = None,
+        tools_path: Path | str | None = None,
     ) -> None:
         """
         Initialize the workflow executor.
@@ -178,12 +258,15 @@ class WorkflowExecutor:
             continue_on_error: If True, continue workflow on step failure.
                               Failed step's dependents receive empty input.
             run_id: Optional run ID. If not provided, generates a UUID.
+            tools_path: Path to tools.py for custom function steps.
+                       If None, looks for tools.py in current directory.
         """
         self.workflow = workflow
         self.inputs = inputs
         self.context = context or ToolContext()
         self.continue_on_error = continue_on_error
         self.run_id = run_id or str(uuid.uuid4())
+        self.tools_path = Path(tools_path) if tools_path else Path("tools.py")
 
         # Execution state
         self._status: WorkflowRunStatus = "pending"
@@ -386,32 +469,38 @@ class WorkflowExecutor:
                 step_name=step_id,
             )
 
-            # Build tool parameters
-            # Tools receive: input_data (from deps) + config
-            params = {
-                "input_data": input_data,
-                **interpolated_config,
-            }
-
-            # Execute tool with progress tracking
-            def on_progress(event):
-                self._emit_event(
-                    step_id=step_id,
-                    substep=event.substep,
-                    status=event.status,
-                    current=event.current,
-                    total=event.total,
-                    message=event.message,
-                    metadata=event.metadata,
-                )
-
             # Check for cancellation before executing
             if self._cancel_event.is_set():
                 raise ToolCanceledError(tool_name, reason="Workflow canceled")
 
-            result: ToolResult = await execute_tool(
-                tool_name, params, self.context, on_progress=on_progress
-            )
+            # Handle function-type steps differently
+            if step_def.type == "function":
+                result = await self._execute_function_step(
+                    step_id, step_def, input_data, interpolated_config
+                )
+            else:
+                # Build tool parameters
+                # Tools receive: input_data (from deps) + config
+                params = {
+                    "input_data": input_data,
+                    **interpolated_config,
+                }
+
+                # Execute tool with progress tracking
+                def on_progress(event):
+                    self._emit_event(
+                        step_id=step_id,
+                        substep=event.substep,
+                        status=event.status,
+                        current=event.current,
+                        total=event.total,
+                        message=event.message,
+                        metadata=event.metadata,
+                    )
+
+                result = await execute_tool(
+                    tool_name, params, self.context, on_progress=on_progress
+                )
 
             completed_at = datetime.now(timezone.utc)
             duration_ms = int((completed_at - started_at).total_seconds() * 1000)
@@ -538,6 +627,101 @@ class WorkflowExecutor:
                 completed_at=completed_at.isoformat(),
                 duration_ms=duration_ms,
             )
+
+    async def _execute_function_step(
+        self,
+        step_id: str,
+        step_def: StepDef,
+        input_data: list[dict[str, Any]],
+        config: dict[str, Any],
+    ) -> ToolResult:
+        """
+        Execute a custom function step.
+
+        Loads the function from tools.py and executes it with context.
+
+        Args:
+            step_id: Step identifier
+            step_def: Step definition (must have function field set)
+            input_data: Data from upstream steps
+            config: Interpolated step configuration
+
+        Returns:
+            ToolResult with function output
+        """
+        function_name = step_def.function
+        if not function_name:
+            result = ToolResult(success=False)
+            result.add_error(
+                error_type="config_error",
+                message="Missing function name",
+            )
+            return result
+
+        # Load the user function
+        try:
+            func = _load_user_function(self.tools_path, function_name)
+        except FileNotFoundError as e:
+            result = ToolResult(success=False)
+            result.add_error(
+                error_type="file_not_found",
+                message=str(e),
+            )
+            return result
+        except AttributeError as e:
+            result = ToolResult(success=False)
+            result.add_error(
+                error_type="function_not_found",
+                message=str(e),
+            )
+            return result
+        except Exception as e:
+            result = ToolResult(success=False)
+            result.add_error(
+                error_type="import_error",
+                message=f"Failed to load function: {e}",
+            )
+            return result
+
+        # Build context for the function
+        context_dict = {
+            "inputs": self.inputs,
+            "input_data": input_data,
+            "config": config,
+            "workflow_id": self.run_id,
+            "step_id": step_id,
+        }
+
+        # Execute the function
+        try:
+            output = await _execute_user_function(func, context_dict)
+
+            # Emit progress event
+            self._emit_event(
+                step_id=step_id,
+                status="completed",
+                message=f"Function {function_name} completed",
+                metadata={"function": function_name},
+            )
+
+            # Wrap output in list if needed (tools return list of records)
+            output_data = [output] if output else []
+
+            return ToolResult(success=True, data=output_data)
+
+        except Exception as e:
+            self._emit_event(
+                step_id=step_id,
+                status="failed",
+                message=f"Function {function_name} failed: {e}",
+                metadata={"function": function_name, "error": str(e)},
+            )
+            result = ToolResult(success=False)
+            result.add_error(
+                error_type="function_error",
+                message=str(e),
+            )
+            return result
 
     def _build_input_data(self, step_def: StepDef) -> list[dict[str, Any]]:
         """
@@ -677,6 +861,7 @@ async def execute_workflow(
     *,
     continue_on_error: bool = False,
     run_id: str | None = None,
+    tools_path: Path | str | None = None,
 ) -> WorkflowResult:
     """
     Execute a workflow with the given inputs.
@@ -684,7 +869,7 @@ async def execute_workflow(
     This is the main entry point for workflow execution. It:
     1. Builds an execution plan using build_dag()
     2. Executes steps level by level using asyncio.gather for parallel steps
-    3. Calls execute_tool() for each step
+    3. Calls execute_tool() for each step (or user function for type=function)
     4. Handles cancellation and partial failure
     5. Emits progress events via track_event()
 
@@ -695,6 +880,8 @@ async def execute_workflow(
         continue_on_error: If True, continue workflow on step failure.
                           Failed step's dependents receive empty input.
         run_id: Optional run ID. If not provided, generates a UUID.
+        tools_path: Path to tools.py for custom function steps.
+                   If None, looks for tools.py in current directory.
 
     Returns:
         WorkflowResult with:
@@ -722,5 +909,6 @@ async def execute_workflow(
         context=context,
         continue_on_error=continue_on_error,
         run_id=run_id,
+        tools_path=tools_path,
     )
     return await executor.run()

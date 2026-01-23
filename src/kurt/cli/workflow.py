@@ -135,7 +135,7 @@ def run_cmd(workflow_path: Path, inputs: tuple[str, ...], background: bool, dry_
 
     # Dry run mode
     if dry_run:
-        output = _build_dry_run_output(workflow_def, parsed_inputs)
+        output = _build_dry_run_output(workflow_def, parsed_inputs, workflow_path)
         print(json.dumps(output, indent=2, default=str))
         return
 
@@ -200,11 +200,14 @@ def run_cmd(workflow_path: Path, inputs: tuple[str, ...], background: bool, dry_
         return
 
     # Foreground execution
+    # Look for tools.py in the same directory as the workflow file
+    tools_path = workflow_path.parent / "tools.py"
     result = asyncio.run(
         execute_workflow(
             workflow=workflow_def,
             inputs=merged_inputs,
             context=context,
+            tools_path=tools_path if tools_path.exists() else None,
         )
     )
 
@@ -805,6 +808,7 @@ def cancel_cmd(run_id: str, timeout: float):
 def _build_dry_run_output(
     workflow_def,
     parsed_inputs: dict[str, Any],
+    workflow_path: Path | None = None,
 ) -> dict[str, Any]:
     """
     Build enhanced dry-run output with execution plan and config validation.
@@ -852,6 +856,19 @@ def _build_dry_run_output(
     config_validation: dict[str, dict[str, Any]] = {}
     workflow_input_names = set(workflow_def.inputs.keys())
 
+    # Check for tools.py if any function steps exist
+    tools_path = workflow_path.parent / "tools.py" if workflow_path else None
+    tools_module = None
+    if tools_path and tools_path.exists():
+        try:
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("tools", tools_path)
+            if spec and spec.loader:
+                tools_module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(tools_module)
+        except Exception:
+            pass
+
     for step_name, step_def in workflow_def.steps.items():
         step_validation: dict[str, Any] = {
             "tool": step_def.type,
@@ -859,8 +876,25 @@ def _build_dry_run_output(
             "errors": [],
         }
 
+        # Handle function-type steps
+        if step_def.type == "function":
+            if not step_def.function:
+                step_validation["valid"] = False
+                step_validation["errors"].append("Missing 'function' field for function step")
+            elif not tools_path or not tools_path.exists():
+                step_validation["valid"] = False
+                step_validation["errors"].append(
+                    f"tools.py not found at {tools_path or 'unknown path'}"
+                )
+            elif tools_module and not hasattr(tools_module, step_def.function):
+                step_validation["valid"] = False
+                step_validation["errors"].append(
+                    f"Function '{step_def.function}' not found in tools.py"
+                )
+            else:
+                step_validation["function"] = step_def.function
         # Check if tool is registered
-        if step_def.type not in TOOLS:
+        elif step_def.type not in TOOLS:
             step_validation["valid"] = False
             step_validation["errors"].append(f"Tool '{step_def.type}' not registered")
         else:

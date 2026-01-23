@@ -28,7 +28,8 @@ from kurt.tools.registry import TOOLS
 InputType = Literal["string", "int", "float", "bool"]
 
 # Valid step types - must match tool registry keys
-VALID_STEP_TYPES = frozenset(["map", "fetch", "llm", "embed", "write", "sql", "agent"])
+# "function" is special: executes user-defined Python function from tools.py
+VALID_STEP_TYPES = frozenset(["map", "fetch", "llm", "embed", "write", "sql", "agent", "function"])
 
 
 class WorkflowParseError(Exception):
@@ -114,15 +115,18 @@ class StepDef(BaseModel):
     Definition of a workflow step.
 
     Attributes:
-        type: Tool name to execute (must be in VALID_STEP_TYPES)
+        type: Tool name to execute (must be in VALID_STEP_TYPES).
+              Special type "function" executes user-defined Python function.
         depends_on: List of step names this step depends on
         config: Tool-specific configuration (validated at execution time)
+        function: For type="function", the name of the function to call from tools.py
         continue_on_error: Whether to continue workflow on step failure
     """
 
     type: str
     depends_on: list[str] = Field(default_factory=list)
     config: dict[str, Any] = Field(default_factory=dict)
+    function: str | None = Field(default=None)
     continue_on_error: bool = False
 
 
@@ -157,7 +161,8 @@ class WorkflowDefinition(BaseModel):
 # Valid keys for each section (strict validation)
 _WORKFLOW_KEYS = frozenset(["name", "description"])
 _INPUT_KEYS = frozenset(["type", "required", "default"])
-_STEP_KEYS = frozenset(["type", "depends_on", "config", "continue_on_error"])
+# function step uses "function" key instead of "config" to specify the function name
+_STEP_KEYS = frozenset(["type", "depends_on", "config", "continue_on_error", "function"])
 _TOP_LEVEL_KEYS = frozenset(["workflow", "inputs", "steps"])
 
 
@@ -340,12 +345,19 @@ def parse_workflow(
             if step_type not in VALID_STEP_TYPES:
                 raise UnknownStepTypeError(step_name, step_type)
 
-            # Additional validation: if validate_tools is True, check tool registry
-            if validate_tools and step_type not in TOOLS:
-                # Only warn if TOOLS is non-empty (tools have been registered)
-                # Otherwise allow for testing without full tool setup
-                if TOOLS:
-                    raise UnknownStepTypeError(step_name, step_type)
+            # Validate function-type steps
+            if step_type == "function":
+                if "function" not in step_data:
+                    raise WorkflowParseError(
+                        f"Step {step_name} has type 'function' but missing required 'function' key"
+                    )
+            else:
+                # Additional validation: if validate_tools is True, check tool registry
+                if validate_tools and step_type not in TOOLS:
+                    # Only warn if TOOLS is non-empty (tools have been registered)
+                    # Otherwise allow for testing without full tool setup
+                    if TOOLS:
+                        raise UnknownStepTypeError(step_name, step_type)
 
             # Resolve output_schema for llm steps
             config = step_data.get("config", {}).copy()

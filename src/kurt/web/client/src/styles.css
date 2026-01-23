@@ -3107,6 +3107,53 @@ html {
   flex-shrink: 0;
 }
 
+.workflow-summary-inline {
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  margin-left: var(--space-2);
+}
+
+.workflow-summary-tokens {
+  font-family: var(--font-mono);
+  color: var(--color-text-secondary);
+}
+
+.workflow-summary-cost {
+  font-family: var(--font-mono);
+  color: var(--color-success);
+}
+
+.workflow-summary-turns {
+  font-family: var(--font-mono);
+  color: var(--color-info);
+}
+
+.workflow-load-more {
+  width: 100%;
+  padding: var(--space-2);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  margin-top: var(--space-2);
+}
+
+.workflow-load-more:hover {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+}
+
+.workflow-load-more:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .workflow-actions {
   display: flex;
   gap: var(--space-1);

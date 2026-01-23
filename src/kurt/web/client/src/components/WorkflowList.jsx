@@ -16,6 +16,8 @@ const TYPE_OPTIONS = [
   { value: 'tool', label: 'Tool' },
 ]
 
+const PAGE_SIZE = 50
+
 const apiBase = import.meta.env.VITE_API_URL || ''
 const apiUrl = (path) => `${apiBase}${path}`
 
@@ -27,8 +29,10 @@ export default function WorkflowList({ onAttachWorkflow }) {
   const [searchQuery, setSearchQuery] = useState('')
   const [expandedId, setExpandedId] = useState(null)
   const [error, setError] = useState(null)
+  const [hasMore, setHasMore] = useState(false)
+  const [offset, setOffset] = useState(0)
 
-  const fetchWorkflows = useCallback(async () => {
+  const fetchWorkflows = useCallback(async (loadMore = false) => {
     setIsLoading(true)
     setError(null)
     try {
@@ -36,14 +40,26 @@ export default function WorkflowList({ onAttachWorkflow }) {
       if (statusFilter) params.set('status', statusFilter)
       if (typeFilter) params.set('workflow_type', typeFilter)
       if (searchQuery) params.set('search', searchQuery)
-      params.set('limit', '50')
+      params.set('limit', String(PAGE_SIZE))
+      params.set('offset', String(loadMore ? offset : 0))
 
       const response = await fetch(apiUrl(`/api/workflows?${params}`))
       if (!response.ok) {
         throw new Error(`Failed to fetch: ${response.status}`)
       }
       const data = await response.json()
-      setWorkflows(data.workflows || [])
+      const newWorkflows = data.workflows || []
+
+      if (loadMore) {
+        setWorkflows(prev => [...prev, ...newWorkflows])
+        setOffset(prev => prev + newWorkflows.length)
+      } else {
+        setWorkflows(newWorkflows)
+        setOffset(newWorkflows.length)
+      }
+
+      setHasMore(newWorkflows.length === PAGE_SIZE)
+
       if (data.error) {
         setError(data.error)
       } else {
@@ -55,14 +71,18 @@ export default function WorkflowList({ onAttachWorkflow }) {
     } finally {
       setIsLoading(false)
     }
-  }, [statusFilter, typeFilter, searchQuery])
+  }, [statusFilter, typeFilter, searchQuery, offset])
 
   // Initial fetch and polling
   useEffect(() => {
-    fetchWorkflows()
-    const interval = setInterval(fetchWorkflows, 3000)
+    fetchWorkflows(false)
+    const interval = setInterval(() => fetchWorkflows(false), 5000)
     return () => clearInterval(interval)
-  }, [fetchWorkflows])
+  }, [statusFilter, typeFilter, searchQuery])
+
+  const handleLoadMore = () => {
+    fetchWorkflows(true)
+  }
 
   const handleCancel = async (workflowId) => {
     try {
@@ -73,7 +93,7 @@ export default function WorkflowList({ onAttachWorkflow }) {
         throw new Error(`Cancel failed: ${response.status}`)
       }
       // Refresh list after cancel
-      fetchWorkflows()
+      fetchWorkflows(false)
     } catch (err) {
       console.error('Failed to cancel workflow:', err)
     }
@@ -145,7 +165,7 @@ export default function WorkflowList({ onAttachWorkflow }) {
         <button
           type="button"
           className="workflow-refresh"
-          onClick={fetchWorkflows}
+          onClick={() => fetchWorkflows(false)}
           disabled={isLoading}
           title="Refresh"
         >
@@ -164,17 +184,29 @@ export default function WorkflowList({ onAttachWorkflow }) {
             {isLoading ? 'Loading...' : 'No workflows found'}
           </div>
         ) : (
-          workflows.map((workflow) => (
-            <WorkflowRow
-              key={workflow.workflow_uuid}
-              workflow={workflow}
-              isExpanded={expandedId === workflow.workflow_uuid}
-              onToggleExpand={() => handleToggleExpand(workflow.workflow_uuid)}
-              onAttach={() => handleAttach(workflow.workflow_uuid)}
-              onCancel={() => handleCancel(workflow.workflow_uuid)}
-              getStatusBadgeClass={getStatusBadgeClass}
-            />
-          ))
+          <>
+            {workflows.map((workflow) => (
+              <WorkflowRow
+                key={workflow.workflow_uuid}
+                workflow={workflow}
+                isExpanded={expandedId === workflow.workflow_uuid}
+                onToggleExpand={() => handleToggleExpand(workflow.workflow_uuid)}
+                onAttach={() => handleAttach(workflow.workflow_uuid)}
+                onCancel={() => handleCancel(workflow.workflow_uuid)}
+                getStatusBadgeClass={getStatusBadgeClass}
+              />
+            ))}
+            {hasMore && (
+              <button
+                type="button"
+                className="workflow-load-more"
+                onClick={handleLoadMore}
+                disabled={isLoading}
+              >
+                {isLoading ? 'Loading...' : 'Load more'}
+              </button>
+            )}
+          </>
         )}
       </div>
     </div>

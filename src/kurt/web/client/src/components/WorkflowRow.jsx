@@ -642,6 +642,19 @@ function WorkflowChildBox({
   )
 }
 
+const formatTokenCount = (tokens) => {
+  if (tokens == null) return null
+  if (tokens >= 1000000) return `${(tokens / 1000000).toFixed(1)}M`
+  if (tokens >= 1000) return `${(tokens / 1000).toFixed(1)}k`
+  return String(tokens)
+}
+
+const formatCost = (cost) => {
+  if (cost == null) return null
+  if (cost < 0.01) return `$${cost.toFixed(4)}`
+  return `$${cost.toFixed(2)}`
+}
+
 export default function WorkflowRow({
   workflow,
   isExpanded,
@@ -666,6 +679,12 @@ export default function WorkflowRow({
     return workflow.status
   }
   const effectiveStatus = getEffectiveStatus()
+
+  // Summary info for collapsed state
+  const tokensIn = workflow.tokens_in ? formatTokenCount(workflow.tokens_in) : null
+  const tokensOut = workflow.tokens_out ? formatTokenCount(workflow.tokens_out) : null
+  const costDisplay = workflow.cost_usd ? formatCost(workflow.cost_usd) : null
+  const turns = workflow.agent_turns
 
   const fetchStatus = useCallback(async () => {
     if (!workflow?.workflow_uuid) return
@@ -811,6 +830,13 @@ export default function WorkflowRow({
           {shortId}
         </span>
         <span className="workflow-time">{formatTime(workflow.created_at)}</span>
+        {workflow.workflow_type === 'agent' && (tokensIn || costDisplay) && (
+          <span className="workflow-summary-inline">
+            {tokensIn && <span className="workflow-summary-tokens">{tokensIn}→{tokensOut || '0'}</span>}
+            {costDisplay && <span className="workflow-summary-cost">{costDisplay}</span>}
+            {turns != null && <span className="workflow-summary-turns">{turns}t</span>}
+          </span>
+        )}
         <div className="workflow-actions" onClick={(e) => e.stopPropagation()}>
           {isRunning && (
             <>
