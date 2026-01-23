@@ -1328,26 +1328,28 @@ html {
   padding: 0;
   color: inherit;
   border: none;
+  font-family: inherit;
+  font-size: inherit;
 }
 
-/* Syntax highlighting colors (lowlight/highlight.js) */
+/* Syntax highlighting colors (lowlight/highlight.js) - using design tokens */
 .editor-content .tiptap pre code .hljs-comment,
 .editor-content .tiptap pre code .hljs-quote {
-  color: #6b7280;
+  color: var(--syntax-comment);
   font-style: italic;
 }
 
 .editor-content .tiptap pre code .hljs-keyword,
 .editor-content .tiptap pre code .hljs-selector-tag,
 .editor-content .tiptap pre code .hljs-built_in {
-  color: #c084fc;
+  color: var(--syntax-keyword);
 }
 
 .editor-content .tiptap pre code .hljs-string,
 .editor-content .tiptap pre code .hljs-title,
 .editor-content .tiptap pre code .hljs-section,
 .editor-content .tiptap pre code .hljs-attribute {
-  color: #34d399;
+  color: var(--syntax-string);
 }
 
 .editor-content .tiptap pre code .hljs-number,
@@ -1355,46 +1357,46 @@ html {
 .editor-content .tiptap pre code .hljs-variable,
 .editor-content .tiptap pre code .hljs-template-variable,
 .editor-content .tiptap pre code .hljs-tag .hljs-attr {
-  color: #f472b6;
+  color: var(--syntax-number);
 }
 
 .editor-content .tiptap pre code .hljs-function,
 .editor-content .tiptap pre code .hljs-name {
-  color: #60a5fa;
+  color: var(--syntax-function);
 }
 
 .editor-content .tiptap pre code .hljs-type,
 .editor-content .tiptap pre code .hljs-class .hljs-title {
-  color: #fbbf24;
+  color: var(--syntax-class);
 }
 
 .editor-content .tiptap pre code .hljs-tag,
 .editor-content .tiptap pre code .hljs-tag .hljs-name {
-  color: #f87171;
+  color: var(--syntax-operator);
 }
 
 .editor-content .tiptap pre code .hljs-regexp,
 .editor-content .tiptap pre code .hljs-link {
-  color: #22d3ee;
+  color: var(--syntax-property);
 }
 
 .editor-content .tiptap pre code .hljs-symbol,
 .editor-content .tiptap pre code .hljs-bullet {
-  color: #fb923c;
+  color: var(--syntax-number);
 }
 
 .editor-content .tiptap pre code .hljs-meta {
-  color: #94a3b8;
+  color: var(--syntax-punctuation);
 }
 
 .editor-content .tiptap pre code .hljs-deletion {
-  color: #f87171;
-  background: rgba(248, 113, 113, 0.1);
+  color: var(--color-error);
+  background: var(--color-error-bg);
 }
 
 .editor-content .tiptap pre code .hljs-addition {
-  color: #34d399;
-  background: rgba(52, 211, 153, 0.1);
+  color: var(--color-success);
+  background: var(--color-success-bg);
 }
 
 .editor-content .tiptap pre code .hljs-emphasis {

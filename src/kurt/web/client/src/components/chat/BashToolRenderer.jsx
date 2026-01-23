@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import ToolUseBlock, { ToolOutput, ToolError, ToolCommand } from './ToolUseBlock'
 
 /**
@@ -11,6 +13,8 @@ import ToolUseBlock, { ToolOutput, ToolError, ToolCommand } from './ToolUseBlock
  * - Error state for failed commands
  */
 
+const MAX_LINES = 8
+
 const BashToolRenderer = ({
   command,
   description,
@@ -20,15 +24,19 @@ const BashToolRenderer = ({
   status = 'complete',
   compact = false,
 }) => {
-  const formatOutput = (text) => {
-    if (!text) return ''
+  const [isExpanded, setIsExpanded] = useState(false)
+
+  const getOutputInfo = (text) => {
+    if (!text) return { lines: [], totalLines: 0, hasMore: false }
     const lines = text.split('\n')
-    const maxLines = 8
-    if (lines.length <= maxLines) return text
-    const shown = lines.slice(0, maxLines).join('\n')
-    const remaining = lines.length - maxLines
-    return `${shown}\n... +${remaining} lines`
+    return {
+      lines,
+      totalLines: lines.length,
+      hasMore: lines.length > MAX_LINES,
+    }
   }
+
+  const outputInfo = getOutputInfo(output)
 
   // Determine status based on exit code if not provided
   const hasExitCode = typeof exitCode === 'number'
@@ -98,7 +106,7 @@ const BashToolRenderer = ({
           className="claude-tool-output"
           streaming={isStreaming}
           style={{
-            maxHeight: '260px',
+            maxHeight: isExpanded ? '500px' : '220px',
           }}
         >
           <pre
@@ -109,8 +117,50 @@ const BashToolRenderer = ({
               lineHeight: '1.4',
             }}
           >
-            {formatOutput(output)}
+            {isExpanded
+              ? output
+              : outputInfo.lines.slice(0, MAX_LINES).join('\n')}
           </pre>
+          {outputInfo.hasMore && (
+            <button
+              onClick={() => setIsExpanded(!isExpanded)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                marginTop: 'var(--space-2, 8px)',
+                padding: '6px 12px',
+                background: 'var(--color-bg-active, rgba(255,255,255,0.1))',
+                border: '1px solid var(--chat-border)',
+                borderRadius: 'var(--radius-md, 8px)',
+                color: 'var(--chat-text-muted)',
+                fontSize: '12px',
+                fontFamily: 'var(--font-mono)',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'var(--color-bg-hover, rgba(255,255,255,0.15))'
+                e.currentTarget.style.color = 'var(--chat-text)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'var(--color-bg-active, rgba(255,255,255,0.1))'
+                e.currentTarget.style.color = 'var(--chat-text-muted)'
+              }}
+            >
+              {isExpanded ? (
+                <>
+                  <ChevronDown size={14} />
+                  <span>Show less</span>
+                </>
+              ) : (
+                <>
+                  <ChevronRight size={14} />
+                  <span>+{outputInfo.totalLines - MAX_LINES} more lines</span>
+                </>
+              )}
+            </button>
+          )}
         </ToolOutput>
       )}
 
