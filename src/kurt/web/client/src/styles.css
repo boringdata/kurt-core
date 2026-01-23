@@ -1322,6 +1322,121 @@ html {
   border: none;
 }
 
+/* Syntax highlighting colors (lowlight/highlight.js) */
+.editor-content .tiptap pre code .hljs-comment,
+.editor-content .tiptap pre code .hljs-quote {
+  color: #6b7280;
+  font-style: italic;
+}
+
+.editor-content .tiptap pre code .hljs-keyword,
+.editor-content .tiptap pre code .hljs-selector-tag,
+.editor-content .tiptap pre code .hljs-built_in {
+  color: #c084fc;
+}
+
+.editor-content .tiptap pre code .hljs-string,
+.editor-content .tiptap pre code .hljs-title,
+.editor-content .tiptap pre code .hljs-section,
+.editor-content .tiptap pre code .hljs-attribute {
+  color: #34d399;
+}
+
+.editor-content .tiptap pre code .hljs-number,
+.editor-content .tiptap pre code .hljs-literal,
+.editor-content .tiptap pre code .hljs-variable,
+.editor-content .tiptap pre code .hljs-template-variable,
+.editor-content .tiptap pre code .hljs-tag .hljs-attr {
+  color: #f472b6;
+}
+
+.editor-content .tiptap pre code .hljs-function,
+.editor-content .tiptap pre code .hljs-name {
+  color: #60a5fa;
+}
+
+.editor-content .tiptap pre code .hljs-type,
+.editor-content .tiptap pre code .hljs-class .hljs-title {
+  color: #fbbf24;
+}
+
+.editor-content .tiptap pre code .hljs-tag,
+.editor-content .tiptap pre code .hljs-tag .hljs-name {
+  color: #f87171;
+}
+
+.editor-content .tiptap pre code .hljs-regexp,
+.editor-content .tiptap pre code .hljs-link {
+  color: #22d3ee;
+}
+
+.editor-content .tiptap pre code .hljs-symbol,
+.editor-content .tiptap pre code .hljs-bullet {
+  color: #fb923c;
+}
+
+.editor-content .tiptap pre code .hljs-meta {
+  color: #94a3b8;
+}
+
+.editor-content .tiptap pre code .hljs-deletion {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.1);
+}
+
+.editor-content .tiptap pre code .hljs-addition {
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.1);
+}
+
+.editor-content .tiptap pre code .hljs-emphasis {
+  font-style: italic;
+}
+
+.editor-content .tiptap pre code .hljs-strong {
+  font-weight: bold;
+}
+
+/* Image resize styles */
+.editor-content .tiptap .editor-image {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: var(--space-3) 0;
+  border-radius: var(--radius-md);
+}
+
+.editor-content .tiptap .editor-image.ProseMirror-selectednode {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* Resize handles for images */
+.editor-content .tiptap .image-resizer {
+  display: inline-flex;
+  position: relative;
+  flex-grow: 0;
+}
+
+.editor-content .tiptap .image-resizer .resize-trigger {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  width: 12px;
+  height: 12px;
+  background: var(--color-accent);
+  border: 2px solid white;
+  border-radius: 50%;
+  cursor: nwse-resize;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.editor-content .tiptap .image-resizer:hover .resize-trigger,
+.editor-content .tiptap .image-resizer.resizing .resize-trigger {
+  opacity: 1;
+}
+
 .editor-content .tiptap mark {
   background: var(--color-highlight);
   padding: 1px 2px;
