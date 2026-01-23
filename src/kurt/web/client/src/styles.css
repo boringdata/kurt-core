@@ -366,7 +366,7 @@ html {
 .app-header {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   padding: var(--space-2) var(--space-3);
   background-color: var(--color-bg-secondary);
   border-bottom: 1px solid var(--color-border);
@@ -374,6 +374,37 @@ html {
   flex-shrink: 0;
   position: relative;
   z-index: 10;
+}
+
+.app-header-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.app-header-logo {
+  width: 28px;
+  height: 28px;
+  background: var(--color-accent);
+  color: var(--color-text-inverse);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: var(--font-semibold);
+  font-size: var(--text-sm);
+}
+
+.app-header-title {
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-primary);
+}
+
+.app-header-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .app-container > .dockview-theme-abyss {

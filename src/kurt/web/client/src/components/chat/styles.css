@@ -432,20 +432,25 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: var(--space-1);
+  margin-top: var(--space-2);
+  padding-top: var(--space-1);
 }
 
 .claude-input-left,
 .claude-input-right {
   display: flex;
   align-items: center;
+  gap: var(--space-1);
+}
+
+.claude-input-right {
   gap: var(--space-2);
 }
 
 .claude-icon-button {
-  width: 26px;
-  height: 26px;
-  border-radius: var(--radius-sm);
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--color-border);
   background: var(--color-bg-secondary);
   color: var(--color-text-secondary);
@@ -454,16 +459,24 @@
   justify-content: center;
   font-size: var(--text-sm);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.15s;
+  flex-shrink: 0;
 }
 
 .claude-icon-button:hover {
   background: var(--color-bg-hover);
   color: var(--color-text-primary);
+  border-color: var(--color-border-strong);
+}
+
+.claude-icon-button:active {
+  transform: scale(0.95);
 }
 
 .claude-icon-button svg {
   display: block;
+  width: 14px;
+  height: 14px;
 }
 
 .claude-file-input {
@@ -585,26 +598,35 @@
 .claude-mode-button {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
-  border: none;
-  background: transparent;
+  gap: var(--space-1);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-secondary);
   color: var(--color-text-primary);
-  border-radius: var(--radius-lg);
-  padding: var(--space-1) var(--space-1);
+  border-radius: var(--radius-md);
+  padding: var(--space-1) var(--space-2);
   font-size: var(--text-sm);
+  font-weight: var(--font-medium);
   cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  height: 28px;
+}
+
+.claude-mode-button:hover {
+  background: var(--color-bg-hover);
+  border-color: var(--color-border-strong);
 }
 
 .claude-mode-icon {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   border-radius: var(--radius-sm);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--text-xs);
+  font-size: 10px;
   font-weight: var(--font-semibold);
-  color: var(--color-bg-inverse);
+  color: var(--color-text-inverse);
+  flex-shrink: 0;
 }
 
 .claude-mode-ask {
