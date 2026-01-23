@@ -156,13 +156,13 @@ def run_cmd(workflow_path: Path, inputs: tuple[str, ...], background: bool, dry_
         if name not in merged_inputs:
             merged_inputs[name] = value
 
-    # Get DoltDB for tracking
+    # Get DoltDB for tracking and tool context
     db = _get_dolt_db()
 
-    # Execute workflow
+    # Execute workflow with database in context
     from kurt.tools.base import ToolContext
 
-    context = ToolContext()
+    context = ToolContext(db=db)
 
     if background:
         # Background execution: start and return immediately
