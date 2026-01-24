@@ -2,9 +2,9 @@
 
 Commands:
     kurt run <workflow.toml> [--input key=value]...  - Run workflow, output JSON with run_id
-    kurt status <run_id> [--json]                     - Show workflow status
-    kurt status <run_id> --follow                     - Stream progress events
-    kurt cancel <run_id>                              - Cancel running workflow
+    kurt logs <run_id> [--json]                      - View step logs for workflow run
+    kurt logs <run_id> --tail                        - Stream progress events
+    kurt cancel <run_id>                             - Cancel running workflow
 """
 
 from __future__ import annotations
@@ -196,7 +196,7 @@ def run_cmd(workflow_path: Path, inputs: tuple[str, ...], background: bool, dry_
         console.print(
             "\n[yellow]Note: Background execution creates run record only.[/yellow]"
         )
-        console.print("[dim]Use 'kurt status {run_id}' to check status.[/dim]")
+        console.print("[dim]Use 'kurt logs {run_id}' to check progress.[/dim]")
         return
 
     # Foreground execution

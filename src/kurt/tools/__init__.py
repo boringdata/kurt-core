@@ -104,6 +104,10 @@ from .map_tool import MapInput, MapOutput, MapTool, normalize_url
 from .sql_tool import SQLConfig, SQLInput, SQLOutput, SQLTool
 from .write_tool import WriteConfig, WriteInput, WriteOutput, WriteParams, WriteTool
 
+# Import research and signals tools to register them
+from .research import ResearchTool, ResearchInput, ResearchOutput, CitationOutput
+from .signals import SignalsTool, SignalInput, SignalOutput
+
 __all__ = [
     # Base classes
     "Tool",
@@ -185,4 +189,13 @@ __all__ = [
     "load_tool_context",
     "validate_settings",
     "ConfigValidationError",
+    # Research tool
+    "ResearchTool",
+    "ResearchInput",
+    "ResearchOutput",
+    "CitationOutput",
+    # Signals tool
+    "SignalsTool",
+    "SignalInput",
+    "SignalOutput",
 ]

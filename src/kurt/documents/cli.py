@@ -33,8 +33,9 @@ def content_group():
       list     List documents with filters
       get      Get document details
       delete   Delete documents
-      map      Discover content sources
-      fetch    Fetch and index documents
+
+    \b
+    Note: Use 'kurt tool map' and 'kurt tool fetch' for content discovery and fetching.
     """
     pass
 
@@ -246,17 +247,6 @@ def delete_cmd(
         session.commit()
 
     console.print(f"[green]✓[/green] Deleted {deleted_count} document(s)")
-
-
-# =============================================================================
-# Register Workflow Commands
-# =============================================================================
-
-from kurt.tools.fetch.cli import fetch_cmd  # noqa: E402
-from kurt.tools.map.cli import map_cmd  # noqa: E402
-
-content_group.add_command(fetch_cmd, "fetch")
-content_group.add_command(map_cmd, "map")
 
 
 # =============================================================================

@@ -500,17 +500,14 @@ kurt content delete --url-prefix https://example.com/
 ### Background Workflows
 
 ```bash
-# List background workflows
-kurt workflows list
+# Check workflow status and logs
+kurt logs <run-id>
 
-# Check workflow status
-kurt workflows status <workflow-id>
-
-# Follow workflow progress
-kurt workflows follow <workflow-id>
+# Follow workflow progress (streaming)
+kurt logs <run-id> --tail
 
 # Cancel a workflow
-kurt workflows cancel <workflow-id>
+kurt cancel <run-id>
 ```
 
 ### Administrative Commands

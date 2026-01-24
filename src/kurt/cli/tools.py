@@ -848,18 +848,33 @@ def sql_cmd(
 
 
 # ============================================================================
-# Tools group (for grouped access)
+# Tools group (for grouped access: kurt tool <x>)
 # ============================================================================
 
 
 @click.group()
 def tools_group() -> None:
-    """Direct tool invocation commands."""
+    """
+    Direct tool invocation commands.
+
+    \b
+    Commands:
+      map      Discover content sources (URLs, folders, CMS)
+      fetch    Fetch and index documents
+      llm      Process rows through an LLM
+      embed    Generate vector embeddings
+      write    Persist data to database tables
+      sql      Execute read-only SQL queries
+    """
     pass
 
 
-tools_group.add_command(map_cmd, name="map")
-tools_group.add_command(fetch_cmd, name="fetch")
+# Import the full-featured map/fetch CLI commands from their new location
+from kurt.tools.map.cli import map_cmd as map_tool_cmd  # noqa: E402
+from kurt.tools.fetch.cli import fetch_cmd as fetch_tool_cmd  # noqa: E402
+
+tools_group.add_command(map_tool_cmd, name="map")
+tools_group.add_command(fetch_tool_cmd, name="fetch")
 tools_group.add_command(llm_cmd, name="llm")
 tools_group.add_command(embed_cmd, name="embed")
 tools_group.add_command(write_cmd, name="write")

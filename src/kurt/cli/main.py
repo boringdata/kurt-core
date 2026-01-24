@@ -38,10 +38,11 @@ class LazyGroup(click.Group):
     cls=LazyGroup,
     lazy_subcommands={
         "content": ("kurt.documents.cli", "content_group"),
+        "tool": ("kurt.cli.tools", "tools_group"),
         "integrations": ("kurt.integrations.cli", "integrations_group"),
         "workflow": ("kurt.cli.workflow", "workflow_group"),
-        "research": ("kurt.workflows.research.cli", "research_group"),
-        "signals": ("kurt.workflows.signals.cli", "signals_group"),
+        "research": ("kurt.tools.research.cli", "research_group"),
+        "signals": ("kurt.tools.signals.cli", "signals_group"),
         "agents": ("kurt.workflows.agents.cli", "agents_group"),
         "agent": ("kurt.workflows.agents.cli", "agent_group"),
         "admin": ("kurt.cli.admin", "admin"),
