@@ -1,6 +1,9 @@
 """Tests for FetchConfig."""
 
-from kurt.tools.fetch.config import FetchConfig
+import os
+from unittest.mock import patch
+
+from kurt.tools.fetch.config import FetchConfig, has_embedding_api_keys
 
 
 class TestFetchConfig:
@@ -16,6 +19,7 @@ class TestFetchConfig:
 
         assert config.fetch_engine == "trafilatura"
         assert config.batch_size is None
+        assert config.embed is None  # None = auto-detect from API keys
         assert config.embedding_max_chars == 1000
         assert config.embedding_batch_size == 100
         assert config.dry_run is False
@@ -65,6 +69,48 @@ class TestFetchConfig:
 
         config = FetchConfig(dry_run=False)
         assert config.dry_run is False
+
+    def test_config_embed_default_is_none(self):
+        """Test embed default is None for auto-detection."""
+        config = FetchConfig()
+        assert config.embed is None
+
+    def test_config_embed_explicit_true(self):
+        """Test embed can be explicitly enabled."""
+        config = FetchConfig(embed=True)
+        assert config.embed is True
+
+    def test_config_embed_explicit_false(self):
+        """Test embed can be explicitly disabled."""
+        config = FetchConfig(embed=False)
+        assert config.embed is False
+
+
+class TestHasEmbeddingApiKeys:
+    """Test suite for has_embedding_api_keys function."""
+
+    def test_no_api_keys(self):
+        """Test returns False when no API keys are set."""
+        with patch.dict(os.environ, {}, clear=True):
+            # Clear any existing keys
+            for key in ["OPENAI_API_KEY", "VOYAGE_API_KEY", "COHERE_API_KEY"]:
+                os.environ.pop(key, None)
+            assert has_embedding_api_keys() is False
+
+    def test_with_openai_key(self):
+        """Test returns True when OPENAI_API_KEY is set."""
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test"}, clear=False):
+            assert has_embedding_api_keys() is True
+
+    def test_with_voyage_key(self):
+        """Test returns True when VOYAGE_API_KEY is set."""
+        with patch.dict(os.environ, {"VOYAGE_API_KEY": "voyage-test"}, clear=False):
+            assert has_embedding_api_keys() is True
+
+    def test_with_cohere_key(self):
+        """Test returns True when COHERE_API_KEY is set."""
+        with patch.dict(os.environ, {"COHERE_API_KEY": "cohere-test"}, clear=False):
+            assert has_embedding_api_keys() is True
 
     def test_config_model_dump(self):
         """Test config serialization."""

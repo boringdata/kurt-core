@@ -11,7 +11,7 @@ def fetch_from_file(file_path: str) -> tuple[str, dict]:
     Fetch content from a local file.
 
     Args:
-        file_path: Path to local file
+        file_path: Path to local file (can be a file:// URL or plain path)
 
     Returns:
         Tuple of (content, metadata_dict)
@@ -20,6 +20,10 @@ def fetch_from_file(file_path: str) -> tuple[str, dict]:
         FileNotFoundError: If file doesn't exist
         ValueError: If file is not readable
     """
+    # Handle file:// URLs by stripping the prefix
+    if file_path.startswith("file://"):
+        file_path = file_path[7:]
+
     path = Path(file_path)
 
     if not path.exists():

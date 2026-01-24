@@ -27,6 +27,7 @@ console = Console()
     help="Discovery method",
 )
 @click.option("--max-depth", type=int, help="Maximum crawl depth (1-5)")
+@click.option("--allow-external", is_flag=True, help="Allow crawling to external domains")
 @click.option("--include", "include_patterns", help="Glob patterns to include (comma-separated)")
 @click.option("--exclude", "exclude_patterns", help="Glob patterns to exclude (comma-separated)")
 @limit_option
@@ -42,6 +43,7 @@ def map_cmd(
     sitemap_path: str | None,
     method: str,
     max_depth: int | None,
+    allow_external: bool,
     include_patterns: str | None,
     exclude_patterns: str | None,
     limit: int | None,
@@ -112,18 +114,29 @@ def map_cmd(
         dry_run=dry_run,
     )
 
+    # Determine depth: use config value if set, otherwise use sensible defaults
+    # For crawl mode: user explicitly wants crawling, depth=1 is sensible default
+    # For auto mode: depth=0 means "sitemap only, no crawl fallback"
+    # For sitemap mode: depth is irrelevant (sitemap provides all URLs)
+    depth = config.max_depth
+    if depth is None and config.discovery_method == "crawl":
+        depth = 1  # Default depth for explicit crawl mode
+    elif depth is None:
+        depth = 0  # Default for auto/sitemap modes (no crawl fallback unless user sets depth)
+
     params = {
         "source": tool_source,
         "url": config.source_url,
         "path": config.source_folder,
         "cms_platform": config.cms_platform,
         "cms_instance": config.cms_instance,
-        "depth": config.max_depth or 1,
+        "depth": depth,
         "max_pages": config.max_pages,
         "include_patterns": list(parse_patterns(config.include_patterns)),
         "exclude_patterns": list(parse_patterns(config.exclude_patterns)),
         "discovery_method": config.discovery_method.lower(),
         "sitemap_path": config.sitemap_path,
+        "allow_external": allow_external or config.allow_external,
         "dry_run": config.dry_run,
     }
 

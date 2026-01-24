@@ -125,7 +125,7 @@ class TestFetchConfig:
         assert config.timeout_ms == 30000
         assert config.retries == 3
         assert config.retry_backoff_ms == 1000
-        assert config.embed is False
+        assert config.embed is None  # None = auto-detect from API keys
         assert config.content_dir is None
 
     def test_custom_values(self):

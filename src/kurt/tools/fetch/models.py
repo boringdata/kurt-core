@@ -34,6 +34,7 @@ class FetchStatus(str, Enum):
     PENDING = "PENDING"
     SUCCESS = "SUCCESS"
     ERROR = "ERROR"
+    SKIPPED = "SKIPPED"
 
 
 class FetchDocument(EmbeddingMixin, TimestampMixin, TenantMixin, SQLModel, table=True):

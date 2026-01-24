@@ -184,10 +184,10 @@ class MapInput(BaseModel):
 
     # Discovery options
     depth: int = Field(
-        default=1,
+        default=0,
         ge=0,
         le=10,
-        description="Maximum crawl depth for URL discovery",
+        description="Maximum crawl depth for URL discovery (0 = no crawling)",
     )
     max_pages: int = Field(
         default=1000,
@@ -222,6 +222,10 @@ class MapInput(BaseModel):
         ge=1.0,
         le=300.0,
         description="HTTP timeout in seconds",
+    )
+    allow_external: bool = Field(
+        default=False,
+        description="Allow crawling to external domains",
     )
     dry_run: bool = Field(
         default=False,
@@ -531,6 +535,7 @@ async def discover_from_crawl(
     include_patterns: list[str],
     exclude_patterns: list[str],
     disallowed_paths: set[str],
+    allow_external: bool = False,
     on_progress: ProgressCallback | None = None,
     emit_fn: Any = None,
 ) -> list[dict[str, Any]]:
@@ -546,6 +551,7 @@ async def discover_from_crawl(
         include_patterns: URL patterns to include
         exclude_patterns: URL patterns to exclude
         disallowed_paths: Paths disallowed by robots.txt
+        allow_external: Allow crawling to external domains
         on_progress: Progress callback
         emit_fn: Function to emit progress events
 
@@ -628,9 +634,9 @@ async def discover_from_crawl(
                     full_url = urljoin(current_url, link)
                     normalized = normalize_url(full_url)
 
-                    # Skip external links
+                    # Skip external links (unless allow_external is True)
                     parsed = urlparse(normalized)
-                    if parsed.netloc != base_domain:
+                    if not allow_external and parsed.netloc != base_domain:
                         continue
 
                     # Skip if already seen
@@ -700,6 +706,9 @@ async def discover_from_folder(
     for pattern in include_patterns:
         for file_path in folder.glob(pattern):
             if file_path.is_file() and file_path not in all_files:
+                # Skip hidden files/directories (paths containing components starting with '.')
+                if any(part.startswith(".") for part in file_path.relative_to(folder).parts):
+                    continue
                 all_files.append(file_path)
 
     # Filter out excluded patterns
@@ -960,12 +969,17 @@ class MapTool(Tool[MapInput, MapOutput]):
                     )
                     return items, None
 
-                # Fall back to crawl if auto mode
+                # Fall back to crawl if auto mode (only if depth > 0)
                 if params.discovery_method == "sitemap":
                     return [], sitemap_error
 
-            # Crawl mode (or fallback from auto)
-            if params.discovery_method in ("auto", "crawl"):
+            # Crawl mode (or fallback from auto when depth > 0)
+            # In auto mode, only crawl if user explicitly set depth > 0
+            should_crawl = (
+                params.discovery_method == "crawl"
+                or (params.discovery_method == "auto" and params.depth > 0)
+            )
+            if should_crawl:
                 self.emit_progress(
                     on_progress,
                     substep="map_url",
@@ -981,6 +995,7 @@ class MapTool(Tool[MapInput, MapOutput]):
                     include_patterns=params.include_patterns,
                     exclude_patterns=params.exclude_patterns,
                     disallowed_paths=disallowed,
+                    allow_external=params.allow_external,
                     on_progress=on_progress,
                     emit_fn=self.emit_progress,
                 )
@@ -993,16 +1008,17 @@ class MapTool(Tool[MapInput, MapOutput]):
                     total=len(items),
                 )
 
-                if not items:
-                    # Single page fallback
-                    items = [
-                        {
-                            "url": normalize_url(params.url),
-                            "source_type": "page",
-                            "discovered_from": params.url,
-                            "depth": 0,
-                        }
-                    ]
+            # Single page fallback when no items found
+            # (crawl returned nothing, or auto mode with depth=0 and no sitemap)
+            if not items:
+                items = [
+                    {
+                        "url": normalize_url(params.url),
+                        "source_type": "page",
+                        "discovered_from": params.url,
+                        "depth": 0,
+                    }
+                ]
 
             # Filter out robots-blocked URLs
             if params.respect_robots and disallowed:

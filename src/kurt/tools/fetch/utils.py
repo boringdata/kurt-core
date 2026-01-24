@@ -244,9 +244,18 @@ def persist_fetch_documents(rows: list[dict], *, fetch_engine: str | None) -> di
             if status == FetchStatus.SUCCESS.value:
                 db_status = FetchStatus.SUCCESS
             elif status == FetchStatus.SKIPPED.value:
-                db_status = FetchStatus.ERROR
+                db_status = FetchStatus.SKIPPED
             else:
                 db_status = FetchStatus.ERROR
+
+            # Merge provider metadata with fetch metrics (preserve title, author, etc.)
+            provider_metadata = row.get("metadata") or {}
+            metadata_json = dict(provider_metadata)  # Copy to avoid mutating original
+            metadata_json.update({
+                "latency_ms": row.get("latency_ms"),
+                "bytes_fetched": row.get("bytes_fetched"),
+                "source_url": row.get("url"),
+            })
 
             db_row = {
                 "document_id": document_id,
@@ -257,11 +266,7 @@ def persist_fetch_documents(rows: list[dict], *, fetch_engine: str | None) -> di
                 "fetch_engine": fetch_engine,
                 "public_url": row.get("public_url"),
                 "error": row.get("error"),
-                "metadata_json": {
-                    "latency_ms": row.get("latency_ms"),
-                    "bytes_fetched": row.get("bytes_fetched"),
-                    "source_url": row.get("url"),
-                },
+                "metadata_json": metadata_json,
             }
 
             existing_row = session.get(FetchDocument, document_id)

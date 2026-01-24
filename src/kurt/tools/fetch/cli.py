@@ -98,6 +98,12 @@ def _list_engines(output_format: str) -> None:
 )
 @click.option("--list-engines", is_flag=True, help="List available engines and exit")
 @click.option("--refetch", is_flag=True, help="Re-fetch already FETCHED documents")
+@click.option(
+    "--embed/--no-embed",
+    "embed",
+    default=None,
+    help="Generate embeddings after fetch (default: auto-detect from API keys)",
+)
 @add_background_options()
 @dry_run_option
 @format_option
@@ -124,6 +130,7 @@ def fetch_cmd(
     batch_size: int | None,
     list_engines: bool,
     refetch: bool,
+    embed: bool | None,
     background: bool,
     priority: int,
     dry_run: bool,
@@ -250,6 +257,8 @@ def fetch_cmd(
         config_overrides["fetch_engine"] = engine.lower()
     if batch_size is not None:
         config_overrides["batch_size"] = batch_size
+    if embed is not None:
+        config_overrides["embed"] = embed
     config = FetchConfig.from_config("fetch", **config_overrides)
 
     inputs = [
@@ -267,6 +276,7 @@ def fetch_cmd(
         "dry_run": config.dry_run,
         "engine": config.fetch_engine,
         "batch_size": config.batch_size,
+        "embed": config.embed,
     }
 
     cli_command = "kurt " + " ".join(sys.argv[1:])

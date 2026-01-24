@@ -128,9 +128,9 @@ class FetchConfig(BaseModel):
         le=60000,
         description="Base backoff delay in milliseconds (exponential: delay * 2^attempt)",
     )
-    embed: bool = Field(
-        default=False,
-        description="Generate embeddings after fetch",
+    embed: bool | None = Field(
+        default=None,
+        description="Generate embeddings after fetch (None = auto-detect from API keys)",
     )
     content_dir: str | None = Field(
         default=None,
@@ -227,9 +227,9 @@ class FetchParams(BaseModel):
         le=60000,
         description="Base backoff delay in milliseconds (exponential: delay * 2^attempt)",
     )
-    embed: bool = Field(
-        default=False,
-        description="Generate embeddings after fetch",
+    embed: bool | None = Field(
+        default=None,
+        description="Generate embeddings after fetch (None = auto-detect from API keys)",
     )
     content_dir: str | None = Field(
         default=None,
@@ -797,8 +797,17 @@ class FetchTool(Tool[FetchParams, FetchOutput]):
         )
 
         saved_count = 0
+        # Collect content for embedding before it's removed from results
+        embedding_content: list[tuple[int, str, str]] = []  # (idx, document_id, content)
+
         for i, result in enumerate(results):
             if result["status"] == FetchStatus.SUCCESS.value and result.get("content"):
+                # Save content for embedding before it's popped
+                doc_id = result.get("document_id", "")
+                content_text = result.get("content", "")
+                if doc_id and content_text:
+                    embedding_content.append((i, doc_id, content_text))
+
                 try:
                     path_source = result.get("public_url") or result["url"]
                     content_path = _generate_content_path(path_source, config.content_dir)
@@ -834,28 +843,94 @@ class FetchTool(Tool[FetchParams, FetchOutput]):
         )
 
         # ----------------------------------------------------------------
-        # Substep 3: generate_embeddings (if enabled)
+        # Substep 3: generate_embeddings (if enabled or auto-detected)
         # ----------------------------------------------------------------
-        if config.embed:
+        # Auto-detect embedding capability if embed is None
+        should_embed = config.embed
+        if should_embed is None:
+            from kurt.tools.fetch.config import has_embedding_api_keys
+
+            should_embed = has_embedding_api_keys()
+            if should_embed:
+                logger.debug("Auto-detected embedding API keys, enabling embeddings")
+
+        embedded_count = 0
+        if should_embed and embedding_content:
             self.emit_progress(
                 on_progress,
                 substep="generate_embeddings",
                 status="running",
                 current=0,
-                total=saved_count,
-                message="Generating embeddings (not implemented)",
+                total=len(embedding_content),
+                message=f"Generating embeddings for {len(embedding_content)} document(s)",
             )
 
-            # TODO: Implement embedding generation
-            # For now, just emit completion without doing anything
+            try:
+                from kurt.core.embedding_step import generate_embeddings, embedding_to_bytes
 
+                # Prepare texts for embedding (truncate to max chars)
+                max_chars = 1000  # Default, could be configurable
+                texts = [content[:max_chars] for _, _, content in embedding_content]
+
+                # Generate embeddings in a single batch
+                embeddings = generate_embeddings(
+                    texts,
+                    module_name="FETCH",
+                    step_name="generate_embeddings",
+                )
+
+                # Store embeddings in results
+                for (idx, doc_id, _), emb in zip(embedding_content, embeddings):
+                    results[idx]["embedding"] = embedding_to_bytes(emb)
+                    embedded_count += 1
+
+                    self.emit_progress(
+                        on_progress,
+                        substep="generate_embeddings",
+                        status="progress",
+                        current=embedded_count,
+                        total=len(embedding_content),
+                        message=f"Embedded {embedded_count}/{len(embedding_content)}",
+                    )
+
+                self.emit_progress(
+                    on_progress,
+                    substep="generate_embeddings",
+                    status="completed",
+                    current=embedded_count,
+                    total=len(embedding_content),
+                    message=f"Generated {embedded_count} embedding(s)",
+                )
+
+            except ImportError as e:
+                logger.warning(f"Embedding dependencies not available: {e}")
+                self.emit_progress(
+                    on_progress,
+                    substep="generate_embeddings",
+                    status="completed",
+                    current=0,
+                    total=len(embedding_content),
+                    message="Embedding skipped - dependencies not installed",
+                )
+            except Exception as e:
+                logger.error(f"Failed to generate embeddings: {e}")
+                self.emit_progress(
+                    on_progress,
+                    substep="generate_embeddings",
+                    status="completed",
+                    current=embedded_count,
+                    total=len(embedding_content),
+                    message=f"Embedding failed: {e}",
+                )
+        elif should_embed:
+            # No content to embed
             self.emit_progress(
                 on_progress,
                 substep="generate_embeddings",
                 status="completed",
                 current=0,
                 total=0,
-                message="Embedding generation not yet implemented",
+                message="No content to embed",
             )
 
         if not config.dry_run and results:
@@ -905,12 +980,12 @@ class FetchTool(Tool[FetchParams, FetchOutput]):
             total=save_count,
         )
 
-        if config.embed:
+        if should_embed:
             result.add_substep(
                 name="generate_embeddings",
                 status="completed",
-                current=0,
-                total=0,
+                current=embedded_count,
+                total=len(embedding_content),
             )
 
         # Add errors for failed URLs

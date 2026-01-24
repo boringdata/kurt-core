@@ -11,12 +11,14 @@ class TestFetchStatus:
         assert FetchStatus.PENDING.value == "PENDING"
         assert FetchStatus.SUCCESS.value == "SUCCESS"
         assert FetchStatus.ERROR.value == "ERROR"
+        assert FetchStatus.SKIPPED.value == "SKIPPED"
 
     def test_status_from_string(self):
         """Test creating FetchStatus from string."""
         assert FetchStatus("PENDING") == FetchStatus.PENDING
         assert FetchStatus("SUCCESS") == FetchStatus.SUCCESS
         assert FetchStatus("ERROR") == FetchStatus.ERROR
+        assert FetchStatus("SKIPPED") == FetchStatus.SKIPPED
 
 
 class TestFetchDocument:
