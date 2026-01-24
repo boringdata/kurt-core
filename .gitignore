@@ -104,3 +104,6 @@ vscode-source/**
 # Temporary/test files
 perm-test.txt
 reverse_vscode.md
+
+content/
+.dolt/noms/
