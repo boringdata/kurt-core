@@ -1,17 +1,18 @@
 """Map workflow - discover URLs/files/CMS sources.
 
 For lightweight imports (models only), use:
-    from kurt.workflows.map.models import MapDocument, MapStatus
+    from kurt.tools.map.models import MapDocument, MapStatus
 
-For workflow execution (requires [workflows] extras):
-    from kurt.workflows.map.workflow import map_workflow, run_map
+For CLI commands, use:
+    from kurt.tools.map.cli import map_cmd
+
+Note: config, models, and CLI have moved to kurt.tools.map.
+This module re-exports for backward compatibility.
 """
 
-from .config import MapConfig
-from .models import MapDocument, MapStatus
-
-# NOTE: workflow and steps not imported here to avoid heavy dependencies
-# Import directly when needed: from kurt.workflows.map.workflow import map_workflow
+# Re-export from tools/ for backward compatibility
+from kurt.tools.map.config import MapConfig
+from kurt.tools.map.models import MapDocument, MapStatus
 
 __all__ = [
     "MapConfig",

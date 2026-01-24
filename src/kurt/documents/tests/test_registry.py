@@ -6,8 +6,8 @@ from __future__ import annotations
 
 from kurt.db import managed_session
 from kurt.documents import DocumentFilters, DocumentRegistry, DocumentView
-from kurt.workflows.fetch.models import FetchStatus
-from kurt.workflows.map.models import MapStatus
+from kurt.tools.fetch.models import FetchStatus
+from kurt.tools.map.models import MapStatus
 
 
 class TestDocumentRegistry:

@@ -15,8 +15,8 @@ from pathlib import Path
 import pytest
 
 from kurt.db import ensure_tables, init_database, managed_session
-from kurt.workflows.fetch.models import FetchDocument, FetchStatus
-from kurt.workflows.map.models import MapDocument, MapStatus
+from kurt.tools.fetch.models import FetchDocument, FetchStatus
+from kurt.tools.map.models import MapDocument, MapStatus
 
 
 def pytest_addoption(parser):

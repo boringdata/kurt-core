@@ -182,8 +182,8 @@ class TestMigrateFunctional:
 
         # 3. Verify all workflow tables were created
         from kurt.db import managed_session
-        from kurt.workflows.fetch.models import FetchDocument
-        from kurt.workflows.map.models import MapDocument
+        from kurt.tools.fetch.models import FetchDocument
+        from kurt.tools.map.models import MapDocument
 
         with managed_session() as session:
             # Tables should exist and be queryable

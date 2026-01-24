@@ -246,7 +246,7 @@ class TestResolveDocumentsUrlAutoCreate:
         """Test that passing a URL as identifier auto-creates MapDocument."""
         from kurt.db import managed_session
         from kurt.documents import resolve_documents
-        from kurt.workflows.map.models import MapDocument
+        from kurt.tools.map.models import MapDocument
 
         test_url = "https://example.com/test-auto-create"
 
@@ -300,7 +300,7 @@ class TestSourceUrlUniqueConstraint:
         from sqlalchemy.exc import IntegrityError
 
         from kurt.db import managed_session
-        from kurt.workflows.map.models import MapDocument, MapStatus
+        from kurt.tools.map.models import MapDocument, MapStatus
 
         test_url = "https://example.com/unique-test"
 

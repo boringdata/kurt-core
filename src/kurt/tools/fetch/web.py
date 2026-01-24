@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from .fetch_firecrawl import fetch_with_firecrawl
-from .fetch_httpx import fetch_with_httpx
-from .fetch_tavily import fetch_with_tavily
-from .fetch_trafilatura import fetch_with_trafilatura
+from .firecrawl import fetch_with_firecrawl
+from .httpx import fetch_with_httpx
+from .tavily import fetch_with_tavily
+from .trafilatura import fetch_with_trafilatura
 from .models import BatchFetchResult
 
 

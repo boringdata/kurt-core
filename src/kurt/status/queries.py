@@ -23,8 +23,8 @@ def get_status_data(session: "Session") -> dict:
     """
     from sqlmodel import func, select
 
-    from kurt.workflows.fetch.models import FetchDocument, FetchStatus
-    from kurt.workflows.map.models import MapDocument
+    from kurt.tools.fetch.models import FetchDocument, FetchStatus
+    from kurt.tools.map.models import MapDocument
 
     # Total documents
     total = session.exec(select(func.count()).select_from(MapDocument)).one()

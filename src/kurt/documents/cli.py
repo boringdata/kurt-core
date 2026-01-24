@@ -69,7 +69,7 @@ def list_cmd(
         kurt content list --format json             # JSON output for agents
     """
     from kurt.documents import DocumentFilters
-    from kurt.workflows.fetch.models import FetchStatus
+    from kurt.tools.fetch.models import FetchStatus
 
     # Build filters
     filters = DocumentFilters(
@@ -195,8 +195,8 @@ def delete_cmd(
     """
     from kurt.db import managed_session
     from kurt.documents import DocumentFilters, DocumentRegistry
-    from kurt.workflows.fetch.models import FetchDocument
-    from kurt.workflows.map.models import MapDocument
+    from kurt.tools.fetch.models import FetchDocument
+    from kurt.tools.map.models import MapDocument
 
     # Build filters
     filters = DocumentFilters(
@@ -252,8 +252,8 @@ def delete_cmd(
 # Register Workflow Commands
 # =============================================================================
 
-from kurt.workflows.fetch.cli import fetch_cmd  # noqa: E402
-from kurt.workflows.map.cli import map_cmd  # noqa: E402
+from kurt.tools.fetch.cli import fetch_cmd  # noqa: E402
+from kurt.tools.map.cli import map_cmd  # noqa: E402
 
 content_group.add_command(fetch_cmd, "fetch")
 content_group.add_command(map_cmd, "map")
@@ -338,7 +338,7 @@ def _get_document_from_db(identifier: str):
                 # Partial document ID match - query directly with LIKE
                 from sqlmodel import select
 
-                from kurt.workflows.map.models import MapDocument
+                from kurt.tools.map.models import MapDocument
 
                 query = (
                     select(MapDocument).where(MapDocument.document_id.contains(identifier)).limit(1)

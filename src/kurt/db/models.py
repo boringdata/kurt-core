@@ -24,10 +24,10 @@ def register_all_models():
         AnalyticsDomain,
         PageAnalytics,
     )
-    from kurt.workflows.fetch.models import FetchDocument  # noqa: F401
+    from kurt.tools.fetch.models import FetchDocument  # noqa: F401
 
     # Workflow models
-    from kurt.workflows.map.models import MapDocument  # noqa: F401
+    from kurt.tools.map.models import MapDocument  # noqa: F401
     from kurt.workflows.research.models import ResearchDocument  # noqa: F401
     from kurt.workflows.signals.models import MonitoringSignal  # noqa: F401
 

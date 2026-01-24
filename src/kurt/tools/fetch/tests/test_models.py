@@ -1,6 +1,6 @@
 """Tests for fetch models."""
 
-from kurt.workflows.fetch import FetchDocument, FetchStatus
+from kurt.tools.fetch import FetchDocument, FetchStatus
 
 
 class TestFetchStatus:

@@ -17,8 +17,8 @@ from kurt.documents.filtering import (
     build_map_query,
 )
 from kurt.documents.models import DocumentView
-from kurt.workflows.fetch.models import FetchDocument
-from kurt.workflows.map.models import MapDocument
+from kurt.tools.fetch.models import FetchDocument
+from kurt.tools.map.models import MapDocument
 
 
 class DocumentRegistry:

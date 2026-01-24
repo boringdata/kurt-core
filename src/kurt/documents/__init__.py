@@ -15,7 +15,7 @@ from kurt.documents.registry import DocumentRegistry
 
 # Lazy import to avoid requiring heavy ML dependencies (trafilatura, lxml) in API mode
 if TYPE_CHECKING:
-    from kurt.workflows.fetch.utils import load_document_content as _load_document_content
+    from kurt.tools.fetch.utils import load_document_content as _load_document_content
 else:
     _load_document_content = None
 
@@ -32,7 +32,7 @@ def load_document_content(*args, **kwargs):
     """Lazy wrapper for load_document_content to avoid importing trafilatura in API mode."""
     global _load_document_content
     if _load_document_content is None:
-        from kurt.workflows.fetch.utils import load_document_content as _ldc
+        from kurt.tools.fetch.utils import load_document_content as _ldc
 
         _load_document_content = _ldc
     return _load_document_content(*args, **kwargs)
@@ -86,8 +86,8 @@ def resolve_documents(
     from pathlib import Path
 
     from kurt.db import managed_session
-    from kurt.workflows.fetch.models import FetchStatus
-    from kurt.workflows.map.models import MapDocument, MapStatus
+    from kurt.tools.fetch.models import FetchStatus
+    from kurt.tools.map.models import MapDocument, MapStatus
 
     # If identifier looks like a URL, auto-create MapDocument if needed
     if identifier and identifier.startswith(("http://", "https://")):

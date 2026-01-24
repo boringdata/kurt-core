@@ -30,7 +30,7 @@ import pytest
 
 from kurt.db import managed_session
 from kurt.documents import DocumentFilters, DocumentRegistry
-from kurt.workflows.fetch.models import FetchStatus
+from kurt.tools.fetch.models import FetchStatus
 
 
 class TestDocumentRegistryAllModes:

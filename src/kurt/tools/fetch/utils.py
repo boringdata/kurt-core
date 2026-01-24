@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime
 import re
 
 import trafilatura
@@ -10,6 +11,9 @@ from lxml import etree
 from lxml import html as lxml_html
 
 from kurt.config import load_config
+from kurt.db import managed_session
+
+from .models import FetchDocument, FetchStatus
 
 
 def _deduplicate_images(content: str) -> str:
@@ -224,6 +228,53 @@ def _url_to_path(url: str) -> str:
         sanitized_path = "index"
 
     return f"{domain}/{sanitized_path}.md"
+
+
+def persist_fetch_documents(rows: list[dict], *, fetch_engine: str | None) -> dict[str, int]:
+    """Persist fetch results to fetch_documents."""
+    inserted = 0
+    updated = 0
+    with managed_session() as session:
+        for row in rows:
+            document_id = row.get("document_id")
+            if not document_id:
+                continue
+
+            status = row.get("status", "")
+            if status == FetchStatus.SUCCESS.value:
+                db_status = FetchStatus.SUCCESS
+            elif status == FetchStatus.SKIPPED.value:
+                db_status = FetchStatus.ERROR
+            else:
+                db_status = FetchStatus.ERROR
+
+            db_row = {
+                "document_id": document_id,
+                "status": db_status,
+                "content_length": row.get("bytes_fetched", 0),
+                "content_hash": row.get("content_hash"),
+                "content_path": row.get("content_path"),
+                "fetch_engine": fetch_engine,
+                "public_url": row.get("public_url"),
+                "error": row.get("error"),
+                "metadata_json": {
+                    "latency_ms": row.get("latency_ms"),
+                    "bytes_fetched": row.get("bytes_fetched"),
+                    "source_url": row.get("url"),
+                },
+            }
+
+            existing_row = session.get(FetchDocument, document_id)
+            if existing_row:
+                for key, value in db_row.items():
+                    setattr(existing_row, key, value)
+                existing_row.updated_at = datetime.utcnow()
+                updated += 1
+            else:
+                session.add(FetchDocument(**db_row))
+                inserted += 1
+        session.commit()
+    return {"rows_written": inserted, "rows_updated": updated}
 
 
 def save_content_file(document_id: str, content: str, source_url: str | None = None) -> str:

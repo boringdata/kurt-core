@@ -97,7 +97,7 @@ class TestExecutorParentWorkflowId:
     @patch("shutil.which")
     @patch("subprocess.run")
     def test_executor_sets_parent_workflow_id_env(self, mock_run, mock_which, tmp_path):
-        """Test that executor sets KURT_PARENT_WORKFLOW_ID env var."""
+        """Test that executor sets KURT_PARENT_WORKFLOW_ID env var when run_id is provided."""
         from kurt.workflows.agents.executor import agent_execution_step
 
         mock_which.return_value = "/usr/bin/claude"
@@ -107,29 +107,26 @@ class TestExecutorParentWorkflowId:
         mock_result.stderr = ""
         mock_run.return_value = mock_result
 
-        with patch("kurt.workflows.agents.executor.DBOS") as mock_dbos:
-            mock_dbos.workflow_id = "workflow-789"
-            mock_dbos.write_stream = MagicMock()
-            mock_dbos.set_event = MagicMock()
+        with patch(
+            "kurt.workflows.agents.executor._create_tool_tracking_settings"
+        ) as mock_create:
+            settings_file = tmp_path / "settings.json"
+            tool_log_file = tmp_path / "tools.jsonl"
+            settings_file.write_text("{}")
+            tool_log_file.write_text("")
+            mock_create.return_value = (str(settings_file), str(tool_log_file))
 
-            with patch(
-                "kurt.workflows.agents.executor._create_tool_tracking_settings"
-            ) as mock_create:
-                settings_file = tmp_path / "settings.json"
-                tool_log_file = tmp_path / "tools.jsonl"
-                settings_file.write_text("{}")
-                tool_log_file.write_text("")
-                mock_create.return_value = (str(settings_file), str(tool_log_file))
+            with patch("kurt.workflows.agents.executor._get_project_root") as mock_root:
+                mock_root.return_value = str(tmp_path)
 
-                with patch("kurt.workflows.agents.executor._get_project_root") as mock_root:
-                    mock_root.return_value = str(tmp_path)
-
-                    agent_execution_step(
-                        prompt="Test",
-                        model="claude-sonnet-4-20250514",
-                        max_turns=5,
-                        allowed_tools=["Bash"],
-                    )
+                # Pass run_id to agent_execution_step
+                agent_execution_step(
+                    prompt="Test",
+                    model="claude-sonnet-4-20250514",
+                    max_turns=5,
+                    allowed_tools=["Bash"],
+                    run_id="workflow-789",
+                )
 
         # Verify subprocess was called with correct env
         call_args = mock_run.call_args

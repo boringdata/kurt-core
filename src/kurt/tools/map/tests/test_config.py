@@ -1,6 +1,6 @@
 """Tests for MapConfig."""
 
-from kurt.workflows.map import MapConfig
+from kurt.tools.map.config import MapConfig
 
 
 class TestMapConfig:

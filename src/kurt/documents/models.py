@@ -10,8 +10,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Optional
 
-from kurt.workflows.fetch.models import FetchStatus
-from kurt.workflows.map.models import MapStatus
+from kurt.tools.fetch.models import FetchStatus
+from kurt.tools.map.models import MapStatus
 
 
 @dataclass

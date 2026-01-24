@@ -173,17 +173,13 @@ class MapInput(BaseModel):
     )
 
     # CMS source parameters
-    base_url: str | None = Field(
+    cms_platform: str | None = Field(
         default=None,
-        description="CMS base URL (required if source='cms')",
+        description="CMS platform name (e.g., 'sanity')",
     )
-    cms_provider: str | None = Field(
+    cms_instance: str | None = Field(
         default=None,
-        description="CMS provider name (e.g., 'sanity')",
-    )
-    cms_config: dict[str, Any] | None = Field(
-        default=None,
-        description="CMS-specific configuration",
+        description="CMS instance name (e.g., 'production')",
     )
 
     # Discovery options
@@ -209,9 +205,9 @@ class MapInput(BaseModel):
     )
 
     # URL-specific options
-    discovery_method: Literal["auto", "sitemap", "crawl"] = Field(
+    discovery_method: Literal["auto", "sitemap", "crawl", "folder", "cms"] = Field(
         default="auto",
-        description="URL discovery method: 'auto', 'sitemap', or 'crawl'",
+        description="Discovery method: 'auto', 'sitemap', 'crawl', 'folder', or 'cms'",
     )
     sitemap_path: str | None = Field(
         default=None,
@@ -227,6 +223,10 @@ class MapInput(BaseModel):
         le=300.0,
         description="HTTP timeout in seconds",
     )
+    dry_run: bool = Field(
+        default=False,
+        description="Preview mode - skip persistence",
+    )
 
     @model_validator(mode="after")
     def validate_source_requirements(self) -> MapInput:
@@ -235,8 +235,10 @@ class MapInput(BaseModel):
             raise ValueError("url is required when source='url'")
         if self.source == "file" and not self.path:
             raise ValueError("path is required when source='file'")
-        if self.source == "cms" and not self.base_url:
-            raise ValueError("base_url is required when source='cms'")
+        if self.source == "cms" and not self.cms_platform:
+            raise ValueError("cms_platform is required when source='cms'")
+        if self.source == "cms" and not self.cms_instance:
+            self.cms_instance = "default"
         return self
 
 
@@ -732,10 +734,9 @@ async def discover_from_folder(
 
 
 async def discover_from_cms(
-    base_url: str,
     *,
-    cms_provider: str | None,
-    cms_config: dict[str, Any] | None,
+    cms_platform: str,
+    cms_instance: str,
     include_patterns: list[str],
     exclude_patterns: list[str],
     max_pages: int,
@@ -746,9 +747,8 @@ async def discover_from_cms(
     Discover content from a CMS provider.
 
     Args:
-        base_url: CMS base URL
-        cms_provider: CMS provider name
-        cms_config: CMS-specific configuration
+        cms_platform: CMS platform name
+        cms_instance: CMS instance name
         include_patterns: Patterns to include
         exclude_patterns: Patterns to exclude
         max_pages: Maximum entries to discover
@@ -758,60 +758,25 @@ async def discover_from_cms(
     Returns:
         Tuple of (discovered items, error message or None)
     """
-    # Try to load the CMS adapter
     try:
-        if cms_provider == "sanity":
-            from kurt.integrations.cms.sanity.adapter import SanityAdapter
+        from kurt.tools.map.cms import discover_from_cms as discover_cms
 
-            config = cms_config or {}
-            adapter = SanityAdapter(config)
+        result = discover_cms(platform=cms_platform, instance=cms_instance, limit=max_pages)
+        items: list[dict[str, Any]] = result.get("discovered", [])
 
-            # List all documents
-            docs = adapter.list_all(limit=max_pages)
-
-            items: list[dict[str, Any]] = []
-            for doc in docs:
-                doc_id = doc.get("id", doc.get("_id", ""))
-                title = doc.get("title", "")
-                content_type = doc.get("content_type", doc.get("_type", ""))
-
-                # Build URL
-                url = f"{base_url}/{content_type}/{doc_id}"
-
-                # Apply filters
-                filtered = filter_items(
-                    [url],
-                    include_patterns=include_patterns,
-                    exclude_patterns=exclude_patterns,
-                )
-                if not filtered:
-                    continue
-
-                items.append(
-                    {
-                        "url": url,
-                        "source_type": "cms_entry",
-                        "title": title,
-                        "discovered_from": base_url,
-                        "depth": 0,
-                        "metadata": {
-                            "cms_id": doc_id,
-                            "cms_provider": cms_provider,
-                            "content_type": content_type,
-                        },
-                    }
-                )
-
-                if len(items) >= max_pages:
-                    break
-
-            return items, None
-
+        if include_patterns or exclude_patterns:
+            filtered_urls = filter_items(
+                [item.get("url", "") for item in items],
+                include_patterns=include_patterns,
+                exclude_patterns=exclude_patterns,
+                max_items=max_pages,
+            )
+            allowed = set(filtered_urls)
+            items = [item for item in items if item.get("url") in allowed]
         else:
-            return [], f"Unsupported CMS provider: {cms_provider}"
+            items = items[:max_pages]
 
-    except ImportError as e:
-        return [], f"CMS adapter not available: {e}"
+        return items, None
     except Exception as e:
         return [], f"CMS discovery failed: {e}"
 
@@ -875,20 +840,58 @@ class MapTool(Tool[MapInput, MapOutput]):
             )
             result.success = False
 
-        # Add document IDs and convert to output format
-        for item in items:
-            url = item.get("url", "")
-            if not item.get("document_id"):
-                item["document_id"] = make_document_id(url)
-            result.data.append(item)
+        from kurt.tools.map.utils import (
+            build_rows,
+            get_source_type,
+            persist_map_documents,
+            serialize_rows,
+        )
+
+        discovery_method = params.discovery_method
+        discovery_url = ""
+        if params.source == "url":
+            if params.discovery_method == "auto":
+                discovery_method = (
+                    "sitemap"
+                    if any(item.get("source_type") == "sitemap" for item in items)
+                    else "crawl"
+                )
+            discovery_url = params.url or ""
+        elif params.source == "file":
+            discovery_method = "folder"
+            discovery_url = params.path or ""
+        elif params.source == "cms":
+            discovery_method = "cms"
+            if params.cms_platform:
+                discovery_url = f"{params.cms_platform}/{params.cms_instance or 'default'}"
+
+        source_type = get_source_type(discovery_method)
+        rows = build_rows(
+            items,
+            discovery_method=discovery_method,
+            discovery_url=discovery_url,
+            source_type=source_type,
+        )
+
+        if not params.dry_run and rows:
+            try:
+                persist_map_documents(rows)
+            except Exception as exc:
+                result.add_error(
+                    error_type="persist_failed",
+                    message=str(exc),
+                )
+                result.success = False
+
+        result.data.extend(serialize_rows(rows))
 
         # Record substep summary
         substep_name = f"map_{params.source}"
         result.add_substep(
             name=substep_name,
             status="completed" if result.success else "failed",
-            current=len(items),
-            total=len(items),
+            current=len(rows),
+            total=len(rows),
         )
 
         return result
@@ -1057,17 +1060,17 @@ class MapTool(Tool[MapInput, MapOutput]):
         on_progress: ProgressCallback | None,
     ) -> tuple[list[dict[str, Any]], str | None]:
         """Map content from a CMS."""
+        instance_label = params.cms_instance or "default"
         self.emit_progress(
             on_progress,
             substep="map_cms",
             status="running",
-            message=f"Discovering from CMS: {params.cms_provider or 'unknown'}",
+            message=f"Discovering from CMS: {params.cms_platform}/{instance_label}",
         )
 
         items, error = await discover_from_cms(
-            params.base_url,
-            cms_provider=params.cms_provider,
-            cms_config=params.cms_config,
+            cms_platform=params.cms_platform or "",
+            cms_instance=instance_label,
             include_patterns=params.include_patterns,
             exclude_patterns=params.exclude_patterns,
             max_pages=params.max_pages,

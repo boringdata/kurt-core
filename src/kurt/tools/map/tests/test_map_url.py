@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from kurt.workflows.map.map_url import (
+from kurt.tools.map.url import (
     crawl_website,
     discover_from_url,
     discover_sitemap_urls,
@@ -114,7 +114,7 @@ class TestCrawlWebsite:
         mock_urls = {"https://example.com/page1", "https://example.com/page2"}
 
         with patch(
-            "kurt.workflows.map.map_url.focused_crawler",
+            "kurt.tools.map.url.focused_crawler",
             return_value=([], mock_urls),
         ):
             urls = crawl_website("https://example.com", max_depth=2)
@@ -131,7 +131,7 @@ class TestCrawlWebsite:
         }
 
         with patch(
-            "kurt.workflows.map.map_url.focused_crawler",
+            "kurt.tools.map.url.focused_crawler",
             return_value=([], mock_urls),
         ):
             urls = crawl_website("https://example.com", max_depth=2, allow_external=False)
@@ -147,7 +147,7 @@ class TestCrawlWebsite:
         }
 
         with patch(
-            "kurt.workflows.map.map_url.focused_crawler",
+            "kurt.tools.map.url.focused_crawler",
             return_value=([], mock_urls),
         ):
             urls = crawl_website("https://example.com", max_depth=2, allow_external=True)
@@ -160,7 +160,7 @@ class TestCrawlWebsite:
         mock_urls = {f"https://example.com/page{i}" for i in range(100)}
 
         with patch(
-            "kurt.workflows.map.map_url.focused_crawler",
+            "kurt.tools.map.url.focused_crawler",
             return_value=([], mock_urls),
         ):
             urls = crawl_website("https://example.com", max_depth=2, max_pages=10)
@@ -175,7 +175,7 @@ class TestCrawlWebsite:
         }
 
         with patch(
-            "kurt.workflows.map.map_url.focused_crawler",
+            "kurt.tools.map.url.focused_crawler",
             return_value=([], mock_urls),
         ):
             urls = crawl_website(
@@ -195,7 +195,7 @@ class TestCrawlWebsite:
         }
 
         with patch(
-            "kurt.workflows.map.map_url.focused_crawler",
+            "kurt.tools.map.url.focused_crawler",
             return_value=([], mock_urls),
         ):
             urls = crawl_website(
@@ -259,7 +259,7 @@ class TestDiscoverFromUrl:
 
         with patch("httpx.get", return_value=mock_response):
             with patch(
-                "kurt.workflows.map.map_url.focused_crawler",
+                "kurt.tools.map.url.focused_crawler",
                 return_value=([], mock_urls),
             ):
                 result = discover_from_url("https://example.com", max_depth=2)
@@ -370,7 +370,7 @@ class TestDiscoverFromUrl:
 
         # Even if sitemap would work, it shouldn't be tried
         with patch(
-            "kurt.workflows.map.map_url.focused_crawler",
+            "kurt.tools.map.url.focused_crawler",
             return_value=([], mock_urls),
         ) as mock_crawler:
             result = discover_from_url(
@@ -443,7 +443,7 @@ class TestDiscoverFromUrl:
         mock_urls = {"https://example.com/page"}
 
         with patch(
-            "kurt.workflows.map.map_url.focused_crawler",
+            "kurt.tools.map.url.focused_crawler",
             return_value=([], mock_urls),
         ) as mock_crawler:
             discover_from_url(

@@ -1,24 +1,33 @@
-"""Executor for agent-based workflows using Claude Code CLI and DBOS."""
+"""Executor for agent-based workflows using Claude Code CLI.
+
+This module runs agent workflows (Claude Code subprocess) with observability
+tracking via workflow_runs/step_logs/step_events tables (no DBOS).
+"""
 
 from __future__ import annotations
 
 import ast
 import json
+import logging
 import os
 import re
+import subprocess
 import tempfile
 import time
+import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
-
-from dbos import DBOS
+from typing import Any, Callable, Optional
 
 from kurt.config import get_config_file_path
-from kurt.core import run_workflow
+from kurt.db.dolt import DoltDB, check_schema_exists, init_observability_schema
+from kurt.observability import WorkflowLifecycle
+from kurt.observability.tracking import track_event
 
 from .parser import ParsedWorkflow
 from .registry import get_workflow_dir
+
+logger = logging.getLogger(__name__)
 
 
 def _create_tool_tracking_settings() -> tuple[str, str]:
@@ -88,6 +97,31 @@ def _cleanup_tool_tracking(settings_path: str, tool_log_path: str) -> int:
 def _get_project_root() -> str:
     """Get the project root directory."""
     return str(get_config_file_path().parent)
+
+
+def _get_dolt_db(project_root: Path | None = None) -> DoltDB:
+    """Get or initialize Dolt database for observability."""
+    if project_root is None:
+        project_root = Path(_get_project_root())
+
+    dolt_path = os.environ.get("DOLT_PATH", ".")
+    path = Path(dolt_path)
+    if not path.is_absolute():
+        path = project_root / path
+
+    db = DoltDB(path)
+    if not db.exists():
+        db.init()
+        init_observability_schema(db)
+    else:
+        schema_status = check_schema_exists(db)
+        if not all(schema_status.values()):
+            init_observability_schema(db)
+    return db
+
+
+# Progress callback type for step events
+ProgressCallback = Callable[[dict[str, Any]], None]
 
 
 def _extract_tools_documentation(workflow_name: str) -> str:
@@ -191,47 +225,66 @@ def resolve_template(body: str, inputs: dict[str, Any]) -> str:
     return re.sub(r"\{\{(\w+)\}\}", replace_var, body)
 
 
-@DBOS.workflow()
 def execute_agent_workflow(
     definition_dict: dict[str, Any],
     inputs: dict[str, Any],
     trigger: str = "manual",
+    run_id: str | None = None,
+    db: DoltDB | None = None,
 ) -> dict[str, Any]:
     """
-    Execute an agent workflow inside DBOS.
+    Execute an agent workflow with observability tracking.
 
-    All state is tracked via DBOS events/streams - no custom tables needed.
+    All state is tracked via workflow_runs/step_logs/step_events tables.
 
     Args:
         definition_dict: ParsedWorkflow as dict
         inputs: Input parameters merged with defaults
         trigger: What triggered this run (manual, scheduled, api)
+        run_id: Optional existing run ID (for background execution)
+        db: Optional DoltDB instance (created if not provided)
 
     Returns:
         Dict with workflow results
     """
     definition = ParsedWorkflow.model_validate(definition_dict)
-    workflow_id = DBOS.workflow_id
 
-    # Store workflow metadata in DBOS events
-    DBOS.set_event("workflow_type", "agent")
-    DBOS.set_event("definition_name", definition.name)
-    DBOS.set_event("trigger", trigger)
-    DBOS.set_event("status", "running")
-    DBOS.set_event("started_at", time.time())
+    # Initialize database and lifecycle tracking
+    if db is None:
+        db = _get_dolt_db()
+    lifecycle = WorkflowLifecycle(db)
 
-    # Store parent workflow ID for nested workflow display
-    parent_workflow_id = os.environ.get("KURT_PARENT_WORKFLOW_ID")
-    if parent_workflow_id:
-        DBOS.set_event("parent_workflow_id", parent_workflow_id)
+    # Create or resume workflow run
+    if run_id is None:
+        run_id = str(uuid.uuid4())
+        metadata = {
+            "workflow_type": "agent",
+            "definition_name": definition.name,
+            "trigger": trigger,
+        }
+        # Store parent workflow ID for nested workflow display
+        parent_workflow_id = os.environ.get("KURT_PARENT_WORKFLOW_ID")
+        if parent_workflow_id:
+            metadata["parent_workflow_id"] = parent_workflow_id
 
-    DBOS.write_stream(
-        "progress",
-        {
-            "type": "workflow",
-            "status": "start",
-            "timestamp": time.time(),
-        },
+        lifecycle.create_run(
+            workflow=f"agent:{definition.name}",
+            inputs=inputs,
+            metadata=metadata,
+            run_id=run_id,
+            status="running",
+        )
+    else:
+        lifecycle.update_status(run_id, "running")
+
+    # Emit workflow start event
+    track_event(
+        run_id=run_id,
+        step_id="workflow",
+        status="running",
+        message=f"Agent workflow {definition.name} started",
+        metadata={"trigger": trigger},
+        db=db,
     )
 
     try:
@@ -261,11 +314,36 @@ result = <function_name>(args)
 {prompt}
 {tools_section}
 ---
-Workflow ID: {workflow_id}
+Workflow ID: {run_id}
 """
 
         # Get workflow directory for PYTHONPATH
         workflow_dir = get_workflow_dir(definition.name)
+
+        # Create step log for agent execution
+        lifecycle.create_step_log(
+            run_id=run_id,
+            step_id="agent_execution",
+            tool="ClaudeCLI",
+            metadata={
+                "model": definition.agent.model,
+                "max_turns": definition.agent.max_turns,
+            },
+        )
+
+        # Build progress callback
+        def on_progress(event: dict[str, Any]) -> None:
+            track_event(
+                run_id=run_id,
+                step_id="agent_execution",
+                substep=event.get("substep"),
+                status=event.get("status", "progress"),
+                current=event.get("current"),
+                total=event.get("total"),
+                message=event.get("message"),
+                metadata=event.get("metadata"),
+                db=db,
+            )
 
         # Execute agent
         result = agent_execution_step(
@@ -278,42 +356,63 @@ Workflow ID: {workflow_id}
             max_tool_calls=definition.guardrails.max_tool_calls,
             max_time=definition.guardrails.max_time,
             workflow_dir=str(workflow_dir) if workflow_dir else None,
+            run_id=run_id,
+            on_progress=on_progress,
         )
 
-        # Final state in DBOS events
-        DBOS.set_event("status", "completed")
-        DBOS.set_event("completed_at", time.time())
-        DBOS.set_event("stop_reason", result.get("stop_reason", "completed"))
-
-        DBOS.write_stream(
-            "progress",
-            {
-                "type": "workflow",
-                "status": "complete",
-                "timestamp": time.time(),
+        # Update step log
+        lifecycle.update_step_log(
+            run_id, "agent_execution",
+            status="completed",
+            output_count=result.get("turns", 0),
+            metadata={
+                "stop_reason": result.get("stop_reason"),
+                "tokens_in": result.get("tokens_in"),
+                "tokens_out": result.get("tokens_out"),
+                "cost_usd": result.get("cost_usd"),
             },
         )
 
-        return {"workflow_id": workflow_id, "status": "completed", **result}
+        # Complete workflow
+        lifecycle.update_status(run_id, "completed")
+
+        track_event(
+            run_id=run_id,
+            step_id="workflow",
+            status="completed",
+            message=f"Agent workflow {definition.name} completed",
+            metadata={"stop_reason": result.get("stop_reason", "completed")},
+            db=db,
+        )
+
+        return {"workflow_id": run_id, "status": "completed", **result}
 
     except Exception as e:
-        DBOS.set_event("status", "failed")
-        DBOS.set_event("completed_at", time.time())
-        DBOS.set_event("last_error", str(e))
+        # Update step log as failed
+        try:
+            lifecycle.update_step_log(
+                run_id, "agent_execution",
+                status="failed",
+                error_count=1,
+                errors=[{"row_idx": None, "error_type": "exception", "message": str(e)}],
+            )
+        except Exception:
+            pass  # Step log may not exist yet
 
-        DBOS.write_stream(
-            "agent_events",
-            {
-                "type": "error",
-                "timestamp": time.time(),
-                "data": {"message": str(e), "code": "WORKFLOW_ERROR"},
-            },
+        lifecycle.update_status(run_id, "failed", error=str(e))
+
+        track_event(
+            run_id=run_id,
+            step_id="workflow",
+            status="failed",
+            message=f"Agent workflow failed: {str(e)}",
+            metadata={"error": str(e)},
+            db=db,
         )
 
         raise
 
 
-@DBOS.step(name="agent_execution", retries_allowed=False)
 def agent_execution_step(
     prompt: str,
     model: str,
@@ -326,6 +425,9 @@ def agent_execution_step(
     max_time: int = 3600,
     # Workflow directory for custom tools
     workflow_dir: Optional[str] = None,
+    # Observability
+    run_id: Optional[str] = None,
+    on_progress: Optional[ProgressCallback] = None,
 ) -> dict[str, Any]:
     """
     Execute Claude Code agent via subprocess.
@@ -343,9 +445,10 @@ def agent_execution_step(
         max_tool_calls: Maximum tool invocations (not enforced by CLI)
         max_time: Maximum execution time in seconds
         workflow_dir: Path to workflow directory containing tools.py
+        run_id: Optional workflow run ID for nested workflow support
+        on_progress: Optional callback for progress events
     """
     import shutil
-    import subprocess
 
     start_time = time.time()
 
@@ -357,16 +460,14 @@ def agent_execution_step(
             "curl -fsSL https://claude.ai/install.sh | bash"
         )
 
-    DBOS.write_stream(
-        "progress",
-        {
-            "type": "step",
-            "step": "agent_execution",
-            "status": "start",
+    # Emit start progress event
+    if on_progress:
+        on_progress({
+            "substep": "execution",
+            "status": "running",
             "total": max_turns,
-            "timestamp": time.time(),
-        },
-    )
+            "message": "Starting Claude Code execution",
+        })
 
     # Create tool tracking settings (temp files for hook-based tracking)
     settings_path, tool_log_path = _create_tool_tracking_settings()
@@ -375,7 +476,8 @@ def agent_execution_step(
     env = os.environ.copy()
     env["KURT_TOOL_LOG_FILE"] = tool_log_path
     # Pass parent workflow ID so child workflows can be nested
-    env["KURT_PARENT_WORKFLOW_ID"] = DBOS.workflow_id
+    if run_id:
+        env["KURT_PARENT_WORKFLOW_ID"] = run_id
 
     # Add workflow directory to PYTHONPATH for custom tool imports
     # This allows: from workflows.my_workflow.tools import my_tool
@@ -417,14 +519,7 @@ def agent_execution_step(
     # Add the prompt as positional argument
     cmd.append(prompt)
 
-    DBOS.write_stream(
-        "agent_events",
-        {
-            "type": "start",
-            "timestamp": time.time(),
-            "data": {"command": " ".join(cmd[:5]) + " ..."},
-        },
-    )
+    logger.debug(f"Running Claude CLI: {' '.join(cmd[:5])} ...")
 
     try:
         # Run claude with timeout
@@ -459,23 +554,22 @@ def agent_execution_step(
         tokens_in = usage.get("input_tokens", 0) + usage.get("cache_read_input_tokens", 0)
         tokens_out = usage.get("output_tokens", 0)
 
-        DBOS.set_event("agent_turns", turns)
-        DBOS.set_event("tool_calls", tool_calls)
-        DBOS.set_event("tokens_in", tokens_in)
-        DBOS.set_event("tokens_out", tokens_out)
-        DBOS.set_event("cost_usd", cost)
-
-        # Log final result
-        result_text = output_data.get("result", "")
-        if result_text:
-            DBOS.write_stream(
-                "agent_events",
-                {
-                    "type": "result",
-                    "timestamp": time.time(),
-                    "data": {"content": str(result_text)[:2000]},
+        # Emit result progress event
+        if on_progress:
+            result_text = output_data.get("result", "")
+            on_progress({
+                "substep": "result",
+                "status": "progress",
+                "current": turns,
+                "total": max_turns,
+                "message": f"Completed {turns} turns",
+                "metadata": {
+                    "tokens_in": tokens_in,
+                    "tokens_out": tokens_out,
+                    "cost_usd": cost,
+                    "result_preview": str(result_text)[:500] if result_text else None,
                 },
-            )
+            })
 
         # Determine stop reason
         is_error = output_data.get("is_error", False)
@@ -489,14 +583,12 @@ def agent_execution_step(
 
         # Check if there was an error in stderr
         if result.returncode != 0 and result.stderr:
-            DBOS.write_stream(
-                "agent_events",
-                {
-                    "type": "error",
-                    "timestamp": time.time(),
-                    "data": {"stderr": result.stderr[:1000]},
-                },
-            )
+            if on_progress:
+                on_progress({
+                    "substep": "error",
+                    "status": "failed",
+                    "message": result.stderr[:500],
+                })
             if not is_error:
                 stop_reason = f"error: {result.stderr[:100]}"
 
@@ -509,31 +601,27 @@ def agent_execution_step(
         tokens_out = 0
         cost = 0.0
 
-        DBOS.write_stream(
-            "agent_events",
-            {
-                "type": "guardrail_triggered",
-                "timestamp": time.time(),
-                "data": {"reason": stop_reason},
-            },
-        )
+        if on_progress:
+            on_progress({
+                "substep": "timeout",
+                "status": "failed",
+                "message": stop_reason,
+            })
 
     except Exception:
         # Ensure cleanup on any error
         _cleanup_tool_tracking(settings_path, tool_log_path)
         raise
 
-    DBOS.write_stream(
-        "progress",
-        {
-            "type": "step",
-            "step": "agent_execution",
-            "status": "complete",
+    # Emit completion progress event
+    if on_progress:
+        on_progress({
+            "substep": "execution",
+            "status": "completed",
             "current": turns,
             "total": max_turns,
-            "timestamp": time.time(),
-        },
-    )
+            "message": f"Execution complete: {stop_reason}",
+        })
 
     return {
         "turns": turns,
@@ -564,14 +652,15 @@ def _truncate_dict(d: dict, max_length: int = 500) -> dict:
 # ============================================================================
 
 
-@DBOS.workflow()
 def execute_steps_workflow(
     definition_dict: dict[str, Any],
     inputs: dict[str, Any],
     trigger: str = "manual",
+    run_id: str | None = None,
+    db: DoltDB | None = None,
 ) -> dict[str, Any]:
     """
-    Execute a DBOS-driven workflow with DAG orchestration.
+    Execute a DAG-orchestrated workflow with observability tracking.
 
     Steps are executed in topological order based on their depends_on fields.
     Results from each step are passed to dependent steps via context.
@@ -580,6 +669,8 @@ def execute_steps_workflow(
         definition_dict: ParsedWorkflow as dict
         inputs: Input parameters merged with defaults
         trigger: What triggered this run (manual, scheduled, api)
+        run_id: Optional existing run ID (for background execution)
+        db: Optional DoltDB instance (created if not provided)
 
     Returns:
         Dict with workflow results and step outputs
@@ -589,36 +680,55 @@ def execute_steps_workflow(
     from .parser import ParsedWorkflow
 
     definition = ParsedWorkflow.model_validate(definition_dict)
-    workflow_id = DBOS.workflow_id
 
-    # Store workflow metadata in DBOS events
-    DBOS.set_event("workflow_type", "steps")
-    DBOS.set_event("definition_name", definition.name)
-    DBOS.set_event("trigger", trigger)
-    DBOS.set_event("status", "running")
-    DBOS.set_event("started_at", time.time())
+    # Initialize database and lifecycle tracking
+    if db is None:
+        db = _get_dolt_db()
+    lifecycle = WorkflowLifecycle(db)
 
-    # Store parent workflow ID for nested workflow display
-    parent_workflow_id = os.environ.get("KURT_PARENT_WORKFLOW_ID")
-    if parent_workflow_id:
-        DBOS.set_event("parent_workflow_id", parent_workflow_id)
-
-    DBOS.write_stream(
-        "progress",
-        {
-            "type": "workflow",
-            "status": "start",
+    # Create or resume workflow run
+    if run_id is None:
+        run_id = str(uuid.uuid4())
+        metadata = {
+            "workflow_type": "steps",
+            "definition_name": definition.name,
+            "trigger": trigger,
             "total_steps": len(definition.steps),
-            "timestamp": time.time(),
-        },
+        }
+        # Store parent workflow ID for nested workflow display
+        parent_workflow_id = os.environ.get("KURT_PARENT_WORKFLOW_ID")
+        if parent_workflow_id:
+            metadata["parent_workflow_id"] = parent_workflow_id
+
+        lifecycle.create_run(
+            workflow=f"steps:{definition.name}",
+            inputs=inputs,
+            metadata=metadata,
+            run_id=run_id,
+            status="running",
+        )
+    else:
+        lifecycle.update_status(run_id, "running")
+
+    # Emit workflow start event
+    track_event(
+        run_id=run_id,
+        step_id="workflow",
+        status="running",
+        message=f"Steps workflow {definition.name} started",
+        total=len(definition.steps),
+        metadata={"trigger": trigger},
+        db=db,
     )
 
     # Build context for step execution
     context = {
-        "workflow_id": workflow_id,
+        "workflow_id": run_id,
         "inputs": inputs,
         "outputs": {},  # Step outputs keyed by step name
         "definition": definition_dict,
+        "db": db,
+        "lifecycle": lifecycle,
     }
 
     try:
@@ -627,29 +737,35 @@ def execute_steps_workflow(
         sorter = TopologicalSorter(graph)
         execution_order = list(sorter.static_order())
 
-        DBOS.write_stream(
-            "progress",
-            {
-                "type": "dag",
-                "execution_order": execution_order,
-                "timestamp": time.time(),
-            },
+        track_event(
+            run_id=run_id,
+            step_id="workflow",
+            substep="dag",
+            status="progress",
+            message=f"Execution order: {', '.join(execution_order)}",
+            db=db,
         )
 
         # Execute steps in order
         for idx, step_name in enumerate(execution_order):
             step = definition.steps[step_name]
 
-            DBOS.write_stream(
-                "progress",
-                {
-                    "type": "step",
-                    "step": step_name,
-                    "status": "start",
-                    "index": idx + 1,
-                    "total": len(execution_order),
-                    "timestamp": time.time(),
-                },
+            # Create step log
+            lifecycle.create_step_log(
+                run_id=run_id,
+                step_id=step_name,
+                tool=step.type,
+                metadata={"index": idx + 1, "total": len(execution_order)},
+            )
+
+            track_event(
+                run_id=run_id,
+                step_id=step_name,
+                status="running",
+                current=idx + 1,
+                total=len(execution_order),
+                message=f"Starting step {step_name}",
+                db=db,
             )
 
             # Execute step based on type
@@ -658,50 +774,51 @@ def execute_steps_workflow(
             # Store result in context for dependent steps
             context["outputs"][step_name] = step_result
 
-            DBOS.write_stream(
-                "progress",
-                {
-                    "type": "step",
-                    "step": step_name,
-                    "status": "complete",
-                    "index": idx + 1,
-                    "total": len(execution_order),
-                    "timestamp": time.time(),
-                },
+            # Update step log
+            lifecycle.update_step_log(
+                run_id, step_name,
+                status="completed",
+                output_count=len(step_result) if isinstance(step_result, dict) else 1,
             )
 
-        # Final state
-        DBOS.set_event("status", "completed")
-        DBOS.set_event("completed_at", time.time())
+            track_event(
+                run_id=run_id,
+                step_id=step_name,
+                status="completed",
+                current=idx + 1,
+                total=len(execution_order),
+                message=f"Completed step {step_name}",
+                db=db,
+            )
 
-        DBOS.write_stream(
-            "progress",
-            {
-                "type": "workflow",
-                "status": "complete",
-                "timestamp": time.time(),
-            },
+        # Complete workflow
+        lifecycle.update_status(run_id, "completed")
+
+        track_event(
+            run_id=run_id,
+            step_id="workflow",
+            status="completed",
+            message=f"Steps workflow {definition.name} completed",
+            db=db,
         )
 
         return {
-            "workflow_id": workflow_id,
+            "workflow_id": run_id,
             "status": "completed",
             "outputs": context["outputs"],
             "execution_order": execution_order,
         }
 
     except Exception as e:
-        DBOS.set_event("status", "failed")
-        DBOS.set_event("completed_at", time.time())
-        DBOS.set_event("last_error", str(e))
+        lifecycle.update_status(run_id, "failed", error=str(e))
 
-        DBOS.write_stream(
-            "agent_events",
-            {
-                "type": "error",
-                "timestamp": time.time(),
-                "data": {"message": str(e), "code": "WORKFLOW_ERROR"},
-            },
+        track_event(
+            run_id=run_id,
+            step_id="workflow",
+            status="failed",
+            message=f"Steps workflow failed: {str(e)}",
+            metadata={"error": str(e)},
+            db=db,
         )
 
         raise
@@ -748,7 +865,6 @@ def _execute_step(
         raise ValueError(f"Unknown step type: {step.type}")
 
 
-@DBOS.step(name="execute_function_step")
 def execute_function_step(
     step_name: str,
     function_name: str,
@@ -757,8 +873,6 @@ def execute_function_step(
 ) -> dict[str, Any]:
     """
     Execute a function from the workflow's tools.py.
-
-    The function should be decorated with @DBOS.step() in tools.py.
 
     Args:
         step_name: Name of the step
@@ -796,25 +910,28 @@ def execute_function_step(
     result = func(context)
     duration = time.time() - start_time
 
-    DBOS.write_stream(
-        "agent_events",
-        {
-            "type": "function_executed",
-            "timestamp": time.time(),
-            "data": {
-                "step": step_name,
+    # Emit progress event if db is available in context
+    db = context.get("db")
+    run_id = context.get("workflow_id")
+    if db and run_id:
+        track_event(
+            run_id=run_id,
+            step_id=step_name,
+            substep="function",
+            status="progress",
+            message=f"Function {function_name} executed in {duration:.2f}s",
+            metadata={
                 "function": function_name,
                 "duration_seconds": round(duration, 2),
             },
-        },
-    )
+            db=db,
+        )
 
     if isinstance(result, dict):
         return result
     return {"result": result}
 
 
-@DBOS.step(name="execute_agent_step")
 def execute_agent_step(
     step_name: str,
     prompt: str,
@@ -860,6 +977,24 @@ Workflow ID: {context['workflow_id']}
 
     workflow_dir = get_workflow_dir(workflow_name)
 
+    # Build progress callback
+    db = context.get("db")
+    run_id = context.get("workflow_id")
+
+    def on_progress(event: dict[str, Any]) -> None:
+        if db and run_id:
+            track_event(
+                run_id=run_id,
+                step_id=step_name,
+                substep=event.get("substep"),
+                status=event.get("status", "progress"),
+                current=event.get("current"),
+                total=event.get("total"),
+                message=event.get("message"),
+                metadata=event.get("metadata"),
+                db=db,
+            )
+
     # Execute agent
     result = agent_execution_step(
         prompt=resolved_prompt,
@@ -871,12 +1006,13 @@ Workflow ID: {context['workflow_id']}
         max_tool_calls=100,
         max_time=600,
         workflow_dir=str(workflow_dir) if workflow_dir else None,
+        run_id=run_id,
+        on_progress=on_progress,
     )
 
     return result
 
 
-@DBOS.step(name="execute_llm_step")
 def execute_llm_step(
     step_name: str,
     prompt_template: str,
@@ -958,9 +1094,9 @@ def execute_llm_step(
         return output_schema(response=content)
 
     # Detect input columns from template
-    import re
+    import re as re_module
 
-    input_columns = list(set(re.findall(r"\{(\w+)\}", prompt_template)))
+    input_columns = list(set(re_module.findall(r"\{(\w+)\}", prompt_template)))
 
     # Create and run LLMStep
     from kurt.core import LLMStep
@@ -988,6 +1124,111 @@ def execute_llm_step(
     }
 
 
+# --- Background Execution ---
+
+
+def _create_pending_run(
+    workflow_name: str,
+    definition_dict: dict[str, Any],
+    inputs: dict[str, Any],
+    trigger: str,
+) -> str:
+    """Create a pending workflow run in the database."""
+    db = _get_dolt_db()
+    lifecycle = WorkflowLifecycle(db)
+
+    run_id = str(uuid.uuid4())
+    metadata = {
+        "workflow_type": "agent" if "agent" in workflow_name else "steps",
+        "definition_name": definition_dict.get("name", "unknown"),
+        "trigger": trigger,
+    }
+
+    lifecycle.create_run(
+        workflow=workflow_name,
+        inputs=inputs,
+        metadata=metadata,
+        run_id=run_id,
+        status="pending",
+    )
+
+    return run_id
+
+
+def _spawn_background_agent_run(
+    workflow_fn: Callable,
+    definition_dict: dict[str, Any],
+    inputs: dict[str, Any],
+    trigger: str,
+) -> dict[str, Any]:
+    """
+    Spawn a background subprocess to run the agent workflow.
+
+    Creates a pending run, writes payload to temp file, and spawns subprocess.
+    """
+    import sys
+
+    # Determine workflow name
+    is_steps = workflow_fn == execute_steps_workflow
+    workflow_name = f"{'steps' if is_steps else 'agent'}:{definition_dict.get('name', 'unknown')}"
+
+    # Create pending run
+    run_id = _create_pending_run(workflow_name, definition_dict, inputs, trigger)
+
+    # Write payload to temp file
+    payload = {
+        "run_id": run_id,
+        "workflow_type": "steps" if is_steps else "agent",
+        "definition_dict": definition_dict,
+        "inputs": inputs,
+        "trigger": trigger,
+        "project_root": _get_project_root(),
+    }
+
+    payload_file = tempfile.NamedTemporaryFile("w", delete=False, suffix=".json")
+    with payload_file as handle:
+        json.dump(payload, handle)
+
+    # Spawn subprocess
+    cmd = [sys.executable, "-m", "kurt.workflows.agents.executor", "--payload", payload_file.name]
+    subprocess.Popen(
+        cmd,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        cwd=_get_project_root(),
+        start_new_session=True,
+    )
+
+    return {"workflow_id": run_id, "status": "started"}
+
+
+def _run_from_payload(payload_path: str) -> None:
+    """Run a workflow from a payload file (called by subprocess)."""
+    payload = json.loads(Path(payload_path).read_text())
+
+    run_id = payload["run_id"]
+    workflow_type = payload["workflow_type"]
+    definition_dict = payload["definition_dict"]
+    inputs = payload["inputs"]
+    trigger = payload["trigger"]
+
+    if workflow_type == "steps":
+        execute_steps_workflow(
+            definition_dict=definition_dict,
+            inputs=inputs,
+            trigger=trigger,
+            run_id=run_id,
+        )
+    else:
+        execute_agent_workflow(
+            definition_dict=definition_dict,
+            inputs=inputs,
+            trigger=trigger,
+            run_id=run_id,
+        )
+
+
 # --- Public API ---
 
 
@@ -1002,7 +1243,7 @@ def run_definition(
 
     Automatically detects workflow type:
     - Agent-driven: Uses [agent] section, executed via Claude Code
-    - DBOS-driven: Uses [steps.xxx] sections, executed via DAG orchestration
+    - Steps-driven: Uses [steps.xxx] sections, executed via DAG orchestration
 
     Args:
         definition_name: Name of the workflow definition
@@ -1027,25 +1268,25 @@ def run_definition(
 
     # Select workflow executor based on type
     if definition.is_dbos_driven:
-        # DBOS-driven workflow with [steps.xxx] sections
         workflow_fn = execute_steps_workflow
     else:
-        # Agent-driven workflow with [agent] section
         workflow_fn = execute_agent_workflow
 
-    # Execute via DBOS
-    result = run_workflow(
-        workflow_fn,
-        definition.model_dump(),
-        resolved_inputs,
-        trigger,
-        background=background,
-    )
-
-    # Background mode returns workflow_id string, wrap it
     if background:
-        return {"workflow_id": result, "status": "started"}
-    return result
+        # Background execution via subprocess
+        return _spawn_background_agent_run(
+            workflow_fn=workflow_fn,
+            definition_dict=definition.model_dump(),
+            inputs=resolved_inputs,
+            trigger=trigger,
+        )
+    else:
+        # Foreground execution
+        return workflow_fn(
+            definition_dict=definition.model_dump(),
+            inputs=resolved_inputs,
+            trigger=trigger,
+        )
 
 
 def run_from_path(
@@ -1059,7 +1300,7 @@ def run_from_path(
 
     Automatically detects workflow type and file format:
     - Agent-driven (.md or .toml with [agent]): Executed via Claude Code
-    - DBOS-driven (.toml with [steps.xxx]): Executed via DAG orchestration
+    - Steps-driven (.toml with [steps.xxx]): Executed via DAG orchestration
 
     Args:
         workflow_path: Path to workflow file (.md or .toml) or directory
@@ -1096,22 +1337,57 @@ def run_from_path(
 
     # Select workflow executor based on type
     if definition.is_dbos_driven:
-        # DBOS-driven workflow with [steps.xxx] sections
         workflow_fn = execute_steps_workflow
     else:
-        # Agent-driven workflow with [agent] section
         workflow_fn = execute_agent_workflow
 
-    # Execute via DBOS
-    result = run_workflow(
-        workflow_fn,
-        definition.model_dump(),
-        resolved_inputs,
-        trigger,
-        background=background,
-    )
-
-    # Background mode returns workflow_id string, wrap it
     if background:
-        return {"workflow_id": result, "status": "started"}
-    return result
+        # Background execution via subprocess
+        return _spawn_background_agent_run(
+            workflow_fn=workflow_fn,
+            definition_dict=definition.model_dump(),
+            inputs=resolved_inputs,
+            trigger=trigger,
+        )
+    else:
+        # Foreground execution
+        return workflow_fn(
+            definition_dict=definition.model_dump(),
+            inputs=resolved_inputs,
+            trigger=trigger,
+        )
+
+
+# --- CLI Entry Point for Background Execution ---
+
+
+def _parse_args(argv: list[str]) -> argparse.Namespace:
+    """Parse command line arguments for background execution."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Run agent workflow from payload file.")
+    parser.add_argument("--payload", required=True, help="Path to JSON payload file")
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Main entry point for background subprocess execution."""
+    import sys
+
+    args = _parse_args(argv or sys.argv[1:])
+    try:
+        _run_from_payload(args.payload)
+        # Clean up payload file
+        try:
+            Path(args.payload).unlink()
+        except Exception:
+            pass
+        return 0
+    except Exception as e:
+        logger.error(f"Background workflow failed: {e}")
+        return 1
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main())

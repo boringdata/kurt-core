@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from kurt.workflows.map.map_cms import discover_from_cms
+from kurt.tools.map.cms import discover_from_cms
 
 
 class TestDiscoverFromCms:

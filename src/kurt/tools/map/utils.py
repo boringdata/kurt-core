@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime
 from fnmatch import fnmatch
 from typing import Any, Callable, Optional
 
@@ -99,6 +100,25 @@ def serialize_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             row_copy["status"] = status.value
         serialized.append(row_copy)
     return serialized
+
+
+def persist_map_documents(rows: list[dict[str, Any]]) -> dict[str, int]:
+    """Persist map results to map_documents."""
+    inserted = 0
+    updated = 0
+    with managed_session() as session:
+        for row in rows:
+            existing_row = session.get(MapDocument, row["document_id"])
+            if existing_row:
+                for key, value in row.items():
+                    setattr(existing_row, key, value)
+                existing_row.updated_at = datetime.utcnow()
+                updated += 1
+            else:
+                session.add(MapDocument(**row))
+                inserted += 1
+        session.commit()
+    return {"rows_written": inserted, "rows_updated": updated}
 
 
 def filter_items(

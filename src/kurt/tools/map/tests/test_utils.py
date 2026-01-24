@@ -2,8 +2,8 @@
 
 from unittest.mock import patch
 
-from kurt.workflows.map.models import MapStatus
-from kurt.workflows.map.utils import (
+from kurt.tools.map.models import MapStatus
+from kurt.tools.map.utils import (
     build_rows,
     compute_status,
     filter_items,
@@ -283,7 +283,7 @@ class TestBuildRows:
             }
         ]
 
-        with patch("kurt.workflows.map.utils.resolve_existing", return_value=set()):
+        with patch("kurt.tools.map.utils.resolve_existing", return_value=set()):
             rows = build_rows(
                 discovered_docs,
                 discovery_method="folder",
@@ -298,7 +298,7 @@ class TestBuildRows:
         """Test that source_url is set from path for folder sources."""
         discovered_docs = [{"path": "/docs/guide.md", "title": "Guide"}]
 
-        with patch("kurt.workflows.map.utils.resolve_existing", return_value=set()):
+        with patch("kurt.tools.map.utils.resolve_existing", return_value=set()):
             rows = build_rows(
                 discovered_docs,
                 discovery_method="folder",
@@ -312,7 +312,7 @@ class TestBuildRows:
         """Test that source_url is set from url for web sources."""
         discovered_docs = [{"url": "https://example.com/page", "title": "Page"}]
 
-        with patch("kurt.workflows.map.utils.resolve_existing", return_value=set()):
+        with patch("kurt.tools.map.utils.resolve_existing", return_value=set()):
             rows = build_rows(
                 discovered_docs,
                 discovery_method="sitemap",
@@ -332,7 +332,7 @@ class TestBuildRows:
             }
         ]
 
-        with patch("kurt.workflows.map.utils.resolve_existing", return_value=set()):
+        with patch("kurt.tools.map.utils.resolve_existing", return_value=set()):
             rows = build_rows(
                 discovered_docs,
                 discovery_method="cms",
@@ -351,11 +351,11 @@ class TestBuildRows:
         ]
 
         # Simulate that second doc already exists
-        with patch("kurt.workflows.map.utils.resolve_existing") as mock_resolve:
+        with patch("kurt.tools.map.utils.resolve_existing") as mock_resolve:
             mock_resolve.return_value = {"map_" + "x" * 40}  # Mock existing ID
 
             # Need to also mock make_document_id to return predictable IDs
-            with patch("kurt.workflows.map.utils.make_document_id") as mock_make_id:
+            with patch("kurt.tools.map.utils.make_document_id") as mock_make_id:
                 mock_make_id.side_effect = ["map_new123", "map_" + "x" * 40]
 
                 rows = build_rows(

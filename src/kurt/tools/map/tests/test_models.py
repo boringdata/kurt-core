@@ -1,6 +1,6 @@
 """Tests for MapDocument and MapStatus models."""
 
-from kurt.workflows.map.models import MapDocument, MapStatus
+from kurt.tools.map.models import MapDocument, MapStatus
 
 
 class TestMapStatus:

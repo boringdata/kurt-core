@@ -1,17 +1,18 @@
 """Fetch workflow - fetch content from discovered documents.
 
 For lightweight imports (models only), use:
-    from kurt.workflows.fetch.models import FetchDocument, FetchStatus
+    from kurt.tools.fetch.models import FetchDocument, FetchStatus
 
-For workflow execution (requires [workflows] extras):
-    from kurt.workflows.fetch.workflow import fetch_workflow, run_fetch
+For CLI commands, use:
+    from kurt.tools.fetch.cli import fetch_cmd
+
+Note: config, models, and CLI have moved to kurt.tools.fetch.
+This module re-exports for backward compatibility.
 """
 
-from .config import FetchConfig
-from .models import FetchDocument, FetchStatus
-
-# NOTE: workflow and steps not imported here to avoid heavy dependencies
-# Import directly when needed: from kurt.workflows.fetch.workflow import fetch_workflow
+# Re-export from tools/ for backward compatibility
+from kurt.tools.fetch.config import FetchConfig
+from kurt.tools.fetch.models import FetchDocument, FetchStatus
 
 __all__ = [
     "FetchConfig",

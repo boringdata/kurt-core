@@ -39,7 +39,6 @@ class LazyGroup(click.Group):
     lazy_subcommands={
         "content": ("kurt.documents.cli", "content_group"),
         "integrations": ("kurt.integrations.cli", "integrations_group"),
-        "workflows": ("kurt.cli.workflows", "workflows_group"),
         "workflow": ("kurt.cli.workflow", "workflow_group"),
         "research": ("kurt.workflows.research.cli", "research_group"),
         "signals": ("kurt.workflows.signals.cli", "signals_group"),
@@ -133,17 +132,12 @@ from kurt.cli.doctor import doctor_cmd, repair_cmd  # noqa: E402
 from kurt.cli.init import init  # noqa: E402
 from kurt.cli.merge import merge_cmd  # noqa: E402
 from kurt.cli.remote import pull_cmd, push_cmd  # noqa: E402
-from kurt.cli.tools import (  # noqa: E402
-    embed_cmd,
-    fetch_cmd,
-    llm_cmd,
-    map_cmd,
-    sql_cmd,
-    write_cmd,
-)
+from kurt.cli.tools import embed_cmd, llm_cmd, sql_cmd, write_cmd  # noqa: E402
+from kurt.tools.fetch.cli import fetch_cmd  # noqa: E402
+from kurt.tools.map.cli import map_cmd  # noqa: E402
 from kurt.cli.update import update  # noqa: E402
 from kurt.cli.web import serve  # noqa: E402
-from kurt.cli.workflow import cancel_cmd, logs_cmd, run_cmd, status_cmd, test_cmd  # noqa: E402
+from kurt.cli.workflow import cancel_cmd, logs_cmd, run_cmd, test_cmd  # noqa: E402
 from kurt.status import status  # noqa: E402
 
 main.add_command(init)
@@ -158,7 +152,6 @@ main.add_command(repair_cmd, name="repair")
 
 # Workflow commands (top-level for ease of use)
 main.add_command(run_cmd, name="run")
-main.add_command(status_cmd, name="wf-status")  # Avoid conflict with existing 'status'
 main.add_command(logs_cmd, name="logs")
 main.add_command(cancel_cmd, name="cancel")
 main.add_command(test_cmd, name="test")

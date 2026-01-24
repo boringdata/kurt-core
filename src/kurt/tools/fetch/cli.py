@@ -1,8 +1,10 @@
-"""CLI command for fetch workflow."""
+"""CLI command for fetch tool."""
 
 from __future__ import annotations
 
 import os
+import sys
+from pathlib import Path
 
 import click
 from rich.console import Console
@@ -15,26 +17,23 @@ from kurt.cli.options import (
     dry_run_option,
     format_option,
 )
-from kurt.cli.output import print_json, print_workflow_status
+from kurt.cli.output import print_json
+from kurt.tools.runner import create_pending_run, run_tool_with_tracking, spawn_background_run
 
 console = Console()
 
 
 def _check_engine_status(engine: str) -> tuple[str, str]:
-    """Check if engine is ready (has required API key).
-
-    Returns:
-        Tuple of (status, message) where status is 'ready' or 'missing'
-    """
+    """Check if engine is ready (has required API key)."""
     if engine == "trafilatura":
         return "ready", "Free local extraction (default)"
-    elif engine == "httpx":
+    if engine == "httpx":
         return "ready", "HTTP + trafilatura (proxy-friendly)"
-    elif engine == "firecrawl":
+    if engine == "firecrawl":
         if os.getenv("FIRECRAWL_API_KEY"):
             return "ready", "Firecrawl API"
         return "missing", "Set FIRECRAWL_API_KEY"
-    elif engine == "tavily":
+    if engine == "tavily":
         if os.getenv("TAVILY_API_KEY"):
             return "ready", "Tavily Extract API"
         return "missing", "Set TAVILY_API_KEY"
@@ -60,7 +59,6 @@ def _list_engines(output_format: str) -> None:
         print_json({"engines": engine_info})
         return
 
-    # Rich table output
     table = Table(title="Available Fetch Engines")
     table.add_column("Engine", style="cyan")
     table.add_column("Status", style="bold")
@@ -140,37 +138,19 @@ def fetch_cmd(
       httpx         HTTP fetch + trafilatura (respects proxies)
       firecrawl     Firecrawl API - requires FIRECRAWL_API_KEY
       tavily        Tavily Extract API - requires TAVILY_API_KEY
-
-    \b
-    Examples:
-      kurt content fetch                              # Fetch all pending docs
-      kurt content fetch --url "https://..."          # Single URL
-      kurt content fetch --engine tavily --url "..."  # Use Tavily
-      kurt content fetch --list-engines               # Show available engines
-
-    \b
-    Filtering:
-      kurt content fetch --limit 10                   # Fetch first 10 documents
-      kurt content fetch --include "*.md"             # Fetch markdown files
-      kurt content fetch --url-contains "/docs/"      # URLs containing /docs/
-      kurt content fetch --source-type url            # Only web URLs
-      kurt content fetch --refetch                    # Re-fetch already fetched
     """
-    # Handle --list-engines early exit
     if list_engines:
         _list_engines(output_format)
         return
 
     from kurt.documents import resolve_documents
+    from kurt.tools.fetch.config import FetchConfig
 
-    from .config import FetchConfig
-    from .workflow import run_fetch
-
-    # Merge --url into --urls for backward compatibility
+    # Merge --url into --urls
     if single_url:
         urls = f"{urls},{single_url}" if urls else single_url
 
-    # Merge --file into --files for backward compatibility
+    # Merge --file into --files
     if single_file:
         files_paths = f"{files_paths},{single_file}" if files_paths else single_file
 
@@ -181,19 +161,16 @@ def fetch_cmd(
         from sqlmodel import select
 
         from kurt.db import managed_session
-        from kurt.workflows.map.models import MapDocument, MapStatus
+        from kurt.tools.map.models import MapDocument, MapStatus
 
         url_list = [u.strip() for u in urls.split(",") if u.strip()]
         with managed_session() as session:
             for url in url_list:
-                # Check if document exists
                 existing = session.exec(
                     select(MapDocument).where(MapDocument.source_url == url)
                 ).first()
                 if not existing:
-                    # Generate document_id from URL hash
                     doc_id = hashlib.sha256(url.encode()).hexdigest()[:12]
-                    # Auto-create the document
                     doc = MapDocument(
                         document_id=doc_id,
                         source_url=url,
@@ -207,26 +184,22 @@ def fetch_cmd(
     # Handle --files: auto-create documents for file paths
     if files_paths:
         import hashlib
-        from pathlib import Path
+        from pathlib import Path as FilePath
 
         from sqlmodel import select
 
         from kurt.db import managed_session
-        from kurt.workflows.map.models import MapDocument, MapStatus
+        from kurt.tools.map.models import MapDocument, MapStatus
 
         file_list = [f.strip() for f in files_paths.split(",") if f.strip()]
         with managed_session() as session:
             for file_path in file_list:
-                # Resolve to absolute path
-                abs_path = str(Path(file_path).resolve())
-                # Check if document exists
+                abs_path = str(FilePath(file_path).resolve())
                 existing = session.exec(
                     select(MapDocument).where(MapDocument.source_url == abs_path)
                 ).first()
                 if not existing:
-                    # Generate document_id from path hash
                     doc_id = hashlib.sha256(abs_path.encode()).hexdigest()[:12]
-                    # Auto-create the document
                     doc = MapDocument(
                         document_id=doc_id,
                         source_url=abs_path,
@@ -238,63 +211,32 @@ def fetch_cmd(
             session.commit()
 
     # Determine effective status filter
-    # --refetch allows re-fetching FETCHED documents
     effective_status = with_status
     if not effective_status:
         if refetch:
-            effective_status = None  # No status filter, fetch all
+            effective_status = None
         else:
-            effective_status = "NOT_FETCHED"  # Default: only unfetched
+            effective_status = "NOT_FETCHED"
 
-    # Resolve documents to fetch
     docs = resolve_documents(
         identifier=identifier,
         include_pattern=include_pattern,
-        ids=ids if not urls and not files_paths else None,  # Don't use ids if urls/files provided
+        ids=ids if not urls and not files_paths else None,
         in_cluster=in_cluster,
         with_status=effective_status,
         with_content_type=with_content_type,
         limit=limit,
         exclude_pattern=exclude_pattern,
         url_contains=url_contains,
-        # Pass urls/files for filtering if provided
+        file_ext=file_ext,
+        source_type=source_type,
+        has_content=has_content,
+        min_content_length=min_content_length,
         urls=urls,
         files=files_paths,
     )
 
     if not docs:
-        # Check if documents exist but are already fetched (when using default NOT_FETCHED filter)
-        if effective_status == "NOT_FETCHED" and (urls or identifier):
-            # Re-query without status filter to see if documents exist
-            all_docs = resolve_documents(
-                identifier=identifier,
-                include_pattern=include_pattern,
-                ids=ids if not urls and not files_paths else None,
-                in_cluster=in_cluster,
-                with_status=None,  # No status filter
-                with_content_type=with_content_type,
-                limit=limit,
-                exclude_pattern=exclude_pattern,
-                url_contains=url_contains,
-                urls=urls,
-                files=files_paths,
-            )
-            if all_docs:
-                # Documents exist but are already fetched
-                if output_format == "json":
-                    print_json(
-                        {
-                            "status": "already_fetched",
-                            "message": "Document(s) already fetched. Use --refetch to fetch again.",
-                            "documents": [d["document_id"] for d in all_docs],
-                        }
-                    )
-                else:
-                    console.print(
-                        "[yellow]Document(s) already fetched. Use --refetch to fetch again.[/yellow]"
-                    )
-                return
-
         if output_format == "json":
             print_json(
                 {"status": "no_documents", "message": "No documents found matching criteria"}
@@ -303,44 +245,72 @@ def fetch_cmd(
             console.print("[yellow]No documents found matching criteria[/yellow]")
         return
 
-    if output_format != "json":
-        console.print(f"[dim]Found {len(docs)} document(s) to fetch[/dim]")
-
-    # Build config with CLI overrides
-    config_overrides = {"dry_run": dry_run}
+    config_overrides: dict[str, object] = {"dry_run": dry_run}
     if engine:
         config_overrides["fetch_engine"] = engine.lower()
     if batch_size is not None:
         config_overrides["batch_size"] = batch_size
     config = FetchConfig.from_config("fetch", **config_overrides)
 
-    # Build CLI command string for replay
-    import sys
+    inputs = [
+        {
+            "url": d["source_url"],
+            "document_id": d["document_id"],
+            "source_type": d.get("source_type"),
+            "metadata": d.get("metadata_json"),
+            "discovery_url": d.get("discovery_url"),
+        }
+        for d in docs
+    ]
+    params: dict[str, object] = {
+        "inputs": inputs,
+        "dry_run": config.dry_run,
+        "engine": config.fetch_engine,
+        "batch_size": config.batch_size,
+    }
 
     cli_command = "kurt " + " ".join(sys.argv[1:])
 
-    # Run workflow
-    result = run_fetch(
-        docs, config, background=background, priority=priority, cli_command=cli_command
+    if background:
+        run_id = create_pending_run(
+            "fetch",
+            params,
+            project_root=str(Path.cwd()),
+            cli_command=cli_command,
+            priority=priority,
+        )
+        spawn_background_run(
+            "fetch",
+            params,
+            run_id=run_id,
+            project_root=str(Path.cwd()),
+            cli_command=cli_command,
+            priority=priority,
+        )
+        if output_format == "json":
+            print_json({"run_id": run_id, "background": True})
+        else:
+            console.print(f"[green]✓[/green] Fetch started (run_id: {run_id})")
+            console.print("[dim]Use 'kurt workflow status <run_id>' to check status[/dim]")
+        return
+
+    run_id, result = run_tool_with_tracking(
+        "fetch",
+        params,
+        project_root=str(Path.cwd()),
+        cli_command=cli_command,
+        priority=priority,
     )
 
-    # Output result
-    # When background=True, result is a string (workflow_id) or None
-    # When background=False, result is a dict with workflow results
-    if isinstance(result, str):
-        # Background mode - result is workflow_id
-        if output_format == "json":
-            print_json({"workflow_id": result, "background": True})
-        else:
-            print_workflow_status(result)
-    elif output_format == "json":
-        print_json(result)
-    else:
-        workflow_id = result.get("workflow_id") if result else None
-        if workflow_id:
-            print_workflow_status(workflow_id)
-        else:
-            # Fallback for direct result
-            console.print(f"[green]✓[/green] Fetched {result.get('success_count', 0)} documents")
-            if result.get("error_count", 0) > 0:
-                console.print(f"[red]✗[/red] {result.get('error_count')} errors")
+    if output_format == "json":
+        print_json({"run_id": run_id, **result})
+        return
+
+    rows = result.get("data", [])
+    success_count = sum(1 for row in rows if row.get("status") == "SUCCESS")
+    error_count = sum(1 for row in rows if row.get("status") == "ERROR")
+    console.print(f"[green]✓[/green] Fetched {success_count} document(s)")
+    if error_count:
+        console.print(f"[red]✗[/red] {error_count} errors")
+    if dry_run:
+        console.print("[dim]Dry run - no documents were saved[/dim]")

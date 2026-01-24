@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from kurt.workflows.map.map_folder import (
+from kurt.tools.map.folder import (
     _extract_title,
     compute_file_hash,
     discover_from_folder,

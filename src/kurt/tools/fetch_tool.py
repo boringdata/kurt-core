@@ -64,15 +64,31 @@ class FetchEngine(str, Enum):
 class FetchStatus(str, Enum):
     """Status of a fetch operation."""
 
-    SUCCESS = "success"
-    ERROR = "error"
-    SKIPPED = "skipped"
+    SUCCESS = "SUCCESS"
+    ERROR = "ERROR"
+    SKIPPED = "SKIPPED"
 
 
 class FetchInput(BaseModel):
     """Input for a single URL to fetch."""
 
     url: str = Field(..., description="URL to fetch")
+    document_id: str | None = Field(
+        default=None,
+        description="Document ID for persistence (optional)",
+    )
+    source_type: str | None = Field(
+        default=None,
+        description="Source type (url, file, cms)",
+    )
+    metadata: dict[str, Any] | None = Field(
+        default=None,
+        description="Source metadata for CMS/file fetches",
+    )
+    discovery_url: str | None = Field(
+        default=None,
+        description="Discovery URL for CMS sources (public URL)",
+    )
 
 
 class FetchConfig(BaseModel):
@@ -94,6 +110,12 @@ class FetchConfig(BaseModel):
         le=120000,
         description="Request timeout in milliseconds",
     )
+    batch_size: int | None = Field(
+        default=None,
+        ge=1,
+        le=100,
+        description="Batch size for engines with batch support (tavily/firecrawl)",
+    )
     retries: int = Field(
         default=3,
         ge=0,
@@ -114,16 +136,24 @@ class FetchConfig(BaseModel):
         default=None,
         description="Directory to save content (relative to project root)",
     )
+    dry_run: bool = Field(
+        default=False,
+        description="Preview mode - skip persistence",
+    )
 
 
 class FetchOutput(BaseModel):
     """Output for a fetched URL."""
 
     url: str = Field(..., description="URL that was fetched")
+    document_id: str | None = Field(
+        default=None,
+        description="Document ID for persistence (optional)",
+    )
     content_path: str = Field(default="", description="Path to saved content file")
     content_hash: str = Field(default="", description="SHA256 hash of content")
-    status: Literal["success", "error", "skipped"] = Field(
-        default="success",
+    status: Literal["SUCCESS", "ERROR", "SKIPPED"] = Field(
+        default="SUCCESS",
         description="Fetch status",
     )
     error: str | None = Field(default=None, description="Error message if failed")
@@ -179,6 +209,12 @@ class FetchParams(BaseModel):
         le=120000,
         description="Request timeout in milliseconds",
     )
+    batch_size: int | None = Field(
+        default=None,
+        ge=1,
+        le=100,
+        description="Batch size for engines with batch support (tavily/firecrawl)",
+    )
     retries: int = Field(
         default=3,
         ge=0,
@@ -199,6 +235,10 @@ class FetchParams(BaseModel):
         default=None,
         description="Directory to save content (relative to project root)",
     )
+    dry_run: bool = Field(
+        default=False,
+        description="Preview mode - skip persistence",
+    )
 
     def get_inputs(self) -> list[FetchInput]:
         """Get the input list from either input_data or inputs field."""
@@ -216,10 +256,12 @@ class FetchParams(BaseModel):
             engine=self.engine,
             concurrency=self.concurrency,
             timeout_ms=self.timeout_ms,
+            batch_size=self.batch_size,
             retries=self.retries,
             retry_backoff_ms=self.retry_backoff_ms,
             embed=self.embed,
             content_dir=self.content_dir,
+            dry_run=self.dry_run,
         )
 
 
@@ -249,7 +291,7 @@ async def _fetch_with_trafilatura(
     """
     import trafilatura
 
-    from kurt.workflows.fetch.utils import extract_with_trafilatura
+    from kurt.tools.fetch.utils import extract_with_trafilatura
 
     # Use httpx for the download (async-compatible)
     response = await client.get(url, timeout=timeout_s, follow_redirects=True)
@@ -291,7 +333,7 @@ async def _fetch_with_httpx(
     Raises:
         ValueError: If fetch or extraction fails
     """
-    from kurt.workflows.fetch.utils import extract_with_trafilatura
+    from kurt.tools.fetch.utils import extract_with_trafilatura
 
     response = await client.get(url, timeout=timeout_s, follow_redirects=True)
     response.raise_for_status()
@@ -319,7 +361,7 @@ async def _fetch_with_tavily(
     client: httpx.AsyncClient,
 ) -> tuple[str, dict[str, Any]]:
     """
-    Fetch content using Tavily API (stub - not implemented).
+    Fetch content using Tavily API.
 
     Args:
         url: URL to fetch
@@ -330,9 +372,15 @@ async def _fetch_with_tavily(
         Tuple of (markdown_content, metadata_dict)
 
     Raises:
-        NotImplementedError: Always raises - Tavily is a stub
+        ValueError: If Tavily returns an error for the URL
     """
-    raise NotImplementedError("Tavily engine not yet implemented")
+    from kurt.tools.fetch.tavily import fetch_with_tavily
+
+    results = await asyncio.to_thread(fetch_with_tavily, url)
+    result = results.get(url)
+    if isinstance(result, Exception) or result is None:
+        raise ValueError(str(result) if result else "No result from Tavily")
+    return result
 
 
 async def _fetch_with_firecrawl(
@@ -341,7 +389,7 @@ async def _fetch_with_firecrawl(
     client: httpx.AsyncClient,
 ) -> tuple[str, dict[str, Any]]:
     """
-    Fetch content using Firecrawl API (stub - not implemented).
+    Fetch content using Firecrawl API.
 
     Args:
         url: URL to fetch
@@ -352,9 +400,15 @@ async def _fetch_with_firecrawl(
         Tuple of (markdown_content, metadata_dict)
 
     Raises:
-        NotImplementedError: Always raises - Firecrawl is a stub
+        ValueError: If Firecrawl returns an error for the URL
     """
-    raise NotImplementedError("Firecrawl engine not yet implemented")
+    from kurt.tools.fetch.firecrawl import fetch_with_firecrawl
+
+    results = await asyncio.to_thread(fetch_with_firecrawl, url)
+    result = results.get(url)
+    if isinstance(result, Exception) or result is None:
+        raise ValueError(str(result) if result else "No result from Firecrawl")
+    return result
 
 
 # Engine dispatcher
@@ -575,8 +629,8 @@ class FetchTool(Tool[FetchParams, FetchOutput]):
     Engines:
     - trafilatura: Free, local extraction with trafilatura
     - httpx: HTTP fetch + trafilatura extraction (proxy-friendly)
-    - tavily: Tavily API (stub, not implemented)
-    - firecrawl: Firecrawl API (stub, not implemented)
+    - tavily: Tavily API (native batch support)
+    - firecrawl: Firecrawl API (native batch support)
     """
 
     name = "fetch"
@@ -625,40 +679,51 @@ class FetchTool(Tool[FetchParams, FetchOutput]):
             message=f"Fetching {total_urls} URL(s) with {config.engine}",
         )
 
-        # Create semaphore for concurrency control
-        semaphore = asyncio.Semaphore(config.concurrency)
         timeout_s = config.timeout_ms / 1000
+        fetch_results: list[dict[str, Any] | Exception | None] = [None] * total_urls
+        web_inputs: list[FetchInput] = []
+        web_indices: list[int] = []
 
-        # Check if engine is a stub (no HTTP client needed)
-        if config.engine in ("tavily", "firecrawl"):
-            # Stub engines - don't create HTTP client
-            fetch_results = [
-                await self._fetch_single_url(
-                    input_item.url,
-                    config,
-                    timeout_s,
-                    semaphore,
-                    None,  # No client needed for stubs
-                )
-                for input_item in inputs
-            ]
-        else:
-            # Create shared HTTP client for real engines
-            async with httpx.AsyncClient() as client:
-                # Create tasks for all URLs
-                fetch_tasks = [
-                    self._fetch_single_url(
-                        input_item.url,
-                        config,
-                        timeout_s,
-                        semaphore,
-                        client,
-                    )
-                    for input_item in inputs
-                ]
+        for idx, input_item in enumerate(inputs):
+            source_type = (input_item.source_type or "url").lower()
+            if source_type == "file":
+                fetch_results[idx] = await self._fetch_file_input(input_item)
+            elif source_type == "cms":
+                fetch_results[idx] = await self._fetch_cms_input(input_item)
+            else:
+                web_inputs.append(input_item)
+                web_indices.append(idx)
 
-                # Execute all tasks concurrently
-                fetch_results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
+        if web_inputs:
+            if config.engine in ("tavily", "firecrawl"):
+                batch_results = await self._fetch_web_batch(web_inputs, config)
+                for idx, input_item in zip(web_indices, web_inputs):
+                    fetch_results[idx] = batch_results.get(input_item.url) or {
+                        "url": input_item.url,
+                        "content": None,
+                        "metadata": None,
+                        "content_hash": "",
+                        "status": FetchStatus.ERROR.value,
+                        "error": "No result",
+                        "bytes_fetched": 0,
+                        "latency_ms": 0,
+                    }
+            else:
+                semaphore = asyncio.Semaphore(config.concurrency)
+                async with httpx.AsyncClient() as client:
+                    fetch_tasks = [
+                        self._fetch_single_url(
+                            input_item.url,
+                            config,
+                            timeout_s,
+                            semaphore,
+                            client,
+                        )
+                        for input_item in web_inputs
+                    ]
+                    web_results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
+                for idx, result in zip(web_indices, web_results):
+                    fetch_results[idx] = result
 
         # Process results and emit progress
         fetched_count = 0
@@ -666,10 +731,12 @@ class FetchTool(Tool[FetchParams, FetchOutput]):
         skipped_count = 0
 
         for i, (input_item, result) in enumerate(zip(inputs, fetch_results)):
-            if isinstance(result, Exception):
+            document_id = input_item.document_id
+            if result is None or isinstance(result, Exception):
                 # Task raised an exception
-                error_msg = str(result)
+                error_msg = str(result) if result is not None else "No result"
                 results.append({
+                    "document_id": document_id,
                     "url": input_item.url,
                     "content": None,
                     "metadata": None,
@@ -682,6 +749,7 @@ class FetchTool(Tool[FetchParams, FetchOutput]):
                 failed_count += 1
             else:
                 # Result is a dict from _fetch_single_url
+                result["document_id"] = document_id
                 results.append(result)
                 if result["status"] == FetchStatus.SUCCESS.value:
                     fetched_count += 1
@@ -732,7 +800,8 @@ class FetchTool(Tool[FetchParams, FetchOutput]):
         for i, result in enumerate(results):
             if result["status"] == FetchStatus.SUCCESS.value and result.get("content"):
                 try:
-                    content_path = _generate_content_path(result["url"], config.content_dir)
+                    path_source = result.get("public_url") or result["url"]
+                    content_path = _generate_content_path(path_source, config.content_dir)
                     _save_content(result["content"], content_path, context)
                     result["content_path"] = content_path
                     saved_count += 1
@@ -789,10 +858,24 @@ class FetchTool(Tool[FetchParams, FetchOutput]):
                 message="Embedding generation not yet implemented",
             )
 
+        if not config.dry_run and results:
+            from kurt.tools.fetch.utils import persist_fetch_documents
+
+            try:
+                persist_fetch_documents(results, fetch_engine=config.engine)
+            except Exception as exc:
+                result = ToolResult(success=False, data=[])
+                result.add_error(
+                    error_type="persist_failed",
+                    message=str(exc),
+                )
+                return result
+
         # Build final output
         output_data = [
             {
                 "url": r["url"],
+                "document_id": r.get("document_id"),
                 "content_path": r.get("content_path", ""),
                 "content_hash": r.get("content_hash", ""),
                 "status": r["status"],
@@ -841,6 +924,148 @@ class FetchTool(Tool[FetchParams, FetchOutput]):
                 )
 
         return result
+
+    async def _fetch_file_input(self, input_item: FetchInput) -> dict[str, Any]:
+        from kurt.tools.fetch.file import fetch_from_file
+
+        try:
+            started = time.time()
+            content, metadata = await asyncio.to_thread(fetch_from_file, input_item.url)
+            latency_ms = int((time.time() - started) * 1000)
+            content_hash = _compute_content_hash(content)
+            bytes_fetched = len(content.encode("utf-8"))
+            return {
+                "url": input_item.url,
+                "content": content,
+                "metadata": metadata,
+                "content_hash": content_hash,
+                "status": FetchStatus.SUCCESS.value,
+                "error": None,
+                "bytes_fetched": bytes_fetched,
+                "latency_ms": latency_ms,
+                "public_url": None,
+            }
+        except Exception as exc:
+            return {
+                "url": input_item.url,
+                "content": None,
+                "metadata": None,
+                "content_hash": "",
+                "status": FetchStatus.ERROR.value,
+                "error": str(exc),
+                "bytes_fetched": 0,
+                "latency_ms": 0,
+                "public_url": None,
+            }
+
+    async def _fetch_cms_input(self, input_item: FetchInput) -> dict[str, Any]:
+        from kurt.integrations.cms.fetch import fetch_from_cms
+
+        metadata = input_item.metadata or {}
+        cms_platform = metadata.get("cms_platform")
+        cms_instance = metadata.get("cms_instance")
+        cms_document_id = metadata.get("cms_id") or metadata.get("cms_document_id")
+
+        if not cms_platform or not cms_instance or not cms_document_id:
+            return {
+                "url": input_item.url,
+                "content": None,
+                "metadata": None,
+                "content_hash": "",
+                "status": FetchStatus.ERROR.value,
+                "error": "cms_metadata_missing",
+                "bytes_fetched": 0,
+                "latency_ms": 0,
+                "public_url": None,
+            }
+
+        try:
+            started = time.time()
+            content, fetch_metadata, public_url = await asyncio.to_thread(
+                fetch_from_cms,
+                cms_platform,
+                cms_instance,
+                cms_document_id,
+                input_item.discovery_url,
+            )
+            latency_ms = int((time.time() - started) * 1000)
+            content_hash = _compute_content_hash(content)
+            bytes_fetched = len(content.encode("utf-8"))
+            return {
+                "url": input_item.url,
+                "content": content,
+                "metadata": fetch_metadata,
+                "content_hash": content_hash,
+                "status": FetchStatus.SUCCESS.value,
+                "error": None,
+                "bytes_fetched": bytes_fetched,
+                "latency_ms": latency_ms,
+                "public_url": public_url,
+            }
+        except Exception as exc:
+            return {
+                "url": input_item.url,
+                "content": None,
+                "metadata": None,
+                "content_hash": "",
+                "status": FetchStatus.ERROR.value,
+                "error": str(exc),
+                "bytes_fetched": 0,
+                "latency_ms": 0,
+                "public_url": None,
+            }
+
+    async def _fetch_web_batch(
+        self,
+        inputs: list[FetchInput],
+        config: FetchConfig,
+    ) -> dict[str, dict[str, Any]]:
+        from kurt.tools.fetch.web import fetch_from_web
+
+        urls = [input_item.url for input_item in inputs]
+        if not urls:
+            return {}
+
+        batch_size = config.batch_size or len(urls)
+        if config.engine == "tavily":
+            batch_size = min(batch_size, 20)
+
+        results_by_url: dict[str, dict[str, Any]] = {}
+        for i in range(0, len(urls), batch_size):
+            batch_urls = urls[i : i + batch_size]
+            batch_results = await asyncio.to_thread(fetch_from_web, batch_urls, config.engine)
+            for url in batch_urls:
+                result = batch_results.get(url)
+                if isinstance(result, Exception) or result is None:
+                    results_by_url[url] = {
+                        "url": url,
+                        "content": None,
+                        "metadata": None,
+                        "content_hash": "",
+                        "status": FetchStatus.ERROR.value,
+                        "error": str(result) if result else "No result",
+                        "bytes_fetched": 0,
+                        "latency_ms": 0,
+                        "public_url": None,
+                    }
+                    continue
+
+                content, metadata = result
+                content_hash = _compute_content_hash(content)
+                bytes_fetched = len(content.encode("utf-8"))
+                results_by_url[url] = {
+                    "url": url,
+                    "content": content,
+                    "metadata": metadata,
+                    "content_hash": content_hash,
+                    "status": FetchStatus.SUCCESS.value,
+                    "error": None,
+                    "bytes_fetched": bytes_fetched,
+                    "latency_ms": 0,
+                    "public_url": None,
+                }
+
+        return results_by_url
 
     async def _fetch_single_url(
         self,

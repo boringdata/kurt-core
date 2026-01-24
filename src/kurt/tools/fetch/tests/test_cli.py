@@ -9,7 +9,7 @@ from kurt.core.tests.conftest import (
     assert_output_contains,
     invoke_cli,
 )
-from kurt.workflows.fetch.cli import fetch_cmd
+from kurt.tools.fetch.cli import fetch_cmd
 
 
 class TestFetchCommand:
@@ -49,6 +49,7 @@ class TestFetchCommand:
         assert_output_contains(result, "--file")
         assert_output_contains(result, "--files")
         assert_output_contains(result, "--engine")
+        assert_output_contains(result, "--batch-size")
         assert_output_contains(result, "--refetch")
 
     def test_fetch_no_docs_message(self, cli_runner: CliRunner, tmp_database):
@@ -233,165 +234,3 @@ class TestFetchCommand:
         )
         assert_cli_success(result)
 
-
-class TestE2EWithDocs:
-    """E2E tests using tmp_project_with_docs fixture with real documents."""
-
-    def test_fetch_shows_documents_to_fetch(self, cli_runner: CliRunner, tmp_project_with_docs):
-        """Test fetch --dry-run shows documents that would be fetched."""
-        result = invoke_cli(cli_runner, fetch_cmd, ["--dry-run", "--format", "json"])
-        assert_cli_success(result)
-        # Should show documents that need fetching (discovered but not fetched)
-        import json
-
-        data = json.loads(result.output)
-        assert isinstance(data, (list, dict))
-
-    def test_fetch_with_limit_real_docs(self, cli_runner: CliRunner, tmp_project_with_docs):
-        """Test fetch --limit with real documents."""
-        result = invoke_cli(
-            cli_runner, fetch_cmd, ["--limit", "2", "--dry-run", "--format", "json"]
-        )
-        assert_cli_success(result)
-        import json
-
-        data = json.loads(result.output)
-        # Should respect the limit
-        if isinstance(data, list):
-            assert len(data) <= 2
-
-    def test_fetch_with_status_filter(self, cli_runner: CliRunner, tmp_project_with_docs):
-        """Test fetch --with-status filters documents correctly."""
-        result = invoke_cli(
-            cli_runner, fetch_cmd, ["--with-status", "NOT_FETCHED", "--dry-run", "--format", "json"]
-        )
-        assert_cli_success(result)
-
-    def test_fetch_with_include_pattern(self, cli_runner: CliRunner, tmp_project_with_docs):
-        """Test fetch --include filters by URL pattern."""
-        result = invoke_cli(
-            cli_runner, fetch_cmd, ["--include", "*/docs/*", "--dry-run", "--format", "json"]
-        )
-        assert_cli_success(result)
-
-    def test_fetch_specific_id(self, cli_runner: CliRunner, tmp_project_with_docs):
-        """Test fetch with specific document ID using --format json --dry-run."""
-        result = invoke_cli(
-            cli_runner, fetch_cmd, ["--ids", "doc-1", "--dry-run", "--format", "json"]
-        )
-        assert_cli_success(result)
-        import json
-
-        data = json.loads(result.output)
-        # The dry_run should return info about the document
-        assert isinstance(data, dict)
-
-    def test_fetch_multiple_ids(self, cli_runner: CliRunner, tmp_project_with_docs):
-        """Test fetch --ids with multiple document IDs."""
-        result = invoke_cli(
-            cli_runner, fetch_cmd, ["--ids", "doc-1,doc-2,doc-3", "--dry-run", "--format", "json"]
-        )
-        assert_cli_success(result)
-
-
-class TestBackgroundExecution:
-    """Tests that verify --background actually runs workflows in background using DBOS.
-
-    These tests use dbos_launched fixture for real DBOS integration.
-    They would have caught the bug where background/priority CLI args
-    were not forwarded to run_fetch().
-    """
-
-    def test_background_returns_workflow_id(
-        self, cli_runner: CliRunner, tmp_project_with_docs, dbos_launched
-    ):
-        """Test that --background returns a workflow_id immediately.
-
-        When running in background, the CLI should return a workflow_id
-        that can be used to check status later.
-        """
-        import json
-
-        result = invoke_cli(
-            cli_runner,
-            fetch_cmd,
-            ["--ids", "doc-1", "--background", "--format", "json"],
-        )
-        assert_cli_success(result)
-
-        # Parse JSON output
-        data = json.loads(result.output)
-
-        # Background mode should return workflow_id (or status message if no docs)
-        if data is not None:
-            assert (
-                "workflow_id" in data or "status" in data or isinstance(data, str)
-            ), f"Expected workflow_id or status in response, got: {data}"
-
-    def test_background_workflow_appears_in_dbos(
-        self, cli_runner: CliRunner, tmp_project_with_docs, dbos_launched
-    ):
-        """Test that background workflow is registered in DBOS workflow_status table."""
-        import json
-
-        from sqlalchemy import text
-
-        from kurt.db import managed_session
-
-        result = invoke_cli(
-            cli_runner,
-            fetch_cmd,
-            ["--ids", "doc-1", "--background", "--format", "json"],
-        )
-        assert_cli_success(result)
-
-        data = json.loads(result.output)
-        workflow_id = data.get("workflow_id") if isinstance(data, dict) else data
-
-        if workflow_id:
-            # Check workflow exists in DBOS
-            with managed_session() as session:
-                row = session.execute(
-                    text("SELECT status FROM workflow_status WHERE workflow_uuid = :wf_id"),
-                    {"wf_id": workflow_id},
-                ).fetchone()
-
-            # Workflow should exist (status can be PENDING, SUCCESS, or ERROR)
-            assert row is not None, f"Workflow {workflow_id} not found in DBOS"
-
-    def test_foreground_completes_synchronously(
-        self, cli_runner: CliRunner, tmp_project_with_docs, dbos_launched
-    ):
-        """Test that without --background, workflow completes synchronously."""
-        import json
-
-        result = invoke_cli(
-            cli_runner,
-            fetch_cmd,
-            ["--ids", "doc-1", "--dry-run", "--format", "json"],
-        )
-        assert_cli_success(result)
-
-        data = json.loads(result.output)
-
-        # Foreground mode should return full result, not just workflow_id
-        assert isinstance(data, dict)
-        # Should have workflow completion indicators
-        assert "workflow_id" in data or "dry_run" in data or "success_count" in data
-
-    def test_priority_affects_workflow(
-        self, cli_runner: CliRunner, tmp_project_with_docs, dbos_launched
-    ):
-        """Test that --priority option is accepted and workflow runs."""
-        import json
-
-        result = invoke_cli(
-            cli_runner,
-            fetch_cmd,
-            ["--ids", "doc-1", "--priority", "1", "--dry-run", "--format", "json"],
-        )
-        assert_cli_success(result)
-
-        # Should complete without error
-        data = json.loads(result.output)
-        assert isinstance(data, dict)

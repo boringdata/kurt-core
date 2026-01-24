@@ -1,6 +1,6 @@
 """Tests for FetchConfig."""
 
-from kurt.workflows.fetch import FetchConfig
+from kurt.tools.fetch.config import FetchConfig
 
 
 class TestFetchConfig:

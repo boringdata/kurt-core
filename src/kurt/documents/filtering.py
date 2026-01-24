@@ -16,8 +16,8 @@ from sqlalchemy import or_
 from sqlalchemy.sql import Select
 from sqlmodel import select
 
-from kurt.workflows.fetch.models import FetchDocument, FetchStatus
-from kurt.workflows.map.models import MapDocument, MapStatus
+from kurt.tools.fetch.models import FetchDocument, FetchStatus
+from kurt.tools.map.models import MapDocument, MapStatus
 
 if TYPE_CHECKING:
     from kurt.documents.models import DocumentView

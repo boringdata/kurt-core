@@ -9,7 +9,7 @@ from kurt.core.tests.conftest import (
     assert_output_contains,
     invoke_cli,
 )
-from kurt.workflows.map.cli import map_cmd
+from kurt.tools.map.cli import map_cmd
 
 
 class TestMapCommand:
@@ -70,7 +70,10 @@ class TestMapCommand:
 
     def test_map_with_cms_option(self, cli_runner: CliRunner, tmp_database):
         """Test map --cms option."""
-        result = cli_runner.invoke(map_cmd, ["--cms", "sanity:production", "--dry-run"])
+        result = cli_runner.invoke(
+            map_cmd,
+            ["--cms", "sanity:production", "--dry-run"],
+        )
         # May fail because CMS not configured, but should parse
         assert "--help" not in result.output
 
@@ -87,10 +90,10 @@ class TestMapCommand:
         """Test --method crawl skips sitemap and uses crawler directly."""
         from unittest.mock import patch
 
-        with patch("kurt.workflows.map.map_url.focused_crawler") as mock_crawler:
+        with patch("kurt.tools.map.url.focused_crawler") as mock_crawler:
             mock_crawler.return_value = ([], {"https://example.com/page1"})
 
-            with patch("kurt.workflows.map.map_url.httpx.get") as mock_httpx:
+            with patch("kurt.tools.map.url.httpx.get") as mock_httpx:
                 # httpx should NOT be called when method=crawl
                 mock_httpx.side_effect = Exception("sitemap should not be tried")
 
@@ -107,14 +110,14 @@ class TestMapCommand:
         """Test --method sitemap raises error instead of falling back to crawl."""
         from unittest.mock import MagicMock, patch
 
-        with patch("kurt.workflows.map.map_url.httpx.get") as mock_httpx:
+        with patch("kurt.tools.map.url.httpx.get") as mock_httpx:
             # Sitemap returns 404
             mock_response = MagicMock()
             mock_response.status_code = 404
             mock_response.text = ""
             mock_httpx.return_value = mock_response
 
-            with patch("kurt.workflows.map.map_url.focused_crawler") as mock_crawler:
+            with patch("kurt.tools.map.url.focused_crawler") as mock_crawler:
                 result = cli_runner.invoke(
                     map_cmd,
                     [
@@ -189,86 +192,3 @@ class TestMapCommand:
             ],
         )
         assert "--help" not in result.output
-
-
-class TestE2EWithDocs:
-    """E2E tests using tmp_project_with_docs fixture with real documents."""
-
-    def test_map_folder_dry_run(self, cli_runner: CliRunner, tmp_project_with_docs):
-        """Test map --folder with real project directory."""
-
-        # Create a test folder with markdown files
-        test_folder = tmp_project_with_docs / "test_docs"
-        test_folder.mkdir()
-        (test_folder / "doc1.md").write_text("# Test Doc 1")
-        (test_folder / "doc2.md").write_text("# Test Doc 2")
-
-        result = cli_runner.invoke(
-            map_cmd,
-            ["--folder", str(test_folder), "--dry-run", "--format", "json"],
-        )
-        assert_cli_success(result)
-
-    def test_map_folder_with_include_filter(self, cli_runner: CliRunner, tmp_project_with_docs):
-        """Test map --folder with --include filter."""
-
-        # Create test folder with mixed files
-        test_folder = tmp_project_with_docs / "mixed_docs"
-        test_folder.mkdir()
-        (test_folder / "doc.md").write_text("# Markdown")
-        (test_folder / "code.py").write_text("# Python")
-        (test_folder / "data.txt").write_text("Plain text")
-
-        result = cli_runner.invoke(
-            map_cmd,
-            ["--folder", str(test_folder), "--include", "*.md", "--dry-run", "--format", "json"],
-        )
-        assert_cli_success(result)
-
-    def test_map_folder_with_exclude_filter(self, cli_runner: CliRunner, tmp_project_with_docs):
-        """Test map --folder with --exclude filter."""
-
-        test_folder = tmp_project_with_docs / "exclude_test"
-        test_folder.mkdir()
-        (test_folder / "keep.md").write_text("# Keep")
-        (test_folder / "test_skip.md").write_text("# Skip")
-
-        result = cli_runner.invoke(
-            map_cmd,
-            ["--folder", str(test_folder), "--exclude", "*test*", "--dry-run", "--format", "json"],
-        )
-        assert_cli_success(result)
-
-    def test_map_folder_with_limit(self, cli_runner: CliRunner, tmp_project_with_docs):
-        """Test map --folder with --limit option."""
-
-        test_folder = tmp_project_with_docs / "limit_test"
-        test_folder.mkdir()
-        for i in range(5):
-            (test_folder / f"doc{i}.md").write_text(f"# Doc {i}")
-
-        result = cli_runner.invoke(
-            map_cmd,
-            ["--folder", str(test_folder), "--limit", "2", "--dry-run", "--format", "json"],
-        )
-        assert_cli_success(result)
-
-    def test_map_folder_max_depth(self, cli_runner: CliRunner, tmp_project_with_docs):
-        """Test map --folder with --max-depth option."""
-
-        # Create nested folder structure
-        test_folder = tmp_project_with_docs / "nested"
-        test_folder.mkdir()
-        (test_folder / "level0.md").write_text("# Level 0")
-        level1 = test_folder / "level1"
-        level1.mkdir()
-        (level1 / "level1.md").write_text("# Level 1")
-        level2 = level1 / "level2"
-        level2.mkdir()
-        (level2 / "level2.md").write_text("# Level 2")
-
-        result = cli_runner.invoke(
-            map_cmd,
-            ["--folder", str(test_folder), "--max-depth", "1", "--dry-run", "--format", "json"],
-        )
-        assert_cli_success(result)

@@ -10,22 +10,22 @@ class TestFetchFromWeb:
 
     def test_import(self):
         """Test that fetch_from_web can be imported."""
-        from kurt.workflows.fetch.fetch_web import fetch_from_web
+        from kurt.tools.fetch.web import fetch_from_web
 
         assert fetch_from_web is not None
 
     def test_empty_urls_returns_empty_dict(self):
         """Test that empty URL list returns empty dict."""
-        from kurt.workflows.fetch.fetch_web import fetch_from_web
+        from kurt.tools.fetch.web import fetch_from_web
 
         result = fetch_from_web([], "trafilatura")
         assert result == {}
 
-    @patch("kurt.workflows.fetch.utils.trafilatura")
-    @patch("kurt.workflows.fetch.fetch_trafilatura.trafilatura")
+    @patch("kurt.tools.fetch.utils.trafilatura")
+    @patch("kurt.tools.fetch.trafilatura.trafilatura")
     def test_routes_to_trafilatura_by_default(self, mock_traf_fetch, mock_traf_utils):
         """Test that default engine uses trafilatura."""
-        from kurt.workflows.fetch.fetch_web import fetch_from_web
+        from kurt.tools.fetch.web import fetch_from_web
 
         mock_traf_fetch.fetch_url.return_value = "<html>Test</html>"
         mock_traf_utils.extract.return_value = "# Test Content"
@@ -41,11 +41,11 @@ class TestFetchFromWeb:
         assert metadata["title"] == "Test"
         mock_traf_fetch.fetch_url.assert_called_once()
 
-    @patch("kurt.workflows.fetch.utils.trafilatura")
-    @patch("kurt.workflows.fetch.fetch_httpx.httpx")
+    @patch("kurt.tools.fetch.utils.trafilatura")
+    @patch("kurt.tools.fetch.httpx.httpx")
     def test_routes_to_httpx(self, mock_httpx, mock_traf_utils):
         """Test that httpx engine is routed correctly."""
-        from kurt.workflows.fetch.fetch_web import fetch_from_web
+        from kurt.tools.fetch.web import fetch_from_web
 
         mock_response = MagicMock()
         mock_response.text = "<html>Test</html>"
@@ -65,9 +65,9 @@ class TestFetchFromWeb:
 
     def test_firecrawl_returns_error_on_missing_key(self):
         """Test that firecrawl returns error without API key."""
-        from kurt.workflows.fetch.fetch_web import fetch_from_web
+        from kurt.tools.fetch.web import fetch_from_web
 
-        with patch("kurt.workflows.fetch.fetch_firecrawl.os.getenv", return_value=None):
+        with patch("kurt.tools.fetch.firecrawl.os.getenv", return_value=None):
             # fetch_from_web catches exceptions and returns them in results dict
             results = fetch_from_web(["https://example.com"], "firecrawl")
 
@@ -77,9 +77,9 @@ class TestFetchFromWeb:
 
     def test_tavily_returns_error_on_missing_key(self):
         """Test that tavily returns error without API key."""
-        from kurt.workflows.fetch.fetch_web import fetch_from_web
+        from kurt.tools.fetch.web import fetch_from_web
 
-        with patch("kurt.workflows.fetch.fetch_tavily.os.getenv", return_value=None):
+        with patch("kurt.tools.fetch.tavily.os.getenv", return_value=None):
             # fetch_from_web catches exceptions and returns them in results dict
             results = fetch_from_web(["https://example.com"], "tavily")
 
@@ -93,14 +93,14 @@ class TestExtractWithTrafilatura:
 
     def test_import(self):
         """Test that utils can be imported."""
-        from kurt.workflows.fetch.utils import extract_with_trafilatura
+        from kurt.tools.fetch.utils import extract_with_trafilatura
 
         assert extract_with_trafilatura is not None
 
-    @patch("kurt.workflows.fetch.utils.trafilatura")
+    @patch("kurt.tools.fetch.utils.trafilatura")
     def test_extracts_content_and_metadata(self, mock_trafilatura):
         """Test extraction returns content and metadata."""
-        from kurt.workflows.fetch.utils import extract_with_trafilatura
+        from kurt.tools.fetch.utils import extract_with_trafilatura
 
         mock_trafilatura.extract.return_value = "# Extracted Content"
         mock_trafilatura.extract_metadata.return_value = MagicMock(
@@ -118,10 +118,10 @@ class TestExtractWithTrafilatura:
         assert metadata["author"] == "Author Name"
         assert metadata["fingerprint"] == "hash123"
 
-    @patch("kurt.workflows.fetch.utils.trafilatura")
+    @patch("kurt.tools.fetch.utils.trafilatura")
     def test_raises_on_no_content(self, mock_trafilatura):
         """Test that ValueError is raised when no content extracted."""
-        from kurt.workflows.fetch.utils import extract_with_trafilatura
+        from kurt.tools.fetch.utils import extract_with_trafilatura
 
         mock_trafilatura.extract.return_value = None
         mock_trafilatura.extract_metadata.return_value = None

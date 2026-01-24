@@ -22,9 +22,9 @@ def agents_group():
     Manage agent-based workflow definitions.
 
     \\b
-    Agent workflows are defined as Markdown files in workflows/
+    Agent workflows are defined as Markdown or TOML files in workflows/
     (configurable via PATH_WORKFLOWS in kurt.config) and executed
-    by Claude Code inside DBOS workflows.
+    by Claude Code with observability tracking.
 
     \\b
     Commands:
@@ -103,7 +103,7 @@ def show_cmd(name: str):
 
     # Show workflow type
     if definition.is_dbos_driven:
-        console.print("\n[bold]Workflow Type:[/bold] DBOS-driven (steps)")
+        console.print("\n[bold]Workflow Type:[/bold] Steps-driven (DAG)")
         console.print(f"\n[bold]Steps:[/bold] {len(definition.steps)}")
         for step_name, step in definition.steps.items():
             deps = f" (depends: {', '.join(step.depends_on)})" if step.depends_on else ""
@@ -292,10 +292,11 @@ def run_cmd(name_or_path: str, inputs: tuple, foreground: bool):
 @click.option("--limit", "-l", default=20, help="Number of runs to show")
 @track_command
 def history_cmd(name: str, limit: int):
-    """Show run history for a workflow (queries DBOS)."""
-    from dbos import DBOS
+    """Show run history for a workflow."""
+    import os
+    from pathlib import Path
 
-    from kurt.core import init_dbos
+    from kurt.db.dolt import DoltDB
 
     from .registry import get_definition
 
@@ -304,80 +305,92 @@ def history_cmd(name: str, limit: int):
         console.print(f"[red]Workflow not found: {name}[/red]")
         raise click.Abort()
 
-    # Initialize DBOS to query workflow history
-    init_dbos()
+    # Get Dolt database
+    dolt_path = os.environ.get("DOLT_PATH", ".")
+    db = DoltDB(Path(dolt_path))
+
+    if not db.exists():
+        console.print("[dim]No workflow history database found.[/dim]")
+        console.print("[dim]Run a workflow first to create the database.[/dim]")
+        return
 
     try:
-        # Query DBOS for workflow runs from both agent and steps executors
-        # Note: DBOS API for querying workflows may vary
-        all_runs = []
-        for workflow_name in ["execute_agent_workflow", "execute_steps_workflow"]:
-            try:
-                runs = DBOS.get_workflows(
-                    workflow_name=workflow_name,
-                    limit=limit * 2,  # Get more to filter
-                )
-                all_runs.extend(runs)
-            except Exception:
-                continue
+        # Query workflow_runs for this definition
+        # Filter by workflow name pattern (agent:<name> or steps:<name>)
+        result = db.query(
+            """
+            SELECT id, workflow, status, started_at, completed_at, inputs, metadata, error
+            FROM workflow_runs
+            WHERE workflow LIKE ? OR workflow LIKE ?
+            ORDER BY started_at DESC
+            LIMIT ?
+            """,
+            [f"agent:{name}", f"steps:{name}", limit],
+        )
 
-        # Filter by definition name (stored as DBOS event)
-        filtered_runs = []
-        for run in all_runs:
-            try:
-                def_name = DBOS.get_event(run.workflow_id, "definition_name")
-                if def_name == name:
-                    filtered_runs.append(run)
-                    if len(filtered_runs) >= limit:
-                        break
-            except Exception:
-                continue
-
-        if not filtered_runs:
+        if not result.rows:
             console.print(f"[dim]No run history found for: {name}[/dim]")
             return
 
         table = Table(title=f"Run History: {name}")
-        table.add_column("Workflow ID")
+        table.add_column("Run ID")
         table.add_column("Status")
-        table.add_column("Trigger")
         table.add_column("Started")
-        table.add_column("Turns")
-        table.add_column("Tokens")
+        table.add_column("Duration")
+        table.add_column("Trigger")
 
-        for run in filtered_runs:
-            status = run.status
+        for row in result.rows:
+            run_id = row.get("id", "")[:12] + "..."
+            status = row.get("status", "unknown")
             status_color = {
-                "SUCCESS": "green",
-                "ERROR": "red",
-                "PENDING": "yellow",
+                "completed": "green",
+                "failed": "red",
+                "running": "yellow",
+                "pending": "dim",
             }.get(status, "white")
 
-            try:
-                trigger = DBOS.get_event(run.workflow_id, "trigger") or "-"
-                turns = DBOS.get_event(run.workflow_id, "agent_turns") or 0
-                tokens_in = DBOS.get_event(run.workflow_id, "tokens_in") or 0
-                tokens_out = DBOS.get_event(run.workflow_id, "tokens_out") or 0
-            except Exception:
-                trigger = "-"
-                turns = 0
-                tokens_in = 0
-                tokens_out = 0
+            started = row.get("started_at", "-")
+            if isinstance(started, str) and len(started) > 16:
+                started = started[:16]
+
+            # Calculate duration if completed
+            duration = "-"
+            if row.get("completed_at") and row.get("started_at"):
+                try:
+                    from datetime import datetime
+                    start = datetime.fromisoformat(row["started_at"].replace("Z", "+00:00"))
+                    end = datetime.fromisoformat(row["completed_at"].replace("Z", "+00:00"))
+                    dur_secs = (end - start).total_seconds()
+                    if dur_secs < 60:
+                        duration = f"{dur_secs:.0f}s"
+                    else:
+                        duration = f"{dur_secs/60:.1f}m"
+                except Exception:
+                    pass
+
+            # Get trigger from metadata
+            trigger = "-"
+            if row.get("metadata"):
+                try:
+                    import json
+                    meta = json.loads(row["metadata"]) if isinstance(row["metadata"], str) else row["metadata"]
+                    trigger = meta.get("trigger", "-")
+                except Exception:
+                    pass
 
             table.add_row(
-                run.workflow_id[:12] + "...",
+                run_id,
                 f"[{status_color}]{status}[/{status_color}]",
+                str(started),
+                duration,
                 trigger,
-                run.created_at.strftime("%Y-%m-%d %H:%M") if run.created_at else "-",
-                str(turns),
-                f"{tokens_in + tokens_out:,}",
             )
 
         console.print(table)
 
     except Exception as e:
-        console.print(f"[yellow]Warning: Could not query DBOS history: {e}[/yellow]")
-        console.print("[dim]Run history requires DBOS to be properly initialized.[/dim]")
+        console.print(f"[yellow]Warning: Could not query run history: {e}[/yellow]")
+        console.print("[dim]Make sure the Dolt database is initialized.[/dim]")
 
 
 @agents_group.command(name="track-tool", hidden=True)
@@ -619,12 +632,9 @@ tags = ["custom-tools"]
         # Create tools.py
         tools_path = workflow_dir / "tools.py"
         if not tools_path.exists():
-            tools_content = '''"""Custom DBOS steps for this workflow."""
-
-from dbos import DBOS
+            tools_content = '''"""Custom functions for this workflow."""
 
 
-@DBOS.step()
 def fetch_data(context: dict) -> dict:
     """Fetch data from sources.
 
@@ -639,7 +649,6 @@ def fetch_data(context: dict) -> dict:
     return {"data": [], "count": 0}
 
 
-@DBOS.step()
 def generate_output(context: dict) -> dict:
     """Generate final output.
 
