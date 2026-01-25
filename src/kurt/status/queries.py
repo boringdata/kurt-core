@@ -1,88 +1,51 @@
-"""Status queries using direct SQLModel queries."""
+"""Status queries using Dolt documents table."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-from urllib.parse import urlparse
-
-if TYPE_CHECKING:
-    from sqlmodel import Session
+from typing import Any
 
 
-def get_status_data(session: "Session") -> dict:
+def get_status_data_dolt() -> dict[str, Any]:
     """
-    Gather all status information.
+    Gather document status from Dolt.
 
-    In cloud mode, this function is called by the kurt-cloud API endpoint.
-
-    Args:
-        session: SQLModel session
+    Queries the unified `documents` table in Dolt.
 
     Returns:
         Dict with status data including document counts and domain distribution
     """
-    from sqlmodel import func, select
+    from kurt.db.documents import (
+        count_documents,
+        get_dolt_db,
+        get_domain_counts,
+        get_status_counts,
+    )
 
-    from kurt.tools.fetch.models import FetchDocument, FetchStatus
-    from kurt.tools.map.models import MapDocument
+    try:
+        db = get_dolt_db()
+    except RuntimeError:
+        # Dolt not initialized
+        return {
+            "initialized": False,
+            "documents": {
+                "total": 0,
+                "by_status": {},
+                "by_domain": {},
+            },
+        }
 
-    # Total documents
-    total = session.exec(select(func.count()).select_from(MapDocument)).one()
+    # Get status counts
+    status_counts = get_status_counts(db)
+    total = sum(status_counts.values())
 
-    # Fetched successfully
-    fetched = session.exec(
-        select(func.count())
-        .select_from(FetchDocument)
-        .where(FetchDocument.status == FetchStatus.SUCCESS.value)
-    ).one()
-
-    # Failed fetches
-    error = session.exec(
-        select(func.count())
-        .select_from(FetchDocument)
-        .where(FetchDocument.status == FetchStatus.ERROR.value)
-    ).one()
-
-    # Not yet fetched
-    not_fetched = total - fetched - error
+    # Map fetch_status to display names
+    fetched = status_counts.get("success", 0)
+    error = status_counts.get("error", 0)
+    pending = status_counts.get("pending", 0)
+    skipped = status_counts.get("skipped", 0)
 
     # Get domain distribution
-    # Use SQL GROUP BY for PostgreSQL, fall back to Python parsing for SQLite
-    from sqlalchemy import text
-
-    # Check if we're using PostgreSQL (has better regex support)
-    try:
-        dialect_name = session.get_bind().dialect.name
-        is_postgres = dialect_name == "postgresql"
-    except Exception:
-        is_postgres = False
-
-    if is_postgres:
-        # PostgreSQL: Extract domain using SQL regex and GROUP BY
-        # Pattern: https://example.com/path -> example.com
-        query = text("""
-            SELECT
-                substring(source_url from '://([^/]+)') as domain,
-                COUNT(*) as count
-            FROM map_documents
-            WHERE source_url IS NOT NULL
-            GROUP BY domain
-            ORDER BY count DESC
-            LIMIT 100
-        """)
-        result = session.exec(query)
-        domains = {row[0]: row[1] for row in result if row[0]}
-    else:
-        # SQLite: Fall back to Python parsing (regex support limited)
-        urls = session.exec(select(MapDocument.source_url).limit(10000)).all()
-        domains = {}
-        for url in urls:
-            if url:
-                try:
-                    domain = urlparse(url).netloc
-                    domains[domain] = domains.get(domain, 0) + 1
-                except Exception:
-                    pass
+    domains = get_domain_counts(db, limit=100)
 
     return {
         "initialized": True,
@@ -90,9 +53,26 @@ def get_status_data(session: "Session") -> dict:
             "total": total,
             "by_status": {
                 "fetched": fetched,
-                "not_fetched": not_fetched,
+                "not_fetched": pending,
                 "error": error,
+                "skipped": skipped,
             },
             "by_domain": domains,
         },
     }
+
+
+def get_status_data(session: Any = None) -> dict[str, Any]:
+    """
+    Gather all status information.
+
+    This function now uses Dolt directly. The session parameter is
+    kept for backward compatibility but is ignored.
+
+    Args:
+        session: Ignored (kept for backward compatibility)
+
+    Returns:
+        Dict with status data including document counts and domain distribution
+    """
+    return get_status_data_dolt()

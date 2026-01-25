@@ -104,10 +104,26 @@ def status(output_format: str, hook_cc: bool):
 def _auto_init_hook():
     """Auto-initialize Kurt in hook mode."""
     from kurt.config import create_config
-    from kurt.db import init_database
 
     create_config()
-    init_database()
+
+    # Initialize Dolt database
+    try:
+        from pathlib import Path
+
+        from kurt.db.dolt import DoltDB, init_observability_schema
+
+        dolt_path = Path(".dolt")
+        if not dolt_path.exists():
+            # Initialize dolt repo
+            import subprocess
+
+            subprocess.run(["dolt", "init"], check=True, capture_output=True)
+
+        db = DoltDB(dolt_path)
+        init_observability_schema(db)
+    except Exception:
+        pass  # Dolt init is optional
 
     output = {
         "systemMessage": "Kurt project initialized!",
@@ -116,7 +132,7 @@ def _auto_init_hook():
             "additionalContext": (
                 "**Kurt initialized**\\n\\n"
                 "- Configuration: `kurt.config`\\n"
-                "- Database: `.kurt/kurt.sqlite`\\n\\n"
+                "- Database: `.dolt/` (Dolt)\\n\\n"
                 "Get started: `kurt content fetch <url>`"
             ),
         },
@@ -125,16 +141,28 @@ def _auto_init_hook():
 
 
 def _init_database_hook():
-    """Initialize database in hook mode."""
-    from kurt.db import init_database
+    """Initialize Dolt database in hook mode."""
+    try:
+        from pathlib import Path
 
-    init_database()
+        from kurt.db.dolt import DoltDB, init_observability_schema
+
+        dolt_path = Path(".dolt")
+        if not dolt_path.exists():
+            import subprocess
+
+            subprocess.run(["dolt", "init"], check=True, capture_output=True)
+
+        db = DoltDB(dolt_path)
+        init_observability_schema(db)
+    except Exception:
+        pass
 
     output = {
         "systemMessage": "Database initialized!",
         "hookSpecificOutput": {
             "hookEventName": "SessionStart",
-            "additionalContext": "Database created at `.kurt/kurt.sqlite`",
+            "additionalContext": "Database created at `.dolt/` (Dolt)",
         },
     }
     print(json.dumps(output, indent=2))
@@ -178,13 +206,10 @@ def _get_status_data() -> dict:
 
 
 def _get_status_data_from_db() -> dict:
-    """Get status data using direct database queries (local mode)."""
-    from kurt.db import managed_session
-
+    """Get status data using Dolt queries (local mode)."""
     from .queries import get_status_data
 
-    with managed_session() as session:
-        return get_status_data(session)
+    return get_status_data()
 
 
 def _get_status_data_from_api() -> dict:

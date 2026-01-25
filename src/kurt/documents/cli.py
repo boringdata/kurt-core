@@ -194,10 +194,8 @@ def delete_cmd(
         kurt content delete --ids a,b,c      # Delete multiple IDs
         kurt content delete --include "*test*" --dry-run  # Preview deletion
     """
-    from kurt.db import managed_session
-    from kurt.documents import DocumentFilters, DocumentRegistry
-    from kurt.tools.fetch.models import FetchDocument
-    from kurt.tools.map.models import MapDocument
+    from kurt.documents import DocumentFilters
+    from kurt.documents.dolt_registry import delete_documents_dolt, list_documents_dolt
 
     # Build filters
     filters = DocumentFilters(
@@ -208,9 +206,7 @@ def delete_cmd(
     )
 
     # Get documents to delete
-    registry = DocumentRegistry()
-    with managed_session() as session:
-        docs = registry.list(session, filters)
+    docs = list_documents_dolt(filters)
 
     if not docs:
         console.print("[dim]No documents found matching criteria[/dim]")
@@ -231,20 +227,9 @@ def delete_cmd(
             console.print("[dim]Cancelled[/dim]")
             return
 
-    # Delete documents
-    deleted_count = 0
-    with managed_session() as session:
-        for doc in docs:
-            # Delete from fetch table first (FK constraint)
-            session.exec(
-                FetchDocument.__table__.delete().where(FetchDocument.document_id == doc.document_id)
-            )
-            # Delete from map table
-            session.exec(
-                MapDocument.__table__.delete().where(MapDocument.document_id == doc.document_id)
-            )
-            deleted_count += 1
-        session.commit()
+    # Delete documents from Dolt
+    doc_ids = [doc.document_id for doc in docs]
+    deleted_count = delete_documents_dolt(doc_ids)
 
     console.print(f"[green]✓[/green] Deleted {deleted_count} document(s)")
 
@@ -267,13 +252,10 @@ def _list_documents(filters):
 
 
 def _list_documents_from_db(filters):
-    """Get documents using direct database queries (local mode)."""
-    from kurt.db import managed_session
-    from kurt.documents import DocumentRegistry
+    """Get documents using Dolt queries (local mode)."""
+    from kurt.documents.dolt_registry import list_documents_dolt
 
-    registry = DocumentRegistry()
-    with managed_session() as session:
-        return registry.list(session, filters)
+    return list_documents_dolt(filters)
 
 
 def _list_documents_from_api(filters):
@@ -309,35 +291,10 @@ def _get_document(identifier: str):
 
 
 def _get_document_from_db(identifier: str):
-    """Get document using direct database queries (local mode)."""
-    from kurt.db import managed_session
-    from kurt.documents import DocumentFilters, DocumentRegistry
+    """Get document using Dolt queries (local mode)."""
+    from kurt.documents.dolt_registry import get_document_dolt
 
-    registry = DocumentRegistry()
-    with managed_session() as session:
-        # First try exact ID match
-        doc = registry.get(session, identifier)
-
-        # If not found, try URL match or partial ID
-        if not doc:
-            if identifier.startswith(("http://", "https://")):
-                # URL match
-                filters = DocumentFilters(url_contains=identifier, limit=1)
-                docs = registry.list(session, filters)
-            else:
-                # Partial document ID match - query directly with LIKE
-                from sqlmodel import select
-
-                from kurt.tools.map.models import MapDocument
-
-                query = (
-                    select(MapDocument).where(MapDocument.document_id.contains(identifier)).limit(1)
-                )
-                map_doc = session.exec(query).first()
-                docs = [registry.get(session, map_doc.document_id)] if map_doc else []
-            doc = docs[0] if docs else None
-
-    return doc
+    return get_document_dolt(identifier)
 
 
 def _get_document_from_api(identifier: str):

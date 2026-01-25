@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime
+import logging
 import re
 
 import trafilatura
@@ -11,9 +11,10 @@ from lxml import etree
 from lxml import html as lxml_html
 
 from kurt.config import load_config
-from kurt.db import managed_session
 
-from .models import FetchDocument, FetchStatus
+from .models import FetchStatus
+
+logger = logging.getLogger(__name__)
 
 
 def _deduplicate_images(content: str) -> str:
@@ -231,55 +232,57 @@ def _url_to_path(url: str) -> str:
 
 
 def persist_fetch_documents(rows: list[dict], *, fetch_engine: str | None) -> dict[str, int]:
-    """Persist fetch results to fetch_documents."""
-    inserted = 0
-    updated = 0
-    with managed_session() as session:
-        for row in rows:
-            document_id = row.get("document_id")
-            if not document_id:
-                continue
+    """Persist fetch results to Dolt documents table.
 
-            status = row.get("status", "")
-            if status == FetchStatus.SUCCESS.value:
-                db_status = FetchStatus.SUCCESS
-            elif status == FetchStatus.SKIPPED.value:
-                db_status = FetchStatus.SKIPPED
-            else:
-                db_status = FetchStatus.ERROR
+    Updates existing documents (created by map) with fetch results:
+    - fetch_status: success/error/skipped
+    - content_path: path to saved content
+    - content_hash: SHA256 of content
+    - metadata: merged with existing metadata
+    """
+    from kurt.db.documents import get_dolt_db, upsert_documents
 
-            # Merge provider metadata with fetch metrics (preserve title, author, etc.)
-            provider_metadata = row.get("metadata") or {}
-            metadata_json = dict(provider_metadata)  # Copy to avoid mutating original
-            metadata_json.update({
-                "latency_ms": row.get("latency_ms"),
-                "bytes_fetched": row.get("bytes_fetched"),
-                "source_url": row.get("url"),
-            })
+    # Convert to Dolt documents format
+    dolt_docs = []
+    for row in rows:
+        document_id = row.get("document_id")
+        if not document_id:
+            continue
 
-            db_row = {
-                "document_id": document_id,
-                "status": db_status,
-                "content_length": row.get("bytes_fetched", 0),
-                "content_hash": row.get("content_hash"),
-                "content_path": row.get("content_path"),
-                "fetch_engine": fetch_engine,
-                "public_url": row.get("public_url"),
-                "error": row.get("error"),
-                "metadata_json": metadata_json,
-            }
+        # Map status to fetch_status
+        status = row.get("status", "")
+        if status == FetchStatus.SUCCESS.value:
+            fetch_status = "success"
+        elif status == FetchStatus.SKIPPED.value:
+            fetch_status = "skipped"
+        else:
+            fetch_status = "error"
 
-            existing_row = session.get(FetchDocument, document_id)
-            if existing_row:
-                for key, value in db_row.items():
-                    setattr(existing_row, key, value)
-                existing_row.updated_at = datetime.utcnow()
-                updated += 1
-            else:
-                session.add(FetchDocument(**db_row))
-                inserted += 1
-        session.commit()
-    return {"rows_written": inserted, "rows_updated": updated}
+        # Merge provider metadata with fetch metrics
+        provider_metadata = row.get("metadata") or {}
+        metadata = dict(provider_metadata)
+        metadata.update({
+            "latency_ms": row.get("latency_ms"),
+            "bytes_fetched": row.get("bytes_fetched"),
+            "fetch_engine": fetch_engine,
+            "public_url": row.get("public_url"),
+            "content_length": row.get("bytes_fetched", 0),
+        })
+
+        doc = {
+            "id": document_id,
+            "url": row.get("url") or row.get("source_url"),
+            "fetch_status": fetch_status,
+            "content_path": row.get("content_path"),
+            "content_hash": row.get("content_hash"),
+            "error": row.get("error"),
+            "metadata": metadata,
+        }
+        dolt_docs.append(doc)
+
+    db = get_dolt_db()
+    result = upsert_documents(db, dolt_docs)
+    return {"rows_written": result["inserted"], "rows_updated": result["updated"]}
 
 
 def save_content_file(document_id: str, content: str, source_url: str | None = None) -> str:

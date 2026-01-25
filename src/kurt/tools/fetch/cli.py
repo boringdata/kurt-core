@@ -161,61 +161,65 @@ def fetch_cmd(
     if single_file:
         files_paths = f"{files_paths},{single_file}" if files_paths else single_file
 
-    # Handle --urls: auto-create documents if they don't exist
+    # Handle --urls: auto-create documents in Dolt if they don't exist
     if urls:
         import hashlib
 
-        from sqlmodel import select
-
-        from kurt.db import managed_session
-        from kurt.tools.map.models import MapDocument, MapStatus
+        from kurt.db.documents import get_dolt_db, upsert_documents
 
         url_list = [u.strip() for u in urls.split(",") if u.strip()]
-        with managed_session() as session:
-            for url in url_list:
-                existing = session.exec(
-                    select(MapDocument).where(MapDocument.source_url == url)
-                ).first()
-                if not existing:
-                    doc_id = hashlib.sha256(url.encode()).hexdigest()[:12]
-                    doc = MapDocument(
-                        document_id=doc_id,
-                        source_url=url,
-                        source_type="url",
-                        status=MapStatus.SUCCESS,
-                        discovery_method="cli",
-                    )
-                    session.add(doc)
-            session.commit()
+        docs_to_create = []
+        db = get_dolt_db()
 
-    # Handle --files: auto-create documents for file paths
+        for url in url_list:
+            # Check if exists
+            existing = db.query("SELECT id FROM documents WHERE url = ?", [url])
+            if not existing:
+                doc_id = hashlib.sha256(url.encode()).hexdigest()[:12]
+                docs_to_create.append({
+                    "id": doc_id,
+                    "url": url,
+                    "source_type": "url",
+                    "fetch_status": "pending",
+                    "metadata": {
+                        "discovery_method": "cli",
+                        "map_status": "SUCCESS",
+                    },
+                })
+
+        if docs_to_create:
+            upsert_documents(db, docs_to_create)
+
+    # Handle --files: auto-create documents for file paths in Dolt
     if files_paths:
         import hashlib
         from pathlib import Path as FilePath
 
-        from sqlmodel import select
-
-        from kurt.db import managed_session
-        from kurt.tools.map.models import MapDocument, MapStatus
+        from kurt.db.documents import get_dolt_db, upsert_documents
 
         file_list = [f.strip() for f in files_paths.split(",") if f.strip()]
-        with managed_session() as session:
-            for file_path in file_list:
-                abs_path = str(FilePath(file_path).resolve())
-                existing = session.exec(
-                    select(MapDocument).where(MapDocument.source_url == abs_path)
-                ).first()
-                if not existing:
-                    doc_id = hashlib.sha256(abs_path.encode()).hexdigest()[:12]
-                    doc = MapDocument(
-                        document_id=doc_id,
-                        source_url=abs_path,
-                        source_type="file",
-                        status=MapStatus.SUCCESS,
-                        discovery_method="cli",
-                    )
-                    session.add(doc)
-            session.commit()
+        docs_to_create = []
+        db = get_dolt_db()
+
+        for file_path in file_list:
+            abs_path = str(FilePath(file_path).resolve())
+            # Check if exists
+            existing = db.query("SELECT id FROM documents WHERE url = ?", [abs_path])
+            if not existing:
+                doc_id = hashlib.sha256(abs_path.encode()).hexdigest()[:12]
+                docs_to_create.append({
+                    "id": doc_id,
+                    "url": abs_path,
+                    "source_type": "file",
+                    "fetch_status": "pending",
+                    "metadata": {
+                        "discovery_method": "cli",
+                        "map_status": "SUCCESS",
+                    },
+                })
+
+        if docs_to_create:
+            upsert_documents(db, docs_to_create)
 
     # Determine effective status filter
     effective_status = with_status
