@@ -52,9 +52,16 @@ Agents should use these commands to dynamically discover options and access work
 **⚠️ Content Operations (use these exact commands):**
 - `kurt content list` - List all indexed documents
 - `kurt content list --url-contains "topic"` - Filter by URL substring
-- `kurt content map <url>` - Discover content from a URL (crawls site)
-- `kurt content fetch` - Fetch and index discovered documents
+- `kurt map <url>` - Discover content from a URL (crawls site)
+- `kurt fetch` - Fetch and index discovered documents
 - `kurt content get <doc-id>` - Get document by ID or URL
+
+**Direct Tool Commands (for pipelines):**
+- `kurt map <url>` - Map/discover URLs from a source
+- `kurt fetch` - Fetch content from discovered URLs
+- `kurt llm --prompt "..." ` - Run LLM prompt over documents
+- `kurt embed` - Generate embeddings
+- `kurt sql "SELECT ..."` - Query the Dolt database
 
 **Format & Options:**
 - `kurt show format-templates` - List available format templates
@@ -331,31 +338,31 @@ For detailed discovery methods, run: `kurt show discovery-methods`
 
 ## ⚠️ Common Mistakes to Avoid
 
-### 1. Using wrong CLI command syntax
+### 1. Using CLI commands correctly
 
-**❌ Don't:**
+**✅ Top-level tool commands (recommended):**
 ```bash
-kurt map url <url>      # Wrong - "map" is not a subcommand
-kurt fetch              # Wrong - "fetch" is not a subcommand
-kurt fetch <url>        # Wrong - "fetch" is not a subcommand
+kurt map <url>          # Discover URLs from a source
+kurt fetch              # Fetch discovered documents
+kurt sql "SELECT ..."   # Query the database
 ```
 
-**✅ Do:**
+**✅ Content subcommands (also valid):**
 ```bash
-kurt content map <url>  # Correct - use "content" subcommand
-kurt content fetch      # Correct - use "content" subcommand
-kurt content list       # Correct - use "content" subcommand
+kurt content list       # List indexed documents
+kurt content get <id>   # Get document by ID
 ```
 
-**Why:** The kurt CLI uses a subcommand structure. Content operations go under `kurt content`.
+**Why:** Kurt provides both top-level tool commands (`kurt map`, `kurt fetch`) and the `kurt content` group for document management.
 
 ### 2. Not knowing about the database
 
-Kurt has a **database** with document metadata (URLs, fetch status, embeddings).
+Kurt uses **Dolt** (a Git-like SQL database) to track document metadata (URLs, fetch status, embeddings).
 
 **Be aware:**
 - `kurt content list` shows what's indexed and fetch status
-- `grep` in `.kurt/sources/` searches actual content
+- `kurt sql "SELECT * FROM documents"` queries the database directly
+- `grep` in `content/` searches actual fetched content
 - Both are valid - use whichever fits your task
 - The database is the source of truth for "what have we indexed from where"
 
@@ -442,20 +449,27 @@ Users can customize Kurt's system in several ways:
 
 ## Database Management
 
-Kurt stores all your indexed content, research, and project data in a local SQLite database at `.kurt/kurt.sqlite`. Each workspace has a unique `WORKSPACE_ID` (auto-generated at `kurt init`) that tags all data.
+Kurt stores all your indexed content, research, and project data in a **Dolt database** at `.dolt/`. Dolt is a Git-like SQL database that provides version control for your data. Each workspace has a unique `WORKSPACE_ID` (auto-generated at `kurt init`) that tags all data.
 
 For detailed cloud setup instructions, run: `kurt show cloud-setup`
 
 ### Check Database Status
 
 ```bash
-kurt db status
+kurt status
 ```
 
 This shows:
-- Current mode (sqlite, cloud, or postgresql)
-- Table row counts
-- Workspace ID
+- Document counts by status
+- Recent activity
+- Workspace info
+
+### Query the Database
+
+```bash
+kurt sql "SELECT * FROM documents LIMIT 10"
+kurt sql "SELECT COUNT(*) FROM documents WHERE fetch_status = 'success'"
+```
 
 ### Export and Import Data
 

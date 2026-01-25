@@ -232,6 +232,54 @@ def _create_content_dir() -> bool:
         return False
 
 
+def _create_agents_dir() -> bool:
+    """Create .agents directory with AGENTS.md from package."""
+    agents_dir = Path.cwd() / ".agents"
+    agents_md = agents_dir / "AGENTS.md"
+
+    try:
+        agents_dir.mkdir(exist_ok=True)
+
+        # Copy AGENTS.md from package if not exists
+        if not agents_md.exists():
+            package_agents = Path(__file__).parent.parent / "agents" / "AGENTS.md"
+            if package_agents.exists():
+                import shutil
+                shutil.copy2(package_agents, agents_md)
+            else:
+                # Create minimal AGENTS.md if package file not found
+                agents_md.write_text("""# Kurt Agent Instructions
+
+See https://github.com/wikumeo/kurt-core for documentation.
+
+Run `kurt update` to get the latest agent instructions.
+""")
+        return True
+    except Exception as e:
+        console.print(f"[red]Failed to create .agents directory: {e}[/red]")
+        return False
+
+
+def _create_claude_config() -> bool:
+    """Create .claude directory with symlink to AGENTS.md."""
+    claude_dir = Path.cwd() / ".claude"
+    claude_md = claude_dir / "CLAUDE.md"
+    agents_md = Path.cwd() / ".agents" / "AGENTS.md"
+
+    try:
+        claude_dir.mkdir(exist_ok=True)
+
+        # Create symlink to .agents/AGENTS.md if not exists
+        if not claude_md.exists() and agents_md.exists():
+            # Use relative symlink for portability
+            claude_md.symlink_to("../.agents/AGENTS.md")
+
+        return True
+    except Exception as e:
+        console.print(f"[yellow]Warning: Failed to create .claude config: {e}[/yellow]")
+        return True  # Non-fatal
+
+
 def _update_gitignore() -> bool:
     """Update .gitignore with Kurt-specific entries."""
     gitignore_path = Path.cwd() / ".gitignore"
@@ -450,6 +498,24 @@ def init(path: str, no_dolt: bool, no_hooks: bool, force: bool):
     else:
         results["gitignore"] = False
         console.print("[yellow]  ⚠ .gitignore (failed)[/yellow]")
+
+    # Step 8: Create .agents directory with AGENTS.md
+    console.print("[dim]Setting up agent instructions...[/dim]")
+    if _create_agents_dir():
+        results["agents"] = True
+        console.print("[green]  ✓ Agent instructions: .agents/AGENTS.md[/green]")
+    else:
+        results["agents"] = False
+        console.print("[yellow]  ⚠ Agent instructions (failed)[/yellow]")
+
+    # Step 9: Create .claude config directory
+    console.print("[dim]Setting up Claude Code config...[/dim]")
+    if _create_claude_config():
+        results["claude"] = True
+        console.print("[green]  ✓ Claude config: .claude/CLAUDE.md → .agents/AGENTS.md[/green]")
+    else:
+        results["claude"] = False
+        console.print("[yellow]  ⚠ Claude config (failed)[/yellow]")
 
     # Summary
     console.print()

@@ -33,7 +33,7 @@ def show():
     - llm-step: LLMStep batch processing documentation
     - embedding-step: EmbeddingStep vector embeddings documentation
     - models-py: SQLModel table definitions guide
-    - tools-py: DBOS step functions guide
+    - tools-py: Custom workflow functions guide
     - workflow-create: Instructions for creating user workflows with tools
 
     \b

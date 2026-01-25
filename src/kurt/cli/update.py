@@ -35,7 +35,8 @@ def update(backup: bool):
 
     try:
         # Get source AGENTS.md from package
-        package_agents = Path(__file__).parent / "agents" / "AGENTS.md"
+        # AGENTS.md is in src/kurt/agents/, not src/kurt/cli/agents/
+        package_agents = Path(__file__).parent.parent / "agents" / "AGENTS.md"
 
         if not package_agents.exists():
             console.print("[red]Package AGENTS.md not found[/red]")
