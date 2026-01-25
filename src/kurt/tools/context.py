@@ -431,6 +431,13 @@ def _init_dolt_db(dolt_settings: DoltSettings, project_dir: Path) -> "DoltDB | N
         if not dolt_path.is_absolute():
             dolt_path = project_dir / dolt_path
 
+        # DoltDB expects the repo root (directory containing .dolt), not .dolt itself
+        # If path ends with ".dolt", use the parent directory
+        if dolt_path.name == ".dolt":
+            repo_path = dolt_path.parent
+        else:
+            repo_path = dolt_path
+
         # Parse server URL if in server mode
         host = "localhost"
         port = 3306
@@ -444,7 +451,7 @@ def _init_dolt_db(dolt_settings: DoltSettings, project_dir: Path) -> "DoltDB | N
                     pass
 
         return DoltDB(
-            path=dolt_path,
+            path=repo_path,
             mode=dolt_settings.mode,
             host=host,
             port=port,

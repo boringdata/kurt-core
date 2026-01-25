@@ -30,7 +30,10 @@ logger = logging.getLogger(__name__)
 
 
 def get_dolt_db() -> "DoltDB":
-    """Get DoltDB client from project config.
+    """Get DoltDB client from project directory.
+
+    Looks for .dolt directory in current working directory.
+    DoltDB expects the project root (parent of .dolt), not .dolt itself.
 
     Returns:
         DoltDB instance
@@ -38,20 +41,19 @@ def get_dolt_db() -> "DoltDB":
     Raises:
         RuntimeError: If Dolt is not initialized
     """
-    from kurt.config import load_config
     from kurt.db.dolt import DoltDB
 
-    config = load_config()
-    dolt_path = config.get("DOLT_PATH", ".dolt")
+    project_root = Path.cwd()
+    dolt_path = project_root / ".dolt"
 
-    path = Path(dolt_path)
-    if not path.exists():
+    if not dolt_path.exists():
         raise RuntimeError(
             f"Dolt database not found at {dolt_path}. "
             "Run 'kurt init' to initialize the project."
         )
 
-    return DoltDB(path)
+    # DoltDB expects project root (parent of .dolt), not .dolt directory
+    return DoltDB(project_root)
 
 
 def upsert_document(
@@ -360,7 +362,7 @@ def get_status_counts(db: "DoltDB") -> dict[str, int]:
         db: DoltDB client
 
     Returns:
-        Dict mapping fetch_status to count
+        Dict mapping fetch_status to count (None status mapped to 'pending')
     """
     sql = """
         SELECT fetch_status, COUNT(*) as count
@@ -368,7 +370,15 @@ def get_status_counts(db: "DoltDB") -> dict[str, int]:
         GROUP BY fetch_status
     """
     result = db.query(sql)
-    return {row["fetch_status"]: row["count"] for row in result}
+    # Handle NULL fetch_status (omitted from dict by DoltDB JSON parser)
+    # Map NULL to 'pending' for consistency
+    counts = {}
+    for row in result:
+        status = row.get("fetch_status", "pending")  # NULL -> pending
+        if status is None:
+            status = "pending"
+        counts[status] = row["count"]
+    return counts
 
 
 def get_domain_counts(db: "DoltDB", limit: int = 100) -> dict[str, int]:
