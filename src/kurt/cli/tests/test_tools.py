@@ -16,7 +16,7 @@ from kurt.cli.tools import (
     llm_cmd,
     map_cmd,
     sql_cmd,
-    write_cmd,
+    save_cmd,
 )
 from kurt.tools.base import ToolResult
 
@@ -385,7 +385,7 @@ class TestWriteCommand:
             mock_ctx.return_value = MagicMock()
             mock_exec.return_value = mock_result
 
-            result = runner.invoke(write_cmd, [input_path, "--table=documents", "--quiet"])
+            result = runner.invoke(save_cmd, [input_path, "--table=documents", "--quiet"])
 
             assert result.exit_code == 0
             lines = [l for l in result.output.strip().split("\n") if l]
@@ -403,7 +403,7 @@ class TestWriteCommand:
             mock_exec.return_value = mock_result
 
             result = runner.invoke(
-                write_cmd,
+                save_cmd,
                 [input_path, "--table=docs", "--mode=upsert", "--key=url", "--quiet"],
             )
 
@@ -425,7 +425,7 @@ class TestWriteCommand:
             mock_exec.return_value = mock_result
 
             result = runner.invoke(
-                write_cmd,
+                save_cmd,
                 [input_path, "--table=pages", "--mode=upsert", "--key=domain,path", "--quiet"],
             )
 
@@ -438,7 +438,7 @@ class TestWriteCommand:
         """Test that --table is required."""
         input_path = temp_jsonl([{"data": "test"}])
 
-        result = runner.invoke(write_cmd, [input_path, "--quiet"])
+        result = runner.invoke(save_cmd, [input_path, "--quiet"])
 
         assert result.exit_code != 0
         assert "table" in result.output.lower()

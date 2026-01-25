@@ -6,8 +6,10 @@ Provides CLI commands for invoking tools directly from the command line:
 - kurt fetch <input.jsonl> [--engine=trafilatura] [--concurrency=5]
 - kurt llm <input.jsonl> --prompt-template='...' [--model=gpt-4o-mini]
 - kurt embed <input.jsonl> --text-field=content [--model=text-embedding-3-small]
-- kurt write <input.jsonl> --table=<name> [--mode=upsert] [--key=url]
+- kurt save <input.jsonl> --table=<name> [--mode=upsert] [--key=url]
 - kurt sql '<query>' [--params='{}']
+- kurt research search '<query>' [--recency=day]
+- kurt signals reddit -s <subreddit> [--timeframe=day]
 
 Each command:
 - Parses CLI args into tool config
@@ -498,7 +500,7 @@ def llm_cmd(
         kurt fetch urls.jsonl | kurt llm -p 'Summarize: {content}' --model=gpt-4o
 
     Piping:
-        kurt map url | kurt fetch | kurt llm -p 'Extract: {content}' | kurt write --table=extracted
+        kurt map url | kurt fetch | kurt llm -p 'Extract: {content}' | kurt save --table=extracted
     """
     progress_mode = _get_progress_mode(quiet, progress, json_progress)
 
@@ -664,11 +666,11 @@ def embed_cmd(
 
 
 # ============================================================================
-# write command
+# save command (formerly write)
 # ============================================================================
 
 
-@click.command("write")
+@click.command("save")
 @click.argument("input_file", required=False, default="-")
 @click.option(
     "--table",
@@ -693,7 +695,7 @@ def embed_cmd(
     help="Continue processing after individual row errors",
 )
 @add_progress_options()
-def write_cmd(
+def save_cmd(
     input_file: str,
     table: str,
     mode: str,
@@ -704,7 +706,7 @@ def write_cmd(
     json_progress: bool,
 ) -> None:
     """
-    Persist data to database tables.
+    Save data to database tables.
 
     INPUT_FILE: JSONL file with row data, or '-' for stdin (default).
 
@@ -712,12 +714,12 @@ def write_cmd(
         {"url": "https://...", "title": "Page Title", "content": "..."}
 
     Examples:
-        kurt write data.jsonl --table=documents
-        cat data.jsonl | kurt write --table=documents --mode=upsert --key=url
-        kurt fetch urls.jsonl | kurt write --table=fetched --mode=upsert --key=url
+        kurt save data.jsonl --table=documents
+        cat data.jsonl | kurt save --table=documents --mode=upsert --key=url
+        kurt fetch urls.jsonl | kurt save --table=fetched --mode=upsert --key=url
 
     Piping:
-        kurt map url | kurt fetch | kurt write --table=content --key=url
+        kurt map url | kurt fetch | kurt save --table=content --key=url
     """
     progress_mode = _get_progress_mode(quiet, progress, json_progress)
 
@@ -859,12 +861,14 @@ def tools_group() -> None:
 
     \b
     Commands:
-      map      Discover content sources (URLs, folders, CMS)
-      fetch    Fetch and index documents
-      llm      Process rows through an LLM
-      embed    Generate vector embeddings
-      write    Persist data to database tables
-      sql      Execute read-only SQL queries
+      map       Discover content sources (URLs, folders, CMS)
+      fetch     Fetch and index documents
+      llm       Process rows through an LLM
+      embed     Generate vector embeddings
+      save      Save data to database tables
+      sql       Execute read-only SQL queries
+      research  Execute research queries
+      signals   Monitor social signals
     """
     pass
 
@@ -872,10 +876,14 @@ def tools_group() -> None:
 # Import the full-featured map/fetch CLI commands from their new location
 from kurt.tools.map.cli import map_cmd as map_tool_cmd  # noqa: E402
 from kurt.tools.fetch.cli import fetch_cmd as fetch_tool_cmd  # noqa: E402
+from kurt.tools.research.cli import research_group  # noqa: E402
+from kurt.tools.signals.cli import signals_group  # noqa: E402
 
 tools_group.add_command(map_tool_cmd, name="map")
 tools_group.add_command(fetch_tool_cmd, name="fetch")
 tools_group.add_command(llm_cmd, name="llm")
 tools_group.add_command(embed_cmd, name="embed")
-tools_group.add_command(write_cmd, name="write")
+tools_group.add_command(save_cmd, name="save")
 tools_group.add_command(sql_cmd, name="sql")
+tools_group.add_command(research_group, name="research")
+tools_group.add_command(signals_group, name="signals")

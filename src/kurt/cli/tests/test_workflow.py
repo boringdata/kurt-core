@@ -465,7 +465,7 @@ class TestWorkflowGroup:
         """Test workflow group shows help."""
         result = invoke_cli(cli_runner, workflow_group, ["--help"])
         assert_cli_success(result)
-        assert_output_contains(result, "Manage TOML-based workflows")
+        assert_output_contains(result, "Manage workflows (both TOML and Markdown formats)")
 
     def test_workflow_group_lists_commands(self, cli_runner: CliRunner):
         """Test workflow group lists all commands."""

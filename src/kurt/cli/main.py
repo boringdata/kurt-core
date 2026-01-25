@@ -1,4 +1,16 @@
-"""Kurt CLI - Main command-line interface."""
+"""Kurt CLI - Main command-line interface.
+
+Simplified CLI structure with ~12 top-level commands:
+- init, status, doctor, repair, serve: Core operations
+- workflow: Unified workflow management (TOML + MD)
+- tool: All tools (map, fetch, llm, embed, save, sql, research, signals)
+- docs: Document management
+- sync: Version control (pull, push, branch, merge)
+- connect: CMS and analytics integrations
+- cloud: Kurt Cloud operations
+- admin: Administrative commands
+- help: Documentation and guides
+"""
 
 import sys
 
@@ -37,19 +49,15 @@ class LazyGroup(click.Group):
 @click.group(
     cls=LazyGroup,
     lazy_subcommands={
-        "content": ("kurt.documents.cli", "content_group"),
-        "tool": ("kurt.cli.tools", "tools_group"),
-        "integrations": ("kurt.integrations.cli", "integrations_group"),
+        # Core command groups
         "workflow": ("kurt.cli.workflow", "workflow_group"),
-        "research": ("kurt.tools.research.cli", "research_group"),
-        "signals": ("kurt.tools.signals.cli", "signals_group"),
-        "agents": ("kurt.workflows.agents.cli", "agents_group"),
-        "agent": ("kurt.workflows.agents.cli", "agent_group"),
-        "admin": ("kurt.cli.admin", "admin"),
-        "show": ("kurt.cli.show", "show_group"),
+        "tool": ("kurt.cli.tools", "tools_group"),
+        "docs": ("kurt.cli.docs", "docs_group"),
+        "sync": ("kurt.cli.sync", "sync_group"),
+        "connect": ("kurt.integrations.cli", "integrations_group"),
         "cloud": ("kurt.cli.cloud", "cloud_group"),
-        "db": ("kurt.cli.db", "db_group"),
-        "branch": ("kurt.cli.branch", "branch_group"),
+        "admin": ("kurt.cli.admin", "admin"),
+        "help": ("kurt.cli.show", "show_group"),
     },
 )
 @click.version_option(package_name="kurt-core", prog_name="kurt")
@@ -62,8 +70,8 @@ def main(ctx):
     """
     from kurt.config import config_file_exists
 
-    # Skip migration check for init, admin, cloud, and db (which handle DB themselves)
-    if ctx.invoked_subcommand in ["init", "admin", "cloud", "db"]:
+    # Skip migration check for init, admin, cloud (which handle DB themselves)
+    if ctx.invoked_subcommand in ["init", "admin", "cloud"]:
         return
 
     # Skip migration check if running in hook mode
@@ -129,41 +137,17 @@ def _check_migrations():
         pass
 
 
+# Core top-level commands (not under any group)
 from kurt.cli.doctor import doctor_cmd, repair_cmd  # noqa: E402
 from kurt.cli.init import init  # noqa: E402
-from kurt.cli.merge import merge_cmd  # noqa: E402
-from kurt.cli.remote import pull_cmd, push_cmd  # noqa: E402
-from kurt.cli.tools import embed_cmd, llm_cmd, sql_cmd, write_cmd  # noqa: E402
-from kurt.tools.fetch.cli import fetch_cmd  # noqa: E402
-from kurt.tools.map.cli import map_cmd  # noqa: E402
-from kurt.cli.update import update  # noqa: E402
 from kurt.cli.web import serve  # noqa: E402
-from kurt.cli.workflow import cancel_cmd, logs_cmd, run_cmd, test_cmd  # noqa: E402
 from kurt.status import status  # noqa: E402
 
 main.add_command(init)
 main.add_command(status)
-main.add_command(update)
 main.add_command(serve)
-main.add_command(pull_cmd, name="pull")
-main.add_command(push_cmd, name="push")
-main.add_command(merge_cmd, name="merge")
 main.add_command(doctor_cmd, name="doctor")
 main.add_command(repair_cmd, name="repair")
-
-# Workflow commands (top-level for ease of use)
-main.add_command(run_cmd, name="run")
-main.add_command(logs_cmd, name="logs")
-main.add_command(cancel_cmd, name="cancel")
-main.add_command(test_cmd, name="test")
-
-# Direct tool CLI commands (top-level for piping support)
-main.add_command(map_cmd, name="map")
-main.add_command(fetch_cmd, name="fetch")
-main.add_command(llm_cmd, name="llm")
-main.add_command(embed_cmd, name="embed")
-main.add_command(write_cmd, name="write")
-main.add_command(sql_cmd, name="sql")
 
 
 if __name__ == "__main__":

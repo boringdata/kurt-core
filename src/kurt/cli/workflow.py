@@ -1,10 +1,20 @@
-"""Workflow CLI commands for running and managing TOML-based workflows.
+"""Unified workflow CLI commands for running and managing workflows.
+
+Supports both TOML-based workflows (engine-driven) and MD/TOML agent workflows.
 
 Commands:
-    kurt run <workflow.toml> [--input key=value]...  - Run workflow, output JSON with run_id
-    kurt logs <run_id> [--json]                      - View step logs for workflow run
-    kurt logs <run_id> --tail                        - Stream progress events
-    kurt cancel <run_id>                             - Cancel running workflow
+    kurt workflow run <workflow> [--input key=value]...  - Run workflow (TOML or MD)
+    kurt workflow logs <run_id> [--json]                 - View step logs for workflow run
+    kurt workflow logs <run_id> --tail                   - Stream progress events
+    kurt workflow cancel <run_id>                        - Cancel running workflow
+    kurt workflow status <run_id>                        - Show workflow status
+    kurt workflow test <workflow.toml>                   - Test workflow with fixtures
+    kurt workflow list                                   - List all workflow definitions
+    kurt workflow show <name>                            - Show workflow details
+    kurt workflow validate [file]                        - Validate workflow file(s)
+    kurt workflow history <name>                         - Show run history for a workflow
+    kurt workflow init                                   - Initialize with example workflows
+    kurt workflow create                                 - Create a new workflow definition
 """
 
 from __future__ import annotations
@@ -1180,12 +1190,54 @@ def test_cmd(
 # Command group for workflow management (alternative entry point)
 @click.group(name="workflow")
 def workflow_group():
-    """Manage TOML-based workflows."""
+    """
+    Manage workflows (both TOML and Markdown formats).
+
+    \\b
+    This unified group handles:
+    - TOML engine-driven workflows (with DAG steps)
+    - MD/TOML agent workflows (Claude Code execution)
+
+    \\b
+    Core Commands:
+      run        Run a workflow (handles both formats)
+      status     Show workflow status
+      logs       View step logs for a workflow run
+      cancel     Cancel a running workflow
+      test       Test a workflow with fixtures
+
+    \\b
+    Definition Commands (from agents):
+      list       List all workflow definitions
+      show       Show workflow definition details
+      validate   Validate workflow file(s)
+      history    Show run history for a workflow
+      init       Initialize with example workflows
+      create     Create a new workflow definition
+    """
     pass
 
 
+# Core TOML workflow commands
 workflow_group.add_command(run_cmd, name="run")
 workflow_group.add_command(status_cmd, name="status")
 workflow_group.add_command(logs_cmd, name="logs")
 workflow_group.add_command(cancel_cmd, name="cancel")
 workflow_group.add_command(test_cmd, name="test")
+
+# Import and add agent workflow commands
+from kurt.workflows.agents.cli import (
+    create_cmd as agents_create_cmd,
+    history_cmd as agents_history_cmd,
+    init_cmd as agents_init_cmd,
+    list_cmd as agents_list_cmd,
+    show_cmd as agents_show_cmd,
+    validate_cmd as agents_validate_cmd,
+)
+
+workflow_group.add_command(agents_list_cmd, name="list")
+workflow_group.add_command(agents_show_cmd, name="show")
+workflow_group.add_command(agents_validate_cmd, name="validate")
+workflow_group.add_command(agents_history_cmd, name="history")
+workflow_group.add_command(agents_init_cmd, name="init")
+workflow_group.add_command(agents_create_cmd, name="create")
