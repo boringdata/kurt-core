@@ -88,14 +88,17 @@ class TestMapCommand:
 
     def test_map_method_crawl_forces_crawler(self, cli_runner: CliRunner, tmp_database):
         """Test --method crawl skips sitemap and uses crawler directly."""
-        from unittest.mock import patch
+        import asyncio
+        from unittest.mock import AsyncMock, patch
 
-        with patch("kurt.tools.map.url.focused_crawler") as mock_crawler:
-            mock_crawler.return_value = ([], {"https://example.com/page1"})
+        async def mock_crawl(*args, **kwargs):
+            return [{"url": "https://example.com/page1", "source_type": "page", "depth": 0}]
 
-            with patch("kurt.tools.map.url.httpx.get") as mock_httpx:
-                # httpx should NOT be called when method=crawl
-                mock_httpx.side_effect = Exception("sitemap should not be tried")
+        # Mock discover_from_crawl in map_tool.py (where it's actually called)
+        with patch("kurt.tools.map_tool.discover_from_crawl", new=mock_crawl) as mock_crawler:
+            # Also mock discover_from_sitemap to verify it's NOT called
+            with patch("kurt.tools.map_tool.discover_from_sitemap") as mock_sitemap:
+                mock_sitemap.side_effect = Exception("sitemap should not be tried")
 
                 result = cli_runner.invoke(
                     map_cmd,
@@ -103,8 +106,8 @@ class TestMapCommand:
                 )
 
                 assert result.exit_code == 0, f"Failed: {result.output}"
-                assert mock_crawler.called, "Crawler should be called"
-                # httpx.get would raise if called, so if we got here, sitemap was skipped
+                # Sitemap should not be called when method=crawl
+                assert not mock_sitemap.called, "Sitemap should NOT be called when method=crawl"
 
     def test_map_method_sitemap_does_not_fallback(self, cli_runner: CliRunner, tmp_database):
         """Test --method sitemap raises error instead of falling back to crawl."""

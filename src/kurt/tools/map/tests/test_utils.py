@@ -98,10 +98,12 @@ class TestGetSourceType:
 class TestMakeDocumentId:
     """Test suite for make_document_id function."""
 
-    def test_creates_prefixed_hash(self):
-        """Test that document ID starts with 'map_' prefix."""
+    def test_creates_hash(self):
+        """Test that document ID is a hex string (12-char SHA256 prefix)."""
         doc_id = make_document_id("https://example.com/page")
-        assert doc_id.startswith("map_")
+        # Should be 12 hex characters
+        assert len(doc_id) == 12
+        assert all(c in "0123456789abcdef" for c in doc_id)
 
     def test_consistent_hash(self):
         """Test that same source produces same ID."""
@@ -117,10 +119,10 @@ class TestMakeDocumentId:
         assert id1 != id2
 
     def test_hash_length(self):
-        """Test that hash is SHA1 length (40 chars) plus prefix."""
+        """Test that hash is 12 characters (SHA256 prefix)."""
         doc_id = make_document_id("https://example.com")
-        # "map_" (4) + SHA1 hex (40) = 44 chars
-        assert len(doc_id) == 44
+        # 12-char hex string from SHA256
+        assert len(doc_id) == 12
 
 
 class TestGetSourceIdentifier:

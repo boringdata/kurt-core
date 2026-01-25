@@ -241,6 +241,8 @@ class TestEmbeddingStepRun:
 
     def test_embedding_step_tracks_batch_metrics(self, mock_dbos, monkeypatch):
         """Test that EmbeddingStep passes batch metrics to hooks."""
+        from unittest.mock import MagicMock
+
         captured: dict[str, float] = {}
 
         class CaptureHooks(StepHooks):
@@ -276,10 +278,13 @@ class TestEmbeddingStepRun:
 
         embedding_step_module = importlib.import_module("kurt.core.embedding_step")
 
-        monkeypatch.setattr(embedding_step_module.litellm, "embedding", fake_embedding)
-        monkeypatch.setattr(
-            embedding_step_module.litellm, "response_cost_calculator", fake_cost_calc
-        )
+        # Create a mock litellm module since the real one may not be installed
+        mock_litellm = MagicMock()
+        mock_litellm.embedding.side_effect = fake_embedding
+        mock_litellm.response_cost_calculator.side_effect = fake_cost_calc
+
+        # Replace the entire litellm module in the embedding_step module
+        monkeypatch.setattr(embedding_step_module, "litellm", mock_litellm)
 
         step = EmbeddingStep(
             name="embed_metrics",

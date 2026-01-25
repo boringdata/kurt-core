@@ -3,11 +3,24 @@
 from datetime import datetime
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from kurt.integrations.research.base import Citation, ResearchResult
-from kurt.integrations.research.monitoring.feeds import FeedAdapter
 from kurt.integrations.research.monitoring.hackernews import HackerNewsAdapter
 from kurt.integrations.research.monitoring.models import Signal
 from kurt.integrations.research.monitoring.reddit import RedditAdapter
+
+# Check if feedparser is available (optional dependency)
+try:
+    import feedparser  # noqa: F401
+
+    HAS_FEEDPARSER = True
+except ImportError:
+    HAS_FEEDPARSER = False
+
+# Import FeedAdapter only if feedparser is available
+if HAS_FEEDPARSER:
+    from kurt.integrations.research.monitoring.feeds import FeedAdapter
 
 
 class TestCitation:
@@ -208,6 +221,7 @@ class TestHackerNewsAdapter:
         assert signals[0].score == 100
 
 
+@pytest.mark.skipif(not HAS_FEEDPARSER, reason="feedparser not installed")
 class TestFeedAdapter:
     """Tests for RSS/Atom feed adapter."""
 

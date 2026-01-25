@@ -49,6 +49,7 @@ def mock_dolt_db():
     db.branch_list.return_value = [
         BranchInfo(name="main", is_current=True),
         BranchInfo(name="feature", is_current=False),
+        BranchInfo(name="conflict-feature", is_current=False),
     ]
     return db
 
@@ -563,7 +564,8 @@ class TestMergeBranch:
 
         assert result.success is True
         assert result.dolt_commit_hash is None
-        assert result.git_commit_hash == ""
+        # In no_commit mode, git_commit_hash is None (no commit made)
+        assert result.git_commit_hash is None
 
 
 # =============================================================================

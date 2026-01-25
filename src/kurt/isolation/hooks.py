@@ -252,11 +252,7 @@ def install_hooks(
     repo_path = Path(repo_path).resolve()
     hooks_dir = repo_path / ".git" / "hooks"
 
-    # Validate Git repository
-    if not (repo_path / ".git").is_dir():
-        raise ValueError(f"Not a Git repository: {repo_path}")
-
-    # Check for bare repo
+    # Check for bare repo first (no .git directory, repo IS the git dir)
     if _is_bare_repo(repo_path):
         logger.warning("Hooks not installed: bare repository")
         return HookInstallResult(
@@ -266,7 +262,7 @@ def install_hooks(
             errors=["Bare repository - hooks not applicable"],
         )
 
-    # Check for worktree
+    # Check for worktree (.git is a file, not a directory)
     if _is_worktree(repo_path):
         logger.warning("Hooks not installed: Git worktree")
         return HookInstallResult(
@@ -275,6 +271,10 @@ def install_hooks(
             skipped=HOOK_NAMES.copy(),
             errors=["Git worktree - install hooks in main repository"],
         )
+
+    # Validate Git repository (must be a normal repo with .git directory)
+    if not (repo_path / ".git").is_dir():
+        raise ValueError(f"Not a Git repository: {repo_path}")
 
     # Create hooks directory if it doesn't exist
     hooks_dir.mkdir(parents=True, exist_ok=True)

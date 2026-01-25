@@ -232,10 +232,11 @@ def mock_embeddings(dimensions: int = 1536):
     Yields:
         The mock litellm module for assertions
     """
-    import litellm
+    import importlib
 
-    original_embedding = litellm.embedding
+    embedding_step_module = importlib.import_module("kurt.core.embedding_step")
 
+    # Create a mock litellm module
     mock_litellm = MagicMock()
 
     def mock_embedding_fn(**kwargs):
@@ -243,12 +244,19 @@ def mock_embeddings(dimensions: int = 1536):
         return create_embedding_response(texts, dimensions)
 
     mock_litellm.embedding.side_effect = mock_embedding_fn
-    litellm.embedding = mock_litellm.embedding
+    # Also mock response_cost_calculator to return 0.0
+    mock_litellm.response_cost_calculator.return_value = 0.0
+
+    # Store original litellm (could be None or the real module)
+    original_litellm = embedding_step_module.litellm
+
+    # Replace litellm in the embedding_step module
+    embedding_step_module.litellm = mock_litellm
 
     try:
         yield mock_litellm
     finally:
-        litellm.embedding = original_embedding
+        embedding_step_module.litellm = original_litellm
 
 
 @contextmanager

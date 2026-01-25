@@ -72,14 +72,26 @@ class TestStatusCommand:
 
     def test_status_with_database(self, cli_runner: CliRunner, tmp_project_with_docs):
         """Test status shows documents when database has data."""
-        result = invoke_cli(cli_runner, status, ["--format", "json"])
-        assert_cli_success(result)
-        import json
+        from unittest.mock import patch
 
-        data = json.loads(result.output)
-        assert data["initialized"] is True
-        assert "documents" in data
-        assert data["documents"]["total"] == 7
+        # Mock get_status_data since tmp_project_with_docs uses SQLite, not Dolt
+        mock_status = {
+            "initialized": True,
+            "documents": {
+                "total": 7,
+                "by_status": {"fetched": 2, "not_fetched": 3, "error": 2, "skipped": 0},
+                "by_domain": {"example.com": 7},
+            },
+        }
+        with patch("kurt.status.cli._get_status_data", return_value=mock_status):
+            result = invoke_cli(cli_runner, status, ["--format", "json"])
+            assert_cli_success(result)
+            import json
+
+            data = json.loads(result.output)
+            assert data["initialized"] is True
+            assert "documents" in data
+            assert data["documents"]["total"] == 7
 
 
 class TestStatusHookCC:

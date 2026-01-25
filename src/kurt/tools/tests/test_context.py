@@ -365,7 +365,7 @@ class TestInitFunctions:
         assert client is not None
         # Clean up
         import asyncio
-        asyncio.get_event_loop().run_until_complete(client.aclose())
+        asyncio.run(client.aclose())
 
     def test_init_dolt_db_embedded(self, tmp_path):
         """_init_dolt_db creates DoltDB in embedded mode."""
@@ -379,8 +379,9 @@ class TestInitFunctions:
             result = _init_dolt_db(settings, tmp_path)
 
             assert result == mock_instance
+            # DoltDB expects repo root path (parent of .dolt), not .dolt itself
             mock_dolt.assert_called_once_with(
-                path=tmp_path / ".dolt",
+                path=tmp_path,
                 mode="embedded",
                 host="localhost",
                 port=3306,
@@ -404,8 +405,9 @@ class TestInitFunctions:
 
             result = _init_dolt_db(settings, tmp_path)
 
+            # DoltDB expects repo root path (parent of .dolt), not .dolt itself
             mock_dolt.assert_called_once_with(
-                path=tmp_path / ".dolt",
+                path=tmp_path,
                 mode="server",
                 host="myhost",
                 port=3307,
@@ -445,7 +447,7 @@ class TestLoadToolContext:
         assert context.http is not None
         # Clean up
         import asyncio
-        asyncio.get_event_loop().run_until_complete(context.http.aclose())
+        asyncio.run(context.http.aclose())
 
     def test_load_tool_context_with_llm(self, tmp_project, clean_env, monkeypatch):
         """load_tool_context initializes LLM config."""
