@@ -93,12 +93,20 @@ def build_rows(
 
 
 def serialize_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Serialize rows for workflow output.
+
+    Also adds 'url' field as alias for 'source_url' for compatibility
+    with downstream tools (e.g., FetchTool expects 'url').
+    """
     serialized = []
     for row in rows:
         row_copy = dict(row)
         status = row_copy.get("status")
         if isinstance(status, MapStatus):
             row_copy["status"] = status.value
+        # Add 'url' as alias for compatibility with FetchTool
+        if "source_url" in row_copy and "url" not in row_copy:
+            row_copy["url"] = row_copy["source_url"]
         serialized.append(row_copy)
     return serialized
 
