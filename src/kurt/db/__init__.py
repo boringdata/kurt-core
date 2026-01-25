@@ -54,6 +54,18 @@ from kurt.db.tenant import (
     set_workspace_context,
 )
 
+# Tool-owned table operations (new architecture)
+from kurt.db.tool_tables import (
+    register_document,
+    insert_map_result,
+    insert_fetch_result,
+    insert_embed_result,
+    batch_insert_map_results,
+    batch_insert_fetch_results,
+    get_documents_for_fetch,
+    get_existing_document_ids,
+)
+
 # Dolt client and schema
 from kurt.db.dolt import (
     # Client classes
@@ -135,4 +147,13 @@ __all__ = [
     "init_observability_schema",
     "check_schema_exists",
     "get_table_ddl",
+    # Tool-owned table operations
+    "register_document",
+    "insert_map_result",
+    "insert_fetch_result",
+    "insert_embed_result",
+    "batch_insert_map_results",
+    "batch_insert_fetch_results",
+    "get_documents_for_fetch",
+    "get_existing_document_ids",
 ]

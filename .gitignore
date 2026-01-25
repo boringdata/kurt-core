@@ -107,3 +107,8 @@ reverse_vscode.md
 
 content/
 .dolt/noms/
+
+# Project-specific files (not code)
+.dolt/
+kurt.toml
+sources/

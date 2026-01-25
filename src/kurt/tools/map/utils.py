@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-import hashlib
 import logging
 from fnmatch import fnmatch
 from typing import Any, Callable, Optional
+
+# Use shared URL canonicalization for consistent document IDs
+from kurt.tools.utils import make_document_id
 
 from .models import MapStatus
 
@@ -26,11 +28,6 @@ def get_source_type(discovery_method: str) -> str:
     return {"folder": "file", "cms": "cms"}.get(discovery_method, "url")
 
 
-def make_document_id(source: str) -> str:
-    digest = hashlib.sha1(source.encode("utf-8")).hexdigest()
-    return f"map_{digest}"
-
-
 def get_source_identifier(item: dict[str, Any]) -> str:
     return (
         item.get("document_id")
@@ -44,14 +41,17 @@ def get_source_identifier(item: dict[str, Any]) -> str:
 
 
 def resolve_existing(doc_ids: list[str]) -> set[str]:
-    """Check which document IDs already exist in Dolt."""
+    """Check which document IDs already exist in document_registry."""
     if not doc_ids:
         return set()
     try:
-        from kurt.db.documents import get_dolt_db, get_existing_ids
+        from kurt.db.documents import get_dolt_db
 
         db = get_dolt_db()
-        return get_existing_ids(db, doc_ids)
+        placeholders = ", ".join("?" for _ in doc_ids)
+        sql = f"SELECT document_id FROM document_registry WHERE document_id IN ({placeholders})"
+        result = db.query(sql, doc_ids)
+        return {row["document_id"] for row in result}
     except Exception as e:
         logger.warning(f"Failed to check existing documents in Dolt: {e}")
         return set()
@@ -103,47 +103,53 @@ def serialize_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return serialized
 
 
-def persist_map_documents(rows: list[dict[str, Any]]) -> dict[str, int]:
-    """Persist map results to Dolt documents table.
+def persist_map_documents(
+    rows: list[dict[str, Any]],
+    run_id: str | None = None,
+) -> dict[str, int]:
+    """Persist map results to tool-owned tables.
 
-    Converts map-specific fields to the unified documents schema:
-    - document_id -> id
-    - source_url -> url
-    - status (MapStatus) -> metadata.map_status
-    - discovery_method, discovery_url, title, is_new -> metadata
-    - fetch_status defaults to 'pending' for new documents
+    Writes to:
+    - document_registry: Central registry (upsert)
+    - map_results: Map tool output (insert new row per run)
+
+    Args:
+        rows: List of map result dicts
+        run_id: Run/batch ID (UUID). If None, generates one.
+
+    Returns:
+        Dict with counts: {"registered": N, "inserted": M}
     """
-    from kurt.db.documents import get_dolt_db, upsert_documents
+    import uuid
 
-    # Convert to Dolt documents format
-    dolt_docs = []
+    from kurt.db.documents import get_dolt_db
+    from kurt.db.tool_tables import batch_insert_map_results
+
+    if run_id is None:
+        run_id = str(uuid.uuid4())
+
+    # Convert to format expected by batch_insert_map_results
+    map_results = []
     for row in rows:
-        # Map status to string for metadata
+        # Map status to string
         status = row.get("status")
         if isinstance(status, MapStatus):
             status = status.value
 
-        doc = {
-            "id": row.get("document_id"),
+        result = {
             "url": row.get("source_url"),
             "source_type": row.get("source_type", "url"),
-            "content_hash": row.get("content_hash"),
+            "discovery_method": row.get("discovery_method", "unknown"),
+            "discovery_url": row.get("discovery_url"),
+            "title": row.get("title"),
+            "status": status or "success",
             "error": row.get("error"),
-            "fetch_status": "pending",  # New documents start as pending
-            "metadata": {
-                "discovery_method": row.get("discovery_method"),
-                "discovery_url": row.get("discovery_url"),
-                "title": row.get("title"),
-                "is_new": row.get("is_new"),
-                "map_status": status,
-                **(row.get("metadata_json") or {}),
-            },
+            "metadata": row.get("metadata_json"),
         }
-        dolt_docs.append(doc)
+        map_results.append(result)
 
     db = get_dolt_db()
-    result = upsert_documents(db, dolt_docs)
-    return {"rows_written": result["inserted"], "rows_updated": result["updated"]}
+    return batch_insert_map_results(db, run_id, map_results)
 
 
 def filter_items(

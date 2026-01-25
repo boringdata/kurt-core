@@ -68,32 +68,170 @@ CREATE TABLE IF NOT EXISTS step_events (
 );
 
 -- =============================================================================
--- documents: Map/fetch document metadata
+-- TOOL-OWNED TABLES (new architecture: 1 table per tool)
 -- =============================================================================
--- Used by MapTool and FetchTool to persist discovered/fetched document metadata.
--- - MapTool: INSERT with source_type, fetch_status='pending'
--- - FetchTool: UPDATE with content_path, content_hash, fetch_status='success'
--- - EmbedTool: UPDATE with embedding
---
--- Deduplication:
--- - url is UNIQUE
--- - Map skips existing URLs (upsert with no-op on conflict)
--- - Fetch skips already-fetched (check fetch_status='success')
-CREATE TABLE IF NOT EXISTS documents (
-    id VARCHAR(36) PRIMARY KEY,
-    url TEXT NOT NULL UNIQUE,
-    source_type VARCHAR(20),          -- url|file|cms
-    content_path TEXT,                -- path to content file on disk
-    content_hash VARCHAR(64),         -- SHA256 of content
-    embedding BLOB,                   -- vector embedding (optional)
-    fetch_status VARCHAR(20),         -- pending|fetching|success|error
+-- See spec: kurt-core-5v6 "Tool-Owned Tables with Pydantic Schemas"
+-- Each tool owns its table. History preserved via (document_id, run_id) key.
+-- Unified `documents` VIEW joins all tool tables via document_registry.
+
+-- =============================================================================
+-- schema_migrations: Track applied migrations
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version VARCHAR(20) PRIMARY KEY,
+    applied_at TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP(6),
+    description TEXT
+);
+
+-- =============================================================================
+-- document_registry: Central registry of all known documents
+-- =============================================================================
+-- Populated by any tool that discovers new documents.
+-- CRITICAL: url_hash MUST use same canonicalization as document_id
+CREATE TABLE IF NOT EXISTS document_registry (
+    document_id VARCHAR(12) PRIMARY KEY,
+    url VARCHAR(2048) NOT NULL,
+    url_hash VARCHAR(64) NOT NULL,  -- SHA256 of canonicalized URL
+    source_type VARCHAR(20) NOT NULL,  -- url|file|cms
+    first_seen_at TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP(6),
+    UNIQUE KEY idx_registry_url_hash (url_hash),
+    INDEX idx_registry_url (url(255))
+);
+
+-- =============================================================================
+-- map_results: Output from MapTool
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS map_results (
+    document_id VARCHAR(12) NOT NULL,
+    run_id VARCHAR(36) NOT NULL,
+    url TEXT NOT NULL,
+    source_type VARCHAR(20) DEFAULT 'url',
+    discovery_method VARCHAR(50) NOT NULL,
+    discovery_url TEXT,
+    title TEXT,
+    status VARCHAR(20) DEFAULT 'success',
     error TEXT,
     metadata JSON,
-    created_at TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP NOT NULL
+    created_at TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP(6),
+    PRIMARY KEY (document_id, run_id),
+    INDEX idx_map_created (created_at),
+    INDEX idx_map_status (status)
 );
-CREATE INDEX IF NOT EXISTS idx_documents_url ON documents(url);
-CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(fetch_status);
+
+-- =============================================================================
+-- fetch_results: Output from FetchTool
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS fetch_results (
+    document_id VARCHAR(12) NOT NULL,
+    run_id VARCHAR(36) NOT NULL,
+    url TEXT NOT NULL,
+    status VARCHAR(20) NOT NULL,  -- success|error|skipped
+    content_path TEXT,
+    content_hash VARCHAR(64),
+    content_length INT,
+    fetch_engine VARCHAR(50),
+    error TEXT,
+    metadata JSON,
+    created_at TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP(6),
+    PRIMARY KEY (document_id, run_id),
+    INDEX idx_fetch_created (created_at),
+    INDEX idx_fetch_status (status)
+);
+
+-- =============================================================================
+-- embed_results: Output from EmbedTool
+-- =============================================================================
+-- PK includes embedding_model to support multiple models per run
+CREATE TABLE IF NOT EXISTS embed_results (
+    document_id VARCHAR(12) NOT NULL,
+    run_id VARCHAR(36) NOT NULL,
+    embedding_model VARCHAR(100) NOT NULL,
+    embedding_path TEXT NOT NULL,
+    vector_size INT NOT NULL,
+    created_at TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP(6),
+    PRIMARY KEY (document_id, run_id, embedding_model),
+    INDEX idx_embed_created (created_at),
+    INDEX idx_embed_model (embedding_model)
+);
+
+-- =============================================================================
+-- LATEST VIEWS: Deterministic tie-breaking with ROW_NUMBER
+-- =============================================================================
+
+CREATE OR REPLACE VIEW map_results_latest AS
+SELECT document_id, run_id, url, source_type, discovery_method,
+       discovery_url, title, status, error, metadata, created_at
+FROM (
+    SELECT m.*,
+           ROW_NUMBER() OVER (
+               PARTITION BY m.document_id
+               ORDER BY m.created_at DESC, m.run_id DESC
+           ) AS rn
+    FROM map_results m
+) ranked
+WHERE rn = 1;
+
+CREATE OR REPLACE VIEW fetch_results_latest AS
+SELECT document_id, run_id, url, status, content_path, content_hash,
+       content_length, fetch_engine, error, metadata, created_at
+FROM (
+    SELECT f.*,
+           ROW_NUMBER() OVER (
+               PARTITION BY f.document_id
+               ORDER BY f.created_at DESC, f.run_id DESC
+           ) AS rn
+    FROM fetch_results f
+) ranked
+WHERE rn = 1;
+
+CREATE OR REPLACE VIEW embed_results_latest AS
+SELECT document_id, run_id, embedding_model, embedding_path,
+       vector_size, created_at
+FROM (
+    SELECT e.*,
+           ROW_NUMBER() OVER (
+               PARTITION BY e.document_id, e.embedding_model
+               ORDER BY e.created_at DESC, e.run_id DESC
+           ) AS rn
+    FROM embed_results e
+) ranked
+WHERE rn = 1;
+
+-- =============================================================================
+-- documents VIEW: Unified view joining all tool tables
+-- =============================================================================
+CREATE OR REPLACE VIEW documents AS
+SELECT
+    r.document_id,
+    r.document_id AS id,  -- Alias for backward compatibility
+    r.url,
+    r.source_type,
+    r.first_seen_at,
+    -- Map data (latest)
+    ml.discovery_method,
+    ml.title,
+    ml.status AS map_status,
+    ml.created_at AS mapped_at,
+    -- Fetch data (latest)
+    fl.status AS fetch_status,
+    fl.content_path,
+    fl.content_hash,
+    fl.content_length,
+    fl.fetch_engine,
+    fl.created_at AS fetched_at,
+    -- Embed data (latest)
+    el.embedding_model,
+    el.vector_size,
+    el.created_at AS embedded_at,
+    -- Computed fields for backward compatibility
+    COALESCE(fl.created_at, ml.created_at, r.first_seen_at) AS created_at,
+    COALESCE(fl.created_at, ml.created_at, r.first_seen_at) AS updated_at,
+    fl.error AS error,
+    ml.metadata AS metadata
+FROM document_registry r
+LEFT JOIN map_results_latest ml ON r.document_id = ml.document_id
+LEFT JOIN fetch_results_latest fl ON r.document_id = fl.document_id
+LEFT JOIN embed_results_latest el ON r.document_id = el.document_id;
 
 -- =============================================================================
 -- llm_traces: LLM call traces for cost/token tracking
