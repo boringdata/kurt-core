@@ -87,10 +87,15 @@ def _dolt_init() -> bool:
     if _check_dolt_repo():
         return True
     try:
+        # Set env var to skip Dolt registration prompts for local-only use
+        env = os.environ.copy()
+        env["DOLT_DISABLE_ACCOUNT_REGISTRATION"] = "true"
+
         subprocess.run(
             ["dolt", "init"],
             capture_output=True,
             check=True,
+            env=env,
         )
         return True
     except subprocess.CalledProcessError as e:

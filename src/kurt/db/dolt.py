@@ -833,6 +833,8 @@ class DoltDB:
         """Run a dolt CLI command."""
         cmd = ["dolt"] + args
         env = os.environ.copy()
+        # Skip Dolt registration prompts for local-only use
+        env["DOLT_DISABLE_ACCOUNT_REGISTRATION"] = "true"
 
         try:
             result = subprocess.run(
