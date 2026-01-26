@@ -14,7 +14,7 @@ Usage:
         session.add(LLMTrace(...))
 """
 
-from kurt.db.base import get_database_client
+from kurt.db.database import get_database_client, get_engine
 from kurt.db.cloud_api import KurtCloudAuthError
 from kurt.db.database import (
     async_session_scope,
@@ -79,6 +79,7 @@ from kurt.db.tenant import (
 __all__ = [
     # Database client
     "get_database_client",
+    "get_engine",
     "KurtCloudAuthError",
     # Session management
     "get_session",

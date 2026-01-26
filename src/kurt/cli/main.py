@@ -20,6 +20,25 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _auto_migrate_schema():
+    """Auto-migrate schema on startup (adds missing columns)."""
+    try:
+        from kurt.db.auto_migrate import auto_migrate
+
+        changes = auto_migrate()
+        if changes:
+            from rich.console import Console
+
+            console = Console()
+            for table, cols in changes.items():
+                if cols and cols[0].startswith("[created"):
+                    console.print(f"[dim]Created table: {table}[/dim]")
+                else:
+                    console.print(f"[dim]Added columns to {table}: {', '.join(cols)}[/dim]")
+    except Exception:
+        pass  # Silent fail - don't block CLI
+
+
 class LazyGroup(click.Group):
     """A Click group that lazily loads subcommands."""
 
@@ -61,13 +80,25 @@ class LazyGroup(click.Group):
     },
 )
 @click.version_option(package_name="kurt-core", prog_name="kurt")
-def main():
+@click.pass_context
+def main(ctx):
     """
     Kurt - Document intelligence CLI tool.
 
     Transform documents into structured knowledge graphs.
     """
-    pass
+    from kurt.config import config_file_exists
+
+    # Skip auto-migrate for init command (no DB yet)
+    if ctx.invoked_subcommand in ["init", "help"]:
+        return
+
+    # Skip if no project initialized
+    if not config_file_exists():
+        return
+
+    # Auto-migrate schema (adds missing columns)
+    _auto_migrate_schema()
 
 
 # Core top-level commands (not under any group)
