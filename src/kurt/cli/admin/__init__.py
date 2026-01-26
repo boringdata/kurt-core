@@ -7,6 +7,7 @@ import click
 from .feedback import feedback
 from .migrate import migrate
 from .telemetry import telemetry
+from kurt.cli.sync import sync_group
 
 
 @click.group()
@@ -18,3 +19,4 @@ def admin():
 admin.add_command(feedback)
 admin.add_command(migrate)
 admin.add_command(telemetry)
+admin.add_command(sync_group, name="sync")

@@ -53,7 +53,6 @@ class LazyGroup(click.Group):
         "workflow": ("kurt.cli.workflow", "workflow_group"),
         "tool": ("kurt.cli.tools", "tools_group"),
         "docs": ("kurt.cli.docs", "docs_group"),
-        "sync": ("kurt.cli.sync", "sync_group"),
         "connect": ("kurt.integrations.cli", "integrations_group"),
         "cloud": ("kurt.cli.cloud", "cloud_group"),
         "admin": ("kurt.cli.admin", "admin"),
