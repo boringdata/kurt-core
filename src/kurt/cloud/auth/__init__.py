@@ -16,12 +16,10 @@ Public API:
 """
 
 from kurt.cloud.auth.api import get_user_info, refresh_access_token
-from kurt.cloud.auth.cli import auth
 from kurt.cloud.auth.credentials import (
     Credentials,
     clear_credentials,
     ensure_fresh_token,
-    get_all_workspace_paths,
     get_cloud_api_url,
     get_workspace_id_from_config,
     get_workspace_paths,
@@ -42,10 +40,7 @@ __all__ = [
     # Workspace tracking
     "register_workspace_path",
     "get_workspace_paths",
-    "get_all_workspace_paths",
     # API helpers
     "get_user_info",
     "refresh_access_token",
-    # CLI
-    "auth",
 ]
