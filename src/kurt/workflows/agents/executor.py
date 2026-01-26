@@ -625,19 +625,6 @@ def agent_execution_step(
     }
 
 
-def _truncate_dict(d: dict, max_length: int = 500) -> dict:
-    """Truncate string values in a dict for logging."""
-    result = {}
-    for k, v in d.items():
-        if isinstance(v, str) and len(v) > max_length:
-            result[k] = v[:max_length] + "..."
-        elif isinstance(v, dict):
-            result[k] = _truncate_dict(v, max_length)
-        else:
-            result[k] = v
-    return result
-
-
 # ============================================================================
 # DAG Executor for step-driven workflows with [steps.xxx] sections
 # ============================================================================

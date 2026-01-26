@@ -7,16 +7,14 @@ This module manages all Kurt configuration including:
 - Workflow configs (MAP.*, FETCH.*, etc.) via dot notation
 """
 
-# Re-export base config API (backward compatibility)
+# Re-export base config API
 from kurt.config.base import (
     KurtConfig,
     ModelSettings,
-    config_exists,
     config_file_exists,
     create_config,
     get_config_file_path,
     get_config_or_default,
-    get_step_config,
     load_config,
     resolve_model_settings,
     update_config,
@@ -33,7 +31,6 @@ from kurt.config.utils import (
     get_nested_value,
     has_placeholder_values,
     load_prefixed_config,
-    prefixed_config_exists,
     save_prefixed_config,
     set_nested_value,
 )
@@ -42,12 +39,10 @@ __all__ = [
     # Base config
     "KurtConfig",
     "ModelSettings",
-    "config_exists",  # deprecated, use config_file_exists
     "config_file_exists",
     "create_config",
     "get_config_file_path",
     "get_config_or_default",
-    "get_step_config",
     "load_config",
     "resolve_model_settings",
     "update_config",
@@ -62,7 +57,6 @@ __all__ = [
     "get_nested_value",
     "has_placeholder_values",
     "load_prefixed_config",
-    "prefixed_config_exists",  # deprecated, use config_exists_for_prefix
     "save_prefixed_config",
     "set_nested_value",
 ]

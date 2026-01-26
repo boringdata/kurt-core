@@ -131,12 +131,6 @@ def get_session() -> Session:
     return db.get_session()
 
 
-def check_database_exists() -> bool:
-    """Check if the database exists."""
-    db = get_database_client()
-    return db.check_database_exists()
-
-
 def ensure_tables(models: list[type[SQLModel]], session: Optional[Session] = None) -> None:
     """Create tables for the provided SQLModel classes."""
     if not models:

@@ -390,15 +390,6 @@ def config_file_exists() -> bool:
     return get_config_file_path().exists()
 
 
-# Backwards compatibility alias
-def config_exists() -> bool:
-    """
-    Deprecated: Use config_file_exists() instead.
-    Check if kurt.config configuration file exists.
-    """
-    return config_file_exists()
-
-
 def get_config_or_default() -> KurtConfig:
     """
     Get configuration, or return default if kurt.config file doesn't exist.
@@ -496,72 +487,6 @@ def update_config(config: KurtConfig) -> None:
             f.write(f"\n# {header}\n")
             for key, value in sorted(underscore_keys[prefix].items()):
                 f.write(f'{key}="{value}"\n')
-
-
-def get_step_config(
-    config: KurtConfig,
-    module: str,
-    step: str | None,
-    param: str,
-    fallback_key: str | None = None,
-    default: Any = None,
-) -> Any:
-    """
-    Get a step-specific configuration value with fallback resolution.
-
-    Resolution order:
-    1. Step-specific: MODULE.STEP.PARAM (e.g., INDEXING.SECTION_EXTRACTIONS.LLM_MODEL)
-       Or module-level: MODULE.PARAM (e.g., EMBEDDING.API_BASE) when step is None/empty
-    2. Global fallback: fallback_key (e.g., INDEXING_LLM_MODEL)
-    3. Default value
-
-    Args:
-        config: KurtConfig instance
-        module: Module name (e.g., "INDEXING", "FETCH", "LLM", "EMBEDDING")
-        step: Step name (e.g., "SECTION_EXTRACTIONS", "ENTITY_CLUSTERING")
-              Use None or "" for 2-part keys like EMBEDDING.API_BASE
-        param: Parameter name (e.g., "LLM_MODEL", "EPS", "API_BASE")
-        fallback_key: Global config key to use as fallback (e.g., "INDEXING_LLM_MODEL")
-        default: Default value if not found anywhere
-
-    Returns:
-        The configuration value
-
-    Example:
-        >>> config = load_config()
-        >>> # 3-part key: INDEXING.SECTION_EXTRACTIONS.LLM_MODEL
-        >>> llm_model = get_step_config(
-        ...     config, "INDEXING", "SECTION_EXTRACTIONS", "LLM_MODEL",
-        ...     fallback_key="INDEXING_LLM_MODEL",
-        ...     default="openai/gpt-4o-mini"
-        ... )
-        >>> # 2-part key: EMBEDDING.API_BASE
-        >>> api_base = get_step_config(
-        ...     config, "EMBEDDING", None, "API_BASE",
-        ...     default=None
-        ... )
-    """
-    extra = getattr(config, "__pydantic_extra__", {})
-
-    # Build key based on whether step is provided
-    if step:
-        # 3-part key: MODULE.STEP.PARAM
-        config_key = f"{module}.{step}.{param}"
-    else:
-        # 2-part key: MODULE.PARAM
-        config_key = f"{module}.{param}"
-
-    if config_key in extra:
-        return extra[config_key]
-
-    # Try global fallback
-    if fallback_key:
-        if hasattr(config, fallback_key):
-            return getattr(config, fallback_key)
-        if fallback_key in extra:
-            return extra[fallback_key]
-
-    return default
 
 
 @dataclass
