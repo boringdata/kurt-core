@@ -236,5 +236,8 @@ def clear_registry() -> None:
     Clear all registered tools.
 
     Primarily used for testing to ensure clean state.
+    Also resets _tools_loaded flag so tools can be re-loaded.
     """
+    global _tools_loaded
     TOOLS.clear()
+    _tools_loaded = False
