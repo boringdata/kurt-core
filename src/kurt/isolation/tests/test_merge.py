@@ -82,6 +82,14 @@ def git_repo(tmp_path):
         capture_output=True,
     )
 
+    # Ensure branch is named "main" (git version-agnostic)
+    subprocess.run(
+        ["git", "branch", "-M", "main"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+
     return repo
 
 
