@@ -13,7 +13,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from sqlalchemy import JSON, BigInteger, Column, Index, Text
+from sqlalchemy import JSON, BigInteger, Column, Index, String, Text
 from sqlmodel import Field, SQLModel
 
 from kurt.db.models import TenantMixin
@@ -79,6 +79,7 @@ class StepLog(TenantMixin, SQLModel, table=True):
     run_id: str = Field(
         sa_column=Column(
             "run_id",
+            String(36),
             nullable=False,
             index=True,
         ),
