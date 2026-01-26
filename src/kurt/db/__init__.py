@@ -54,12 +54,6 @@ from kurt.db.models import (
     TenantMixin,
     TimestampMixin,
 )
-from kurt.db.model_utils import (
-    ensure_all_workflow_tables,
-    ensure_table_exists,
-    find_models_in_workflow,
-    get_model_by_table_name,
-)
 from kurt.db.tenant import (
     add_workspace_filter,
     clear_workspace_context,
@@ -128,9 +122,4 @@ __all__ = [
     "get_dolt_db",
     "init_observability_schema",
     "check_schema_exists",
-    # Model utilities (moved from kurt.core)
-    "get_model_by_table_name",
-    "ensure_table_exists",
-    "find_models_in_workflow",
-    "ensure_all_workflow_tables",
 ]

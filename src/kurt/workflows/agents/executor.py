@@ -883,12 +883,15 @@ def execute_function_step(
     if not tools_path.exists():
         raise ValueError(f"tools.py not found in workflow: {workflow_name}")
 
-    # Load the module
-    from kurt.db.model_utils import _load_module_from_path
+    # Load the module dynamically
+    import importlib.util
 
-    module = _load_module_from_path(tools_path)
-    if module is None:
-        raise ImportError(f"Failed to load tools.py from {workflow_name}")
+    spec = importlib.util.spec_from_file_location("tools", tools_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load tools.py from {workflow_name}")
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
 
     # Get the function
     if not hasattr(module, function_name):
