@@ -42,23 +42,29 @@ def _ensure_tools_loaded() -> None:
         return
     _tools_loaded = True
 
-    # Import tool modules to trigger @register_tool decorators
-    # This must be done lazily to avoid circular imports
-    try:
-        from kurt.tools import (
-            agent,  # noqa: F401
-            batch_embedding,  # noqa: F401
-            batch_llm,  # noqa: F401
-            fetch,  # noqa: F401
-            map,  # noqa: F401
-            research,  # noqa: F401
-            signals,  # noqa: F401
-            sql,  # noqa: F401
-            write,  # noqa: F401
-        )
-    except ImportError:
-        # Some tools may not be available in minimal installations
-        pass
+    # Import tool modules directly to trigger @register_tool decorators
+    # Import each module separately to isolate failures and avoid
+    # going through kurt.tools which could cause circular imports
+    tool_modules = [
+        "kurt.tools.map",
+        "kurt.tools.fetch",
+        "kurt.tools.sql",
+        "kurt.tools.write",
+        "kurt.tools.batch_embedding",
+        "kurt.tools.batch_llm",
+        "kurt.tools.agent",
+        "kurt.tools.research",
+        "kurt.tools.signals",
+    ]
+
+    import importlib
+
+    for module_name in tool_modules:
+        try:
+            importlib.import_module(module_name)
+        except ImportError:
+            # Some tools may not be available in minimal installations
+            pass
 
 
 def register_tool(tool_class: type[Tool]) -> type[Tool]:
