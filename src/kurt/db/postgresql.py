@@ -56,11 +56,6 @@ class PostgreSQLClient(DatabaseClient):
         Note: In production, migrations should be run via Alembic.
         This method is primarily for development/testing.
         """
-        # Register all models with SQLModel.metadata
-        from kurt.db.models import register_all_models
-
-        register_all_models()
-
         db_url = self.get_database_url()
         logger.info("Initializing PostgreSQL database")
 

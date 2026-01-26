@@ -164,11 +164,10 @@ def tmp_database(tmp_path: Path, monkeypatch, reset_dbos_state):
     # This is necessary because SQLModel uses a global MetaData registry
     from sqlmodel import SQLModel
 
-    # Store tables we want to keep (kurt core models)
-    from kurt.db.models import register_all_models
+    # Import LLMTrace to register it with SQLModel.metadata
+    from kurt.db.models import LLMTrace  # noqa: F401
 
     SQLModel.metadata.clear()
-    register_all_models()
 
     # Create .kurt directory structure
     kurt_dir = tmp_path / ".kurt"

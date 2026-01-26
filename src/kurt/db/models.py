@@ -2,36 +2,13 @@
 Core database models for kurt.
 
 Infrastructure tables shared across all tools.
-Tool-specific output tables are defined in tools/<name>/models.py
-and registered via register_all_models().
+Tool-specific output tables are defined in tools/<name>/models.py.
 """
 
 from datetime import datetime
 from typing import Optional
 
 from sqlmodel import Field, SQLModel
-
-
-def register_all_models():
-    """Import all models to register them with SQLModel.metadata.
-
-    Call this before creating tables to ensure all workflow models
-    are included in SQLModel.metadata.create_all().
-    """
-    # Infrastructure models (defined below)
-    from kurt.db.models import LLMTrace  # noqa: F401
-    from kurt.tools.fetch.models import FetchDocument  # noqa: F401
-
-    # Tool output models
-    from kurt.tools.agent.models import AgentExecution  # noqa: F401
-    from kurt.tools.analytics.models import (  # noqa: F401
-        AnalyticsDomain,
-        PageAnalytics,
-    )
-    from kurt.tools.batch_embedding.models import BatchEmbeddingRecord  # noqa: F401
-    from kurt.tools.map.models import MapDocument  # noqa: F401
-    from kurt.tools.research.models import ResearchDocument  # noqa: F401
-    from kurt.tools.signals.models import MonitoringSignal  # noqa: F401
 
 
 # ============================================================================

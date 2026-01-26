@@ -91,11 +91,6 @@ class SQLiteClient(DatabaseClient):
         1. Apply Alembic migrations (stamps alembic_version for infrastructure tables)
         2. Use create_all for any workflow/model tables not yet in migrations
         """
-        # Register all models with SQLModel.metadata
-        from kurt.db.models import register_all_models
-
-        register_all_models()
-
         self._ensure_directory()
         db_path = self.get_database_path()
 
