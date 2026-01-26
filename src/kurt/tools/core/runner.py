@@ -23,6 +23,9 @@ from kurt.tools.core.base import SubstepEvent
 from kurt.tools.core.context import load_tool_context
 from kurt.tools.core.registry import execute_tool, get_tool
 
+# Import tools module to ensure all tools are registered via @register_tool decorators
+import kurt.tools  # noqa: F401
+
 
 def _get_project_root(project_root: str | None = None) -> Path:
     if project_root:
