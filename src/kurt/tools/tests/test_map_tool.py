@@ -572,6 +572,7 @@ class TestMapTool:
             source="file",
             path=str(temp_folder),
             include_patterns=["**/*.html"],
+            dry_run=True,
         )
         context = ToolContext()
 
@@ -593,6 +594,7 @@ class TestMapTool:
         params = MapInput(
             source="file",
             path="/nonexistent/folder",
+            dry_run=True,
         )
         context = ToolContext()
 
@@ -609,6 +611,7 @@ class TestMapTool:
         params = MapInput(
             source="file",
             path=str(temp_folder),
+            dry_run=True,
         )
         context = ToolContext()
 
@@ -631,6 +634,7 @@ class TestMapTool:
             source="file",
             path=str(temp_folder),
             max_pages=5,
+            dry_run=True,
         )
         context = ToolContext()
 
@@ -672,6 +676,7 @@ class TestMapTool:
             source="url",
             url="https://example.com",
             discovery_method="sitemap",
+            dry_run=True,
         )
         context = ToolContext(http=mock_client)
 
@@ -706,6 +711,7 @@ class TestMapToolErrorHandling:
             source="url",
             url="https://example.com",
             discovery_method="sitemap",
+            dry_run=True,
         )
         context = ToolContext(http=mock_client)
 
@@ -729,6 +735,7 @@ class TestMapToolErrorHandling:
             source="url",
             url="https://example.com",
             discovery_method="sitemap",
+            dry_run=True,
         )
         context = ToolContext(http=mock_client)
 
@@ -745,6 +752,7 @@ class TestMapToolErrorHandling:
             source="cms",
             cms_platform="unknown_provider",
             cms_instance="default",
+            dry_run=True,
         )
         context = ToolContext()
 

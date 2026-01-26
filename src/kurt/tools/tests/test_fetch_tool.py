@@ -393,7 +393,7 @@ class TestFetchToolExecution:
         tool = FetchTool()
         params = FetchParams(
             inputs=[FetchInput(url="https://example.com")],
-            config=FetchConfig(retries=0),
+            config=FetchConfig(retries=0, dry_run=True),
         )
 
         # Mock _fetch_single_url to avoid network calls
@@ -437,7 +437,7 @@ class TestFetchToolExecution:
         tool = FetchTool()
         params = FetchParams(
             inputs=[FetchInput(url="https://example.com")],
-            config=FetchConfig(retries=0),
+            config=FetchConfig(retries=0, dry_run=True),
         )
 
         # Mock _fetch_single_url to avoid network calls
@@ -475,7 +475,7 @@ class TestFetchToolExecution:
         tool = FetchTool()
         params = FetchParams(
             inputs=[FetchInput(url="https://example.com")],
-            config=FetchConfig(retries=0),
+            config=FetchConfig(retries=0, dry_run=True),
         )
 
         # Mock _fetch_single_url to return an error
@@ -544,7 +544,7 @@ class TestFetchToolExecution:
 
         params = FetchParams(
             inputs=[FetchInput(url=f"https://example.com/{i}") for i in range(10)],
-            config=FetchConfig(concurrency=3, retries=0),
+            config=FetchConfig(concurrency=3, retries=0, dry_run=True),
         )
 
         with patch.object(tool, "_fetch_single_url", side_effect=mock_fetch):
@@ -565,7 +565,7 @@ class TestFetchToolExecution:
         tool = FetchTool()
         params = FetchParams(
             inputs=[FetchInput(url="https://example.com/test/page")],
-            config=FetchConfig(retries=0),
+            config=FetchConfig(retries=0, dry_run=True),
         )
 
         # Mock _fetch_single_url to return content
@@ -605,7 +605,7 @@ class TestFetchToolExecution:
         tool = FetchTool()
         params = FetchParams(
             inputs=[FetchInput(url="https://example.com")],
-            config=FetchConfig(retries=0),
+            config=FetchConfig(retries=0, dry_run=True),
         )
 
         # Mock _fetch_single_url to return content
@@ -641,7 +641,7 @@ class TestFetchToolExecution:
         tool = FetchTool()
         params = FetchParams(
             inputs=[FetchInput(url="https://example.com")],
-            config=FetchConfig(engine="tavily"),
+            config=FetchConfig(engine="tavily", dry_run=True),
         )
 
         result = await tool.run(params, tool_context)
@@ -656,7 +656,7 @@ class TestFetchToolExecution:
         tool = FetchTool()
         params = FetchParams(
             inputs=[FetchInput(url="https://example.com")],
-            config=FetchConfig(engine="firecrawl"),
+            config=FetchConfig(engine="firecrawl", dry_run=True),
         )
 
         result = await tool.run(params, tool_context)
@@ -682,7 +682,7 @@ async def test_real_fetch(tool_context):
     tool = FetchTool()
     params = FetchParams(
         inputs=[FetchInput(url="https://example.com")],
-        config=FetchConfig(retries=1),
+        config=FetchConfig(retries=1, dry_run=True),
     )
 
     result = await tool.run(params, tool_context)
