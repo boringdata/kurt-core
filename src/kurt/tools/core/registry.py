@@ -27,6 +27,39 @@ from .errors import (
 # e.g., {"map": MapTool, "fetch": FetchTool, ...}
 TOOLS: dict[str, type[Tool]] = {}
 
+# Track whether tools have been auto-loaded
+_tools_loaded = False
+
+
+def _ensure_tools_loaded() -> None:
+    """Ensure all tool modules are imported and tools are registered.
+
+    This is called lazily by get_tool() and execute_tool() to avoid
+    circular imports while ensuring tools are registered before use.
+    """
+    global _tools_loaded
+    if _tools_loaded:
+        return
+    _tools_loaded = True
+
+    # Import tool modules to trigger @register_tool decorators
+    # This must be done lazily to avoid circular imports
+    try:
+        from kurt.tools import (
+            agent,  # noqa: F401
+            batch_embedding,  # noqa: F401
+            batch_llm,  # noqa: F401
+            fetch,  # noqa: F401
+            map,  # noqa: F401
+            research,  # noqa: F401
+            signals,  # noqa: F401
+            sql,  # noqa: F401
+            write,  # noqa: F401
+        )
+    except ImportError:
+        # Some tools may not be available in minimal installations
+        pass
+
 
 def register_tool(tool_class: type[Tool]) -> type[Tool]:
     """
@@ -73,6 +106,7 @@ def get_tool(name: str) -> type[Tool]:
     Raises:
         ToolNotFoundError: If tool name is not registered
     """
+    _ensure_tools_loaded()
     if name not in TOOLS:
         raise ToolNotFoundError(name)
     return TOOLS[name]
@@ -85,6 +119,7 @@ def list_tools() -> list[str]:
     Returns:
         Sorted list of tool names
     """
+    _ensure_tools_loaded()
     return sorted(TOOLS.keys())
 
 

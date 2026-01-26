@@ -16,8 +16,6 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-# Import tools module to ensure all tools are registered via @register_tool decorators
-import kurt.tools  # noqa: F401
 from kurt.db.dolt import DoltDB, check_schema_exists, init_observability_schema
 from kurt.observability import WorkflowLifecycle
 from kurt.observability.tracking import track_event
