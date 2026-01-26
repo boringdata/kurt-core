@@ -105,21 +105,6 @@ from .tracking import (
     write_event,
 )
 
-# Display utilities (moved from kurt.core.display)
-from .display import (
-    ConcurrentProgressManager,
-    PlainStepDisplay,
-    StepDisplay,
-    get_concurrent_manager,
-    get_display_mode,
-    is_display_enabled,
-    print_info,
-    print_warning,
-    set_display_enabled,
-    set_display_mode,
-)
-
-
 __all__ = [
     # Core functions
     "track_event",
@@ -166,15 +151,4 @@ __all__ = [
     "DEFAULT_POLL_MS",
     "DEFAULT_BATCH_LIMIT",
     "TERMINAL_STATUSES",
-    # Display utilities (moved from kurt.core)
-    "StepDisplay",
-    "PlainStepDisplay",
-    "ConcurrentProgressManager",
-    "is_display_enabled",
-    "set_display_enabled",
-    "get_display_mode",
-    "set_display_mode",
-    "get_concurrent_manager",
-    "print_warning",
-    "print_info",
 ]
