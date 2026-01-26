@@ -16,15 +16,14 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+# Import tools module to ensure all tools are registered via @register_tool decorators
+import kurt.tools  # noqa: F401
 from kurt.db.dolt import DoltDB, check_schema_exists, init_observability_schema
 from kurt.observability import WorkflowLifecycle
 from kurt.observability.tracking import track_event
 from kurt.tools.core.base import SubstepEvent
 from kurt.tools.core.context import load_tool_context
 from kurt.tools.core.registry import execute_tool, get_tool
-
-# Import tools module to ensure all tools are registered via @register_tool decorators
-import kurt.tools  # noqa: F401
 
 
 def _get_project_root(project_root: str | None = None) -> Path:
