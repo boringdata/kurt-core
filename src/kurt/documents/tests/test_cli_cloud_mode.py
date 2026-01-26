@@ -22,7 +22,7 @@ def mock_cloud_mode_with_data(tmp_project_with_docs):
         mock_is_cloud.return_value = True
 
         # Mock API base URL
-        with patch("kurt.auth.credentials.get_cloud_api_url") as mock_api_url:
+        with patch("kurt.cloud.auth.credentials.get_cloud_api_url") as mock_api_url:
             mock_api_url.return_value = "http://testserver"
 
             # Mock auth token
