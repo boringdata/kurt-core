@@ -1,7 +1,9 @@
 """
 Document lifecycle models.
 
-DocumentView is a virtual view - aggregated from workflow tables, not persisted.
+Includes:
+- DocumentRegistry: Central document ID registry (SQLModel table)
+- DocumentView: Virtual view aggregated from workflow tables (dataclass, not persisted)
 """
 
 from __future__ import annotations
@@ -10,8 +12,43 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Optional
 
+from sqlalchemy import Index
+from sqlmodel import Field, SQLModel
+
+from kurt.db.models import TenantMixin, TimestampMixin
 from kurt.tools.fetch.models import FetchStatus
 from kurt.tools.map.models import MapStatus
+
+
+# =============================================================================
+# SQLModel Table
+# =============================================================================
+
+
+class DocumentRegistry(TimestampMixin, TenantMixin, SQLModel, table=True):
+    """Central document ID registry.
+
+    Maps URLs to stable document IDs. Used as the primary key registry
+    that other workflow tables (map_documents, fetch_documents) reference.
+
+    The document_id is a 12-character hex string derived from URL hash.
+    """
+
+    __tablename__ = "document_registry"
+    __table_args__ = (
+        Index("idx_registry_url", "url"),
+        Index("idx_registry_url_hash", "url_hash", unique=True),
+    )
+
+    document_id: str = Field(primary_key=True, max_length=12)
+    url: str = Field(max_length=2048)
+    url_hash: str = Field(max_length=64, index=True)
+    source_type: str = Field(default="url", max_length=20)
+
+
+# =============================================================================
+# Virtual View (Dataclass)
+# =============================================================================
 
 
 @dataclass

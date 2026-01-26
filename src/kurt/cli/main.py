@@ -61,80 +61,13 @@ class LazyGroup(click.Group):
     },
 )
 @click.version_option(package_name="kurt-core", prog_name="kurt")
-@click.pass_context
-def main(ctx):
+def main():
     """
     Kurt - Document intelligence CLI tool.
 
     Transform documents into structured knowledge graphs.
     """
-    from kurt.config import config_file_exists
-
-    # Skip migration check for init, admin, cloud (which handle DB themselves)
-    if ctx.invoked_subcommand in ["init", "admin", "cloud"]:
-        return
-
-    # Skip migration check if running in hook mode
-    if "--hook-cc" in sys.argv:
-        return
-
-    # Check if project is initialized
-    if not config_file_exists():
-        return
-
-    _check_migrations()
-
-
-def _check_migrations():
-    """Check and optionally apply pending database migrations."""
-    try:
-        from kurt.db.migrations.utils import (
-            apply_migrations,
-            check_migrations_needed,
-            get_pending_migrations,
-        )
-
-        if not check_migrations_needed():
-            return
-
-        from rich.console import Console
-
-        console = Console()
-        pending = get_pending_migrations()
-        is_interactive = sys.stdin.isatty() and sys.stdout.isatty()
-
-        console.print()
-        console.print("[yellow]⚠ Database migrations are pending[/yellow]")
-        console.print(f"[dim]{len(pending)} migration(s) need to be applied[/dim]")
-        console.print()
-        console.print(
-            "[dim]Run [cyan]kurt admin migrate apply[/cyan] to update your database[/dim]"
-        )
-        console.print("[dim]Or run [cyan]kurt admin migrate status[/cyan] to see details[/dim]")
-        console.print()
-
-        if is_interactive:
-            from rich.prompt import Confirm
-
-            if Confirm.ask("[bold]Apply migrations now?[/bold]", default=False):
-                result = apply_migrations(auto_confirm=True)
-                if not result["success"]:
-                    raise click.Abort()
-            else:
-                console.print(
-                    "[yellow]⚠ Proceeding without migration. Some features may not work.[/yellow]"
-                )
-                console.print()
-        else:
-            result = apply_migrations(auto_confirm=True, silent=True)
-            if result["success"] and result["applied"]:
-                console.print(f"[green]✓ Applied {result['count']} migration(s)[/green]")
-                console.print()
-
-    except ImportError:
-        pass
-    except Exception:
-        pass
+    pass
 
 
 # Core top-level commands (not under any group)

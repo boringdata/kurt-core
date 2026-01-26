@@ -45,10 +45,7 @@ from kurt.db.dolt import (
     QueryResult,
     check_schema_exists,
     get_dolt_db,
-    get_schema_sql,
-    get_table_ddl,
     init_observability_schema,
-    split_sql_statements,
 )
 from kurt.db.models import (
     ConfidenceMixin,
@@ -128,11 +125,8 @@ __all__ = [
     "DoltDBProtocol",
     "OBSERVABILITY_TABLES",
     "get_dolt_db",
-    "get_schema_sql",
-    "split_sql_statements",
     "init_observability_schema",
     "check_schema_exists",
-    "get_table_ddl",
     # Model utilities (moved from kurt.core)
     "get_model_by_table_name",
     "ensure_table_exists",

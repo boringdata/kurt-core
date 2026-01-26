@@ -103,11 +103,8 @@ __all__ = [
     "DoltBranchError",
     # Schema helpers
     "DoltDBProtocol",
-    "get_schema_sql",
     "init_observability_schema",
     "check_schema_exists",
-    "get_table_ddl",
-    "split_sql_statements",
     "OBSERVABILITY_TABLES",
     # Convenience
     "get_dolt_db",
@@ -1060,283 +1057,48 @@ class DoltDB:
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         self.close()
 
-# Tables managed by this schema
-OBSERVABILITY_TABLES = ["workflow_runs", "step_logs", "step_events", "documents", "llm_traces"]
 
-# Dolt schema for observability and document tables (embedded)
-# Defines: workflow_runs, step_logs, step_events, document_registry,
-# map_results, fetch_results, embed_results, llm_traces, and views
-_SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS workflow_runs (
-    id VARCHAR(36) PRIMARY KEY,
-    workflow VARCHAR(255) NOT NULL,
-    status VARCHAR(20) NOT NULL,
-    started_at TIMESTAMP NOT NULL,
-    completed_at TIMESTAMP,
-    error TEXT,
-    inputs JSON,
-    metadata JSON,
-    INDEX idx_workflow_runs_status (status),
-    INDEX idx_workflow_runs_started (started_at DESC)
-);
+# =============================================================================
+# Schema Initialization (SQLModel-based)
+# =============================================================================
 
-CREATE TABLE IF NOT EXISTS step_logs (
-    id VARCHAR(36) PRIMARY KEY,
-    run_id VARCHAR(36) NOT NULL,
-    step_id VARCHAR(255) NOT NULL,
-    tool VARCHAR(50) NOT NULL,
-    status VARCHAR(20) NOT NULL,
-    started_at TIMESTAMP,
-    completed_at TIMESTAMP,
-    input_count INT,
-    output_count INT,
-    error_count INT DEFAULT 0,
-    errors JSON,
-    metadata JSON,
-    INDEX idx_step_logs_run_step (run_id, step_id),
-    UNIQUE KEY uq_step_logs_run_step (run_id, step_id),
-    CONSTRAINT fk_step_logs_run FOREIGN KEY (run_id) REFERENCES workflow_runs(id)
-);
-
-CREATE TABLE IF NOT EXISTS step_events (
-    id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    run_id VARCHAR(36) NOT NULL,
-    step_id VARCHAR(255) NOT NULL,
-    substep VARCHAR(255),
-    status VARCHAR(20) NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    current INT,
-    total INT,
-    message TEXT,
-    metadata JSON,
-    INDEX idx_step_events_run_id (run_id, id)
-);
-
-CREATE TABLE IF NOT EXISTS schema_migrations (
-    version VARCHAR(20) PRIMARY KEY,
-    applied_at TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP(6),
-    description TEXT
-);
-
-CREATE TABLE IF NOT EXISTS document_registry (
-    document_id VARCHAR(12) PRIMARY KEY,
-    url VARCHAR(2048) NOT NULL,
-    url_hash VARCHAR(64) NOT NULL,
-    source_type VARCHAR(20) NOT NULL,
-    first_seen_at TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP(6),
-    UNIQUE KEY idx_registry_url_hash (url_hash),
-    INDEX idx_registry_url (url(255))
-);
-
-CREATE TABLE IF NOT EXISTS map_results (
-    document_id VARCHAR(12) NOT NULL,
-    run_id VARCHAR(36) NOT NULL,
-    url TEXT NOT NULL,
-    source_type VARCHAR(20) DEFAULT 'url',
-    discovery_method VARCHAR(50) NOT NULL,
-    discovery_url TEXT,
-    title TEXT,
-    status VARCHAR(20) DEFAULT 'success',
-    error TEXT,
-    metadata JSON,
-    created_at TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP(6),
-    PRIMARY KEY (document_id, run_id),
-    INDEX idx_map_created (created_at),
-    INDEX idx_map_status (status)
-);
-
-CREATE TABLE IF NOT EXISTS fetch_results (
-    document_id VARCHAR(12) NOT NULL,
-    run_id VARCHAR(36) NOT NULL,
-    url TEXT NOT NULL,
-    status VARCHAR(20) NOT NULL,
-    content_path TEXT,
-    content_hash VARCHAR(64),
-    content_length INT,
-    fetch_engine VARCHAR(50),
-    error TEXT,
-    metadata JSON,
-    created_at TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP(6),
-    PRIMARY KEY (document_id, run_id),
-    INDEX idx_fetch_created (created_at),
-    INDEX idx_fetch_status (status)
-);
-
-CREATE TABLE IF NOT EXISTS embed_results (
-    document_id VARCHAR(12) NOT NULL,
-    run_id VARCHAR(36) NOT NULL,
-    embedding_model VARCHAR(100) NOT NULL,
-    embedding_path TEXT NOT NULL,
-    vector_size INT NOT NULL,
-    created_at TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP(6),
-    PRIMARY KEY (document_id, run_id, embedding_model),
-    INDEX idx_embed_created (created_at),
-    INDEX idx_embed_model (embedding_model)
-);
-
-CREATE OR REPLACE VIEW map_results_latest AS
-SELECT document_id, run_id, url, source_type, discovery_method,
-       discovery_url, title, status, error, metadata, created_at
-FROM (
-    SELECT m.*,
-           ROW_NUMBER() OVER (
-               PARTITION BY m.document_id
-               ORDER BY m.created_at DESC, m.run_id DESC
-           ) AS rn
-    FROM map_results m
-) ranked
-WHERE rn = 1;
-
-CREATE OR REPLACE VIEW fetch_results_latest AS
-SELECT document_id, run_id, url, status, content_path, content_hash,
-       content_length, fetch_engine, error, metadata, created_at
-FROM (
-    SELECT f.*,
-           ROW_NUMBER() OVER (
-               PARTITION BY f.document_id
-               ORDER BY f.created_at DESC, f.run_id DESC
-           ) AS rn
-    FROM fetch_results f
-) ranked
-WHERE rn = 1;
-
-CREATE OR REPLACE VIEW embed_results_latest AS
-SELECT document_id, run_id, embedding_model, embedding_path,
-       vector_size, created_at
-FROM (
-    SELECT e.*,
-           ROW_NUMBER() OVER (
-               PARTITION BY e.document_id, e.embedding_model
-               ORDER BY e.created_at DESC, e.run_id DESC
-           ) AS rn
-    FROM embed_results e
-) ranked
-WHERE rn = 1;
-
-CREATE OR REPLACE VIEW documents AS
-SELECT
-    r.document_id,
-    r.document_id AS id,
-    r.url,
-    r.source_type,
-    r.first_seen_at,
-    ml.discovery_method,
-    ml.title,
-    ml.status AS map_status,
-    ml.created_at AS mapped_at,
-    fl.status AS fetch_status,
-    fl.content_path,
-    fl.content_hash,
-    fl.content_length,
-    fl.fetch_engine,
-    fl.created_at AS fetched_at,
-    el.embedding_model,
-    el.vector_size,
-    el.created_at AS embedded_at,
-    COALESCE(fl.created_at, ml.created_at, r.first_seen_at) AS created_at,
-    COALESCE(fl.created_at, ml.created_at, r.first_seen_at) AS updated_at,
-    fl.error AS error,
-    ml.metadata AS metadata
-FROM document_registry r
-LEFT JOIN map_results_latest ml ON r.document_id = ml.document_id
-LEFT JOIN fetch_results_latest fl ON r.document_id = fl.document_id
-LEFT JOIN embed_results_latest el ON r.document_id = el.document_id;
-
-CREATE TABLE IF NOT EXISTS llm_traces (
-    id VARCHAR(36) PRIMARY KEY,
-    run_id VARCHAR(36),
-    step_id VARCHAR(255),
-    model VARCHAR(100) NOT NULL,
-    provider VARCHAR(50) NOT NULL,
-    prompt TEXT,
-    response TEXT,
-    structured_output JSON,
-    tokens_in INT NOT NULL,
-    tokens_out INT NOT NULL,
-    cost_usd DECIMAL(10,6),
-    latency_ms INT,
-    error TEXT,
-    retry_count INT DEFAULT 0,
-    created_at TIMESTAMP NOT NULL,
-    INDEX idx_llm_traces_run (run_id),
-    INDEX idx_llm_traces_created (created_at DESC),
-    INDEX idx_llm_traces_model (model)
-);
-"""
+# Table names managed by observability schema
+OBSERVABILITY_TABLES = [
+    "workflow_runs",
+    "step_logs",
+    "step_events",
+    "document_registry",
+    "llm_traces",
+]
 
 
-def get_schema_sql() -> str:
-    """Get the Dolt schema SQL.
+def _get_observability_models() -> list[type[SQLModel]]:
+    """Get all SQLModel classes for observability tables.
 
-    Returns:
-        str: Full SQL schema definition for observability tables.
+    Lazily imports models to avoid circular imports.
     """
-    return _SCHEMA_SQL
+    from kurt.db.models import LLMTrace
+    from kurt.documents.models import DocumentRegistry
+    from kurt.observability.models import StepEvent, StepLog, WorkflowRun
+
+    return [WorkflowRun, StepLog, StepEvent, DocumentRegistry, LLMTrace]
 
 
-def split_sql_statements(sql: str) -> list[str]:
-    """Split SQL into individual statements.
-
-    Handles:
-    - Comment lines (-- comments)
-    - Multi-line CREATE TABLE statements
-    - Empty lines
-
-    Args:
-        sql: Full SQL script with multiple statements.
-
-    Returns:
-        List of individual SQL statements to execute.
-    """
-    statements = []
-    current_statement: list[str] = []
-
-    for line in sql.split("\n"):
-        stripped = line.strip()
-
-        # Skip empty lines and comments when not in a statement
-        if not current_statement and (not stripped or stripped.startswith("--")):
-            continue
-
-        # Skip standalone comment lines
-        if stripped.startswith("--"):
-            continue
-
-        current_statement.append(line)
-
-        # Statement ends with semicolon
-        if stripped.endswith(";"):
-            stmt = "\n".join(current_statement).strip()
-            if stmt:
-                statements.append(stmt)
-            current_statement = []
-
-    # Handle any remaining statement without trailing semicolon
-    if current_statement:
-        stmt = "\n".join(current_statement).strip()
-        if stmt:
-            statements.append(stmt)
-
-    return statements
-
-
-def init_observability_schema(db: "DoltDBProtocol") -> list[str]:
-    """Initialize observability tables in Dolt database.
+def init_observability_schema(db: "DoltDB") -> list[str]:
+    """Initialize observability tables in Dolt database using SQLModel.
 
     Creates the following tables if they don't exist:
     - workflow_runs: Workflow execution tracking
     - step_logs: Step-level summaries
     - step_events: Append-only progress events
+    - document_registry: Central document ID registry
+    - llm_traces: LLM call traces
 
     Args:
-        db: DoltDB client instance (from kurt-core-bc5.1).
+        db: DoltDB client instance.
 
     Returns:
         List of table names that were created/verified.
-
-    Raises:
-        FileNotFoundError: If schema file is missing.
-        DoltQueryError: If SQL execution fails (from DoltDB client).
 
     Example:
         from kurt.db.dolt import DoltDB, init_observability_schema
@@ -1345,11 +1107,15 @@ def init_observability_schema(db: "DoltDBProtocol") -> list[str]:
         tables = init_observability_schema(db)
         print(f"Initialized tables: {tables}")
     """
-    schema_sql = get_schema_sql()
-    statements = split_sql_statements(schema_sql)
+    # Get SQLModel classes
+    models = _get_observability_models()
 
-    for stmt in statements:
-        db.execute(stmt)
+    # Create tables using SQLAlchemy/SQLModel
+    engine = db._get_engine()
+    SQLModel.metadata.create_all(
+        bind=engine,
+        tables=[model.__table__ for model in models],
+    )
 
     return OBSERVABILITY_TABLES
 
@@ -1376,29 +1142,6 @@ def check_schema_exists(db: "DoltDBProtocol") -> dict[str, bool]:
         except Exception:
             result[table] = False
     return result
-
-
-def get_table_ddl(table_name: str) -> str | None:
-    """Extract DDL for a specific table from schema file.
-
-    Args:
-        table_name: Name of table to extract DDL for.
-
-    Returns:
-        CREATE TABLE statement for the table, or None if not found.
-    """
-    if table_name not in OBSERVABILITY_TABLES:
-        return None
-
-    schema_sql = get_schema_sql()
-    statements = split_sql_statements(schema_sql)
-
-    for stmt in statements:
-        # Look for CREATE TABLE statement for this table
-        if "CREATE TABLE" in stmt.upper() and table_name in stmt:
-            return stmt
-
-    return None
 
 
 def get_dolt_db() -> "DoltDB":

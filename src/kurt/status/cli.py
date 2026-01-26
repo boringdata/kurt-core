@@ -75,22 +75,18 @@ def status(output_format: str, hook_cc: bool):
                 console.print(f"[yellow]{message}[/yellow]")
             return
 
-        # Hook mode: auto-apply migrations + generate status
+        # Hook mode: generate status
         if hook_cc:
             _handle_hook_output()
             return
 
-        # Check for pending migrations
-        migration_info = _check_pending_migrations()
-
         # Get status data (routes to local or cloud)
         status_data = _get_status_data()
-        status_data["migrations"] = migration_info
 
         if output_format == "json":
             print(json.dumps(status_data, indent=2, default=str))
         else:
-            _print_pretty_status(status_data, migration_info)
+            _print_pretty_status(status_data)
 
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
@@ -228,46 +224,9 @@ def _generate_status_markdown(data: dict) -> str:
     return "\n".join(lines)
 
 
-def _check_pending_migrations() -> dict:
-    """Check if there are pending database migrations.
-
-    Returns:
-        Dict with 'has_pending', 'count', and 'migrations' keys
-    """
-    try:
-        from kurt.db.migrations.utils import (
-            check_migrations_needed,
-            get_pending_migrations,
-        )
-
-        has_pending = check_migrations_needed()
-        if has_pending:
-            pending = get_pending_migrations()
-            return {
-                "has_pending": True,
-                "count": len(pending),
-                "migrations": [revision_id for revision_id, _ in pending],
-            }
-
-        return {"has_pending": False, "count": 0, "migrations": []}
-    except ImportError:
-        return {"has_pending": False, "count": 0, "migrations": []}
-    except Exception:
-        return {"has_pending": False, "count": 0, "migrations": []}
-
-
-def _print_pretty_status(data: dict, migration_info: dict):
+def _print_pretty_status(data: dict):
     """Print status in human-readable format."""
     from rich.markdown import Markdown
-
-    # Show migration warning first if needed
-    if migration_info.get("has_pending"):
-        console.print()
-        console.print(f"[yellow]⚠ {migration_info['count']} pending database migration(s)[/yellow]")
-        console.print("[dim]Run: `kurt admin migrate apply` to update the database[/dim]")
-        for migration_name in migration_info.get("migrations", []):
-            console.print(f"[dim]  - {migration_name}[/dim]")
-        console.print()
 
     markdown = _generate_status_markdown(data)
     console.print(Markdown(markdown))

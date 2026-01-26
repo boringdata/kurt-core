@@ -324,7 +324,6 @@ def status_cmd():
     - Login status and user info
     - Current workspace ID
     - Database connection mode
-    - Pending migrations
 
     Example:
         kurt cloud status
@@ -336,15 +335,6 @@ def status_cmd():
     console.print()
     console.print("[bold]Kurt Cloud Status[/bold]")
     console.print()
-
-    # Check for pending migrations first
-    migration_info = _check_pending_migrations()
-    if migration_info.get("has_pending"):
-        console.print(f"[yellow]⚠ {migration_info['count']} pending database migration(s)[/yellow]")
-        console.print("[dim]Run: `kurt admin migrate apply` to update the database[/dim]")
-        for migration_name in migration_info.get("migrations", []):
-            console.print(f"[dim]  - {migration_name}[/dim]")
-        console.print()
 
     # Auth status - auto-refresh token if needed
     from kurt.auth import ensure_fresh_token
@@ -408,16 +398,6 @@ def status_cmd():
         }.get(mode, mode)
         console.print(f"Database: {mode_display}")
 
-        # Schema version
-        try:
-            from kurt.db.migrations.utils import get_current_version
-
-            schema_version = get_current_version()
-            if schema_version:
-                console.print(f"  Schema: {schema_version}")
-        except Exception:
-            pass
-
         # Show masked DATABASE_URL if set
         if config.DATABASE_URL:
             url = config.DATABASE_URL
@@ -470,30 +450,6 @@ def status_cmd():
     else:
         console.print("[yellow]No kurt.config found[/yellow]")
         console.print("[dim]Run 'kurt init' to initialize a project[/dim]")
-
-
-def _check_pending_migrations() -> dict:
-    """Check if there are pending database migrations."""
-    try:
-        from kurt.db.migrations.utils import (
-            check_migrations_needed,
-            get_pending_migrations,
-        )
-
-        has_pending = check_migrations_needed()
-        if has_pending:
-            pending = get_pending_migrations()
-            return {
-                "has_pending": True,
-                "count": len(pending),
-                "migrations": [revision_id for revision_id, _ in pending],
-            }
-
-        return {"has_pending": False, "count": 0, "migrations": []}
-    except ImportError:
-        return {"has_pending": False, "count": 0, "migrations": []}
-    except Exception:
-        return {"has_pending": False, "count": 0, "migrations": []}
 
 
 @cloud_group.command(name="whoami")
