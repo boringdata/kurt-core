@@ -6,6 +6,12 @@ Provides test fixtures for CLI testing, database testing, and sample data.
 
 from __future__ import annotations
 
+import os
+import shutil
+import signal
+import socket
+import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +23,29 @@ from kurt.documents.tests.conftest import (
     tmp_project,
     tmp_project_with_docs,
 )
+
+
+def _find_free_port() -> int:
+    """Find a free port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        s.listen(1)
+        port = s.getsockname()[1]
+    return port
+
+
+def _wait_for_port(port: int, timeout: float = 10.0) -> bool:
+    """Wait for a port to become available."""
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(0.5)
+                s.connect(("127.0.0.1", port))
+                return True
+        except (ConnectionRefusedError, socket.timeout, OSError):
+            time.sleep(0.1)
+    return False
 
 # ============================================================================
 # CLI Testing Fixtures
@@ -99,22 +128,65 @@ def assert_json_output(result) -> dict:
 @pytest.fixture
 def tmp_database(tmp_path: Path, monkeypatch):
     """
-    Fixture for a temporary SQLite database.
+    Fixture for a temporary Dolt database with its own server.
 
-    Creates a fresh database for each test.
+    Creates a fresh Dolt database for each test on a unique port.
     Sets DATABASE_URL environment variable.
     """
-    db_path = tmp_path / "test.sqlite"
-    db_url = f"sqlite:///{db_path}"
+    # Skip if dolt is not installed
+    if not shutil.which("dolt"):
+        pytest.skip("Dolt CLI not installed")
 
-    monkeypatch.setenv("DATABASE_URL", db_url)
+    # Change to temp directory
+    original_cwd = os.getcwd()
+    os.chdir(tmp_path)
+
+    # Initialize dolt repo
+    env = os.environ.copy()
+    env["DOLT_DISABLE_ACCOUNT_REGISTRATION"] = "true"
+    subprocess.run(["dolt", "init"], cwd=tmp_path, capture_output=True, env=env)
+
+    # Find a free port for this test's Dolt server
+    port = _find_free_port()
+
+    # Start dolt sql-server on the unique port
+    server_process = subprocess.Popen(
+        ["dolt", "sql-server", "--port", str(port), "--host", "127.0.0.1"],
+        cwd=tmp_path,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+        env=env,
+    )
+
+    # Wait for server to be ready
+    if not _wait_for_port(port, timeout=10.0):
+        server_process.terminate()
+        os.chdir(original_cwd)
+        pytest.fail(f"Dolt server failed to start on port {port}")
+
+    # Set DATABASE_URL to connect to this test's Dolt server
+    database_name = tmp_path.name
+    monkeypatch.setenv("DATABASE_URL", f"mysql+pymysql://root@127.0.0.1:{port}/{database_name}")
 
     # Initialize the database
     from kurt.db import init_database
 
     init_database()
 
-    return db_path
+    yield tmp_path
+
+    # Cleanup: stop the Dolt server
+    try:
+        os.killpg(os.getpgid(server_process.pid), signal.SIGTERM)
+        server_process.wait(timeout=5)
+    except Exception:
+        try:
+            server_process.kill()
+        except Exception:
+            pass
+
+    os.chdir(original_cwd)
 
 
 @pytest.fixture
@@ -129,13 +201,13 @@ def tmp_database_with_data(tmp_database: Path):
     from kurt.db import managed_session
 
     with managed_session() as session:
-        # Create a sample table
+        # Create a sample table (use VARCHAR for MySQL/Dolt compatibility)
         session.execute(
             text("""
             CREATE TABLE IF NOT EXISTS test_documents (
-                id TEXT PRIMARY KEY,
-                url TEXT NOT NULL,
-                title TEXT,
+                id VARCHAR(255) PRIMARY KEY,
+                url VARCHAR(512) NOT NULL,
+                title VARCHAR(255),
                 content TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -154,7 +226,7 @@ def tmp_database_with_data(tmp_database: Path):
         )
         session.commit()
 
-    return tmp_database
+    yield tmp_database
 
 
 # ============================================================================
