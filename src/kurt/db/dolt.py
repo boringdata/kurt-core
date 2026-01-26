@@ -737,9 +737,22 @@ class DoltDB:
         pool = self._get_pool()
         conn = pool.get_connection()
 
+        # Convert SQLite-style ? placeholders to MySQL-style %s
+        mysql_sql = sql.replace("?", "%s")
+
         try:
-            cursor = conn.cursor(dictionary=True)
-            cursor.execute(sql, params or [])
+            # Handle both mysql.connector and pymysql cursor creation
+            # mysql.connector uses cursor(dictionary=True)
+            # pymysql uses conn.cursor(pymysql.cursors.DictCursor)
+            try:
+                cursor = conn.cursor(dictionary=True)
+            except TypeError:
+                # pymysql doesn't support dictionary=True parameter
+                import pymysql.cursors
+
+                cursor = conn.cursor(pymysql.cursors.DictCursor)
+
+            cursor.execute(mysql_sql, params or [])
             rows = cursor.fetchall()
             cursor.close()
             return QueryResult(rows=list(rows))
@@ -753,9 +766,12 @@ class DoltDB:
         pool = self._get_pool()
         conn = pool.get_connection()
 
+        # Convert SQLite-style ? placeholders to MySQL-style %s
+        mysql_sql = sql.replace("?", "%s")
+
         try:
             cursor = conn.cursor()
-            cursor.execute(sql, params or [])
+            cursor.execute(mysql_sql, params or [])
             affected = cursor.rowcount
             last_id = cursor.lastrowid
             cursor.close()

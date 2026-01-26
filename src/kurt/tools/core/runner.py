@@ -31,20 +31,33 @@ def _get_project_root(project_root: str | None = None) -> Path:
     return Path.cwd().resolve()
 
 
-def _get_dolt_db(project_root: Path) -> DoltDB:
-    dolt_path = os.environ.get("DOLT_PATH", ".")
-    path = Path(dolt_path)
-    if not path.is_absolute():
-        path = project_root / path
+def _get_dolt_db(project_root: Path | None = None) -> DoltDB:
+    """Get DoltDB client, initializing observability schema if needed.
 
-    db = DoltDB(path)
-    if not db.exists():
-        db.init()
-        init_observability_schema(db)
+    Uses get_database_client() to respect DATABASE_URL environment variable.
+
+    Args:
+        project_root: Optional project root (unused, kept for backwards compatibility).
+    """
+    from kurt.db import get_database_client
+
+    db = get_database_client()
+
+    # For local/embedded mode, check if initialization is needed
+    if db.mode == "embedded":
+        if not db.exists():
+            db.init()
+            init_observability_schema(db)
+        else:
+            schema_status = check_schema_exists(db)
+            if not all(schema_status.values()):
+                init_observability_schema(db)
     else:
+        # Server mode - check schema exists
         schema_status = check_schema_exists(db)
         if not all(schema_status.values()):
             init_observability_schema(db)
+
     return db
 
 

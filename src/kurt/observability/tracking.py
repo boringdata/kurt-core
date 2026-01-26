@@ -44,6 +44,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from queue import Empty, Queue
 from typing import Any, Literal
 
@@ -178,12 +179,13 @@ def track_event(
         return None
 
     metadata_json = json.dumps(metadata) if metadata else None
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
     sql = """
-        INSERT INTO step_events (run_id, step_id, substep, status, current, total, message, metadata)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO step_events (run_id, step_id, substep, status, current, total, message, metadata_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
-    params = [run_id, step_id, substep, status, current, total, message, metadata_json]
+    params = [run_id, step_id, substep, status, current, total, message, metadata_json, now]
 
     try:
         result = target_db.execute(sql, params)
@@ -510,7 +512,7 @@ class EventTracker:
         values_clause = ", ".join([placeholders] * len(batch))
 
         sql = f"""
-            INSERT INTO step_events (run_id, step_id, substep, status, current, total, message, metadata)
+            INSERT INTO step_events (run_id, step_id, substep, status, current, total, message, metadata_json)
             VALUES {values_clause}
         """
 

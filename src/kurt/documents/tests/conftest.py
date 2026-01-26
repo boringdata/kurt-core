@@ -124,7 +124,7 @@ def tmp_project(tmp_path: Path, monkeypatch):
         pytest.fail(f"Dolt server failed to start on port {port}")
 
     # Set DATABASE_URL to connect to this test's Dolt server
-    database_name = f"kurt_test_{port}"
+    database_name = tmp_path.name
     monkeypatch.setenv("DATABASE_URL", f"mysql+pymysql://root@127.0.0.1:{port}/{database_name}")
 
     # Create config file
@@ -328,7 +328,7 @@ def db_mode_project_with_docs(request, tmp_path, monkeypatch):
                 pytest.fail(f"Dolt server failed to start on port {port}")
 
             # Set DATABASE_URL to connect to this test's Dolt server
-            database_name = f"kurt_test_{port}"
+            database_name = tmp_path.name
             monkeypatch.setenv("DATABASE_URL", f"mysql+pymysql://root@127.0.0.1:{port}/{database_name}")
 
             from kurt.config import create_config

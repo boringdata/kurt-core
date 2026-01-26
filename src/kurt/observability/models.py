@@ -54,7 +54,8 @@ class WorkflowRun(TenantMixin, SQLModel, table=True):
 
     id: str = Field(primary_key=True, max_length=36)
     workflow: str = Field(max_length=255, index=True)
-    status: WorkflowStatus = Field(default=WorkflowStatus.PENDING, max_length=20)
+    # Use VARCHAR instead of ENUM for raw SQL compatibility
+    status: str = Field(sa_column=Column(String(20)), default="pending")
     started_at: datetime = Field(default_factory=datetime.utcnow)
     completed_at: Optional[datetime] = Field(default=None)
     error: Optional[str] = Field(sa_column=Column(Text), default=None)
@@ -87,7 +88,8 @@ class StepLog(TenantMixin, SQLModel, table=True):
     )
     step_id: str = Field(max_length=255, index=True)
     tool: str = Field(max_length=50)
-    status: StepStatus = Field(default=StepStatus.PENDING, max_length=20)
+    # Use VARCHAR instead of ENUM for raw SQL compatibility
+    status: str = Field(sa_column=Column(String(20)), default="pending")
     started_at: Optional[datetime] = Field(default=None)
     completed_at: Optional[datetime] = Field(default=None)
     input_count: Optional[int] = Field(default=None)
@@ -114,7 +116,8 @@ class StepEvent(TenantMixin, SQLModel, table=True):
     run_id: str = Field(max_length=36, index=True)
     step_id: str = Field(max_length=255)
     substep: Optional[str] = Field(max_length=255, default=None)
-    status: StepStatus = Field(default=StepStatus.PENDING, max_length=20)
+    # Use VARCHAR instead of ENUM for raw SQL compatibility
+    status: str = Field(sa_column=Column(String(20)), default="pending")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     current: Optional[int] = Field(default=None)
     total: Optional[int] = Field(default=None)

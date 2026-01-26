@@ -1,19 +1,56 @@
 """
 Test fixtures for fetch tool tests.
 
-Re-exports fixtures from tools/core/tests/conftest.py for use in fetch/tests/.
+Imports fixtures from kurt.conftest for Dolt-based testing.
 """
 
-from kurt.tools.core.tests.conftest import (
-    tmp_dolt_project,
-    tmp_sqlmodel_project,
-    tool_context_with_dolt,
-    tool_context_with_sqlmodel,
-)
+from __future__ import annotations
 
-__all__ = [
-    "tmp_dolt_project",
-    "tmp_sqlmodel_project",
-    "tool_context_with_dolt",
-    "tool_context_with_sqlmodel",
-]
+import pytest
+
+# Import the Dolt-based project fixture from kurt.conftest
+from kurt.conftest import tmp_project
+
+
+@pytest.fixture
+def tmp_sqlmodel_project(tmp_project):
+    """
+    Create a temporary project with SQLModel tables for tool persistence tests.
+
+    This fixture now uses Dolt (not SQLite) since SQLite support was removed.
+    It wraps the tmp_project fixture from kurt.conftest.
+
+    Yields:
+        Path: The temp project path
+    """
+    yield tmp_project
+
+
+@pytest.fixture
+def tmp_dolt_project(tmp_project):
+    """Alias for tmp_project."""
+    yield tmp_project
+
+
+@pytest.fixture
+def tool_context_with_sqlmodel(tmp_sqlmodel_project):
+    """
+    Create a ToolContext with database project for testing persistence.
+    """
+    from kurt.tools.core.base import ToolContext
+
+    repo_path = tmp_sqlmodel_project
+    return ToolContext(
+        settings={"project_root": str(repo_path)},
+    )
+
+
+@pytest.fixture
+def tool_context_with_dolt(tmp_dolt_project):
+    """Alias for tool_context_with_sqlmodel."""
+    from kurt.tools.core.base import ToolContext
+
+    repo_path = tmp_dolt_project
+    return ToolContext(
+        settings={"project_root": str(repo_path)},
+    )

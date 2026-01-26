@@ -219,7 +219,7 @@ class WorkflowLifecycle:
         metadata_json = json.dumps(metadata) if metadata else None
 
         sql = """
-            INSERT INTO workflow_runs (id, workflow, status, started_at, inputs, metadata)
+            INSERT INTO workflow_runs (id, workflow, status, started_at, inputs, metadata_json)
             VALUES (?, ?, ?, ?, ?, ?)
         """
         params = [run_id, workflow, status, now, inputs_json, metadata_json]
@@ -275,7 +275,7 @@ class WorkflowLifecycle:
         """
         # Get current status
         current_row = self._db.query_one(
-            "SELECT status, metadata FROM workflow_runs WHERE id = ?", [run_id]
+            "SELECT status, metadata_json FROM workflow_runs WHERE id = ?", [run_id]
         )
         if current_row is None:
             raise RunNotFoundError(run_id)
@@ -293,19 +293,19 @@ class WorkflowLifecycle:
         # Merge metadata if provided
         merged_metadata = None
         if metadata:
-            existing = json.loads(current_row["metadata"]) if current_row.get("metadata") else {}
+            existing = json.loads(current_row["metadata_json"]) if current_row.get("metadata_json") else {}
             merged_metadata = json.dumps({**existing, **metadata})
 
         if is_terminal:
             if merged_metadata:
-                sql = "UPDATE workflow_runs SET status = ?, completed_at = ?, error = ?, metadata = ? WHERE id = ?"
+                sql = "UPDATE workflow_runs SET status = ?, completed_at = ?, error = ?, metadata_json = ? WHERE id = ?"
                 params = [status, now, error, merged_metadata, run_id]
             else:
                 sql = "UPDATE workflow_runs SET status = ?, completed_at = ?, error = ? WHERE id = ?"
                 params = [status, now, error, run_id]
         else:
             if merged_metadata:
-                sql = "UPDATE workflow_runs SET status = ?, metadata = ? WHERE id = ?"
+                sql = "UPDATE workflow_runs SET status = ?, metadata_json = ? WHERE id = ?"
                 params = [status, merged_metadata, run_id]
             else:
                 sql = "UPDATE workflow_runs SET status = ? WHERE id = ?"
@@ -385,10 +385,10 @@ class WorkflowLifecycle:
         metadata_json = json.dumps(metadata) if metadata else None
 
         sql = """
-            INSERT INTO step_logs (id, run_id, step_id, tool, status, started_at, input_count, metadata)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO step_logs (id, run_id, step_id, tool, status, started_at, input_count, error_count, metadata_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
-        params = [step_log_id, run_id, step_id, tool, status, now, input_count, metadata_json]
+        params = [step_log_id, run_id, step_id, tool, status, now, input_count, 0, metadata_json]
 
         try:
             self._db.execute(sql, params)
@@ -453,7 +453,7 @@ class WorkflowLifecycle:
         """
         # Get current state
         current_row = self._db.query_one(
-            "SELECT status, metadata FROM step_logs WHERE run_id = ? AND step_id = ?",
+            "SELECT status, metadata_json FROM step_logs WHERE run_id = ? AND step_id = ?",
             [run_id, step_id],
         )
         if current_row is None:
@@ -492,9 +492,9 @@ class WorkflowLifecycle:
             params.append(json.dumps(errors))
 
         if metadata is not None:
-            existing = json.loads(current_row["metadata"]) if current_row.get("metadata") else {}
+            existing = json.loads(current_row["metadata_json"]) if current_row.get("metadata_json") else {}
             merged = {**existing, **metadata}
-            updates.append("metadata = ?")
+            updates.append("metadata_json = ?")
             params.append(json.dumps(merged))
 
         if not updates:

@@ -166,8 +166,8 @@ def tmp_database(tmp_path: Path, monkeypatch):
         pytest.fail(f"Dolt server failed to start on port {port}")
 
     # Set DATABASE_URL to connect to this test's Dolt server
-    # Use a short database name (MySQL/Dolt has 64 char limit)
-    database_name = f"kurt_test_{port}"
+    # Database name is the directory name (created by dolt init)
+    database_name = tmp_path.name
     monkeypatch.setenv("DATABASE_URL", f"mysql+pymysql://root@127.0.0.1:{port}/{database_name}")
 
     # Initialize the database

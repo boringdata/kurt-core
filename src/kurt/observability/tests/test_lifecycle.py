@@ -92,7 +92,7 @@ class TestWorkflowLifecycleUpdateStatus:
 
     def test_valid_transition_running_to_completed(self, mock_db):
         """Should allow running -> completed transition."""
-        mock_db.query_one.return_value = {"status": "running", "metadata": None}
+        mock_db.query_one.return_value = {"status": "running", "metadata_json": None}
         lifecycle = WorkflowLifecycle(mock_db, emit_events=False)
 
         lifecycle.update_status("run-123", "completed")
@@ -104,7 +104,7 @@ class TestWorkflowLifecycleUpdateStatus:
 
     def test_valid_transition_running_to_failed(self, mock_db):
         """Should allow running -> failed transition with error."""
-        mock_db.query_one.return_value = {"status": "running", "metadata": None}
+        mock_db.query_one.return_value = {"status": "running", "metadata_json": None}
         lifecycle = WorkflowLifecycle(mock_db, emit_events=False)
 
         lifecycle.update_status("run-123", "failed", error="Fetch timed out")
@@ -116,7 +116,7 @@ class TestWorkflowLifecycleUpdateStatus:
 
     def test_valid_transition_running_to_canceling(self, mock_db):
         """Should allow running -> canceling transition."""
-        mock_db.query_one.return_value = {"status": "running", "metadata": None}
+        mock_db.query_one.return_value = {"status": "running", "metadata_json": None}
         lifecycle = WorkflowLifecycle(mock_db, emit_events=False)
 
         lifecycle.update_status("run-123", "canceling")
@@ -127,7 +127,7 @@ class TestWorkflowLifecycleUpdateStatus:
 
     def test_valid_transition_canceling_to_canceled(self, mock_db):
         """Should allow canceling -> canceled transition."""
-        mock_db.query_one.return_value = {"status": "canceling", "metadata": None}
+        mock_db.query_one.return_value = {"status": "canceling", "metadata_json": None}
         lifecycle = WorkflowLifecycle(mock_db, emit_events=False)
 
         lifecycle.update_status("run-123", "canceled")
@@ -137,7 +137,7 @@ class TestWorkflowLifecycleUpdateStatus:
 
     def test_invalid_transition_completed_to_running(self, mock_db):
         """Should reject completed -> running transition."""
-        mock_db.query_one.return_value = {"status": "completed", "metadata": None}
+        mock_db.query_one.return_value = {"status": "completed", "metadata_json": None}
         lifecycle = WorkflowLifecycle(mock_db, emit_events=False)
 
         with pytest.raises(InvalidStatusTransition) as exc_info:
@@ -148,7 +148,7 @@ class TestWorkflowLifecycleUpdateStatus:
 
     def test_invalid_transition_failed_to_running(self, mock_db):
         """Should reject failed -> running transition."""
-        mock_db.query_one.return_value = {"status": "failed", "metadata": None}
+        mock_db.query_one.return_value = {"status": "failed", "metadata_json": None}
         lifecycle = WorkflowLifecycle(mock_db, emit_events=False)
 
         with pytest.raises(InvalidStatusTransition):
@@ -156,7 +156,7 @@ class TestWorkflowLifecycleUpdateStatus:
 
     def test_invalid_transition_canceled_to_running(self, mock_db):
         """Should reject canceled -> running transition."""
-        mock_db.query_one.return_value = {"status": "canceled", "metadata": None}
+        mock_db.query_one.return_value = {"status": "canceled", "metadata_json": None}
         lifecycle = WorkflowLifecycle(mock_db, emit_events=False)
 
         with pytest.raises(InvalidStatusTransition):
@@ -176,7 +176,7 @@ class TestWorkflowLifecycleUpdateStatus:
         """Should merge new metadata with existing."""
         mock_db.query_one.return_value = {
             "status": "running",
-            "metadata": '{"existing": "value"}',
+            "metadata_json": '{"existing": "value"}',
         }
         lifecycle = WorkflowLifecycle(mock_db, emit_events=False)
 
@@ -223,7 +223,7 @@ class TestWorkflowLifecycleStepLogs:
 
     def test_update_step_log_completed(self, mock_db):
         """Should update step log with output counts."""
-        mock_db.query_one.return_value = {"status": "running", "metadata": None}
+        mock_db.query_one.return_value = {"status": "running", "metadata_json": None}
         lifecycle = WorkflowLifecycle(mock_db, emit_events=False)
 
         lifecycle.update_step_log(
@@ -242,7 +242,7 @@ class TestWorkflowLifecycleStepLogs:
 
     def test_update_step_log_with_errors(self, mock_db):
         """Should store error details as JSON."""
-        mock_db.query_one.return_value = {"status": "running", "metadata": None}
+        mock_db.query_one.return_value = {"status": "running", "metadata_json": None}
         lifecycle = WorkflowLifecycle(mock_db, emit_events=False)
 
         errors = [
@@ -277,7 +277,7 @@ class TestWorkflowLifecycleStepLogs:
 
     def test_invalid_step_status_transition(self, mock_db):
         """Should reject invalid step status transitions."""
-        mock_db.query_one.return_value = {"status": "completed", "metadata": None}
+        mock_db.query_one.return_value = {"status": "completed", "metadata_json": None}
         lifecycle = WorkflowLifecycle(mock_db, emit_events=False)
 
         with pytest.raises(InvalidStatusTransition) as exc_info:
@@ -294,7 +294,7 @@ class TestWorkflowLifecycleCallbacks:
         """Create a mock DoltDB."""
         db = MagicMock(spec=DoltDB)
         db.execute.return_value = QueryResult(rows=[], affected_rows=1)
-        db.query_one.return_value = {"status": "running", "metadata": None}
+        db.query_one.return_value = {"status": "running", "metadata_json": None}
         return db
 
     def test_on_workflow_start(self, mock_db):
@@ -372,7 +372,7 @@ class TestWorkflowLifecycleEventEmission:
         """Create a mock DoltDB."""
         db = MagicMock(spec=DoltDB)
         db.execute.return_value = QueryResult(rows=[], affected_rows=1, last_insert_id=1)
-        db.query_one.return_value = {"status": "running", "metadata": None}
+        db.query_one.return_value = {"status": "running", "metadata_json": None}
         return db
 
     def test_emits_event_on_create_run(self, mock_db):
