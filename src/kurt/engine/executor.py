@@ -29,7 +29,7 @@ from kurt.engine.dag import build_dag
 from kurt.engine.interpolation import interpolate_step_config
 from kurt.engine.parser import StepDef, WorkflowDefinition
 from kurt.observability.tracking import track_event
-from kurt.tools.base import ToolContext, ToolResult, ToolResultError
+from kurt.tools.base import ToolContext, ToolResult
 from kurt.tools.errors import ToolCanceledError, ToolError
 from kurt.tools.registry import execute_tool
 

@@ -375,7 +375,7 @@ def check_no_stale_locks(git_path: Path) -> CheckResult:
                 name="no_stale_locks",
                 status=CheckStatus.FAIL,
                 message=f"Stale lock file ({age:.0f}s old)",
-                details=f"Run 'kurt repair' to remove stale lock",
+                details="Run 'kurt repair' to remove stale lock",
             )
     except Exception as e:
         return CheckResult(

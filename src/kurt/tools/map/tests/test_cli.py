@@ -88,14 +88,13 @@ class TestMapCommand:
 
     def test_map_method_crawl_forces_crawler(self, cli_runner: CliRunner, tmp_database):
         """Test --method crawl skips sitemap and uses crawler directly."""
-        import asyncio
-        from unittest.mock import AsyncMock, patch
+        from unittest.mock import patch
 
         async def mock_crawl(*args, **kwargs):
             return [{"url": "https://example.com/page1", "source_type": "page", "depth": 0}]
 
         # Mock discover_from_crawl in map_tool.py (where it's actually called)
-        with patch("kurt.tools.map_tool.discover_from_crawl", new=mock_crawl) as mock_crawler:
+        with patch("kurt.tools.map_tool.discover_from_crawl", new=mock_crawl):
             # Also mock discover_from_sitemap to verify it's NOT called
             with patch("kurt.tools.map_tool.discover_from_sitemap") as mock_sitemap:
                 mock_sitemap.side_effect = Exception("sitemap should not be tried")

@@ -14,7 +14,6 @@ from kurt.engine.interpolation import (
     validate_config_variables,
 )
 
-
 # ============================================================================
 # Basic String Interpolation Tests
 # ============================================================================

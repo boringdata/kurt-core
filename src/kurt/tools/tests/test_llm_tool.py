@@ -9,9 +9,8 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from pydantic import BaseModel
 
-from kurt.tools.base import SubstepEvent, ToolContext, ToolResult
+from kurt.tools.base import SubstepEvent, ToolContext
 from kurt.tools.llm_tool import (
     LLMBatchProcessor,
     LLMConfig,
@@ -26,7 +25,6 @@ from kurt.tools.llm_tool import (
     resolve_output_schema,
 )
 from kurt.tools.registry import TOOLS, clear_registry
-
 
 # ============================================================================
 # Fixtures
@@ -246,13 +244,13 @@ class TestPromptTemplate:
 
 # Check if packages are available
 try:
-    import openai
+    import openai  # noqa: F401
     HAS_OPENAI = True
 except ImportError:
     HAS_OPENAI = False
 
 try:
-    import anthropic
+    import anthropic  # noqa: F401
     HAS_ANTHROPIC = True
 except ImportError:
     HAS_ANTHROPIC = False
@@ -581,7 +579,6 @@ class TestLLMTool:
     @pytest.mark.asyncio
     async def test_run_with_structured_output(self, sample_inputs):
         """Run with structured output schema."""
-        from kurt.tools.llm.models import SentimentAnalysis
 
         async def mock_call(*args, **kwargs):
             return {

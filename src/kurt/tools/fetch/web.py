@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from .firecrawl import fetch_with_firecrawl
 from .httpx import fetch_with_httpx
+from .models import BatchFetchResult
 from .tavily import fetch_with_tavily
 from .trafilatura import fetch_with_trafilatura
-from .models import BatchFetchResult
 
 
 def fetch_from_web(urls: list[str], fetch_engine: str) -> BatchFetchResult:

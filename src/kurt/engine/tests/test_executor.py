@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -20,7 +20,6 @@ from kurt.engine.executor import (
 from kurt.engine.parser import InputDef, StepDef, WorkflowDefinition, WorkflowMeta
 from kurt.tools.base import ToolContext, ToolResult, ToolResultError
 from kurt.tools.errors import ToolExecutionError, ToolNotFoundError
-
 
 # ============================================================================
 # Helper Functions
@@ -303,7 +302,7 @@ class TestExecuteWorkflowSequential:
         with patch(
             "kurt.engine.executor.execute_tool", side_effect=mock_execute
         ):
-            result = await execute_workflow(workflow, {"query": "test"})
+            await execute_workflow(workflow, {"query": "test"})
 
         # First step gets workflow inputs
         assert captured_params["fetch"]["input_data"] == [{"query": "test"}]

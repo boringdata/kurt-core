@@ -125,7 +125,7 @@ def run_cmd(workflow_path: Path, inputs: tuple[str, ...], background: bool, dry_
         kurt run workflows/pipeline.toml --background
     """
     from kurt.engine import parse_workflow
-    from kurt.engine.executor import WorkflowExecutor, execute_workflow
+    from kurt.engine.executor import execute_workflow
 
     # Parse inputs
     parsed_inputs: dict[str, Any] = {}
@@ -386,12 +386,12 @@ def _follow_workflow(db, run_id: str):
     if run:
         status = run.get("status")
         if status == "completed":
-            console.print(f"\n[green]Workflow completed successfully[/green]")
+            console.print("\n[green]Workflow completed successfully[/green]")
         elif status == "failed":
             error = run.get("error", "Unknown error")
             console.print(f"\n[red]Workflow failed: {error}[/red]")
         elif status == "canceled":
-            console.print(f"\n[yellow]Workflow canceled[/yellow]")
+            console.print("\n[yellow]Workflow canceled[/yellow]")
 
 
 @click.command(name="logs")
@@ -724,11 +724,11 @@ def _tail_logs(
                 if not output_json:
                     final_status = run_result.get("status")
                     if final_status == "completed":
-                        console.print(f"\n[green]Workflow completed[/green]")
+                        console.print("\n[green]Workflow completed[/green]")
                     elif final_status == "failed":
-                        console.print(f"\n[red]Workflow failed[/red]")
+                        console.print("\n[red]Workflow failed[/red]")
                     elif final_status == "canceled":
-                        console.print(f"\n[yellow]Workflow canceled[/yellow]")
+                        console.print("\n[yellow]Workflow canceled[/yellow]")
                 break
 
             # No new events - wait before next poll
@@ -829,7 +829,7 @@ def _build_dry_run_output(
     - Execution plan from DAG builder
     - Config validation against tool schemas
     """
-    from kurt.engine.dag import build_dag, CycleDetectedError
+    from kurt.engine.dag import CycleDetectedError, build_dag
     from kurt.engine.interpolation import interpolate_step_config
     from kurt.tools.registry import TOOLS, get_tool
 
@@ -1129,7 +1129,7 @@ def test_cmd(
         # Coverage summary
         total = len(step_names)
         with_fixtures = len(coverage.steps_with_fixtures)
-        without_fixtures = len(coverage.steps_without_fixtures)
+        len(coverage.steps_without_fixtures)
         pct = (with_fixtures / max(1, total)) * 100
 
         console.print(f"[bold]Coverage:[/bold] {with_fixtures}/{total} steps ({pct:.0f}%)")
@@ -1225,15 +1225,13 @@ workflow_group.add_command(logs_cmd, name="logs")
 workflow_group.add_command(cancel_cmd, name="cancel")
 workflow_group.add_command(test_cmd, name="test")
 
-# Import and add agent workflow commands
-from kurt.workflows.agents.cli import (
-    create_cmd as agents_create_cmd,
-    history_cmd as agents_history_cmd,
-    init_cmd as agents_init_cmd,
-    list_cmd as agents_list_cmd,
-    show_cmd as agents_show_cmd,
-    validate_cmd as agents_validate_cmd,
-)
+# Import and add agent workflow commands (at end to avoid circular imports)
+from kurt.workflows.agents.cli import create_cmd as agents_create_cmd  # noqa: E402
+from kurt.workflows.agents.cli import history_cmd as agents_history_cmd  # noqa: E402
+from kurt.workflows.agents.cli import init_cmd as agents_init_cmd  # noqa: E402
+from kurt.workflows.agents.cli import list_cmd as agents_list_cmd  # noqa: E402
+from kurt.workflows.agents.cli import show_cmd as agents_show_cmd  # noqa: E402
+from kurt.workflows.agents.cli import validate_cmd as agents_validate_cmd  # noqa: E402
 
 workflow_group.add_command(agents_list_cmd, name="list")
 workflow_group.add_command(agents_show_cmd, name="show")

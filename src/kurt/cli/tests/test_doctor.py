@@ -27,14 +27,12 @@ from kurt.cli.doctor import (
     doctor_cmd,
     get_repair_actions,
     repair_cmd,
-    run_doctor,
 )
 from kurt.core.tests.conftest import (
     assert_cli_success,
     assert_output_contains,
     invoke_cli,
 )
-
 
 # =============================================================================
 # Fixtures
@@ -76,7 +74,7 @@ def temp_git_repo(tmp_path: Path) -> Path:
 @pytest.fixture
 def temp_dolt_repo(tmp_path: Path) -> Path:
     """Create a temporary Dolt repository for testing."""
-    dolt_path = tmp_path / ".dolt"
+    tmp_path / ".dolt"
     # Check if dolt is available
     if not shutil.which("dolt"):
         pytest.skip("Dolt CLI not available")

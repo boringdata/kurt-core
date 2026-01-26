@@ -1,6 +1,5 @@
 """Tests for Dolt schema initialization."""
 
-import pytest
 
 from kurt.db.dolt import (
     OBSERVABILITY_TABLES,

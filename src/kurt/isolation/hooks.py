@@ -24,7 +24,6 @@ Opt-out:
 from __future__ import annotations
 
 import logging
-import os
 import stat
 import subprocess
 from dataclasses import dataclass

@@ -6,6 +6,7 @@ tracking via workflow_runs/step_logs/step_events tables (no DBOS).
 
 from __future__ import annotations
 
+import argparse
 import ast
 import json
 import logging

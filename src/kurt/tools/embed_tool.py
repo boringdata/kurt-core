@@ -597,7 +597,7 @@ class EmbedTool(Tool[EmbedParams, EmbedOutput]):
 
         # Process results
         for batch_result in batch_results:
-            batch_idx = batch_result["batch_idx"]
+            batch_result["batch_idx"]
 
             if batch_result["status"] == "success":
                 embeddings = batch_result["embeddings"]

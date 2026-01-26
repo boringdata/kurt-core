@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -297,7 +295,7 @@ class TestInitFunctionalNoDolt:
         with patch("kurt.cli.init.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
 
-            result = cli_runner_isolated.invoke(init, ["--no-dolt"])
+            cli_runner_isolated.invoke(init, ["--no-dolt"])
 
             # Git init should be called
             calls = [str(c) for c in mock_run.call_args_list]
@@ -308,7 +306,7 @@ class TestInitFunctionalNoDolt:
         with patch("kurt.cli.init.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
 
-            result = cli_runner_isolated.invoke(init, ["--no-dolt"])
+            cli_runner_isolated.invoke(init, ["--no-dolt"])
 
             # Dolt init should NOT be called
             calls = [str(c) for c in mock_run.call_args_list]
@@ -381,7 +379,7 @@ class TestInitPartialDetection:
             with patch("kurt.cli.init._install_hooks") as mock_hooks:
                 mock_hooks.return_value = True
 
-                result = cli_runner_isolated.invoke(init, ["--force", "--no-dolt"])
+                cli_runner_isolated.invoke(init, ["--force", "--no-dolt"])
 
                 # Should create missing components
                 assert (Path.cwd() / "kurt.toml").exists()

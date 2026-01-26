@@ -289,7 +289,6 @@ async def _fetch_with_trafilatura(
     Raises:
         ValueError: If fetch or extraction fails
     """
-    import trafilatura
 
     from kurt.tools.fetch.utils import extract_with_trafilatura
 
@@ -866,7 +865,7 @@ class FetchTool(Tool[FetchParams, FetchOutput]):
             )
 
             try:
-                from kurt.core.embedding_step import generate_embeddings, embedding_to_bytes
+                from kurt.core.embedding_step import embedding_to_bytes, generate_embeddings
 
                 # Prepare texts for embedding (truncate to max chars)
                 max_chars = 1000  # Default, could be configurable

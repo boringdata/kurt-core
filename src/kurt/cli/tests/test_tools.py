@@ -71,7 +71,7 @@ class TestMapCommand:
 
             assert result.exit_code == 0
             # Filter empty lines
-            lines = [l for l in result.output.strip().split("\n") if l]
+            lines = [line for line in result.output.strip().split("\n") if line]
             assert len(lines) == 2
 
             # Verify JSONL output
@@ -166,7 +166,7 @@ class TestFetchCommand:
             result = runner.invoke(fetch_cmd, [input_path, "--quiet"])
 
             assert result.exit_code == 0
-            lines = [l for l in result.output.strip().split("\n") if l]
+            lines = [line for line in result.output.strip().split("\n") if line]
             assert len(lines) == 2
 
     def test_fetch_from_stdin(self, runner):
@@ -246,7 +246,7 @@ class TestLLMCommand:
             )
 
             assert result.exit_code == 0
-            lines = [l for l in result.output.strip().split("\n") if l]
+            lines = [line for line in result.output.strip().split("\n") if line]
             assert len(lines) == 2
 
     def test_llm_with_model_option(self, runner, temp_jsonl):
@@ -326,7 +326,7 @@ class TestEmbedCommand:
             result = runner.invoke(embed_cmd, [input_path, "--quiet"])
 
             assert result.exit_code == 0
-            lines = [l for l in result.output.strip().split("\n") if l]
+            lines = [line for line in result.output.strip().split("\n") if line]
             assert len(lines) == 2
 
             # Check that embedding is base64 encoded
@@ -388,7 +388,7 @@ class TestWriteCommand:
             result = runner.invoke(write_to_db_cmd, [input_path, "--table=documents", "--quiet"])
 
             assert result.exit_code == 0
-            lines = [l for l in result.output.strip().split("\n") if l]
+            lines = [line for line in result.output.strip().split("\n") if line]
             assert len(lines) == 2
 
     def test_write_upsert_mode(self, runner, temp_jsonl):
@@ -471,7 +471,7 @@ class TestSQLCommand:
             result = runner.invoke(sql_cmd, ["SELECT * FROM documents LIMIT 10", "--quiet"])
 
             assert result.exit_code == 0
-            lines = [l for l in result.output.strip().split("\n") if l]
+            lines = [line for line in result.output.strip().split("\n") if line]
             assert len(lines) == 2
 
     def test_sql_with_params(self, runner):
@@ -534,7 +534,7 @@ class TestProgressDisplay:
             # Only JSONL output, no progress on stderr
             assert result.exit_code == 0
             # JSONL output on stdout
-            lines = [l for l in result.output.strip().split("\n") if l]
+            lines = [line for line in result.output.strip().split("\n") if line]
             assert len(lines) == 1
 
     def test_json_progress_mode(self, runner, temp_jsonl):

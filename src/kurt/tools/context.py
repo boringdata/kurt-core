@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     import httpx
 
     from kurt.db.dolt import DoltDB
+    from kurt.tools.base import ToolContext
 
 logger = logging.getLogger(__name__)
 
@@ -182,7 +183,7 @@ def _load_toml(path: Path) -> dict[str, Any]:
                 return tomli.load(f)
         except ImportError:
             logger.warning(
-                f"No TOML parser available. Install tomli: uv pip install tomli"
+                "No TOML parser available. Install tomli: uv pip install tomli"
             )
             return {}
     except Exception as e:

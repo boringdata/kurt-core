@@ -622,7 +622,7 @@ class TestSaveToDbEdgeCases:
             with patch("kurt.core.get_model_by_table_name") as mock_get:
                 mock_get.return_value = None
 
-                result = cli_runner.invoke(
+                cli_runner.invoke(
                     tool,
                     ["save-to-db", "--table", "test", "--data", '{"key": "value"}'],
                 )

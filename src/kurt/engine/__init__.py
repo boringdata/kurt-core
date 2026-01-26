@@ -51,6 +51,13 @@ from .dag import (
     ExecutionPlan,
     build_dag,
 )
+from .executor import (
+    ExitCode,
+    StepResult,
+    WorkflowExecutor,
+    WorkflowResult,
+    execute_workflow,
+)
 from .fixtures import (
     FixtureLoadError,
     FixtureNotFoundError,
@@ -62,13 +69,6 @@ from .fixtures import (
     load_fixture,
     load_fixtures,
     load_jsonl,
-)
-from .executor import (
-    ExitCode,
-    StepResult,
-    WorkflowExecutor,
-    WorkflowResult,
-    execute_workflow,
 )
 from .interpolation import (
     InterpolationError,

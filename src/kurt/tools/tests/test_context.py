@@ -17,7 +17,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from kurt.tools.context import (
-    ConfigValidationError,
     DoltSettings,
     FetchSettings,
     LLMClient,
@@ -35,7 +34,6 @@ from kurt.tools.context import (
     load_tool_context,
     validate_settings,
 )
-
 
 # ============================================================================
 # Test Fixtures
@@ -403,7 +401,7 @@ class TestInitFunctions:
             mock_instance = MagicMock()
             mock_dolt.return_value = mock_instance
 
-            result = _init_dolt_db(settings, tmp_path)
+            _init_dolt_db(settings, tmp_path)
 
             # DoltDB expects repo root path (parent of .dolt), not .dolt itself
             mock_dolt.assert_called_once_with(

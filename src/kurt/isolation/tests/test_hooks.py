@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import subprocess
-from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -22,7 +20,6 @@ from kurt.isolation.hooks import (
     install_hooks,
     uninstall_hooks,
 )
-
 
 # =============================================================================
 # Fixtures

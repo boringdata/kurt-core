@@ -4,9 +4,6 @@ Unit tests for tool registry and execution.
 
 from __future__ import annotations
 
-from typing import Any
-from unittest.mock import Mock
-
 import pytest
 from pydantic import BaseModel
 
@@ -31,7 +28,6 @@ from kurt.tools.registry import (
     list_tools,
     register_tool,
 )
-
 
 # ============================================================================
 # Test Fixtures and Helper Classes

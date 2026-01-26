@@ -6,8 +6,7 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
-from typing import Any
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from pydantic import ValidationError
@@ -26,7 +25,6 @@ from kurt.tools.map_tool import (
     normalize_url,
 )
 from kurt.tools.registry import TOOLS, clear_registry
-
 
 # ============================================================================
 # Fixtures

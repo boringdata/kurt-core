@@ -83,7 +83,7 @@ class LifecycleError(Exception):
     pass
 
 
-class InvalidStatusTransition(LifecycleError):
+class InvalidStatusTransition(LifecycleError):  # noqa: N818
     """Raised when an invalid status transition is attempted."""
 
     def __init__(self, current: str, target: str, entity: str = "workflow"):

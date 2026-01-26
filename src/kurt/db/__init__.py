@@ -30,6 +30,31 @@ from kurt.db.database import (
     init_database,
     managed_session,
 )
+
+# Dolt client and schema
+from kurt.db.dolt import (
+    # Schema helpers
+    OBSERVABILITY_TABLES,
+    SCHEMA_FILE,
+    BranchInfo,
+    ConnectionPool,
+    DoltBranchError,
+    DoltConnectionError,
+    # Client classes
+    DoltDB,
+    DoltDBProtocol,
+    # Exceptions
+    DoltError,
+    DoltQueryError,
+    DoltTransaction,
+    DoltTransactionError,
+    QueryResult,
+    check_schema_exists,
+    get_schema_sql,
+    get_table_ddl,
+    init_observability_schema,
+    split_sql_statements,
+)
 from kurt.db.models import (
     ConfidenceMixin,
     EmbeddingMixin,
@@ -56,39 +81,14 @@ from kurt.db.tenant import (
 
 # Tool-owned table operations (new architecture)
 from kurt.db.tool_tables import (
-    register_document,
-    insert_map_result,
-    insert_fetch_result,
-    insert_embed_result,
-    batch_insert_map_results,
     batch_insert_fetch_results,
+    batch_insert_map_results,
     get_documents_for_fetch,
     get_existing_document_ids,
-)
-
-# Dolt client and schema
-from kurt.db.dolt import (
-    # Client classes
-    DoltDB,
-    DoltTransaction,
-    QueryResult,
-    BranchInfo,
-    ConnectionPool,
-    # Exceptions
-    DoltError,
-    DoltConnectionError,
-    DoltQueryError,
-    DoltTransactionError,
-    DoltBranchError,
-    # Schema helpers
-    OBSERVABILITY_TABLES,
-    SCHEMA_FILE,
-    DoltDBProtocol,
-    check_schema_exists,
-    get_schema_sql,
-    get_table_ddl,
-    init_observability_schema,
-    split_sql_statements,
+    insert_embed_result,
+    insert_fetch_result,
+    insert_map_result,
+    register_document,
 )
 
 __all__ = [

@@ -18,8 +18,12 @@ from kurt.core.tests.conftest import (
     invoke_cli,
 )
 from kurt.db.dolt import BranchInfo
-from kurt.isolation.branch import BranchStatus, BranchSyncError, BranchSyncErrorCode, BranchSyncResult
-
+from kurt.isolation.branch import (
+    BranchStatus,
+    BranchSyncError,
+    BranchSyncErrorCode,
+    BranchSyncResult,
+)
 
 # =============================================================================
 # Fixtures

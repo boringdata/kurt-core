@@ -4,13 +4,12 @@ Unit tests for SQLTool.
 
 from __future__ import annotations
 
-from typing import Any
 from unittest.mock import Mock
 
 import pytest
 from pydantic import ValidationError
 
-from kurt.tools.base import SubstepEvent, ToolContext, ToolResult
+from kurt.tools.base import SubstepEvent, ToolContext
 from kurt.tools.registry import TOOLS, clear_registry
 from kurt.tools.sql_tool import (
     SQLConfig,
@@ -20,7 +19,6 @@ from kurt.tools.sql_tool import (
     bind_params_positional,
     validate_params,
 )
-
 
 # ============================================================================
 # Fixtures

@@ -226,7 +226,7 @@ def push_cmd(remote: str, git_only: bool, dolt_only: bool, as_json: bool):
                     console.print("[green]Git: Already up to date[/green]")
             elif result.git.status == "error":
                 console.print(
-                    f"[yellow]Warning: Git push failed (Dolt push succeeded)[/yellow]"
+                    "[yellow]Warning: Git push failed (Dolt push succeeded)[/yellow]"
                 )
                 console.print(f"[dim]{result.git.error}[/dim]")
                 console.print("[dim]Run 'git push' manually to sync Git[/dim]")

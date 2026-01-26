@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import click
 
+from kurt.cli.sync import sync_group
+
 from .feedback import feedback
 from .migrate import migrate
 from .telemetry import telemetry
-from kurt.cli.sync import sync_group
 
 
 @click.group()

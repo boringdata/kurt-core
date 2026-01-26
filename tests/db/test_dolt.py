@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -21,7 +20,6 @@ from kurt.db.dolt import (
     DoltTransactionError,
     QueryResult,
 )
-
 
 # =============================================================================
 # Fixtures
@@ -407,7 +405,7 @@ class TestDoltDBQueryEmbedded:
         db = DoltDB(tmp_dolt_repo)
 
         db.execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(100))")
-        result = db.execute("INSERT INTO users VALUES (1, 'Alice')")
+        db.execute("INSERT INTO users VALUES (1, 'Alice')")
 
         # Verify data was inserted
         query_result = db.query("SELECT * FROM users")

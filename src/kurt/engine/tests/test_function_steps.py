@@ -8,19 +8,19 @@ reference them in workflow TOML files using type = "function".
 from __future__ import annotations
 
 import os
-import pytest
-import tempfile
 from pathlib import Path
 
-from kurt.engine.parser import (
-    parse_workflow,
-    WorkflowParseError,
-    VALID_STEP_TYPES,
-)
+import pytest
+
 from kurt.engine.executor import (
-    execute_workflow,
-    _load_user_function,
     _execute_user_function,
+    _load_user_function,
+    execute_workflow,
+)
+from kurt.engine.parser import (
+    VALID_STEP_TYPES,
+    WorkflowParseError,
+    parse_workflow,
 )
 from kurt.tools.base import ToolContext
 

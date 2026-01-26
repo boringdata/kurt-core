@@ -15,7 +15,6 @@ def get_status_data_dolt() -> dict[str, Any]:
         Dict with status data including document counts and domain distribution
     """
     from kurt.db.documents import (
-        count_documents,
         get_dolt_db,
         get_domain_counts,
         get_status_counts,

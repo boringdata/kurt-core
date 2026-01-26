@@ -11,10 +11,10 @@ import argparse
 import asyncio
 import json
 import os
-import sys
-from pathlib import Path
-import tempfile
 import subprocess
+import sys
+import tempfile
+from pathlib import Path
 from typing import Any
 
 from kurt.db.dolt import DoltDB, check_schema_exists, init_observability_schema

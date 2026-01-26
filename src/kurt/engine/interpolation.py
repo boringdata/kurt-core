@@ -134,7 +134,7 @@ def _coerce_value(
 
 
 def _unescape_braces(text: str) -> str:
-    """
+    r"""
     Replace escaped braces with literal braces.
 
     \{{ -> {{

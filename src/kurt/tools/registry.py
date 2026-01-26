@@ -17,7 +17,6 @@ from pydantic import ValidationError
 
 from .base import ProgressCallback, Tool, ToolContext, ToolResult, ToolResultMetadata
 from .errors import (
-    ToolConfigError,
     ToolExecutionError,
     ToolInputError,
     ToolNotFoundError,

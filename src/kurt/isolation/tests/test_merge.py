@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -17,13 +17,11 @@ from kurt.isolation.merge import (
     MergeExitCode,
     MergeResult,
     _dolt_branch_exists,
-    _dolt_get_conflicts,
     _dolt_merge_abort,
     _dolt_merge_commit,
     _dolt_merge_no_commit,
     _dolt_reset_hard,
     _git_branch_exists,
-    _git_current_branch,
     _git_merge,
     _git_merge_abort,
     _git_merge_in_progress,
@@ -32,7 +30,6 @@ from kurt.isolation.merge import (
     check_conflicts,
     merge_branch,
 )
-
 
 # =============================================================================
 # Fixtures
@@ -658,7 +655,7 @@ class TestMergeError:
 
     def test_error_codes_all_defined(self):
         """Test all error codes are defined."""
-        codes = list(MergeErrorCode)
+        list(MergeErrorCode)
         expected = [
             "DOLT_CONFLICT",
             "GIT_CONFLICT",

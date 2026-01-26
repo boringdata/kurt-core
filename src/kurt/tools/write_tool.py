@@ -365,7 +365,7 @@ def table_exists(db: Any, table: str) -> bool:
         True if table exists
     """
     try:
-        result = db.query(f"SELECT 1 FROM `{table}` LIMIT 0")
+        db.query(f"SELECT 1 FROM `{table}` LIMIT 0")
         return True
     except Exception:
         return False

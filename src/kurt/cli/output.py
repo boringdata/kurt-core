@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+
 def print_workflow_status(workflow_id: str, *, as_json: bool = False) -> None:
     """Print live workflow status."""
     from kurt.core import format_live_status, get_live_status

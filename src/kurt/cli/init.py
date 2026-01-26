@@ -426,7 +426,6 @@ def init(path: str, no_dolt: bool, no_hooks: bool, force: bool):
 
     # If any component exists without --force, warn about partial state
     if any(status.values()) and not force:
-        has_components = [k for k, v in status.items() if v]
         missing_components = [k for k, v in status.items() if not v]
 
         if missing_components:
@@ -545,9 +544,7 @@ def init(path: str, no_dolt: bool, no_hooks: bool, force: bool):
     console.print()
     console.print(f"[bold green]Initialized Kurt project in {cwd}[/bold green]")
 
-    # Count successes
-    successes = sum(1 for v in results.values() if v is True)
-    skipped = sum(1 for v in results.values() if v is None)
+    # Count failures
     failures = sum(1 for v in results.values() if v is False)
 
     if failures > 0:

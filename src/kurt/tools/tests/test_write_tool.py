@@ -4,23 +4,19 @@ Unit tests for WriteTool.
 
 from __future__ import annotations
 
-import json
-from typing import Any
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from pydantic import ValidationError
 
-from kurt.tools.base import SubstepEvent, ToolContext, ToolResult
+from kurt.tools.base import SubstepEvent, ToolContext
 from kurt.tools.errors import ToolExecutionError
 from kurt.tools.registry import TOOLS, clear_registry
 from kurt.tools.write_tool import (
     WriteConfig,
     WriteInput,
-    WriteMode,
     WriteOutput,
     WriteParams,
-    WriteStatus,
     WriteTool,
     build_create_table_sql,
     build_delete_sql,
@@ -32,7 +28,6 @@ from kurt.tools.write_tool import (
     serialize_value,
     table_exists,
 )
-
 
 # ============================================================================
 # Fixtures

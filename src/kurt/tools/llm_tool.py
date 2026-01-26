@@ -751,7 +751,7 @@ class LLMBatchProcessor:
                         self.rate_limit_event.set()
                     continue
 
-                except QuotaExceededError as e:
+                except QuotaExceededError:
                     self.quota_exceeded = True
                     return {
                         "row": input_item.row,

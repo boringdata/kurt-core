@@ -37,6 +37,16 @@ from .branch import (
     sync_to_dolt,
     sync_to_git,
 )
+from .hooks import (
+    HOOK_NAMES,
+    HookExitCode,
+    HookInstallResult,
+    HookUninstallResult,
+    get_installed_hooks,
+    hooks_need_update,
+    install_hooks,
+    uninstall_hooks,
+)
 from .merge import (
     DoltConflict,
     MergeConflict,
@@ -47,16 +57,6 @@ from .merge import (
     abort_merge,
     check_conflicts,
     merge_branch,
-)
-from .hooks import (
-    HOOK_NAMES,
-    HookExitCode,
-    HookInstallResult,
-    HookUninstallResult,
-    get_installed_hooks,
-    hooks_need_update,
-    install_hooks,
-    uninstall_hooks,
 )
 from .remote import (
     DoltResult,

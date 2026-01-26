@@ -189,9 +189,9 @@ def _detect_circular_dependencies(steps: dict[str, StepDef]) -> list[str] | None
     Returns:
         List of step names forming a cycle, or None if no cycle.
     """
-    WHITE, GRAY, BLACK = 0, 1, 2
+    WHITE, GRAY, BLACK = 0, 1, 2  # noqa: N806
     color: dict[str, int] = {name: WHITE for name in steps}
-    parent: dict[str, str | None] = {name: None for name in steps}
+    {name: None for name in steps}
 
     def visit(node: str, path: list[str]) -> list[str] | None:
         color[node] = GRAY

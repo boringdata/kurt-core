@@ -6,34 +6,27 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-from pathlib import Path
-from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 import pytest
 from pydantic import ValidationError
 
-from kurt.tools.base import SubstepEvent, ToolContext, ToolResult
+from kurt.tools.base import SubstepEvent, ToolContext
 from kurt.tools.fetch_tool import (
-    MAX_CONTENT_SIZE_BYTES,
     NON_RETRYABLE_STATUS_CODES,
     RETRYABLE_STATUS_CODES,
     FetchConfig,
-    FetchEngine,
     FetchInput,
     FetchOutput,
     FetchParams,
-    FetchStatus,
     FetchTool,
     _compute_content_hash,
-    _fetch_with_retry,
     _generate_content_path,
     _is_retryable_error,
     _save_content,
 )
 from kurt.tools.registry import TOOLS, clear_registry, get_tool
-
 
 # ============================================================================
 # Fixtures
@@ -423,7 +416,7 @@ class TestFetchToolExecution:
                 mock_client.__aexit__ = AsyncMock(return_value=None)
                 mock_client_class.return_value = mock_client
 
-                result = await tool.run(params, tool_context, on_progress)
+                await tool.run(params, tool_context, on_progress)
 
         # Check that progress events were emitted
         assert len(events) > 0

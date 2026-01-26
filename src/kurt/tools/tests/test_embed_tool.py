@@ -5,13 +5,12 @@ Unit tests for EmbedTool.
 from __future__ import annotations
 
 import asyncio
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from pydantic import ValidationError
 
-from kurt.tools.base import SubstepEvent, ToolContext, ToolResult
+from kurt.tools.base import SubstepEvent, ToolContext
 from kurt.tools.embed_tool import (
     PROVIDER_DEFAULT_MODELS,
     PROVIDER_MAX_BATCH_SIZES,
@@ -19,15 +18,12 @@ from kurt.tools.embed_tool import (
     EmbedInput,
     EmbedOutput,
     EmbedParams,
-    EmbedProvider,
     EmbedTool,
-    _embed_with_retry,
     _is_retryable_error,
     bytes_to_embedding,
     embedding_to_bytes,
 )
 from kurt.tools.registry import TOOLS, clear_registry, get_tool
-
 
 # ============================================================================
 # Fixtures
@@ -367,7 +363,7 @@ class TestEmbedToolExecution:
         # Mock the embedding function
         with patch("kurt.tools.embed_tool._embed_with_retry") as mock_embed:
             mock_embed.return_value = (mock_embeddings[:2], 50)
-            result = await tool.run(params, tool_context, on_progress)
+            await tool.run(params, tool_context, on_progress)
 
         # Check that progress events were emitted
         assert len(events) > 0

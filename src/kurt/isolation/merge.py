@@ -27,7 +27,7 @@ from pathlib import Path
 from shutil import which
 from typing import Any
 
-from kurt.db.dolt import DoltDB, DoltError
+from kurt.db.dolt import DoltDB
 
 logger = logging.getLogger(__name__)
 
@@ -529,7 +529,7 @@ def merge_branch(
 
         raise MergeError(
             code=MergeErrorCode.DOLT_CONFLICT,
-            message=f"Dolt merge conflicts detected. Merge aborted.",
+            message="Dolt merge conflicts detected. Merge aborted.",
             conflicts=MergeConflict(
                 dolt_conflicts=dolt_conflicts,
                 resolution_hint="Use 'dolt conflicts resolve' or 'kurt merge --abort' to abort.",

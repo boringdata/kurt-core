@@ -989,7 +989,7 @@ def check_schema_exists(db: "DoltDBProtocol") -> dict[str, bool]:
     for table in OBSERVABILITY_TABLES:
         try:
             # Use SHOW TABLES or information_schema query
-            rows = db.query(f"SELECT 1 FROM {table} LIMIT 0")
+            db.query(f"SELECT 1 FROM {table} LIMIT 0")
             result[table] = True
         except Exception:
             result[table] = False
@@ -1013,7 +1013,7 @@ def get_table_ddl(table_name: str) -> str | None:
 
     for stmt in statements:
         # Look for CREATE TABLE statement for this table
-        if f"CREATE TABLE" in stmt.upper() and table_name in stmt:
+        if "CREATE TABLE" in stmt.upper() and table_name in stmt:
             return stmt
 
     return None

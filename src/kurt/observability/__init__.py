@@ -79,6 +79,15 @@ from .streaming import (
     format_event,
     stream_events,
 )
+from .traces import (
+    LLMTrace,
+    get_trace,
+    get_traces,
+    get_traces_summary,
+    get_tracing_db,
+    init_tracing,
+    trace_llm_call,
+)
 from .tracking import (
     EVENT_KEY_CUSTOM,
     EVENT_KEY_ERROR,
@@ -94,15 +103,6 @@ from .tracking import (
     track_batched,
     track_event,
     write_event,
-)
-from .traces import (
-    LLMTrace,
-    get_trace,
-    get_traces,
-    get_traces_summary,
-    get_tracing_db,
-    init_tracing,
-    trace_llm_call,
 )
 
 __all__ = [

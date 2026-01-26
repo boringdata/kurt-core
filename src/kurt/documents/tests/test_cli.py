@@ -125,6 +125,7 @@ def _get_document_sqlite(identifier: str) -> DoltDocumentView | None:
 def _delete_documents_sqlite(doc_ids: list[str]) -> int:
     """SQLite-based implementation for testing (replaces Dolt)."""
     from sqlmodel import select
+
     from kurt.tools.fetch.models import FetchDocument
     from kurt.tools.map.models import MapDocument
 
@@ -400,6 +401,7 @@ class TestResolveDocumentsUrlAutoCreate:
     def test_resolve_url_identifier_creates_document(self, mock_dolt_registry):
         """Test that passing a URL as identifier auto-creates MapDocument."""
         from sqlmodel import select
+
         from kurt.tools.map.models import MapDocument, MapStatus
 
         test_url = "https://example.com/test-auto-create"
@@ -457,6 +459,7 @@ class TestSourceUrlUniqueConstraint:
     def test_unique_constraint_prevents_duplicates(self, tmp_project):
         """Test that new documents with duplicate URLs are rejected."""
         from sqlalchemy.exc import IntegrityError
+
         from kurt.tools.map.models import MapDocument, MapStatus
 
         test_url = "https://example.com/unique-test"

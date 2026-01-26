@@ -56,7 +56,7 @@ def _detect_cycle(
         List of step names forming the cycle (including the repeated node),
         or None if no cycle exists.
     """
-    WHITE, GRAY, BLACK = 0, 1, 2
+    WHITE, GRAY, BLACK = 0, 1, 2  # noqa: N806
     color: dict[str, int] = {name: WHITE for name in steps}
 
     def dfs(node: str, path: list[str]) -> list[str] | None:

@@ -225,7 +225,7 @@ def _dolt_get_commit_count(db: DoltDB, ref1: str, ref2: str) -> int:
     """Count commits between two refs in Dolt."""
     try:
         output = db._run_cli(["log", "--oneline", f"{ref1}..{ref2}"])
-        lines = [l for l in output.strip().split("\n") if l.strip()]
+        lines = [line for line in output.strip().split("\n") if line.strip()]
         return len(lines)
     except Exception:
         return 0
@@ -353,7 +353,7 @@ def _git_push(path: Path, remote: str, branch: str) -> int:
         capture_output=True,
         text=True,
     )
-    commits_to_push = len([l for l in result.stdout.strip().split("\n") if l.strip()])
+    commits_to_push = len([line for line in result.stdout.strip().split("\n") if line.strip()])
 
     if commits_to_push == 0:
         return 0

@@ -16,7 +16,7 @@ import xml.etree.ElementTree as ET
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
-from urllib.parse import parse_qsl, unquote, urlencode, urljoin, urlparse
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -332,7 +332,6 @@ async def check_robots_txt(
     try:
         response = await http.get(robots_url, timeout=timeout)
         if response.status_code == 200:
-            user_agent = "*"
             current_applies = False
 
             for line in response.text.split("\n"):
@@ -937,7 +936,6 @@ class MapTool(Tool[MapInput, MapOutput]):
                 disallowed = await check_robots_txt(http, params.url, params.timeout)
 
             items: list[dict[str, Any]] = []
-            error: str | None = None
 
             # Sitemap mode
             if params.discovery_method in ("auto", "sitemap"):

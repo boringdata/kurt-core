@@ -5,7 +5,6 @@ Unit tests for tool base classes and dataclasses.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any
 from unittest.mock import Mock
 
 import pytest
@@ -21,7 +20,6 @@ from kurt.tools.base import (
     ToolResultMetadata,
     ToolResultSubstep,
 )
-
 
 # ============================================================================
 # SubstepEvent Tests

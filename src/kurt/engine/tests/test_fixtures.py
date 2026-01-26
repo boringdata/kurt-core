@@ -4,8 +4,6 @@ Tests for the fixture loading module.
 
 from __future__ import annotations
 
-import json
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -13,7 +11,6 @@ import pytest
 from kurt.engine.fixtures import (
     FixtureLoadError,
     FixtureNotFoundError,
-    FixtureReport,
     FixtureSet,
     StepFixture,
     analyze_fixture_coverage,
@@ -22,7 +19,6 @@ from kurt.engine.fixtures import (
     load_fixtures,
     load_jsonl,
 )
-
 
 # ============================================================================
 # Test Fixtures (pytest fixtures for creating test data)
