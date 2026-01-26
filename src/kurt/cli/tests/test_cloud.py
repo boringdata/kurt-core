@@ -109,7 +109,7 @@ class TestLogoutCommand:
 
     def test_logout_when_not_logged_in(self, cli_runner: CliRunner):
         """Test logout when no credentials exist."""
-        with patch("kurt.cloud.auth.credentials.load_credentials", return_value=None):
+        with patch("kurt.cloud.auth.load_credentials", return_value=None):
             result = cli_runner.invoke(cloud_group, ["logout"])
         assert result.exit_code == 0
         assert "Not logged in" in result.output
@@ -117,8 +117,8 @@ class TestLogoutCommand:
     def test_logout_clears_credentials(self, cli_runner: CliRunner, mock_credentials):
         """Test logout clears stored credentials."""
         with (
-            patch("kurt.cloud.auth.credentials.load_credentials", return_value=mock_credentials),
-            patch("kurt.cloud.auth.credentials.clear_credentials") as mock_clear,
+            patch("kurt.cloud.auth.load_credentials", return_value=mock_credentials),
+            patch("kurt.cloud.auth.clear_credentials") as mock_clear,
         ):
             result = cli_runner.invoke(cloud_group, ["logout"])
         assert result.exit_code == 0
@@ -143,7 +143,7 @@ class TestStatusCommand:
     def test_status_not_logged_in(self, cli_runner: CliRunner):
         """Test status when not logged in."""
         with (
-            patch("kurt.cloud.auth.credentials.load_credentials", return_value=None),
+            patch("kurt.cloud.auth.load_credentials", return_value=None),
             patch("kurt.config.config_file_exists", return_value=False),
         ):
             result = cli_runner.invoke(cloud_group, ["status"])
@@ -157,7 +157,8 @@ class TestStatusCommand:
         mock_config.DATABASE_URL = None
 
         with (
-            patch("kurt.cloud.auth.credentials.load_credentials", return_value=mock_credentials),
+            patch("kurt.cloud.auth.load_credentials", return_value=mock_credentials),
+            patch("kurt.cloud.auth.ensure_fresh_token", return_value=mock_credentials),
             patch("kurt.config.config_file_exists", return_value=True),
             patch("kurt.config.load_config", return_value=mock_config),
             patch("kurt.db.get_mode", return_value="sqlite"),
@@ -179,13 +180,19 @@ class TestStatusCommand:
             "user_metadata": {"workspace_id": "ws-from-api"},
         }
 
+        # Mock config with no workspace_id
+        mock_config = MagicMock()
+        mock_config.WORKSPACE_ID = None
+        mock_config.DATABASE_URL = "postgresql://localhost/db"
+
         with (
-            patch("kurt.cloud.auth.credentials.load_credentials", return_value=mock_credentials),
-            patch("kurt.cloud.auth.credentials.ensure_fresh_token", return_value=mock_credentials),
-            patch("kurt.config.base.get_config_file_path", return_value=config_file),
+            patch("kurt.cloud.auth.load_credentials", return_value=mock_credentials),
+            patch("kurt.cloud.auth.ensure_fresh_token", return_value=mock_credentials),
+            patch("kurt.config.config_file_exists", return_value=True),
+            patch("kurt.config.load_config", return_value=mock_config),
             patch("kurt.config.get_config_file_path", return_value=config_file),
             patch("kurt.db.get_mode", return_value="postgres"),
-            patch("kurt.cloud.auth.api.get_user_info", return_value=mock_user_info),
+            patch("kurt.cloud.auth.get_user_info", return_value=mock_user_info),
         ):
             result = cli_runner.invoke(cloud_group, ["status"])
 
@@ -211,7 +218,7 @@ class TestWhoamiCommand:
 
     def test_whoami_not_logged_in(self, cli_runner: CliRunner):
         """Test whoami when not logged in."""
-        with patch("kurt.cloud.auth.credentials.load_credentials", return_value=None):
+        with patch("kurt.cloud.auth.load_credentials", return_value=None):
             result = cli_runner.invoke(cloud_group, ["whoami"])
         assert result.exit_code == 1
         assert "Not logged in" in result.output
@@ -240,7 +247,7 @@ class TestInviteCommand:
 
     def test_invite_not_logged_in(self, cli_runner: CliRunner):
         """Test invite when not logged in."""
-        with patch("kurt.cloud.auth.credentials.load_credentials", return_value=None):
+        with patch("kurt.cloud.auth.load_credentials", return_value=None):
             result = cli_runner.invoke(cloud_group, ["invite", "user@example.com"])
         assert result.exit_code == 1
         assert "Not logged in" in result.output
@@ -248,7 +255,7 @@ class TestInviteCommand:
     def test_invite_no_config(self, cli_runner: CliRunner, mock_credentials):
         """Test invite when no kurt.config exists."""
         with (
-            patch("kurt.cloud.auth.credentials.load_credentials", return_value=mock_credentials),
+            patch("kurt.cloud.auth.ensure_fresh_token", return_value=mock_credentials),
             patch("kurt.config.config_file_exists", return_value=False),
         ):
             result = cli_runner.invoke(cloud_group, ["invite", "user@example.com"])
@@ -261,7 +268,7 @@ class TestInviteCommand:
         mock_config.WORKSPACE_ID = None
 
         with (
-            patch("kurt.cloud.auth.credentials.load_credentials", return_value=mock_credentials),
+            patch("kurt.cloud.auth.ensure_fresh_token", return_value=mock_credentials),
             patch("kurt.config.config_file_exists", return_value=True),
             patch("kurt.config.load_config", return_value=mock_config),
         ):
@@ -292,7 +299,7 @@ class TestUseCommand:
 
     def test_use_not_logged_in(self, cli_runner: CliRunner):
         """Test use when not logged in."""
-        with patch("kurt.cloud.auth.credentials.load_credentials", return_value=None):
+        with patch("kurt.cloud.auth.load_credentials", return_value=None):
             result = cli_runner.invoke(cloud_group, ["use", "ws-new-123"])
         assert result.exit_code == 1
         assert "Not logged in" in result.output
@@ -314,7 +321,7 @@ class TestWorkspacesCommand:
 
     def test_workspaces_not_logged_in(self, cli_runner: CliRunner):
         """Test workspaces when not logged in."""
-        with patch("kurt.cloud.auth.credentials.load_credentials", return_value=None):
+        with patch("kurt.cloud.auth.load_credentials", return_value=None):
             result = cli_runner.invoke(cloud_group, ["workspaces"])
         assert result.exit_code == 1
         assert "Not logged in" in result.output
@@ -336,7 +343,7 @@ class TestMembersCommand:
 
     def test_members_not_logged_in(self, cli_runner: CliRunner):
         """Test members when not logged in."""
-        with patch("kurt.cloud.auth.credentials.load_credentials", return_value=None):
+        with patch("kurt.cloud.auth.load_credentials", return_value=None):
             result = cli_runner.invoke(cloud_group, ["members"])
         assert result.exit_code == 1
         assert "Not logged in" in result.output
@@ -344,7 +351,7 @@ class TestMembersCommand:
     def test_members_no_config(self, cli_runner: CliRunner, mock_credentials):
         """Test members when no kurt.config exists."""
         with (
-            patch("kurt.cloud.auth.credentials.load_credentials", return_value=mock_credentials),
+            patch("kurt.cloud.auth.ensure_fresh_token", return_value=mock_credentials),
             patch("kurt.config.config_file_exists", return_value=False),
         ):
             result = cli_runner.invoke(cloud_group, ["members"])
@@ -357,7 +364,7 @@ class TestMembersCommand:
         mock_config.WORKSPACE_ID = None
 
         with (
-            patch("kurt.cloud.auth.credentials.load_credentials", return_value=mock_credentials),
+            patch("kurt.cloud.auth.ensure_fresh_token", return_value=mock_credentials),
             patch("kurt.config.config_file_exists", return_value=True),
             patch("kurt.config.load_config", return_value=mock_config),
         ):
@@ -390,7 +397,7 @@ class TestCloudE2EWithMockedAPI:
         mock_response.__exit__ = MagicMock(return_value=False)
 
         with (
-            patch("kurt.cloud.auth.credentials.load_credentials", return_value=mock_credentials),
+            patch("kurt.cloud.auth.ensure_fresh_token", return_value=mock_credentials),
             patch("kurt.config.config_file_exists", return_value=True),
             patch("kurt.config.load_config", return_value=mock_config),
             patch("urllib.request.urlopen", return_value=mock_response),
@@ -419,7 +426,7 @@ class TestCloudE2EWithMockedAPI:
         mock_response.__exit__ = MagicMock(return_value=False)
 
         with (
-            patch("kurt.cloud.auth.credentials.load_credentials", return_value=mock_credentials),
+            patch("kurt.cloud.auth.ensure_fresh_token", return_value=mock_credentials),
             patch("kurt.config.config_file_exists", return_value=True),
             patch("kurt.config.load_config", return_value=mock_config),
             patch("urllib.request.urlopen", return_value=mock_response),
@@ -448,7 +455,7 @@ class TestCloudE2EWithMockedAPI:
         mock_response.__exit__ = MagicMock(return_value=False)
 
         with (
-            patch("kurt.cloud.auth.credentials.load_credentials", return_value=mock_credentials),
+            patch("kurt.cloud.auth.ensure_fresh_token", return_value=mock_credentials),
             patch("kurt.config.config_file_exists", return_value=True),
             patch("kurt.config.load_config", return_value=mock_config),
             patch("urllib.request.urlopen", return_value=mock_response),
@@ -477,8 +484,8 @@ class TestCloudE2EWithMockedAPI:
         mock_response.__exit__ = MagicMock(return_value=False)
 
         with (
-            patch("kurt.cloud.auth.credentials.load_credentials", return_value=mock_credentials),
-            patch("kurt.cloud.auth.credentials.save_credentials"),
+            patch("kurt.cloud.auth.load_credentials", return_value=mock_credentials),
+            patch("kurt.cloud.auth.save_credentials"),
             patch("kurt.config.config_file_exists", return_value=True),
             patch("kurt.config.get_config_file_path", return_value=config_file),
             patch("urllib.request.urlopen", return_value=mock_response),
