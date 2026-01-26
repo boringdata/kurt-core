@@ -100,7 +100,7 @@ class TestCheckHooksInstalled:
 
     def test_all_hooks_installed(self, temp_git_repo: Path):
         """Test when all hooks are installed."""
-        with patch("kurt.isolation.hooks.get_installed_hooks") as mock_get:
+        with patch("kurt.db.isolation.hooks.get_installed_hooks") as mock_get:
             mock_get.return_value = [
                 "post-checkout",
                 "post-commit",
@@ -113,7 +113,7 @@ class TestCheckHooksInstalled:
 
     def test_missing_hooks(self, temp_git_repo: Path):
         """Test when some hooks are missing."""
-        with patch("kurt.isolation.hooks.get_installed_hooks") as mock_get:
+        with patch("kurt.db.isolation.hooks.get_installed_hooks") as mock_get:
             mock_get.return_value = ["post-checkout", "post-commit"]
             result = check_hooks_installed(temp_git_repo)
             assert result.status == CheckStatus.FAIL
@@ -619,7 +619,7 @@ class TestRepairActions:
         """Test hooks reinstallation."""
         from kurt.cli.doctor import do_reinstall_hooks
 
-        with patch("kurt.isolation.hooks.install_hooks") as mock_install:
+        with patch("kurt.db.isolation.hooks.install_hooks") as mock_install:
             mock_install.return_value = MagicMock(
                 installed=["post-checkout", "post-commit"],
                 errors=[],
@@ -632,7 +632,7 @@ class TestRepairActions:
         """Test hooks reinstallation with force."""
         from kurt.cli.doctor import do_reinstall_hooks
 
-        with patch("kurt.isolation.hooks.install_hooks") as mock_install:
+        with patch("kurt.db.isolation.hooks.install_hooks") as mock_install:
             mock_install.return_value = MagicMock(
                 installed=["post-checkout"],
                 errors=[],

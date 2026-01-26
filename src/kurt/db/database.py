@@ -3,6 +3,7 @@ Database initialization and management.
 
 This module provides a unified interface for database operations.
 Uses Dolt for local development with git-like versioning.
+SQLite is supported for testing only.
 
 Usage:
     from kurt.db import get_database_client, get_session
@@ -28,13 +29,83 @@ Or use convenience functions:
 
 from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional, Union
 
+from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel import Session, SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from kurt.db.dolt import DoltDB
+
+if TYPE_CHECKING:
+    from sqlalchemy import Engine
+
+
+# =============================================================================
+# SQLite Client (for testing)
+# =============================================================================
+
+
+class SQLiteDB:
+    """
+    SQLite database client for testing.
+
+    This provides a minimal interface matching DoltDB for use in tests.
+    Not intended for production use.
+    """
+
+    def __init__(self, database_url: str):
+        """Initialize with a SQLite URL (sqlite:///path/to/db)."""
+        self._database_url = database_url
+        self._engine: Optional["Engine"] = None
+
+    def _get_engine(self) -> "Engine":
+        """Get or create SQLAlchemy engine."""
+        if self._engine is None:
+            self._engine = create_engine(
+                self._database_url,
+                connect_args={"check_same_thread": False},
+            )
+        return self._engine
+
+    def init_database(self) -> None:
+        """Initialize the database and create all SQLModel tables."""
+        engine = self._get_engine()
+        SQLModel.metadata.create_all(engine)
+
+    def get_session(self) -> Session:
+        """Get a SQLModel database session."""
+        engine = self._get_engine()
+        return Session(engine)
+
+    def check_database_exists(self) -> bool:
+        """Check if the database exists and is accessible."""
+        try:
+            from sqlalchemy import text
+
+            engine = self._get_engine()
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            return True
+        except Exception:
+            return False
+
+    def get_mode_name(self) -> str:
+        """Get the name of this database mode."""
+        return "sqlite"
+
+    def close(self) -> None:
+        """Close the engine."""
+        if self._engine:
+            self._engine.dispose()
+            self._engine = None
+
+    def __enter__(self) -> "SQLiteDB":
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.close()
 
 # =============================================================================
 # Database Client Factory
@@ -54,20 +125,21 @@ def _get_database_url_from_config() -> str | None:
     return None
 
 
-def get_database_client() -> DoltDB:
+def get_database_client() -> Union[DoltDB, SQLiteDB]:
     """
-    Factory function to get the DoltDB client.
+    Factory function to get a database client.
 
     Priority order for DATABASE_URL:
     1. Environment variable DATABASE_URL
     2. kurt.config DATABASE_URL field
 
     Routing:
+    - "sqlite://...": SQLiteDB (for testing)
     - "mysql://...": DoltDB connecting to remote Dolt server
     - None, empty, or other: DoltDB for local .dolt database
 
     Returns:
-        DoltDB: Database client for the environment
+        Database client for the environment
     """
     import os
 
@@ -77,6 +149,10 @@ def get_database_client() -> DoltDB:
     # Priority 2: Config file
     if not database_url:
         database_url = _get_database_url_from_config()
+
+    # SQLite connection (for testing only)
+    if database_url and database_url.startswith("sqlite"):
+        return SQLiteDB(database_url)
 
     # MySQL/Dolt connection (Dolt exposes MySQL-compatible protocol)
     if database_url and database_url.startswith("mysql"):
@@ -107,6 +183,7 @@ def get_engine():
 __all__ = [
     "get_database_client",
     "DoltDB",
+    "SQLiteDB",
     "Session",
     "init_database",
     "get_session",
