@@ -60,10 +60,14 @@ def temp_project_dir(tmp_path):
 
 @pytest.fixture
 def tool_context(temp_project_dir):
-    """Create a tool context with temp project directory."""
+    """Create a tool context with temp project directory (no Dolt)."""
     return ToolContext(
         settings={"project_root": str(temp_project_dir)},
     )
+
+
+# Note: tool_context_with_dolt and tmp_dolt_project fixtures are imported
+# from conftest.py for tests that need real Dolt persistence
 
 
 @pytest.fixture
@@ -667,22 +671,101 @@ class TestFetchToolExecution:
 
 
 # ============================================================================
+# Integration Tests (with real database persistence)
+# ============================================================================
+
+
+class TestFetchToolPersistence:
+    """Integration tests with real Dolt database persistence."""
+
+    @pytest.mark.asyncio
+    async def test_fetch_persists_to_dolt(self, tmp_dolt_project):
+        """Test that fetch results are persisted to Dolt database."""
+        from unittest.mock import AsyncMock, patch
+
+        from kurt.tools.utils import make_document_id
+
+        repo_path, db = tmp_dolt_project
+        tool = FetchTool()
+        tool_context = ToolContext(settings={"project_root": str(repo_path)})
+
+        # Use proper 12-char document_id (hash)
+        test_url = "https://example.com/test"
+        doc_id = make_document_id(test_url)
+
+        # Mock _fetch_single_url to avoid network calls
+        async def mock_fetch(url, config, timeout_s, semaphore, client):
+            return {
+                "url": url,
+                "content": "# Test Content\n\nPersisted to Dolt.",
+                "metadata": {"fingerprint": "abc123"},
+                "content_hash": "abc123def456",
+                "status": "SUCCESS",
+                "error": None,
+                "bytes_fetched": 100,
+                "latency_ms": 50,
+            }
+
+        params = FetchParams(
+            inputs=[
+                FetchInput(
+                    url=test_url,
+                    document_id=doc_id,
+                )
+            ],
+            config=FetchConfig(retries=0),  # No dry_run - persist to database
+        )
+
+        with patch.object(tool, "_fetch_single_url", side_effect=mock_fetch):
+            with patch("kurt.tools.fetch_tool.httpx.AsyncClient") as mock_client_class:
+                mock_client = AsyncMock()
+                mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_client.__aexit__ = AsyncMock(return_value=None)
+                mock_client_class.return_value = mock_client
+
+                result = await tool.run(params, tool_context)
+
+        # Verify tool result
+        assert result.success is True
+        assert len(result.data) == 1
+        assert result.data[0]["status"] == "SUCCESS"
+
+        # Verify data was persisted to Dolt
+        rows = db.query("SELECT * FROM fetch_results")
+        assert len(rows) >= 1
+        assert any(r["url"] == "https://example.com/test" for r in rows)
+
+
+# ============================================================================
 # Integration Tests (with real network - marked for optional execution)
 # ============================================================================
 
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_real_fetch(tool_context):
+async def test_real_fetch(tmp_dolt_project):
     """
-    Integration test with real network.
+    Integration test with real network and real Dolt persistence.
 
     Run with: pytest -m integration
     """
+    from kurt.tools.utils import make_document_id
+
+    repo_path, db = tmp_dolt_project
     tool = FetchTool()
+    tool_context = ToolContext(settings={"project_root": str(repo_path)})
+
+    # Use proper 12-char document_id (hash)
+    doc_id = make_document_id("https://example.com")
+
     params = FetchParams(
-        inputs=[FetchInput(url="https://example.com")],
-        config=FetchConfig(retries=1, dry_run=True),
+        inputs=[
+            FetchInput(
+                url="https://example.com",
+                document_id=doc_id,
+            )
+        ],
+        config=FetchConfig(retries=1),  # No dry_run - persist to database
     )
 
     result = await tool.run(params, tool_context)
@@ -690,3 +773,7 @@ async def test_real_fetch(tool_context):
     assert result.success is True
     assert len(result.data) == 1
     assert result.data[0]["status"] == "SUCCESS"
+
+    # Verify data was persisted
+    rows = db.query("SELECT * FROM fetch_results")
+    assert len(rows) >= 1

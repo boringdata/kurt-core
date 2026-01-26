@@ -804,3 +804,95 @@ class TestMapOutput:
         assert output.title == "Page Title"
         assert output.document_id == "map_abc123"
         assert output.metadata["cms_id"] == "123"
+
+
+# ============================================================================
+# Integration Tests (with real database persistence)
+# ============================================================================
+
+
+class TestMapToolPersistence:
+    """Integration tests with real Dolt database persistence."""
+
+    @pytest.mark.asyncio
+    async def test_map_folder_persists_to_dolt(self, tmp_dolt_project, temp_folder):
+        """Test that map results are persisted to Dolt database."""
+        repo_path, db = tmp_dolt_project
+
+        tool = MapTool()
+        params = MapInput(
+            source="file",
+            path=str(temp_folder),
+            include_patterns=["**/*.html"],
+            # No dry_run - persist to database
+        )
+        context = ToolContext(settings={"project_root": str(repo_path)})
+
+        result = await tool.run(params, context)
+
+        # Verify tool result
+        assert result.success is True
+        assert len(result.data) >= 2  # index.html and about.html
+
+        # Verify data was persisted to Dolt
+        rows = db.query("SELECT * FROM map_results")
+        assert len(rows) >= 2
+
+        # Verify document registry was populated
+        registry_rows = db.query("SELECT * FROM document_registry")
+        assert len(registry_rows) >= 2
+
+    @pytest.mark.asyncio
+    async def test_map_url_with_sitemap_persists_to_dolt(self, tmp_dolt_project):
+        """Test that URL mapping with sitemap persists to Dolt."""
+        from unittest.mock import AsyncMock, Mock
+
+        repo_path, db = tmp_dolt_project
+
+        sitemap_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url><loc>https://example.com/page1</loc></url>
+    <url><loc>https://example.com/page2</loc></url>
+</urlset>"""
+
+        mock_sitemap = Mock()
+        mock_sitemap.status_code = 200
+        mock_sitemap.content = sitemap_xml.encode()
+
+        mock_404 = Mock()
+        mock_404.status_code = 404
+
+        mock_client = AsyncMock()
+
+        async def mock_get(url, **kwargs):
+            if "sitemap.xml" in url:
+                return mock_sitemap
+            return mock_404
+
+        mock_client.get.side_effect = mock_get
+
+        tool = MapTool()
+        params = MapInput(
+            source="url",
+            url="https://example.com",
+            discovery_method="sitemap",
+            # No dry_run - persist to database
+        )
+        context = ToolContext(
+            http=mock_client,
+            settings={"project_root": str(repo_path)},
+        )
+
+        result = await tool.run(params, context)
+
+        # Verify tool result
+        assert result.success is True
+        assert len(result.data) == 2
+
+        # Verify data was persisted to Dolt
+        rows = db.query("SELECT * FROM map_results")
+        assert len(rows) >= 2
+
+        urls = {r["url"] for r in rows}
+        assert "https://example.com/page1" in urls
+        assert "https://example.com/page2" in urls
