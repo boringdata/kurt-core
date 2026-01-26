@@ -703,8 +703,8 @@ class BatchEmbeddingTool(Tool[BatchEmbeddingParams, BatchEmbeddingOutput]):
 # Public API
 # ============================================================================
 
-from .models import BatchEmbeddingRecord, BatchEmbeddingStatus
-from .utils import (
+from .models import BatchEmbeddingRecord, BatchEmbeddingStatus  # noqa: E402
+from .utils import (  # noqa: E402
     generate_document_embedding,
     generate_embeddings,
 )

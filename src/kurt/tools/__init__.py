@@ -127,10 +127,10 @@ from .map import MapInput, MapOutput, MapTool, normalize_url
 FetchConfig = FetchToolConfig
 
 # Import research and signals tools to register them
-from .research import CitationOutput, ResearchInput, ResearchOutput, ResearchTool
-from .signals import SignalInput, SignalOutput, SignalsTool
-from .sql import SQLConfig, SQLInput, SQLOutput, SQLTool
-from .write import WriteConfig, WriteInput, WriteOutput, WriteParams, WriteTool
+from .research import CitationOutput, ResearchInput, ResearchOutput, ResearchTool  # noqa: E402
+from .signals import SignalInput, SignalOutput, SignalsTool  # noqa: E402
+from .sql import SQLConfig, SQLInput, SQLOutput, SQLTool  # noqa: E402
+from .write import WriteConfig, WriteInput, WriteOutput, WriteParams, WriteTool  # noqa: E402
 
 __all__ = [
     # Base classes

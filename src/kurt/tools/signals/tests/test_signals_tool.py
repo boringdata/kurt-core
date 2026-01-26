@@ -439,7 +439,7 @@ class TestSignalsToolHackerNews:
             mock_adapter.get_recent.return_value = [mock_signal]
             mock_adapter_class.return_value = mock_adapter
 
-            result = await tool.run(params, tool_context)
+            await tool.run(params, tool_context)
 
         mock_adapter.get_recent.assert_called_once_with(
             hours=1,
@@ -460,7 +460,7 @@ class TestSignalsToolHackerNews:
             mock_adapter.get_recent.return_value = [mock_signal]
             mock_adapter_class.return_value = mock_adapter
 
-            result = await tool.run(params, tool_context)
+            await tool.run(params, tool_context)
 
         mock_adapter.get_recent.assert_called_once_with(
             hours=168,  # week = 168 hours

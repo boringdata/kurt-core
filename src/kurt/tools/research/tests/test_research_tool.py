@@ -132,12 +132,12 @@ class TestResearchToolRegistration:
     def test_tool_is_registered(self):
         """ResearchTool is registered via @register_tool decorator."""
         # Import triggers registration
-        from kurt.tools.research import ResearchTool as RT
+        from kurt.tools.research import ResearchTool as ResearchToolCls
 
         # Manually add to registry for this test since we cleared it
-        TOOLS["research"] = RT
+        TOOLS["research"] = ResearchToolCls
         tool_class = get_tool("research")
-        assert tool_class is RT
+        assert tool_class is ResearchToolCls
 
 
 # ============================================================================

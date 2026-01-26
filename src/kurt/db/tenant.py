@@ -22,7 +22,10 @@ from __future__ import annotations
 import os
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 # Use ContextVar for async compatibility (works with both sync and async)
 _workspace_context: ContextVar[Optional["WorkspaceContext"]] = ContextVar(

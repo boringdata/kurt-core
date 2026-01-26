@@ -552,7 +552,7 @@ class AgentTool(Tool[AgentParams, AgentOutput]):
         return result
 
 
-from .models import AgentExecution, AgentExecutionStatus
+from .models import AgentExecution, AgentExecutionStatus  # noqa: E402
 
 __all__ = [
     "AgentArtifact",

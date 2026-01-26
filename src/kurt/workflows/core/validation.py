@@ -53,7 +53,7 @@ def detect_cycle(
         >>> detect_cycle(steps)
         ['a', 'b', 'c', 'a']
     """
-    WHITE, GRAY, BLACK = 0, 1, 2
+    WHITE, GRAY, BLACK = 0, 1, 2  # noqa: N806 - algorithm state constants
     color: dict[str, int] = {name: WHITE for name in steps}
 
     def get_depends_on(step: HasDependsOn | dict[str, Any]) -> list[str]:
