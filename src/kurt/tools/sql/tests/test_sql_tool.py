@@ -11,7 +11,7 @@ from pydantic import ValidationError
 
 from kurt.tools.base import SubstepEvent, ToolContext
 from kurt.tools.registry import TOOLS, clear_registry
-from kurt.tools.sql_tool import (
+from kurt.tools.sql import (
     SQLConfig,
     SQLInput,
     SQLOutput,

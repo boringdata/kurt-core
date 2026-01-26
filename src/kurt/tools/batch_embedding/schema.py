@@ -1,5 +1,5 @@
 """
-Pydantic schema for embed_results table.
+Pydantic schema for batch_embedding_results table.
 
 Used for VALIDATION ONLY - not DDL generation.
 Actual table schema defined in src/kurt/db/schema/embed_results.sql
@@ -13,8 +13,8 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class EmbedResult(BaseModel):
-    """Validation schema for EmbedTool output."""
+class BatchEmbeddingResult(BaseModel):
+    """Validation schema for BatchEmbeddingTool output."""
 
     model_config = ConfigDict(extra="forbid")  # Strict - no extra fields
 

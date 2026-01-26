@@ -1,5 +1,5 @@
 """
-Unit tests for LLMTool.
+Unit tests for BatchLLMTool.
 """
 
 from __future__ import annotations
@@ -11,15 +11,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from kurt.tools.base import SubstepEvent, ToolContext
-from kurt.tools.llm_tool import (
-    LLMBatchProcessor,
-    LLMConfig,
-    LLMInput,
-    LLMOutput,
-    LLMParams,
-    LLMTool,
+from kurt.tools.batch_llm import (
+    BatchLLMConfig,
+    BatchLLMInput,
+    BatchLLMOutput,
+    BatchLLMParams,
+    BatchLLMProcessor,
+    BatchLLMTool,
     QuotaExceededError,
     RateLimitError,
+    _estimate_anthropic_cost,
+    _estimate_openai_cost,
     call_anthropic,
     call_openai,
     resolve_output_schema,
@@ -36,7 +38,7 @@ def clean_registry():
     """Clear the registry before and after each test."""
     saved_tools = dict(TOOLS)
     clear_registry()
-    TOOLS["llm"] = LLMTool
+    TOOLS["batch-llm"] = BatchLLMTool
     yield
     clear_registry()
     TOOLS.update(saved_tools)
@@ -44,8 +46,8 @@ def clean_registry():
 
 @pytest.fixture
 def sample_config():
-    """Sample LLM configuration."""
-    return LLMConfig(
+    """Sample batch LLM configuration."""
+    return BatchLLMConfig(
         prompt_template="Summarize: {content}",
         model="gpt-4o-mini",
         provider="openai",
@@ -57,11 +59,11 @@ def sample_config():
 
 @pytest.fixture
 def sample_inputs():
-    """Sample LLM inputs."""
+    """Sample batch LLM inputs."""
     return [
-        LLMInput(row={"content": "The quick brown fox"}),
-        LLMInput(row={"content": "Lorem ipsum dolor sit amet"}),
-        LLMInput(row={"content": "Hello world"}),
+        BatchLLMInput(row={"content": "The quick brown fox"}),
+        BatchLLMInput(row={"content": "Lorem ipsum dolor sit amet"}),
+        BatchLLMInput(row={"content": "Hello world"}),
     ]
 
 
@@ -109,16 +111,16 @@ class TestResolveOutputSchema:
 
 
 # ============================================================================
-# LLMConfig Tests
+# BatchLLMConfig Tests
 # ============================================================================
 
 
-class TestLLMConfig:
-    """Test LLMConfig validation."""
+class TestBatchLLMConfig:
+    """Test BatchLLMConfig validation."""
 
     def test_default_values(self):
         """Default values are set correctly."""
-        config = LLMConfig(prompt_template="Hello {name}")
+        config = BatchLLMConfig(prompt_template="Hello {name}")
         assert config.model == "gpt-4o-mini"
         assert config.provider == "openai"
         assert config.concurrency == 3
@@ -129,7 +131,7 @@ class TestLLMConfig:
 
     def test_custom_values(self):
         """Custom values override defaults."""
-        config = LLMConfig(
+        config = BatchLLMConfig(
             prompt_template="Test {content}",
             output_schema="ExtractEntities",
             model="claude-3-haiku-20240307",
@@ -151,42 +153,42 @@ class TestLLMConfig:
     def test_concurrency_bounds(self):
         """Concurrency must be between 1 and 20."""
         with pytest.raises(Exception):
-            LLMConfig(prompt_template="Test", concurrency=0)
+            BatchLLMConfig(prompt_template="Test", concurrency=0)
 
         with pytest.raises(Exception):
-            LLMConfig(prompt_template="Test", concurrency=21)
+            BatchLLMConfig(prompt_template="Test", concurrency=21)
 
     def test_temperature_bounds(self):
         """Temperature must be between 0 and 2."""
         with pytest.raises(Exception):
-            LLMConfig(prompt_template="Test", temperature=-0.1)
+            BatchLLMConfig(prompt_template="Test", temperature=-0.1)
 
         with pytest.raises(Exception):
-            LLMConfig(prompt_template="Test", temperature=2.1)
+            BatchLLMConfig(prompt_template="Test", temperature=2.1)
 
 
 # ============================================================================
-# LLMInput Tests
+# BatchLLMInput Tests
 # ============================================================================
 
 
-class TestLLMInput:
-    """Test LLMInput validation."""
+class TestBatchLLMInput:
+    """Test BatchLLMInput validation."""
 
     def test_valid_input(self):
         """Valid input with row dict."""
-        input_item = LLMInput(row={"content": "Hello world", "title": "Test"})
+        input_item = BatchLLMInput(row={"content": "Hello world", "title": "Test"})
         assert input_item.row["content"] == "Hello world"
         assert input_item.row["title"] == "Test"
 
     def test_empty_row(self):
         """Empty row is valid."""
-        input_item = LLMInput(row={})
+        input_item = BatchLLMInput(row={})
         assert input_item.row == {}
 
     def test_nested_row_values(self):
         """Row can contain nested values."""
-        input_item = LLMInput(row={"metadata": {"author": "Test", "date": "2024-01-01"}})
+        input_item = BatchLLMInput(row={"metadata": {"author": "Test", "date": "2024-01-01"}})
         assert input_item.row["metadata"]["author"] == "Test"
 
 
@@ -200,7 +202,7 @@ class TestPromptTemplate:
 
     def test_simple_substitution(self, sample_config):
         """Simple field substitution works."""
-        processor = LLMBatchProcessor(
+        processor = BatchLLMProcessor(
             config=sample_config,
             output_schema=None,
             on_progress=None,
@@ -212,10 +214,10 @@ class TestPromptTemplate:
 
     def test_multiple_fields(self):
         """Multiple field substitution."""
-        config = LLMConfig(
+        config = BatchLLMConfig(
             prompt_template="Title: {title}\nContent: {content}",
         )
-        processor = LLMBatchProcessor(
+        processor = BatchLLMProcessor(
             config=config,
             output_schema=None,
             on_progress=None,
@@ -227,7 +229,7 @@ class TestPromptTemplate:
 
     def test_missing_field_raises(self, sample_config):
         """Missing field raises KeyError."""
-        processor = LLMBatchProcessor(
+        processor = BatchLLMProcessor(
             config=sample_config,
             output_schema=None,
             on_progress=None,
@@ -275,7 +277,7 @@ class TestMockOpenAI:
 
         with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
             with patch("openai.AsyncOpenAI", return_value=mock_client):
-                config = LLMConfig(prompt_template="Test")
+                config = BatchLLMConfig(prompt_template="Test")
                 output, tokens_in, tokens_out, cost = await call_openai(
                     "Test prompt",
                     config,
@@ -292,7 +294,7 @@ class TestMockOpenAI:
     async def test_call_openai_missing_api_key(self):
         """Missing API key raises error."""
         with patch.dict("os.environ", {}, clear=True):
-            config = LLMConfig(prompt_template="Test")
+            config = BatchLLMConfig(prompt_template="Test")
             with pytest.raises(ValueError, match="OPENAI_API_KEY"):
                 await call_openai("Test", config, None, 5.0)
 
@@ -319,7 +321,7 @@ class TestMockAnthropic:
 
         with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-key"}):
             with patch("anthropic.AsyncAnthropic", return_value=mock_client):
-                config = LLMConfig(
+                config = BatchLLMConfig(
                     prompt_template="Test",
                     provider="anthropic",
                     model="claude-3-haiku-20240307",
@@ -340,7 +342,7 @@ class TestMockAnthropic:
     async def test_call_anthropic_missing_api_key(self):
         """Missing API key raises error."""
         with patch.dict("os.environ", {}, clear=True):
-            config = LLMConfig(prompt_template="Test", provider="anthropic")
+            config = BatchLLMConfig(prompt_template="Test", provider="anthropic")
             with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
                 await call_anthropic("Test", config, None, 5.0)
 
@@ -350,8 +352,8 @@ class TestMockAnthropic:
 # ============================================================================
 
 
-class TestLLMBatchProcessor:
-    """Test LLMBatchProcessor."""
+class TestBatchLLMProcessor:
+    """Test BatchLLMProcessor."""
 
     @pytest.mark.asyncio
     async def test_process_batch_success(self, sample_config, sample_inputs):
@@ -360,7 +362,7 @@ class TestLLMBatchProcessor:
         async def mock_call_openai(*args, **kwargs):
             return "Summary text", 10, 5, 0.001
 
-        with patch("kurt.tools.llm_tool.call_openai", mock_call_openai):
+        with patch("kurt.tools.batch_llm.call_openai", mock_call_openai):
             with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
                 events: list[dict[str, Any]] = []
 
@@ -374,7 +376,7 @@ class TestLLMBatchProcessor:
                         "total": total,
                     })
 
-                processor = LLMBatchProcessor(
+                processor = BatchLLMProcessor(
                     config=sample_config,
                     output_schema=None,
                     on_progress=None,
@@ -405,9 +407,9 @@ class TestLLMBatchProcessor:
                 raise Exception("API Error")
             return "Summary", 10, 5, 0.001
 
-        with patch("kurt.tools.llm_tool.call_openai", mock_call_with_errors):
+        with patch("kurt.tools.batch_llm.call_openai", mock_call_with_errors):
             with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
-                processor = LLMBatchProcessor(
+                processor = BatchLLMProcessor(
                     config=sample_config,
                     output_schema=None,
                     on_progress=None,
@@ -434,11 +436,11 @@ class TestLLMBatchProcessor:
                 raise RateLimitError("Rate limited", retry_after=0.01)
             return "Success", 10, 5, 0.001
 
-        inputs = [LLMInput(row={"content": "test"})]
+        inputs = [BatchLLMInput(row={"content": "test"})]
 
-        with patch("kurt.tools.llm_tool.call_openai", mock_with_rate_limit):
+        with patch("kurt.tools.batch_llm.call_openai", mock_with_rate_limit):
             with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
-                processor = LLMBatchProcessor(
+                processor = BatchLLMProcessor(
                     config=sample_config,
                     output_schema=None,
                     on_progress=None,
@@ -463,14 +465,14 @@ class TestLLMBatchProcessor:
                 return "Success", 10, 5, 0.001
             raise QuotaExceededError("Quota exceeded")
 
-        with patch("kurt.tools.llm_tool.call_openai", mock_with_quota):
+        with patch("kurt.tools.batch_llm.call_openai", mock_with_quota):
             with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
                 # Use concurrency=1 to ensure sequential processing
-                config = LLMConfig(
+                config = BatchLLMConfig(
                     prompt_template="Test: {content}",
                     concurrency=1,
                 )
-                processor = LLMBatchProcessor(
+                processor = BatchLLMProcessor(
                     config=config,
                     output_schema=None,
                     on_progress=None,
@@ -486,32 +488,32 @@ class TestLLMBatchProcessor:
 
 
 # ============================================================================
-# LLMTool Integration Tests
+# BatchLLMTool Integration Tests
 # ============================================================================
 
 
-class TestLLMTool:
-    """Test LLMTool class."""
+class TestBatchLLMTool:
+    """Test BatchLLMTool class."""
 
     def test_tool_registered(self):
-        """LLMTool is registered in TOOLS."""
-        assert "llm" in TOOLS
-        assert TOOLS["llm"] is LLMTool
+        """BatchLLMTool is registered in TOOLS."""
+        assert "batch-llm" in TOOLS
+        assert TOOLS["batch-llm"] is BatchLLMTool
 
     def test_tool_attributes(self):
-        """LLMTool has correct attributes."""
-        assert LLMTool.name == "llm"
-        assert LLMTool.description is not None
-        assert LLMTool.InputModel is LLMParams
-        assert LLMTool.OutputModel is LLMOutput
+        """BatchLLMTool has correct attributes."""
+        assert BatchLLMTool.name == "batch-llm"
+        assert BatchLLMTool.description is not None
+        assert BatchLLMTool.InputModel is BatchLLMParams
+        assert BatchLLMTool.OutputModel is BatchLLMOutput
 
     @pytest.mark.asyncio
     async def test_run_empty_inputs(self):
         """Empty inputs returns empty result."""
-        tool = LLMTool()
-        params = LLMParams(
+        tool = BatchLLMTool()
+        params = BatchLLMParams(
             inputs=[],
-            config=LLMConfig(prompt_template="Test"),
+            config=BatchLLMConfig(prompt_template="Test"),
         )
         context = ToolContext()
 
@@ -527,10 +529,10 @@ class TestLLMTool:
         async def mock_call(*args, **kwargs):
             return "Summarized text", 10, 5, 0.001
 
-        with patch("kurt.tools.llm_tool.call_openai", mock_call):
+        with patch("kurt.tools.batch_llm.call_openai", mock_call):
             with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
-                tool = LLMTool()
-                params = LLMParams(inputs=sample_inputs, config=sample_config)
+                tool = BatchLLMTool()
+                params = BatchLLMParams(inputs=sample_inputs, config=sample_config)
                 context = ToolContext()
 
                 events: list[SubstepEvent] = []
@@ -553,7 +555,7 @@ class TestLLMTool:
 
                 # Check substeps
                 assert len(result.substeps) == 1
-                assert result.substeps[0].name == "llm_batch"
+                assert result.substeps[0].name == "batch_llm"
                 assert result.substeps[0].status == "completed"
 
                 # Check progress events
@@ -562,12 +564,12 @@ class TestLLMTool:
     @pytest.mark.asyncio
     async def test_run_with_invalid_schema(self, sample_inputs):
         """Invalid schema name returns error."""
-        tool = LLMTool()
-        config = LLMConfig(
+        tool = BatchLLMTool()
+        config = BatchLLMConfig(
             prompt_template="Test: {content}",
             output_schema="NonExistentSchema",
         )
-        params = LLMParams(inputs=sample_inputs, config=config)
+        params = BatchLLMParams(inputs=sample_inputs, config=config)
         context = ToolContext()
 
         result = await tool.run(params, context)
@@ -587,14 +589,14 @@ class TestLLMTool:
                 "reasoning": "Happy words",
             }, 15, 10, 0.002
 
-        with patch("kurt.tools.llm_tool.call_openai", mock_call):
+        with patch("kurt.tools.batch_llm.call_openai", mock_call):
             with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
-                tool = LLMTool()
-                config = LLMConfig(
+                tool = BatchLLMTool()
+                config = BatchLLMConfig(
                     prompt_template="Analyze: {content}",
                     output_schema="SentimentAnalysis",
                 )
-                params = LLMParams(inputs=sample_inputs, config=config)
+                params = BatchLLMParams(inputs=sample_inputs, config=config)
                 context = ToolContext()
 
                 result = await tool.run(params, context)
@@ -615,10 +617,10 @@ class TestLLMTool:
         async def mock_call(*args, **kwargs):
             return "Test", 10, 5, 0.001
 
-        with patch("kurt.tools.llm_tool.call_openai", mock_call):
+        with patch("kurt.tools.batch_llm.call_openai", mock_call):
             with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
-                tool = LLMTool()
-                params = LLMParams(inputs=sample_inputs, config=sample_config)
+                tool = BatchLLMTool()
+                params = BatchLLMParams(inputs=sample_inputs, config=sample_config)
                 context = ToolContext()
 
                 events: list[SubstepEvent] = []
@@ -629,8 +631,8 @@ class TestLLMTool:
                 await tool.run(params, context, on_progress)
 
                 # Should have running, progress for each input, and completed
-                assert any(e.substep == "llm_batch" and e.status == "running" for e in events)
-                assert any(e.substep == "llm_batch" and e.status == "completed" for e in events)
+                assert any(e.substep == "batch_llm" and e.status == "running" for e in events)
+                assert any(e.substep == "batch_llm" and e.status == "completed" for e in events)
                 progress_events = [e for e in events if e.status == "progress"]
                 assert len(progress_events) == 3
 
@@ -650,13 +652,13 @@ class TestErrorHandling:
         async def mock_call(*args, **kwargs):
             return "Test", 10, 5, 0.001
 
-        with patch("kurt.tools.llm_tool.call_openai", mock_call):
+        with patch("kurt.tools.batch_llm.call_openai", mock_call):
             with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
-                tool = LLMTool()
+                tool = BatchLLMTool()
                 inputs = [
-                    LLMInput(row={"wrong_field": "value"}),  # Missing 'content'
+                    BatchLLMInput(row={"wrong_field": "value"}),  # Missing 'content'
                 ]
-                params = LLMParams(inputs=inputs, config=sample_config)
+                params = BatchLLMParams(inputs=inputs, config=sample_config)
                 context = ToolContext()
 
                 result = await tool.run(params, context)
@@ -673,10 +675,10 @@ class TestErrorHandling:
         async def mock_timeout(*args, **kwargs):
             raise asyncio.TimeoutError()
 
-        with patch("kurt.tools.llm_tool.call_openai", mock_timeout):
+        with patch("kurt.tools.batch_llm.call_openai", mock_timeout):
             with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
-                tool = LLMTool()
-                params = LLMParams(inputs=sample_inputs, config=sample_config)
+                tool = BatchLLMTool()
+                params = BatchLLMParams(inputs=sample_inputs, config=sample_config)
                 context = ToolContext()
 
                 result = await tool.run(params, context)
@@ -697,11 +699,11 @@ class TestErrorHandling:
                 raise Exception("Error on even")
             return "Success", 10, 5, 0.001
 
-        with patch("kurt.tools.llm_tool.call_openai", mock_partial):
+        with patch("kurt.tools.batch_llm.call_openai", mock_partial):
             with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
-                tool = LLMTool()
-                inputs = [LLMInput(row={"content": f"test{i}"}) for i in range(4)]
-                params = LLMParams(inputs=inputs, config=sample_config)
+                tool = BatchLLMTool()
+                inputs = [BatchLLMInput(row={"content": f"test{i}"}) for i in range(4)]
+                params = BatchLLMParams(inputs=inputs, config=sample_config)
                 context = ToolContext()
 
                 result = await tool.run(params, context)
@@ -724,8 +726,6 @@ class TestCostEstimation:
 
     def test_openai_cost_gpt4o(self):
         """GPT-4o cost estimation."""
-        from kurt.tools.llm_tool import _estimate_openai_cost
-
         cost = _estimate_openai_cost("gpt-4o", 1000, 500)
         # $5/1M in + $15/1M out
         expected = (1000 * 5 + 500 * 15) / 1_000_000
@@ -733,8 +733,6 @@ class TestCostEstimation:
 
     def test_openai_cost_gpt4o_mini(self):
         """GPT-4o-mini cost estimation."""
-        from kurt.tools.llm_tool import _estimate_openai_cost
-
         cost = _estimate_openai_cost("gpt-4o-mini", 1000, 500)
         # $0.15/1M in + $0.60/1M out
         expected = (1000 * 0.15 + 500 * 0.60) / 1_000_000
@@ -742,8 +740,6 @@ class TestCostEstimation:
 
     def test_anthropic_cost_haiku(self):
         """Claude Haiku cost estimation."""
-        from kurt.tools.llm_tool import _estimate_anthropic_cost
-
         cost = _estimate_anthropic_cost("claude-3-haiku-20240307", 1000, 500)
         # $0.25/1M in + $1.25/1M out
         expected = (1000 * 0.25 + 500 * 1.25) / 1_000_000
@@ -751,8 +747,6 @@ class TestCostEstimation:
 
     def test_anthropic_cost_sonnet(self):
         """Claude Sonnet cost estimation."""
-        from kurt.tools.llm_tool import _estimate_anthropic_cost
-
         cost = _estimate_anthropic_cost("claude-3-5-sonnet-20240620", 1000, 500)
         # $3/1M in + $15/1M out
         expected = (1000 * 3 + 500 * 15) / 1_000_000

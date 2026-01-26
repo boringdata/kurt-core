@@ -42,7 +42,7 @@ class TestFetchFromWeb:
         mock_traf_fetch.fetch_url.assert_called_once()
 
     @patch("kurt.tools.fetch.utils.trafilatura")
-    @patch("kurt.tools.fetch.httpx.httpx")
+    @patch("kurt.tools.fetch.httpx_engine.httpx")
     def test_routes_to_httpx(self, mock_httpx, mock_traf_utils):
         """Test that httpx engine is routed correctly."""
         from kurt.tools.fetch.web import fetch_from_web

@@ -14,8 +14,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
-from .base import ProgressCallback, Tool, ToolContext, ToolResult
-from .registry import register_tool
+from ..base import ProgressCallback, Tool, ToolContext, ToolResult
+from ..registry import register_tool
 
 logger = logging.getLogger(__name__)
 
@@ -371,3 +371,13 @@ class SQLTool(Tool[SQLInput, SQLOutput]):
             )
 
         return result
+
+
+__all__ = [
+    "SQLConfig",
+    "SQLInput",
+    "SQLOutput",
+    "SQLTool",
+    "bind_params_positional",
+    "validate_params",
+]

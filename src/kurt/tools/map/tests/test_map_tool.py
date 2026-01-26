@@ -12,7 +12,7 @@ import pytest
 from pydantic import ValidationError
 
 from kurt.tools.base import SubstepEvent, ToolContext, ToolResult
-from kurt.tools.map_tool import (
+from kurt.tools.map import (
     MapInput,
     MapOutput,
     MapTool,

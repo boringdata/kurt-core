@@ -13,20 +13,23 @@ import pytest
 from pydantic import ValidationError
 
 from kurt.tools.base import SubstepEvent, ToolContext
-from kurt.tools.fetch_tool import (
+from kurt.tools.fetch import (
     NON_RETRYABLE_STATUS_CODES,
     RETRYABLE_STATUS_CODES,
-    FetchConfig,
     FetchInput,
     FetchOutput,
     FetchParams,
     FetchTool,
+    FetchToolConfig,
     _compute_content_hash,
     _generate_content_path,
     _is_retryable_error,
     _save_content,
 )
 from kurt.tools.registry import TOOLS, clear_registry, get_tool
+
+# Alias for backward compatibility with test names
+FetchConfig = FetchToolConfig
 
 # ============================================================================
 # Fixtures
@@ -41,7 +44,7 @@ def reset_registry():
     clear_registry()
 
     # Re-register FetchTool for tests
-    from kurt.tools.fetch_tool import FetchTool
+    from kurt.tools.fetch import FetchTool
 
     TOOLS["fetch"] = FetchTool
 
@@ -414,7 +417,7 @@ class TestFetchToolExecution:
             }
 
         with patch.object(tool, "_fetch_single_url", side_effect=mock_fetch):
-            with patch("kurt.tools.fetch_tool.httpx.AsyncClient") as mock_client_class:
+            with patch("kurt.tools.fetch.httpx.AsyncClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client.__aenter__ = AsyncMock(return_value=mock_client)
                 mock_client.__aexit__ = AsyncMock(return_value=None)
@@ -458,7 +461,7 @@ class TestFetchToolExecution:
             }
 
         with patch.object(tool, "_fetch_single_url", side_effect=mock_fetch):
-            with patch("kurt.tools.fetch_tool.httpx.AsyncClient") as mock_client_class:
+            with patch("kurt.tools.fetch.httpx.AsyncClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client.__aenter__ = AsyncMock(return_value=mock_client)
                 mock_client.__aexit__ = AsyncMock(return_value=None)
@@ -496,7 +499,7 @@ class TestFetchToolExecution:
             }
 
         with patch.object(tool, "_fetch_single_url", side_effect=mock_fetch):
-            with patch("kurt.tools.fetch_tool.httpx.AsyncClient") as mock_client_class:
+            with patch("kurt.tools.fetch.httpx.AsyncClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client.__aenter__ = AsyncMock(return_value=mock_client)
                 mock_client.__aexit__ = AsyncMock(return_value=None)
@@ -552,7 +555,7 @@ class TestFetchToolExecution:
         )
 
         with patch.object(tool, "_fetch_single_url", side_effect=mock_fetch):
-            with patch("kurt.tools.fetch_tool.httpx.AsyncClient") as mock_client_class:
+            with patch("kurt.tools.fetch.httpx.AsyncClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client.__aenter__ = AsyncMock(return_value=mock_client)
                 mock_client.__aexit__ = AsyncMock(return_value=None)
@@ -586,7 +589,7 @@ class TestFetchToolExecution:
             }
 
         with patch.object(tool, "_fetch_single_url", side_effect=mock_fetch):
-            with patch("kurt.tools.fetch_tool.httpx.AsyncClient") as mock_client_class:
+            with patch("kurt.tools.fetch.httpx.AsyncClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client.__aenter__ = AsyncMock(return_value=mock_client)
                 mock_client.__aexit__ = AsyncMock(return_value=None)
@@ -626,7 +629,7 @@ class TestFetchToolExecution:
             }
 
         with patch.object(tool, "_fetch_single_url", side_effect=mock_fetch):
-            with patch("kurt.tools.fetch_tool.httpx.AsyncClient") as mock_client_class:
+            with patch("kurt.tools.fetch.httpx.AsyncClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client.__aenter__ = AsyncMock(return_value=mock_client)
                 mock_client.__aexit__ = AsyncMock(return_value=None)
@@ -717,7 +720,7 @@ class TestFetchToolPersistence:
         )
 
         with patch.object(tool, "_fetch_single_url", side_effect=mock_fetch):
-            with patch("kurt.tools.fetch_tool.httpx.AsyncClient") as mock_client_class:
+            with patch("kurt.tools.fetch.httpx.AsyncClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client.__aenter__ = AsyncMock(return_value=mock_client)
                 mock_client.__aexit__ = AsyncMock(return_value=None)

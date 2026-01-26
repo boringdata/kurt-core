@@ -4,7 +4,7 @@ Direct tool CLI commands.
 Provides CLI commands for invoking tools directly from the command line:
 - kurt map <url|file> [--depth=N] [--source=url|file|cms]
 - kurt fetch <input.jsonl> [--engine=trafilatura] [--concurrency=5]
-- kurt llm <input.jsonl> --prompt-template='...' [--model=gpt-4o-mini]
+- kurt batch-llm <input.jsonl> --prompt-template='...' [--model=gpt-4o-mini]
 - kurt embed <input.jsonl> --text-field=content [--model=text-embedding-3-small]
 - kurt tool write-to-db <input.jsonl> --table=<name> [--mode=upsert] [--key=url]
 - kurt sql '<query>' [--params='{}']
@@ -29,9 +29,9 @@ from typing import Any, Iterator, TextIO
 import click
 
 from kurt.tools import (
-    EmbedConfig,
+    BatchEmbeddingConfig,
+    BatchLLMConfig,
     FetchConfig,
-    LLMConfig,
     SQLConfig,
     WriteConfig,
     execute_tool,
@@ -510,7 +510,7 @@ def llm_cmd(
         sys.exit(2)
 
     # Build config
-    config = LLMConfig(
+    config = BatchLLMConfig(
         prompt_template=prompt_template,
         output_schema=output_schema,
         model=model,
@@ -533,7 +533,7 @@ def llm_cmd(
     context = load_tool_context(init_db=False, init_http=False, init_llm=True)
 
     result = asyncio.run(
-        execute_tool("llm", params, context=context, on_progress=on_progress)
+        execute_tool("batch-llm", params, context=context, on_progress=on_progress)
     )
 
     # Output results as JSONL
@@ -624,7 +624,7 @@ def embed_cmd(
         sys.exit(2)
 
     # Build config
-    config = EmbedConfig(
+    config = BatchEmbeddingConfig(
         text_field=text_field,
         model=model,
         provider=provider,
@@ -645,7 +645,7 @@ def embed_cmd(
     context = load_tool_context(init_db=False, init_http=False, init_llm=True)
 
     result = asyncio.run(
-        execute_tool("embed", params, context=context, on_progress=on_progress)
+        execute_tool("batch-embedding", params, context=context, on_progress=on_progress)
     )
 
     # Convert bytes embeddings to base64 for JSON serialization
@@ -865,11 +865,13 @@ def tools_group() -> None:
       sql          Execute read-only SQL queries
       research     Execute research queries
       signals      Monitor social signals
+      analytics    Sync domain analytics
     """
     pass
 
 
 # Import the full-featured map/fetch CLI commands from their new location
+from kurt.tools.analytics.cli import analytics_group  # noqa: E402
 from kurt.tools.fetch.cli import fetch_cmd as fetch_tool_cmd  # noqa: E402
 from kurt.tools.map.cli import map_cmd as map_tool_cmd  # noqa: E402
 from kurt.tools.research.cli import research_group  # noqa: E402
@@ -883,3 +885,4 @@ tools_group.add_command(write_to_db_cmd, name="write-to-db")
 tools_group.add_command(sql_cmd, name="sql")
 tools_group.add_command(research_group, name="research")
 tools_group.add_command(signals_group, name="signals")
+tools_group.add_command(analytics_group, name="analytics")

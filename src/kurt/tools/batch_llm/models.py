@@ -1,7 +1,7 @@
 """
-Built-in output schema models for the LLM tool.
+Built-in output schema models for the batch LLM tool.
 
-These models can be referenced by name in the LLMConfig.output_schema field.
+These models can be referenced by name in the BatchLLMConfig.output_schema field.
 Custom workflow models can be added in workflows/<name>/models.py.
 """
 

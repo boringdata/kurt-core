@@ -1,5 +1,5 @@
 """
-EmbedTool - Vector embedding generation tool for Kurt workflows.
+BatchEmbeddingTool - Vector embedding generation tool for Kurt workflows.
 
 Generates embeddings for text content using configurable providers (OpenAI, Cohere, Voyage).
 Supports batch processing with concurrency control and exponential backoff retries.
@@ -15,8 +15,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from .base import ProgressCallback, Tool, ToolContext, ToolResult
-from .registry import register_tool
+from ..base import ProgressCallback, Tool, ToolContext, ToolResult
+from ..registry import register_tool
+from .schema import BatchEmbeddingResult
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,7 @@ RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 # ============================================================================
 
 
-class EmbedProvider(str, Enum):
+class BatchEmbeddingProvider(str, Enum):
     """Supported embedding providers."""
 
     OPENAI = "openai"
@@ -56,14 +57,14 @@ class EmbedProvider(str, Enum):
     VOYAGE = "voyage"
 
 
-class EmbedInput(BaseModel):
+class BatchEmbeddingInput(BaseModel):
     """Input for a single text to embed."""
 
     text: str = Field(..., description="Text content to embed")
 
 
-class EmbedConfig(BaseModel):
-    """Configuration for the embed tool."""
+class BatchEmbeddingConfig(BaseModel):
+    """Configuration for the batch embedding tool."""
 
     model: str = Field(
         default="text-embedding-3-small",
@@ -97,7 +98,7 @@ class EmbedConfig(BaseModel):
     )
 
 
-class EmbedOutput(BaseModel):
+class BatchEmbeddingOutput(BaseModel):
     """Output for an embedded text."""
 
     text: str = Field(..., description="Original text that was embedded")
@@ -109,12 +110,12 @@ class EmbedOutput(BaseModel):
     error: str | None = Field(default=None, description="Error message if failed")
 
 
-class EmbedParams(BaseModel):
-    """Combined parameters for the embed tool.
+class BatchEmbeddingParams(BaseModel):
+    """Combined parameters for the batch embedding tool.
 
     Accepts two input styles:
     1. Executor style (flat): input_data + model, text_field, etc. at top level
-    2. Direct API style (nested): inputs + config=EmbedConfig(...)
+    2. Direct API style (nested): inputs + config=BatchEmbeddingConfig(...)
     """
 
     # For executor style (flat)
@@ -128,9 +129,9 @@ class EmbedParams(BaseModel):
         default_factory=list,
         description="List of input rows with text field (alternative to input_data)",
     )
-    config: EmbedConfig | None = Field(
+    config: BatchEmbeddingConfig | None = Field(
         default=None,
-        description="Embed configuration (alternative to flat fields)",
+        description="Batch embedding configuration (alternative to flat fields)",
     )
 
     # Flat config fields for executor compatibility
@@ -171,11 +172,11 @@ class EmbedParams(BaseModel):
             return self.input_data
         return self.inputs
 
-    def get_config(self) -> EmbedConfig:
+    def get_config(self) -> BatchEmbeddingConfig:
         """Get config from nested config field or flat fields."""
         if self.config is not None:
             return self.config
-        return EmbedConfig(
+        return BatchEmbeddingConfig(
             model=self.model,
             text_field=self.text_field,
             provider=self.provider,
@@ -452,12 +453,12 @@ async def _embed_with_retry(
 
 
 # ============================================================================
-# EmbedTool Implementation
+# BatchEmbeddingTool Implementation
 # ============================================================================
 
 
 @register_tool
-class EmbedTool(Tool[EmbedParams, EmbedOutput]):
+class BatchEmbeddingTool(Tool[BatchEmbeddingParams, BatchEmbeddingOutput]):
     """
     Generate vector embeddings for text content.
 
@@ -470,22 +471,22 @@ class EmbedTool(Tool[EmbedParams, EmbedOutput]):
     - voyage: Voyage AI embeddings (voyage-2, voyage-large-2, etc.)
     """
 
-    name = "embed"
+    name = "batch-embedding"
     description = "Generate vector embeddings for text content"
-    InputModel = EmbedParams
-    OutputModel = EmbedOutput
+    InputModel = BatchEmbeddingParams
+    OutputModel = BatchEmbeddingOutput
 
     async def run(
         self,
-        params: EmbedParams,
+        params: BatchEmbeddingParams,
         context: ToolContext,
         on_progress: ProgressCallback | None = None,
     ) -> ToolResult:
         """
-        Execute the embed tool.
+        Execute the batch embedding tool.
 
         Args:
-            params: Embed parameters (inputs and config)
+            params: Batch embedding parameters (inputs and config)
             context: Execution context
             on_progress: Optional progress callback
 
@@ -696,3 +697,34 @@ class EmbedTool(Tool[EmbedParams, EmbedOutput]):
                 )
 
         return result
+
+
+# ============================================================================
+# Public API
+# ============================================================================
+
+from .models import BatchEmbeddingRecord, BatchEmbeddingStatus
+
+__all__ = [
+    # Tool class
+    "BatchEmbeddingTool",
+    # Database models
+    "BatchEmbeddingRecord",
+    "BatchEmbeddingStatus",
+    # Pydantic models
+    "BatchEmbeddingConfig",
+    "BatchEmbeddingInput",
+    "BatchEmbeddingOutput",
+    "BatchEmbeddingParams",
+    "BatchEmbeddingProvider",
+    "BatchEmbeddingResult",
+    # Utilities
+    "embedding_to_bytes",
+    "bytes_to_embedding",
+    # Constants
+    "PROVIDER_MAX_BATCH_SIZES",
+    "PROVIDER_DEFAULT_MODELS",
+    # Internal (for testing)
+    "_is_retryable_error",
+    "_embed_with_retry",
+]

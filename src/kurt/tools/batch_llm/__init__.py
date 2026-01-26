@@ -1,5 +1,10 @@
 """
-LLMTool - Batch LLM processing tool for Kurt workflows.
+Batch LLM tool subpackage.
+
+Contains:
+- BatchLLMTool: Batch LLM processing tool for Kurt workflows
+- Pydantic models for input/output (BatchLLMConfig, BatchLLMInput, BatchLLMOutput, BatchLLMParams)
+- Built-in output schema models (ExtractEntities, etc.)
 
 Processes rows through an LLM with configurable:
 - Prompt template with {field} substitution
@@ -21,8 +26,14 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from .base import ProgressCallback, Tool, ToolContext, ToolResult
-from .registry import register_tool
+from ..base import ProgressCallback, Tool, ToolContext, ToolResult
+from ..registry import register_tool
+from .models import (
+    ExtractEntities,
+    ExtractKeywords,
+    SentimentAnalysis,
+    Summarize,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +59,7 @@ MAX_BATCH_SIZE = 100
 # ============================================================================
 
 
-class LLMInput(BaseModel):
+class BatchLLMInput(BaseModel):
     """Input for a single LLM call - contains arbitrary row data for template substitution."""
 
     row: dict[str, Any] = Field(
@@ -57,8 +68,8 @@ class LLMInput(BaseModel):
     )
 
 
-class LLMConfig(BaseModel):
-    """Configuration for the LLM tool."""
+class BatchLLMConfig(BaseModel):
+    """Configuration for the batch LLM tool."""
 
     prompt_template: str = Field(
         ...,
@@ -108,28 +119,28 @@ class LLMConfig(BaseModel):
     )
 
 
-class LLMParams(BaseModel):
-    """Combined parameters for the LLM tool.
+class BatchLLMParams(BaseModel):
+    """Combined parameters for the batch LLM tool.
 
     Accepts two input styles:
     1. Executor style (flat): input_data + prompt, model, etc. at top level
-    2. Direct API style (nested): inputs + config=LLMConfig(...)
+    2. Direct API style (nested): inputs + config=BatchLLMConfig(...)
     """
 
     # For executor style (flat)
-    input_data: list[LLMInput | dict[str, Any]] = Field(
+    input_data: list[BatchLLMInput | dict[str, Any]] = Field(
         default_factory=list,
         description="List of rows to process (from upstream steps)",
     )
 
     # For direct API style (nested)
-    inputs: list[LLMInput] = Field(
+    inputs: list[BatchLLMInput] = Field(
         default_factory=list,
         description="List of rows to process (alternative to input_data)",
     )
-    config: LLMConfig | None = Field(
+    config: BatchLLMConfig | None = Field(
         default=None,
-        description="LLM configuration (alternative to flat fields)",
+        description="Batch LLM configuration (alternative to flat fields)",
     )
 
     # Flat config fields for executor compatibility
@@ -184,17 +195,17 @@ class LLMParams(BaseModel):
         description="Maximum tokens in response",
     )
 
-    def get_inputs(self) -> list[LLMInput]:
+    def get_inputs(self) -> list[BatchLLMInput]:
         """Get the input list from either input_data or inputs field."""
         if self.input_data:
-            # Convert dicts to LLMInput if needed
+            # Convert dicts to BatchLLMInput if needed
             return [
-                LLMInput(row=item) if isinstance(item, dict) else item
+                BatchLLMInput(row=item) if isinstance(item, dict) else item
                 for item in self.input_data
             ]
         return self.inputs
 
-    def get_config(self) -> LLMConfig:
+    def get_config(self) -> BatchLLMConfig:
         """Get config from nested config field or flat fields."""
         if self.config is not None:
             return self.config
@@ -202,7 +213,7 @@ class LLMParams(BaseModel):
         template = self.prompt_template or self.prompt
         if template is None:
             raise ValueError("Either 'config', 'prompt', or 'prompt_template' must be provided")
-        return LLMConfig(
+        return BatchLLMConfig(
             prompt_template=template,
             output_schema=self.output_schema,
             model=self.model,
@@ -215,7 +226,7 @@ class LLMParams(BaseModel):
         )
 
 
-class LLMOutput(BaseModel):
+class BatchLLMOutput(BaseModel):
     """Output for a processed row."""
 
     row: dict[str, Any] = Field(
@@ -266,7 +277,7 @@ def resolve_output_schema(
 
     Resolution order:
     1. Check workflow-local: workflows/<name>/models.py
-    2. Check built-in: kurt/tools/llm/models.py
+    2. Check built-in: kurt/tools/batch_llm/models.py
     3. Return None (error)
 
     Args:
@@ -289,7 +300,7 @@ def resolve_output_schema(
 
     # Try built-in models
     try:
-        from kurt.tools.llm import models as builtin_models
+        from kurt.tools.batch_llm import models as builtin_models
 
         if hasattr(builtin_models, schema_name):
             return getattr(builtin_models, schema_name)
@@ -320,7 +331,7 @@ class QuotaExceededError(Exception):
 
 async def call_openai(
     prompt: str,
-    config: LLMConfig,
+    config: BatchLLMConfig,
     output_schema: type[BaseModel] | None,
     timeout_s: float,
 ) -> tuple[dict[str, Any] | str, int, int, float]:
@@ -329,7 +340,7 @@ async def call_openai(
 
     Args:
         prompt: The prompt to send
-        config: LLM configuration
+        config: Batch LLM configuration
         output_schema: Optional Pydantic model for structured output
         timeout_s: Timeout in seconds
 
@@ -416,7 +427,7 @@ async def call_openai(
 
 async def call_anthropic(
     prompt: str,
-    config: LLMConfig,
+    config: BatchLLMConfig,
     output_schema: type[BaseModel] | None,
     timeout_s: float,
 ) -> tuple[dict[str, Any] | str, int, int, float]:
@@ -425,7 +436,7 @@ async def call_anthropic(
 
     Args:
         prompt: The prompt to send
-        config: LLM configuration
+        config: Batch LLM configuration
         output_schema: Optional Pydantic model for structured output
         timeout_s: Timeout in seconds
 
@@ -562,7 +573,7 @@ def _estimate_anthropic_cost(model: str, tokens_in: int, tokens_out: int) -> flo
 # ============================================================================
 
 
-class LLMBatchProcessor:
+class BatchLLMProcessor:
     """
     Process LLM requests with concurrency control and backpressure.
 
@@ -575,7 +586,7 @@ class LLMBatchProcessor:
 
     def __init__(
         self,
-        config: LLMConfig,
+        config: BatchLLMConfig,
         output_schema: type[BaseModel] | None,
         on_progress: ProgressCallback | None,
         emit_fn: Any,
@@ -591,13 +602,13 @@ class LLMBatchProcessor:
 
     async def process_batch(
         self,
-        inputs: list[LLMInput],
+        inputs: list[BatchLLMInput],
     ) -> list[dict[str, Any]]:
         """
         Process a batch of inputs.
 
         Args:
-            inputs: List of LLMInput objects
+            inputs: List of BatchLLMInput objects
 
         Returns:
             List of result dictionaries
@@ -639,7 +650,7 @@ class LLMBatchProcessor:
                 completed += 1
                 self.emit_fn(
                     self.on_progress,
-                    substep="llm_batch",
+                    substep="batch_llm",
                     status="progress",
                     current=completed,
                     total=total,
@@ -655,7 +666,7 @@ class LLMBatchProcessor:
 
     async def _process_single(
         self,
-        input_item: LLMInput,
+        input_item: BatchLLMInput,
         idx: int,
         total: int,
     ) -> dict[str, Any]:
@@ -808,17 +819,17 @@ class LLMBatchProcessor:
 
 
 # ============================================================================
-# LLMTool Implementation
+# BatchLLMTool Implementation
 # ============================================================================
 
 
 @register_tool
-class LLMTool(Tool[LLMParams, LLMOutput]):
+class BatchLLMTool(Tool[BatchLLMParams, BatchLLMOutput]):
     """
     Tool for batch LLM processing.
 
     Substeps:
-    - llm_batch: Process rows through LLM (progress: rows completed)
+    - batch_llm: Process rows through LLM (progress: rows completed)
 
     Features:
     - Prompt template with {field} substitution
@@ -828,22 +839,22 @@ class LLMTool(Tool[LLMParams, LLMOutput]):
     - Support for OpenAI and Anthropic providers
     """
 
-    name = "llm"
+    name = "batch-llm"
     description = "Process rows through LLM with configurable prompts and structured output"
-    InputModel = LLMParams
-    OutputModel = LLMOutput
+    InputModel = BatchLLMParams
+    OutputModel = BatchLLMOutput
 
     async def run(
         self,
-        params: LLMParams,
+        params: BatchLLMParams,
         context: ToolContext,
         on_progress: ProgressCallback | None = None,
     ) -> ToolResult:
         """
-        Execute the LLM tool.
+        Execute the batch LLM tool.
 
         Args:
-            params: LLM parameters (inputs and config)
+            params: Batch LLM parameters (inputs and config)
             context: Execution context
             on_progress: Optional progress callback
 
@@ -876,7 +887,7 @@ class LLMTool(Tool[LLMParams, LLMOutput]):
         # Emit start progress
         self.emit_progress(
             on_progress,
-            substep="llm_batch",
+            substep="batch_llm",
             status="running",
             current=0,
             total=total,
@@ -884,7 +895,7 @@ class LLMTool(Tool[LLMParams, LLMOutput]):
         )
 
         # Process batch
-        processor = LLMBatchProcessor(
+        processor = BatchLLMProcessor(
             config=config,
             output_schema=output_schema,
             on_progress=on_progress,
@@ -933,7 +944,7 @@ class LLMTool(Tool[LLMParams, LLMOutput]):
         # Emit completion progress
         self.emit_progress(
             on_progress,
-            substep="llm_batch",
+            substep="batch_llm",
             status="completed",
             current=total,
             total=total,
@@ -952,7 +963,7 @@ class LLMTool(Tool[LLMParams, LLMOutput]):
         )
 
         result.add_substep(
-            name="llm_batch",
+            name="batch_llm",
             status="completed",
             current=total,
             total=total,
@@ -969,3 +980,28 @@ class LLMTool(Tool[LLMParams, LLMOutput]):
                 )
 
         return result
+
+
+__all__ = [
+    # Batch LLM Tool
+    "BatchLLMTool",
+    "BatchLLMConfig",
+    "BatchLLMInput",
+    "BatchLLMOutput",
+    "BatchLLMParams",
+    # Batch processor
+    "BatchLLMProcessor",
+    # Provider functions
+    "call_openai",
+    "call_anthropic",
+    # Errors
+    "RateLimitError",
+    "QuotaExceededError",
+    # Schema resolution
+    "resolve_output_schema",
+    # Built-in output schemas
+    "ExtractEntities",
+    "ExtractKeywords",
+    "SentimentAnalysis",
+    "Summarize",
+]

@@ -23,11 +23,13 @@ def register_all_models():
     from kurt.tools.fetch.models import FetchDocument  # noqa: F401
 
     # Tool output models
-    from kurt.tools.map.models import MapDocument  # noqa: F401
+    from kurt.tools.agent.models import AgentExecution  # noqa: F401
     from kurt.tools.analytics.models import (  # noqa: F401
         AnalyticsDomain,
         PageAnalytics,
     )
+    from kurt.tools.batch_embedding.models import BatchEmbeddingRecord  # noqa: F401
+    from kurt.tools.map.models import MapDocument  # noqa: F401
     from kurt.tools.research.models import ResearchDocument  # noqa: F401
     from kurt.tools.signals.models import MonitoringSignal  # noqa: F401
 

@@ -1,5 +1,5 @@
 """
-Unit tests for EmbedTool.
+Unit tests for BatchEmbeddingTool.
 """
 
 from __future__ import annotations
@@ -11,14 +11,14 @@ import pytest
 from pydantic import ValidationError
 
 from kurt.tools.base import SubstepEvent, ToolContext
-from kurt.tools.embed_tool import (
+from kurt.tools.batch_embedding import (
     PROVIDER_DEFAULT_MODELS,
     PROVIDER_MAX_BATCH_SIZES,
-    EmbedConfig,
-    EmbedInput,
-    EmbedOutput,
-    EmbedParams,
-    EmbedTool,
+    BatchEmbeddingConfig,
+    BatchEmbeddingInput,
+    BatchEmbeddingOutput,
+    BatchEmbeddingParams,
+    BatchEmbeddingTool,
     _is_retryable_error,
     bytes_to_embedding,
     embedding_to_bytes,
@@ -37,10 +37,10 @@ def reset_registry():
     saved_tools = dict(TOOLS)
     clear_registry()
 
-    # Re-register EmbedTool for tests
-    from kurt.tools.embed_tool import EmbedTool
+    # Re-register BatchEmbeddingTool for tests
+    from kurt.tools.batch_embedding import BatchEmbeddingTool
 
-    TOOLS["embed"] = EmbedTool
+    TOOLS["batch-embedding"] = BatchEmbeddingTool
 
     yield
 
@@ -68,35 +68,35 @@ def mock_embeddings():
 
 
 # ============================================================================
-# EmbedInput Tests
+# BatchEmbeddingInput Tests
 # ============================================================================
 
 
-class TestEmbedInput:
-    """Test EmbedInput model."""
+class TestBatchEmbeddingInput:
+    """Test BatchEmbeddingInput model."""
 
     def test_valid_text(self):
         """Valid text input."""
-        inp = EmbedInput(text="Hello, world!")
+        inp = BatchEmbeddingInput(text="Hello, world!")
         assert inp.text == "Hello, world!"
 
     def test_text_required(self):
         """Text is required."""
         with pytest.raises(ValidationError):
-            EmbedInput()
+            BatchEmbeddingInput()
 
 
 # ============================================================================
-# EmbedConfig Tests
+# BatchEmbeddingConfig Tests
 # ============================================================================
 
 
-class TestEmbedConfig:
-    """Test EmbedConfig model."""
+class TestBatchEmbeddingConfig:
+    """Test BatchEmbeddingConfig model."""
 
     def test_default_values(self):
         """Default configuration values."""
-        config = EmbedConfig()
+        config = BatchEmbeddingConfig()
         assert config.model == "text-embedding-3-small"
         assert config.text_field == "content"
         assert config.provider == "openai"
@@ -106,7 +106,7 @@ class TestEmbedConfig:
 
     def test_custom_values(self):
         """Custom configuration values."""
-        config = EmbedConfig(
+        config = BatchEmbeddingConfig(
             model="text-embedding-3-large",
             text_field="body",
             provider="cohere",
@@ -124,43 +124,43 @@ class TestEmbedConfig:
     def test_batch_size_bounds(self):
         """Batch size must be between 1 and 2048."""
         with pytest.raises(ValidationError):
-            EmbedConfig(batch_size=0)
+            BatchEmbeddingConfig(batch_size=0)
         with pytest.raises(ValidationError):
-            EmbedConfig(batch_size=3000)
+            BatchEmbeddingConfig(batch_size=3000)
 
         # Valid bounds
-        EmbedConfig(batch_size=1)
-        EmbedConfig(batch_size=2048)
+        BatchEmbeddingConfig(batch_size=1)
+        BatchEmbeddingConfig(batch_size=2048)
 
     def test_concurrency_bounds(self):
         """Concurrency must be between 1 and 10."""
         with pytest.raises(ValidationError):
-            EmbedConfig(concurrency=0)
+            BatchEmbeddingConfig(concurrency=0)
         with pytest.raises(ValidationError):
-            EmbedConfig(concurrency=11)
+            BatchEmbeddingConfig(concurrency=11)
 
         # Valid bounds
-        EmbedConfig(concurrency=1)
-        EmbedConfig(concurrency=10)
+        BatchEmbeddingConfig(concurrency=1)
+        BatchEmbeddingConfig(concurrency=10)
 
     def test_invalid_provider(self):
         """Invalid provider raises validation error."""
         with pytest.raises(ValidationError):
-            EmbedConfig(provider="invalid")
+            BatchEmbeddingConfig(provider="invalid")
 
 
 # ============================================================================
-# EmbedOutput Tests
+# BatchEmbeddingOutput Tests
 # ============================================================================
 
 
-class TestEmbedOutput:
-    """Test EmbedOutput model."""
+class TestBatchEmbeddingOutput:
+    """Test BatchEmbeddingOutput model."""
 
     def test_successful_output(self):
         """Successful embed output."""
         embedding_bytes = embedding_to_bytes([0.1, 0.2, 0.3])
-        out = EmbedOutput(
+        out = BatchEmbeddingOutput(
             text="Hello world",
             embedding=embedding_bytes,
             status="success",
@@ -172,7 +172,7 @@ class TestEmbedOutput:
 
     def test_error_output(self):
         """Error embed output."""
-        out = EmbedOutput(
+        out = BatchEmbeddingOutput(
             text="Hello world",
             status="error",
             error="API error",
@@ -183,7 +183,7 @@ class TestEmbedOutput:
 
     def test_skipped_output(self):
         """Skipped embed output."""
-        out = EmbedOutput(
+        out = BatchEmbeddingOutput(
             text="",
             status="skipped",
             error="Empty text",
@@ -192,16 +192,16 @@ class TestEmbedOutput:
 
 
 # ============================================================================
-# EmbedParams Tests
+# BatchEmbeddingParams Tests
 # ============================================================================
 
 
-class TestEmbedParams:
-    """Test EmbedParams model."""
+class TestBatchEmbeddingParams:
+    """Test BatchEmbeddingParams model."""
 
     def test_with_inputs(self):
         """Create params with inputs."""
-        params = EmbedParams(
+        params = BatchEmbeddingParams(
             inputs=[
                 {"content": "Hello"},
                 {"content": "World"},
@@ -212,15 +212,15 @@ class TestEmbedParams:
 
     def test_with_custom_config(self):
         """Create params with custom config."""
-        params = EmbedParams(
+        params = BatchEmbeddingParams(
             inputs=[{"content": "Hello"}],
-            config=EmbedConfig(model="text-embedding-3-large", provider="openai"),
+            config=BatchEmbeddingConfig(model="text-embedding-3-large", provider="openai"),
         )
         assert params.get_config().model == "text-embedding-3-large"
 
     def test_with_input_data(self):
         """Create params with input_data (executor style)."""
-        params = EmbedParams(
+        params = BatchEmbeddingParams(
             input_data=[{"content": "Hello"}],
             model="text-embedding-3-large",
             provider="openai",
@@ -301,43 +301,43 @@ class TestRetryLogic:
 
 
 # ============================================================================
-# EmbedTool Registration Tests
+# BatchEmbeddingTool Registration Tests
 # ============================================================================
 
 
-class TestEmbedToolRegistration:
-    """Test EmbedTool is registered correctly."""
+class TestBatchEmbeddingToolRegistration:
+    """Test BatchEmbeddingTool is registered correctly."""
 
     def test_tool_registered(self):
-        """EmbedTool is registered in TOOLS."""
-        assert "embed" in TOOLS
+        """BatchEmbeddingTool is registered in TOOLS."""
+        assert "batch-embedding" in TOOLS
 
     def test_get_tool(self):
-        """get_tool returns EmbedTool."""
-        tool_class = get_tool("embed")
-        assert tool_class is EmbedTool
+        """get_tool returns BatchEmbeddingTool."""
+        tool_class = get_tool("batch-embedding")
+        assert tool_class is BatchEmbeddingTool
 
     def test_tool_attributes(self):
-        """EmbedTool has correct attributes."""
-        assert EmbedTool.name == "embed"
-        assert EmbedTool.description
-        assert EmbedTool.InputModel is EmbedParams
-        assert EmbedTool.OutputModel is EmbedOutput
+        """BatchEmbeddingTool has correct attributes."""
+        assert BatchEmbeddingTool.name == "batch-embedding"
+        assert BatchEmbeddingTool.description
+        assert BatchEmbeddingTool.InputModel is BatchEmbeddingParams
+        assert BatchEmbeddingTool.OutputModel is BatchEmbeddingOutput
 
 
 # ============================================================================
-# EmbedTool Execution Tests
+# BatchEmbeddingTool Execution Tests
 # ============================================================================
 
 
-class TestEmbedToolExecution:
-    """Test EmbedTool execution."""
+class TestBatchEmbeddingToolExecution:
+    """Test BatchEmbeddingTool execution."""
 
     @pytest.mark.asyncio
     async def test_empty_inputs(self, tool_context):
         """Empty inputs returns empty result."""
-        tool = EmbedTool()
-        params = EmbedParams(inputs=[])
+        tool = BatchEmbeddingTool()
+        params = BatchEmbeddingParams(inputs=[])
 
         result = await tool.run(params, tool_context)
 
@@ -352,8 +352,8 @@ class TestEmbedToolExecution:
         def on_progress(event: SubstepEvent):
             events.append(event)
 
-        tool = EmbedTool()
-        params = EmbedParams(
+        tool = BatchEmbeddingTool()
+        params = BatchEmbeddingParams(
             inputs=[
                 {"content": "Hello"},
                 {"content": "World"},
@@ -361,7 +361,7 @@ class TestEmbedToolExecution:
         )
 
         # Mock the embedding function
-        with patch("kurt.tools.embed_tool._embed_with_retry") as mock_embed:
+        with patch("kurt.tools.batch_embedding._embed_with_retry") as mock_embed:
             mock_embed.return_value = (mock_embeddings[:2], 50)
             await tool.run(params, tool_context, on_progress)
 
@@ -376,8 +376,8 @@ class TestEmbedToolExecution:
     @pytest.mark.asyncio
     async def test_successful_embed(self, tool_context, mock_embeddings):
         """Successful embedding returns embeddings."""
-        tool = EmbedTool()
-        params = EmbedParams(
+        tool = BatchEmbeddingTool()
+        params = BatchEmbeddingParams(
             inputs=[
                 {"content": "Hello, world!"},
                 {"content": "Test embedding"},
@@ -385,7 +385,7 @@ class TestEmbedToolExecution:
         )
 
         # Mock the embedding function
-        with patch("kurt.tools.embed_tool._embed_with_retry") as mock_embed:
+        with patch("kurt.tools.batch_embedding._embed_with_retry") as mock_embed:
             mock_embed.return_value = (mock_embeddings[:2], 50)
             result = await tool.run(params, tool_context)
 
@@ -399,8 +399,8 @@ class TestEmbedToolExecution:
     @pytest.mark.asyncio
     async def test_empty_text_skipped(self, tool_context, mock_embeddings):
         """Empty text inputs are skipped."""
-        tool = EmbedTool()
-        params = EmbedParams(
+        tool = BatchEmbeddingTool()
+        params = BatchEmbeddingParams(
             inputs=[
                 {"content": "Hello"},
                 {"content": ""},  # Empty - should be skipped
@@ -409,7 +409,7 @@ class TestEmbedToolExecution:
         )
 
         # Mock the embedding function
-        with patch("kurt.tools.embed_tool._embed_with_retry") as mock_embed:
+        with patch("kurt.tools.batch_embedding._embed_with_retry") as mock_embed:
             # Only 2 texts should be embedded (skipping empty)
             mock_embed.return_value = (mock_embeddings[:2], 50)
             result = await tool.run(params, tool_context)
@@ -424,13 +424,13 @@ class TestEmbedToolExecution:
     @pytest.mark.asyncio
     async def test_text_truncation(self, tool_context, mock_embeddings):
         """Long text is truncated."""
-        tool = EmbedTool()
+        tool = BatchEmbeddingTool()
 
         # Create text longer than max_chars
         long_text = "x" * 10000
-        params = EmbedParams(
+        params = BatchEmbeddingParams(
             inputs=[{"content": long_text}],
-            config=EmbedConfig(max_chars=1000),
+            config=BatchEmbeddingConfig(max_chars=1000),
         )
 
         # Track what text was passed to embedding function
@@ -440,7 +440,7 @@ class TestEmbedToolExecution:
             captured_texts.extend(texts)
             return ([[0.1, 0.2, 0.3]], 50)
 
-        with patch("kurt.tools.embed_tool._embed_with_retry", side_effect=mock_embed):
+        with patch("kurt.tools.batch_embedding._embed_with_retry", side_effect=mock_embed):
             result = await tool.run(params, tool_context)
 
         assert result.success is True
@@ -450,17 +450,17 @@ class TestEmbedToolExecution:
     @pytest.mark.asyncio
     async def test_custom_text_field(self, tool_context, mock_embeddings):
         """Custom text field is used."""
-        tool = EmbedTool()
-        params = EmbedParams(
+        tool = BatchEmbeddingTool()
+        params = BatchEmbeddingParams(
             inputs=[
                 {"body": "Hello from body field"},
                 {"body": "Another body"},
             ],
-            config=EmbedConfig(text_field="body"),
+            config=BatchEmbeddingConfig(text_field="body"),
         )
 
         # Mock the embedding function
-        with patch("kurt.tools.embed_tool._embed_with_retry") as mock_embed:
+        with patch("kurt.tools.batch_embedding._embed_with_retry") as mock_embed:
             mock_embed.return_value = (mock_embeddings[:2], 50)
             result = await tool.run(params, tool_context)
 
@@ -471,13 +471,13 @@ class TestEmbedToolExecution:
     @pytest.mark.asyncio
     async def test_batch_processing(self, tool_context):
         """Inputs are processed in batches."""
-        tool = EmbedTool()
+        tool = BatchEmbeddingTool()
 
         # Create many inputs to test batching
         inputs = [{"content": f"Text {i}"} for i in range(10)]
-        params = EmbedParams(
+        params = BatchEmbeddingParams(
             inputs=inputs,
-            config=EmbedConfig(batch_size=3),  # 10 texts in batches of 3 = 4 batches
+            config=BatchEmbeddingConfig(batch_size=3),  # 10 texts in batches of 3 = 4 batches
         )
 
         # Track number of API calls
@@ -488,7 +488,7 @@ class TestEmbedToolExecution:
             call_count += 1
             return ([[0.1, 0.2] for _ in texts], 50)
 
-        with patch("kurt.tools.embed_tool._embed_with_retry", side_effect=mock_embed):
+        with patch("kurt.tools.batch_embedding._embed_with_retry", side_effect=mock_embed):
             result = await tool.run(params, tool_context)
 
         assert result.success is True
@@ -498,7 +498,7 @@ class TestEmbedToolExecution:
     @pytest.mark.asyncio
     async def test_concurrency_control(self, tool_context):
         """Concurrency is controlled by semaphore."""
-        tool = EmbedTool()
+        tool = BatchEmbeddingTool()
 
         # Track concurrent calls
         max_concurrent = 0
@@ -521,12 +521,12 @@ class TestEmbedToolExecution:
 
         # 10 texts in batches of 2 = 5 batches, concurrency 2
         inputs = [{"content": f"Text {i}"} for i in range(10)]
-        params = EmbedParams(
+        params = BatchEmbeddingParams(
             inputs=inputs,
-            config=EmbedConfig(batch_size=2, concurrency=2),
+            config=BatchEmbeddingConfig(batch_size=2, concurrency=2),
         )
 
-        with patch("kurt.tools.embed_tool._embed_with_retry", side_effect=mock_embed):
+        with patch("kurt.tools.batch_embedding._embed_with_retry", side_effect=mock_embed):
             await tool.run(params, tool_context)
 
         # Max concurrent should not exceed configured concurrency
@@ -535,8 +535,8 @@ class TestEmbedToolExecution:
     @pytest.mark.asyncio
     async def test_failed_batch(self, tool_context, mock_embeddings):
         """Failed batch marks all items as errors."""
-        tool = EmbedTool()
-        params = EmbedParams(
+        tool = BatchEmbeddingTool()
+        params = BatchEmbeddingParams(
             inputs=[
                 {"content": "Hello"},
                 {"content": "World"},
@@ -544,7 +544,7 @@ class TestEmbedToolExecution:
         )
 
         # Mock the embedding function to fail
-        with patch("kurt.tools.embed_tool._embed_with_retry") as mock_embed:
+        with patch("kurt.tools.batch_embedding._embed_with_retry") as mock_embed:
             mock_embed.side_effect = Exception("API Error")
             result = await tool.run(params, tool_context)
 
@@ -558,13 +558,13 @@ class TestEmbedToolExecution:
     @pytest.mark.asyncio
     async def test_substep_summaries(self, tool_context, mock_embeddings):
         """Result includes substep summaries."""
-        tool = EmbedTool()
-        params = EmbedParams(
+        tool = BatchEmbeddingTool()
+        params = BatchEmbeddingParams(
             inputs=[{"content": "Hello"}],
         )
 
         # Mock the embedding function
-        with patch("kurt.tools.embed_tool._embed_with_retry") as mock_embed:
+        with patch("kurt.tools.batch_embedding._embed_with_retry") as mock_embed:
             mock_embed.return_value = (mock_embeddings[:1], 50)
             result = await tool.run(params, tool_context)
 
@@ -575,12 +575,12 @@ class TestEmbedToolExecution:
     @pytest.mark.asyncio
     async def test_provider_batch_size_limit(self, tool_context, mock_embeddings):
         """Batch size is capped by provider maximum."""
-        tool = EmbedTool()
+        tool = BatchEmbeddingTool()
 
         # Cohere has max batch size of 96
-        params = EmbedParams(
+        params = BatchEmbeddingParams(
             inputs=[{"content": "Text"}],
-            config=EmbedConfig(provider="cohere", batch_size=200),  # Over limit
+            config=BatchEmbeddingConfig(provider="cohere", batch_size=200),  # Over limit
         )
 
         # Track batch size passed to API
@@ -591,7 +591,7 @@ class TestEmbedToolExecution:
             captured_batch_size = len(texts)
             return ([[0.1, 0.2] for _ in texts], 50)
 
-        with patch("kurt.tools.embed_tool._embed_with_retry", side_effect=mock_embed):
+        with patch("kurt.tools.batch_embedding._embed_with_retry", side_effect=mock_embed):
             await tool.run(params, tool_context)
 
         # Batch size should be capped to provider max (but we only have 1 text)
@@ -601,8 +601,8 @@ class TestEmbedToolExecution:
     @pytest.mark.asyncio
     async def test_missing_text_field(self, tool_context, mock_embeddings):
         """Missing text field is handled gracefully."""
-        tool = EmbedTool()
-        params = EmbedParams(
+        tool = BatchEmbeddingTool()
+        params = BatchEmbeddingParams(
             inputs=[
                 {"other_field": "Hello"},  # Missing 'content' field
             ],
@@ -618,14 +618,14 @@ class TestEmbedToolExecution:
     @pytest.mark.asyncio
     async def test_preserves_input_fields(self, tool_context, mock_embeddings):
         """Output includes all input fields plus embedding."""
-        tool = EmbedTool()
-        params = EmbedParams(
+        tool = BatchEmbeddingTool()
+        params = BatchEmbeddingParams(
             inputs=[
                 {"content": "Hello", "id": "doc1", "source": "test"},
             ],
         )
 
-        with patch("kurt.tools.embed_tool._embed_with_retry") as mock_embed:
+        with patch("kurt.tools.batch_embedding._embed_with_retry") as mock_embed:
             mock_embed.return_value = (mock_embeddings[:1], 50)
             result = await tool.run(params, tool_context)
 
@@ -679,10 +679,10 @@ async def test_real_openai_embedding(tool_context):
     if not os.getenv("OPENAI_API_KEY"):
         pytest.skip("OPENAI_API_KEY not set")
 
-    tool = EmbedTool()
-    params = EmbedParams(
+    tool = BatchEmbeddingTool()
+    params = BatchEmbeddingParams(
         inputs=[{"content": "Hello, world!"}],
-        config=EmbedConfig(model="text-embedding-3-small"),
+        config=BatchEmbeddingConfig(model="text-embedding-3-small"),
     )
 
     # Don't mock - use real API

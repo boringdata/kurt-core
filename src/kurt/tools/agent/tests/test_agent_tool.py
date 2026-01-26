@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pydantic import ValidationError
 
-from kurt.tools.agent_tool import (
+from kurt.tools.agent import (
     AgentArtifact,
     AgentConfig,
     AgentInput,
@@ -338,7 +338,7 @@ class TestAgentToolExecution:
 
         with patch("shutil.which", return_value="/usr/bin/claude"):
             with patch("subprocess.run", return_value=mock_result):
-                with patch("kurt.tools.agent_tool._get_project_root", return_value=str(tmp_path)):
+                with patch("kurt.tools.agent._get_project_root", return_value=str(tmp_path)):
                     result = await tool.run(params, context)
 
         assert result.success is True
@@ -374,7 +374,7 @@ class TestAgentToolExecution:
 
         with patch("shutil.which", return_value="/usr/bin/claude"):
             with patch("subprocess.run", side_effect=capture_run):
-                with patch("kurt.tools.agent_tool._get_project_root", return_value=str(tmp_path)):
+                with patch("kurt.tools.agent._get_project_root", return_value=str(tmp_path)):
                     await tool.run(params, context)
 
         # The prompt should include the context
@@ -399,7 +399,7 @@ class TestAgentToolExecution:
 
         with patch("shutil.which", return_value="/usr/bin/claude"):
             with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="claude", timeout=10)):
-                with patch("kurt.tools.agent_tool._get_project_root", return_value=str(tmp_path)):
+                with patch("kurt.tools.agent._get_project_root", return_value=str(tmp_path)):
                     with pytest.raises(ToolTimeoutError) as exc_info:
                         await tool.run(params, context)
 
@@ -422,7 +422,7 @@ class TestAgentToolExecution:
 
         with patch("shutil.which", return_value="/usr/bin/claude"):
             with patch("subprocess.run", return_value=mock_result):
-                with patch("kurt.tools.agent_tool._get_project_root", return_value=str(tmp_path)):
+                with patch("kurt.tools.agent._get_project_root", return_value=str(tmp_path)):
                     result = await tool.run(params, context)
 
         # Should have error but still return result
@@ -450,7 +450,7 @@ class TestAgentToolExecution:
 
         with patch("shutil.which", return_value="/usr/bin/claude"):
             with patch("subprocess.run", return_value=mock_result):
-                with patch("kurt.tools.agent_tool._get_project_root", return_value=str(tmp_path)):
+                with patch("kurt.tools.agent._get_project_root", return_value=str(tmp_path)):
                     await tool.run(params, context, on_progress)
 
         assert len(events) >= 2
@@ -480,8 +480,8 @@ class TestAgentToolExecution:
 
         with patch("shutil.which", return_value="/usr/bin/claude"):
             with patch("subprocess.run", return_value=mock_result):
-                with patch("kurt.tools.agent_tool._get_project_root", return_value=str(tmp_path)):
-                    with patch("kurt.tools.agent_tool._create_tool_log_file", return_value=str(tool_log)):
+                with patch("kurt.tools.agent._get_project_root", return_value=str(tmp_path)):
+                    with patch("kurt.tools.agent._create_tool_log_file", return_value=str(tool_log)):
                         result = await tool.run(params, context)
 
         assert result.success is True
@@ -520,7 +520,7 @@ class TestAgentToolCommandBuilding:
 
         with patch("shutil.which", return_value="/usr/bin/claude"):
             with patch("subprocess.run", side_effect=capture_run):
-                with patch("kurt.tools.agent_tool._get_project_root", return_value=str(tmp_path)):
+                with patch("kurt.tools.agent._get_project_root", return_value=str(tmp_path)):
                     await tool.run(params, context)
 
         assert "--allowedTools" in captured_cmd
@@ -552,7 +552,7 @@ class TestAgentToolCommandBuilding:
 
         with patch("shutil.which", return_value="/usr/bin/claude"):
             with patch("subprocess.run", side_effect=capture_run):
-                with patch("kurt.tools.agent_tool._get_project_root", return_value=str(tmp_path)):
+                with patch("kurt.tools.agent._get_project_root", return_value=str(tmp_path)):
                     await tool.run(params, context)
 
         assert "--model" in captured_cmd
@@ -584,7 +584,7 @@ class TestAgentToolCommandBuilding:
 
         with patch("shutil.which", return_value="/usr/bin/claude"):
             with patch("subprocess.run", side_effect=capture_run):
-                with patch("kurt.tools.agent_tool._get_project_root", return_value=str(tmp_path)):
+                with patch("kurt.tools.agent._get_project_root", return_value=str(tmp_path)):
                     await tool.run(params, context)
 
         assert "--permission-mode" in captured_cmd
@@ -616,7 +616,7 @@ class TestAgentToolCommandBuilding:
 
         with patch("shutil.which", return_value="/usr/bin/claude"):
             with patch("subprocess.run", side_effect=capture_run):
-                with patch("kurt.tools.agent_tool._get_project_root", return_value=str(tmp_path)):
+                with patch("kurt.tools.agent._get_project_root", return_value=str(tmp_path)):
                     await tool.run(params, context)
 
         assert "--max-turns" in captured_cmd
@@ -643,7 +643,7 @@ class TestAgentToolEdgeCases:
 
         with patch("shutil.which", return_value="/usr/bin/claude"):
             with patch("subprocess.run", return_value=mock_result):
-                with patch("kurt.tools.agent_tool._get_project_root", return_value=str(tmp_path)):
+                with patch("kurt.tools.agent._get_project_root", return_value=str(tmp_path)):
                     result = await tool.run(params, context)
 
         assert result.success is True
@@ -671,7 +671,7 @@ class TestAgentToolEdgeCases:
 
         with patch("shutil.which", return_value="/usr/bin/claude"):
             with patch("subprocess.run", side_effect=capture_run):
-                with patch("kurt.tools.agent_tool._get_project_root", return_value=str(tmp_path)):
+                with patch("kurt.tools.agent._get_project_root", return_value=str(tmp_path)):
                     await tool.run(params, context)
 
         assert "--allowedTools" not in captured_cmd
@@ -699,8 +699,8 @@ class TestAgentToolEdgeCases:
 
         with patch("shutil.which", return_value="/usr/bin/claude"):
             with patch("subprocess.run", return_value=mock_result):
-                with patch("kurt.tools.agent_tool._get_project_root", return_value=str(tmp_path)):
-                    with patch("kurt.tools.agent_tool._create_tool_log_file", side_effect=track_creation):
+                with patch("kurt.tools.agent._get_project_root", return_value=str(tmp_path)):
+                    with patch("kurt.tools.agent._create_tool_log_file", side_effect=track_creation):
                         await tool.run(params, context)
 
         if created_log_file:
@@ -722,7 +722,7 @@ class TestAgentToolEdgeCases:
 
         with patch("shutil.which", return_value="/usr/bin/claude"):
             with patch("subprocess.run", return_value=mock_result):
-                with patch("kurt.tools.agent_tool._get_project_root", return_value=str(tmp_path)):
+                with patch("kurt.tools.agent._get_project_root", return_value=str(tmp_path)):
                     result = await tool.run(params, context)
 
         assert len(result.substeps) == 1

@@ -17,9 +17,9 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-from .base import ProgressCallback, Tool, ToolContext, ToolResult
-from .errors import ToolExecutionError, ToolTimeoutError
-from .registry import register_tool
+from ..base import ProgressCallback, Tool, ToolContext, ToolResult
+from ..errors import ToolExecutionError, ToolTimeoutError
+from ..registry import register_tool
 
 # ============================================================================
 # Pydantic Models
@@ -550,3 +550,23 @@ class AgentTool(Tool[AgentParams, AgentOutput]):
             _cleanup_temp_files(tool_log_path)
 
         return result
+
+
+from .models import AgentExecution, AgentExecutionStatus
+
+__all__ = [
+    "AgentArtifact",
+    "AgentConfig",
+    "AgentExecution",
+    "AgentExecutionStatus",
+    "AgentInput",
+    "AgentOutput",
+    "AgentParams",
+    "AgentTool",
+    "AgentToolCall",
+    # Helper functions exported for testing
+    "_cleanup_temp_files",
+    "_create_tool_log_file",
+    "_get_project_root",
+    "_read_tool_calls",
+]

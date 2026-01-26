@@ -9,8 +9,8 @@ Tool names map to step types in workflow TOML:
 - step.type='fetch' -> FetchTool
 - step.type='write' -> WriteTool
 - step.type='sql' -> SQLTool
-- step.type='embed' -> EmbedTool
-- step.type='llm' -> LLMTool
+- step.type='batch-embedding' -> BatchEmbeddingTool
+- step.type='batch-llm' -> BatchLLMTool
 - step.type='agent' -> AgentTool
 
 Example usage:
@@ -32,7 +32,7 @@ Example usage:
 """
 
 # Base classes and dataclasses
-from .agent_tool import (
+from .agent import (
     AgentArtifact,
     AgentConfig,
     AgentInput,
@@ -67,12 +67,12 @@ from .context import (
 )
 
 # Import tools to register them
-from .embed_tool import (
-    EmbedConfig,
-    EmbedInput,
-    EmbedOutput,
-    EmbedParams,
-    EmbedTool,
+from .batch_embedding import (
+    BatchEmbeddingConfig,
+    BatchEmbeddingInput,
+    BatchEmbeddingOutput,
+    BatchEmbeddingParams,
+    BatchEmbeddingTool,
     bytes_to_embedding,
     embedding_to_bytes,
 )
@@ -87,9 +87,31 @@ from .errors import (
     ToolNotFoundError,
     ToolTimeoutError,
 )
-from .fetch_tool import FetchConfig, FetchInput, FetchOutput, FetchParams, FetchTool
-from .llm_tool import LLMConfig, LLMInput, LLMOutput, LLMParams, LLMTool
-from .map_tool import MapInput, MapOutput, MapTool, normalize_url
+from .fetch import (
+    NON_RETRYABLE_STATUS_CODES,
+    RETRYABLE_STATUS_CODES,
+    FetchInput,
+    FetchOutput,
+    FetchParams,
+    FetchTool,
+    FetchToolConfig,
+    _compute_content_hash,
+    _generate_content_path,
+    _is_retryable_error,
+    _save_content,
+)
+
+# Backward compatibility alias - FetchConfig in fetch_tool.py was renamed to FetchToolConfig
+# The FetchConfig in fetch/config.py is a StepConfig for workflows (different purpose)
+FetchConfig = FetchToolConfig
+from .batch_llm import (
+    BatchLLMConfig,
+    BatchLLMInput,
+    BatchLLMOutput,
+    BatchLLMParams,
+    BatchLLMTool,
+)
+from .map import MapInput, MapOutput, MapTool, normalize_url
 
 # Registry functions
 from .registry import (
@@ -105,8 +127,8 @@ from .registry import (
 # Import research and signals tools to register them
 from .research import CitationOutput, ResearchInput, ResearchOutput, ResearchTool
 from .signals import SignalInput, SignalOutput, SignalsTool
-from .sql_tool import SQLConfig, SQLInput, SQLOutput, SQLTool
-from .write_tool import WriteConfig, WriteInput, WriteOutput, WriteParams, WriteTool
+from .sql import SQLConfig, SQLInput, SQLOutput, SQLTool
+from .write import WriteConfig, WriteInput, WriteOutput, WriteParams, WriteTool
 
 __all__ = [
     # Base classes
@@ -150,12 +172,12 @@ __all__ = [
     "SQLInput",
     "SQLOutput",
     "SQLConfig",
-    # Embed tool
-    "EmbedTool",
-    "EmbedInput",
-    "EmbedOutput",
-    "EmbedConfig",
-    "EmbedParams",
+    # Batch embedding tool
+    "BatchEmbeddingTool",
+    "BatchEmbeddingInput",
+    "BatchEmbeddingOutput",
+    "BatchEmbeddingConfig",
+    "BatchEmbeddingParams",
     "embedding_to_bytes",
     "bytes_to_embedding",
     # Agent tool
@@ -172,12 +194,12 @@ __all__ = [
     "WriteOutput",
     "WriteConfig",
     "WriteParams",
-    # LLM tool
-    "LLMTool",
-    "LLMInput",
-    "LLMOutput",
-    "LLMConfig",
-    "LLMParams",
+    # Batch LLM tool
+    "BatchLLMTool",
+    "BatchLLMInput",
+    "BatchLLMOutput",
+    "BatchLLMConfig",
+    "BatchLLMParams",
     # Context loading
     "Settings",
     "LLMSettings",
