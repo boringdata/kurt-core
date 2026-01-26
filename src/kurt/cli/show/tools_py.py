@@ -150,7 +150,7 @@ ACCESSING DOLT DATABASE
 ═══════════════════════════════════════════════════════════════════
 
 ```python
-from kurt.db.documents import get_dolt_db
+from kurt.db.dolt import get_dolt_db
 
 def query_documents(context: dict) -> dict:
     \"\"\"Query documents from Dolt.\"\"\"

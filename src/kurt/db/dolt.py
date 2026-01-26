@@ -1,6 +1,12 @@
 """
 Dolt database client with embedded and server mode support.
 
+Unified DoltDB class providing:
+- Git-like version control operations (branching, commits)
+- SQLModel ORM access (sessions, transactions)
+- Server lifecycle management (start/stop dolt sql-server)
+- Both embedded CLI mode and MySQL protocol server mode
+
 Dolt is a SQL database with Git-like version control features.
 This module provides:
 
@@ -45,13 +51,23 @@ import logging
 import os
 import re
 import shutil
+import signal
 import subprocess
 import threading
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from queue import Queue
-from typing import Any, Generator, Iterator, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Generator, Iterator, Literal, Optional, Protocol
+
+from sqlalchemy import create_engine, text
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
+from sqlmodel import Session, SQLModel
+from sqlmodel.ext.asyncio.session import AsyncSession
+
+if TYPE_CHECKING:
+    from sqlalchemy import Engine
 
 logger = logging.getLogger(__name__)
 
@@ -92,8 +108,9 @@ __all__ = [
     "check_schema_exists",
     "get_table_ddl",
     "split_sql_statements",
-    "SCHEMA_FILE",
     "OBSERVABILITY_TABLES",
+    # Convenience
+    "get_dolt_db",
 ]
 
 
@@ -376,6 +393,7 @@ class DoltDB:
     ):
         self.path = Path(path).resolve()
         self.mode = mode
+        self._auto_start = True  # Auto-start server for session operations
 
         # Server mode settings
         self._host = host
@@ -385,8 +403,13 @@ class DoltDB:
         self._database = database or self.path.name
         self._pool_size = pool_size
 
-        # Connection pool (lazy init)
+        # Connection pool (lazy init) - for raw query mode
         self._pool: ConnectionPool | None = None
+
+        # SQLAlchemy engines (lazy init) - for SQLModel session mode
+        self._server_process: Optional[subprocess.Popen] = None
+        self._engine: Optional["Engine"] = None
+        self._async_engine: Optional[AsyncEngine] = None
 
         # Verify dolt is available for embedded mode
         if mode == "embedded":
@@ -411,6 +434,166 @@ class DoltDB:
                 pool_size=self._pool_size,
             )
         return self._pool
+
+    # =========================================================================
+    # Server Lifecycle Management
+    # =========================================================================
+
+    def _is_server_running(self) -> bool:
+        """Check if Dolt SQL server is running on configured port."""
+        try:
+            import socket
+
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(1)
+            result = sock.connect_ex((self._host if self._host != "localhost" else "127.0.0.1", self._port))
+            sock.close()
+            return result == 0
+        except Exception:
+            return False
+
+    def _start_server(self) -> None:
+        """Start Dolt SQL server in background."""
+        if self._is_server_running():
+            logger.debug(f"Dolt SQL server already running on port {self._port}")
+            return
+
+        if not shutil.which("dolt"):
+            raise DoltConnectionError(
+                "Dolt CLI not installed. Install from https://docs.dolthub.com/introduction/installation"
+            )
+
+        if not self.exists():
+            self.init()
+
+        logger.info(f"Starting Dolt SQL server on port {self._port}")
+
+        # Start dolt sql-server in background
+        self._server_process = subprocess.Popen(
+            [
+                "dolt",
+                "sql-server",
+                "--port",
+                str(self._port),
+                "--host",
+                "127.0.0.1",
+            ],
+            cwd=self.path,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,  # Detach from parent
+        )
+
+        # Wait for server to be ready
+        for _ in range(30):  # 3 second timeout
+            if self._is_server_running():
+                logger.info(f"Dolt SQL server ready on port {self._port}")
+                return
+            time.sleep(0.1)
+
+        raise DoltConnectionError(f"Dolt SQL server failed to start on port {self._port}")
+
+    def _stop_server(self) -> None:
+        """Stop the Dolt SQL server if we started it."""
+        if self._server_process:
+            try:
+                os.killpg(os.getpgid(self._server_process.pid), signal.SIGTERM)
+                self._server_process.wait(timeout=5)
+            except Exception:
+                pass
+            self._server_process = None
+
+    # =========================================================================
+    # SQLModel Session Support
+    # =========================================================================
+
+    def get_database_url(self) -> str:
+        """Get the MySQL database connection URL for SQLAlchemy."""
+        return f"mysql+pymysql://{self._user}@{self._host}:{self._port}/{self._database}"
+
+    def _get_engine(self) -> "Engine":
+        """Get or create SQLAlchemy engine."""
+        if self._engine is None:
+            if self._auto_start and not self._is_server_running():
+                self._start_server()
+
+            self._engine = create_engine(
+                self.get_database_url(),
+                pool_pre_ping=True,
+                pool_recycle=300,
+            )
+        return self._engine
+
+    def init_database(self) -> None:
+        """Initialize the database and create all SQLModel tables."""
+        if self._auto_start:
+            if not self.exists():
+                self.init()
+            self._start_server()
+
+        engine = self._get_engine()
+
+        # Create all SQLModel tables
+        SQLModel.metadata.create_all(engine)
+
+        logger.info("Dolt database initialized")
+
+    def get_session(self) -> Session:
+        """Get a SQLModel database session."""
+        engine = self._get_engine()
+        return Session(engine)
+
+    def check_database_exists(self) -> bool:
+        """Check if the database exists and is accessible."""
+        try:
+            engine = self._get_engine()
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            return True
+        except Exception:
+            return False
+
+    def get_mode_name(self) -> str:
+        """Get the name of this database mode."""
+        return "dolt"
+
+    # =========================================================================
+    # Async SQLModel Support
+    # =========================================================================
+
+    def _make_async_url(self, url: str) -> str:
+        """Convert sync MySQL URL to async aiomysql URL."""
+        if "pymysql" in url:
+            return url.replace("pymysql", "aiomysql")
+        elif url.startswith("mysql://"):
+            return url.replace("mysql://", "mysql+aiomysql://", 1)
+        else:
+            return url
+
+    def get_async_engine(self) -> AsyncEngine:
+        """Get or create async SQLAlchemy engine."""
+        if self._async_engine is None:
+            if self._auto_start and not self._is_server_running():
+                self._start_server()
+
+            async_url = self._make_async_url(self.get_database_url())
+            self._async_engine = create_async_engine(
+                async_url,
+                pool_pre_ping=True,
+                pool_recycle=300,
+            )
+        return self._async_engine
+
+    def get_async_session_maker(self) -> async_sessionmaker:
+        """Get async session factory for Dolt."""
+        engine = self.get_async_engine()
+        return async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async def dispose_async_engine(self) -> None:
+        """Cleanup async database resources."""
+        if self._async_engine:
+            await self._async_engine.dispose()
+            self._async_engine = None
 
     # =========================================================================
     # Repository Management
@@ -860,10 +1043,16 @@ class DoltDB:
     # =========================================================================
 
     def close(self) -> None:
-        """Close all connections (server mode only)."""
+        """Close all connections and engines."""
         if self._pool:
             self._pool.close_all()
             self._pool = None
+
+        if self._engine:
+            self._engine.dispose()
+            self._engine = None
+
+        # Note: We don't stop the server on close - let it run for other processes
 
     def __enter__(self) -> "DoltDB":
         return self
@@ -871,25 +1060,218 @@ class DoltDB:
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         self.close()
 
-# Path to schema SQL file
-SCHEMA_FILE = Path(__file__).parent / "dolt_schema.sql"
-
 # Tables managed by this schema
 OBSERVABILITY_TABLES = ["workflow_runs", "step_logs", "step_events", "documents", "llm_traces"]
 
+# Dolt schema for observability and document tables (embedded)
+# Defines: workflow_runs, step_logs, step_events, document_registry,
+# map_results, fetch_results, embed_results, llm_traces, and views
+_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS workflow_runs (
+    id VARCHAR(36) PRIMARY KEY,
+    workflow VARCHAR(255) NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    started_at TIMESTAMP NOT NULL,
+    completed_at TIMESTAMP,
+    error TEXT,
+    inputs JSON,
+    metadata JSON,
+    INDEX idx_workflow_runs_status (status),
+    INDEX idx_workflow_runs_started (started_at DESC)
+);
+
+CREATE TABLE IF NOT EXISTS step_logs (
+    id VARCHAR(36) PRIMARY KEY,
+    run_id VARCHAR(36) NOT NULL,
+    step_id VARCHAR(255) NOT NULL,
+    tool VARCHAR(50) NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    started_at TIMESTAMP,
+    completed_at TIMESTAMP,
+    input_count INT,
+    output_count INT,
+    error_count INT DEFAULT 0,
+    errors JSON,
+    metadata JSON,
+    INDEX idx_step_logs_run_step (run_id, step_id),
+    UNIQUE KEY uq_step_logs_run_step (run_id, step_id),
+    CONSTRAINT fk_step_logs_run FOREIGN KEY (run_id) REFERENCES workflow_runs(id)
+);
+
+CREATE TABLE IF NOT EXISTS step_events (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    run_id VARCHAR(36) NOT NULL,
+    step_id VARCHAR(255) NOT NULL,
+    substep VARCHAR(255),
+    status VARCHAR(20) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    current INT,
+    total INT,
+    message TEXT,
+    metadata JSON,
+    INDEX idx_step_events_run_id (run_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version VARCHAR(20) PRIMARY KEY,
+    applied_at TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP(6),
+    description TEXT
+);
+
+CREATE TABLE IF NOT EXISTS document_registry (
+    document_id VARCHAR(12) PRIMARY KEY,
+    url VARCHAR(2048) NOT NULL,
+    url_hash VARCHAR(64) NOT NULL,
+    source_type VARCHAR(20) NOT NULL,
+    first_seen_at TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP(6),
+    UNIQUE KEY idx_registry_url_hash (url_hash),
+    INDEX idx_registry_url (url(255))
+);
+
+CREATE TABLE IF NOT EXISTS map_results (
+    document_id VARCHAR(12) NOT NULL,
+    run_id VARCHAR(36) NOT NULL,
+    url TEXT NOT NULL,
+    source_type VARCHAR(20) DEFAULT 'url',
+    discovery_method VARCHAR(50) NOT NULL,
+    discovery_url TEXT,
+    title TEXT,
+    status VARCHAR(20) DEFAULT 'success',
+    error TEXT,
+    metadata JSON,
+    created_at TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP(6),
+    PRIMARY KEY (document_id, run_id),
+    INDEX idx_map_created (created_at),
+    INDEX idx_map_status (status)
+);
+
+CREATE TABLE IF NOT EXISTS fetch_results (
+    document_id VARCHAR(12) NOT NULL,
+    run_id VARCHAR(36) NOT NULL,
+    url TEXT NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    content_path TEXT,
+    content_hash VARCHAR(64),
+    content_length INT,
+    fetch_engine VARCHAR(50),
+    error TEXT,
+    metadata JSON,
+    created_at TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP(6),
+    PRIMARY KEY (document_id, run_id),
+    INDEX idx_fetch_created (created_at),
+    INDEX idx_fetch_status (status)
+);
+
+CREATE TABLE IF NOT EXISTS embed_results (
+    document_id VARCHAR(12) NOT NULL,
+    run_id VARCHAR(36) NOT NULL,
+    embedding_model VARCHAR(100) NOT NULL,
+    embedding_path TEXT NOT NULL,
+    vector_size INT NOT NULL,
+    created_at TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP(6),
+    PRIMARY KEY (document_id, run_id, embedding_model),
+    INDEX idx_embed_created (created_at),
+    INDEX idx_embed_model (embedding_model)
+);
+
+CREATE OR REPLACE VIEW map_results_latest AS
+SELECT document_id, run_id, url, source_type, discovery_method,
+       discovery_url, title, status, error, metadata, created_at
+FROM (
+    SELECT m.*,
+           ROW_NUMBER() OVER (
+               PARTITION BY m.document_id
+               ORDER BY m.created_at DESC, m.run_id DESC
+           ) AS rn
+    FROM map_results m
+) ranked
+WHERE rn = 1;
+
+CREATE OR REPLACE VIEW fetch_results_latest AS
+SELECT document_id, run_id, url, status, content_path, content_hash,
+       content_length, fetch_engine, error, metadata, created_at
+FROM (
+    SELECT f.*,
+           ROW_NUMBER() OVER (
+               PARTITION BY f.document_id
+               ORDER BY f.created_at DESC, f.run_id DESC
+           ) AS rn
+    FROM fetch_results f
+) ranked
+WHERE rn = 1;
+
+CREATE OR REPLACE VIEW embed_results_latest AS
+SELECT document_id, run_id, embedding_model, embedding_path,
+       vector_size, created_at
+FROM (
+    SELECT e.*,
+           ROW_NUMBER() OVER (
+               PARTITION BY e.document_id, e.embedding_model
+               ORDER BY e.created_at DESC, e.run_id DESC
+           ) AS rn
+    FROM embed_results e
+) ranked
+WHERE rn = 1;
+
+CREATE OR REPLACE VIEW documents AS
+SELECT
+    r.document_id,
+    r.document_id AS id,
+    r.url,
+    r.source_type,
+    r.first_seen_at,
+    ml.discovery_method,
+    ml.title,
+    ml.status AS map_status,
+    ml.created_at AS mapped_at,
+    fl.status AS fetch_status,
+    fl.content_path,
+    fl.content_hash,
+    fl.content_length,
+    fl.fetch_engine,
+    fl.created_at AS fetched_at,
+    el.embedding_model,
+    el.vector_size,
+    el.created_at AS embedded_at,
+    COALESCE(fl.created_at, ml.created_at, r.first_seen_at) AS created_at,
+    COALESCE(fl.created_at, ml.created_at, r.first_seen_at) AS updated_at,
+    fl.error AS error,
+    ml.metadata AS metadata
+FROM document_registry r
+LEFT JOIN map_results_latest ml ON r.document_id = ml.document_id
+LEFT JOIN fetch_results_latest fl ON r.document_id = fl.document_id
+LEFT JOIN embed_results_latest el ON r.document_id = el.document_id;
+
+CREATE TABLE IF NOT EXISTS llm_traces (
+    id VARCHAR(36) PRIMARY KEY,
+    run_id VARCHAR(36),
+    step_id VARCHAR(255),
+    model VARCHAR(100) NOT NULL,
+    provider VARCHAR(50) NOT NULL,
+    prompt TEXT,
+    response TEXT,
+    structured_output JSON,
+    tokens_in INT NOT NULL,
+    tokens_out INT NOT NULL,
+    cost_usd DECIMAL(10,6),
+    latency_ms INT,
+    error TEXT,
+    retry_count INT DEFAULT 0,
+    created_at TIMESTAMP NOT NULL,
+    INDEX idx_llm_traces_run (run_id),
+    INDEX idx_llm_traces_created (created_at DESC),
+    INDEX idx_llm_traces_model (model)
+);
+"""
+
 
 def get_schema_sql() -> str:
-    """Load the Dolt schema SQL from file.
+    """Get the Dolt schema SQL.
 
     Returns:
         str: Full SQL schema definition for observability tables.
-
-    Raises:
-        FileNotFoundError: If dolt_schema.sql is missing.
     """
-    if not SCHEMA_FILE.exists():
-        raise FileNotFoundError(f"Dolt schema file not found: {SCHEMA_FILE}")
-    return SCHEMA_FILE.read_text()
+    return _SCHEMA_SQL
 
 
 def split_sql_statements(sql: str) -> list[str]:
@@ -1017,3 +1399,28 @@ def get_table_ddl(table_name: str) -> str | None:
             return stmt
 
     return None
+
+
+def get_dolt_db() -> "DoltDB":
+    """Get DoltDB client from project directory.
+
+    Looks for .dolt directory in current working directory.
+    DoltDB expects the project root (parent of .dolt), not .dolt itself.
+
+    Returns:
+        DoltDB instance
+
+    Raises:
+        RuntimeError: If Dolt is not initialized
+    """
+    project_root = Path.cwd()
+    dolt_path = project_root / ".dolt"
+
+    if not dolt_path.exists():
+        raise RuntimeError(
+            f"Dolt database not found at {dolt_path}. "
+            "Run 'kurt init' to initialize the project."
+        )
+
+    # DoltDB expects project root (parent of .dolt), not .dolt directory
+    return DoltDB(project_root)

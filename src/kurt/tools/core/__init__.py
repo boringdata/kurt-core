@@ -1,0 +1,235 @@
+"""
+Kurt Tool System Core Infrastructure.
+
+This module contains all foundational infrastructure for the tool system:
+- Base classes: Tool, ToolContext, ToolResult, SubstepEvent
+- Error taxonomy: ToolError, ToolNotFoundError, ToolConfigError, etc.
+- Registry: register_tool, get_tool, execute_tool, TOOLS
+- Context loading: load_settings, load_tool_context, Settings
+- Runner: run_tool_with_tracking, spawn_background_run
+- Utilities: canonicalize_url, make_document_id
+- Param helpers: DualInputMixin, build_config_from_flat_fields
+- Retry utilities: RetryConfig, retry_with_backoff
+"""
+
+# Base classes and dataclasses
+from .base import (
+    InputT,
+    OutputT,
+    ProgressCallback,
+    SubstepEvent,
+    Tool,
+    ToolContext,
+    ToolResult,
+    ToolResultError,
+    ToolResultMetadata,
+    ToolResultSubstep,
+)
+
+# Context loading
+from .context import (
+    ConfigValidationError,
+    DoltSettings,
+    FetchSettings,
+    LLMClient,
+    LLMSettings,
+    Settings,
+    StorageSettings,
+    load_settings,
+    load_tool_context,
+    validate_settings,
+)
+
+# Error types
+from .errors import (
+    ToolCanceledError,
+    ToolConfigError,
+    ToolError,
+    ToolExecutionError,
+    ToolInputError,
+    ToolNotFoundError,
+    ToolTimeoutError,
+)
+
+# Parameter helpers
+from .param_helpers import (
+    DualInputMixin,
+    build_config_from_flat_fields,
+)
+
+# Registry functions
+from .registry import (
+    TOOLS,
+    clear_registry,
+    execute_tool,
+    get_tool,
+    get_tool_info,
+    list_tools,
+    register_tool,
+)
+
+# Retry utilities
+from .retry import (
+    RetryConfig,
+    RetryExhaustedError,
+    calculate_backoff_ms,
+    is_retryable_error,
+    retry_sync,
+    retry_with_backoff,
+)
+
+# Runner
+from .runner import (
+    create_pending_run,
+    run_tool_from_file,
+    run_tool_with_tracking,
+    spawn_background_run,
+)
+
+# Utilities
+from .utils import (
+    canonicalize_url,
+    make_document_id,
+    make_url_hash,
+)
+
+# Step hooks (moved from kurt.core.hooks)
+from .hooks import (
+    CompositeStepHooks,
+    NoopStepHooks,
+    StepHooks,
+)
+
+# Background workflow utilities (moved from kurt.core.background)
+from .background import (
+    start_background_workflow,
+    workflow_path_for,
+)
+
+# CLI options and utilities (moved from kurt.cli.core)
+from .cli_options import (
+    add_background_options,
+    add_confirmation_options,
+    add_filter_options,
+    add_output_options,
+    background_option,
+    dry_run_option,
+    exclude_option,
+    fetch_engine_option,
+    file_extension_option,
+    format_option,
+    format_table_option,
+    has_content_option,
+    ids_option,
+    in_cluster_option,
+    include_option,
+    limit_option,
+    min_content_length_option,
+    poll_workflow_logs,
+    poll_workflow_progress,
+    print_json,
+    print_workflow_logs,
+    print_workflow_status,
+    priority_option,
+    source_type_option,
+    url_contains_option,
+    with_content_type_option,
+    with_status_option,
+    yes_option,
+)
+
+__all__ = [
+    # Base classes
+    "Tool",
+    "ToolContext",
+    "ToolResult",
+    "ToolResultError",
+    "ToolResultMetadata",
+    "ToolResultSubstep",
+    "SubstepEvent",
+    "ProgressCallback",
+    "InputT",
+    "OutputT",
+    # Errors
+    "ToolError",
+    "ToolNotFoundError",
+    "ToolConfigError",
+    "ToolInputError",
+    "ToolExecutionError",
+    "ToolTimeoutError",
+    "ToolCanceledError",
+    # Registry
+    "TOOLS",
+    "register_tool",
+    "get_tool",
+    "list_tools",
+    "get_tool_info",
+    "execute_tool",
+    "clear_registry",
+    # Context loading
+    "Settings",
+    "LLMSettings",
+    "FetchSettings",
+    "StorageSettings",
+    "DoltSettings",
+    "LLMClient",
+    "load_settings",
+    "load_tool_context",
+    "validate_settings",
+    "ConfigValidationError",
+    # Param helpers
+    "DualInputMixin",
+    "build_config_from_flat_fields",
+    # Retry utilities
+    "RetryConfig",
+    "RetryExhaustedError",
+    "calculate_backoff_ms",
+    "is_retryable_error",
+    "retry_sync",
+    "retry_with_backoff",
+    # Runner
+    "run_tool_with_tracking",
+    "create_pending_run",
+    "spawn_background_run",
+    "run_tool_from_file",
+    # Utilities
+    "canonicalize_url",
+    "make_document_id",
+    "make_url_hash",
+    # Step hooks (moved from kurt.core)
+    "StepHooks",
+    "NoopStepHooks",
+    "CompositeStepHooks",
+    # Background workflow utilities (moved from kurt.core)
+    "start_background_workflow",
+    "workflow_path_for",
+    # CLI options and utilities (moved from kurt.cli.core)
+    "add_background_options",
+    "add_confirmation_options",
+    "add_filter_options",
+    "add_output_options",
+    "background_option",
+    "dry_run_option",
+    "exclude_option",
+    "fetch_engine_option",
+    "file_extension_option",
+    "format_option",
+    "format_table_option",
+    "has_content_option",
+    "ids_option",
+    "in_cluster_option",
+    "include_option",
+    "limit_option",
+    "min_content_length_option",
+    "poll_workflow_logs",
+    "poll_workflow_progress",
+    "print_json",
+    "print_workflow_logs",
+    "print_workflow_status",
+    "priority_option",
+    "source_type_option",
+    "url_contains_option",
+    "with_content_type_option",
+    "with_status_option",
+    "yes_option",
+]

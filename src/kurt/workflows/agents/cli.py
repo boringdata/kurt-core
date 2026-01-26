@@ -11,8 +11,6 @@ from rich.table import Table
 
 from kurt.admin.telemetry.decorators import track_command
 
-from .tool_cli import tool
-
 console = Console()
 
 
@@ -102,7 +100,7 @@ def show_cmd(name: str):
         console.print(definition.description)
 
     # Show workflow type
-    if definition.is_dbos_driven:
+    if definition.is_steps_driven:
         console.print("\n[bold]Workflow Type:[/bold] Steps-driven (DAG)")
         console.print(f"\n[bold]Steps:[/bold] {len(definition.steps)}")
         for step_name, step in definition.steps.items():
@@ -537,7 +535,7 @@ Provide a summary of what you accomplished.
 @agents_group.command(name="create")
 @click.option("--name", "-n", required=True, help="Workflow name (kebab-case)")
 @click.option("--title", "-t", help="Display title (defaults to name)")
-@click.option("--with-steps", is_flag=True, help="Create DBOS-driven workflow with steps")
+@click.option("--with-steps", is_flag=True, help="Create step-driven workflow with DAG steps")
 @click.option("--with-tools", is_flag=True, help="Create directory structure with tools.py and models.py")
 @track_command
 def create_cmd(name: str, title: str, with_steps: bool, with_tools: bool):
@@ -560,11 +558,11 @@ def create_cmd(name: str, title: str, with_steps: bool, with_tools: bool):
         workflow_path = workflow_dir / "workflow.toml"
 
         if with_steps:
-            # DBOS-driven workflow template
+            # Step-driven workflow template
             content = f'''[workflow]
 name = "{name}"
 title = "{display_title}"
-description = "DBOS-driven workflow with step orchestration."
+description = "Step-driven workflow with DAG orchestration."
 
 [inputs]
 # Add your default inputs here
@@ -591,7 +589,7 @@ type = "function"
 depends_on = ["process"]
 function = "generate_output"
 
-tags = ["dbos-driven"]
+tags = ["steps-driven"]
 '''
         else:
             # Agent-driven workflow template with tools
@@ -730,26 +728,3 @@ tags = []
     console.print(f"[cyan]  kurt agents run {name}[/cyan]")
 
 
-# ============================================================================
-# Agent group (singular) - for tool commands
-# ============================================================================
-
-
-@click.group(name="agent")
-def agent_group():
-    """
-    Agent tool commands for workflow data operations.
-
-    \\b
-    These commands are designed to be called by agents during
-    workflow execution. All commands output JSON for parsing.
-
-    \\b
-    Commands:
-      tool   Agent tools (save-to-db, llm, embedding)
-    """
-    pass
-
-
-# Add tool subgroup to agent group
-agent_group.add_command(tool)

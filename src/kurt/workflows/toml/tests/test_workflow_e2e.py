@@ -24,7 +24,7 @@ from click.testing import CliRunner
 
 from kurt.workflows.toml.executor import execute_workflow
 from kurt.workflows.toml.parser import parse_workflow
-from kurt.tools.base import ToolContext
+from kurt.tools.core import ToolContext
 
 # ============================================================================
 # DoltDB Fixture
@@ -817,7 +817,7 @@ query = "{{query}}"
 """)
 
         runner = CliRunner()
-        from kurt.cli.workflow import run_cmd
+        from kurt.workflows.toml.cli import run_cmd
 
         result = runner.invoke(
             run_cmd,
@@ -845,7 +845,7 @@ function = "echo"
 """)
 
         runner = CliRunner()
-        from kurt.cli.workflow import run_cmd
+        from kurt.workflows.toml.cli import run_cmd
 
         result = runner.invoke(
             run_cmd,
@@ -873,7 +873,7 @@ function = "nonexistent_function"
 """)
 
         runner = CliRunner()
-        from kurt.cli.workflow import run_cmd
+        from kurt.workflows.toml.cli import run_cmd
 
         result = runner.invoke(
             run_cmd,

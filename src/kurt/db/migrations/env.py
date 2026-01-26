@@ -34,7 +34,7 @@ target_metadata = SQLModel.metadata
 
 def get_database_url() -> str:
     """Get database URL from environment or default to SQLite."""
-    # Check for DATABASE_URL (PostgreSQL for production/DBOS)
+    # Check for DATABASE_URL (PostgreSQL for production)
     database_url = os.environ.get("DATABASE_URL")
     if database_url:
         # Handle Heroku-style postgres:// URLs

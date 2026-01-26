@@ -22,7 +22,7 @@ from kurt.workflows.toml.parser import (
     WorkflowParseError,
     parse_workflow,
 )
-from kurt.tools.base import ToolContext
+from kurt.tools.core import ToolContext
 
 
 class TestFunctionStepParsing:

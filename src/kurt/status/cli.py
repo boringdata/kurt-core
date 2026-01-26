@@ -195,33 +195,13 @@ def _handle_hook_output():
 
 def _get_status_data() -> dict:
     """
-    Get status data - routes to local queries or cloud API based on mode.
+    Get status data from Dolt database.
 
-    Local mode: Direct SQLAlchemy queries
-    Cloud mode: HTTP request to kurt-cloud API
+    In Dolt-only architecture, we query directly from Dolt tables.
     """
-    from kurt.db.routing import route_by_mode
-
-    return route_by_mode(_get_status_data_from_db, _get_status_data_from_api)
-
-
-def _get_status_data_from_db() -> dict:
-    """Get status data using Dolt queries (local mode)."""
     from .queries import get_status_data
 
     return get_status_data()
-
-
-def _get_status_data_from_api() -> dict:
-    """
-    Get status data from web API (cloud mode).
-
-    Calls the /core/api/status endpoint (kurt-core mounted at /core prefix).
-    In cloud mode, this is hosted on kurt-cloud.
-    """
-    from kurt.db.cloud_api import api_request
-
-    return api_request("/core/api/status")
 
 
 def _generate_status_markdown(data: dict) -> str:

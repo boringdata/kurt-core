@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from kurt.cli.workflow import run_cmd, test_cmd
+from kurt.workflows.toml.cli import run_cmd, test_cmd
 
 
 @pytest.fixture

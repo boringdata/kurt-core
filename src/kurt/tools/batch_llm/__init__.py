@@ -26,8 +26,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from ..base import ProgressCallback, Tool, ToolContext, ToolResult
-from ..registry import register_tool
+from ..core.base import ProgressCallback, Tool, ToolContext, ToolResult
+from ..core.registry import register_tool
 from .models import (
     ExtractEntities,
     ExtractKeywords,

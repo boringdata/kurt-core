@@ -1,7 +1,7 @@
 """Executor for agent-based workflows using Claude Code CLI.
 
 This module runs agent workflows (Claude Code subprocess) with observability
-tracking via workflow_runs/step_logs/step_events tables (no DBOS).
+tracking via workflow_runs/step_logs/step_events tables in Dolt.
 """
 
 from __future__ import annotations
@@ -127,7 +127,7 @@ ProgressCallback = Callable[[dict[str, Any]], None]
 
 def _extract_tools_documentation(workflow_name: str) -> str:
     """
-    Extract docstrings from DBOS workflows in tools.py.
+    Extract docstrings from workflow functions in tools.py.
 
     Returns markdown documentation of available tools.
     """
@@ -148,20 +148,10 @@ def _extract_tools_documentation(workflow_name: str) -> str:
     tools = []
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef):
-            # Check for @DBOS.workflow() or @DBOS.step() decorator
-            is_dbos = False
-            for decorator in node.decorator_list:
-                if isinstance(decorator, ast.Call):
-                    if isinstance(decorator.func, ast.Attribute):
-                        if decorator.func.attr in ("workflow", "step"):
-                            is_dbos = True
-                            break
-                elif isinstance(decorator, ast.Attribute):
-                    if decorator.attr in ("workflow", "step"):
-                        is_dbos = True
-                        break
+            # Check for decorated functions (any decorator marks it as a tool)
+            has_decorator = len(node.decorator_list) > 0
 
-            if is_dbos:
+            if has_decorator:
                 # Extract function signature
                 args = []
                 for arg in node.args.args:
@@ -649,7 +639,7 @@ def _truncate_dict(d: dict, max_length: int = 500) -> dict:
 
 
 # ============================================================================
-# DAG Executor for DBOS-driven workflows with [steps.xxx] sections
+# DAG Executor for step-driven workflows with [steps.xxx] sections
 # ============================================================================
 
 
@@ -894,7 +884,7 @@ def execute_function_step(
         raise ValueError(f"tools.py not found in workflow: {workflow_name}")
 
     # Load the module
-    from kurt.core.model_utils import _load_module_from_path
+    from kurt.db.model_utils import _load_module_from_path
 
     module = _load_module_from_path(tools_path)
     if module is None:
@@ -1024,6 +1014,9 @@ def execute_llm_step(
     """
     Execute an LLM step for batch processing.
 
+    DEPRECATED: This function requires the removed LLMStep class.
+    Use BatchLLMTool from kurt.tools.batch_llm instead.
+
     Args:
         step_name: Name of the step
         prompt_template: Prompt template with {field} placeholders
@@ -1033,96 +1026,14 @@ def execute_llm_step(
 
     Returns:
         LLM step results
+
+    Raises:
+        NotImplementedError: This function is deprecated
     """
-    try:
-        import pandas as pd
-    except ImportError:
-        raise ImportError("pandas is required for LLM steps")
-
-    # Get input data from previous step outputs or inputs
-    # Look for data in outputs or inputs
-    input_data = None
-    for output_name, output_value in context["outputs"].items():
-        if isinstance(output_value, (list, dict)):
-            if isinstance(output_value, list):
-                input_data = output_value
-            elif "results" in output_value:
-                input_data = output_value["results"]
-            elif "data" in output_value:
-                input_data = output_value["data"]
-            break
-
-    if input_data is None:
-        input_data = context["inputs"].get("data", [])
-
-    if not input_data:
-        return {"results": [], "total": 0, "successful": 0}
-
-    # Resolve output schema if provided
-    output_schema = None
-    if output_schema_name:
-        workflow_dir = get_workflow_dir(workflow_name)
-        if workflow_dir:
-            from kurt.core.model_utils import _load_module_from_path
-
-            models_path = workflow_dir / "models.py"
-            if models_path.exists():
-                module = _load_module_from_path(models_path)
-                if module and hasattr(module, output_schema_name):
-                    output_schema = getattr(module, output_schema_name)
-
-    if output_schema is None:
-        from pydantic import BaseModel
-
-        class DefaultOutput(BaseModel):
-            response: str = ""
-
-        output_schema = DefaultOutput
-
-    # Set up LLM function
-    from kurt.config import resolve_model_settings
-
-    settings = resolve_model_settings(model_category="LLM")
-
-    import litellm
-
-    def llm_fn(prompt_text: str):
-        response = litellm.completion(
-            model=settings.model,
-            messages=[{"role": "user", "content": prompt_text}],
-        )
-        content = response.choices[0].message.content or ""
-        return output_schema(response=content)
-
-    # Detect input columns from template
-    import re as re_module
-
-    input_columns = list(set(re_module.findall(r"\{(\w+)\}", prompt_template)))
-
-    # Create and run LLMStep
-    from kurt.core import LLMStep
-
-    step = LLMStep(
-        name=step_name,
-        input_columns=input_columns,
-        prompt_template=prompt_template,
-        output_schema=output_schema,
-        llm_fn=llm_fn,
-        concurrency=3,
+    raise NotImplementedError(
+        "execute_llm_step is deprecated. The underlying LLMStep class has been removed. "
+        "Use BatchLLMTool from kurt.tools.batch_llm for batch LLM processing."
     )
-
-    df = pd.DataFrame(input_data)
-    result_df = step.run(df)
-
-    results = result_df.to_dict(orient="records")
-    status_col = f"{step_name}_status"
-    successful = sum(1 for r in results if r.get(status_col) == "success")
-
-    return {
-        "results": results,
-        "total": len(results),
-        "successful": successful,
-    }
 
 
 # --- Background Execution ---
@@ -1268,7 +1179,7 @@ def run_definition(
         resolved_inputs.update(inputs)  # Override with provided inputs
 
     # Select workflow executor based on type
-    if definition.is_dbos_driven:
+    if definition.is_steps_driven:
         workflow_fn = execute_steps_workflow
     else:
         workflow_fn = execute_agent_workflow
@@ -1337,7 +1248,7 @@ def run_from_path(
         resolved_inputs.update(inputs)  # Override with provided inputs
 
     # Select workflow executor based on type
-    if definition.is_dbos_driven:
+    if definition.is_steps_driven:
         workflow_fn = execute_steps_workflow
     else:
         workflow_fn = execute_agent_workflow

@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from kurt.cli.auth.credentials import (
+from kurt.auth import (
     get_cloud_api_url,
     get_workspace_id_from_config,
     load_credentials,
@@ -1275,57 +1275,30 @@ def api_git_show(path: str = Query(..., description="File path relative to repo 
 
 
 # --- Workflow API endpoints ---
+# Uses Dolt observability tables (workflow_runs, step_logs, step_events)
 
 
-def _get_db_session():
-    """Get a database session for workflow queries."""
+def _get_dolt_db():
+    """Get a DoltDB instance for workflow queries."""
+    from pathlib import Path
+
+    from kurt.config import get_config_file_path
+    from kurt.db.dolt import DoltDB
+
     try:
-        from kurt.db.database import check_database_exists, get_session
-
-        if not check_database_exists():
-            return None
-        return get_session()
-    except ImportError:
-        return None
+        project_root = get_config_file_path().parent
     except Exception:
+        project_root = Path.cwd()
+
+    dolt_path = os.environ.get("DOLT_PATH", ".")
+    path = Path(dolt_path)
+    if not path.is_absolute():
+        path = project_root / path
+
+    db = DoltDB(path)
+    if not db.exists():
         return None
-
-
-def _decode_workflow_output(raw_output: Any) -> Any:
-    """Decode base64/pickle encoded workflow output."""
-    if not raw_output:
-        return None
-    try:
-        import base64
-        import pickle
-
-        decoded = base64.b64decode(raw_output)
-        return pickle.loads(decoded)
-    except Exception:
-        # Try JSON if pickle fails
-        try:
-            import json
-
-            return json.loads(raw_output)
-        except Exception:
-            return raw_output
-
-
-def _decode_dbos_event_value(encoded_value: Any) -> Any:
-    """
-    Decode DBOS event value (base64 + pickle encoded).
-
-    DBOS stores event values encoded as base64(pickle(value)).
-    """
-    if not encoded_value:
-        return None
-    try:
-        import base64
-        import pickle
-
-        return pickle.loads(base64.b64decode(encoded_value))
-    except Exception:
-        return None
+    return db
 
 
 @app.get("/api/workflows")
@@ -1338,170 +1311,138 @@ def api_list_workflows(
     parent_id: Optional[str] = Query(None, description="Filter by parent workflow ID"),
 ):
     """List workflows with optional filtering."""
-    from kurt.core.status import get_dbos_table_names, read_workflow_events
-
-    session = _get_db_session()
-    if session is None:
+    db = _get_dolt_db()
+    if db is None:
         return {"workflows": [], "total": 0, "error": "Database not available"}
 
     try:
-        from sqlalchemy import text
-
-        # Get schema-qualified table names for DBOS tables
-        tables = get_dbos_table_names()
-        ws_table = tables["workflow_status"]
-        we_table = tables["workflow_events"]
-
-        # Join with workflow_events to get parent_workflow_id
-        sql = f"""
-            SELECT
-                ws.workflow_uuid,
-                ws.name,
-                ws.status,
-                ws.created_at,
-                ws.updated_at,
-                we.value as parent_workflow_id
-            FROM {ws_table} ws
-            LEFT JOIN {we_table} we
-                ON ws.workflow_uuid = we.workflow_uuid
-                AND we.key = 'parent_workflow_id'
-        """
-        params: dict[str, Any] = {}
+        # Build query against workflow_runs table (Dolt observability schema)
+        sql = "SELECT id, workflow, status, started_at, completed_at, inputs, metadata FROM workflow_runs"
+        params: list[Any] = []
         conditions = []
 
         if status:
-            conditions.append("ws.status = :status")
-            params["status"] = status
+            conditions.append("status = ?")
+            params.append(status)
 
         if search:
-            conditions.append("ws.workflow_uuid LIKE :search")
-            params["search"] = f"%{search}%"
-
-        if parent_id:
-            # Filter to only show children of a specific parent
-            conditions.append("we.value IS NOT NULL")
+            conditions.append("id LIKE ?")
+            params.append(f"%{search}%")
 
         if conditions:
             sql += " WHERE " + " AND ".join(conditions)
 
-        sql += " ORDER BY ws.created_at DESC LIMIT :limit OFFSET :offset"
-        params["limit"] = limit
-        params["offset"] = offset
+        sql += " ORDER BY started_at DESC LIMIT ? OFFSET ?"
+        params.append(limit)
+        params.append(offset)
 
-        result = session.execute(text(sql), params)
+        result = db.query(sql, params)
         workflows = []
-        for row in result.fetchall():
-            workflow_uuid = row[0]
-            raw_parent = row[5]
-            parent_workflow_id = _decode_dbos_event_value(raw_parent) if raw_parent else None
+
+        for row in result.rows:
+            workflow_id = row.get("id", "")
+
+            # Parse metadata for workflow_type and parent info
+            metadata = {}
+            if row.get("metadata"):
+                try:
+                    metadata = json.loads(row["metadata"]) if isinstance(row["metadata"], str) else row["metadata"]
+                except Exception:
+                    pass
+
+            parent_workflow_id = metadata.get("parent_workflow_id")
 
             # If filtering by parent_id, only include matching children
             if parent_id and parent_workflow_id != parent_id:
                 continue
 
-            # If NOT filtering by parent_id, hide child workflows (they show nested under their parent)
+            # If NOT filtering by parent_id, hide child workflows
             if not parent_id and parent_workflow_id:
                 continue
 
-            workflow = {
-                "workflow_uuid": workflow_uuid,
-                "name": row[1],
-                "status": row[2],
-                "created_at": str(row[3]) if row[3] else None,
-                "updated_at": str(row[4]) if row[4] else None,
-                "parent_workflow_id": parent_workflow_id,
-            }
-
-            # Fetch workflow events for additional metadata
-            try:
-                events = read_workflow_events(workflow_uuid)
-                wf_type = events.get("workflow_type")
-                if wf_type:
-                    workflow["workflow_type"] = wf_type
-                parent_step_name = events.get("parent_step_name")
-                if parent_step_name:
-                    workflow["parent_step_name"] = parent_step_name
-                # Agent workflow specific fields
-                if wf_type == "agent":
-                    workflow["definition_name"] = events.get("definition_name")
-                    workflow["trigger"] = events.get("trigger")
-                    workflow["agent_turns"] = events.get("agent_turns")
-                    workflow["tokens_in"] = events.get("tokens_in")
-                    workflow["tokens_out"] = events.get("tokens_out")
-                    workflow["cost_usd"] = events.get("cost_usd")
-                # Content workflow fields (map, fetch)
-                elif wf_type in ("map", "fetch"):
-                    workflow["cli_command"] = events.get("cli_command")
-            except Exception:
-                pass  # Skip events if not available
+            wf_type = metadata.get("workflow_type")
 
             # Apply workflow_type filter if specified
             if workflow_type:
-                wf_type = workflow.get("workflow_type")
                 if workflow_type == "agent":
-                    # Only show agent workflows
                     if wf_type != "agent":
                         continue
                 elif workflow_type == "tool":
-                    # Show all non-agent workflows (map, fetch, etc.)
                     if wf_type == "agent":
                         continue
                 else:
-                    # Exact type match
                     if wf_type != workflow_type:
                         continue
 
-            workflows.append(workflow)
+            workflow = {
+                "workflow_uuid": workflow_id,
+                "name": row.get("workflow", ""),
+                "status": row.get("status", "unknown"),
+                "created_at": str(row.get("started_at")) if row.get("started_at") else None,
+                "updated_at": str(row.get("completed_at")) if row.get("completed_at") else None,
+                "parent_workflow_id": parent_workflow_id,
+                "workflow_type": wf_type,
+            }
 
-        session.close()
+            # Add metadata fields for agent workflows
+            if wf_type == "agent":
+                workflow["definition_name"] = metadata.get("definition_name")
+                workflow["trigger"] = metadata.get("trigger")
+                workflow["agent_turns"] = metadata.get("agent_turns")
+                workflow["tokens_in"] = metadata.get("tokens_in")
+                workflow["tokens_out"] = metadata.get("tokens_out")
+                workflow["cost_usd"] = metadata.get("cost_usd")
+            elif wf_type in ("map", "fetch"):
+                workflow["cli_command"] = metadata.get("cli_command")
+
+            workflows.append(workflow)
 
         return {"workflows": workflows, "total": len(workflows)}
     except Exception as e:
-        if session:
-            session.close()
         # Handle missing table (no workflows run yet)
-        if "no such table" in str(e):
+        if "no such table" in str(e).lower() or "doesn't exist" in str(e).lower():
             return {"workflows": [], "total": 0}
-        # Return error in response body instead of 500, so frontend can display it
         return {"workflows": [], "total": 0, "error": f"Database error: {e}"}
 
 
 @app.get("/api/workflows/{workflow_id}")
 def api_get_workflow(workflow_id: str):
     """Get detailed workflow information."""
-    from kurt.core.status import get_dbos_table_names
-
-    session = _get_db_session()
-    if session is None:
+    db = _get_dolt_db()
+    if db is None:
         raise HTTPException(status_code=503, detail="Database not available")
 
     try:
-        from sqlalchemy import text
-
-        tables = get_dbos_table_names()
-        sql = f"""
-            SELECT workflow_uuid, name, status, created_at, updated_at,
-                   authenticated_user, output, error
-            FROM {tables["workflow_status"]}
-            WHERE workflow_uuid LIKE :workflow_id || '%'
+        sql = """
+            SELECT id, workflow, status, started_at, completed_at, error, inputs, metadata
+            FROM workflow_runs
+            WHERE id LIKE CONCAT(?, '%')
             LIMIT 1
         """
-        result = session.execute(text(sql), {"workflow_id": workflow_id})
-        row = result.fetchone()
-        session.close()
+        result = db.query(sql, [workflow_id])
 
-        if not row:
+        if not result.rows:
             raise HTTPException(status_code=404, detail="Workflow not found")
 
+        row = result.rows[0]
+
+        # Parse metadata
+        metadata = {}
+        if row.get("metadata"):
+            try:
+                metadata = json.loads(row["metadata"]) if isinstance(row["metadata"], str) else row["metadata"]
+            except Exception:
+                pass
+
         return {
-            "workflow_uuid": row[0],
-            "name": row[1],
-            "status": row[2],
-            "created_at": str(row[3]) if row[3] else None,
-            "updated_at": str(row[4]) if row[4] else None,
-            "authenticated_user": row[5],
-            "output": _decode_workflow_output(row[6]),
-            "error": row[7],
+            "workflow_uuid": row.get("id"),
+            "name": row.get("workflow"),
+            "status": row.get("status"),
+            "created_at": str(row.get("started_at")) if row.get("started_at") else None,
+            "updated_at": str(row.get("completed_at")) if row.get("completed_at") else None,
+            "error": row.get("error"),
+            "inputs": row.get("inputs"),
+            "metadata": metadata,
         }
     except HTTPException:
         raise
@@ -1511,17 +1452,32 @@ def api_get_workflow(workflow_id: str):
 
 @app.post("/api/workflows/{workflow_id}/cancel")
 def api_cancel_workflow(workflow_id: str):
-    """Cancel a workflow."""
+    """Cancel a workflow by updating its status to 'canceling'.
+
+    The workflow runner is responsible for detecting this status change
+    and terminating gracefully.
+    """
+    db = _get_dolt_db()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
     try:
-        from kurt.workflows import DBOS_AVAILABLE, get_dbos
+        # Check workflow exists and is running
+        result = db.query("SELECT id, status FROM workflow_runs WHERE id = ?", [workflow_id])
+        if not result.rows:
+            raise HTTPException(status_code=404, detail="Workflow not found")
 
-        if not DBOS_AVAILABLE:
-            raise HTTPException(status_code=503, detail="DBOS not available")
+        current_status = result.rows[0].get("status")
+        if current_status not in ("pending", "running"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot cancel workflow with status '{current_status}'",
+            )
 
-        dbos = get_dbos()
-        dbos.cancel_workflow(workflow_id)
+        # Update status to canceling
+        db.execute("UPDATE workflow_runs SET status = 'canceling' WHERE id = ?", [workflow_id])
 
-        return {"status": "cancelled", "workflow_id": workflow_id}
+        return {"status": "canceling", "workflow_id": workflow_id}
     except HTTPException:
         raise
     except Exception as e:
@@ -1530,37 +1486,99 @@ def api_cancel_workflow(workflow_id: str):
 
 @app.get("/api/workflows/{workflow_id}/status")
 def api_get_workflow_status(workflow_id: str):
-    """Get live workflow status with progress information."""
-    from kurt.core.status import get_dbos_table_names
-
-    session = _get_db_session()
-    if session is None:
+    """Get live workflow status with progress information from Dolt."""
+    db = _get_dolt_db()
+    if db is None:
         raise HTTPException(status_code=503, detail="Database not available")
 
     try:
-        from sqlalchemy import text
-
-        tables = get_dbos_table_names()
-        # Get full workflow ID from prefix
-        sql = text(f"""
-            SELECT workflow_uuid FROM {tables["workflow_status"]}
-            WHERE workflow_uuid LIKE :workflow_id || '%'
+        # Get workflow run
+        result = db.query(
+            """
+            SELECT id, workflow, status, started_at, completed_at, error, metadata
+            FROM workflow_runs
+            WHERE id LIKE CONCAT(?, '%')
             LIMIT 1
-        """)
-        result = session.execute(sql, {"workflow_id": workflow_id})
-        row = result.fetchone()
-        session.close()
+            """,
+            [workflow_id],
+        )
 
-        if not row:
+        if not result.rows:
             raise HTTPException(status_code=404, detail="Workflow not found")
 
-        full_id = row[0]
+        row = result.rows[0]
+        full_id = row.get("id")
 
-        # Use the existing get_live_status function
-        from kurt.core.status import get_live_status
+        # Parse metadata
+        metadata = {}
+        if row.get("metadata"):
+            try:
+                metadata = json.loads(row["metadata"]) if isinstance(row["metadata"], str) else row["metadata"]
+            except Exception:
+                pass
 
-        status = get_live_status(full_id)
-        return status
+        # Get step logs for progress info
+        step_result = db.query(
+            """
+            SELECT step_id, step_type, status, started_at, completed_at, input_count, output_count, error_count
+            FROM step_logs
+            WHERE run_id = ?
+            ORDER BY started_at
+            """,
+            [full_id],
+        )
+
+        steps = []
+        for step_row in step_result.rows:
+            steps.append({
+                "step_id": step_row.get("step_id"),
+                "step_type": step_row.get("step_type"),
+                "status": step_row.get("status"),
+                "started_at": str(step_row.get("started_at")) if step_row.get("started_at") else None,
+                "completed_at": str(step_row.get("completed_at")) if step_row.get("completed_at") else None,
+                "input_count": step_row.get("input_count"),
+                "output_count": step_row.get("output_count"),
+                "error_count": step_row.get("error_count"),
+            })
+
+        # Get latest events for current step progress
+        events_result = db.query(
+            """
+            SELECT step_id, event_type, event_data, created_at
+            FROM step_events
+            WHERE run_id = ?
+            ORDER BY id DESC
+            LIMIT 10
+            """,
+            [full_id],
+        )
+
+        latest_events = []
+        for event_row in events_result.rows:
+            event_data = {}
+            if event_row.get("event_data"):
+                try:
+                    event_data = json.loads(event_row["event_data"]) if isinstance(event_row["event_data"], str) else event_row["event_data"]
+                except Exception:
+                    pass
+            latest_events.append({
+                "step_id": event_row.get("step_id"),
+                "event_type": event_row.get("event_type"),
+                "event_data": event_data,
+                "created_at": str(event_row.get("created_at")) if event_row.get("created_at") else None,
+            })
+
+        return {
+            "workflow_id": full_id,
+            "workflow": row.get("workflow"),
+            "status": row.get("status"),
+            "started_at": str(row.get("started_at")) if row.get("started_at") else None,
+            "completed_at": str(row.get("completed_at")) if row.get("completed_at") else None,
+            "error": row.get("error"),
+            "metadata": metadata,
+            "steps": steps,
+            "latest_events": latest_events,
+        }
 
     except HTTPException:
         raise
@@ -1574,35 +1592,71 @@ def api_get_step_logs(
     step: str | None = Query(None, description="Filter by step name"),
     limit: int = Query(100, le=500),
 ):
-    """Get workflow logs from DBOS streams, optionally filtered by step."""
-    from kurt.core.status import get_dbos_table_names
-
-    session = _get_db_session()
-    if session is None:
+    """Get step logs from Dolt step_logs table, optionally filtered by step."""
+    db = _get_dolt_db()
+    if db is None:
         raise HTTPException(status_code=503, detail="Database not available")
 
     try:
-        from sqlalchemy import text
+        # Get full workflow ID
+        wf_result = db.query(
+            "SELECT id FROM workflow_runs WHERE id LIKE CONCAT(?, '%') LIMIT 1",
+            [workflow_id],
+        )
 
-        tables = get_dbos_table_names()
-        # Get full workflow ID from prefix
-        sql = text(f"""
-            SELECT workflow_uuid FROM {tables["workflow_status"]}
-            WHERE workflow_uuid LIKE :workflow_id || '%'
-            LIMIT 1
-        """)
-        result = session.execute(sql, {"workflow_id": workflow_id})
-        row = result.fetchone()
-        session.close()
-
-        if not row:
+        if not wf_result.rows:
             raise HTTPException(status_code=404, detail="Workflow not found")
 
-        full_id = row[0]
+        full_id = wf_result.rows[0].get("id")
 
-        from kurt.core.status import get_step_logs
+        # Query step logs
+        sql = """
+            SELECT step_id, step_type, status, started_at, completed_at,
+                   input_count, output_count, error_count, errors, metadata
+            FROM step_logs
+            WHERE run_id = ?
+        """
+        params: list[Any] = [full_id]
 
-        logs = get_step_logs(full_id, step_name=step, limit=limit)
+        if step:
+            sql += " AND step_id = ?"
+            params.append(step)
+
+        sql += " ORDER BY started_at LIMIT ?"
+        params.append(limit)
+
+        result = db.query(sql, params)
+
+        logs = []
+        for row in result.rows:
+            # Parse JSON fields
+            errors = []
+            if row.get("errors"):
+                try:
+                    errors = json.loads(row["errors"]) if isinstance(row["errors"], str) else row["errors"]
+                except Exception:
+                    pass
+
+            metadata = {}
+            if row.get("metadata"):
+                try:
+                    metadata = json.loads(row["metadata"]) if isinstance(row["metadata"], str) else row["metadata"]
+                except Exception:
+                    pass
+
+            logs.append({
+                "step_id": row.get("step_id"),
+                "step_type": row.get("step_type"),
+                "status": row.get("status"),
+                "started_at": str(row.get("started_at")) if row.get("started_at") else None,
+                "completed_at": str(row.get("completed_at")) if row.get("completed_at") else None,
+                "input_count": row.get("input_count"),
+                "output_count": row.get("output_count"),
+                "error_count": row.get("error_count"),
+                "errors": errors,
+                "metadata": metadata,
+            })
+
         return {"logs": logs, "step": step}
 
     except HTTPException:
@@ -1615,34 +1669,24 @@ def api_get_step_logs(
 async def api_stream_workflow_status(workflow_id: str):
     """Stream live workflow status via Server-Sent Events."""
     import asyncio
-    import json
 
     from fastapi.responses import StreamingResponse
 
-    from kurt.core.status import get_dbos_table_names
-
-    session = _get_db_session()
-    if session is None:
+    db = _get_dolt_db()
+    if db is None:
         raise HTTPException(status_code=503, detail="Database not available")
 
     try:
-        from sqlalchemy import text
+        # Get full workflow ID
+        result = db.query(
+            "SELECT id, status FROM workflow_runs WHERE id LIKE CONCAT(?, '%') LIMIT 1",
+            [workflow_id],
+        )
 
-        tables = get_dbos_table_names()
-        # Get full workflow ID from prefix
-        sql = text(f"""
-            SELECT workflow_uuid, status FROM {tables["workflow_status"]}
-            WHERE workflow_uuid LIKE :workflow_id || '%'
-            LIMIT 1
-        """)
-        result = session.execute(sql, {"workflow_id": workflow_id})
-        row = result.fetchone()
-        session.close()
-
-        if not row:
+        if not result.rows:
             raise HTTPException(status_code=404, detail="Workflow not found")
 
-        full_id = row[0]
+        full_id = result.rows[0].get("id")
 
     except HTTPException:
         raise
@@ -1650,12 +1694,35 @@ async def api_stream_workflow_status(workflow_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
     async def event_generator():
-        from kurt.core.status import get_live_status
-
         last_status = None
         while True:
             try:
-                status = get_live_status(full_id)
+                # Re-fetch status from Dolt
+                db_inner = _get_dolt_db()
+                if db_inner is None:
+                    break
+
+                status_result = db_inner.query(
+                    """
+                    SELECT id, workflow, status, started_at, completed_at, error
+                    FROM workflow_runs WHERE id = ?
+                    """,
+                    [full_id],
+                )
+
+                if not status_result.rows:
+                    break
+
+                row = status_result.rows[0]
+                status = {
+                    "workflow_id": row.get("id"),
+                    "workflow": row.get("workflow"),
+                    "status": row.get("status"),
+                    "started_at": str(row.get("started_at")) if row.get("started_at") else None,
+                    "completed_at": str(row.get("completed_at")) if row.get("completed_at") else None,
+                    "error": row.get("error"),
+                }
+
                 status_json = json.dumps(status)
 
                 # Only send if changed
@@ -1664,7 +1731,7 @@ async def api_stream_workflow_status(workflow_id: str):
                     last_status = status_json
 
                 # Stop streaming if workflow completed
-                if status.get("status") in ("completed", "error", "SUCCESS", "ERROR", "CANCELLED"):
+                if status.get("status") in ("completed", "failed", "canceled"):
                     break
 
                 await asyncio.sleep(0.5)
@@ -1685,34 +1752,24 @@ async def api_stream_workflow_status(workflow_id: str):
 async def api_stream_workflow_logs(workflow_id: str):
     """Stream workflow logs via Server-Sent Events."""
     import asyncio
-    import json
 
     from fastapi.responses import StreamingResponse
 
-    from kurt.core.status import get_dbos_table_names
-
-    session = _get_db_session()
-    if session is None:
+    db = _get_dolt_db()
+    if db is None:
         raise HTTPException(status_code=503, detail="Database not available")
 
     try:
-        from sqlalchemy import text
+        # Get full workflow ID
+        result = db.query(
+            "SELECT id, status FROM workflow_runs WHERE id LIKE CONCAT(?, '%') LIMIT 1",
+            [workflow_id],
+        )
 
-        tables = get_dbos_table_names()
-        # Get full workflow ID and status
-        sql = text(f"""
-            SELECT workflow_uuid, status FROM {tables["workflow_status"]}
-            WHERE workflow_uuid LIKE :workflow_id || '%'
-            LIMIT 1
-        """)
-        result = session.execute(sql, {"workflow_id": workflow_id})
-        row = result.fetchone()
-        session.close()
-
-        if not row:
+        if not result.rows:
             raise HTTPException(status_code=404, detail="Workflow not found")
 
-        full_id = row[0]
+        full_id = result.rows[0].get("id")
 
     except HTTPException:
         raise
@@ -1736,29 +1793,27 @@ async def api_stream_workflow_logs(workflow_id: str):
                         last_size = current_size
 
                 # Check if workflow is done
-                check_session = _get_db_session()
-                if check_session:
-                    result = check_session.execute(
-                        text(
-                            f"SELECT status FROM {tables['workflow_status']} WHERE workflow_uuid = :id"
-                        ),
-                        {"id": full_id},
+                db_inner = _get_dolt_db()
+                if db_inner:
+                    status_result = db_inner.query(
+                        "SELECT status FROM workflow_runs WHERE id = ?",
+                        [full_id],
                     )
-                    status_row = result.fetchone()
-                    check_session.close()
-                    if status_row and status_row[0] in ("SUCCESS", "ERROR", "CANCELLED"):
-                        # Send final content and close
-                        await asyncio.sleep(0.5)
-                        if log_file.exists():
-                            current_size = log_file.stat().st_size
-                            if current_size > last_size:
-                                with open(log_file, "r") as f:
-                                    f.seek(last_size)
-                                    new_content = f.read()
-                                    if new_content:
-                                        yield f"data: {json.dumps({'content': new_content})}\n\n"
-                        yield f"data: {json.dumps({'done': True})}\n\n"
-                        break
+                    if status_result.rows:
+                        status = status_result.rows[0].get("status")
+                        if status in ("completed", "failed", "canceled"):
+                            # Send final content and close
+                            await asyncio.sleep(0.5)
+                            if log_file.exists():
+                                current_size = log_file.stat().st_size
+                                if current_size > last_size:
+                                    with open(log_file, "r") as f:
+                                        f.seek(last_size)
+                                        new_content = f.read()
+                                        if new_content:
+                                            yield f"data: {json.dumps({'content': new_content})}\n\n"
+                            yield f"data: {json.dumps({'done': True})}\n\n"
+                            break
 
                 await asyncio.sleep(0.5)
             except Exception:
@@ -1781,23 +1836,17 @@ def api_get_workflow_logs(
     limit: int = Query(500, le=5000),
 ):
     """Read workflow log file in chunks."""
-    from kurt.core.status import get_dbos_table_names
-
-    # First, get the full workflow ID from the database
-    session = _get_db_session()
+    db = _get_dolt_db()
     full_id = workflow_id
 
-    if session is not None:
+    if db is not None:
         try:
-            from sqlalchemy import text
-
-            tables = get_dbos_table_names()
-            sql = f"SELECT workflow_uuid FROM {tables['workflow_status']} WHERE workflow_uuid LIKE :workflow_id || '%' LIMIT 1"
-            result = session.execute(text(sql), {"workflow_id": workflow_id})
-            row = result.fetchone()
-            if row:
-                full_id = row[0]
-            session.close()
+            result = db.query(
+                "SELECT id FROM workflow_runs WHERE id LIKE CONCAT(?, '%') LIMIT 1",
+                [workflow_id],
+            )
+            if result.rows:
+                full_id = result.rows[0].get("id")
         except Exception:
             pass
 

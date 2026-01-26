@@ -34,18 +34,17 @@ def get_alembic_config() -> AlembicConfig:
 
 
 def get_database_url() -> str:
-    """Get database URL from environment or config."""
+    """Get database URL from environment or config.
+
+    Kurt uses Dolt only (MySQL protocol). SQLite is used as a fallback
+    for migrations when no Dolt database is configured.
+    """
     import os
 
-    # Check for DATABASE_URL (PostgreSQL for production/DBOS)
+    # Check for DATABASE_URL (mysql:// for Dolt)
     database_url = os.environ.get("DATABASE_URL")
-    if database_url:
-        # Handle Heroku-style postgres:// URLs
-        if database_url.startswith("postgres://"):
-            database_url = database_url.replace("postgres://", "postgresql://", 1)
-            return database_url
-        if database_url.startswith("postgresql://"):
-            return database_url
+    if database_url and database_url.startswith("mysql"):
+        return database_url
 
     # Try to load from kurt config
     try:
@@ -55,37 +54,29 @@ def get_database_url() -> str:
             kurt_config = load_config()
             config_db_url = kurt_config.DATABASE_URL
 
-            # Handle "kurt" magic value - resolve to Kurt Cloud URL
-            if config_db_url == "kurt":
-                from kurt.db.base import _resolve_kurt_cloud_url
-
-                resolved_url = _resolve_kurt_cloud_url()
-                if resolved_url:
-                    return resolved_url
-
-            # Handle direct PostgreSQL URL in config
-            if config_db_url and config_db_url.startswith("postgresql://"):
+            # Handle MySQL/Dolt URL in config
+            if config_db_url and config_db_url.startswith("mysql"):
                 return config_db_url
 
-            # Fall back to SQLite path
+            # Fall back to SQLite path (for migration testing only)
             db_path = kurt_config.get_absolute_db_path()
             return f"sqlite:///{db_path}"
     except Exception:
         pass
 
-    # Default to SQLite for local development
+    # Default to SQLite for local development (migration testing only)
     db_path = os.environ.get("KURT_DB_PATH", ".kurt/kurt.sqlite")
     return f"sqlite:///{db_path}"
 
 
 def get_database_path() -> Path:
-    """Get the database file path (for SQLite only)."""
+    """Get the database file path (for SQLite fallback only)."""
     import os
 
-    # Check for DATABASE_URL (PostgreSQL) - no file path
+    # Check for DATABASE_URL (mysql:// for Dolt) - no file path
     database_url = os.environ.get("DATABASE_URL")
-    if database_url and database_url.startswith("postgres"):
-        raise ValueError("PostgreSQL database has no file path")
+    if database_url and database_url.startswith("mysql"):
+        raise ValueError("Dolt/MySQL database has no file path")
 
     # Try to load from kurt config
     try:
@@ -219,11 +210,11 @@ def backup_database(silent: bool = False) -> Optional[Path]:
     """
     import os
 
-    # Skip backup for PostgreSQL
+    # Skip backup for Dolt/MySQL (use Dolt's built-in versioning instead)
     database_url = os.environ.get("DATABASE_URL")
-    if database_url and database_url.startswith("postgres"):
+    if database_url and database_url.startswith("mysql"):
         if not silent:
-            console.print("[dim]PostgreSQL database - backup managed externally[/dim]")
+            console.print("[dim]Dolt database - use dolt commit for versioning[/dim]")
         return None
 
     try:
@@ -505,14 +496,14 @@ def show_migration_status() -> None:
 
     # Database info - use get_database_url() which handles kurt config
     database_url = get_database_url()
-    if database_url.startswith("postgres"):
+    if database_url.startswith("mysql"):
         # Mask credentials in URL for display
         if "@" in database_url:
             parts = database_url.split("@")
             host_part = parts[-1]
-            console.print(f"[dim]Database:[/dim] PostgreSQL ({host_part.split('/')[0]})")
+            console.print(f"[dim]Database:[/dim] Dolt ({host_part.split('/')[0]})")
         else:
-            console.print("[dim]Database:[/dim] PostgreSQL")
+            console.print("[dim]Database:[/dim] Dolt")
     else:
         try:
             db_path = get_database_path()

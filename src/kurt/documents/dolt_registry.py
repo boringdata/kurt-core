@@ -7,11 +7,17 @@ Provides document listing and retrieval from the unified Dolt `documents` table.
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from kurt.documents.filtering import DocumentFilters
+
+if TYPE_CHECKING:
+    from kurt.db.dolt import DoltDB
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -92,7 +98,7 @@ def list_documents_dolt(filters: DocumentFilters | None = None) -> list[DoltDocu
     Returns:
         List of DoltDocumentView
     """
-    from kurt.db.documents import get_dolt_db
+    from kurt.db.dolt import get_dolt_db
 
     db = get_dolt_db()
     filters = filters or DocumentFilters()
@@ -156,7 +162,7 @@ def get_document_dolt(identifier: str) -> DoltDocumentView | None:
     Returns:
         DoltDocumentView or None if not found
     """
-    from kurt.db.documents import get_dolt_db
+    from kurt.db.dolt import get_dolt_db
 
     db = get_dolt_db()
 
@@ -189,7 +195,7 @@ def delete_documents_dolt(doc_ids: list[str]) -> int:
     Returns:
         Number of deleted documents
     """
-    from kurt.db.documents import get_dolt_db
+    from kurt.db.dolt import get_dolt_db
 
     if not doc_ids:
         return 0
@@ -198,3 +204,145 @@ def delete_documents_dolt(doc_ids: list[str]) -> int:
     placeholders = ", ".join("?" for _ in doc_ids)
     count = db.execute(f"DELETE FROM documents WHERE id IN ({placeholders})", doc_ids)
     return count
+
+
+def upsert_documents(
+    db: "DoltDB",
+    documents: list[dict[str, Any]],
+) -> dict[str, int]:
+    """Batch upsert documents to Dolt.
+
+    Args:
+        db: DoltDB client
+        documents: List of document dicts with keys matching upsert_document params
+
+    Returns:
+        Dict with 'inserted' and 'updated' counts
+    """
+    inserted = 0
+    updated = 0
+
+    with db.transaction() as tx:
+        for doc in documents:
+            doc_id = doc.get("id") or doc.get("document_id")
+            url = doc.get("url") or doc.get("source_url")
+
+            if not doc_id or not url:
+                logger.warning(f"Skipping document without id or url: {doc}")
+                continue
+
+            now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+
+            # Check if exists
+            check_sql = "SELECT id FROM documents WHERE id = ?"
+            result = tx.query(check_sql, [doc_id])
+            exists = len(result.rows) > 0 if hasattr(result, 'rows') else len(result) > 0
+
+            # Build metadata from extra fields
+            metadata = doc.get("metadata") or doc.get("metadata_json") or {}
+            if isinstance(metadata, str):
+                try:
+                    metadata = json.loads(metadata)
+                except json.JSONDecodeError:
+                    metadata = {}
+
+            # Move map-specific fields to metadata
+            for key in ["discovery_method", "discovery_url", "title", "is_new", "map_status"]:
+                if key in doc and doc[key] is not None:
+                    metadata[key] = doc[key]
+
+            metadata_json = json.dumps(metadata) if metadata else None
+
+            if exists:
+                # Update
+                update_sql = """
+                    UPDATE documents SET
+                        url = ?, source_type = ?, content_path = ?, content_hash = ?,
+                        fetch_status = ?, error = ?, metadata = ?, updated_at = ?
+                    WHERE id = ?
+                """
+                tx.execute(update_sql, [
+                    url,
+                    doc.get("source_type", "url"),
+                    doc.get("content_path"),
+                    doc.get("content_hash"),
+                    doc.get("fetch_status") or doc.get("status", "pending"),
+                    doc.get("error"),
+                    metadata_json,
+                    now,
+                    doc_id,
+                ])
+                updated += 1
+            else:
+                # Insert
+                insert_sql = """
+                    INSERT INTO documents (id, url, source_type, content_path, content_hash,
+                                           fetch_status, error, metadata, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """
+                tx.execute(insert_sql, [
+                    doc_id,
+                    url,
+                    doc.get("source_type", "url"),
+                    doc.get("content_path"),
+                    doc.get("content_hash"),
+                    doc.get("fetch_status") or doc.get("status", "pending"),
+                    doc.get("error"),
+                    metadata_json,
+                    now,
+                    now,
+                ])
+                inserted += 1
+
+    return {"inserted": inserted, "updated": updated}
+
+
+def get_status_counts(db: "DoltDB") -> dict[str, int]:
+    """Get document counts by fetch status.
+
+    Args:
+        db: DoltDB client
+
+    Returns:
+        Dict mapping fetch_status to count (None status mapped to 'pending')
+    """
+    sql = """
+        SELECT fetch_status, COUNT(*) as count
+        FROM documents
+        GROUP BY fetch_status
+    """
+    result = db.query(sql)
+    # Handle NULL fetch_status (omitted from dict by DoltDB JSON parser)
+    # Map NULL to 'pending' for consistency
+    counts = {}
+    for row in result:
+        status = row.get("fetch_status", "pending")  # NULL -> pending
+        if status is None:
+            status = "pending"
+        counts[status] = row["count"]
+    return counts
+
+
+def get_domain_counts(db: "DoltDB", limit: int = 100) -> dict[str, int]:
+    """Get document counts by domain.
+
+    Args:
+        db: DoltDB client
+        limit: Maximum number of domains to return
+
+    Returns:
+        Dict mapping domain to count
+    """
+    # Dolt/MySQL supports SUBSTRING_INDEX for domain extraction
+    sql = f"""
+        SELECT
+            SUBSTRING_INDEX(SUBSTRING_INDEX(url, '://', -1), '/', 1) as domain,
+            COUNT(*) as count
+        FROM documents
+        WHERE url IS NOT NULL AND url != ''
+        GROUP BY domain
+        ORDER BY count DESC
+        LIMIT {limit}
+    """
+    result = db.query(sql)
+    return {row["domain"]: row["count"] for row in result}

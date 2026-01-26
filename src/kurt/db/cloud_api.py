@@ -21,7 +21,7 @@ def get_auth_token() -> str:
     Raises:
         KurtCloudAuthError: If not logged in or token expired
     """
-    from kurt.cli.auth.credentials import ensure_fresh_token
+    from kurt.auth import ensure_fresh_token
 
     creds = ensure_fresh_token()
     if not creds or not creds.access_token or creds.is_expired():
@@ -46,7 +46,7 @@ def api_request(endpoint: str, params: dict | None = None):
     """
     import requests
 
-    from kurt.cli.auth.credentials import get_cloud_api_url
+    from kurt.auth import get_cloud_api_url
 
     api_base = get_cloud_api_url()
     token = get_auth_token()

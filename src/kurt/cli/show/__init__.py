@@ -1,10 +1,13 @@
-"""Show commands - display instructions and available options."""
+"""Show commands - display instructions and available options.
+
+Note: Some setup/help commands have been moved to their respective modules:
+- analytics-setup -> kurt connect analytics help
+- cloud-setup -> kurt cloud help
+- cms-setup -> kurt connect cms help
+"""
 
 import click
 
-from .analytics_setup import analytics_setup_cmd
-from .cloud_setup import cloud_setup_cmd
-from .cms_setup import cms_setup_cmd
 from .discovery_methods import discovery_methods_cmd
 from .embedding_step import embedding_step_cmd
 from .feedback_workflow import feedback_workflow_cmd
@@ -37,7 +40,7 @@ def show():
     - workflow-create: Instructions for creating user workflows with tools
 
     \b
-    Other Commands:
+    Agent Workflow Instructions:
     - format-templates: List available format templates
     - source-gathering: Display source gathering strategy
     - project-workflow: Instructions for creating/editing projects
@@ -47,9 +50,12 @@ def show():
     - plan-template-workflow: Instructions for modifying plan template
     - feedback-workflow: Instructions for collecting feedback
     - discovery-methods: Methods for discovering existing content
-    - cms-setup: CMS integration setup
-    - analytics-setup: Analytics integration setup
-    - cloud-setup: Kurt Cloud setup and migration
+
+    \b
+    Moved Commands (now in their respective modules):
+    - Analytics setup: kurt connect analytics help
+    - CMS setup: kurt connect cms help
+    - Cloud setup: kurt cloud help
     """
     pass
 
@@ -64,9 +70,6 @@ show.add_command(profile_workflow_cmd, name="profile-workflow")
 show.add_command(plan_template_workflow_cmd, name="plan-template-workflow")
 show.add_command(feedback_workflow_cmd, name="feedback-workflow")
 show.add_command(discovery_methods_cmd, name="discovery-methods")
-show.add_command(cms_setup_cmd, name="cms-setup")
-show.add_command(analytics_setup_cmd, name="analytics-setup")
-show.add_command(cloud_setup_cmd, name="cloud-setup")
 show.add_command(workflow_create_cmd, name="workflow-create")
 
 # Workflow tool documentation

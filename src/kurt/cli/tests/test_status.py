@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from kurt.core.tests.conftest import (
+from kurt.conftest import (
     assert_cli_success,
     assert_output_contains,
     invoke_cli,
@@ -230,7 +230,7 @@ class TestStatusMigrationWarning:
         2. User runs `kurt admin migrate apply`
         3. User runs `kurt status` and sees no warning
         """
-        from kurt.cli.admin import admin
+        from kurt.admin.cli import admin
 
         # Note: For fresh project, status will fail because DB doesn't exist
         # So we need to run migrate first to create the DB

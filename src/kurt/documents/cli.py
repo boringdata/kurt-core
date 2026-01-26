@@ -12,13 +12,13 @@ from rich.console import Console
 from rich.table import Table
 
 from kurt.admin.telemetry.decorators import track_command
-from kurt.cli.options import (
+from kurt.tools.core import (
     add_confirmation_options,
     add_filter_options,
     format_option,
     format_table_option,
+    print_json,
 )
-from kurt.cli.output import print_json
 
 console = Console()
 
@@ -241,76 +241,24 @@ def delete_cmd(
 
 def _list_documents(filters):
     """
-    List documents - routes to local queries or cloud API based on mode.
+    List documents from Dolt database.
 
-    Local mode: Direct SQLAlchemy queries
-    Cloud mode: HTTP request to kurt-cloud API
+    In Dolt-only architecture, we query directly from Dolt tables.
     """
-    from kurt.db.routing import route_by_mode
-
-    return route_by_mode(_list_documents_from_db, _list_documents_from_api, filters)
-
-
-def _list_documents_from_db(filters):
-    """Get documents using Dolt queries (local mode)."""
     from kurt.documents.dolt_registry import list_documents_dolt
 
     return list_documents_dolt(filters)
 
 
-def _list_documents_from_api(filters):
-    """Get documents from web API (cloud mode)."""
-    from kurt.db.cloud_api import api_request
-    from kurt.documents.models import DocumentView
-
-    # Build query parameters - only include what DocumentFilters actually has
-    params = {}
-    if filters.fetch_status:
-        params["status"] = str(filters.fetch_status)
-    if filters.limit:
-        params["limit"] = filters.limit
-    if filters.offset:
-        params["offset"] = filters.offset
-    if filters.url_contains:
-        params["url_pattern"] = filters.url_contains
-
-    data = api_request("/core/api/documents", params)
-    return [DocumentView(**doc) for doc in data]
-
-
 def _get_document(identifier: str):
     """
-    Get document by ID - routes to local queries or cloud API based on mode.
+    Get document by ID from Dolt database.
 
-    Local mode: Direct SQLAlchemy queries with fallback to partial ID match
-    Cloud mode: HTTP request to kurt-cloud API
+    In Dolt-only architecture, we query directly from Dolt tables.
     """
-    from kurt.db.routing import route_by_mode
-
-    return route_by_mode(_get_document_from_db, _get_document_from_api, identifier)
-
-
-def _get_document_from_db(identifier: str):
-    """Get document using Dolt queries (local mode)."""
     from kurt.documents.dolt_registry import get_document_dolt
 
     return get_document_dolt(identifier)
-
-
-def _get_document_from_api(identifier: str):
-    """Get document from web API (cloud mode)."""
-    import requests
-
-    from kurt.db.cloud_api import api_request
-    from kurt.documents.models import DocumentView
-
-    try:
-        data = api_request(f"/core/api/documents/{identifier}")
-        return DocumentView(**data)
-    except requests.exceptions.HTTPError as e:
-        if e.response.status_code == 404:
-            return None
-        raise
 
 
 def _doc_to_dict(doc) -> dict:
@@ -350,3 +298,27 @@ def _status_style(status) -> str:
     if "PENDING" in s:
         return f"[yellow]{s}[/yellow]"
     return s
+
+
+# =============================================================================
+# Command Groups
+# =============================================================================
+
+
+@click.group(name="docs")
+def docs_group():
+    """
+    Document management commands.
+
+    \b
+    Commands:
+      list     List documents with filters
+      get      Get document details
+      delete   Delete documents
+    """
+    pass
+
+
+docs_group.add_command(list_cmd, name="list")
+docs_group.add_command(get_cmd, name="get")
+docs_group.add_command(delete_cmd, name="delete")

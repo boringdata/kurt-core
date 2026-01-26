@@ -50,12 +50,13 @@ class LazyGroup(click.Group):
     cls=LazyGroup,
     lazy_subcommands={
         # Core command groups
-        "workflow": ("kurt.cli.workflow", "workflow_group"),
-        "tool": ("kurt.cli.tools", "tools_group"),
-        "docs": ("kurt.cli.docs", "docs_group"),
+        "workflow": ("kurt.workflows.toml.cli", "workflow_group"),
+        "tool": ("kurt.tools.cli", "tools_group"),
+        "docs": ("kurt.documents.cli", "docs_group"),
+        "sync": ("kurt.isolation.cli", "sync_group"),
         "connect": ("kurt.integrations.cli", "integrations_group"),
-        "cloud": ("kurt.cli.cloud", "cloud_group"),
-        "admin": ("kurt.cli.admin", "admin"),
+        "cloud": ("kurt.cloud.cli", "cloud_group"),
+        "admin": ("kurt.admin.cli", "admin"),
         "help": ("kurt.cli.show", "show_group"),
     },
 )
@@ -139,7 +140,7 @@ def _check_migrations():
 # Core top-level commands (not under any group)
 from kurt.cli.doctor import doctor_cmd, repair_cmd  # noqa: E402
 from kurt.cli.init import init  # noqa: E402
-from kurt.cli.web import serve  # noqa: E402
+from kurt.web.cli import serve  # noqa: E402
 from kurt.status import status  # noqa: E402
 
 main.add_command(init)

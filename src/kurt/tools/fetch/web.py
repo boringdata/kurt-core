@@ -17,9 +17,8 @@ def fetch_from_web(urls: list[str], fetch_engine: str) -> BatchFetchResult:
     - httpx/trafilatura: Sequential processing (no native batch support)
     - tavily/firecrawl: Native batch API (single call with all URLs)
 
-    Note: For parallel processing of httpx/trafilatura, use DBOS Queue at
-    the workflow level (see steps.py). This function is a simple router
-    that can be called from anywhere.
+    For parallel processing, use the workflow orchestration layer.
+    This function is a simple router that can be called from anywhere.
 
     Args:
         urls: List of URLs to fetch

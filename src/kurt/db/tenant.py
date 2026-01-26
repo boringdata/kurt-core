@@ -1,18 +1,18 @@
 """
-Workspace context management for multi-tenant isolation.
+Workspace context management for local Dolt mode.
 
 Usage:
-    # In middleware/auth
+    # Set workspace context (typically from config)
     set_workspace_context(workspace_id="ws-123", user_id="user-456")
 
     # In business logic (automatic)
     workspace_id = get_workspace_id()  # Returns "ws-123"
 
-    # Check if multi-tenant mode is enabled
-    if is_multi_tenant():
-        # Enforce workspace filtering
+    # Check cloud mode
+    if is_cloud_mode():
+        # Route to cloud API
 
-Local SQLite mode:
+Local Dolt mode:
     Workspace is auto-detected from GitHub repo (owner/repo:branch).
     This ensures data is tagged consistently for later migration to cloud.
 """
@@ -22,10 +22,7 @@ from __future__ import annotations
 import os
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional
-
-if TYPE_CHECKING:
-    from sqlalchemy.orm import Session
+from typing import Optional
 
 # Use ContextVar for async compatibility (works with both sync and async)
 _workspace_context: ContextVar[Optional["WorkspaceContext"]] = ContextVar(
@@ -105,7 +102,7 @@ def is_multi_tenant() -> bool:
     - DATABASE_URL is set (PostgreSQL mode)
     - OR KURT_MULTI_TENANT=true
 
-    Returns False for local SQLite mode.
+    Returns False for local Dolt mode.
     """
     if os.environ.get("KURT_MULTI_TENANT", "").lower() == "true":
         return True
@@ -132,41 +129,13 @@ def is_cloud_mode() -> bool:
     return False
 
 
-
-
-def is_postgres() -> bool:
-    """Check if using PostgreSQL database."""
-    db_url = os.environ.get("DATABASE_URL", "")
-    if db_url.startswith("postgresql"):
-        return True
-    # Check config file for DATABASE_URL="kurt" or postgresql://...
-    if not db_url:
-        try:
-            from kurt.config import config_file_exists, load_config
-
-            if config_file_exists():
-                config = load_config()
-                config_url = config.DATABASE_URL or ""
-                return config_url == "kurt" or config_url.startswith("postgresql")
-        except Exception:
-            pass
-    return db_url == "kurt"
-
-
 def get_mode() -> str:
     """Get current operating mode.
 
     Returns:
-        "sqlite" - Default CLI usage with SQLite
-        "postgres" - Local testing with PostgreSQL
-        "kurt-cloud" - Production SaaS with auth + RLS
+        "dolt" - Dolt database with git-like versioning (only supported mode)
     """
-    if not is_postgres():
-        return "sqlite"
-    elif is_cloud_mode():
-        return "kurt-cloud"
-    else:
-        return "postgres"
+    return "dolt"
 
 
 # =============================================================================
@@ -179,7 +148,7 @@ def init_workspace_from_config() -> bool:
 
     Reads WORKSPACE_ID from config and sets workspace context.
     If no WORKSPACE_ID exists, generates one and saves it to config.
-    Call this at CLI startup for local SQLite mode.
+    Call this at CLI startup for local Dolt mode.
 
     Returns:
         True if context was set, False if no config file.
@@ -273,7 +242,7 @@ def load_context_from_credentials() -> bool:
         True if context was set, False if no credentials or not logged in.
     """
     try:
-        from kurt.cli.auth.credentials import load_credentials
+        from kurt.auth import load_credentials
 
         creds = load_credentials()
         if creds is None:
@@ -304,37 +273,6 @@ def load_context_from_credentials() -> bool:
         return False
     except Exception:
         return False
-
-
-# =============================================================================
-# RLS Context for PostgreSQL
-# =============================================================================
-
-
-def set_rls_context(session: "Session") -> None:
-    """Set PostgreSQL session variables for RLS policies.
-
-    Call this at the start of each request/session when in cloud mode.
-    RLS policies use these variables to filter data:
-        workspace_id = current_setting('app.workspace_id', true)
-
-    Args:
-        session: SQLAlchemy session to configure
-    """
-    from sqlalchemy import text
-
-    if not is_cloud_mode() or not is_postgres():
-        return
-
-    user_id = get_user_id()
-    workspace_id = get_workspace_id()
-
-    if user_id:
-        session.execute(text("SET LOCAL app.user_id = :user_id"), {"user_id": user_id})
-    if workspace_id:
-        session.execute(
-            text("SET LOCAL app.workspace_id = :workspace_id"), {"workspace_id": workspace_id}
-        )
 
 
 # =============================================================================

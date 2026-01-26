@@ -23,10 +23,9 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlparse
 
 from pydantic import BaseModel, Field, model_validator
 
-from kurt.tools.base import ProgressCallback, Tool, ToolContext, ToolResult
+from kurt.tools.core import ProgressCallback, Tool, ToolContext, ToolResult, register_tool
 from kurt.tools.map.config import MapConfig
 from kurt.tools.map.models import MapDocument, MapStatus
-from kurt.tools.registry import register_tool
 
 if TYPE_CHECKING:
     from httpx import AsyncClient

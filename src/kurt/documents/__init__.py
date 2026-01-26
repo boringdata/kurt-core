@@ -86,7 +86,8 @@ def resolve_documents(
     import hashlib
     from pathlib import Path
 
-    from kurt.db.documents import get_dolt_db, upsert_documents
+    from kurt.db.dolt import get_dolt_db
+    from kurt.documents.dolt_registry import upsert_documents
     from kurt.documents.dolt_registry import list_documents_dolt
 
     db = get_dolt_db()

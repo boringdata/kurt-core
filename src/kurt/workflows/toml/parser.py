@@ -22,7 +22,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from kurt.tools.registry import TOOLS
+from kurt.tools.core import TOOLS
+from kurt.workflows.core import CircularDependencyError, WorkflowParseError, detect_cycle
 
 # Valid input types for workflow inputs
 InputType = Literal["string", "int", "float", "bool"]
@@ -44,12 +45,6 @@ def resolve_step_type(step_type: str) -> str:
     return STEP_TYPE_ALIASES.get(step_type, step_type)
 
 
-class WorkflowParseError(Exception):
-    """Base exception for workflow parsing errors."""
-
-    pass
-
-
 class UnknownStepTypeError(WorkflowParseError):
     """Raised when a step has an unknown type."""
 
@@ -66,15 +61,6 @@ class UnknownDependsOnError(WorkflowParseError):
         self.step_name = step_name
         self.dep = dep
         super().__init__(f"Step {step_name} depends on unknown step: {dep}")
-
-
-class CircularDependencyError(WorkflowParseError):
-    """Raised when circular dependencies are detected."""
-
-    def __init__(self, cycle: list[str]):
-        self.cycle = cycle
-        cycle_str = " -> ".join(cycle)
-        super().__init__(f"Circular dependency detected: {cycle_str}")
 
 
 class UnknownKeyError(WorkflowParseError):
@@ -187,52 +173,6 @@ def _check_unknown_keys(
     for key in data:
         if key not in valid_keys:
             raise UnknownKeyError(location, key)
-
-
-def _detect_circular_dependencies(steps: dict[str, StepDef]) -> list[str] | None:
-    """
-    Detect circular dependencies in step graph.
-
-    Uses DFS with coloring:
-    - WHITE (0): unvisited
-    - GRAY (1): in current path
-    - BLACK (2): fully processed
-
-    Returns:
-        List of step names forming a cycle, or None if no cycle.
-    """
-    WHITE, GRAY, BLACK = 0, 1, 2  # noqa: N806
-    color: dict[str, int] = {name: WHITE for name in steps}
-    {name: None for name in steps}
-
-    def visit(node: str, path: list[str]) -> list[str] | None:
-        color[node] = GRAY
-        path.append(node)
-
-        for dep in steps[node].depends_on:
-            if dep not in color:
-                # Dependency doesn't exist - handled elsewhere
-                continue
-            if color[dep] == GRAY:
-                # Found cycle - build cycle path
-                cycle_start = path.index(dep)
-                return path[cycle_start:] + [dep]
-            if color[dep] == WHITE:
-                result = visit(dep, path)
-                if result:
-                    return result
-
-        path.pop()
-        color[node] = BLACK
-        return None
-
-    for node in steps:
-        if color[node] == WHITE:
-            result = visit(node, [])
-            if result:
-                return result
-
-    return None
 
 
 def _resolve_output_schema(config: dict[str, Any], models_path: Path | None) -> None:
@@ -388,9 +328,9 @@ def parse_workflow(
             if dep not in step_names:
                 raise UnknownDependsOnError(step_name, dep)
 
-    # Detect circular dependencies
+    # Detect circular dependencies using shared utility
     if steps:
-        cycle = _detect_circular_dependencies(steps)
+        cycle = detect_cycle(steps)
         if cycle:
             raise CircularDependencyError(cycle)
 

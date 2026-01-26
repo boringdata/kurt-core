@@ -2,9 +2,9 @@
 
 This module provides:
 - Config: Project configuration management (KurtConfig, ModelConfig, etc.)
-- Core: LLM step abstractions with DBOS durability
-- DB: Database abstraction layer (SQLite/PostgreSQL)
+- DB: Database abstraction layer (SQLite/PostgreSQL/Dolt)
 - Workflows: Modular workflow implementations
+- Observability: Tracking and monitoring for workflows via Dolt
 """
 
 # Config module - project and workflow configuration

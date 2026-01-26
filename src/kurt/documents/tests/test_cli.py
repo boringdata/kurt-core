@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner
 
-from kurt.core.tests.conftest import (
+from kurt.conftest import (
     assert_cli_success,
     assert_json_output,
     assert_output_contains,

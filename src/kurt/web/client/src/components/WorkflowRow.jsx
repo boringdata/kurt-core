@@ -764,7 +764,7 @@ export default function WorkflowRow({
       let date = new Date(dateStr)
       if (!isNaN(date.getTime())) return date
 
-      // DBOS timestamps may be in format "2024-01-09 14:30:44.123456"
+      // Timestamps may be in format "2024-01-09 14:30:44.123456"
       // Convert to ISO format by replacing space with T
       if (typeof dateStr === 'string' && dateStr.includes(' ')) {
         date = new Date(dateStr.replace(' ', 'T') + 'Z')

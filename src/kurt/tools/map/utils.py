@@ -5,7 +5,7 @@ from fnmatch import fnmatch
 from typing import Any, Callable, Optional
 
 # Use shared URL canonicalization for consistent document IDs
-from kurt.tools.utils import make_document_id
+from kurt.tools.core import make_document_id
 
 from .models import MapStatus
 
@@ -45,7 +45,7 @@ def resolve_existing(doc_ids: list[str]) -> set[str]:
     if not doc_ids:
         return set()
     try:
-        from kurt.db.documents import get_dolt_db
+        from kurt.db.dolt import get_dolt_db
 
         db = get_dolt_db()
         placeholders = ", ".join("?" for _ in doc_ids)

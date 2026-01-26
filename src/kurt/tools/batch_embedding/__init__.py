@@ -15,8 +15,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from ..base import ProgressCallback, Tool, ToolContext, ToolResult
-from ..registry import register_tool
+from ..core.base import ProgressCallback, Tool, ToolContext, ToolResult
+from ..core.registry import register_tool
 from .schema import BatchEmbeddingResult
 
 logger = logging.getLogger(__name__)
@@ -704,6 +704,10 @@ class BatchEmbeddingTool(Tool[BatchEmbeddingParams, BatchEmbeddingOutput]):
 # ============================================================================
 
 from .models import BatchEmbeddingRecord, BatchEmbeddingStatus
+from .utils import (
+    generate_document_embedding,
+    generate_embeddings,
+)
 
 __all__ = [
     # Tool class
@@ -721,6 +725,8 @@ __all__ = [
     # Utilities
     "embedding_to_bytes",
     "bytes_to_embedding",
+    "generate_embeddings",
+    "generate_document_embedding",
     # Constants
     "PROVIDER_MAX_BATCH_SIZES",
     "PROVIDER_DEFAULT_MODELS",

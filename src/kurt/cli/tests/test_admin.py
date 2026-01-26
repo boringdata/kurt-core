@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from kurt.cli.admin import admin
-from kurt.core.tests.conftest import (
+from kurt.admin.cli import admin
+from kurt.conftest import (
     assert_cli_success,
     assert_output_contains,
     invoke_cli,

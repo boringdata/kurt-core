@@ -2,7 +2,7 @@
 Database initialization and management.
 
 This module provides a unified interface for database operations.
-Supports both SQLite (local dev) and PostgreSQL (production via DBOS).
+Uses Dolt for local development with git-like versioning.
 
 Usage:
     from kurt.db import get_database_client, get_session
@@ -33,11 +33,12 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel import Session, SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from kurt.db.base import DatabaseClient, get_database_client
+from kurt.db.base import get_database_client
+from kurt.db.dolt import DoltDB
 
 __all__ = [
     "get_database_client",
-    "DatabaseClient",
+    "DoltDB",
     "Session",
     "init_database",
     "get_session",
@@ -91,9 +92,7 @@ def ensure_tables(models: list[type[SQLModel]], session: Optional[Session] = Non
 def managed_session(session: Optional[Session] = None):
     """Transactional context manager with automatic commit/rollback.
 
-    Works with all database backends:
-    - SQLite: Standard SQLModel session
-    - PostgreSQL: SQLModel session + RLS context via SET LOCAL
+    Works with Dolt database backend.
 
     Args:
         session: Optional existing session to use (will NOT be closed/committed)
@@ -106,17 +105,11 @@ def managed_session(session: Optional[Session] = None):
             session.add(LLMTrace(workflow_id="123", ...))
             # Auto-commits on exit, rolls back on exception
     """
-    from kurt.db.tenant import set_rls_context
-
     if session is not None:
-        # Set RLS context on existing session
-        set_rls_context(session)
         yield session
     else:
         _session = get_session()
         try:
-            # Set RLS context for PostgreSQL mode
-            set_rls_context(_session)
             yield _session
             _session.commit()
         except Exception:

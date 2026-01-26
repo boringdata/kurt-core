@@ -390,24 +390,28 @@ class TestToolExtraction:
             "---\nname: my-workflow\ntitle: My\nagent:\n  model: claude-sonnet-4-20250514\n---\nBody"
         )
 
-        # Create tools.py with DBOS decorators
+        # Create tools.py with decorated functions
         tools_content = '''
 """Tools for my workflow."""
 
-from dbos import DBOS
 
-@DBOS.workflow()
+def tool(fn):
+    """Marker decorator for tools."""
+    return fn
+
+
+@tool
 def analyze_data(url: str) -> dict:
     """Analyze data from URL and return insights."""
     return {"result": "analyzed"}
 
-@DBOS.step()
+@tool
 def process_item(item: str, count: int = 1) -> list:
     """Process a single item."""
     return [item] * count
 
 def helper_function():
-    """This is not a tool."""
+    """This is not a tool (no decorator)."""
     pass
 '''
         (workflow_dir / "tools.py").write_text(tools_content)

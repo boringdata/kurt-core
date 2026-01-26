@@ -11,14 +11,16 @@ from rich.console import Console
 from rich.table import Table
 
 from kurt.admin.telemetry.decorators import track_command
-from kurt.cli.options import (
+from kurt.tools.core import (
     add_background_options,
     add_filter_options,
+    create_pending_run,
     dry_run_option,
     format_option,
+    print_json,
+    run_tool_with_tracking,
+    spawn_background_run,
 )
-from kurt.cli.output import print_json
-from kurt.tools.runner import create_pending_run, run_tool_with_tracking, spawn_background_run
 
 console = Console()
 
@@ -165,7 +167,8 @@ def fetch_cmd(
     if urls:
         import hashlib
 
-        from kurt.db.documents import get_dolt_db, upsert_documents
+        from kurt.db.dolt import get_dolt_db
+        from kurt.documents.dolt_registry import upsert_documents
 
         url_list = [u.strip() for u in urls.split(",") if u.strip()]
         docs_to_create = []
@@ -195,7 +198,8 @@ def fetch_cmd(
         import hashlib
         from pathlib import Path as FilePath
 
-        from kurt.db.documents import get_dolt_db, upsert_documents
+        from kurt.db.dolt import get_dolt_db
+        from kurt.documents.dolt_registry import upsert_documents
 
         file_list = [f.strip() for f in files_paths.split(",") if f.strip()]
         docs_to_create = []

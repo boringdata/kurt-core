@@ -12,7 +12,7 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
-from kurt.tools.base import SubstepEvent, ToolContext
+from kurt.tools.core import SubstepEvent, ToolContext
 from kurt.tools.fetch import (
     NON_RETRYABLE_STATUS_CODES,
     RETRYABLE_STATUS_CODES,
@@ -26,7 +26,7 @@ from kurt.tools.fetch import (
     _is_retryable_error,
     _save_content,
 )
-from kurt.tools.registry import TOOLS, clear_registry, get_tool
+from kurt.tools.core import TOOLS, clear_registry, get_tool
 
 # Alias for backward compatibility with test names
 FetchConfig = FetchToolConfig
@@ -690,7 +690,7 @@ class TestFetchToolPersistence:
 
         from kurt.db import managed_session
         from kurt.tools.fetch.models import FetchDocument
-        from kurt.tools.utils import make_document_id
+        from kurt.tools.core import make_document_id
 
         repo_path = tmp_sqlmodel_project
         tool = FetchTool()
@@ -761,7 +761,7 @@ async def test_real_fetch(tmp_sqlmodel_project):
 
     from kurt.db import managed_session
     from kurt.tools.fetch.models import FetchDocument
-    from kurt.tools.utils import make_document_id
+    from kurt.tools.core import make_document_id
 
     repo_path = tmp_sqlmodel_project
     tool = FetchTool()

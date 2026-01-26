@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from kurt.cli.workflow import (
+from kurt.workflows.toml.cli import (
     _parse_input,
     cancel_cmd,
     logs_cmd,
@@ -20,7 +20,7 @@ from kurt.cli.workflow import (
     status_cmd,
     workflow_group,
 )
-from kurt.core.tests.conftest import (
+from kurt.conftest import (
     assert_cli_success,
     assert_output_contains,
     invoke_cli,
@@ -196,7 +196,7 @@ class TestRunCommand:
 
     def test_run_dry_run(self, cli_runner: CliRunner, sample_workflow_toml: Path):
         """Test dry-run mode parses workflow without executing."""
-        with patch("kurt.cli.workflow._get_dolt_db"):
+        with patch("kurt.workflows.toml.cli._get_dolt_db"):
             result = invoke_cli(
                 cli_runner,
                 run_cmd,
@@ -212,7 +212,7 @@ class TestRunCommand:
 
     def test_run_dry_run_shows_inputs(self, cli_runner: CliRunner, sample_workflow_toml: Path):
         """Test dry-run shows input configuration."""
-        with patch("kurt.cli.workflow._get_dolt_db"):
+        with patch("kurt.workflows.toml.cli._get_dolt_db"):
             result = invoke_cli(
                 cli_runner,
                 run_cmd,
@@ -231,7 +231,7 @@ class TestRunCommand:
         self, cli_runner: CliRunner, sample_workflow_toml: Path, mock_dolt_db
     ):
         """Test run fails when required input is missing."""
-        with patch("kurt.cli.workflow._get_dolt_db", return_value=mock_dolt_db):
+        with patch("kurt.workflows.toml.cli._get_dolt_db", return_value=mock_dolt_db):
             result = cli_runner.invoke(run_cmd, [str(sample_workflow_toml)])
 
         assert result.exit_code != 0
@@ -239,7 +239,7 @@ class TestRunCommand:
 
     def test_run_multiple_inputs(self, cli_runner: CliRunner, sample_workflow_toml: Path):
         """Test run with multiple input values."""
-        with patch("kurt.cli.workflow._get_dolt_db"):
+        with patch("kurt.workflows.toml.cli._get_dolt_db"):
             result = invoke_cli(
                 cli_runner,
                 run_cmd,
@@ -294,7 +294,7 @@ class TestStatusCommand:
         self, cli_runner: CliRunner, mock_dolt_db, mock_lifecycle
     ):
         """Test status command with JSON output."""
-        with patch("kurt.cli.workflow._get_dolt_db", return_value=mock_dolt_db):
+        with patch("kurt.workflows.toml.cli._get_dolt_db", return_value=mock_dolt_db):
             with patch(
                 "kurt.observability.WorkflowLifecycle", return_value=mock_lifecycle
             ):
@@ -313,7 +313,7 @@ class TestStatusCommand:
         self, cli_runner: CliRunner, mock_dolt_db, mock_lifecycle
     ):
         """Test status command with text output."""
-        with patch("kurt.cli.workflow._get_dolt_db", return_value=mock_dolt_db):
+        with patch("kurt.workflows.toml.cli._get_dolt_db", return_value=mock_dolt_db):
             with patch(
                 "kurt.observability.WorkflowLifecycle", return_value=mock_lifecycle
             ):
@@ -331,7 +331,7 @@ class TestStatusCommand:
         mock_lifecycle = MagicMock()
         mock_lifecycle.get_run.return_value = None
 
-        with patch("kurt.cli.workflow._get_dolt_db", return_value=mock_dolt_db):
+        with patch("kurt.workflows.toml.cli._get_dolt_db", return_value=mock_dolt_db):
             with patch(
                 "kurt.observability.WorkflowLifecycle", return_value=mock_lifecycle
             ):
@@ -355,7 +355,7 @@ class TestStatusCommand:
             {"step_id": "map", "status": "completed", "output_count": 100},
         ]
 
-        with patch("kurt.cli.workflow._get_dolt_db", return_value=mock_dolt_db):
+        with patch("kurt.workflows.toml.cli._get_dolt_db", return_value=mock_dolt_db):
             with patch(
                 "kurt.observability.WorkflowLifecycle", return_value=mock_lifecycle
             ):
@@ -395,7 +395,7 @@ class TestCancelCommand:
         mock_lifecycle = MagicMock()
         mock_lifecycle.get_run.return_value = None
 
-        with patch("kurt.cli.workflow._get_dolt_db", return_value=mock_dolt_db):
+        with patch("kurt.workflows.toml.cli._get_dolt_db", return_value=mock_dolt_db):
             with patch(
                 "kurt.observability.WorkflowLifecycle", return_value=mock_lifecycle
             ):
@@ -413,7 +413,7 @@ class TestCancelCommand:
             "status": "completed",
         }
 
-        with patch("kurt.cli.workflow._get_dolt_db", return_value=mock_dolt_db):
+        with patch("kurt.workflows.toml.cli._get_dolt_db", return_value=mock_dolt_db):
             with patch(
                 "kurt.observability.WorkflowLifecycle", return_value=mock_lifecycle
             ):
@@ -436,11 +436,11 @@ class TestCancelCommand:
         # update_status should not raise
         mock_lifecycle.update_status.return_value = None
 
-        with patch("kurt.cli.workflow._get_dolt_db", return_value=mock_dolt_db):
+        with patch("kurt.workflows.toml.cli._get_dolt_db", return_value=mock_dolt_db):
             with patch(
                 "kurt.observability.WorkflowLifecycle", return_value=mock_lifecycle
             ):
-                with patch("kurt.cli.workflow.time.sleep"):  # Skip the sleep
+                with patch("kurt.workflows.toml.cli.time.sleep"):  # Skip the sleep
                     result = invoke_cli(cli_runner, cancel_cmd, ["running-run"])
 
         assert_cli_success(result)
@@ -510,7 +510,7 @@ class TestLogsCommand:
         mock_lifecycle = MagicMock()
         mock_lifecycle.get_run.return_value = None
 
-        with patch("kurt.cli.workflow._get_dolt_db", return_value=mock_dolt_db):
+        with patch("kurt.workflows.toml.cli._get_dolt_db", return_value=mock_dolt_db):
             with patch(
                 "kurt.observability.WorkflowLifecycle", return_value=mock_lifecycle
             ):
@@ -524,7 +524,7 @@ class TestLogsCommand:
         mock_lifecycle = MagicMock()
         mock_lifecycle.get_run.return_value = None
 
-        with patch("kurt.cli.workflow._get_dolt_db", return_value=mock_dolt_db):
+        with patch("kurt.workflows.toml.cli._get_dolt_db", return_value=mock_dolt_db):
             with patch(
                 "kurt.observability.WorkflowLifecycle", return_value=mock_lifecycle
             ):
@@ -559,7 +559,7 @@ class TestLogsCommand:
             ]
         )
 
-        with patch("kurt.cli.workflow._get_dolt_db", return_value=mock_dolt_db):
+        with patch("kurt.workflows.toml.cli._get_dolt_db", return_value=mock_dolt_db):
             with patch(
                 "kurt.observability.WorkflowLifecycle", return_value=mock_lifecycle
             ):
@@ -601,7 +601,7 @@ class TestLogsCommand:
 
         mock_dolt_db.query.side_effect = [step_logs_result, step_events_result]
 
-        with patch("kurt.cli.workflow._get_dolt_db", return_value=mock_dolt_db):
+        with patch("kurt.workflows.toml.cli._get_dolt_db", return_value=mock_dolt_db):
             with patch(
                 "kurt.observability.WorkflowLifecycle", return_value=mock_lifecycle
             ):
@@ -627,7 +627,7 @@ class TestLogsCommand:
 
         mock_dolt_db.query.return_value = MagicMock(rows=[])
 
-        with patch("kurt.cli.workflow._get_dolt_db", return_value=mock_dolt_db):
+        with patch("kurt.workflows.toml.cli._get_dolt_db", return_value=mock_dolt_db):
             with patch(
                 "kurt.observability.WorkflowLifecycle", return_value=mock_lifecycle
             ):
@@ -652,7 +652,7 @@ class TestLogsCommand:
 
         mock_dolt_db.query.return_value = MagicMock(rows=[])
 
-        with patch("kurt.cli.workflow._get_dolt_db", return_value=mock_dolt_db):
+        with patch("kurt.workflows.toml.cli._get_dolt_db", return_value=mock_dolt_db):
             with patch(
                 "kurt.observability.WorkflowLifecycle", return_value=mock_lifecycle
             ):
@@ -677,7 +677,7 @@ class TestLogsCommand:
 
         mock_dolt_db.query.return_value = MagicMock(rows=[])
 
-        with patch("kurt.cli.workflow._get_dolt_db", return_value=mock_dolt_db):
+        with patch("kurt.workflows.toml.cli._get_dolt_db", return_value=mock_dolt_db):
             with patch(
                 "kurt.observability.WorkflowLifecycle", return_value=mock_lifecycle
             ):
@@ -708,11 +708,11 @@ class TestLogsCommand:
             {"status": "completed"},  # First check - terminal
         ]
 
-        with patch("kurt.cli.workflow._get_dolt_db", return_value=mock_dolt_db):
+        with patch("kurt.workflows.toml.cli._get_dolt_db", return_value=mock_dolt_db):
             with patch(
                 "kurt.observability.WorkflowLifecycle", return_value=mock_lifecycle
             ):
-                with patch("kurt.cli.workflow.time.sleep"):  # Skip sleep
+                with patch("kurt.workflows.toml.cli.time.sleep"):  # Skip sleep
                     result = invoke_cli(
                         cli_runner, logs_cmd, ["test-run-123", "--tail"]
                     )

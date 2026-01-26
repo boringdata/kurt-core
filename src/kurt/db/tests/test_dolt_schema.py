@@ -3,19 +3,14 @@
 
 from kurt.db.dolt import (
     OBSERVABILITY_TABLES,
-    SCHEMA_FILE,
     get_schema_sql,
     get_table_ddl,
     split_sql_statements,
 )
 
 
-class TestSchemaFile:
-    """Tests for schema file loading."""
-
-    def test_schema_file_exists(self):
-        """Schema file should exist at expected location."""
-        assert SCHEMA_FILE.exists(), f"Schema file not found: {SCHEMA_FILE}"
+class TestSchemaSQL:
+    """Tests for embedded schema SQL."""
 
     def test_get_schema_sql_returns_content(self):
         """get_schema_sql should return non-empty SQL."""

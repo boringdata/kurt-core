@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from pydantic import ValidationError
 
-from kurt.tools.base import SubstepEvent, ToolContext, ToolResult
+from kurt.tools.core import SubstepEvent, ToolContext, ToolResult
 from kurt.tools.map import (
     MapInput,
     MapOutput,
@@ -24,7 +24,7 @@ from kurt.tools.map import (
     make_document_id,
     normalize_url,
 )
-from kurt.tools.registry import TOOLS, clear_registry
+from kurt.tools.core import TOOLS, clear_registry
 
 # ============================================================================
 # Fixtures

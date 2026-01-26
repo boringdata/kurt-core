@@ -9,16 +9,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from kurt.workflows.core import CircularDependencyError, detect_cycle
 from kurt.workflows.toml.parser import StepDef
 
 
-class CycleDetectedError(Exception):
-    """Raised when a cycle is detected in the dependency graph."""
-
-    def __init__(self, cycle: list[str]):
-        self.cycle = cycle
-        cycle_str = " -> ".join(cycle)
-        super().__init__(f"Cycle detected: {cycle_str}")
+# Backwards compatibility alias
+CycleDetectedError = CircularDependencyError
 
 
 @dataclass
@@ -39,57 +35,6 @@ class ExecutionPlan:
     total_steps: int = 0
     parallelizable: bool = False
     critical_path: list[str] = field(default_factory=list)
-
-
-def _detect_cycle(
-    steps: dict[str, StepDef],
-) -> list[str] | None:
-    """
-    Detect cycles in the step dependency graph using DFS.
-
-    Uses three-color algorithm:
-    - WHITE (0): not visited
-    - GRAY (1): in current DFS path
-    - BLACK (2): fully processed
-
-    Returns:
-        List of step names forming the cycle (including the repeated node),
-        or None if no cycle exists.
-    """
-    WHITE, GRAY, BLACK = 0, 1, 2  # noqa: N806
-    color: dict[str, int] = {name: WHITE for name in steps}
-
-    def dfs(node: str, path: list[str]) -> list[str] | None:
-        color[node] = GRAY
-        path.append(node)
-
-        for dep in steps[node].depends_on:
-            if dep not in steps:
-                # Missing dependency - handled by parser
-                continue
-
-            if color[dep] == GRAY:
-                # Found cycle: path from dep to current node + dep
-                cycle_start_idx = path.index(dep)
-                return path[cycle_start_idx:] + [dep]
-
-            if color[dep] == WHITE:
-                result = dfs(dep, path)
-                if result is not None:
-                    return result
-
-        path.pop()
-        color[node] = BLACK
-        return None
-
-    # Sort step names for deterministic cycle detection
-    for node in sorted(steps.keys()):
-        if color[node] == WHITE:
-            result = dfs(node, [])
-            if result is not None:
-                return result
-
-    return None
 
 
 def _compute_levels(
@@ -278,10 +223,10 @@ def build_dag(steps: dict[str, StepDef]) -> ExecutionPlan:
             critical_path=[],
         )
 
-    # Detect cycles first
-    cycle = _detect_cycle(steps)
+    # Detect cycles first using shared utility
+    cycle = detect_cycle(steps)
     if cycle is not None:
-        raise CycleDetectedError(cycle)
+        raise CircularDependencyError(cycle)
 
     # Compute execution levels
     levels = _compute_levels(steps)

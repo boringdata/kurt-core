@@ -21,9 +21,7 @@ from kurt.db.tenant import (
     init_workspace_from_config,
     is_cloud_mode,
     is_multi_tenant,
-    is_postgres,
     require_workspace_id,
-    set_rls_context,
     set_workspace_context,
 )
 
@@ -123,108 +121,24 @@ class TestModeDetection:
         with patch.dict(os.environ, {"DATABASE_URL": "kurt"}, clear=True):
             assert is_cloud_mode() is True
 
-    def test_is_postgres_false_by_default(self):
-        """Test is_postgres returns False with no DATABASE_URL."""
-        with patch.dict(os.environ, {}, clear=True):
-            os.environ.pop("DATABASE_URL", None)
-            assert is_postgres() is False
-
-    def test_is_postgres_true_with_postgresql_url(self):
-        """Test is_postgres returns True with postgresql:// URL."""
-        with patch.dict(os.environ, {"DATABASE_URL": "postgresql://localhost/db"}, clear=True):
-            assert is_postgres() is True
-
-    def test_is_postgres_true_with_postgres_url(self):
-        """Test is_postgres returns True with postgres:// URL."""
-        with patch.dict(os.environ, {"DATABASE_URL": "postgres://localhost/db"}, clear=True):
-            # postgres:// doesn't start with "postgresql" so returns False
-            # This is current behavior - only postgresql:// prefix is recognized
-            assert is_postgres() is False
-
-    def test_is_postgres_false_with_sqlite_url(self):
-        """Test is_postgres returns False with sqlite:// URL."""
-        with patch.dict(os.environ, {"DATABASE_URL": "sqlite:///path/to/db"}, clear=True):
-            assert is_postgres() is False
-
 
 class TestGetMode:
     """Tests for get_mode function."""
 
-    def test_sqlite_mode(self):
-        """Test sqlite mode when no DATABASE_URL."""
+    def test_dolt_mode_always(self):
+        """Test dolt mode is always returned (Dolt-only architecture)."""
+        # No DATABASE_URL
         with patch.dict(os.environ, {}, clear=True):
             os.environ.pop("DATABASE_URL", None)
-            assert get_mode() == "sqlite"
+            assert get_mode() == "dolt"
 
-    def test_postgres_mode(self):
-        """Test postgres mode with postgresql:// DATABASE_URL."""
+        # Even with postgresql:// URL (no longer supported)
         with patch.dict(os.environ, {"DATABASE_URL": "postgresql://localhost/db"}, clear=True):
-            assert get_mode() == "postgres"
+            assert get_mode() == "dolt"
 
-    def test_kurt_cloud_mode(self):
-        """Test kurt-cloud mode with DATABASE_URL='kurt'."""
-        with patch.dict(os.environ, {"DATABASE_URL": "kurt"}, clear=True):
-            assert get_mode() == "kurt-cloud"
-
-
-class TestRLSContext:
-    """Tests for RLS context setting."""
-
-    def setup_method(self):
-        """Clear context before each test."""
-        clear_workspace_context()
-
-    def teardown_method(self):
-        """Clear context after each test."""
-        clear_workspace_context()
-
-    def test_set_rls_context_skipped_in_local_mode(self):
-        """Test set_rls_context does nothing in local mode."""
-        with patch.dict(os.environ, {}, clear=True):
-            os.environ.pop("DATABASE_URL", None)
-
-            mock_session = MagicMock()
-            set_rls_context(mock_session)
-
-            # Should not execute any SQL
-            mock_session.execute.assert_not_called()
-
-    def test_set_rls_context_skipped_without_cloud_mode(self):
-        """Test set_rls_context does nothing with postgres but not cloud mode."""
-        with patch.dict(os.environ, {"DATABASE_URL": "postgresql://localhost/db"}, clear=True):
-            mock_session = MagicMock()
-            set_rls_context(mock_session)
-
-            # Not cloud mode (DATABASE_URL != "kurt"), so should not execute
-            mock_session.execute.assert_not_called()
-
-    def test_set_rls_context_sets_variables_in_cloud_mode(self):
-        """Test set_rls_context sets session variables in cloud mode."""
-        with patch.dict(os.environ, {"DATABASE_URL": "kurt"}, clear=True):
-            set_workspace_context(workspace_id="ws-123", user_id="user-456")
-
-            mock_session = MagicMock()
-            set_rls_context(mock_session)
-
-            # Should execute SET LOCAL statements
-            assert mock_session.execute.call_count == 2
-            # Check the actual SQL text objects passed to execute
-            call_args = [call[0][0] for call in mock_session.execute.call_args_list]
-            sql_texts = [str(arg) for arg in call_args]
-            assert any("app.user_id" in sql for sql in sql_texts)
-            assert any("app.workspace_id" in sql for sql in sql_texts)
-
-    def test_set_rls_context_skips_unset_values(self):
-        """Test set_rls_context skips variables that are not set."""
-        with patch.dict(os.environ, {"DATABASE_URL": "kurt"}, clear=True):
-            # Only set workspace_id, not user_id
-            set_workspace_context(workspace_id="ws-only")
-
-            mock_session = MagicMock()
-            set_rls_context(mock_session)
-
-            # Should only execute one SET LOCAL (for workspace_id)
-            assert mock_session.execute.call_count == 1
+        # With mysql:// URL (Dolt uses MySQL protocol)
+        with patch.dict(os.environ, {"DATABASE_URL": "mysql+pymysql://root@localhost:3309/kurt"}, clear=True):
+            assert get_mode() == "dolt"
 
 
 class TestAddWorkspaceFilter:

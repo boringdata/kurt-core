@@ -14,8 +14,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
-from ..base import ProgressCallback, Tool, ToolContext, ToolResult
-from ..registry import register_tool
+from ..core.base import ProgressCallback, Tool, ToolContext, ToolResult
+from ..core.registry import register_tool
 
 logger = logging.getLogger(__name__)
 

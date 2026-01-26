@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from kurt.cli.tools import (
+from kurt.tools.cli import (
     embed_cmd,
     fetch_cmd,
     llm_cmd,
@@ -18,7 +18,7 @@ from kurt.cli.tools import (
     sql_cmd,
     write_to_db_cmd,
 )
-from kurt.tools.base import ToolResult
+from kurt.tools.core import ToolResult
 
 
 @pytest.fixture
@@ -59,8 +59,8 @@ class TestMapCommand:
             ],
         )
 
-        with patch("kurt.cli.tools.load_tool_context") as mock_ctx, patch(
-            "kurt.cli.tools.execute_tool", new_callable=AsyncMock
+        with patch("kurt.tools.cli.load_tool_context") as mock_ctx, patch(
+            "kurt.tools.cli.execute_tool", new_callable=AsyncMock
         ) as mock_exec:
             mock_ctx.return_value = MagicMock()
             mock_exec.return_value = mock_result
@@ -93,8 +93,8 @@ class TestMapCommand:
             Path(tmpdir, "file1.md").write_text("content 1")
             Path(tmpdir, "file2.md").write_text("content 2")
 
-            with patch("kurt.cli.tools.load_tool_context") as mock_ctx, patch(
-                "kurt.cli.tools.execute_tool", new_callable=AsyncMock
+            with patch("kurt.tools.cli.load_tool_context") as mock_ctx, patch(
+                "kurt.tools.cli.execute_tool", new_callable=AsyncMock
             ) as mock_exec:
                 mock_ctx.return_value = MagicMock()
                 mock_exec.return_value = mock_result
@@ -110,8 +110,8 @@ class TestMapCommand:
         """Test map with include/exclude patterns."""
         mock_result = ToolResult(success=True, data=[{"url": "https://example.com/docs"}])
 
-        with patch("kurt.cli.tools.load_tool_context") as mock_ctx, patch(
-            "kurt.cli.tools.execute_tool", new_callable=AsyncMock
+        with patch("kurt.tools.cli.load_tool_context") as mock_ctx, patch(
+            "kurt.tools.cli.execute_tool", new_callable=AsyncMock
         ) as mock_exec:
             mock_ctx.return_value = MagicMock()
             mock_exec.return_value = mock_result
@@ -157,8 +157,8 @@ class TestFetchCommand:
             ],
         )
 
-        with patch("kurt.cli.tools.load_tool_context") as mock_ctx, patch(
-            "kurt.cli.tools.execute_tool", new_callable=AsyncMock
+        with patch("kurt.tools.cli.load_tool_context") as mock_ctx, patch(
+            "kurt.tools.cli.execute_tool", new_callable=AsyncMock
         ) as mock_exec:
             mock_ctx.return_value = MagicMock()
             mock_exec.return_value = mock_result
@@ -175,8 +175,8 @@ class TestFetchCommand:
             success=True, data=[{"url": "https://example.com", "status": "success"}]
         )
 
-        with patch("kurt.cli.tools.load_tool_context") as mock_ctx, patch(
-            "kurt.cli.tools.execute_tool", new_callable=AsyncMock
+        with patch("kurt.tools.cli.load_tool_context") as mock_ctx, patch(
+            "kurt.tools.cli.execute_tool", new_callable=AsyncMock
         ) as mock_exec:
             mock_ctx.return_value = MagicMock()
             mock_exec.return_value = mock_result
@@ -192,8 +192,8 @@ class TestFetchCommand:
         input_path = temp_jsonl([{"url": "https://example.com"}])
         mock_result = ToolResult(success=True, data=[{"url": "https://example.com"}])
 
-        with patch("kurt.cli.tools.load_tool_context") as mock_ctx, patch(
-            "kurt.cli.tools.execute_tool", new_callable=AsyncMock
+        with patch("kurt.tools.cli.load_tool_context") as mock_ctx, patch(
+            "kurt.tools.cli.execute_tool", new_callable=AsyncMock
         ) as mock_exec:
             mock_ctx.return_value = MagicMock()
             mock_exec.return_value = mock_result
@@ -234,8 +234,8 @@ class TestLLMCommand:
             ],
         )
 
-        with patch("kurt.cli.tools.load_tool_context") as mock_ctx, patch(
-            "kurt.cli.tools.execute_tool", new_callable=AsyncMock
+        with patch("kurt.tools.cli.load_tool_context") as mock_ctx, patch(
+            "kurt.tools.cli.execute_tool", new_callable=AsyncMock
         ) as mock_exec:
             mock_ctx.return_value = MagicMock()
             mock_exec.return_value = mock_result
@@ -254,8 +254,8 @@ class TestLLMCommand:
         input_path = temp_jsonl([{"content": "Test"}])
         mock_result = ToolResult(success=True, data=[{"content": "Test"}])
 
-        with patch("kurt.cli.tools.load_tool_context") as mock_ctx, patch(
-            "kurt.cli.tools.execute_tool", new_callable=AsyncMock
+        with patch("kurt.tools.cli.load_tool_context") as mock_ctx, patch(
+            "kurt.tools.cli.execute_tool", new_callable=AsyncMock
         ) as mock_exec:
             mock_ctx.return_value = MagicMock()
             mock_exec.return_value = mock_result
@@ -317,8 +317,8 @@ class TestEmbedCommand:
             ],
         )
 
-        with patch("kurt.cli.tools.load_tool_context") as mock_ctx, patch(
-            "kurt.cli.tools.execute_tool", new_callable=AsyncMock
+        with patch("kurt.tools.cli.load_tool_context") as mock_ctx, patch(
+            "kurt.tools.cli.execute_tool", new_callable=AsyncMock
         ) as mock_exec:
             mock_ctx.return_value = MagicMock()
             mock_exec.return_value = mock_result
@@ -340,8 +340,8 @@ class TestEmbedCommand:
         input_path = temp_jsonl([{"text": "Test content"}])
         mock_result = ToolResult(success=True, data=[{"text": "Test content"}])
 
-        with patch("kurt.cli.tools.load_tool_context") as mock_ctx, patch(
-            "kurt.cli.tools.execute_tool", new_callable=AsyncMock
+        with patch("kurt.tools.cli.load_tool_context") as mock_ctx, patch(
+            "kurt.tools.cli.execute_tool", new_callable=AsyncMock
         ) as mock_exec:
             mock_ctx.return_value = MagicMock()
             mock_exec.return_value = mock_result
@@ -379,8 +379,8 @@ class TestWriteCommand:
             ],
         )
 
-        with patch("kurt.cli.tools.load_tool_context") as mock_ctx, patch(
-            "kurt.cli.tools.execute_tool", new_callable=AsyncMock
+        with patch("kurt.tools.cli.load_tool_context") as mock_ctx, patch(
+            "kurt.tools.cli.execute_tool", new_callable=AsyncMock
         ) as mock_exec:
             mock_ctx.return_value = MagicMock()
             mock_exec.return_value = mock_result
@@ -396,8 +396,8 @@ class TestWriteCommand:
         input_path = temp_jsonl([{"url": "https://example.com"}])
         mock_result = ToolResult(success=True, data=[{"row_id": "https://example.com", "status": "updated"}])
 
-        with patch("kurt.cli.tools.load_tool_context") as mock_ctx, patch(
-            "kurt.cli.tools.execute_tool", new_callable=AsyncMock
+        with patch("kurt.tools.cli.load_tool_context") as mock_ctx, patch(
+            "kurt.tools.cli.execute_tool", new_callable=AsyncMock
         ) as mock_exec:
             mock_ctx.return_value = MagicMock()
             mock_exec.return_value = mock_result
@@ -418,8 +418,8 @@ class TestWriteCommand:
         input_path = temp_jsonl([{"domain": "example.com", "path": "/page"}])
         mock_result = ToolResult(success=True, data=[{"status": "inserted"}])
 
-        with patch("kurt.cli.tools.load_tool_context") as mock_ctx, patch(
-            "kurt.cli.tools.execute_tool", new_callable=AsyncMock
+        with patch("kurt.tools.cli.load_tool_context") as mock_ctx, patch(
+            "kurt.tools.cli.execute_tool", new_callable=AsyncMock
         ) as mock_exec:
             mock_ctx.return_value = MagicMock()
             mock_exec.return_value = mock_result
@@ -462,8 +462,8 @@ class TestSQLCommand:
             ],
         )
 
-        with patch("kurt.cli.tools.load_tool_context") as mock_ctx, patch(
-            "kurt.cli.tools.execute_tool", new_callable=AsyncMock
+        with patch("kurt.tools.cli.load_tool_context") as mock_ctx, patch(
+            "kurt.tools.cli.execute_tool", new_callable=AsyncMock
         ) as mock_exec:
             mock_ctx.return_value = MagicMock()
             mock_exec.return_value = mock_result
@@ -480,8 +480,8 @@ class TestSQLCommand:
             success=True, data=[{"id": 1, "url": "https://example.com"}]
         )
 
-        with patch("kurt.cli.tools.load_tool_context") as mock_ctx, patch(
-            "kurt.cli.tools.execute_tool", new_callable=AsyncMock
+        with patch("kurt.tools.cli.load_tool_context") as mock_ctx, patch(
+            "kurt.tools.cli.execute_tool", new_callable=AsyncMock
         ) as mock_exec:
             mock_ctx.return_value = MagicMock()
             mock_exec.return_value = mock_result
@@ -523,8 +523,8 @@ class TestProgressDisplay:
         input_path = temp_jsonl([{"url": "https://example.com"}])
         mock_result = ToolResult(success=True, data=[{"url": "https://example.com"}])
 
-        with patch("kurt.cli.tools.load_tool_context") as mock_ctx, patch(
-            "kurt.cli.tools.execute_tool", new_callable=AsyncMock
+        with patch("kurt.tools.cli.load_tool_context") as mock_ctx, patch(
+            "kurt.tools.cli.execute_tool", new_callable=AsyncMock
         ) as mock_exec:
             mock_ctx.return_value = MagicMock()
             mock_exec.return_value = mock_result
@@ -542,8 +542,8 @@ class TestProgressDisplay:
         input_path = temp_jsonl([{"url": "https://example.com"}])
         mock_result = ToolResult(success=True, data=[{"url": "https://example.com"}])
 
-        with patch("kurt.cli.tools.load_tool_context") as mock_ctx, patch(
-            "kurt.cli.tools.execute_tool", new_callable=AsyncMock
+        with patch("kurt.tools.cli.load_tool_context") as mock_ctx, patch(
+            "kurt.tools.cli.execute_tool", new_callable=AsyncMock
         ) as mock_exec:
             mock_ctx.return_value = MagicMock()
             mock_exec.return_value = mock_result
@@ -567,8 +567,8 @@ class TestExitCodes:
         input_path = temp_jsonl([{"url": "https://example.com"}])
         mock_result = ToolResult(success=True, data=[{"url": "https://example.com"}])
 
-        with patch("kurt.cli.tools.load_tool_context") as mock_ctx, patch(
-            "kurt.cli.tools.execute_tool", new_callable=AsyncMock
+        with patch("kurt.tools.cli.load_tool_context") as mock_ctx, patch(
+            "kurt.tools.cli.execute_tool", new_callable=AsyncMock
         ) as mock_exec:
             mock_ctx.return_value = MagicMock()
             mock_exec.return_value = mock_result
@@ -582,8 +582,8 @@ class TestExitCodes:
         input_path = temp_jsonl([{"url": "https://example.com"}])
         mock_result = ToolResult(success=False, data=[], errors=[])
 
-        with patch("kurt.cli.tools.load_tool_context") as mock_ctx, patch(
-            "kurt.cli.tools.execute_tool", new_callable=AsyncMock
+        with patch("kurt.tools.cli.load_tool_context") as mock_ctx, patch(
+            "kurt.tools.cli.execute_tool", new_callable=AsyncMock
         ) as mock_exec:
             mock_ctx.return_value = MagicMock()
             mock_exec.return_value = mock_result

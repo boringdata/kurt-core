@@ -1,17 +1,14 @@
-# tools.py: DBOS Step Functions
+# tools.py: Workflow Step Functions
 
-The `tools.py` file contains `@DBOS.step()` functions used by `type = "function"` steps.
-These functions are durable, retriable, and observable.
+The `tools.py` file contains functions used by `type = "function"` steps in step-driven workflows.
+These functions are called with a context dict and should return serializable results.
 
 ## Basic Structure
 
 ```python
-"""DBOS step functions for my_workflow."""
-
-from dbos import DBOS
+"""Step functions for my_workflow."""
 
 
-@DBOS.step()
 def my_step(context: dict) -> dict:
     """Step description.
 
@@ -48,7 +45,6 @@ The context dict passed to each step contains:
 ### 1. Data Fetching Step
 
 ```python
-@DBOS.step()
 def fetch_data(context: dict) -> dict:
     """Fetch data from external sources."""
     inputs = context.get("inputs", {})
@@ -71,7 +67,6 @@ def fetch_data(context: dict) -> dict:
 ### 2. Processing Step
 
 ```python
-@DBOS.step()
 def process_items(context: dict) -> dict:
     """Process items from previous step."""
     outputs = context.get("outputs", {})
@@ -100,7 +95,6 @@ def extract_title(html: str) -> str:
 When saving data to custom SQLModel tables, **always call `ensure_tables()` first** to create the table if it doesn't exist:
 
 ```python
-@DBOS.step()
 def save_results(context: dict) -> dict:
     """Save analysis results to database."""
     from kurt.db import managed_session, ensure_tables
@@ -136,12 +130,11 @@ def save_results(context: dict) -> dict:
 **Key points:**
 - Use `ensure_tables([Model])` before any INSERT operations
 - Use **absolute imports** for models: `from workflows.my_workflow.models import X`
-- Do NOT use relative imports like `from .models import X` (they fail in DBOS context)
+- Do NOT use relative imports like `from .models import X`
 
 ### 4. Report Generation Step
 
 ```python
-@DBOS.step()
 def generate_report(context: dict) -> dict:
     """Generate final report from analysis."""
     from sqlmodel import select
@@ -174,7 +167,6 @@ def generate_report(context: dict) -> dict:
 ## Using External APIs
 
 ```python
-@DBOS.step()
 def call_api(context: dict) -> dict:
     """Call external API with retry logic."""
     import httpx
@@ -199,30 +191,9 @@ def call_api(context: dict) -> dict:
         return {"success": False, "error": str(e)}
 ```
 
-## Progress Tracking
-
-```python
-@DBOS.step()
-def process_batch(context: dict) -> dict:
-    """Process batch with progress updates."""
-    items = context.get("inputs", {}).get("items", [])
-    total = len(items)
-
-    DBOS.set_event("stage_total", total)
-
-    results = []
-    for idx, item in enumerate(items):
-        result = process_item(item)
-        results.append(result)
-        DBOS.set_event("stage_current", idx + 1)
-
-    return {"results": results, "processed": len(results)}
-```
-
 ## Error Handling
 
 ```python
-@DBOS.step()
 def safe_step(context: dict) -> dict:
     """Step with error handling."""
     try:
@@ -233,19 +204,16 @@ def safe_step(context: dict) -> dict:
         # Expected error - return error info
         return {"success": False, "error": str(e), "error_type": "validation"}
     except Exception as e:
-        # Unexpected error - re-raise for DBOS retry
+        # Unexpected error - re-raise for workflow to handle
         raise
 ```
 
 ## Complete Example
 
 ```python
-"""DBOS step functions for competitor_tracker workflow."""
-
-from dbos import DBOS
+"""Step functions for competitor_tracker workflow."""
 
 
-@DBOS.step()
 def fetch_pages(context: dict) -> dict:
     """Fetch competitor pages from URLs."""
     import httpx
@@ -275,7 +243,6 @@ def fetch_pages(context: dict) -> dict:
     return {"pages": pages, "count": len(pages)}
 
 
-@DBOS.step()
 def save_analysis(context: dict) -> dict:
     """Save analysis results from agent step."""
     import json
@@ -324,7 +291,6 @@ def save_analysis(context: dict) -> dict:
     return {"saved": saved, "errors": errors, "status": "completed"}
 
 
-@DBOS.step()
 def generate_report(context: dict) -> dict:
     """Generate report from saved analysis."""
     from datetime import datetime
@@ -394,5 +360,4 @@ function = "generate_report"  # Calls generate_report() from tools.py
 4. **Return serializable data** - Dicts with JSON-compatible values
 5. **Use context for data flow** - Access inputs and previous outputs
 6. **Handle errors gracefully** - Return error info or re-raise
-7. **Track progress** - Use `DBOS.set_event()` for long operations
-8. **Query saved data in report step** - Agent saves, function reads
+7. **Query saved data in report step** - Agent saves, function reads

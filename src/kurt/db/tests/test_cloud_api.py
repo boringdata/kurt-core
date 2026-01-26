@@ -20,7 +20,7 @@ class _DummyCreds:
 
 def test_get_auth_token_uses_refresh(monkeypatch):
     monkeypatch.setattr(
-        "kurt.cli.auth.credentials.ensure_fresh_token",
+        "kurt.auth.ensure_fresh_token",
         lambda: _DummyCreds("fresh-token", False),
     )
 
@@ -29,7 +29,7 @@ def test_get_auth_token_uses_refresh(monkeypatch):
 
 def test_get_auth_token_raises_when_expired(monkeypatch):
     monkeypatch.setattr(
-        "kurt.cli.auth.credentials.ensure_fresh_token",
+        "kurt.auth.ensure_fresh_token",
         lambda: _DummyCreds("expired-token", True),
     )
 
@@ -39,7 +39,7 @@ def test_get_auth_token_raises_when_expired(monkeypatch):
 
 def test_api_request_handles_empty_body(monkeypatch):
     monkeypatch.setattr("kurt.db.cloud_api.get_auth_token", lambda: "token")
-    monkeypatch.setattr("kurt.cli.auth.credentials.get_cloud_api_url", lambda: "http://test")
+    monkeypatch.setattr("kurt.auth.credentials.get_cloud_api_url", lambda: "http://test")
 
     response = MagicMock()
     response.status_code = 204
@@ -53,7 +53,7 @@ def test_api_request_handles_empty_body(monkeypatch):
 
 def test_api_request_handles_non_json(monkeypatch):
     monkeypatch.setattr("kurt.db.cloud_api.get_auth_token", lambda: "token")
-    monkeypatch.setattr("kurt.cli.auth.credentials.get_cloud_api_url", lambda: "http://test")
+    monkeypatch.setattr("kurt.auth.credentials.get_cloud_api_url", lambda: "http://test")
 
     response = MagicMock()
     response.status_code = 200
@@ -69,7 +69,7 @@ def test_api_request_handles_non_json(monkeypatch):
 
 def test_api_request_raises_on_401(monkeypatch):
     monkeypatch.setattr("kurt.db.cloud_api.get_auth_token", lambda: "token")
-    monkeypatch.setattr("kurt.cli.auth.credentials.get_cloud_api_url", lambda: "http://test")
+    monkeypatch.setattr("kurt.auth.credentials.get_cloud_api_url", lambda: "http://test")
 
     response = MagicMock()
     response.status_code = 401

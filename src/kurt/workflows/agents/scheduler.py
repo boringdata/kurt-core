@@ -1,7 +1,6 @@
 """
 Cron-based scheduling for agent workflows.
 
-This module provides scheduling utilities for agent workflows without DBOS.
 Schedules are tracked via workflow definitions and executed via run_definition.
 
 Note: For production use, consider integrating with an external scheduler
@@ -92,13 +91,13 @@ def run_scheduled_workflow(name: str) -> dict[str, Any]:
 
 def register_scheduled_workflows() -> int:
     """
-    Legacy function for DBOS compatibility.
+    List scheduled workflows for external scheduler integration.
 
-    Without DBOS, scheduled workflows need to be triggered by an external
-    scheduler (cron, systemd timer, task queue, etc.).
+    Scheduled workflows need to be triggered by an external scheduler
+    (cron, systemd timer, task queue, etc.).
 
     Returns:
-        Number of scheduled workflows found (not registered)
+        Number of scheduled workflows found
     """
     count = 0
     for definition in list_definitions():

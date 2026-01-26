@@ -17,9 +17,9 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-from ..base import ProgressCallback, Tool, ToolContext, ToolResult
-from ..errors import ToolExecutionError, ToolTimeoutError
-from ..registry import register_tool
+from ..core.base import ProgressCallback, Tool, ToolContext, ToolResult
+from ..core.errors import ToolExecutionError, ToolTimeoutError
+from ..core.registry import register_tool
 
 # ============================================================================
 # Pydantic Models

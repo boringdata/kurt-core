@@ -2,6 +2,5 @@
 
 This module provides:
 - main: Entry point and command registration
-- options: Shared Click option decorators
-- output: Output formatting (wraps kurt.core.status)
+- core: Shared CLI utilities (options, output formatting)
 """

@@ -442,7 +442,7 @@ class TestBuildDagCycleDetection:
         # Error message should have arrow format
         error_msg = str(exc_info.value)
         assert " -> " in error_msg
-        assert "Cycle detected:" in error_msg
+        assert "Circular dependency detected:" in error_msg
 
 
 # ============================================================================

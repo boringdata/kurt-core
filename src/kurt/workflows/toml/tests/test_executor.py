@@ -18,8 +18,8 @@ from kurt.workflows.toml.executor import (
     execute_workflow,
 )
 from kurt.workflows.toml.parser import InputDef, StepDef, WorkflowDefinition, WorkflowMeta
-from kurt.tools.base import ToolContext, ToolResult, ToolResultError
-from kurt.tools.errors import ToolExecutionError, ToolNotFoundError
+from kurt.tools.core import ToolContext, ToolResult, ToolResultError
+from kurt.tools.core import ToolExecutionError, ToolNotFoundError
 
 # ============================================================================
 # Helper Functions
@@ -1057,7 +1057,7 @@ class TestExecuteWorkflowToolCanceled:
     @pytest.mark.asyncio
     async def test_tool_canceled_error_marks_step_canceled(self):
         """ToolCanceledError marks step as canceled (not failed)."""
-        from kurt.tools.errors import ToolCanceledError
+        from kurt.tools.core import ToolCanceledError
 
         workflow = make_workflow(steps={"step1": make_step("map")})
 
@@ -1077,7 +1077,7 @@ class TestExecuteWorkflowToolCanceled:
     @pytest.mark.asyncio
     async def test_tool_canceled_in_chain_stops_workflow(self):
         """Canceled step with dependencies causes workflow to stop (no dependent execution)."""
-        from kurt.tools.errors import ToolCanceledError
+        from kurt.tools.core import ToolCanceledError
 
         workflow = make_workflow(
             steps={

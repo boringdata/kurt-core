@@ -26,8 +26,7 @@ from typing import Any, Literal
 import httpx
 from pydantic import BaseModel, Field
 
-from kurt.tools.base import ProgressCallback, Tool, ToolContext, ToolResult
-from kurt.tools.registry import register_tool
+from kurt.tools.core import ProgressCallback, Tool, ToolContext, ToolResult, register_tool
 
 from .config import FetchConfig, has_embedding_api_keys
 from .models import (
@@ -866,7 +865,7 @@ class FetchTool(Tool[FetchParams, FetchOutput]):
             )
 
             try:
-                from kurt.core.embedding_step import embedding_to_bytes, generate_embeddings
+                from kurt.tools.batch_embedding import embedding_to_bytes, generate_embeddings
 
                 # Prepare texts for embedding (truncate to max chars)
                 max_chars = 1000  # Default, could be configurable

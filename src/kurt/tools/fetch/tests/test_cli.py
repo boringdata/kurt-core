@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from kurt.core.tests.conftest import (
+from kurt.conftest import (
     assert_cli_success,
     assert_output_contains,
     invoke_cli,

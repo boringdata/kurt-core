@@ -13,8 +13,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from kurt.integrations.research.base import Citation, ResearchResult
-from kurt.tools.base import SubstepEvent, ToolContext, ToolResult
-from kurt.tools.registry import TOOLS, clear_registry, execute_tool, get_tool
+from kurt.tools.core import SubstepEvent, ToolContext, ToolResult
+from kurt.tools.core import TOOLS, clear_registry, execute_tool, get_tool
 from kurt.tools.research import (
     CitationOutput,
     ResearchInput,

@@ -31,17 +31,11 @@ Example usage:
     result = await execute_tool("my_tool", {"param": "value"})
 """
 
-# Base classes and dataclasses
-from .agent import (
-    AgentArtifact,
-    AgentConfig,
-    AgentInput,
-    AgentOutput,
-    AgentParams,
-    AgentTool,
-    AgentToolCall,
-)
-from .base import (
+# Core infrastructure (re-exported from core/)
+from .core import (
+    # Base classes
+    InputT,
+    OutputT,
     ProgressCallback,
     SubstepEvent,
     Tool,
@@ -50,10 +44,7 @@ from .base import (
     ToolResultError,
     ToolResultMetadata,
     ToolResultSubstep,
-)
-
-# Context loading
-from .context import (
+    # Context loading
     ConfigValidationError,
     DoltSettings,
     FetchSettings,
@@ -64,9 +55,43 @@ from .context import (
     load_settings,
     load_tool_context,
     validate_settings,
+    # Errors
+    ToolCanceledError,
+    ToolConfigError,
+    ToolError,
+    ToolExecutionError,
+    ToolInputError,
+    ToolNotFoundError,
+    ToolTimeoutError,
+    # Registry
+    TOOLS,
+    clear_registry,
+    execute_tool,
+    get_tool,
+    get_tool_info,
+    list_tools,
+    register_tool,
+    # Runner
+    create_pending_run,
+    run_tool_from_file,
+    run_tool_with_tracking,
+    spawn_background_run,
+    # Utilities
+    canonicalize_url,
+    make_document_id,
+    make_url_hash,
 )
 
 # Import tools to register them
+from .agent import (
+    AgentArtifact,
+    AgentConfig,
+    AgentInput,
+    AgentOutput,
+    AgentParams,
+    AgentTool,
+    AgentToolCall,
+)
 from .batch_embedding import (
     BatchEmbeddingConfig,
     BatchEmbeddingInput,
@@ -76,16 +101,12 @@ from .batch_embedding import (
     bytes_to_embedding,
     embedding_to_bytes,
 )
-
-# Error types
-from .errors import (
-    ToolCanceledError,
-    ToolConfigError,
-    ToolError,
-    ToolExecutionError,
-    ToolInputError,
-    ToolNotFoundError,
-    ToolTimeoutError,
+from .batch_llm import (
+    BatchLLMConfig,
+    BatchLLMInput,
+    BatchLLMOutput,
+    BatchLLMParams,
+    BatchLLMTool,
 )
 from .fetch import (
     NON_RETRYABLE_STATUS_CODES,
@@ -100,29 +121,11 @@ from .fetch import (
     _is_retryable_error,
     _save_content,
 )
+from .map import MapInput, MapOutput, MapTool, normalize_url
 
 # Backward compatibility alias - FetchConfig in fetch_tool.py was renamed to FetchToolConfig
 # The FetchConfig in fetch/config.py is a StepConfig for workflows (different purpose)
 FetchConfig = FetchToolConfig
-from .batch_llm import (
-    BatchLLMConfig,
-    BatchLLMInput,
-    BatchLLMOutput,
-    BatchLLMParams,
-    BatchLLMTool,
-)
-from .map import MapInput, MapOutput, MapTool, normalize_url
-
-# Registry functions
-from .registry import (
-    TOOLS,
-    clear_registry,
-    execute_tool,
-    get_tool,
-    get_tool_info,
-    list_tools,
-    register_tool,
-)
 
 # Import research and signals tools to register them
 from .research import CitationOutput, ResearchInput, ResearchOutput, ResearchTool
@@ -140,6 +143,8 @@ __all__ = [
     "ToolResultSubstep",
     "SubstepEvent",
     "ProgressCallback",
+    "InputT",
+    "OutputT",
     # Errors
     "ToolError",
     "ToolNotFoundError",
@@ -156,6 +161,15 @@ __all__ = [
     "get_tool_info",
     "execute_tool",
     "clear_registry",
+    # Runner
+    "run_tool_with_tracking",
+    "create_pending_run",
+    "spawn_background_run",
+    "run_tool_from_file",
+    # Utilities
+    "canonicalize_url",
+    "make_document_id",
+    "make_url_hash",
     # Map tool
     "MapTool",
     "MapInput",
@@ -166,7 +180,14 @@ __all__ = [
     "FetchInput",
     "FetchOutput",
     "FetchConfig",
+    "FetchToolConfig",
     "FetchParams",
+    "NON_RETRYABLE_STATUS_CODES",
+    "RETRYABLE_STATUS_CODES",
+    "_compute_content_hash",
+    "_generate_content_path",
+    "_is_retryable_error",
+    "_save_content",
     # SQL tool
     "SQLTool",
     "SQLInput",
