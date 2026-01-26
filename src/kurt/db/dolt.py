@@ -747,8 +747,8 @@ class DoltDB:
 
         try:
             self._run_cli(cmd)
-        except subprocess.CalledProcessError as e:
-            raise DoltBranchError(f"Failed to switch to branch '{name}': {e.stderr}") from e
+        except DoltQueryError as e:
+            raise DoltBranchError(f"Failed to switch to branch '{name}': {e}") from e
 
     def branch_list(self, all_branches: bool = False) -> list[BranchInfo]:
         """

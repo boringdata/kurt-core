@@ -52,15 +52,15 @@ def tmp_dolt_repo(tmp_path: Path, dolt_available: bool) -> Path | None:
         capture_output=True,
     )
 
-    # Configure git user for commits
+    # Configure git user for commits (--set required in newer Dolt versions)
     subprocess.run(
-        ["dolt", "config", "--local", "user.email", "test@example.com"],
+        ["dolt", "config", "--local", "--set", "user.email", "test@example.com"],
         cwd=repo_path,
         check=True,
         capture_output=True,
     )
     subprocess.run(
-        ["dolt", "config", "--local", "user.name", "Test User"],
+        ["dolt", "config", "--local", "--set", "user.name", "Test User"],
         cwd=repo_path,
         check=True,
         capture_output=True,
@@ -468,7 +468,9 @@ class TestDoltDBParameterInterpolation:
         db.execute("INSERT INTO users VALUES (?, ?)", [1, None])
 
         result = db.query("SELECT * FROM users")
-        assert result.rows[0]["name"] is None
+        # Dolt JSON output omits NULL columns, so 'name' is not in the result
+        assert result.rows[0]["id"] == 1
+        assert "name" not in result.rows[0]  # NULL columns are omitted
 
     def test_interpolate_boolean(self, tmp_dolt_repo: Path):
         """Test boolean parameter interpolation."""

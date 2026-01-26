@@ -1,8 +1,8 @@
 """
 Core database models for kurt.
 
-Infrastructure tables shared across all workflows.
-Workflow-specific output tables are defined in workflows/<name>/models.py
+Infrastructure tables shared across all tools.
+Tool-specific output tables are defined in tools/<name>/models.py
 and registered via register_all_models().
 """
 
@@ -22,14 +22,14 @@ def register_all_models():
     from kurt.db.models import LLMTrace  # noqa: F401
     from kurt.tools.fetch.models import FetchDocument  # noqa: F401
 
-    # Workflow models
+    # Tool output models
     from kurt.tools.map.models import MapDocument  # noqa: F401
-    from kurt.workflows.domain_analytics.models import (  # noqa: F401
+    from kurt.tools.analytics.models import (  # noqa: F401
         AnalyticsDomain,
         PageAnalytics,
     )
-    from kurt.workflows.research.models import ResearchDocument  # noqa: F401
-    from kurt.workflows.signals.models import MonitoringSignal  # noqa: F401
+    from kurt.tools.research.models import ResearchDocument  # noqa: F401
+    from kurt.tools.signals.models import MonitoringSignal  # noqa: F401
 
 
 # ============================================================================
