@@ -6,7 +6,7 @@ import subprocess
 
 import pytest
 
-from kurt.isolation.hooks import (
+from kurt.db.isolation.hooks import (
     HOOK_NAMES,
     HOOK_SCRIPTS,
     HookExitCode,

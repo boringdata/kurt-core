@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from kurt.isolation.cli import (
+from kurt.db.isolation.cli import (
     branch_group,
     branch_create_cmd as create_cmd,
     branch_delete_cmd as delete_cmd,
@@ -24,7 +24,7 @@ from kurt.conftest import (
     invoke_cli,
 )
 from kurt.db.dolt import BranchInfo
-from kurt.isolation.branch import (
+from kurt.db.isolation.branch import (
     BranchStatus,
     BranchSyncError,
     BranchSyncErrorCode,
@@ -101,9 +101,9 @@ class TestCreateCommand:
             created=True,
         )
 
-        with patch("kurt.isolation.cli._get_dolt_db", return_value=mock_dolt_db):
-            with patch("kurt.isolation.cli._get_git_path", return_value=Path("/fake/repo")):
-                with patch("kurt.isolation.cli.create_both", return_value=mock_result) as mock_create:
+        with patch("kurt.db.isolation.cli._get_dolt_db", return_value=mock_dolt_db):
+            with patch("kurt.db.isolation.cli._get_git_path", return_value=Path("/fake/repo")):
+                with patch("kurt.db.isolation.cli.create_both", return_value=mock_result) as mock_create:
                     result = invoke_cli(cli_runner, branch_group, ["create", "feature/test"])
 
         assert_cli_success(result)
@@ -118,9 +118,9 @@ class TestCreateCommand:
             created=False,
         )
 
-        with patch("kurt.isolation.cli._get_dolt_db", return_value=mock_dolt_db):
-            with patch("kurt.isolation.cli._get_git_path", return_value=Path("/fake/repo")):
-                with patch("kurt.isolation.cli.create_both", return_value=mock_result):
+        with patch("kurt.db.isolation.cli._get_dolt_db", return_value=mock_dolt_db):
+            with patch("kurt.db.isolation.cli._get_git_path", return_value=Path("/fake/repo")):
+                with patch("kurt.db.isolation.cli.create_both", return_value=mock_result):
                     result = invoke_cli(cli_runner, branch_group, ["create", "existing"])
 
         assert_cli_success(result)
@@ -134,9 +134,9 @@ class TestCreateCommand:
             created=True,
         )
 
-        with patch("kurt.isolation.cli._get_dolt_db", return_value=mock_dolt_db):
-            with patch("kurt.isolation.cli._get_git_path", return_value=Path("/fake/repo")):
-                with patch("kurt.isolation.cli.create_both", return_value=mock_result) as mock_create:
+        with patch("kurt.db.isolation.cli._get_dolt_db", return_value=mock_dolt_db):
+            with patch("kurt.db.isolation.cli._get_git_path", return_value=Path("/fake/repo")):
+                with patch("kurt.db.isolation.cli.create_both", return_value=mock_result) as mock_create:
                     result = invoke_cli(
                         cli_runner, branch_group, ["create", "feature/no-switch", "--no-switch"]
                     )
@@ -155,9 +155,9 @@ class TestCreateCommand:
             details="Use alphanumeric characters only",
         )
 
-        with patch("kurt.isolation.cli._get_dolt_db", return_value=mock_dolt_db):
-            with patch("kurt.isolation.cli._get_git_path", return_value=Path("/fake/repo")):
-                with patch("kurt.isolation.cli.create_both", side_effect=error):
+        with patch("kurt.db.isolation.cli._get_dolt_db", return_value=mock_dolt_db):
+            with patch("kurt.db.isolation.cli._get_git_path", return_value=Path("/fake/repo")):
+                with patch("kurt.db.isolation.cli.create_both", side_effect=error):
                     result = invoke_cli(cli_runner, branch_group, ["create", "bad//name"])
 
         assert result.exit_code != 0
@@ -205,9 +205,9 @@ class TestListCommand:
             ),
         ]
 
-        with patch("kurt.isolation.cli._get_dolt_db", return_value=mock_dolt_db):
-            with patch("kurt.isolation.cli._get_git_path", return_value=Path("/fake/repo")):
-                with patch("kurt.isolation.cli.list_branches", return_value=statuses):
+        with patch("kurt.db.isolation.cli._get_dolt_db", return_value=mock_dolt_db):
+            with patch("kurt.db.isolation.cli._get_git_path", return_value=Path("/fake/repo")):
+                with patch("kurt.db.isolation.cli.list_branches", return_value=statuses):
                     result = invoke_cli(cli_runner, branch_group, ["list"])
 
         assert_cli_success(result)
@@ -228,9 +228,9 @@ class TestListCommand:
             ),
         ]
 
-        with patch("kurt.isolation.cli._get_dolt_db", return_value=mock_dolt_db):
-            with patch("kurt.isolation.cli._get_git_path", return_value=Path("/fake/repo")):
-                with patch("kurt.isolation.cli.list_branches", return_value=statuses):
+        with patch("kurt.db.isolation.cli._get_dolt_db", return_value=mock_dolt_db):
+            with patch("kurt.db.isolation.cli._get_git_path", return_value=Path("/fake/repo")):
+                with patch("kurt.db.isolation.cli.list_branches", return_value=statuses):
                     result = invoke_cli(cli_runner, branch_group, ["list", "--json"])
 
         assert_cli_success(result)
@@ -240,9 +240,9 @@ class TestListCommand:
 
     def test_list_empty(self, cli_runner: CliRunner, mock_dolt_db):
         """Test list with no branches."""
-        with patch("kurt.isolation.cli._get_dolt_db", return_value=mock_dolt_db):
-            with patch("kurt.isolation.cli._get_git_path", return_value=Path("/fake/repo")):
-                with patch("kurt.isolation.cli.list_branches", return_value=[]):
+        with patch("kurt.db.isolation.cli._get_dolt_db", return_value=mock_dolt_db):
+            with patch("kurt.db.isolation.cli._get_git_path", return_value=Path("/fake/repo")):
+                with patch("kurt.db.isolation.cli.list_branches", return_value=[]):
                     result = invoke_cli(cli_runner, branch_group, ["list"])
 
         assert_cli_success(result)
@@ -277,9 +277,9 @@ class TestSwitchCommand:
             created=False,
         )
 
-        with patch("kurt.isolation.cli._get_dolt_db", return_value=mock_dolt_db):
-            with patch("kurt.isolation.cli._get_git_path", return_value=Path("/fake/repo")):
-                with patch("kurt.isolation.cli.switch_both", return_value=mock_result):
+        with patch("kurt.db.isolation.cli._get_dolt_db", return_value=mock_dolt_db):
+            with patch("kurt.db.isolation.cli._get_git_path", return_value=Path("/fake/repo")):
+                with patch("kurt.db.isolation.cli.switch_both", return_value=mock_result):
                     result = invoke_cli(cli_runner, branch_group, ["switch", "feature/test"])
 
         assert_cli_success(result)
@@ -293,9 +293,9 @@ class TestSwitchCommand:
             created=True,
         )
 
-        with patch("kurt.isolation.cli._get_dolt_db", return_value=mock_dolt_db):
-            with patch("kurt.isolation.cli._get_git_path", return_value=Path("/fake/repo")):
-                with patch("kurt.isolation.cli.switch_both", return_value=mock_result):
+        with patch("kurt.db.isolation.cli._get_dolt_db", return_value=mock_dolt_db):
+            with patch("kurt.db.isolation.cli._get_git_path", return_value=Path("/fake/repo")):
+                with patch("kurt.db.isolation.cli.switch_both", return_value=mock_result):
                     result = invoke_cli(cli_runner, branch_group, ["switch", "feature/test"])
 
         assert_cli_success(result)
@@ -309,9 +309,9 @@ class TestSwitchCommand:
             created=False,
         )
 
-        with patch("kurt.isolation.cli._get_dolt_db", return_value=mock_dolt_db):
-            with patch("kurt.isolation.cli._get_git_path", return_value=Path("/fake/repo")):
-                with patch("kurt.isolation.cli.switch_both", return_value=mock_result) as mock_switch:
+        with patch("kurt.db.isolation.cli._get_dolt_db", return_value=mock_dolt_db):
+            with patch("kurt.db.isolation.cli._get_git_path", return_value=Path("/fake/repo")):
+                with patch("kurt.db.isolation.cli.switch_both", return_value=mock_result) as mock_switch:
                     result = invoke_cli(cli_runner, branch_group, ["switch", "main", "--force"])
 
         assert_cli_success(result)
@@ -327,9 +327,9 @@ class TestSwitchCommand:
             details="Use 'kurt branch create' to create a new branch.",
         )
 
-        with patch("kurt.isolation.cli._get_dolt_db", return_value=mock_dolt_db):
-            with patch("kurt.isolation.cli._get_git_path", return_value=Path("/fake/repo")):
-                with patch("kurt.isolation.cli.switch_both", side_effect=error):
+        with patch("kurt.db.isolation.cli._get_dolt_db", return_value=mock_dolt_db):
+            with patch("kurt.db.isolation.cli._get_git_path", return_value=Path("/fake/repo")):
+                with patch("kurt.db.isolation.cli.switch_both", side_effect=error):
                     result = invoke_cli(cli_runner, branch_group, ["switch", "nonexistent"])
 
         assert result.exit_code != 0
@@ -359,8 +359,8 @@ class TestDeleteCommand:
 
     def test_delete_requires_confirmation(self, cli_runner: CliRunner, mock_dolt_db):
         """Test delete asks for confirmation."""
-        with patch("kurt.isolation.cli._get_dolt_db", return_value=mock_dolt_db):
-            with patch("kurt.isolation.cli._get_git_path", return_value=Path("/fake/repo")):
+        with patch("kurt.db.isolation.cli._get_dolt_db", return_value=mock_dolt_db):
+            with patch("kurt.db.isolation.cli._get_git_path", return_value=Path("/fake/repo")):
                 # Simulate user saying "n" to confirmation
                 result = cli_runner.invoke(
                     branch_group, ["delete", "feature/test"], input="n\n"
@@ -377,9 +377,9 @@ class TestDeleteCommand:
             created=False,
         )
 
-        with patch("kurt.isolation.cli._get_dolt_db", return_value=mock_dolt_db):
-            with patch("kurt.isolation.cli._get_git_path", return_value=Path("/fake/repo")):
-                with patch("kurt.isolation.cli.delete_both", return_value=mock_result):
+        with patch("kurt.db.isolation.cli._get_dolt_db", return_value=mock_dolt_db):
+            with patch("kurt.db.isolation.cli._get_git_path", return_value=Path("/fake/repo")):
+                with patch("kurt.db.isolation.cli.delete_both", return_value=mock_result):
                     result = invoke_cli(
                         cli_runner, branch_group, ["delete", "feature/test", "--yes"]
                     )
@@ -389,8 +389,8 @@ class TestDeleteCommand:
 
     def test_delete_main_requires_force(self, cli_runner: CliRunner, mock_dolt_db):
         """Test deleting main branch requires --force --yes."""
-        with patch("kurt.isolation.cli._get_dolt_db", return_value=mock_dolt_db):
-            with patch("kurt.isolation.cli._get_git_path", return_value=Path("/fake/repo")):
+        with patch("kurt.db.isolation.cli._get_dolt_db", return_value=mock_dolt_db):
+            with patch("kurt.db.isolation.cli._get_git_path", return_value=Path("/fake/repo")):
                 result = invoke_cli(cli_runner, branch_group, ["delete", "main"])
 
         assert result.exit_code != 0
@@ -404,9 +404,9 @@ class TestDeleteCommand:
             details="Switch to a different branch first.",
         )
 
-        with patch("kurt.isolation.cli._get_dolt_db", return_value=mock_dolt_db):
-            with patch("kurt.isolation.cli._get_git_path", return_value=Path("/fake/repo")):
-                with patch("kurt.isolation.cli.delete_both", side_effect=error):
+        with patch("kurt.db.isolation.cli._get_dolt_db", return_value=mock_dolt_db):
+            with patch("kurt.db.isolation.cli._get_git_path", return_value=Path("/fake/repo")):
+                with patch("kurt.db.isolation.cli.delete_both", side_effect=error):
                     result = invoke_cli(
                         cli_runner, branch_group, ["delete", "current-branch", "--yes"]
                     )

@@ -6,8 +6,8 @@ import time
 
 import click
 
-from kurt.auth.api import get_user_info, refresh_access_token
-from kurt.auth.credentials import (
+from kurt.cloud.auth.api import get_user_info, refresh_access_token
+from kurt.cloud.auth.credentials import (
     Credentials,
     clear_credentials,
     get_workspace_id_from_config,

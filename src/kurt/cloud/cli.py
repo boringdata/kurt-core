@@ -41,7 +41,7 @@ def login_cmd():
     import time
     import webbrowser
 
-    from kurt.auth import Credentials, get_cloud_api_url, save_credentials
+    from kurt.cloud.auth import Credentials, get_cloud_api_url, save_credentials
 
     cloud_url = get_cloud_api_url()
 
@@ -214,7 +214,7 @@ def login_cmd():
     workspace_id = None
     server_workspace_id = None
     try:
-        from kurt.auth import get_user_info
+        from kurt.cloud.auth import get_user_info
 
         user_info = get_user_info(tokens["access_token"])
         server_workspace_id = user_info.get("user_metadata", {}).get("workspace_id")
@@ -284,7 +284,7 @@ def login_cmd():
     if workspace_id:
         from pathlib import Path
 
-        from kurt.auth import register_workspace_path
+        from kurt.cloud.auth import register_workspace_path
 
         project_path = str(Path.cwd().resolve())
         register_workspace_path(workspace_id, project_path)
@@ -305,7 +305,7 @@ def logout_cmd():
     Example:
         kurt cloud logout
     """
-    from kurt.auth import clear_credentials, load_credentials
+    from kurt.cloud.auth import clear_credentials, load_credentials
 
     creds = load_credentials()
     if creds is None:
@@ -328,7 +328,7 @@ def status_cmd():
     Example:
         kurt cloud status
     """
-    from kurt.auth import load_credentials
+    from kurt.cloud.auth import load_credentials
     from kurt.config import config_file_exists, load_config
     from kurt.db import get_mode
 
@@ -337,7 +337,7 @@ def status_cmd():
     console.print()
 
     # Auth status - auto-refresh token if needed
-    from kurt.auth import ensure_fresh_token
+    from kurt.cloud.auth import ensure_fresh_token
 
     original_creds = load_credentials()
     creds = ensure_fresh_token()
@@ -370,7 +370,7 @@ def status_cmd():
         # If workspace_id not in config, try to get from user metadata via cloud API
         if not workspace_id and creds:
             try:
-                from kurt.auth import get_user_info
+                from kurt.cloud.auth import get_user_info
 
                 user_info = get_user_info(creds.access_token)
                 candidate_workspace_id = user_info.get("user_metadata", {}).get(
@@ -420,7 +420,7 @@ def status_cmd():
                 import json
                 import urllib.request
 
-                from kurt.auth import get_cloud_api_url
+                from kurt.cloud.auth import get_cloud_api_url
 
                 cloud_url = get_cloud_api_url()
                 url = f"{cloud_url}/api/v1/workspaces/{workspace_id}"
@@ -462,8 +462,8 @@ def whoami_cmd():
         kurt cloud whoami
     """
 
-    from kurt.auth import get_user_info
-    from kurt.auth import load_credentials
+    from kurt.cloud.auth import get_user_info
+    from kurt.cloud.auth import load_credentials
 
     creds = load_credentials()
     if creds is None:
@@ -472,7 +472,7 @@ def whoami_cmd():
         raise click.Abort()
 
     # Auto-refresh token if expired
-    from kurt.auth import ensure_fresh_token
+    from kurt.cloud.auth import ensure_fresh_token
 
     creds = ensure_fresh_token()
     if not creds:
@@ -518,7 +518,7 @@ def invite_cmd(email: str, role: str):
     import json
     import urllib.request
 
-    from kurt.auth import ensure_fresh_token, get_cloud_api_url
+    from kurt.cloud.auth import ensure_fresh_token, get_cloud_api_url
     from kurt.config import config_file_exists, load_config
 
     # Check auth and refresh token if needed
@@ -593,7 +593,7 @@ def use_cmd(workspace_id: str):
     import re
     import urllib.request
 
-    from kurt.auth import (
+    from kurt.cloud.auth import (
         get_cloud_api_url,
         load_credentials,
         register_workspace_path,
@@ -679,7 +679,7 @@ def workspace_create_cmd(name: str, github_repo: str):
     import re
     import urllib.request
 
-    from kurt.auth import (
+    from kurt.cloud.auth import (
         get_cloud_api_url,
         load_credentials,
         register_workspace_path,
@@ -769,7 +769,7 @@ def workspaces_cmd():
     import json
     import urllib.request
 
-    from kurt.auth import (
+    from kurt.cloud.auth import (
         ensure_fresh_token,
         get_cloud_api_url,
         get_workspace_paths,
@@ -858,7 +858,7 @@ def members_cmd():
     import json
     import urllib.request
 
-    from kurt.auth import ensure_fresh_token, get_cloud_api_url
+    from kurt.cloud.auth import ensure_fresh_token, get_cloud_api_url
     from kurt.config import config_file_exists, load_config
 
     # Check auth and refresh token if needed

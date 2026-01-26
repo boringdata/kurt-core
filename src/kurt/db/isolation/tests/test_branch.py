@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from kurt.db.dolt import BranchInfo, DoltBranchError, DoltDB
-from kurt.isolation.branch import (
+from kurt.db.isolation.branch import (
     BranchStatus,
     BranchSyncError,
     BranchSyncErrorCode,

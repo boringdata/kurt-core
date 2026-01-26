@@ -173,7 +173,7 @@ def _dolt_status_clean(dolt_path: Path) -> tuple[bool, str]:
 
 def check_hooks_installed(git_path: Path) -> CheckResult:
     """Check if all Git hooks are installed and executable."""
-    from kurt.isolation.hooks import HOOK_NAMES, get_installed_hooks
+    from kurt.db.isolation.hooks import HOOK_NAMES, get_installed_hooks
 
     hooks_dir = git_path / ".git" / "hooks"
     if not hooks_dir.is_dir():
@@ -587,7 +587,7 @@ def get_repair_actions(report: DoctorReport) -> list[RepairAction]:
 
 def do_reinstall_hooks(git_path: Path, force: bool = False) -> bool:
     """Reinstall Git hooks."""
-    from kurt.isolation.hooks import install_hooks
+    from kurt.db.isolation.hooks import install_hooks
 
     result = install_hooks(git_path, force=force)
     return len(result.installed) > 0 and len(result.errors) == 0
@@ -596,7 +596,7 @@ def do_reinstall_hooks(git_path: Path, force: bool = False) -> bool:
 def do_sync_branch(git_path: Path, dolt_path: Path) -> bool:
     """Sync Dolt branch to match Git branch."""
     from kurt.db.dolt import DoltDB
-    from kurt.isolation.branch import sync_to_git
+    from kurt.db.isolation.branch import sync_to_git
 
     dolt_db = DoltDB(dolt_path)
     try:

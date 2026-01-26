@@ -18,7 +18,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from kurt.isolation import (
+from kurt.db.isolation import (
     BranchSyncError,
     MergeConflict,
     MergeError,
@@ -515,7 +515,7 @@ def _handle_abort(as_json: bool) -> None:
 
 def _handle_dry_run(branch: str, git_path: Path, dolt_db, as_json: bool) -> None:
     """Handle --dry-run flag (conflict check)."""
-    from kurt.isolation.branch import _git_current_branch
+    from kurt.db.isolation.branch import _git_current_branch
 
     target = _git_current_branch(git_path) or "main"
 

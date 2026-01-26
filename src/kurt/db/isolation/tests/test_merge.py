@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from kurt.db.dolt import BranchInfo, DoltDB
-from kurt.isolation.merge import (
+from kurt.db.isolation.merge import (
     DoltConflict,
     MergeConflict,
     MergeError,

@@ -242,7 +242,7 @@ def load_context_from_credentials() -> bool:
         True if context was set, False if no credentials or not logged in.
     """
     try:
-        from kurt.auth import load_credentials
+        from kurt.cloud.auth import load_credentials
 
         creds = load_credentials()
         if creds is None:

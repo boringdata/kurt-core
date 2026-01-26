@@ -14,7 +14,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from kurt.admin.telemetry.decorators import track_command
-from kurt.isolation.cli import sync_group
+from kurt.db.isolation.cli import sync_group
 
 console = Console()
 

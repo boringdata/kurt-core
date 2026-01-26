@@ -118,7 +118,7 @@ def ensure_fresh_token() -> Optional[Credentials]:
     if not creds.refresh_token:
         return creds  # No refresh token available
 
-    from kurt.auth.api import refresh_access_token
+    from kurt.cloud.auth.api import refresh_access_token
 
     result = refresh_access_token(creds.refresh_token)
     if not result:

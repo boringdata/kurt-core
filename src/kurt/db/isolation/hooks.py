@@ -9,7 +9,7 @@ Install Git hooks that automatically synchronize Git and Dolt branches:
 Hooks are shell scripts that call kurt CLI commands.
 
 Usage:
-    from kurt.isolation.hooks import install_hooks, uninstall_hooks
+    from kurt.db.isolation.hooks import install_hooks, uninstall_hooks
 
     # Install hooks to a repository
     install_hooks("/path/to/repo")

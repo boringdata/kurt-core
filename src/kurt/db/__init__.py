@@ -69,6 +69,10 @@ from kurt.db.tenant import (
     set_workspace_context,
 )
 
+# Isolation module (Git+Dolt branch sync, merge, remote operations)
+# Import lazily to avoid circular imports - use: from kurt.db.isolation import ...
+# from kurt.db import isolation  # or access via kurt.db.isolation
+
 __all__ = [
     # Database client
     "get_database_client",

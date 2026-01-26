@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from kurt.db.dolt import DoltDB
-from kurt.isolation.remote import (
+from kurt.db.isolation.remote import (
     DoltResult,
     GitResult,
     PullResult,

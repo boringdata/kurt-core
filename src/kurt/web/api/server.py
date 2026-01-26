@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from kurt.auth import (
+from kurt.cloud.auth import (
     get_cloud_api_url,
     get_workspace_id_from_config,
     load_credentials,

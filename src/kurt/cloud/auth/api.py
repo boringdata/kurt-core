@@ -8,7 +8,7 @@ from typing import Optional
 
 import click
 
-from kurt.auth.credentials import get_cloud_api_url
+from kurt.cloud.auth.credentials import get_cloud_api_url
 
 
 def get_user_info(access_token: str) -> dict:

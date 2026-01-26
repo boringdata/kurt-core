@@ -123,7 +123,7 @@ def _create_observability_tables() -> bool:
 def _install_hooks() -> bool:
     """Install Git hooks for auto-sync."""
     try:
-        from kurt.isolation.hooks import install_hooks
+        from kurt.db.isolation.hooks import install_hooks
 
         result = install_hooks(Path.cwd(), force=True)
         if result.errors:

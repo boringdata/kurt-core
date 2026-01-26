@@ -15,9 +15,9 @@ Public API:
 - auth: Click group for CLI commands
 """
 
-from kurt.auth.api import get_user_info, refresh_access_token
-from kurt.auth.cli import auth
-from kurt.auth.credentials import (
+from kurt.cloud.auth.api import get_user_info, refresh_access_token
+from kurt.cloud.auth.cli import auth
+from kurt.cloud.auth.credentials import (
     Credentials,
     clear_credentials,
     ensure_fresh_token,
