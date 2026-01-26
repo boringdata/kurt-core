@@ -83,30 +83,32 @@ def resolve_documents(
         urls: Comma-separated URLs (filter to only these URLs)
         files: Comma-separated file paths (filter to only these files)
     """
-    import hashlib
     from pathlib import Path
 
-    from kurt.db.dolt import get_dolt_db
-    from kurt.documents.dolt_registry import upsert_documents
-    from kurt.documents.dolt_registry import list_documents_dolt
+    from kurt.db import managed_session
+    from kurt.tools.core import make_document_id
+    from kurt.tools.map.models import MapDocument, MapStatus
+    from sqlmodel import select
 
-    db = get_dolt_db()
-
-    # If identifier looks like a URL, auto-create document in Dolt if needed
+    # If identifier looks like a URL, auto-create MapDocument if needed
     if identifier and identifier.startswith(("http://", "https://")):
-        existing = db.query("SELECT id FROM documents WHERE url = ?", [identifier])
-        if not existing:
-            doc_id = hashlib.sha256(identifier.encode()).hexdigest()[:12]
-            upsert_documents(db, [{
-                "id": doc_id,
-                "url": identifier,
-                "source_type": "url",
-                "fetch_status": "pending",
-                "metadata": {
-                    "discovery_method": "cli",
-                    "map_status": "SUCCESS",
-                },
-            }])
+        with managed_session() as session:
+            existing = session.exec(
+                select(MapDocument).where(MapDocument.source_url == identifier)
+            ).first()
+
+            if not existing:
+                doc_id = make_document_id(identifier)
+                doc = MapDocument(
+                    document_id=doc_id,
+                    source_url=identifier,
+                    source_type="url",
+                    discovery_method="cli",
+                    discovery_url=identifier,
+                    status=MapStatus.SUCCESS,
+                    is_new=True,
+                )
+                session.add(doc)
 
     # Build list of source URLs to filter by (from urls/files options)
     source_urls_filter: list[str] | None = None
@@ -153,8 +155,9 @@ def resolve_documents(
         elif status_upper == "ERROR":
             filters.fetch_status = "error"
 
-    # Query documents from Dolt
-    docs = list_documents_dolt(filters)
+    # Query documents using DocumentRegistry
+    registry = DocumentRegistry()
+    docs = registry.list(filters=filters)
     result_docs = list(docs)
 
     # Filter by specific URLs/files if provided

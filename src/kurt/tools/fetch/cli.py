@@ -163,67 +163,66 @@ def fetch_cmd(
     if single_file:
         files_paths = f"{files_paths},{single_file}" if files_paths else single_file
 
-    # Handle --urls: auto-create documents in Dolt if they don't exist
+    # Handle --urls: auto-create MapDocument entries if they don't exist
     if urls:
-        import hashlib
-
-        from kurt.db.dolt import get_dolt_db
-        from kurt.documents.dolt_registry import upsert_documents
+        from kurt.db import managed_session
+        from kurt.tools.core import make_document_id
+        from kurt.tools.map.models import MapDocument, MapStatus
+        from sqlmodel import select
 
         url_list = [u.strip() for u in urls.split(",") if u.strip()]
-        docs_to_create = []
-        db = get_dolt_db()
 
-        for url in url_list:
-            # Check if exists
-            existing = db.query("SELECT id FROM documents WHERE url = ?", [url])
-            if not existing:
-                doc_id = hashlib.sha256(url.encode()).hexdigest()[:12]
-                docs_to_create.append({
-                    "id": doc_id,
-                    "url": url,
-                    "source_type": "url",
-                    "fetch_status": "pending",
-                    "metadata": {
-                        "discovery_method": "cli",
-                        "map_status": "SUCCESS",
-                    },
-                })
+        with managed_session() as session:
+            for url in url_list:
+                # Check if exists
+                existing = session.exec(
+                    select(MapDocument).where(MapDocument.source_url == url)
+                ).first()
 
-        if docs_to_create:
-            upsert_documents(db, docs_to_create)
+                if not existing:
+                    doc_id = make_document_id(url)
+                    doc = MapDocument(
+                        document_id=doc_id,
+                        source_url=url,
+                        source_type="url",
+                        discovery_method="cli",
+                        discovery_url=url,
+                        status=MapStatus.SUCCESS,
+                        is_new=True,
+                    )
+                    session.add(doc)
 
-    # Handle --files: auto-create documents for file paths in Dolt
+    # Handle --files: auto-create MapDocument entries for file paths
     if files_paths:
-        import hashlib
         from pathlib import Path as FilePath
 
-        from kurt.db.dolt import get_dolt_db
-        from kurt.documents.dolt_registry import upsert_documents
+        from kurt.db import managed_session
+        from kurt.tools.core import make_document_id
+        from kurt.tools.map.models import MapDocument, MapStatus
+        from sqlmodel import select
 
         file_list = [f.strip() for f in files_paths.split(",") if f.strip()]
-        docs_to_create = []
-        db = get_dolt_db()
 
-        for file_path in file_list:
-            abs_path = str(FilePath(file_path).resolve())
-            # Check if exists
-            existing = db.query("SELECT id FROM documents WHERE url = ?", [abs_path])
-            if not existing:
-                doc_id = hashlib.sha256(abs_path.encode()).hexdigest()[:12]
-                docs_to_create.append({
-                    "id": doc_id,
-                    "url": abs_path,
-                    "source_type": "file",
-                    "fetch_status": "pending",
-                    "metadata": {
-                        "discovery_method": "cli",
-                        "map_status": "SUCCESS",
-                    },
-                })
+        with managed_session() as session:
+            for file_path in file_list:
+                abs_path = str(FilePath(file_path).resolve())
+                # Check if exists
+                existing = session.exec(
+                    select(MapDocument).where(MapDocument.source_url == abs_path)
+                ).first()
 
-        if docs_to_create:
-            upsert_documents(db, docs_to_create)
+                if not existing:
+                    doc_id = make_document_id(abs_path)
+                    doc = MapDocument(
+                        document_id=doc_id,
+                        source_url=abs_path,
+                        source_type="file",
+                        discovery_method="cli",
+                        discovery_url=abs_path,
+                        status=MapStatus.SUCCESS,
+                        is_new=True,
+                    )
+                    session.add(doc)
 
     # Determine effective status filter
     effective_status = with_status

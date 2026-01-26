@@ -194,8 +194,7 @@ def delete_cmd(
         kurt content delete --ids a,b,c      # Delete multiple IDs
         kurt content delete --include "*test*" --dry-run  # Preview deletion
     """
-    from kurt.documents import DocumentFilters
-    from kurt.documents.dolt_registry import delete_documents_dolt, list_documents_dolt
+    from kurt.documents import DocumentFilters, DocumentRegistry
 
     # Build filters
     filters = DocumentFilters(
@@ -206,7 +205,8 @@ def delete_cmd(
     )
 
     # Get documents to delete
-    docs = list_documents_dolt(filters)
+    registry = DocumentRegistry()
+    docs = registry.list(filters=filters)
 
     if not docs:
         console.print("[dim]No documents found matching criteria[/dim]")
@@ -227,9 +227,12 @@ def delete_cmd(
             console.print("[dim]Cancelled[/dim]")
             return
 
-    # Delete documents from Dolt
-    doc_ids = [doc.document_id for doc in docs]
-    deleted_count = delete_documents_dolt(doc_ids)
+    # Delete documents using DocumentRegistry
+    registry = DocumentRegistry()
+    deleted_count = 0
+    for doc in docs:
+        registry.delete(document_id=doc.document_id)
+        deleted_count += 1
 
     console.print(f"[green]✓[/green] Deleted {deleted_count} document(s)")
 
@@ -241,13 +244,13 @@ def delete_cmd(
 
 def _list_documents(filters):
     """
-    List documents from Dolt database.
+    List documents from database.
 
-    In Dolt-only architecture, we query directly from Dolt tables.
+    Uses DocumentRegistry for unified document view.
     """
-    from kurt.documents.dolt_registry import list_documents_dolt
+    from kurt.documents.registry import DocumentRegistry
 
-    return list_documents_dolt(filters)
+    return DocumentRegistry().list(filters=filters)
 
 
 def _get_document(identifier: str):
@@ -256,9 +259,9 @@ def _get_document(identifier: str):
 
     In Dolt-only architecture, we query directly from Dolt tables.
     """
-    from kurt.documents.dolt_registry import get_document_dolt
+    from kurt.documents.registry import DocumentRegistry
 
-    return get_document_dolt(identifier)
+    return DocumentRegistry().get(document_id=identifier)
 
 
 def _doc_to_dict(doc) -> dict:

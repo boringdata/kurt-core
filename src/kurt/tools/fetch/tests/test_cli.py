@@ -172,10 +172,9 @@ class TestFetchCommand:
         assert_cli_success(result)
 
     # Input options tests
-    def test_fetch_with_url_singular(self, cli_runner: CliRunner, mock_dolt_db):
+    def test_fetch_with_url_singular(self, cli_runner: CliRunner):
         """Test fetch --url (singular) option auto-creates document."""
-        with patch("kurt.db.documents.get_dolt_db") as mock_get:
-            mock_get.return_value = mock_dolt_db
+        with patch("kurt.db.managed_session"):
             with patch("kurt.documents.resolve_documents") as mock_resolve:
                 mock_resolve.return_value = []
                 result = invoke_cli(
@@ -185,10 +184,9 @@ class TestFetchCommand:
                 )
                 assert_cli_success(result)
 
-    def test_fetch_with_urls(self, cli_runner: CliRunner, mock_dolt_db):
+    def test_fetch_with_urls(self, cli_runner: CliRunner):
         """Test fetch --urls option auto-creates documents."""
-        with patch("kurt.db.documents.get_dolt_db") as mock_get:
-            mock_get.return_value = mock_dolt_db
+        with patch("kurt.db.managed_session"):
             with patch("kurt.documents.resolve_documents") as mock_resolve:
                 mock_resolve.return_value = []
                 result = invoke_cli(
@@ -198,14 +196,13 @@ class TestFetchCommand:
                 )
                 assert_cli_success(result)
 
-    def test_fetch_with_file_singular(self, cli_runner: CliRunner, mock_dolt_db, tmp_path):
+    def test_fetch_with_file_singular(self, cli_runner: CliRunner, tmp_path):
         """Test fetch --file (singular) option auto-creates document."""
         # Create temp file
         file1 = tmp_path / "doc1.md"
         file1.write_text("# Doc 1")
 
-        with patch("kurt.db.documents.get_dolt_db") as mock_get:
-            mock_get.return_value = mock_dolt_db
+        with patch("kurt.db.managed_session"):
             with patch("kurt.documents.resolve_documents") as mock_resolve:
                 mock_resolve.return_value = []
                 result = invoke_cli(
@@ -215,7 +212,7 @@ class TestFetchCommand:
                 )
                 assert_cli_success(result)
 
-    def test_fetch_with_files(self, cli_runner: CliRunner, mock_dolt_db, tmp_path):
+    def test_fetch_with_files(self, cli_runner: CliRunner, tmp_path):
         """Test fetch --files option auto-creates documents."""
         # Create temp files
         file1 = tmp_path / "doc1.md"
@@ -223,8 +220,7 @@ class TestFetchCommand:
         file1.write_text("# Doc 1")
         file2.write_text("# Doc 2")
 
-        with patch("kurt.db.documents.get_dolt_db") as mock_get:
-            mock_get.return_value = mock_dolt_db
+        with patch("kurt.db.managed_session"):
             with patch("kurt.documents.resolve_documents") as mock_resolve:
                 mock_resolve.return_value = []
                 result = invoke_cli(

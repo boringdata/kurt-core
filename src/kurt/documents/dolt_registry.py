@@ -210,7 +210,10 @@ def upsert_documents(
     db: "DoltDB",
     documents: list[dict[str, Any]],
 ) -> dict[str, int]:
-    """Batch upsert documents to Dolt.
+    """DEPRECATED: Use persist_map_documents from tools.map.utils instead.
+
+    This function writes to a legacy 'documents' table that doesn't exist.
+    Use MapDocument entries via persist_map_documents() for document creation.
 
     Args:
         db: DoltDB client
@@ -219,6 +222,13 @@ def upsert_documents(
     Returns:
         Dict with 'inserted' and 'updated' counts
     """
+    import warnings
+    warnings.warn(
+        "upsert_documents() is deprecated. Use persist_map_documents() from "
+        "tools.map.utils to create MapDocument entries instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     inserted = 0
     updated = 0
 

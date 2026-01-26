@@ -16,108 +16,39 @@ from kurt.conftest import (
 from kurt.db import managed_session
 from kurt.documents import DocumentFilters
 from kurt.documents.cli import content_group
-from kurt.documents.dolt_registry import DoltDocumentView
+from kurt.documents.models import DocumentView
 from kurt.documents.registry import DocumentRegistry
 
 
-def _list_documents_sqlite(filters: DocumentFilters) -> list[DoltDocumentView]:
+def _list_documents_sqlite(filters: DocumentFilters) -> list[DocumentView]:
     """SQLite-based implementation for testing (replaces Dolt)."""
     registry = DocumentRegistry()
     with managed_session() as session:
         views = registry.list(session, filters)
-        # Convert DocumentView to DoltDocumentView for CLI compatibility
-        return [
-            DoltDocumentView(
-                document_id=v.document_id,
-                source_url=v.source_url,
-                source_type=v.source_type,
-                title=v.title,
-                fetch_status=str(v.fetch_status) if v.fetch_status else None,
-                content_length=v.content_length,
-                error=v.error,
-                discovery_method=v.discovery_method,
-                discovery_url=v.discovery_url,
-                is_new=v.is_new,
-                map_status=str(v.map_status) if v.map_status else None,
-                fetch_engine=v.fetch_engine,
-                public_url=v.public_url,
-                discovered_at=v.discovered_at,
-                fetched_at=v.fetched_at,
-            )
-            for v in views
-        ]
+        return views
 
 
-def _get_document_sqlite(identifier: str) -> DoltDocumentView | None:
+def _get_document_sqlite(identifier: str) -> DocumentView | None:
     """SQLite-based implementation for testing (replaces Dolt)."""
     registry = DocumentRegistry()
     with managed_session() as session:
         # Try exact ID match first
         view = registry.get(session, identifier)
         if view:
-            return DoltDocumentView(
-                document_id=view.document_id,
-                source_url=view.source_url,
-                source_type=view.source_type,
-                title=view.title,
-                fetch_status=str(view.fetch_status) if view.fetch_status else None,
-                content_length=view.content_length,
-                error=view.error,
-                discovery_method=view.discovery_method,
-                discovery_url=view.discovery_url,
-                is_new=view.is_new,
-                map_status=str(view.map_status) if view.map_status else None,
-                fetch_engine=view.fetch_engine,
-                public_url=view.public_url,
-                discovered_at=view.discovered_at,
-                fetched_at=view.fetched_at,
-            )
+            return view
 
         # Try URL match
         if identifier.startswith(("http://", "https://", "file://")):
             filters = DocumentFilters(url_contains=identifier)
             views = registry.list(session, filters)
             if views:
-                view = views[0]
-                return DoltDocumentView(
-                    document_id=view.document_id,
-                    source_url=view.source_url,
-                    source_type=view.source_type,
-                    title=view.title,
-                    fetch_status=str(view.fetch_status) if view.fetch_status else None,
-                    content_length=view.content_length,
-                    error=view.error,
-                    discovery_method=view.discovery_method,
-                    discovery_url=view.discovery_url,
-                    is_new=view.is_new,
-                    map_status=str(view.map_status) if view.map_status else None,
-                    fetch_engine=view.fetch_engine,
-                    public_url=view.public_url,
-                    discovered_at=view.discovered_at,
-                    fetched_at=view.fetched_at,
-                )
+                return views[0]
 
         # Try partial ID match
         views = registry.list(session, DocumentFilters())
         for view in views:
             if identifier in view.document_id:
-                return DoltDocumentView(
-                    document_id=view.document_id,
-                    source_url=view.source_url,
-                    source_type=view.source_type,
-                    title=view.title,
-                    fetch_status=str(view.fetch_status) if view.fetch_status else None,
-                    content_length=view.content_length,
-                    error=view.error,
-                    discovery_method=view.discovery_method,
-                    discovery_url=view.discovery_url,
-                    is_new=view.is_new,
-                    map_status=str(view.map_status) if view.map_status else None,
-                    fetch_engine=view.fetch_engine,
-                    public_url=view.public_url,
-                    discovered_at=view.discovered_at,
-                    fetched_at=view.fetched_at,
-                )
+                return view
 
         return None
 
