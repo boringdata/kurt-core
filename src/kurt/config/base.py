@@ -737,3 +737,73 @@ def validate_config(config: KurtConfig) -> list[str]:
         )
 
     return issues
+
+
+# =============================================================================
+# Deprecated Aliases (for backwards compatibility)
+# =============================================================================
+
+
+def config_exists() -> bool:
+    """
+    Deprecated: Use config_file_exists() instead.
+    Check if kurt.config configuration file exists.
+    """
+    return config_file_exists()
+
+
+def get_step_config(
+    config: KurtConfig,
+    module: str,
+    step: str | None,
+    param: str,
+    fallback_key: str | None = None,
+    default: Any = None,
+) -> Any:
+    """
+    Get a step-specific configuration value with fallback resolution.
+
+    Resolution order:
+    1. Step-specific: MODULE.STEP.PARAM (e.g., INDEXING.SECTION_EXTRACTIONS.LLM_MODEL)
+       Or module-level: MODULE.PARAM (e.g., EMBEDDING.API_BASE) when step is None/empty
+    2. Global fallback: fallback_key (e.g., INDEXING_LLM_MODEL)
+    3. Default value
+
+    Args:
+        config: KurtConfig instance
+        module: Module name (e.g., "INDEXING", "FETCH", "LLM", "EMBEDDING")
+        step: Step name (e.g., "SECTION_EXTRACTIONS", "ENTITY_CLUSTERING")
+              Use None or "" for 2-part keys like EMBEDDING.API_BASE
+        param: Parameter name (e.g., "LLM_MODEL", "EPS", "API_BASE")
+        fallback_key: Global config key to use as fallback (e.g., "INDEXING_LLM_MODEL")
+        default: Default value if not found anywhere
+
+    Returns:
+        The configuration value
+    """
+    extra = getattr(config, "__pydantic_extra__", {})
+
+    # 1. Try step-specific key (3-part: MODULE.STEP.PARAM or 2-part: MODULE.PARAM)
+    if step:
+        step_key = f"{module}.{step}.{param}"
+    else:
+        step_key = f"{module}.{param}"
+
+    if step_key in extra:
+        return extra[step_key]
+
+    # 2. Try module-level key (when we have a step, fall back to 2-part)
+    if step:
+        module_key = f"{module}.{param}"
+        if module_key in extra:
+            return extra[module_key]
+
+    # 3. Try global fallback_key
+    if fallback_key:
+        if fallback_key in extra:
+            return extra[fallback_key]
+        if hasattr(config, fallback_key):
+            return getattr(config, fallback_key)
+
+    # 4. Return default
+    return default

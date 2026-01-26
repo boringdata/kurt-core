@@ -1,20 +1,80 @@
 """Git+Dolt isolation layer for branch synchronization and hooks.
 
-This module provides utilities for keeping Git and Dolt branches in sync.
-
-Used exports:
-- sync_to_git: Sync Dolt to match the current Git branch
-- install_hooks: Install Git hooks for auto-sync
-- get_installed_hooks: List installed Kurt hooks
-- HOOK_NAMES: List of hook names managed by Kurt
+This module provides utilities for keeping Git and Dolt branches in sync,
+as well as merge and remote operations.
 """
 
-from .branch import sync_to_git
+# Branch operations
+from .branch import (
+    BranchStatus,
+    BranchSyncError,
+    BranchSyncErrorCode,
+    BranchSyncResult,
+    create_both,
+    delete_both,
+    list_branches,
+    switch_both,
+    sync_to_dolt,
+    sync_to_git,
+)
+
+# Hooks
 from .hooks import HOOK_NAMES, get_installed_hooks, install_hooks
 
+# Merge operations
+from .merge import (
+    DoltConflict,
+    MergeConflict,
+    MergeError,
+    MergeErrorCode,
+    MergeExitCode,
+    MergeResult,
+    abort_merge,
+    check_conflicts,
+    merge_branch,
+)
+
+# Remote operations
+from .remote import (
+    DoltResult,
+    GitResult,
+    RemoteError,
+    RemoteErrorCode,
+    pull,
+    push,
+)
+
 __all__ = [
+    # Branch
+    "BranchStatus",
+    "BranchSyncError",
+    "BranchSyncErrorCode",
+    "BranchSyncResult",
+    "create_both",
+    "delete_both",
+    "list_branches",
+    "switch_both",
+    "sync_to_dolt",
     "sync_to_git",
-    "install_hooks",
-    "get_installed_hooks",
+    # Hooks
     "HOOK_NAMES",
+    "get_installed_hooks",
+    "install_hooks",
+    # Merge
+    "DoltConflict",
+    "MergeConflict",
+    "MergeError",
+    "MergeErrorCode",
+    "MergeExitCode",
+    "MergeResult",
+    "abort_merge",
+    "check_conflicts",
+    "merge_branch",
+    # Remote
+    "DoltResult",
+    "GitResult",
+    "RemoteError",
+    "RemoteErrorCode",
+    "pull",
+    "push",
 ]
