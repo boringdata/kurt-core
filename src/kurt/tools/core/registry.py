@@ -58,10 +58,28 @@ def _ensure_tools_loaded() -> None:
     ]
 
     import importlib
+    import sys
 
     for module_name in tool_modules:
         try:
-            importlib.import_module(module_name)
+            # Force reimport if module was previously imported but tool not registered
+            # This handles the case where module was imported before @register_tool ran
+            if module_name in sys.modules:
+                module = sys.modules[module_name]
+                # Re-trigger registration if the module has the tool class
+                for attr_name in dir(module):
+                    attr = getattr(module, attr_name, None)
+                    if (
+                        isinstance(attr, type)
+                        and hasattr(attr, "name")
+                        and attr.name
+                        and attr.name not in TOOLS
+                        and hasattr(attr, "run")
+                    ):
+                        # Manually register the tool
+                        TOOLS[attr.name] = attr
+            else:
+                importlib.import_module(module_name)
         except ImportError:
             # Some tools may not be available in minimal installations
             pass
@@ -124,8 +142,11 @@ def list_tools() -> list[str]:
 
     Returns:
         Sorted list of tool names
+
+    Note:
+        Does NOT auto-load tools. Returns only currently registered tools.
+        Use get_tool() to trigger auto-loading if needed.
     """
-    _ensure_tools_loaded()
     return sorted(TOOLS.keys())
 
 
