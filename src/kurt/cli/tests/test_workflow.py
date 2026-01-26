@@ -12,6 +12,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
+from kurt.conftest import (
+    assert_cli_success,
+    assert_output_contains,
+    invoke_cli,
+)
 from kurt.workflows.toml.cli import (
     _parse_input,
     cancel_cmd,
@@ -19,11 +24,6 @@ from kurt.workflows.toml.cli import (
     run_cmd,
     status_cmd,
     workflow_group,
-)
-from kurt.conftest import (
-    assert_cli_success,
-    assert_output_contains,
-    invoke_cli,
 )
 
 # =============================================================================

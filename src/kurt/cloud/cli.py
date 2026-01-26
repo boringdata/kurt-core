@@ -462,8 +462,7 @@ def whoami_cmd():
         kurt cloud whoami
     """
 
-    from kurt.cloud.auth import get_user_info
-    from kurt.cloud.auth import load_credentials
+    from kurt.cloud.auth import get_user_info, load_credentials
 
     creds = load_credentials()
     if creds is None:
@@ -944,7 +943,6 @@ def cloud_help_cmd():
     """
     from pathlib import Path
 
-    from kurt.admin.telemetry.decorators import track_command
 
     template_path = Path(__file__).parent / "templates" / "cloud-setup.txt"
     if template_path.exists():

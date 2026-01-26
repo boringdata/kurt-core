@@ -9,8 +9,7 @@ from unittest.mock import Mock
 import pytest
 from pydantic import ValidationError
 
-from kurt.tools.core import SubstepEvent, ToolContext
-from kurt.tools.core import TOOLS, clear_registry
+from kurt.tools.core import TOOLS, SubstepEvent, ToolContext, clear_registry
 from kurt.tools.sql import (
     SQLConfig,
     SQLInput,

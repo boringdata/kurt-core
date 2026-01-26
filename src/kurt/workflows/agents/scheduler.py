@@ -11,10 +11,9 @@ This module provides the interface for reading schedule configurations.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 from typing import Any
 
-from .registry import get_definition, list_definitions
+from .registry import list_definitions
 
 logger = logging.getLogger(__name__)
 

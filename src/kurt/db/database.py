@@ -36,7 +36,6 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from kurt.db.dolt import DoltDB
 
-
 # =============================================================================
 # Database Client Factory
 # =============================================================================

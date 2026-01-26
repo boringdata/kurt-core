@@ -85,10 +85,11 @@ def resolve_documents(
     """
     from pathlib import Path
 
+    from sqlmodel import select
+
     from kurt.db import managed_session
     from kurt.tools.core import make_document_id
     from kurt.tools.map.models import MapDocument, MapStatus
-    from sqlmodel import select
 
     # If identifier looks like a URL, auto-create MapDocument if needed
     if identifier and identifier.startswith(("http://", "https://")):

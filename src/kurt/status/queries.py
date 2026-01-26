@@ -5,11 +5,11 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import urlparse
 
-from sqlalchemy import func, case
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from kurt.db import managed_session
-from kurt.tools.fetch.models import FetchDocument, FetchStatus
+from kurt.tools.fetch.models import FetchDocument
 from kurt.tools.map.models import MapDocument
 
 

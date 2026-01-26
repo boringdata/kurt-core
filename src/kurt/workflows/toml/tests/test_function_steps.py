@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from kurt.tools.core import ToolContext
 from kurt.workflows.toml.executor import (
     _execute_user_function,
     _load_user_function,
@@ -22,7 +23,6 @@ from kurt.workflows.toml.parser import (
     WorkflowParseError,
     parse_workflow,
 )
-from kurt.tools.core import ToolContext
 
 
 class TestFunctionStepParsing:

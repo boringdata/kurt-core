@@ -22,9 +22,9 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
+from kurt.tools.core import ToolContext
 from kurt.workflows.toml.executor import execute_workflow
 from kurt.workflows.toml.parser import parse_workflow
-from kurt.tools.core import ToolContext
 
 # ============================================================================
 # DoltDB Fixture

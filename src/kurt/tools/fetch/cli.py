@@ -165,10 +165,11 @@ def fetch_cmd(
 
     # Handle --urls: auto-create MapDocument entries if they don't exist
     if urls:
+        from sqlmodel import select
+
         from kurt.db import managed_session
         from kurt.tools.core import make_document_id
         from kurt.tools.map.models import MapDocument, MapStatus
-        from sqlmodel import select
 
         url_list = [u.strip() for u in urls.split(",") if u.strip()]
 
@@ -196,10 +197,11 @@ def fetch_cmd(
     if files_paths:
         from pathlib import Path as FilePath
 
+        from sqlmodel import select
+
         from kurt.db import managed_session
         from kurt.tools.core import make_document_id
         from kurt.tools.map.models import MapDocument, MapStatus
-        from sqlmodel import select
 
         file_list = [f.strip() for f in files_paths.split(",") if f.strip()]
 

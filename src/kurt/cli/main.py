@@ -12,7 +12,6 @@ Simplified CLI structure with ~12 top-level commands:
 - help: Documentation and guides
 """
 
-import sys
 
 import click
 from dotenv import load_dotenv
@@ -104,8 +103,8 @@ def main(ctx):
 # Core top-level commands (not under any group)
 from kurt.cli.doctor import doctor_cmd, repair_cmd  # noqa: E402
 from kurt.cli.init import init  # noqa: E402
-from kurt.web.cli import serve  # noqa: E402
 from kurt.status import status  # noqa: E402
+from kurt.web.cli import serve  # noqa: E402
 
 main.add_command(init)
 main.add_command(status)

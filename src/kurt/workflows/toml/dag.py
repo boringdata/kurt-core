@@ -12,7 +12,6 @@ from dataclasses import dataclass, field
 from kurt.workflows.core import CircularDependencyError, detect_cycle
 from kurt.workflows.toml.parser import StepDef
 
-
 # Backwards compatibility alias
 CycleDetectedError = CircularDependencyError
 

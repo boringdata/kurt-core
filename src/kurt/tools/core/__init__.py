@@ -25,64 +25,6 @@ from .base import (
     ToolResultSubstep,
 )
 
-# Context loading
-from .context import (
-    ConfigValidationError,
-    DoltSettings,
-    FetchSettings,
-    LLMClient,
-    LLMSettings,
-    Settings,
-    StorageSettings,
-    load_settings,
-    load_tool_context,
-    validate_settings,
-)
-
-# Error types
-from .errors import (
-    ToolCanceledError,
-    ToolConfigError,
-    ToolError,
-    ToolExecutionError,
-    ToolInputError,
-    ToolNotFoundError,
-    ToolTimeoutError,
-)
-
-# Registry functions
-from .registry import (
-    TOOLS,
-    clear_registry,
-    execute_tool,
-    get_tool,
-    get_tool_info,
-    list_tools,
-    register_tool,
-)
-
-# Runner
-from .runner import (
-    create_pending_run,
-    run_tool_from_file,
-    run_tool_with_tracking,
-    spawn_background_run,
-)
-
-# Utilities
-from .utils import (
-    canonicalize_url,
-    make_document_id,
-    make_url_hash,
-)
-
-# Step hooks (moved from kurt.core.hooks)
-from .hooks import (
-    CompositeStepHooks,
-    NoopStepHooks,
-    StepHooks,
-)
-
 # CLI options and utilities (moved from kurt.cli.core)
 from .cli_options import (
     add_background_options,
@@ -109,6 +51,64 @@ from .cli_options import (
     with_content_type_option,
     with_status_option,
     yes_option,
+)
+
+# Context loading
+from .context import (
+    ConfigValidationError,
+    DoltSettings,
+    FetchSettings,
+    LLMClient,
+    LLMSettings,
+    Settings,
+    StorageSettings,
+    load_settings,
+    load_tool_context,
+    validate_settings,
+)
+
+# Error types
+from .errors import (
+    ToolCanceledError,
+    ToolConfigError,
+    ToolError,
+    ToolExecutionError,
+    ToolInputError,
+    ToolNotFoundError,
+    ToolTimeoutError,
+)
+
+# Step hooks (moved from kurt.core.hooks)
+from .hooks import (
+    CompositeStepHooks,
+    NoopStepHooks,
+    StepHooks,
+)
+
+# Registry functions
+from .registry import (
+    TOOLS,
+    clear_registry,
+    execute_tool,
+    get_tool,
+    get_tool_info,
+    list_tools,
+    register_tool,
+)
+
+# Runner
+from .runner import (
+    create_pending_run,
+    run_tool_from_file,
+    run_tool_with_tracking,
+    spawn_background_run,
+)
+
+# Utilities
+from .utils import (
+    canonicalize_url,
+    make_document_id,
+    make_url_hash,
 )
 
 __all__ = [

@@ -6,13 +6,11 @@ Provides test fixtures for CLI testing, database testing, and sample data.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any
 
 import pytest
 from click.testing import CliRunner
-from pydantic import BaseModel
 
 # Re-export fixtures from documents tests
 from kurt.documents.tests.conftest import (

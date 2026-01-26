@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import pytest
-
 from kurt.workflows.core import detect_cycle, validate_cron
 
 

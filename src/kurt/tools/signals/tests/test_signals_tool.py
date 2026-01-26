@@ -10,10 +10,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pydantic import ValidationError
 
-from kurt.tools.core import SubstepEvent, ToolContext, ToolResult
-from kurt.tools.core import TOOLS, clear_registry, get_tool
+from kurt.tools.core import TOOLS, SubstepEvent, ToolContext, ToolResult, clear_registry, get_tool
 from kurt.tools.signals import SignalInput, SignalOutput, SignalsTool
-
 
 # ============================================================================
 # Fixtures

@@ -19,7 +19,6 @@ from kurt.db.models import TenantMixin, TimestampMixin
 from kurt.tools.fetch.models import FetchStatus
 from kurt.tools.map.models import MapStatus
 
-
 # =============================================================================
 # SQLModel Table
 # =============================================================================

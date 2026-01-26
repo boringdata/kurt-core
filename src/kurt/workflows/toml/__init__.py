@@ -78,9 +78,9 @@ from .interpolation import (
     validate_config_variables,
 )
 from .parser import (
+    STEP_TYPE_ALIASES,
     CircularDependencyError,
     InputDef,
-    STEP_TYPE_ALIASES,
     StepDef,
     UnknownDependsOnError,
     UnknownKeyError,

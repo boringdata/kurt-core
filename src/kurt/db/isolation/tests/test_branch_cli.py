@@ -11,13 +11,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from kurt.db.isolation.cli import (
-    branch_group,
-    branch_create_cmd as create_cmd,
-    branch_delete_cmd as delete_cmd,
-    branch_list_cmd as list_cmd,
-    branch_switch_cmd as switch_cmd,
-)
 from kurt.conftest import (
     assert_cli_success,
     assert_output_contains,
@@ -29,6 +22,21 @@ from kurt.db.isolation.branch import (
     BranchSyncError,
     BranchSyncErrorCode,
     BranchSyncResult,
+)
+from kurt.db.isolation.cli import (
+    branch_create_cmd as create_cmd,
+)
+from kurt.db.isolation.cli import (
+    branch_delete_cmd as delete_cmd,
+)
+from kurt.db.isolation.cli import (
+    branch_group,
+)
+from kurt.db.isolation.cli import (
+    branch_list_cmd as list_cmd,
+)
+from kurt.db.isolation.cli import (
+    branch_switch_cmd as switch_cmd,
 )
 
 # =============================================================================

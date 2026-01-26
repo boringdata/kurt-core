@@ -829,9 +829,9 @@ def _build_dry_run_output(
     - Execution plan from DAG builder
     - Config validation against tool schemas
     """
+    from kurt.tools.core import TOOLS, get_tool
     from kurt.workflows.toml.dag import CycleDetectedError, build_dag
     from kurt.workflows.toml.interpolation import interpolate_step_config
-    from kurt.tools.core import TOOLS, get_tool
 
     # Build execution plan
     plan_output: dict[str, Any] = {}

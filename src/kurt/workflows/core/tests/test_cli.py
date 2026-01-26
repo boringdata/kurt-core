@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-from io import StringIO
-from unittest.mock import patch
 
 import click
 import pytest
@@ -20,12 +18,8 @@ from kurt.workflows.core.cli import (
     create_run_history_table,
     create_status_table,
     create_workflow_table,
-    display_empty_result,
     display_not_found,
     display_validation_errors,
-    display_validation_success,
-    display_workflow_completed,
-    display_workflow_started,
     foreground_option,
     format_count,
     format_duration,
@@ -33,11 +27,7 @@ from kurt.workflows.core.cli import (
     input_option,
     parse_input_value,
     parse_inputs,
-    print_error,
-    print_info,
     print_json_output,
-    print_success,
-    print_warning,
     scheduled_option,
     tag_option,
     validate_input_format,

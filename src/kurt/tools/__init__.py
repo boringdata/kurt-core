@@ -32,56 +32,6 @@ Example usage:
 """
 
 # Core infrastructure (re-exported from core/)
-from .core import (
-    # Base classes
-    InputT,
-    OutputT,
-    ProgressCallback,
-    SubstepEvent,
-    Tool,
-    ToolContext,
-    ToolResult,
-    ToolResultError,
-    ToolResultMetadata,
-    ToolResultSubstep,
-    # Context loading
-    ConfigValidationError,
-    DoltSettings,
-    FetchSettings,
-    LLMClient,
-    LLMSettings,
-    Settings,
-    StorageSettings,
-    load_settings,
-    load_tool_context,
-    validate_settings,
-    # Errors
-    ToolCanceledError,
-    ToolConfigError,
-    ToolError,
-    ToolExecutionError,
-    ToolInputError,
-    ToolNotFoundError,
-    ToolTimeoutError,
-    # Registry
-    TOOLS,
-    clear_registry,
-    execute_tool,
-    get_tool,
-    get_tool_info,
-    list_tools,
-    register_tool,
-    # Runner
-    create_pending_run,
-    run_tool_from_file,
-    run_tool_with_tracking,
-    spawn_background_run,
-    # Utilities
-    canonicalize_url,
-    make_document_id,
-    make_url_hash,
-)
-
 # Import tools to register them
 from .agent import (
     AgentArtifact,
@@ -107,6 +57,55 @@ from .batch_llm import (
     BatchLLMOutput,
     BatchLLMParams,
     BatchLLMTool,
+)
+from .core import (
+    # Registry
+    TOOLS,
+    # Context loading
+    ConfigValidationError,
+    DoltSettings,
+    FetchSettings,
+    # Base classes
+    InputT,
+    LLMClient,
+    LLMSettings,
+    OutputT,
+    ProgressCallback,
+    Settings,
+    StorageSettings,
+    SubstepEvent,
+    Tool,
+    # Errors
+    ToolCanceledError,
+    ToolConfigError,
+    ToolContext,
+    ToolError,
+    ToolExecutionError,
+    ToolInputError,
+    ToolNotFoundError,
+    ToolResult,
+    ToolResultError,
+    ToolResultMetadata,
+    ToolResultSubstep,
+    ToolTimeoutError,
+    # Utilities
+    canonicalize_url,
+    clear_registry,
+    # Runner
+    create_pending_run,
+    execute_tool,
+    get_tool,
+    get_tool_info,
+    list_tools,
+    load_settings,
+    load_tool_context,
+    make_document_id,
+    make_url_hash,
+    register_tool,
+    run_tool_from_file,
+    run_tool_with_tracking,
+    spawn_background_run,
+    validate_settings,
 )
 from .fetch import (
     NON_RETRYABLE_STATUS_CODES,

@@ -13,10 +13,10 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from sqlalchemy import JSON, BigInteger, Column, ForeignKey, Index, Text
+from sqlalchemy import JSON, BigInteger, Column, Index, Text
 from sqlmodel import Field, SQLModel
 
-from kurt.db.models import TenantMixin, TimestampMixin
+from kurt.db.models import TenantMixin
 
 
 class WorkflowStatus(str, Enum):

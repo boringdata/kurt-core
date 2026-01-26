@@ -146,7 +146,7 @@ def _display_analytics_result(result: dict) -> None:
     total_urls = item.get("total_urls", 0)
     total_pageviews = item.get("total_pageviews", 0)
 
-    console.print(f"[bold]Summary:[/bold]")
+    console.print("[bold]Summary:[/bold]")
     console.print(f"  URLs with data: {total_urls}")
     console.print(f"  Total pageviews (60d): {total_pageviews:,}")
     console.print()

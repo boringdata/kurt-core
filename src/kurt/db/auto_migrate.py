@@ -67,7 +67,7 @@ def get_all_models() -> list[type[SQLModel]]:
 
 def get_column_ddl(column, dialect_name: str = "mysql") -> str:
     """Generate column DDL for ALTER TABLE ADD COLUMN."""
-    from sqlalchemy import Integer, String, Text, Boolean, DateTime, Float
+    from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text
     from sqlalchemy.dialects import mysql, sqlite
 
     # Get the SQL type for this dialect
