@@ -44,7 +44,6 @@ from kurt.db.dolt import (
     DoltTransactionError,
     QueryResult,
     check_schema_exists,
-    get_dolt_db,
     init_observability_schema,
 )
 from kurt.db.models import (
@@ -119,7 +118,6 @@ __all__ = [
     # Dolt schema helpers
     "DoltDBProtocol",
     "OBSERVABILITY_TABLES",
-    "get_dolt_db",
     "init_observability_schema",
     "check_schema_exists",
 ]

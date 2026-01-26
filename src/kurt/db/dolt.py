@@ -106,8 +106,6 @@ __all__ = [
     "init_observability_schema",
     "check_schema_exists",
     "OBSERVABILITY_TABLES",
-    # Convenience
-    "get_dolt_db",
 ]
 
 
@@ -1142,28 +1140,3 @@ def check_schema_exists(db: "DoltDBProtocol") -> dict[str, bool]:
         except Exception:
             result[table] = False
     return result
-
-
-def get_dolt_db() -> "DoltDB":
-    """Get DoltDB client from project directory.
-
-    Looks for .dolt directory in current working directory.
-    DoltDB expects the project root (parent of .dolt), not .dolt itself.
-
-    Returns:
-        DoltDB instance
-
-    Raises:
-        RuntimeError: If Dolt is not initialized
-    """
-    project_root = Path.cwd()
-    dolt_path = project_root / ".dolt"
-
-    if not dolt_path.exists():
-        raise RuntimeError(
-            f"Dolt database not found at {dolt_path}. "
-            "Run 'kurt init' to initialize the project."
-        )
-
-    # DoltDB expects project root (parent of .dolt), not .dolt directory
-    return DoltDB(project_root)

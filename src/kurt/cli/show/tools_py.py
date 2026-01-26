@@ -150,11 +150,11 @@ ACCESSING DOLT DATABASE
 ═══════════════════════════════════════════════════════════════════
 
 ```python
-from kurt.db.dolt import get_dolt_db
+from kurt.db import get_database_client
 
 def query_documents(context: dict) -> dict:
     \"\"\"Query documents from Dolt.\"\"\"
-    db = get_dolt_db()
+    db = get_database_client()
 
     results = db.query(
         "SELECT id, url, fetch_status FROM documents WHERE fetch_status = ?",

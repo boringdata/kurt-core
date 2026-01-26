@@ -45,9 +45,9 @@ def resolve_existing(doc_ids: list[str]) -> set[str]:
     if not doc_ids:
         return set()
     try:
-        from kurt.db.dolt import get_dolt_db
+        from kurt.db import get_database_client
 
-        db = get_dolt_db()
+        db = get_database_client()
         placeholders = ", ".join("?" for _ in doc_ids)
         sql = f"SELECT document_id FROM document_id_registry WHERE document_id IN ({placeholders})"
         result = db.query(sql, doc_ids)
