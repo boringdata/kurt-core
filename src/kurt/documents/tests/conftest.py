@@ -1,8 +1,8 @@
 """
 Test fixtures for documents module.
 
-Provides fixtures for all 3 database modes:
-- SQLite (default, local development)
+Provides fixtures for database modes:
+- Dolt (default, local development with dynamic port per test)
 - PostgreSQL (direct connection, requires server)
 - Kurt Cloud (PostgREST/Supabase, requires auth)
 """
@@ -10,13 +10,41 @@ Provides fixtures for all 3 database modes:
 from __future__ import annotations
 
 import os
+import shutil
+import signal
+import socket
+import subprocess
+import time
 from pathlib import Path
 
 import pytest
 
-from kurt.db import ensure_tables, init_database, managed_session
+from kurt.db import ensure_tables, managed_session
 from kurt.tools.fetch.models import FetchDocument, FetchStatus
 from kurt.tools.map.models import MapDocument, MapStatus
+
+
+def _find_free_port() -> int:
+    """Find a free port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        s.listen(1)
+        port = s.getsockname()[1]
+    return port
+
+
+def _wait_for_port(port: int, timeout: float = 10.0) -> bool:
+    """Wait for a port to become available."""
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(0.5)
+                s.connect(("127.0.0.1", port))
+                return True
+        except (ConnectionRefusedError, socket.timeout, OSError):
+            time.sleep(0.1)
+    return False
 
 
 def pytest_addoption(parser):
@@ -56,32 +84,57 @@ def pytest_collection_modifyitems(config, items):
 @pytest.fixture
 def tmp_project(tmp_path: Path, monkeypatch):
     """
-    Create a temporary project with initialized database and config.
+    Create a temporary project with initialized Dolt database.
 
     Sets up:
     - kurt.config file
-    - .kurt/ directory structure
-    - Fresh SQLite database
+    - .dolt/ directory with initialized Dolt repo
+    - Dolt SQL server on a unique port (for test isolation)
     - Workflow tables (map_documents, fetch_documents)
     """
-    # Create .kurt directory structure
-    kurt_dir = tmp_path / ".kurt"
-    kurt_dir.mkdir(parents=True, exist_ok=True)
+    # Skip if dolt is not installed
+    if not shutil.which("dolt"):
+        pytest.skip("Dolt CLI not installed")
 
-    # Force SQLite by setting DATABASE_URL to sqlite://
-    db_path = kurt_dir / "kurt.sqlite"
-    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path}")
-
-    # Change to temp directory
+    # Create project directory structure
     original_cwd = os.getcwd()
     os.chdir(tmp_path)
+
+    # Initialize dolt repo
+    env = os.environ.copy()
+    env["DOLT_DISABLE_ACCOUNT_REGISTRATION"] = "true"
+    subprocess.run(["dolt", "init"], cwd=tmp_path, capture_output=True, env=env)
+
+    # Find a free port for this test's Dolt server
+    port = _find_free_port()
+
+    # Start dolt sql-server on the unique port
+    server_process = subprocess.Popen(
+        ["dolt", "sql-server", "--port", str(port), "--host", "127.0.0.1"],
+        cwd=tmp_path,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+        env=env,
+    )
+
+    # Wait for server to be ready
+    if not _wait_for_port(port, timeout=10.0):
+        server_process.terminate()
+        pytest.fail(f"Dolt server failed to start on port {port}")
+
+    # Set DATABASE_URL to connect to this test's Dolt server
+    database_name = tmp_path.name
+    monkeypatch.setenv("DATABASE_URL", f"mysql+pymysql://root@127.0.0.1:{port}/{database_name}")
 
     # Create config file
     from kurt.config import create_config
 
     create_config()
 
-    # Initialize database
+    # Initialize database and create tables
+    from kurt.db import init_database
+
     init_database()
 
     # Ensure workflow tables exist
@@ -89,6 +142,16 @@ def tmp_project(tmp_path: Path, monkeypatch):
         ensure_tables([MapDocument, FetchDocument], session=session)
 
     yield tmp_path
+
+    # Cleanup: stop the Dolt server
+    try:
+        os.killpg(os.getpgid(server_process.pid), signal.SIGTERM)
+        server_process.wait(timeout=5)
+    except Exception:
+        try:
+            server_process.kill()
+        except Exception:
+            pass
 
     os.chdir(original_cwd)
 
@@ -218,27 +281,58 @@ def tmp_project_with_docs(tmp_project: Path):
 # =============================================================================
 
 
-@pytest.fixture(params=["sqlite"])
+@pytest.fixture(params=["dolt"])
 def db_mode_project_with_docs(request, tmp_path, monkeypatch):
     """
     Parametrized fixture that sets up a project in different database modes.
 
     Use with:
-        @pytest.mark.parametrize("db_mode_project_with_docs", ["sqlite", "postgres", "cloud"], indirect=True)
+        @pytest.mark.parametrize("db_mode_project_with_docs", ["dolt", "postgres", "cloud"], indirect=True)
 
-    Or just use the default (sqlite only) for CI:
+    Or just use the default (dolt only) for CI:
         def test_something(db_mode_project_with_docs): ...
     """
     mode = request.param
     original_cwd = os.getcwd()
+    server_process = None
 
     try:
-        if mode == "sqlite":
-            # Force SQLite mode
-            monkeypatch.delenv("DATABASE_URL", raising=False)
+        if mode == "dolt":
+            # Skip if dolt is not installed
+            if not shutil.which("dolt"):
+                pytest.skip("Dolt CLI not installed")
+
             os.chdir(tmp_path)
 
+            # Initialize dolt repo
+            env = os.environ.copy()
+            env["DOLT_DISABLE_ACCOUNT_REGISTRATION"] = "true"
+            subprocess.run(["dolt", "init"], cwd=tmp_path, capture_output=True, env=env)
+
+            # Find a free port for this test's Dolt server
+            port = _find_free_port()
+
+            # Start dolt sql-server on the unique port
+            server_process = subprocess.Popen(
+                ["dolt", "sql-server", "--port", str(port), "--host", "127.0.0.1"],
+                cwd=tmp_path,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+                env=env,
+            )
+
+            # Wait for server to be ready
+            if not _wait_for_port(port, timeout=10.0):
+                server_process.terminate()
+                pytest.fail(f"Dolt server failed to start on port {port}")
+
+            # Set DATABASE_URL to connect to this test's Dolt server
+            database_name = tmp_path.name
+            monkeypatch.setenv("DATABASE_URL", f"mysql+pymysql://root@127.0.0.1:{port}/{database_name}")
+
             from kurt.config import create_config
+            from kurt.db import init_database
 
             create_config()
             init_database()
@@ -273,6 +367,17 @@ def db_mode_project_with_docs(request, tmp_path, monkeypatch):
             raise ValueError(f"Unknown database mode: {mode}")
 
     finally:
+        # Cleanup: stop the Dolt server if we started one
+        if server_process:
+            try:
+                os.killpg(os.getpgid(server_process.pid), signal.SIGTERM)
+                server_process.wait(timeout=5)
+            except Exception:
+                try:
+                    server_process.kill()
+                except Exception:
+                    pass
+
         os.chdir(original_cwd)
         if mode in ("postgres", "cloud"):
             # Clean up test data

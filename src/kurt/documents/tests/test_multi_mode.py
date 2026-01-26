@@ -117,7 +117,7 @@ class TestDocumentRegistryAllModes:
 @pytest.mark.parametrize(
     "db_mode_project_with_docs",
     [
-        pytest.param("sqlite", id="sqlite"),
+        pytest.param("dolt", id="dolt"),
         pytest.param("postgres", id="postgres", marks=pytest.mark.postgres),
         pytest.param("cloud", id="cloud", marks=pytest.mark.cloud),
     ],
@@ -223,7 +223,7 @@ class TestPostgreSQLModeSpecifics:
 # To run tests with real databases:
 #
 # SQLite (default):
-#   pytest src/kurt/documents/tests/test_multi_mode.py -k sqlite
+#   pytest src/kurt/documents/tests/test_multi_mode.py -k dolt
 #
 # PostgreSQL (requires server):
 #   export DATABASE_URL="postgresql://user:pass@localhost:5432/test_db"
