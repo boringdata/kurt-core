@@ -68,8 +68,9 @@ def tmp_project(tmp_path: Path, monkeypatch):
     kurt_dir = tmp_path / ".kurt"
     kurt_dir.mkdir(parents=True, exist_ok=True)
 
-    # Force SQLite (no DATABASE_URL)
-    monkeypatch.delenv("DATABASE_URL", raising=False)
+    # Force SQLite by setting DATABASE_URL to sqlite://
+    db_path = kurt_dir / "kurt.sqlite"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path}")
 
     # Change to temp directory
     original_cwd = os.getcwd()

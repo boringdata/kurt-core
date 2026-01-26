@@ -63,7 +63,7 @@ def resolve_documents(
     Resolve documents from CLI parameters to list of dicts for workflow input.
 
     This is the CLI adapter layer that maps CLI option names to internal filter names.
-    Uses Dolt for document storage.
+    Uses DocumentRegistry for document storage.
 
     Args:
         identifier: Single document ID or URL
