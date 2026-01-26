@@ -5,10 +5,9 @@ Simplified CLI structure with ~12 top-level commands:
 - workflow: Unified workflow management (TOML + MD)
 - tool: All tools (map, fetch, llm, embed, save, sql, research, signals)
 - docs: Document management
-- sync: Version control (pull, push, branch, merge)
 - connect: CMS and analytics integrations
 - cloud: Kurt Cloud operations
-- admin: Administrative commands
+- admin: Administrative commands (includes sync)
 - help: Documentation and guides
 """
 
@@ -23,12 +22,14 @@ load_dotenv()
 class LazyGroup(click.Group):
     """A Click group that lazily loads subcommands."""
 
-    def __init__(self, *args, lazy_subcommands=None, **kwargs):
+    def __init__(self, *args, lazy_subcommands=None, deprecated_aliases=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.lazy_subcommands = lazy_subcommands or {}
+        self.deprecated_aliases = deprecated_aliases or {}
         self._loaded_commands = {}
 
     def list_commands(self, ctx):
+        # Don't show deprecated aliases in help
         lazy = list(self.lazy_subcommands.keys())
         regular = list(self.commands.keys())
         return sorted(set(lazy + regular))
@@ -43,6 +44,25 @@ class LazyGroup(click.Group):
                 module = __import__(module_path, fromlist=[cmd_name])
                 self._loaded_commands[name] = getattr(module, cmd_name)
             return self._loaded_commands[name]
+
+        # Check deprecated aliases
+        if name in self.deprecated_aliases:
+            old_name, new_name, module_path, cmd_name = self.deprecated_aliases[name]
+            if name not in self._loaded_commands:
+                from rich.console import Console
+
+                module = __import__(module_path, fromlist=[cmd_name])
+                cmd = getattr(module, cmd_name)
+
+                # Show deprecation warning when command is invoked
+                console = Console(stderr=True)
+                console.print(
+                    f"[yellow]⚠ 'kurt {old_name}' is deprecated. "
+                    f"Use 'kurt {new_name}' instead.[/yellow]"
+                )
+                self._loaded_commands[name] = cmd
+            return self._loaded_commands[name]
+
         return None
 
 
@@ -57,6 +77,14 @@ class LazyGroup(click.Group):
         "cloud": ("kurt.cli.cloud", "cloud_group"),
         "admin": ("kurt.cli.admin", "admin"),
         "help": ("kurt.cli.show", "show_group"),
+    },
+    # Backwards compatibility aliases (hidden from help, show deprecation warning)
+    deprecated_aliases={
+        # old_name: (old_name, new_name, module_path, cmd_name)
+        "agents": ("agents", "workflow", "kurt.cli.workflow", "workflow_group"),
+        "content": ("content", "docs", "kurt.cli.docs", "docs_group"),
+        "show": ("show", "help", "kurt.cli.show", "show_group"),
+        "sync": ("sync", "admin sync", "kurt.cli.sync", "sync_group"),
     },
 )
 @click.version_option(package_name="kurt-core", prog_name="kurt")
