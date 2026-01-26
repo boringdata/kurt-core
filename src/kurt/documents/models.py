@@ -2,7 +2,7 @@
 Document lifecycle models.
 
 Includes:
-- DocumentRegistry: Central document ID registry (SQLModel table)
+- DocumentIdRegistry: Central document ID registry (SQLModel table)
 - DocumentView: Virtual view aggregated from workflow tables (dataclass, not persisted)
 """
 
@@ -25,7 +25,7 @@ from kurt.tools.map.models import MapStatus
 # =============================================================================
 
 
-class DocumentRegistry(TimestampMixin, TenantMixin, SQLModel, table=True):
+class DocumentIdRegistry(TimestampMixin, TenantMixin, SQLModel, table=True):
     """Central document ID registry.
 
     Maps URLs to stable document IDs. Used as the primary key registry
@@ -34,7 +34,7 @@ class DocumentRegistry(TimestampMixin, TenantMixin, SQLModel, table=True):
     The document_id is a 12-character hex string derived from URL hash.
     """
 
-    __tablename__ = "document_registry"
+    __tablename__ = "document_id_registry"
     __table_args__ = (
         Index("idx_registry_url", "url"),
         Index("idx_registry_url_hash", "url_hash", unique=True),

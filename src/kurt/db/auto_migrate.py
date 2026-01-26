@@ -37,8 +37,8 @@ def get_all_models() -> list[type[SQLModel]]:
 
     # Document models
     try:
-        from kurt.documents.models import DocumentRegistry
-        models.append(DocumentRegistry)
+        from kurt.documents.models import DocumentIdRegistry
+        models.append(DocumentIdRegistry)
     except ImportError:
         pass
 

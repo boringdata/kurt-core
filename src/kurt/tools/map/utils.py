@@ -41,7 +41,7 @@ def get_source_identifier(item: dict[str, Any]) -> str:
 
 
 def resolve_existing(doc_ids: list[str]) -> set[str]:
-    """Check which document IDs already exist in document_registry."""
+    """Check which document IDs already exist in document_id_registry."""
     if not doc_ids:
         return set()
     try:
@@ -49,7 +49,7 @@ def resolve_existing(doc_ids: list[str]) -> set[str]:
 
         db = get_dolt_db()
         placeholders = ", ".join("?" for _ in doc_ids)
-        sql = f"SELECT document_id FROM document_registry WHERE document_id IN ({placeholders})"
+        sql = f"SELECT document_id FROM document_id_registry WHERE document_id IN ({placeholders})"
         result = db.query(sql, doc_ids)
         return {row["document_id"] for row in result}
     except Exception as e:

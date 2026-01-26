@@ -1067,7 +1067,7 @@ OBSERVABILITY_TABLES = [
     "workflow_runs",
     "step_logs",
     "step_events",
-    "document_registry",
+    "document_id_registry",
     "llm_traces",
 ]
 
@@ -1078,10 +1078,10 @@ def _get_observability_models() -> list[type[SQLModel]]:
     Lazily imports models to avoid circular imports.
     """
     from kurt.db.models import LLMTrace
-    from kurt.documents.models import DocumentRegistry
+    from kurt.documents.models import DocumentIdRegistry
     from kurt.observability.models import StepEvent, StepLog, WorkflowRun
 
-    return [WorkflowRun, StepLog, StepEvent, DocumentRegistry, LLMTrace]
+    return [WorkflowRun, StepLog, StepEvent, DocumentIdRegistry, LLMTrace]
 
 
 def init_observability_schema(db: "DoltDB") -> list[str]:
@@ -1091,7 +1091,7 @@ def init_observability_schema(db: "DoltDB") -> list[str]:
     - workflow_runs: Workflow execution tracking
     - step_logs: Step-level summaries
     - step_events: Append-only progress events
-    - document_registry: Central document ID registry
+    - document_id_registry: Central document ID registry
     - llm_traces: LLM call traces
 
     Args:

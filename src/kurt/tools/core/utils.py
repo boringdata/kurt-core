@@ -62,7 +62,7 @@ def make_document_id(source: str) -> str:
 
 def make_url_hash(source: str) -> str:
     """
-    Generate url_hash for UNIQUE constraint in document_registry.
+    Generate url_hash for UNIQUE constraint in document_id_registry.
 
     MUST use same canonicalization as document_id to prevent:
     - Duplicate documents from URL variants (case, trailing slash)
