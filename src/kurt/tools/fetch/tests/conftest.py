@@ -1,15 +1,12 @@
 """
 Test fixtures for fetch tool tests.
 
-Imports fixtures from kurt.conftest for Dolt-based testing.
+Uses Dolt-based fixtures from kurt.conftest (discovered automatically by pytest).
 """
 
 from __future__ import annotations
 
 import pytest
-
-# Import the Dolt-based project fixture from kurt.conftest
-from kurt.conftest import tmp_project
 
 
 @pytest.fixture

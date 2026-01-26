@@ -1,5 +1,7 @@
 """
 Test fixtures for map workflow tests.
+
+Uses Dolt-based fixtures from kurt.conftest (discovered automatically by pytest).
 """
 
 from __future__ import annotations
@@ -8,9 +10,6 @@ import os
 from pathlib import Path
 
 import pytest
-
-# Import the Dolt-based project fixture
-from kurt.conftest import tmp_project
 
 
 @pytest.fixture

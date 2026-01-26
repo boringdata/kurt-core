@@ -2,15 +2,12 @@
 Test fixtures for tool tests.
 
 Provides fixtures for testing tools with database persistence.
-Uses Dolt-based fixtures from kurt.conftest.
+Uses Dolt-based fixtures from kurt.conftest (discovered automatically by pytest).
 """
 
 from __future__ import annotations
 
 import pytest
-
-# Import the Dolt-based project fixture
-from kurt.conftest import tmp_project
 
 
 @pytest.fixture
