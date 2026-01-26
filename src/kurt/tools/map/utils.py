@@ -115,49 +115,49 @@ def persist_map_documents(
     rows: list[dict[str, Any]],
     run_id: str | None = None,
 ) -> dict[str, int]:
-    """Persist map results to tool-owned tables.
-
-    Writes to:
-    - document_registry: Central registry (upsert)
-    - map_results: Map tool output (insert new row per run)
+    """Persist map results to SQLModel map_documents table.
 
     Args:
         rows: List of map result dicts
-        run_id: Run/batch ID (UUID). If None, generates one.
+        run_id: Run/batch ID (unused, kept for API compatibility)
 
     Returns:
         Dict with counts: {"registered": N, "inserted": M}
     """
-    import uuid
+    from kurt.db import managed_session
 
-    from kurt.db.documents import get_dolt_db
-    from kurt.db.tool_tables import batch_insert_map_results
+    from .models import MapDocument
 
-    if run_id is None:
-        run_id = str(uuid.uuid4())
+    inserted = 0
+    with managed_session() as session:
+        for row in rows:
+            # Get status - convert string to enum if needed
+            status = row.get("status")
+            if isinstance(status, str):
+                try:
+                    status = MapStatus(status.upper())
+                except ValueError:
+                    status = MapStatus.SUCCESS
+            elif not isinstance(status, MapStatus):
+                status = MapStatus.SUCCESS
 
-    # Convert to format expected by batch_insert_map_results
-    map_results = []
-    for row in rows:
-        # Map status to string
-        status = row.get("status")
-        if isinstance(status, MapStatus):
-            status = status.value
+            doc = MapDocument(
+                document_id=row.get("document_id", ""),
+                source_url=row.get("source_url", ""),
+                source_type=row.get("source_type", "url"),
+                discovery_method=row.get("discovery_method", ""),
+                discovery_url=row.get("discovery_url"),
+                status=status,
+                is_new=row.get("is_new", True),
+                title=row.get("title"),
+                content_hash=row.get("content_hash"),
+                error=row.get("error"),
+                metadata_json=row.get("metadata_json"),
+            )
+            session.merge(doc)  # Upsert
+            inserted += 1
 
-        result = {
-            "url": row.get("source_url"),
-            "source_type": row.get("source_type", "url"),
-            "discovery_method": row.get("discovery_method", "unknown"),
-            "discovery_url": row.get("discovery_url"),
-            "title": row.get("title"),
-            "status": status or "success",
-            "error": row.get("error"),
-            "metadata": row.get("metadata_json"),
-        }
-        map_results.append(result)
-
-    db = get_dolt_db()
-    return batch_insert_map_results(db, run_id, map_results)
+    return {"registered": inserted, "inserted": inserted}
 
 
 def filter_items(

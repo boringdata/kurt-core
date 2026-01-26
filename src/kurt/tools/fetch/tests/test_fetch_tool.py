@@ -679,16 +679,20 @@ class TestFetchToolExecution:
 
 
 class TestFetchToolPersistence:
-    """Integration tests with real Dolt database persistence."""
+    """Integration tests with SQLModel database persistence."""
 
     @pytest.mark.asyncio
-    async def test_fetch_persists_to_dolt(self, tmp_dolt_project):
-        """Test that fetch results are persisted to Dolt database."""
+    async def test_fetch_persists_to_sqlmodel(self, tmp_sqlmodel_project):
+        """Test that fetch results are persisted to SQLModel fetch_documents table."""
         from unittest.mock import AsyncMock, patch
 
+        from sqlmodel import select
+
+        from kurt.db import managed_session
+        from kurt.tools.fetch.models import FetchDocument
         from kurt.tools.utils import make_document_id
 
-        repo_path, db = tmp_dolt_project
+        repo_path = tmp_sqlmodel_project
         tool = FetchTool()
         tool_context = ToolContext(settings={"project_root": str(repo_path)})
 
@@ -700,7 +704,7 @@ class TestFetchToolPersistence:
         async def mock_fetch(url, config, timeout_s, semaphore, client):
             return {
                 "url": url,
-                "content": "# Test Content\n\nPersisted to Dolt.",
+                "content": "# Test Content\n\nPersisted to SQLModel.",
                 "metadata": {"fingerprint": "abc123"},
                 "content_hash": "abc123def456",
                 "status": "SUCCESS",
@@ -733,10 +737,11 @@ class TestFetchToolPersistence:
         assert len(result.data) == 1
         assert result.data[0]["status"] == "SUCCESS"
 
-        # Verify data was persisted to Dolt
-        rows = db.query("SELECT * FROM fetch_results")
-        assert len(rows) >= 1
-        assert any(r["url"] == "https://example.com/test" for r in rows)
+        # Verify data was persisted to SQLModel
+        with managed_session() as session:
+            docs = session.exec(select(FetchDocument)).all()
+            assert len(docs) >= 1
+            assert any(d.document_id == doc_id for d in docs)
 
 
 # ============================================================================
@@ -746,15 +751,19 @@ class TestFetchToolPersistence:
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_real_fetch(tmp_dolt_project):
+async def test_real_fetch(tmp_sqlmodel_project):
     """
-    Integration test with real network and real Dolt persistence.
+    Integration test with real network and real SQLModel persistence.
 
     Run with: pytest -m integration
     """
+    from sqlmodel import select
+
+    from kurt.db import managed_session
+    from kurt.tools.fetch.models import FetchDocument
     from kurt.tools.utils import make_document_id
 
-    repo_path, db = tmp_dolt_project
+    repo_path = tmp_sqlmodel_project
     tool = FetchTool()
     tool_context = ToolContext(settings={"project_root": str(repo_path)})
 
@@ -778,5 +787,6 @@ async def test_real_fetch(tmp_dolt_project):
     assert result.data[0]["status"] == "SUCCESS"
 
     # Verify data was persisted
-    rows = db.query("SELECT * FROM fetch_results")
-    assert len(rows) >= 1
+    with managed_session() as session:
+        docs = session.exec(select(FetchDocument)).all()
+        assert len(docs) >= 1

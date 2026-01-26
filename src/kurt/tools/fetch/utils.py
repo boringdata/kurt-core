@@ -237,67 +237,60 @@ def persist_fetch_documents(
     fetch_engine: str | None,
     run_id: str | None = None,
 ) -> dict[str, int]:
-    """Persist fetch results to tool-owned fetch_results table.
-
-    Writes to fetch_results table. Documents should already exist in
-    document_registry (created by MapTool).
+    """Persist fetch results to SQLModel fetch_documents table.
 
     Args:
         rows: List of fetch result dicts
         fetch_engine: Name of fetch engine used (trafilatura, firecrawl, etc.)
-        run_id: Run/batch ID (UUID). If None, generates one.
+        run_id: Run/batch ID (unused, kept for API compatibility)
 
     Returns:
         Dict with counts: {"inserted": N}
     """
-    import uuid
+    from kurt.db import managed_session
 
-    from kurt.db.documents import get_dolt_db
-    from kurt.db.tool_tables import batch_insert_fetch_results
+    from .models import FetchDocument
 
-    if run_id is None:
-        run_id = str(uuid.uuid4())
+    inserted = 0
+    with managed_session() as session:
+        for row in rows:
+            document_id = row.get("document_id")
+            if not document_id:
+                continue
 
-    # Convert to format expected by batch_insert_fetch_results
-    fetch_results = []
-    for row in rows:
-        document_id = row.get("document_id")
-        if not document_id:
-            continue
+            # Map status string to enum
+            status_str = row.get("status", "")
+            if status_str == FetchStatus.SUCCESS.value or status_str == "success":
+                status = FetchStatus.SUCCESS
+            elif status_str == FetchStatus.SKIPPED.value or status_str == "skipped":
+                status = FetchStatus.SKIPPED
+            else:
+                status = FetchStatus.ERROR
 
-        # Map status to fetch_status string
-        status = row.get("status", "")
-        if status == FetchStatus.SUCCESS.value:
-            fetch_status = "success"
-        elif status == FetchStatus.SKIPPED.value:
-            fetch_status = "skipped"
-        else:
-            fetch_status = "error"
+            # Merge provider metadata with fetch metrics
+            provider_metadata = row.get("metadata") or {}
+            metadata = dict(provider_metadata)
+            metadata.update({
+                "latency_ms": row.get("latency_ms"),
+                "bytes_fetched": row.get("bytes_fetched"),
+                "public_url": row.get("public_url"),
+            })
 
-        # Merge provider metadata with fetch metrics
-        provider_metadata = row.get("metadata") or {}
-        metadata = dict(provider_metadata)
-        metadata.update({
-            "latency_ms": row.get("latency_ms"),
-            "bytes_fetched": row.get("bytes_fetched"),
-            "public_url": row.get("public_url"),
-        })
+            doc = FetchDocument(
+                document_id=document_id,
+                status=status,
+                content_length=row.get("bytes_fetched", 0) or 0,
+                content_hash=row.get("content_hash"),
+                content_path=row.get("content_path"),
+                fetch_engine=fetch_engine,
+                public_url=row.get("public_url"),
+                error=row.get("error"),
+                metadata_json=metadata,
+            )
+            session.merge(doc)  # Upsert
+            inserted += 1
 
-        result = {
-            "document_id": document_id,
-            "url": row.get("url") or row.get("source_url"),
-            "status": fetch_status,
-            "content_path": row.get("content_path"),
-            "content_hash": row.get("content_hash"),
-            "content_length": row.get("bytes_fetched"),
-            "fetch_engine": fetch_engine,
-            "error": row.get("error"),
-            "metadata": metadata,
-        }
-        fetch_results.append(result)
-
-    db = get_dolt_db()
-    return batch_insert_fetch_results(db, run_id, fetch_results)
+    return {"inserted": inserted}
 
 
 def save_content_file(document_id: str, content: str, source_url: str | None = None) -> str:

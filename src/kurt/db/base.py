@@ -102,7 +102,21 @@ def get_database_client() -> DatabaseClient:
                 f"Or install all extras: uv pip install 'kurt[all]'"
             ) from e
 
-    # Default: SQLite (also used as fallback for DATABASE_URL="kurt")
-    from kurt.db.sqlite import SQLiteClient
+    # MySQL/Dolt connection (Dolt exposes MySQL-compatible protocol)
+    if database_url and database_url.startswith("mysql"):
+        try:
+            from kurt.db.dolt_client import DoltClient
 
-    return SQLiteClient()
+            return DoltClient(database_url)
+        except ImportError as e:
+            missing_module = str(e).split("'")[1] if "'" in str(e) else "unknown"
+            raise ImportError(
+                f"MySQL/Dolt mode requires additional dependencies.\n"
+                f"Missing module: {missing_module}\n\n"
+                f"Install with: uv pip install pymysql\n"
+            ) from e
+
+    # Default: Dolt (local development with git-like versioning)
+    from kurt.db.dolt_client import DoltClient
+
+    return DoltClient()

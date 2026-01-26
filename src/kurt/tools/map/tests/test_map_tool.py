@@ -812,12 +812,17 @@ class TestMapOutput:
 
 
 class TestMapToolPersistence:
-    """Integration tests with real Dolt database persistence."""
+    """Integration tests with SQLModel database persistence."""
 
     @pytest.mark.asyncio
-    async def test_map_folder_persists_to_dolt(self, tmp_dolt_project, temp_folder):
-        """Test that map results are persisted to Dolt database."""
-        repo_path, db = tmp_dolt_project
+    async def test_map_folder_persists_to_sqlmodel(self, tmp_sqlmodel_project, temp_folder):
+        """Test that map results are persisted to SQLModel map_documents table."""
+        from sqlmodel import select
+
+        from kurt.db import managed_session
+        from kurt.tools.map.models import MapDocument
+
+        repo_path = tmp_sqlmodel_project
 
         tool = MapTool()
         params = MapInput(
@@ -834,20 +839,22 @@ class TestMapToolPersistence:
         assert result.success is True
         assert len(result.data) >= 2  # index.html and about.html
 
-        # Verify data was persisted to Dolt
-        rows = db.query("SELECT * FROM map_results")
-        assert len(rows) >= 2
-
-        # Verify document registry was populated
-        registry_rows = db.query("SELECT * FROM document_registry")
-        assert len(registry_rows) >= 2
+        # Verify data was persisted to SQLModel
+        with managed_session() as session:
+            docs = session.exec(select(MapDocument)).all()
+            assert len(docs) >= 2
 
     @pytest.mark.asyncio
-    async def test_map_url_with_sitemap_persists_to_dolt(self, tmp_dolt_project):
-        """Test that URL mapping with sitemap persists to Dolt."""
+    async def test_map_url_with_sitemap_persists_to_sqlmodel(self, tmp_sqlmodel_project):
+        """Test that URL mapping with sitemap persists to SQLModel."""
         from unittest.mock import AsyncMock, Mock
 
-        repo_path, db = tmp_dolt_project
+        from sqlmodel import select
+
+        from kurt.db import managed_session
+        from kurt.tools.map.models import MapDocument
+
+        repo_path = tmp_sqlmodel_project
 
         sitemap_xml = """<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -889,10 +896,11 @@ class TestMapToolPersistence:
         assert result.success is True
         assert len(result.data) == 2
 
-        # Verify data was persisted to Dolt
-        rows = db.query("SELECT * FROM map_results")
-        assert len(rows) >= 2
+        # Verify data was persisted to SQLModel
+        with managed_session() as session:
+            docs = session.exec(select(MapDocument)).all()
+            assert len(docs) >= 2
 
-        urls = {r["url"] for r in rows}
-        assert "https://example.com/page1" in urls
-        assert "https://example.com/page2" in urls
+            urls = {d.source_url for d in docs}
+            assert "https://example.com/page1" in urls
+            assert "https://example.com/page2" in urls
