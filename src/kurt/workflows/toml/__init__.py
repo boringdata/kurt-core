@@ -11,7 +11,7 @@ This module provides TOML-based workflow parsing and execution:
 - WorkflowResult, StepResult: Execution result types
 
 Example:
-    from kurt.engine import parse_workflow, build_dag, execute_workflow
+    from kurt.workflows.toml import parse_workflow, build_dag, execute_workflow
 
     # Parse a workflow file
     workflow = parse_workflow("workflows/my_pipeline.toml")
@@ -40,7 +40,7 @@ Example:
         print(f"{name}: type={step_def.type}, depends_on={step_def.depends_on}")
 
     # Interpolate step config with input values
-    from kurt.engine import interpolate_config
+    from kurt.workflows.toml import interpolate_config
     config = {"model": "{{model_name}}", "temperature": "{{temp}}"}
     inputs = {"model_name": "gpt-4", "temp": 0.7}
     result = interpolate_config(config, inputs)
@@ -80,6 +80,7 @@ from .interpolation import (
 from .parser import (
     CircularDependencyError,
     InputDef,
+    STEP_TYPE_ALIASES,
     StepDef,
     UnknownDependsOnError,
     UnknownKeyError,
@@ -88,6 +89,7 @@ from .parser import (
     WorkflowMeta,
     WorkflowParseError,
     parse_workflow,
+    resolve_step_type,
 )
 
 __all__ = [
@@ -130,4 +132,7 @@ __all__ = [
     "CycleDetectedError",
     "UnknownKeyError",
     "InterpolationError",
+    # Step type utilities
+    "STEP_TYPE_ALIASES",
+    "resolve_step_type",
 ]

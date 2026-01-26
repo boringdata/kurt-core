@@ -1,5 +1,5 @@
 """
-Standalone test runner for kurt.engine.parser that doesn't require pandas.
+Standalone test runner for kurt.workflows.toml.parser that doesn't require pandas.
 Run with: python src/kurt/engine/tests/run_standalone_tests.py
 """
 
@@ -16,7 +16,7 @@ from textwrap import dedent
 from pydantic import BaseModel
 
 # Import the module under test
-from kurt.engine.parser import (
+from kurt.workflows.toml.parser import (
     CircularDependencyError,
     InputDef,
     StepDef,

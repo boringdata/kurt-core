@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from kurt.engine.parser import StepDef
+from kurt.workflows.toml.parser import StepDef
 
 
 class CycleDetectedError(Exception):

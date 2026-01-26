@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from kurt.engine.fixtures import (
+from kurt.workflows.toml.fixtures import (
     FixtureLoadError,
     FixtureNotFoundError,
     FixtureSet,

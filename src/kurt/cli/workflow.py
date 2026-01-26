@@ -124,8 +124,8 @@ def run_cmd(workflow_path: Path, inputs: tuple[str, ...], background: bool, dry_
         kurt run workflows/pipeline.toml -i url=https://example.com -i max_pages=100
         kurt run workflows/pipeline.toml --background
     """
-    from kurt.engine import parse_workflow
-    from kurt.engine.executor import execute_workflow
+    from kurt.workflows.toml import parse_workflow
+    from kurt.workflows.toml.executor import execute_workflow
 
     # Parse inputs
     parsed_inputs: dict[str, Any] = {}
@@ -829,8 +829,8 @@ def _build_dry_run_output(
     - Execution plan from DAG builder
     - Config validation against tool schemas
     """
-    from kurt.engine.dag import CycleDetectedError, build_dag
-    from kurt.engine.interpolation import interpolate_step_config
+    from kurt.workflows.toml.dag import CycleDetectedError, build_dag
+    from kurt.workflows.toml.interpolation import interpolate_step_config
     from kurt.tools.registry import TOOLS, get_tool
 
     # Build execution plan
@@ -1024,9 +1024,9 @@ def test_cmd(
         kurt test workflows/pipeline.toml -f fixtures/ --strict
         kurt test workflows/pipeline.toml -f fixtures/ -i url=https://example.com
     """
-    from kurt.engine import parse_workflow
-    from kurt.engine.dag import build_dag
-    from kurt.engine.fixtures import (
+    from kurt.workflows.toml import parse_workflow
+    from kurt.workflows.toml.dag import build_dag
+    from kurt.workflows.toml.fixtures import (
         FixtureLoadError,
         FixtureNotFoundError,
         analyze_fixture_coverage,

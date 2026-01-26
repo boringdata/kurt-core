@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import pytest
 
-from kurt.engine.interpolation import (
+from kurt.workflows.toml.interpolation import (
     InterpolationError,
     extract_variables,
     interpolate_config,

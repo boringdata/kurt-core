@@ -27,9 +27,21 @@ from kurt.tools.registry import TOOLS
 # Valid input types for workflow inputs
 InputType = Literal["string", "int", "float", "bool"]
 
-# Valid step types - must match tool registry keys
+# Step type aliases: user-friendly names -> actual tool registry names
+# This allows TOML files to use short names like "llm" instead of "batch-llm"
+STEP_TYPE_ALIASES: dict[str, str] = {
+    "llm": "batch-llm",
+    "embed": "batch-embedding",
+}
+
+# Valid step types - must match tool registry keys (after alias resolution)
 # "function" is special: executes user-defined Python function from tools.py
 VALID_STEP_TYPES = frozenset(["map", "fetch", "llm", "embed", "write", "sql", "agent", "function"])
+
+
+def resolve_step_type(step_type: str) -> str:
+    """Resolve step type alias to actual tool name."""
+    return STEP_TYPE_ALIASES.get(step_type, step_type)
 
 
 class WorkflowParseError(Exception):
@@ -353,7 +365,9 @@ def parse_workflow(
                     )
             else:
                 # Additional validation: if validate_tools is True, check tool registry
-                if validate_tools and step_type not in TOOLS:
+                # Use resolved step type (after alias expansion) for registry lookup
+                resolved_type = resolve_step_type(step_type)
+                if validate_tools and resolved_type not in TOOLS:
                     # Only warn if TOOLS is non-empty (tools have been registered)
                     # Otherwise allow for testing without full tool setup
                     if TOOLS:

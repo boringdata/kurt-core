@@ -22,8 +22,8 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from kurt.engine.executor import execute_workflow
-from kurt.engine.parser import parse_workflow
+from kurt.workflows.toml.executor import execute_workflow
+from kurt.workflows.toml.parser import parse_workflow
 from kurt.tools.base import ToolContext
 
 # ============================================================================

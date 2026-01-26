@@ -25,9 +25,9 @@ from enum import IntEnum
 from pathlib import Path
 from typing import Any, Callable, Literal
 
-from kurt.engine.dag import build_dag
-from kurt.engine.interpolation import interpolate_step_config
-from kurt.engine.parser import StepDef, WorkflowDefinition
+from kurt.workflows.toml.dag import build_dag
+from kurt.workflows.toml.interpolation import interpolate_step_config
+from kurt.workflows.toml.parser import StepDef, WorkflowDefinition
 from kurt.observability.tracking import track_event
 from kurt.tools.base import ToolContext, ToolResult
 from kurt.tools.errors import ToolCanceledError, ToolError
@@ -892,7 +892,7 @@ async def execute_workflow(
         - exit_code: CLI exit code (0=success, 1=failed, 2=canceled, 3=error)
 
     Example:
-        from kurt.engine import parse_workflow, execute_workflow
+        from kurt.workflows.toml import parse_workflow, execute_workflow
         from kurt.tools import load_tool_context
 
         workflow = parse_workflow("workflows/pipeline.toml")

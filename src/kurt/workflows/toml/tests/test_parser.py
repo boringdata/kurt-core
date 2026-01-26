@@ -17,7 +17,7 @@ from textwrap import dedent
 import pytest
 from pydantic import BaseModel
 
-from kurt.engine.parser import (
+from kurt.workflows.toml.parser import (
     CircularDependencyError,
     InputDef,
     StepDef,

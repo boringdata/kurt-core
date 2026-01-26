@@ -6,12 +6,12 @@ from __future__ import annotations
 
 import pytest
 
-from kurt.engine.dag import (
+from kurt.workflows.toml.dag import (
     CycleDetectedError,
     ExecutionPlan,
     build_dag,
 )
-from kurt.engine.parser import StepDef
+from kurt.workflows.toml.parser import StepDef
 
 # ============================================================================
 # Helper Functions

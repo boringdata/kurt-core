@@ -10,14 +10,14 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from kurt.engine.executor import (
+from kurt.workflows.toml.executor import (
     ExitCode,
     StepResult,
     WorkflowExecutor,
     WorkflowResult,
     execute_workflow,
 )
-from kurt.engine.parser import InputDef, StepDef, WorkflowDefinition, WorkflowMeta
+from kurt.workflows.toml.parser import InputDef, StepDef, WorkflowDefinition, WorkflowMeta
 from kurt.tools.base import ToolContext, ToolResult, ToolResultError
 from kurt.tools.errors import ToolExecutionError, ToolNotFoundError
 
@@ -174,7 +174,7 @@ class TestExecuteWorkflowSingleStep:
         )
 
         with patch(
-            "kurt.engine.executor.execute_tool", new_callable=AsyncMock
+            "kurt.workflows.toml.executor.execute_tool", new_callable=AsyncMock
         ) as mock_execute:
             mock_execute.return_value = mock_result
 
@@ -199,7 +199,7 @@ class TestExecuteWorkflowSingleStep:
         )
 
         with patch(
-            "kurt.engine.executor.execute_tool", new_callable=AsyncMock
+            "kurt.workflows.toml.executor.execute_tool", new_callable=AsyncMock
         ) as mock_execute:
             mock_execute.return_value = mock_result
 
@@ -218,7 +218,7 @@ class TestExecuteWorkflowSingleStep:
         )
 
         with patch(
-            "kurt.engine.executor.execute_tool", new_callable=AsyncMock
+            "kurt.workflows.toml.executor.execute_tool", new_callable=AsyncMock
         ) as mock_execute:
             mock_execute.side_effect = ToolExecutionError("map", "Connection refused")
 
@@ -237,7 +237,7 @@ class TestExecuteWorkflowSingleStep:
         )
 
         with patch(
-            "kurt.engine.executor.execute_tool", new_callable=AsyncMock
+            "kurt.workflows.toml.executor.execute_tool", new_callable=AsyncMock
         ) as mock_execute:
             mock_execute.side_effect = ToolNotFoundError("nonexistent")
 
@@ -273,7 +273,7 @@ class TestExecuteWorkflowSequential:
             return make_tool_result(success=True, data=[{"processed": True}])
 
         with patch(
-            "kurt.engine.executor.execute_tool", side_effect=mock_execute
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
         ):
             result = await execute_workflow(workflow, {})
 
@@ -300,7 +300,7 @@ class TestExecuteWorkflowSequential:
                 return make_tool_result(success=True, data=[{"result": "processed"}])
 
         with patch(
-            "kurt.engine.executor.execute_tool", side_effect=mock_execute
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
         ):
             await execute_workflow(workflow, {"query": "test"})
 
@@ -343,7 +343,7 @@ class TestExecuteWorkflowParallel:
             return make_tool_result(success=True, data=[{"step": name}])
 
         with patch(
-            "kurt.engine.executor.execute_tool", side_effect=mock_execute
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
         ):
             result = await execute_workflow(workflow, {})
 
@@ -376,7 +376,7 @@ class TestExecuteWorkflowParallel:
             return make_tool_result(success=True, data=[{"from": name}])
 
         with patch(
-            "kurt.engine.executor.execute_tool", side_effect=mock_execute
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
         ):
             result = await execute_workflow(workflow, {})
 
@@ -419,7 +419,7 @@ class TestExecuteWorkflowFanIn:
                 return make_tool_result(success=True, data=[])
 
         with patch(
-            "kurt.engine.executor.execute_tool", side_effect=mock_execute
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
         ):
             result = await execute_workflow(workflow, {})
 
@@ -450,7 +450,7 @@ class TestExecuteWorkflowFanIn:
                 return make_tool_result(success=True, data=[])
 
         with patch(
-            "kurt.engine.executor.execute_tool", side_effect=mock_execute
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
         ):
             result = await execute_workflow(workflow, {})
 
@@ -486,7 +486,7 @@ class TestExecuteWorkflowPartialFailure:
             return make_tool_result(success=True)
 
         with patch(
-            "kurt.engine.executor.execute_tool", side_effect=mock_execute
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
         ):
             result = await execute_workflow(workflow, {})
 
@@ -514,7 +514,7 @@ class TestExecuteWorkflowPartialFailure:
             return make_tool_result(success=True, data=[{"result": "ok"}])
 
         with patch(
-            "kurt.engine.executor.execute_tool", side_effect=mock_execute
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
         ):
             result = await execute_workflow(workflow, {}, continue_on_error=True)
 
@@ -545,7 +545,7 @@ class TestExecuteWorkflowPartialFailure:
             return make_tool_result(success=True, data=[{"result": "ok"}])
 
         with patch(
-            "kurt.engine.executor.execute_tool", side_effect=mock_execute
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
         ):
             result = await execute_workflow(workflow, {}, continue_on_error=True)
 
@@ -601,7 +601,7 @@ class TestExecuteWorkflowCancellation:
             return make_tool_result(success=True)
 
         with patch(
-            "kurt.engine.executor.execute_tool", side_effect=mock_execute
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
         ):
             executor = WorkflowExecutor(workflow, {})
 
@@ -649,7 +649,7 @@ class TestExecuteWorkflowCancellation:
             return make_tool_result(success=True)
 
         with patch(
-            "kurt.engine.executor.execute_tool", side_effect=mock_execute
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
         ):
             executor = WorkflowExecutor(workflow, {})
             task = asyncio.create_task(executor.run())
@@ -688,7 +688,7 @@ class TestExecuteWorkflowInputs:
             return make_tool_result(success=True)
 
         with patch(
-            "kurt.engine.executor.execute_tool", side_effect=mock_execute
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
         ):
             await execute_workflow(workflow, {"url": "https://example.com"})
 
@@ -714,7 +714,7 @@ class TestExecuteWorkflowInputs:
             return make_tool_result(success=True)
 
         with patch(
-            "kurt.engine.executor.execute_tool", side_effect=mock_execute
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
         ):
             await execute_workflow(workflow, {"model": "gpt-4"})
 
@@ -744,8 +744,8 @@ class TestExecuteWorkflowEvents:
             events.append(kwargs)
 
         with (
-            patch("kurt.engine.executor.execute_tool", new_callable=AsyncMock) as mock_execute,
-            patch("kurt.engine.executor.track_event", side_effect=capture_event),
+            patch("kurt.workflows.toml.executor.execute_tool", new_callable=AsyncMock) as mock_execute,
+            patch("kurt.workflows.toml.executor.track_event", side_effect=capture_event),
         ):
             mock_execute.return_value = make_tool_result(success=True)
             await execute_workflow(workflow, {})
@@ -768,8 +768,8 @@ class TestExecuteWorkflowEvents:
             events.append(kwargs)
 
         with (
-            patch("kurt.engine.executor.execute_tool", new_callable=AsyncMock) as mock_execute,
-            patch("kurt.engine.executor.track_event", side_effect=capture_event),
+            patch("kurt.workflows.toml.executor.execute_tool", new_callable=AsyncMock) as mock_execute,
+            patch("kurt.workflows.toml.executor.track_event", side_effect=capture_event),
         ):
             mock_execute.return_value = make_tool_result(success=True)
             await execute_workflow(workflow, {})
@@ -797,7 +797,7 @@ class TestExecuteWorkflowExitCodes:
         workflow = make_workflow(steps={"step1": make_step("map")})
 
         with patch(
-            "kurt.engine.executor.execute_tool", new_callable=AsyncMock
+            "kurt.workflows.toml.executor.execute_tool", new_callable=AsyncMock
         ) as mock_execute:
             mock_execute.return_value = make_tool_result(success=True)
             result = await execute_workflow(workflow, {})
@@ -811,7 +811,7 @@ class TestExecuteWorkflowExitCodes:
         workflow = make_workflow(steps={"step1": make_step("map")})
 
         with patch(
-            "kurt.engine.executor.execute_tool", new_callable=AsyncMock
+            "kurt.workflows.toml.executor.execute_tool", new_callable=AsyncMock
         ) as mock_execute:
             mock_execute.return_value = make_tool_result(
                 success=False,
@@ -841,7 +841,7 @@ class TestExecuteWorkflowExitCodes:
             raise asyncio.CancelledError()
 
         with patch(
-            "kurt.engine.executor.execute_tool", side_effect=slow_execute
+            "kurt.workflows.toml.executor.execute_tool", side_effect=slow_execute
         ):
             executor = WorkflowExecutor(workflow, {})
             task = asyncio.create_task(executor.run())
@@ -906,7 +906,7 @@ class TestExecuteWorkflowContext:
             return make_tool_result(success=True)
 
         with patch(
-            "kurt.engine.executor.execute_tool", side_effect=mock_execute
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
         ):
             await execute_workflow(workflow, {}, context=context)
 
@@ -926,7 +926,7 @@ class TestExecuteWorkflowContext:
             return make_tool_result(success=True)
 
         with patch(
-            "kurt.engine.executor.execute_tool", side_effect=mock_execute
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
         ):
             await execute_workflow(workflow, {})
 
@@ -948,7 +948,7 @@ class TestExecuteWorkflowTiming:
         workflow = make_workflow(steps={"step1": make_step("map")})
 
         with patch(
-            "kurt.engine.executor.execute_tool", new_callable=AsyncMock
+            "kurt.workflows.toml.executor.execute_tool", new_callable=AsyncMock
         ) as mock_execute:
             mock_execute.return_value = make_tool_result(success=True)
             result = await execute_workflow(workflow, {})
@@ -965,7 +965,7 @@ class TestExecuteWorkflowTiming:
         workflow = make_workflow(steps={"step1": make_step("map")})
 
         with patch(
-            "kurt.engine.executor.execute_tool", new_callable=AsyncMock
+            "kurt.workflows.toml.executor.execute_tool", new_callable=AsyncMock
         ) as mock_execute:
             mock_execute.return_value = make_tool_result(success=True)
             result = await execute_workflow(workflow, {})
@@ -979,7 +979,7 @@ class TestExecuteWorkflowTiming:
         workflow = make_workflow(steps={"step1": make_step("map")})
 
         with patch(
-            "kurt.engine.executor.execute_tool", new_callable=AsyncMock
+            "kurt.workflows.toml.executor.execute_tool", new_callable=AsyncMock
         ) as mock_execute:
             mock_execute.return_value = make_tool_result(success=True)
             result = await execute_workflow(workflow, {})
@@ -1012,7 +1012,7 @@ class TestExecuteWorkflowProgressCallback:
             return make_tool_result(success=True)
 
         with patch(
-            "kurt.engine.executor.execute_tool", side_effect=mock_execute
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
         ):
             await execute_workflow(workflow, {})
 
@@ -1036,7 +1036,7 @@ class TestExecuteWorkflowInternalError:
 
         # Patch build_dag to raise an internal error
         with patch(
-            "kurt.engine.executor.build_dag", side_effect=RuntimeError("Internal failure")
+            "kurt.workflows.toml.executor.build_dag", side_effect=RuntimeError("Internal failure")
         ):
             result = await execute_workflow(workflow, {})
 
@@ -1062,7 +1062,7 @@ class TestExecuteWorkflowToolCanceled:
         workflow = make_workflow(steps={"step1": make_step("map")})
 
         with patch(
-            "kurt.engine.executor.execute_tool", new_callable=AsyncMock
+            "kurt.workflows.toml.executor.execute_tool", new_callable=AsyncMock
         ) as mock_execute:
             mock_execute.side_effect = ToolCanceledError("map", reason="User requested cancel")
 
@@ -1087,7 +1087,7 @@ class TestExecuteWorkflowToolCanceled:
         )
 
         with patch(
-            "kurt.engine.executor.execute_tool", new_callable=AsyncMock
+            "kurt.workflows.toml.executor.execute_tool", new_callable=AsyncMock
         ) as mock_execute:
             mock_execute.side_effect = ToolCanceledError("map", reason="Canceled")
 
@@ -1125,7 +1125,7 @@ class TestExecuteWorkflowStepSkipping:
             return make_tool_result(success=True)
 
         with patch(
-            "kurt.engine.executor.execute_tool", side_effect=mock_execute
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
         ):
             result = await execute_workflow(workflow, {})
 
@@ -1196,7 +1196,7 @@ class TestExecuteWorkflowComplex:
             return make_tool_result(success=True, data=[{"result": name}])
 
         with patch(
-            "kurt.engine.executor.execute_tool", side_effect=mock_execute
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
         ):
             result = await execute_workflow(workflow, {}, continue_on_error=True)
 
@@ -1222,7 +1222,7 @@ class TestExecuteWorkflowComplex:
             return make_tool_result(success=True, data=[{"step": name}])
 
         with patch(
-            "kurt.engine.executor.execute_tool", side_effect=mock_execute
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
         ):
             result = await execute_workflow(workflow, {})
 
@@ -1250,7 +1250,7 @@ class TestExecuteWorkflowComplex:
             return make_tool_result(success=True, data=[{"step": name}])
 
         with patch(
-            "kurt.engine.executor.execute_tool", side_effect=mock_execute
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
         ):
             result = await execute_workflow(workflow, {})
 

@@ -12,12 +12,12 @@ from pathlib import Path
 
 import pytest
 
-from kurt.engine.executor import (
+from kurt.workflows.toml.executor import (
     _execute_user_function,
     _load_user_function,
     execute_workflow,
 )
-from kurt.engine.parser import (
+from kurt.workflows.toml.parser import (
     VALID_STEP_TYPES,
     WorkflowParseError,
     parse_workflow,
