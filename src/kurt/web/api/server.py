@@ -1354,7 +1354,9 @@ def api_list_workflows(
             params.append(status)
 
         if search:
-            conditions.append("id LIKE ?")
+            # Search by ID or workflow name
+            conditions.append("(id LIKE ? OR workflow LIKE ?)")
+            params.append(f"%{search}%")
             params.append(f"%{search}%")
 
         if conditions:
@@ -1366,6 +1368,7 @@ def api_list_workflows(
 
         result = db.query(sql, params)
         workflows = []
+        raw_count = len(result.rows)  # Count before Python filtering
 
         for row in result.rows:
             workflow_id = row.get("id", "")
@@ -1427,12 +1430,22 @@ def api_list_workflows(
 
             workflows.append(workflow)
 
-        return {"workflows": workflows, "total": len(workflows)}
+        # has_more is True if the raw SQL query returned 'limit' rows
+        # (there might be more in the database)
+        has_more = raw_count >= limit
+
+        return {
+            "workflows": workflows,
+            "total": len(workflows),
+            "has_more": has_more,
+            "offset": offset,
+            "limit": limit,
+        }
     except Exception as e:
         # Handle missing table (no workflows run yet)
         if "no such table" in str(e).lower() or "doesn't exist" in str(e).lower():
-            return {"workflows": [], "total": 0}
-        return {"workflows": [], "total": 0, "error": f"Database error: {e}"}
+            return {"workflows": [], "total": 0, "has_more": False}
+        return {"workflows": [], "total": 0, "has_more": False, "error": f"Database error: {e}"}
 
 
 @app.get("/api/workflows/{workflow_id}")
