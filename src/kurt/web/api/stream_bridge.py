@@ -865,9 +865,23 @@ async def handle_stream_websocket(
 
     import uuid
 
+    def _is_valid_uuid(value: str) -> bool:
+        """Check if a string is a valid UUID."""
+        try:
+            uuid.UUID(value)
+            return True
+        except (ValueError, TypeError):
+            return False
+
     params = websocket.query_params
     original_session_id = params.get("session_id")
-    session_id = original_session_id or str(uuid.uuid4())
+    # Validate session_id is a proper UUID, otherwise generate a new one
+    if original_session_id and _is_valid_uuid(original_session_id):
+        session_id = original_session_id
+    else:
+        session_id = str(uuid.uuid4())
+        if original_session_id:
+            print(f"[Stream] Invalid session_id '{original_session_id}', using new UUID: {session_id}")
     resume = params.get("resume", "0") in ("1", "true")
     force_new = params.get("force_new", "0") in ("1", "true")
     mode = params.get("mode", "ask")  # Default to "ask" mode
