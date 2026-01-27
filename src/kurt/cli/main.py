@@ -1,15 +1,16 @@
 """Kurt CLI - Main command-line interface.
 
-Simplified CLI structure with ~12 top-level commands:
+Simplified CLI structure with ~13 top-level commands:
 - init, status, doctor, repair, serve: Core operations
-- workflow: Unified workflow management (TOML + MD)
+- workflow: Unified workflow management (TOML + MD in workflows/)
 - tool: All tools (map, fetch, llm, embed, save, sql, research, signals)
 - docs: Document management
 - sync: Version control (pull, push, branch, merge)
 - connect: CMS and analytics integrations
 - cloud: Kurt Cloud operations
 - admin: Administrative commands
-- help: Documentation and guides
+- guides: Interactive guides for agents (project, source, template, etc.)
+- help: Documentation and tool references
 """
 
 
@@ -75,6 +76,7 @@ class LazyGroup(click.Group):
         "connect": ("kurt.integrations.cli", "integrations_group"),
         "cloud": ("kurt.cloud.cli", "cloud_group"),
         "admin": ("kurt.admin.cli", "admin"),
+        "guides": ("kurt.cli.guides", "guides_group"),
         "help": ("kurt.cli.show", "show_group"),
     },
 )
