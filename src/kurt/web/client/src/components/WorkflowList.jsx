@@ -1,5 +1,17 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import WorkflowRow from './WorkflowRow'
+
+// Polling intervals in milliseconds
+const POLLING_FAST = 2000   // When workflows are running
+const POLLING_SLOW = 10000  // When all workflows are idle
+const POLLING_NONE = null   // Stop polling when no workflows
+
+// Check if a workflow has an error status that should trigger auto-expand
+const hasErrorStatus = (workflow) => {
+  return workflow.status === 'ERROR' ||
+    workflow.status === 'RETRIES_EXCEEDED' ||
+    (workflow.error_count && workflow.error_count > 0)
+}
 
 const STATUS_OPTIONS = [
   { value: '', label: 'All' },
@@ -31,6 +43,10 @@ export default function WorkflowList({ onAttachWorkflow }) {
   const [error, setError] = useState(null)
   const [hasMore, setHasMore] = useState(false)
   const [offset, setOffset] = useState(0)
+  // Track workflows that have been auto-expanded (to avoid re-expanding after manual collapse)
+  const autoExpandedRef = useRef(new Set())
+  // Track if user has manually collapsed a workflow
+  const userCollapsedRef = useRef(new Set())
 
   const fetchWorkflows = useCallback(async (loadMore = false) => {
     setIsLoading(true)
@@ -73,12 +89,74 @@ export default function WorkflowList({ onAttachWorkflow }) {
     }
   }, [statusFilter, typeFilter, searchQuery, offset])
 
-  // Initial fetch and polling
+  // Determine if any workflow is actively running
+  const hasRunningWorkflows = useMemo(() => {
+    return workflows.some(
+      (w) => w.status === 'PENDING' || w.status === 'ENQUEUED'
+    )
+  }, [workflows])
+
+  // Calculate optimal polling interval based on workflow states
+  const pollingInterval = useMemo(() => {
+    if (workflows.length === 0) {
+      // No workflows loaded yet - poll at slow interval to check for new ones
+      return POLLING_SLOW
+    }
+    if (hasRunningWorkflows) {
+      // Active workflows - poll fast for real-time updates
+      return POLLING_FAST
+    }
+    // All workflows completed/idle - poll slowly or stop
+    // Continue slow polling to detect new workflows
+    return POLLING_SLOW
+  }, [workflows.length, hasRunningWorkflows])
+
+  // Track polling interval changes for logging (debug)
+  const prevIntervalRef = useRef(pollingInterval)
+
+  // Initial fetch and adaptive polling
   useEffect(() => {
     fetchWorkflows(false)
-    const interval = setInterval(() => fetchWorkflows(false), 5000)
-    return () => clearInterval(interval)
   }, [statusFilter, typeFilter, searchQuery])
+
+  // Adaptive polling based on workflow state
+  useEffect(() => {
+    if (pollingInterval === POLLING_NONE) {
+      return // No polling needed
+    }
+
+    const interval = setInterval(() => {
+      fetchWorkflows(false)
+    }, pollingInterval)
+
+    // Update ref for tracking
+    prevIntervalRef.current = pollingInterval
+
+    return () => clearInterval(interval)
+  }, [pollingInterval, statusFilter, typeFilter, searchQuery, fetchWorkflows])
+
+  // Auto-expand workflows with error status on first load
+  useEffect(() => {
+    if (workflows.length === 0) return
+
+    // Find the first error workflow that hasn't been auto-expanded yet
+    // and hasn't been manually collapsed by the user
+    for (const workflow of workflows) {
+      const workflowId = workflow.workflow_uuid
+      if (
+        hasErrorStatus(workflow) &&
+        !autoExpandedRef.current.has(workflowId) &&
+        !userCollapsedRef.current.has(workflowId)
+      ) {
+        // Mark as auto-expanded so we don't re-expand on refresh
+        autoExpandedRef.current.add(workflowId)
+        // Expand this workflow
+        setExpandedId(workflowId)
+        // Only auto-expand one workflow at a time
+        break
+      }
+    }
+  }, [workflows])
 
   const handleLoadMore = () => {
     fetchWorkflows(true)
@@ -104,7 +182,16 @@ export default function WorkflowList({ onAttachWorkflow }) {
   }
 
   const handleToggleExpand = (workflowId) => {
-    setExpandedId(expandedId === workflowId ? null : workflowId)
+    const isCurrentlyExpanded = expandedId === workflowId
+    if (isCurrentlyExpanded) {
+      // User is collapsing - track this to prevent re-auto-expand
+      userCollapsedRef.current.add(workflowId)
+      setExpandedId(null)
+    } else {
+      // User is expanding - remove from collapsed set if present
+      userCollapsedRef.current.delete(workflowId)
+      setExpandedId(workflowId)
+    }
   }
 
   const getStatusBadgeClass = (status) => {
