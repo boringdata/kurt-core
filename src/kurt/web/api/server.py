@@ -1351,6 +1351,28 @@ def _denormalize_status_filter(frontend_status: str) -> list[str]:
     return [frontend_status.lower()] if frontend_status else []
 
 
+def _normalize_step_status(db_status: str | None) -> str:
+    """Normalize step/event status to frontend-expected format.
+
+    Step statuses use lowercase: pending, running, completed, failed, progress
+    Frontend expects: pending, running, success, error, progress
+
+    Consistent with _map_step_status in observability/status.py
+    """
+    if not db_status:
+        return "pending"
+    status_map = {
+        "pending": "pending",
+        "running": "running",
+        "progress": "progress",
+        "completed": "success",
+        "failed": "error",
+        "canceled": "error",
+        "skipped": "skipped",
+    }
+    return status_map.get(db_status.lower(), db_status.lower())
+
+
 @app.get("/api/workflows")
 def api_list_workflows(
     status: Optional[str] = Query(None),
@@ -1631,7 +1653,7 @@ def api_get_step_logs(
             logs.append({
                 "step_id": row.get("step_id"),
                 "tool": row.get("tool"),
-                "status": row.get("status"),
+                "status": _normalize_step_status(row.get("status")),
                 "started_at": str(row.get("started_at")) if row.get("started_at") else None,
                 "completed_at": str(row.get("completed_at")) if row.get("completed_at") else None,
                 "input_count": row.get("input_count"),
@@ -1797,7 +1819,7 @@ async def api_stream_workflow_logs(
                         "id": row.get("id"),
                         "step_id": row.get("step_id"),
                         "substep": row.get("substep"),
-                        "status": row.get("status"),
+                        "status": _normalize_step_status(row.get("status")),
                         "current": row.get("current"),
                         "total": row.get("total"),
                         "message": row.get("message"),
@@ -1846,7 +1868,7 @@ async def api_stream_workflow_logs(
                                 "id": row.get("id"),
                                 "step_id": row.get("step_id"),
                                 "substep": row.get("substep"),
-                                "status": row.get("status"),
+                                "status": _normalize_step_status(row.get("status")),
                                 "current": row.get("current"),
                                 "total": row.get("total"),
                                 "message": row.get("message"),
@@ -1864,7 +1886,7 @@ async def api_stream_workflow_logs(
                                     if new_content:
                                         yield f"data: {json.dumps({'type': 'log', 'content': new_content})}\n\n"
 
-                        yield f"data: {json.dumps({'done': True, 'status': status})}\n\n"
+                        yield f"data: {json.dumps({'done': True, 'status': _normalize_workflow_status(status)})}\n\n"
                         break
 
                 await asyncio.sleep(0.5)
@@ -1944,7 +1966,7 @@ def api_get_workflow_logs(
                     "id": row.get("id"),
                     "step_id": row.get("step_id"),
                     "substep": row.get("substep"),
-                    "status": row.get("status"),
+                    "status": _normalize_step_status(row.get("status")),
                     "current": row.get("current"),
                     "total": row.get("total"),
                     "message": row.get("message"),
