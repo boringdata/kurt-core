@@ -268,10 +268,13 @@ def run_cmd(workflow_path: Path, inputs: tuple[str, ...], background: bool, fore
             "workflow_type": "toml",
             "definition_file": str(workflow_path.name),
         }
-        # Store parent workflow ID for nested workflow display
+        # Store parent workflow ID and step name for nested workflow display
         parent_workflow_id = os.environ.get("KURT_PARENT_WORKFLOW_ID")
         if parent_workflow_id:
             metadata["parent_workflow_id"] = parent_workflow_id
+        parent_step_name = os.environ.get("KURT_PARENT_STEP_NAME")
+        if parent_step_name:
+            metadata["parent_step_name"] = parent_step_name
 
         lifecycle.create_run(
             workflow=workflow_def.workflow.name,

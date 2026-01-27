@@ -253,10 +253,13 @@ def execute_agent_workflow(
             "definition_name": definition.name,
             "trigger": trigger,
         }
-        # Store parent workflow ID for nested workflow display
+        # Store parent workflow ID and step name for nested workflow display
         parent_workflow_id = os.environ.get("KURT_PARENT_WORKFLOW_ID")
         if parent_workflow_id:
             metadata["parent_workflow_id"] = parent_workflow_id
+        parent_step_name = os.environ.get("KURT_PARENT_STEP_NAME")
+        if parent_step_name:
+            metadata["parent_step_name"] = parent_step_name
 
         lifecycle.create_run(
             workflow=f"agent:{definition.name}",
@@ -466,9 +469,12 @@ def agent_execution_step(
     # Set up environment for subprocess
     env = os.environ.copy()
     env["KURT_TOOL_LOG_FILE"] = tool_log_path
-    # Pass parent workflow ID so child workflows can be nested
+    # Pass parent workflow ID and step name so child workflows can be nested
     if run_id:
         env["KURT_PARENT_WORKFLOW_ID"] = run_id
+        # For agent workflows, use "agent_execution" as the step name
+        # This allows frontend to group child workflows under the agent step
+        env["KURT_PARENT_STEP_NAME"] = "agent_execution"
 
     # Add workflow directory to PYTHONPATH for custom tool imports
     # This allows: from workflows.my_workflow.tools import my_tool
@@ -673,10 +679,13 @@ def execute_steps_workflow(
             "trigger": trigger,
             "total_steps": len(definition.steps),
         }
-        # Store parent workflow ID for nested workflow display
+        # Store parent workflow ID and step name for nested workflow display
         parent_workflow_id = os.environ.get("KURT_PARENT_WORKFLOW_ID")
         if parent_workflow_id:
             metadata["parent_workflow_id"] = parent_workflow_id
+        parent_step_name = os.environ.get("KURT_PARENT_STEP_NAME")
+        if parent_step_name:
+            metadata["parent_step_name"] = parent_step_name
 
         lifecycle.create_run(
             workflow=f"steps:{definition.name}",

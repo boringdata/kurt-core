@@ -1414,6 +1414,7 @@ def api_list_workflows(
                 "updated_at": str(row.get("completed_at")) if row.get("completed_at") else None,
                 "error": row.get("error"),
                 "parent_workflow_id": parent_workflow_id,
+                "parent_step_name": metadata.get("parent_step_name"),
                 "workflow_type": wf_type,
             }
 

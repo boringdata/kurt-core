@@ -126,10 +126,13 @@ def run_tool_with_tracking(
     # Set workflow_type for tool filtering in UI
     if "workflow_type" not in run_metadata:
         run_metadata["workflow_type"] = "tool"
-    # Store parent workflow ID for nested workflow display
+    # Store parent workflow ID and step name for nested workflow display
     parent_workflow_id = os.environ.get("KURT_PARENT_WORKFLOW_ID")
     if parent_workflow_id and "parent_workflow_id" not in run_metadata:
         run_metadata["parent_workflow_id"] = parent_workflow_id
+    parent_step_name = os.environ.get("KURT_PARENT_STEP_NAME")
+    if parent_step_name and "parent_step_name" not in run_metadata:
+        run_metadata["parent_step_name"] = parent_step_name
 
     if run_id is None:
         run_id = lifecycle.create_run(
@@ -205,10 +208,13 @@ def create_pending_run(
     # Set workflow_type for tool filtering in UI
     if "workflow_type" not in run_metadata:
         run_metadata["workflow_type"] = "tool"
-    # Store parent workflow ID for nested workflow display
+    # Store parent workflow ID and step name for nested workflow display
     parent_workflow_id = os.environ.get("KURT_PARENT_WORKFLOW_ID")
     if parent_workflow_id and "parent_workflow_id" not in run_metadata:
         run_metadata["parent_workflow_id"] = parent_workflow_id
+    parent_step_name = os.environ.get("KURT_PARENT_STEP_NAME")
+    if parent_step_name and "parent_step_name" not in run_metadata:
+        run_metadata["parent_step_name"] = parent_step_name
 
     return lifecycle.create_run(
         workflow=tool_name,
