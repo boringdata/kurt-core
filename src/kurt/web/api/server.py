@@ -1329,6 +1329,28 @@ def _normalize_workflow_status(dolt_status: str) -> str:
     return status_map.get(normalized, normalized.upper())
 
 
+def _denormalize_status_filter(frontend_status: str) -> list[str]:
+    """Convert frontend status filter to database status values.
+
+    Reverse mapping of _normalize_workflow_status for filtering queries.
+    Returns a list since some frontend statuses map to multiple DB values.
+    """
+    reverse_map = {
+        "PENDING": ["pending", "running", "canceling"],  # All active states
+        "SUCCESS": ["completed"],
+        "WARNING": ["completed_with_errors"],
+        "ERROR": ["failed"],
+        "CANCELLED": ["canceled"],
+        "ENQUEUED": ["pending"],  # Queued jobs are pending
+    }
+    # Try uppercase first, then original value
+    key = frontend_status.upper() if frontend_status else ""
+    if key in reverse_map:
+        return reverse_map[key]
+    # Fallback: pass through as-is (lowercase)
+    return [frontend_status.lower()] if frontend_status else []
+
+
 @app.get("/api/workflows")
 def api_list_workflows(
     status: Optional[str] = Query(None),
@@ -1350,8 +1372,12 @@ def api_list_workflows(
         conditions = []
 
         if status:
-            conditions.append("status = ?")
-            params.append(status)
+            # Convert frontend status to DB status values
+            db_statuses = _denormalize_status_filter(status)
+            if db_statuses:
+                placeholders = ", ".join("?" * len(db_statuses))
+                conditions.append(f"status IN ({placeholders})")
+                params.extend(db_statuses)
 
         if search:
             # Search by ID or workflow name
