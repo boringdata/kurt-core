@@ -1691,8 +1691,20 @@ async def api_stream_workflow_status(workflow_id: str):
 
 
 @app.get("/api/workflows/{workflow_id}/logs/stream")
-async def api_stream_workflow_logs(workflow_id: str):
-    """Stream workflow logs via Server-Sent Events."""
+async def api_stream_workflow_logs(
+    workflow_id: str,
+    step_id: Optional[str] = Query(None, description="Filter by step ID"),
+):
+    """Stream workflow logs via Server-Sent Events.
+
+    Streams step_events with messages as structured log entries.
+    Also checks for and streams file-based logs as fallback.
+
+    Events are JSON with format:
+        {"type": "event", "event": {...}}  - Structured step event
+        {"type": "log", "content": "..."}  - File-based log content
+        {"done": true}                     - Stream complete
+    """
     import asyncio
 
     from fastapi.responses import StreamingResponse
@@ -1721,44 +1733,116 @@ async def api_stream_workflow_logs(workflow_id: str):
     log_file = Path(".kurt") / "logs" / f"workflow-{full_id}.log"
 
     async def event_generator():
-        last_size = 0
+        cursor_id = 0
+        last_file_size = 0
+        terminal_statuses = ("completed", "failed", "canceled")
+
         while True:
             try:
+                db_inner = _get_dolt_db()
+                if not db_inner:
+                    await asyncio.sleep(0.5)
+                    continue
+
+                # Fetch new step_events since cursor
+                conditions = ["run_id = ?", "id > ?"]
+                params: list[Any] = [full_id, cursor_id]
+
+                if step_id:
+                    conditions.append("step_id = ?")
+                    params.append(step_id)
+
+                params.append(50)  # Batch limit
+
+                sql = f"""
+                    SELECT id, step_id, substep, status, current, total, message,
+                           metadata_json, created_at
+                    FROM step_events
+                    WHERE {' AND '.join(conditions)}
+                    ORDER BY id ASC
+                    LIMIT ?
+                """
+                events_result = db_inner.query(sql, params)
+
+                # Yield new events
+                for row in events_result.rows:
+                    event_data = {
+                        "id": row.get("id"),
+                        "step_id": row.get("step_id"),
+                        "substep": row.get("substep"),
+                        "status": row.get("status"),
+                        "current": row.get("current"),
+                        "total": row.get("total"),
+                        "message": row.get("message"),
+                        "created_at": str(row.get("created_at")) if row.get("created_at") else None,
+                    }
+                    # Parse metadata if present
+                    metadata_raw = row.get("metadata_json")
+                    if metadata_raw:
+                        try:
+                            if isinstance(metadata_raw, str):
+                                event_data["metadata"] = json.loads(metadata_raw)
+                            else:
+                                event_data["metadata"] = metadata_raw
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+
+                    yield f"data: {json.dumps({'type': 'event', 'event': event_data})}\n\n"
+                    cursor_id = max(cursor_id, row.get("id", 0))
+
+                # Also check file-based logs
                 if log_file.exists():
                     current_size = log_file.stat().st_size
-                    if current_size > last_size:
+                    if current_size > last_file_size:
                         with open(log_file, "r") as f:
-                            f.seek(last_size)
+                            f.seek(last_file_size)
                             new_content = f.read()
                             if new_content:
-                                yield f"data: {json.dumps({'content': new_content})}\n\n"
-                        last_size = current_size
+                                yield f"data: {json.dumps({'type': 'log', 'content': new_content})}\n\n"
+                        last_file_size = current_size
 
                 # Check if workflow is done
-                db_inner = _get_dolt_db()
-                if db_inner:
-                    status_result = db_inner.query(
-                        "SELECT status FROM workflow_runs WHERE id = ?",
-                        [full_id],
-                    )
-                    if status_result.rows:
-                        status = status_result.rows[0].get("status")
-                        if status in ("completed", "failed", "canceled"):
-                            # Send final content and close
-                            await asyncio.sleep(0.5)
-                            if log_file.exists():
-                                current_size = log_file.stat().st_size
-                                if current_size > last_size:
-                                    with open(log_file, "r") as f:
-                                        f.seek(last_size)
-                                        new_content = f.read()
-                                        if new_content:
-                                            yield f"data: {json.dumps({'content': new_content})}\n\n"
-                            yield f"data: {json.dumps({'done': True})}\n\n"
-                            break
+                status_result = db_inner.query(
+                    "SELECT status FROM workflow_runs WHERE id = ?",
+                    [full_id],
+                )
+                if status_result.rows:
+                    status = status_result.rows[0].get("status")
+                    if status in terminal_statuses:
+                        # Final poll for any remaining events
+                        await asyncio.sleep(0.3)
+
+                        # Fetch final events
+                        final_result = db_inner.query(sql, [full_id, cursor_id, step_id, 50] if step_id else [full_id, cursor_id, 50])
+                        for row in final_result.rows:
+                            event_data = {
+                                "id": row.get("id"),
+                                "step_id": row.get("step_id"),
+                                "substep": row.get("substep"),
+                                "status": row.get("status"),
+                                "current": row.get("current"),
+                                "total": row.get("total"),
+                                "message": row.get("message"),
+                                "created_at": str(row.get("created_at")) if row.get("created_at") else None,
+                            }
+                            yield f"data: {json.dumps({'type': 'event', 'event': event_data})}\n\n"
+
+                        # Final file content
+                        if log_file.exists():
+                            current_size = log_file.stat().st_size
+                            if current_size > last_file_size:
+                                with open(log_file, "r") as f:
+                                    f.seek(last_file_size)
+                                    new_content = f.read()
+                                    if new_content:
+                                        yield f"data: {json.dumps({'type': 'log', 'content': new_content})}\n\n"
+
+                        yield f"data: {json.dumps({'done': True, 'status': status})}\n\n"
+                        break
 
                 await asyncio.sleep(0.5)
-            except Exception:
+            except Exception as e:
+                yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
                 break
 
     return StreamingResponse(
@@ -1774,10 +1858,16 @@ async def api_stream_workflow_logs(workflow_id: str):
 @app.get("/api/workflows/{workflow_id}/logs")
 def api_get_workflow_logs(
     workflow_id: str,
-    offset: int = Query(0, ge=0),
-    limit: int = Query(500, le=5000),
+    step_id: Optional[str] = Query(None, description="Filter by step ID"),
+    since_id: int = Query(0, ge=0, description="Return events after this ID"),
+    limit: int = Query(100, le=1000),
+    include_file_logs: bool = Query(True, description="Include file-based logs"),
 ):
-    """Read workflow log file in chunks."""
+    """Get workflow logs from step_events and optional file logs.
+
+    Returns structured events from step_events table plus optional
+    file-based log content.
+    """
     db = _get_dolt_db()
     full_id = workflow_id
 
@@ -1792,28 +1882,82 @@ def api_get_workflow_logs(
         except Exception:
             pass
 
-    log_file = Path(".kurt") / "logs" / f"workflow-{full_id}.log"
+    events: list[dict[str, Any]] = []
+    file_content = ""
+    has_more = False
 
-    if not log_file.exists():
-        return {"content": "", "total_lines": 0, "has_more": False, "offset": offset}
+    # Query step_events from database
+    if db is not None:
+        try:
+            conditions = ["run_id = ?"]
+            params: list[Any] = [full_id]
 
-    try:
-        with open(log_file, "r") as f:
-            lines = f.readlines()
+            if step_id:
+                conditions.append("step_id = ?")
+                params.append(step_id)
 
-        total_lines = len(lines)
-        selected_lines = lines[offset : offset + limit]
-        has_more = offset + limit < total_lines
+            if since_id > 0:
+                conditions.append("id > ?")
+                params.append(since_id)
 
-        return {
-            "content": "".join(selected_lines),
-            "total_lines": total_lines,
-            "offset": offset,
-            "limit": limit,
-            "has_more": has_more,
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+            params.append(limit + 1)  # Fetch one extra to check has_more
+
+            sql = f"""
+                SELECT id, step_id, substep, status, current, total, message,
+                       metadata_json, created_at
+                FROM step_events
+                WHERE {' AND '.join(conditions)}
+                ORDER BY id ASC
+                LIMIT ?
+            """
+            events_result = db.query(sql, params)
+
+            for row in events_result.rows[:limit]:
+                event_data = {
+                    "id": row.get("id"),
+                    "step_id": row.get("step_id"),
+                    "substep": row.get("substep"),
+                    "status": row.get("status"),
+                    "current": row.get("current"),
+                    "total": row.get("total"),
+                    "message": row.get("message"),
+                    "created_at": str(row.get("created_at")) if row.get("created_at") else None,
+                }
+                # Parse metadata if present
+                metadata_raw = row.get("metadata_json")
+                if metadata_raw:
+                    try:
+                        if isinstance(metadata_raw, str):
+                            event_data["metadata"] = json.loads(metadata_raw)
+                        else:
+                            event_data["metadata"] = metadata_raw
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                events.append(event_data)
+
+            has_more = len(events_result.rows) > limit
+        except Exception:
+            pass
+
+    # Also include file-based logs if requested
+    if include_file_logs:
+        log_file = Path(".kurt") / "logs" / f"workflow-{full_id}.log"
+        if log_file.exists():
+            try:
+                with open(log_file, "r") as f:
+                    file_content = f.read()
+            except Exception:
+                pass
+
+    return {
+        "workflow_id": full_id,
+        "events": events,
+        "total_events": len(events),
+        "has_more": has_more,
+        "since_id": since_id,
+        "limit": limit,
+        "file_content": file_content if include_file_logs else None,
+    }
 
 
 # PTY WebSocket endpoint for terminal sessions
