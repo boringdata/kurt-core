@@ -26,6 +26,7 @@ dependencies = [
     "posthog>=3.0.0",
     "python-frontmatter>=1.0.0",
     "croniter>=2.0.0",
+    "tomli>=2.0.0;python_version<'3.11'",
 ]
 
 [project.optional-dependencies]

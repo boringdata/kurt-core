@@ -26,8 +26,8 @@ def _check_dolt_repo() -> bool:
 
 
 def _check_config_exists() -> bool:
-    """Check if kurt.toml or kurt.config exists."""
-    return (Path.cwd() / "kurt.toml").exists() or (Path.cwd() / "kurt.config").exists()
+    """Check if kurt.toml exists."""
+    return (Path.cwd() / "kurt.toml").exists()
 
 
 def _check_workflows_dir() -> bool:
@@ -83,10 +83,158 @@ def _git_init() -> bool:
         return False
 
 
+def _check_dolt_installed() -> bool:
+    """Check if Dolt is installed and available in PATH."""
+    try:
+        subprocess.run(
+            ["dolt", "version"],
+            capture_output=True,
+            check=True,
+        )
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
+
+
+def _install_dolt() -> bool:
+    """Install Dolt using the official install script."""
+    console.print("[dim]Installing Dolt...[/dim]")
+    try:
+        # Use the official Dolt install script
+        result = subprocess.run(
+            ["bash", "-c", "curl -L https://github.com/dolthub/dolt/releases/latest/download/install.sh | sudo bash"],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if result.returncode != 0:
+            console.print(f"[red]Failed to install Dolt: {result.stderr}[/red]")
+            return False
+
+        # Verify installation
+        if _check_dolt_installed():
+            console.print("[green]  ✓ Dolt installed successfully[/green]")
+            return True
+        else:
+            console.print("[red]Dolt installation completed but dolt command not found in PATH[/red]")
+            return False
+    except subprocess.TimeoutExpired:
+        console.print("[red]Dolt installation timed out[/red]")
+        return False
+    except Exception as e:
+        console.print(f"[red]Failed to install Dolt: {e}[/red]")
+        return False
+
+
+def _get_git_identity() -> tuple[str, str]:
+    """Get git user.name and user.email, with fallbacks."""
+    name = "Kurt User"
+    email = "kurt@localhost"
+
+    try:
+        result = subprocess.run(
+            ["git", "config", "user.name"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            name = result.stdout.strip()
+    except Exception:
+        pass
+
+    try:
+        result = subprocess.run(
+            ["git", "config", "user.email"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            email = result.stdout.strip()
+    except Exception:
+        pass
+
+    return name, email
+
+
+def _configure_dolt_identity() -> bool:
+    """Configure Dolt with git identity or defaults."""
+    name, email = _get_git_identity()
+
+    try:
+        # Set Dolt user config (local to avoid requiring --global)
+        subprocess.run(
+            ["dolt", "config", "--global", "--add", "user.name", name],
+            capture_output=True,
+            check=True,
+        )
+        subprocess.run(
+            ["dolt", "config", "--global", "--add", "user.email", email],
+            capture_output=True,
+            check=True,
+        )
+        return True
+    except Exception:
+        return False
+
+
+def _get_git_branch() -> str | None:
+    """Get current Git branch name."""
+    try:
+        result = subprocess.run(
+            ["git", "symbolic-ref", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return None
+
+
+def _sync_dolt_branch_to_git() -> bool:
+    """Sync Dolt branch to match current Git branch."""
+    git_branch = _get_git_branch()
+    if not git_branch or git_branch == "main":
+        return True  # Nothing to do
+
+    try:
+        # Rename main branch to match git branch
+        subprocess.run(
+            ["dolt", "branch", "-m", "main", git_branch],
+            capture_output=True,
+            check=True,
+        )
+        return True
+    except subprocess.CalledProcessError:
+        # Branch rename failed, try checkout -b instead
+        try:
+            subprocess.run(
+                ["dolt", "checkout", "-b", git_branch],
+                capture_output=True,
+                check=True,
+            )
+            return True
+        except subprocess.CalledProcessError:
+            return False
+    except Exception:
+        return False
+
+
 def _dolt_init() -> bool:
     """Initialize Dolt database if not already initialized."""
     if _check_dolt_repo():
         return True
+
+    # Check if Dolt is installed, install if not
+    if not _check_dolt_installed():
+        if not _install_dolt():
+            console.print("[red]Dolt installation failed. Install manually from https://docs.dolthub.com/introduction/installation[/red]")
+            return False
+
+    # Configure Dolt identity from git config or defaults
+    _configure_dolt_identity()
+
     try:
         # Set env var to skip Dolt registration prompts for local-only use
         env = os.environ.copy()
@@ -98,12 +246,16 @@ def _dolt_init() -> bool:
             check=True,
             env=env,
         )
+
+        # Sync Dolt branch to match Git branch
+        _sync_dolt_branch_to_git()
+
         return True
     except subprocess.CalledProcessError as e:
         console.print(f"[red]Failed to initialize Dolt: {e.stderr.decode()}[/red]")
         return False
     except FileNotFoundError:
-        console.print("[red]Dolt not found. Install from https://docs.dolthub.com/introduction/installation[/red]")
+        console.print("[red]Dolt not found after installation. Check your PATH.[/red]")
         return False
 
 
@@ -136,50 +288,50 @@ def _install_hooks() -> bool:
 
 
 def _create_config() -> bool:
-    """Create kurt.toml and kurt.config configuration files."""
+    """Create kurt.toml configuration file."""
     import uuid
 
-    toml_path = Path.cwd() / "kurt.toml"
-    config_path = Path.cwd() / "kurt.config"
+    config_path = Path.cwd() / "kurt.toml"
 
-    # Skip if either exists
-    if toml_path.exists() or config_path.exists():
+    # Skip if exists
+    if config_path.exists():
         return True
 
     try:
         workspace_id = str(uuid.uuid4())
 
-        # Create kurt.toml (human-readable, TOML format)
-        toml_content = f'''# Kurt Project Configuration
-# This file is auto-generated by 'kurt init'
+        # Create kurt.toml (TOML format)
+        config_content = f'''# Kurt Project Configuration
+# Auto-generated by 'kurt init'
 
-[core]
-workspace_id = "{workspace_id}"
+[workspace]
+id = "{workspace_id}"
 
 [paths]
+db = ".dolt"
+sources = "sources"
+projects = "projects"
+rules = "rules"
 workflows = "workflows"
-content = "content"
 
-[indexing]
-llm_model = "openai/gpt-4o-mini"
-embedding_model = "openai/text-embedding-3-small"
+[agent]
+model = "openai/gpt-4o"
+
+[tool.batch-llm]
+model = "openai/gpt-4o-mini"
 max_concurrent = 50
 
-[fetch]
+[tool.batch-embedding]
+model = "openai/text-embedding-3-small"
+
+[tool.fetch]
 engine = "trafilatura"
-'''
-        toml_path.write_text(toml_content)
 
-        # Create kurt.config (key-value format for config loader compatibility)
-        config_content = f'''# Kurt Configuration (auto-generated)
-# Edit kurt.toml for human-readable settings
+[telemetry]
+enabled = true
 
-WORKSPACE_ID={workspace_id}
-PATH_DB=.dolt
-PATH_SOURCES=content
-PATH_PROJECTS=projects
-PATH_RULES=rules
-PATH_WORKFLOWS=workflows
+[cloud]
+auth = false
 '''
         config_path.write_text(config_content)
         return True
@@ -245,14 +397,14 @@ This is an example workflow. Customize it for your needs.
         return False
 
 
-def _create_content_dir() -> bool:
-    """Create content directory (gitignored)."""
-    content_path = Path.cwd() / "content"
+def _create_sources_dir() -> bool:
+    """Create sources directory (gitignored)."""
+    sources_path = Path.cwd() / "sources"
     try:
-        content_path.mkdir(exist_ok=True)
+        sources_path.mkdir(exist_ok=True)
         return True
     except Exception as e:
-        console.print(f"[red]Failed to create content directory: {e}[/red]")
+        console.print(f"[red]Failed to create sources directory: {e}[/red]")
         return False
 
 
@@ -285,7 +437,10 @@ Run `kurt update` to get the latest agent instructions.
 
 
 def _create_claude_config() -> bool:
-    """Create .claude directory with symlink to AGENTS.md."""
+    """Create .claude directory with symlink to AGENTS.md and hooks."""
+    import json
+    import shutil
+
     claude_dir = Path.cwd() / ".claude"
     claude_md = claude_dir / "CLAUDE.md"
     agents_md = Path.cwd() / ".agents" / "AGENTS.md"
@@ -297,6 +452,26 @@ def _create_claude_config() -> bool:
         if not claude_md.exists() and agents_md.exists():
             # Use relative symlink for portability
             claude_md.symlink_to("../.agents/AGENTS.md")
+
+        # Install Claude Code hooks from package
+        settings_source = Path(__file__).parent.parent / "agents" / "claude-settings.json"
+        if settings_source.exists():
+            dest_settings = claude_dir / "settings.json"
+            with open(settings_source) as f:
+                kurt_settings = json.load(f)
+
+            if dest_settings.exists():
+                # Merge hooks into existing settings
+                with open(dest_settings) as f:
+                    existing_settings = json.load(f)
+                if "hooks" not in existing_settings:
+                    existing_settings["hooks"] = {}
+                existing_settings["hooks"].update(kurt_settings.get("hooks", {}))
+                with open(dest_settings, "w") as f:
+                    json.dump(existing_settings, f, indent=2)
+            else:
+                # Copy settings file
+                shutil.copy2(settings_source, dest_settings)
 
         return True
     except Exception as e:
@@ -310,7 +485,7 @@ def _update_gitignore() -> bool:
 
     kurt_entries = [
         "# Kurt",
-        "content/",
+        "sources/",
         ".dolt/noms/",
         ".env",
     ]
@@ -424,17 +599,6 @@ def init(path: str, no_dolt: bool, no_hooks: bool, force: bool):
             console.print("[dim]All components already initialized.[/dim]")
             sys.exit(1)
 
-    # If any component exists without --force, warn about partial state
-    if any(status.values()) and not force:
-        missing_components = [k for k, v in status.items() if not v]
-
-        if missing_components:
-            console.print("[yellow]Existing project detected. Missing components:[/yellow]")
-            for comp in missing_components:
-                console.print(f"  - {comp.replace('_', ' ').title()}")
-            console.print("\n[dim]Run 'kurt init --force' to complete setup.[/dim]")
-            sys.exit(1)
-
     console.print(f"[bold green]Initializing Kurt project in {cwd}[/bold green]\n")
 
     results = {}
@@ -504,14 +668,14 @@ def init(path: str, no_dolt: bool, no_hooks: bool, force: bool):
         results["workflows"] = False
         console.print("[yellow]  ⚠ Workflows directory (failed)[/yellow]")
 
-    # Step 6: Create content directory
-    console.print("[dim]Creating content directory...[/dim]")
-    if _create_content_dir():
-        results["content"] = True
-        console.print("[green]  ✓ Content directory: content/[/green]")
+    # Step 6: Create sources directory
+    console.print("[dim]Creating sources directory...[/dim]")
+    if _create_sources_dir():
+        results["sources"] = True
+        console.print("[green]  ✓ Sources directory: sources/[/green]")
     else:
-        results["content"] = False
-        console.print("[yellow]  ⚠ Content directory (failed)[/yellow]")
+        results["sources"] = False
+        console.print("[yellow]  ⚠ Sources directory (failed)[/yellow]")
 
     # Step 7: Update .gitignore
     console.print("[dim]Updating .gitignore...[/dim]")

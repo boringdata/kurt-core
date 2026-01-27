@@ -135,10 +135,14 @@ def _git_has_remote(path: Path, remote: str = "origin") -> bool:
 
 
 def _dolt_has_remote(dolt_path: Path, remote: str = "origin") -> bool:
-    """Check if Dolt has a specific remote configured."""
+    """Check if Dolt has a specific remote configured.
+
+    Args:
+        dolt_path: The .dolt directory path (commands run from parent)
+    """
     result = subprocess.run(
         ["dolt", "remote", "-v"],
-        cwd=dolt_path,
+        cwd=dolt_path.parent,
         capture_output=True,
         text=True,
     )
@@ -150,12 +154,15 @@ def _dolt_has_remote(dolt_path: Path, remote: str = "origin") -> bool:
 def _dolt_status_clean(dolt_path: Path) -> tuple[bool, str]:
     """Check if Dolt working directory is clean.
 
+    Args:
+        dolt_path: The .dolt directory path (commands run from parent)
+
     Returns:
         Tuple of (is_clean, status_output)
     """
     result = subprocess.run(
         ["dolt", "status"],
-        cwd=dolt_path,
+        cwd=dolt_path.parent,
         capture_output=True,
         text=True,
     )
@@ -218,19 +225,22 @@ def check_hooks_installed(git_path: Path) -> CheckResult:
 
 
 def check_dolt_initialized(dolt_path: Path) -> CheckResult:
-    """Check if Dolt repository is initialized."""
-    dolt_dir = dolt_path / ".dolt"
+    """Check if Dolt repository is initialized.
 
-    if not dolt_dir.exists():
+    Args:
+        dolt_path: The .dolt directory path (not the project root)
+    """
+    # dolt_path is already the .dolt directory
+    if not dolt_path.exists():
         return CheckResult(
             name="dolt_initialized",
             status=CheckStatus.FAIL,
             message="Dolt repository not initialized",
-            details=f"Run 'dolt init' in {dolt_path}",
+            details=f"Run 'dolt init' in {dolt_path.parent}",
         )
 
     # Check for essential Dolt files
-    noms_dir = dolt_dir / "noms"
+    noms_dir = dolt_path / "noms"
     if not noms_dir.exists():
         return CheckResult(
             name="dolt_initialized",
@@ -247,7 +257,12 @@ def check_dolt_initialized(dolt_path: Path) -> CheckResult:
 
 
 def check_branch_sync(git_path: Path, dolt_path: Path) -> CheckResult:
-    """Check if Git and Dolt branches match."""
+    """Check if Git and Dolt branches match.
+
+    Args:
+        git_path: The git repository root
+        dolt_path: The .dolt directory path (commands run from parent)
+    """
     git_branch = _git_current_branch(git_path)
     if git_branch is None:
         return CheckResult(
@@ -260,7 +275,7 @@ def check_branch_sync(git_path: Path, dolt_path: Path) -> CheckResult:
     # Get Dolt current branch
     result = subprocess.run(
         ["dolt", "branch", "--show-current"],
-        cwd=dolt_path,
+        cwd=dolt_path.parent,
         capture_output=True,
         text=True,
     )
@@ -607,11 +622,15 @@ def do_sync_branch(git_path: Path, dolt_path: Path) -> bool:
 
 
 def do_commit_dolt(dolt_path: Path) -> bool:
-    """Commit pending Dolt changes."""
+    """Commit pending Dolt changes.
+
+    Args:
+        dolt_path: The .dolt directory path (commands run from parent)
+    """
     # Stage all changes
     result = subprocess.run(
         ["dolt", "add", "-A"],
-        cwd=dolt_path,
+        cwd=dolt_path.parent,
         capture_output=True,
         text=True,
     )
@@ -621,7 +640,7 @@ def do_commit_dolt(dolt_path: Path) -> bool:
     # Commit
     result = subprocess.run(
         ["dolt", "commit", "-m", "Auto-commit: kurt repair"],
-        cwd=dolt_path,
+        cwd=dolt_path.parent,
         capture_output=True,
         text=True,
     )

@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.13'",
@@ -1602,6 +1602,7 @@ dependencies = [
     { name = "requests" },
     { name = "rich" },
     { name = "sqlmodel" },
+    { name = "tomli", marker = "python_full_version < '3.11'" },
 ]
 
 [package.optional-dependencies]
@@ -1731,6 +1732,7 @@ requires-dist = [
     { name = "s3fs", marker = "extra == 'storage'", specifier = ">=2023.11.1" },
     { name = "scikit-learn", marker = "extra == 'workflows'", specifier = ">=1.3.0" },
     { name = "sqlmodel", specifier = ">=0.0.14" },
+    { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=2.0.0" },
     { name = "trafilatura", marker = "extra == 'workflows'", specifier = ">=2.0.0" },
     { name = "uvicorn", marker = "extra == 'api'", specifier = ">=0.22" },
     { name = "websockets", marker = "extra == 'api'", specifier = ">=12.0" },

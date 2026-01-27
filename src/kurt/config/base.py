@@ -249,60 +249,179 @@ class KurtConfig(BaseModel):
 
 def get_config_file_path() -> Path:
     """Get the path to the kurt configuration file."""
-    return Path.cwd() / "kurt.config"
+    return Path.cwd() / "kurt.toml"
+
+
+def _load_toml(path: Path) -> dict:
+    """Load TOML file, using tomllib (3.11+) or tomli (3.10)."""
+    try:
+        import tomllib
+    except ImportError:
+        import tomli as tomllib
+
+    with open(path, "rb") as f:
+        return tomllib.load(f)
+
+
+def _flatten_toml(data: dict, prefix: str = "") -> dict:
+    """Flatten nested TOML structure to flat keys for KurtConfig.
+
+    Converts TOML sections to uppercase underscore-separated keys:
+        [paths]
+        sources = "sources"
+    becomes:
+        PATH_SOURCES = "sources"
+
+    Tool sections map to existing flat keys for compatibility:
+        [tool.llm]
+        model = "openai/gpt-4o-mini"
+    becomes:
+        INDEXING_LLM_MODEL = "openai/gpt-4o-mini"  (for tools)
+        LLM_MODEL = "openai/gpt-4o-mini"  (global fallback)
+
+        [tool.embed]
+        model = "openai/text-embedding-3-small"
+    becomes:
+        EMBEDDING_MODEL = "openai/text-embedding-3-small"
+
+        [tool.fetch]
+        engine = "trafilatura"
+    becomes:
+        INGESTION_FETCH_ENGINE = "trafilatura"
+    """
+    result = {}
+
+    # Special mappings for tool subsections to flat keys
+    # Maps [tool.X.key] to the flat key that tools expect
+    tool_key_mappings = {
+        ("batch-llm", "model"): ["INDEXING_LLM_MODEL", "LLM_MODEL"],
+        ("batch-llm", "api_base"): ["LLM_API_BASE"],
+        ("batch-llm", "api_key"): ["LLM_API_KEY"],
+        ("batch-llm", "max_concurrent"): ["MAX_CONCURRENT_INDEXING"],
+        ("batch-embedding", "model"): ["EMBEDDING_MODEL"],
+        ("batch-embedding", "api_base"): ["EMBEDDING_API_BASE"],
+        ("batch-embedding", "api_key"): ["EMBEDDING_API_KEY"],
+        ("fetch", "engine"): ["INGESTION_FETCH_ENGINE"],
+    }
+
+    # Mapping from TOML section names to config key prefixes
+    section_mappings = {
+        "paths": "PATH",
+        "agent": "AGENT",
+        "telemetry": "TELEMETRY",
+        "cloud": "CLOUD",
+        "workspace": "WORKSPACE",
+        # Legacy mappings for backwards compatibility
+        "indexing": "INDEXING",
+        "answer": "ANSWER",
+    }
+
+    for key, value in data.items():
+        if isinstance(value, dict):
+            # Special handling for [tool] section
+            if key == "tool" and not prefix:
+                # Process tool subsections specially
+                for tool_name, tool_config in value.items():
+                    if isinstance(tool_config, dict):
+                        for param_name, param_value in tool_config.items():
+                            # Look up the mapping for this tool.param combination
+                            mapping_key = (tool_name, param_name)
+                            if mapping_key in tool_key_mappings:
+                                # Map to all the expected flat keys
+                                for flat_key in tool_key_mappings[mapping_key]:
+                                    result[flat_key] = param_value
+                            else:
+                                # Fallback: store as TOOL.X_PARAM
+                                result[f"TOOL.{tool_name.upper()}_{param_name.upper()}"] = param_value
+                    else:
+                        # Direct value under [tool]
+                        result[f"TOOL_{tool_name.upper()}"] = tool_config
+                continue
+
+            # Handle other nested sections
+            if prefix:
+                # Already in a section - use dot notation
+                new_prefix = f"{prefix}.{key.upper()}"
+            else:
+                # Top-level section
+                new_prefix = section_mappings.get(key, key.upper())
+
+            nested = _flatten_toml(value, new_prefix)
+            result.update(nested)
+        else:
+            # Leaf value
+            if prefix:
+                full_key = f"{prefix}_{key.upper()}"
+            else:
+                full_key = key.upper()
+
+            result[full_key] = value
+
+    return result
 
 
 def load_config() -> KurtConfig:
     """
-    Load Kurt configuration from kurt.config file in current directory.
+    Load Kurt configuration from kurt.toml file in current directory.
 
-    The kurt.config file should contain key=value pairs:
+    The kurt.toml file uses TOML format with sections:
 
-    # Core settings (underscore-separated)
-    PATH_DB=.kurt/kurt.sqlite
-    INDEXING_LLM_MODEL="openai/gpt-4o-mini"
+        [paths]
+        db = ".dolt"
+        sources = "sources"
 
-    # Module-specific settings (dot-separated hierarchy)
-    INDEXING.SECTION_EXTRACTIONS.LLM_MODEL="anthropic/claude-3-5-sonnet"
-    INDEXING.ENTITY_CLUSTERING.EPS=0.25
+        [indexing]
+        llm_model = "openai/gpt-4o-mini"
+        max_concurrent = 50
 
-    Dot notation keys (e.g., INDEXING.SECTION_EXTRACTIONS.LLM_MODEL) are stored
-    in __pydantic_extra__ and can be accessed via get_step_config().
+        # Module-specific overrides
+        [indexing.section_extractions]
+        llm_model = "anthropic/claude-3-5-sonnet"
 
     Returns:
         KurtConfig with loaded settings
 
     Raises:
-        FileNotFoundError: If kurt.config file doesn't exist
+        FileNotFoundError: If kurt.toml file doesn't exist
         ValueError: If configuration is invalid
     """
     config_file = get_config_file_path()
 
     if not config_file.exists():
+        # Fall back to legacy kurt.config if it exists
+        legacy_config = Path.cwd() / "kurt.config"
+        if legacy_config.exists():
+            return _load_legacy_config(legacy_config)
+
         raise FileNotFoundError(
             f"Kurt configuration file not found: {config_file}\n"
             "Run 'kurt init' to initialize a Kurt project."
         )
 
-    # Parse config file
+    # Parse TOML config
+    toml_data = _load_toml(config_file)
+
+    # Flatten to KurtConfig format
+    config_data = _flatten_toml(toml_data)
+
+    # Pydantic will handle type validation via field_validator
+    return KurtConfig(**config_data)
+
+
+def _load_legacy_config(config_file: Path) -> KurtConfig:
+    """Load legacy kurt.config key=value format."""
     config_data = {}
     with open(config_file, "r") as f:
         for line in f:
             line = line.strip()
-            # Skip empty lines and comments
             if not line or line.startswith("#"):
                 continue
-
-            # Parse key=value
             if "=" in line:
                 key, value = line.split("=", 1)
                 key = key.strip()
-                value = value.strip().strip('"').strip("'")  # Remove quotes
-                # Keys with dots (e.g., INDEXING.SECTION_EXTRACTIONS.LLM_MODEL)
-                # are stored as-is in __pydantic_extra__
+                value = value.strip().strip('"').strip("'")
                 config_data[key] = value
 
-    # Pydantic will handle type validation via field_validator
     return KurtConfig(**config_data)
 
 

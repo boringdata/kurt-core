@@ -112,3 +112,5 @@ content/
 .dolt/
 kurt.toml
 sources/
+# bd worktree
+test-feature/
