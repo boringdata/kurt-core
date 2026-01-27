@@ -1301,6 +1301,34 @@ def _get_dolt_db():
     return db
 
 
+def _normalize_workflow_status(dolt_status: str) -> str:
+    """Normalize Dolt workflow status to frontend-expected format.
+
+    Dolt uses lowercase: pending, running, completed, failed, canceling, canceled
+    Frontend expects uppercase: PENDING, SUCCESS, ERROR, CANCELLED, WARNING
+
+    Mapping:
+    - pending -> PENDING
+    - running -> PENDING (show as active/running)
+    - completed -> SUCCESS
+    - completed_with_errors -> WARNING
+    - failed -> ERROR
+    - canceling -> PENDING
+    - canceled -> CANCELLED
+    """
+    status_map = {
+        "pending": "PENDING",
+        "running": "PENDING",  # Frontend treats PENDING as active
+        "completed": "SUCCESS",
+        "completed_with_errors": "WARNING",
+        "failed": "ERROR",
+        "canceling": "PENDING",
+        "canceled": "CANCELLED",
+    }
+    normalized = dolt_status.lower() if dolt_status else "unknown"
+    return status_map.get(normalized, normalized.upper())
+
+
 @app.get("/api/workflows")
 def api_list_workflows(
     status: Optional[str] = Query(None),
@@ -1378,7 +1406,7 @@ def api_list_workflows(
             workflow = {
                 "workflow_uuid": workflow_id,
                 "name": row.get("workflow", ""),
-                "status": row.get("status", "unknown"),
+                "status": _normalize_workflow_status(row.get("status", "unknown")),
                 "created_at": str(row.get("started_at")) if row.get("started_at") else None,
                 "updated_at": str(row.get("completed_at")) if row.get("completed_at") else None,
                 "error": row.get("error"),
@@ -1440,7 +1468,7 @@ def api_get_workflow(workflow_id: str):
         return {
             "workflow_uuid": row.get("id"),
             "name": row.get("workflow"),
-            "status": row.get("status"),
+            "status": _normalize_workflow_status(row.get("status")),
             "created_at": str(row.get("started_at")) if row.get("started_at") else None,
             "updated_at": str(row.get("completed_at")) if row.get("completed_at") else None,
             "error": row.get("error"),
@@ -1489,101 +1517,25 @@ def api_cancel_workflow(workflow_id: str):
 
 @app.get("/api/workflows/{workflow_id}/status")
 def api_get_workflow_status(workflow_id: str):
-    """Get live workflow status with progress information from Dolt."""
+    """Get live workflow status with progress information from Dolt.
+
+    Returns comprehensive status including:
+    - Workflow metadata (id, name, status, timestamps)
+    - Steps array with success/error counts, duration, and errors
+    - Current stage and progress for running workflows
+    - CLI command and inputs
+    """
+    from kurt.observability.status import get_live_status
+
     db = _get_dolt_db()
     if db is None:
         raise HTTPException(status_code=503, detail="Database not available")
 
     try:
-        # Get workflow run
-        result = db.query(
-            """
-            SELECT id, workflow, status, started_at, completed_at, error, metadata_json
-            FROM workflow_runs
-            WHERE id LIKE CONCAT(?, '%')
-            LIMIT 1
-            """,
-            [workflow_id],
-        )
-
-        if not result.rows:
+        status = get_live_status(db, workflow_id)
+        if status is None:
             raise HTTPException(status_code=404, detail="Workflow not found")
-
-        row = result.rows[0]
-        full_id = row.get("id")
-
-        # Parse metadata
-        metadata = {}
-        raw_metadata = row.get("metadata_json") or row.get("metadata")
-        if raw_metadata:
-            try:
-                metadata = json.loads(raw_metadata) if isinstance(raw_metadata, str) else raw_metadata
-            except Exception:
-                pass
-
-        # Get step logs for progress info
-        step_result = db.query(
-            """
-            SELECT step_id, step_type, status, started_at, completed_at, input_count, output_count, error_count
-            FROM step_logs
-            WHERE run_id = ?
-            ORDER BY started_at
-            """,
-            [full_id],
-        )
-
-        steps = []
-        for step_row in step_result.rows:
-            steps.append({
-                "step_id": step_row.get("step_id"),
-                "step_type": step_row.get("step_type"),
-                "status": step_row.get("status"),
-                "started_at": str(step_row.get("started_at")) if step_row.get("started_at") else None,
-                "completed_at": str(step_row.get("completed_at")) if step_row.get("completed_at") else None,
-                "input_count": step_row.get("input_count"),
-                "output_count": step_row.get("output_count"),
-                "error_count": step_row.get("error_count"),
-            })
-
-        # Get latest events for current step progress
-        events_result = db.query(
-            """
-            SELECT step_id, event_type, event_data, created_at
-            FROM step_events
-            WHERE run_id = ?
-            ORDER BY id DESC
-            LIMIT 10
-            """,
-            [full_id],
-        )
-
-        latest_events = []
-        for event_row in events_result.rows:
-            event_data = {}
-            if event_row.get("event_data"):
-                try:
-                    event_data = json.loads(event_row["event_data"]) if isinstance(event_row["event_data"], str) else event_row["event_data"]
-                except Exception:
-                    pass
-            latest_events.append({
-                "step_id": event_row.get("step_id"),
-                "event_type": event_row.get("event_type"),
-                "event_data": event_data,
-                "created_at": str(event_row.get("created_at")) if event_row.get("created_at") else None,
-            })
-
-        return {
-            "workflow_id": full_id,
-            "workflow": row.get("workflow"),
-            "status": row.get("status"),
-            "started_at": str(row.get("started_at")) if row.get("started_at") else None,
-            "completed_at": str(row.get("completed_at")) if row.get("completed_at") else None,
-            "error": row.get("error"),
-            "metadata": metadata,
-            "steps": steps,
-            "latest_events": latest_events,
-        }
-
+        return status
     except HTTPException:
         raise
     except Exception as e:
@@ -1597,60 +1549,48 @@ def api_get_step_logs(
     limit: int = Query(100, le=500),
 ):
     """Get step logs from Dolt step_logs table, optionally filtered by step."""
+    from kurt.observability.status import get_step_logs_for_workflow
+
     db = _get_dolt_db()
     if db is None:
         raise HTTPException(status_code=503, detail="Database not available")
 
     try:
-        # Get full workflow ID
-        wf_result = db.query(
-            "SELECT id FROM workflow_runs WHERE id LIKE CONCAT(?, '%') LIMIT 1",
-            [workflow_id],
-        )
+        logs_raw = get_step_logs_for_workflow(db, workflow_id, step_name=step, limit=limit)
 
-        if not wf_result.rows:
-            raise HTTPException(status_code=404, detail="Workflow not found")
-
-        full_id = wf_result.rows[0].get("id")
-
-        # Query step logs
-        sql = """
-            SELECT step_id, step_type, status, started_at, completed_at,
-                   input_count, output_count, error_count, errors, metadata
-            FROM step_logs
-            WHERE run_id = ?
-        """
-        params: list[Any] = [full_id]
-
-        if step:
-            sql += " AND step_id = ?"
-            params.append(step)
-
-        sql += " ORDER BY started_at LIMIT ?"
-        params.append(limit)
-
-        result = db.query(sql, params)
+        if not logs_raw and step:
+            # Check if workflow exists
+            result = db.query(
+                "SELECT id FROM workflow_runs WHERE id LIKE CONCAT(?, '%') LIMIT 1",
+                [workflow_id],
+            )
+            if not result.rows:
+                raise HTTPException(status_code=404, detail="Workflow not found")
 
         logs = []
-        for row in result.rows:
+        for row in logs_raw:
             # Parse JSON fields
             errors = []
-            if row.get("errors"):
+            raw_errors = row.get("errors")
+            if raw_errors:
                 try:
-                    errors = json.loads(row["errors"]) if isinstance(row["errors"], str) else row["errors"]
+                    parsed = json.loads(raw_errors) if isinstance(raw_errors, str) else raw_errors
+                    if isinstance(parsed, list):
+                        errors = parsed
                 except Exception:
                     pass
 
             metadata = {}
-            if row.get("metadata"):
+            raw_metadata = row.get("metadata_json")
+            if raw_metadata:
                 try:
-                    metadata = json.loads(row["metadata"]) if isinstance(row["metadata"], str) else row["metadata"]
+                    metadata = json.loads(raw_metadata) if isinstance(raw_metadata, str) else raw_metadata
                 except Exception:
                     pass
 
             logs.append({
                 "step_id": row.get("step_id"),
-                "step_type": row.get("step_type"),
+                "tool": row.get("tool"),
                 "status": row.get("status"),
                 "started_at": str(row.get("started_at")) if row.get("started_at") else None,
                 "completed_at": str(row.get("completed_at")) if row.get("completed_at") else None,
@@ -1671,26 +1611,28 @@ def api_get_step_logs(
 
 @app.get("/api/workflows/{workflow_id}/status/stream")
 async def api_stream_workflow_status(workflow_id: str):
-    """Stream live workflow status via Server-Sent Events."""
+    """Stream live workflow status via Server-Sent Events.
+
+    Streams the same comprehensive status as /api/workflows/{id}/status
+    but continuously until the workflow completes.
+    """
     import asyncio
 
     from fastapi.responses import StreamingResponse
+
+    from kurt.observability.status import get_live_status
 
     db = _get_dolt_db()
     if db is None:
         raise HTTPException(status_code=503, detail="Database not available")
 
     try:
-        # Get full workflow ID
-        result = db.query(
-            "SELECT id, status FROM workflow_runs WHERE id LIKE CONCAT(?, '%') LIMIT 1",
-            [workflow_id],
-        )
-
-        if not result.rows:
+        # Verify workflow exists
+        status = get_live_status(db, workflow_id)
+        if status is None:
             raise HTTPException(status_code=404, detail="Workflow not found")
 
-        full_id = result.rows[0].get("id")
+        full_id = status["workflow_id"]
 
     except HTTPException:
         raise
@@ -1698,7 +1640,7 @@ async def api_stream_workflow_status(workflow_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
     async def event_generator():
-        last_status = None
+        last_status_json = None
         while True:
             try:
                 # Re-fetch status from Dolt
@@ -1706,36 +1648,19 @@ async def api_stream_workflow_status(workflow_id: str):
                 if db_inner is None:
                     break
 
-                status_result = db_inner.query(
-                    """
-                    SELECT id, workflow, status, started_at, completed_at, error
-                    FROM workflow_runs WHERE id = ?
-                    """,
-                    [full_id],
-                )
-
-                if not status_result.rows:
+                status = get_live_status(db_inner, full_id)
+                if status is None:
                     break
-
-                row = status_result.rows[0]
-                status = {
-                    "workflow_id": row.get("id"),
-                    "workflow": row.get("workflow"),
-                    "status": row.get("status"),
-                    "started_at": str(row.get("started_at")) if row.get("started_at") else None,
-                    "completed_at": str(row.get("completed_at")) if row.get("completed_at") else None,
-                    "error": row.get("error"),
-                }
 
                 status_json = json.dumps(status)
 
                 # Only send if changed
-                if status_json != last_status:
+                if status_json != last_status_json:
                     yield f"data: {status_json}\n\n"
-                    last_status = status_json
+                    last_status_json = status_json
 
                 # Stop streaming if workflow completed
-                if status.get("status") in ("completed", "failed", "canceled"):
+                if status.get("status") in ("completed", "completed_with_errors", "failed", "canceled"):
                     break
 
                 await asyncio.sleep(0.5)
