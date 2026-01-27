@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -122,6 +123,13 @@ def run_tool_with_tracking(
         run_metadata["priority"] = priority
     if cli_command:
         run_metadata["cli_command"] = cli_command
+    # Set workflow_type for tool filtering in UI
+    if "workflow_type" not in run_metadata:
+        run_metadata["workflow_type"] = "tool"
+    # Store parent workflow ID for nested workflow display
+    parent_workflow_id = os.environ.get("KURT_PARENT_WORKFLOW_ID")
+    if parent_workflow_id and "parent_workflow_id" not in run_metadata:
+        run_metadata["parent_workflow_id"] = parent_workflow_id
 
     if run_id is None:
         run_id = lifecycle.create_run(
@@ -194,6 +202,13 @@ def create_pending_run(
         run_metadata["priority"] = priority
     if cli_command:
         run_metadata["cli_command"] = cli_command
+    # Set workflow_type for tool filtering in UI
+    if "workflow_type" not in run_metadata:
+        run_metadata["workflow_type"] = "tool"
+    # Store parent workflow ID for nested workflow display
+    parent_workflow_id = os.environ.get("KURT_PARENT_WORKFLOW_ID")
+    if parent_workflow_id and "parent_workflow_id" not in run_metadata:
+        run_metadata["parent_workflow_id"] = parent_workflow_id
 
     return lifecycle.create_run(
         workflow=tool_name,

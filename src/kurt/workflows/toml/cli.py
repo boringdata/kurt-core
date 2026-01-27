@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 import time
 from datetime import datetime
@@ -261,9 +262,21 @@ def run_cmd(workflow_path: Path, inputs: tuple[str, ...], background: bool, fore
         from kurt.observability import WorkflowLifecycle
 
         lifecycle = WorkflowLifecycle(db)
+
+        # Set workflow_type in metadata for type filtering
+        metadata = {
+            "workflow_type": "toml",
+            "definition_file": str(workflow_path.name),
+        }
+        # Store parent workflow ID for nested workflow display
+        parent_workflow_id = os.environ.get("KURT_PARENT_WORKFLOW_ID")
+        if parent_workflow_id:
+            metadata["parent_workflow_id"] = parent_workflow_id
+
         lifecycle.create_run(
             workflow=workflow_def.workflow.name,
             inputs=merged_inputs,
+            metadata=metadata,
             run_id=run_id,
             status="pending",
         )
