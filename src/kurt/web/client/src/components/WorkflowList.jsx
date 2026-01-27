@@ -177,6 +177,23 @@ export default function WorkflowList({ onAttachWorkflow }) {
     }
   }
 
+  const handleRetry = async (workflowId) => {
+    try {
+      const response = await fetch(apiUrl(`/api/workflows/${workflowId}/retry`), {
+        method: 'POST',
+      })
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(data.detail || `Retry failed: ${response.status}`)
+      }
+      // Refresh list after retry to show the new workflow
+      fetchWorkflows(false)
+    } catch (err) {
+      console.error('Failed to retry workflow:', err)
+      // Could show error to user here
+    }
+  }
+
   const handleAttach = (workflowId) => {
     onAttachWorkflow?.(workflowId)
   }
@@ -280,6 +297,7 @@ export default function WorkflowList({ onAttachWorkflow }) {
                 onToggleExpand={() => handleToggleExpand(workflow.workflow_uuid)}
                 onAttach={() => handleAttach(workflow.workflow_uuid)}
                 onCancel={() => handleCancel(workflow.workflow_uuid)}
+                onRetry={() => handleRetry(workflow.workflow_uuid)}
                 getStatusBadgeClass={getStatusBadgeClass}
               />
             ))}

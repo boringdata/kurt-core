@@ -642,6 +642,306 @@ function WorkflowChildBox({
   )
 }
 
+function WorkflowConfigSection({ workflow, liveStatus }) {
+  const [isExpanded, setIsExpanded] = useState(false)
+
+  // Get inputs from liveStatus or workflow
+  const inputs = liveStatus?.inputs || workflow?.inputs
+  const metadata = liveStatus?.metadata || {}
+
+  // Get workflow-specific metadata
+  const workflowType = workflow?.workflow_type || metadata?.workflow_type
+  const definitionName = workflow?.definition_name || metadata?.definition_name
+  const trigger = workflow?.trigger || metadata?.trigger
+
+  // Parse inputs if it's a string
+  let parsedInputs = inputs
+  if (typeof inputs === 'string') {
+    try {
+      parsedInputs = JSON.parse(inputs)
+    } catch {
+      parsedInputs = null
+    }
+  }
+
+  // Filter out internal/empty fields from inputs
+  const getDisplayInputs = () => {
+    if (!parsedInputs || typeof parsedInputs !== 'object') return null
+    if (Array.isArray(parsedInputs)) return parsedInputs
+
+    const filtered = {}
+    for (const [key, value] of Object.entries(parsedInputs)) {
+      // Skip internal fields and empty values
+      if (key.startsWith('_')) continue
+      if (value === null || value === undefined || value === '') continue
+      if (key === 'dry_run' && value === false) continue
+      filtered[key] = value
+    }
+    return Object.keys(filtered).length > 0 ? filtered : null
+  }
+
+  const displayInputs = getDisplayInputs()
+
+  // Don't show section if there's nothing to display
+  const hasContent = definitionName || trigger || displayInputs || workflowType
+  if (!hasContent) return null
+
+  // Build preview text
+  const previewParts = []
+  if (definitionName) previewParts.push(definitionName)
+  if (trigger) previewParts.push(`trigger: ${trigger}`)
+  if (displayInputs && !definitionName) {
+    const inputCount = Object.keys(displayInputs).length
+    previewParts.push(`${inputCount} input${inputCount !== 1 ? 's' : ''}`)
+  }
+  const previewText = previewParts.join(' | ') || 'Configuration'
+
+  const formatValue = (value) => {
+    if (typeof value === 'boolean') return value ? 'true' : 'false'
+    if (typeof value === 'number') return String(value)
+    if (Array.isArray(value)) return value.join(', ')
+    if (typeof value === 'object') return JSON.stringify(value)
+    return String(value)
+  }
+
+  return (
+    <div className="workflow-collapsible-section">
+      <div
+        className="workflow-section-header"
+        onClick={() => setIsExpanded(!isExpanded)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            setIsExpanded(!isExpanded)
+          }
+        }}
+      >
+        <span className="workflow-section-toggle">
+          {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        </span>
+        <span className="workflow-section-label">Config</span>
+        <span className="workflow-section-preview">{previewText}</span>
+      </div>
+      {isExpanded && (
+        <div className="workflow-section-content">
+          <div className="workflow-config-grid">
+            {workflowType && (
+              <div className="workflow-config-row">
+                <span className="workflow-config-label">Type</span>
+                <span className="workflow-config-value">{workflowType}</span>
+              </div>
+            )}
+            {definitionName && (
+              <div className="workflow-config-row">
+                <span className="workflow-config-label">Definition</span>
+                <span className="workflow-config-value workflow-config-definition">
+                  {definitionName}
+                </span>
+              </div>
+            )}
+            {trigger && (
+              <div className="workflow-config-row">
+                <span className="workflow-config-label">Trigger</span>
+                <span className="workflow-config-value">{trigger}</span>
+              </div>
+            )}
+            {displayInputs && (
+              <>
+                <div className="workflow-config-divider" />
+                <div className="workflow-config-row workflow-config-inputs-header">
+                  <span className="workflow-config-label">Inputs</span>
+                </div>
+                {Object.entries(displayInputs).map(([key, value]) => (
+                  <div key={key} className="workflow-config-row workflow-config-input-row">
+                    <span className="workflow-config-input-key">{key}</span>
+                    <span className="workflow-config-input-value" title={formatValue(value)}>
+                      {formatValue(value)}
+                    </span>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function WorkflowOutputSection({ workflow, liveStatus }) {
+  const [isExpanded, setIsExpanded] = useState(false)
+
+  // Get output info from liveStatus or workflow
+  const output = liveStatus?.output || {}
+  const workflowError = liveStatus?.error || workflow?.error
+  const workflowStatus = liveStatus?.status || workflow?.status
+
+  // Determine if workflow is completed (SUCCESS or ERROR)
+  const isCompleted = ['SUCCESS', 'ERROR', 'CANCELLED', 'completed', 'failed', 'canceled', 'completed_with_errors'].includes(workflowStatus)
+
+  // Check if there's anything to show
+  const hasAgentOutput = output.agent_turns != null || output.tokens_in != null || output.tool_calls != null || output.stop_reason
+  const hasToolOutput = output.total_output != null || output.total_success != null
+  const hasErrors = output.total_errors > 0 || workflowError
+  const hasResultPreview = !!output.result_preview
+
+  // Don't show for running workflows or if there's nothing to display
+  if (!isCompleted) return null
+  if (!hasAgentOutput && !hasToolOutput && !hasErrors && !hasResultPreview) return null
+
+  // Auto-expand if there are errors
+  const shouldAutoExpand = hasErrors
+
+  // Build preview text
+  const previewParts = []
+  if (workflowStatus === 'ERROR' || workflowStatus === 'failed' || workflowStatus === 'canceled') {
+    previewParts.push('Error')
+  } else if (output.total_errors > 0) {
+    previewParts.push(`${output.total_errors} error${output.total_errors !== 1 ? 's' : ''}`)
+  } else {
+    previewParts.push('Completed')
+  }
+
+  if (output.agent_turns != null) {
+    previewParts.push(`${output.agent_turns} turn${output.agent_turns !== 1 ? 's' : ''}`)
+  }
+  if (output.tool_calls != null) {
+    previewParts.push(`${output.tool_calls} tool call${output.tool_calls !== 1 ? 's' : ''}`)
+  }
+  if (output.total_success != null && output.total_success > 0) {
+    previewParts.push(`${output.total_success} processed`)
+  }
+
+  const previewText = previewParts.join(' | ')
+
+  const formatCostValue = (cost) => {
+    if (cost == null) return '-'
+    if (cost < 0.01) return `$${cost.toFixed(4)}`
+    return `$${cost.toFixed(2)}`
+  }
+
+  const formatTokens = (tokens) => {
+    if (tokens == null) return '-'
+    return tokens.toLocaleString()
+  }
+
+  return (
+    <div className={`workflow-collapsible-section ${hasErrors ? 'workflow-output-error' : ''}`}>
+      <div
+        className="workflow-section-header"
+        onClick={() => setIsExpanded(!isExpanded)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            setIsExpanded(!isExpanded)
+          }
+        }}
+      >
+        <span className="workflow-section-toggle">
+          {isExpanded || shouldAutoExpand ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        </span>
+        <span className="workflow-section-label">Output</span>
+        <span className={`workflow-section-preview ${hasErrors ? 'workflow-output-error-text' : ''}`}>
+          {previewText}
+        </span>
+      </div>
+      {(isExpanded || shouldAutoExpand) && (
+        <div className="workflow-section-content">
+          {/* Error message display */}
+          {workflowError && (
+            <div className="workflow-output-error-block">
+              <div className="workflow-output-error-label">Error</div>
+              <div className="workflow-output-error-message">{workflowError}</div>
+            </div>
+          )}
+
+          {/* Agent workflow output */}
+          {hasAgentOutput && (
+            <div className="workflow-output-grid">
+              {output.agent_turns != null && (
+                <div className="workflow-output-row">
+                  <span className="workflow-output-label">Turns</span>
+                  <span className="workflow-output-value">{output.agent_turns}</span>
+                </div>
+              )}
+              {output.tool_calls != null && (
+                <div className="workflow-output-row">
+                  <span className="workflow-output-label">Tool Calls</span>
+                  <span className="workflow-output-value">{output.tool_calls}</span>
+                </div>
+              )}
+              {output.tokens_in != null && (
+                <div className="workflow-output-row">
+                  <span className="workflow-output-label">Tokens In</span>
+                  <span className="workflow-output-value">{formatTokens(output.tokens_in)}</span>
+                </div>
+              )}
+              {output.tokens_out != null && (
+                <div className="workflow-output-row">
+                  <span className="workflow-output-label">Tokens Out</span>
+                  <span className="workflow-output-value">{formatTokens(output.tokens_out)}</span>
+                </div>
+              )}
+              {output.cost_usd != null && (
+                <div className="workflow-output-row">
+                  <span className="workflow-output-label">Cost</span>
+                  <span className="workflow-output-value workflow-output-cost">{formatCostValue(output.cost_usd)}</span>
+                </div>
+              )}
+              {output.stop_reason && (
+                <div className="workflow-output-row">
+                  <span className="workflow-output-label">Stop Reason</span>
+                  <span className={`workflow-output-value ${output.stop_reason.startsWith('error') ? 'workflow-output-error-text' : ''}`}>
+                    {output.stop_reason}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Tool workflow output */}
+          {hasToolOutput && !hasAgentOutput && (
+            <div className="workflow-output-grid">
+              {output.total_output != null && (
+                <div className="workflow-output-row">
+                  <span className="workflow-output-label">Total Output</span>
+                  <span className="workflow-output-value">{output.total_output}</span>
+                </div>
+              )}
+              {output.total_success != null && (
+                <div className="workflow-output-row">
+                  <span className="workflow-output-label">Successful</span>
+                  <span className="workflow-output-value workflow-output-success">{output.total_success}</span>
+                </div>
+              )}
+              {output.total_errors != null && output.total_errors > 0 && (
+                <div className="workflow-output-row">
+                  <span className="workflow-output-label">Errors</span>
+                  <span className="workflow-output-value workflow-output-error-text">{output.total_errors}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Result preview for agent workflows */}
+          {hasResultPreview && (
+            <div className="workflow-output-preview">
+              <div className="workflow-output-preview-label">Result Preview</div>
+              <div className="workflow-output-preview-content">
+                {output.result_preview}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 const formatTokenCount = (tokens) => {
   if (tokens == null) return null
   if (tokens >= 1000000) return `${(tokens / 1000000).toFixed(1)}M`
@@ -661,12 +961,15 @@ export default function WorkflowRow({
   onToggleExpand,
   onAttach,
   onCancel,
+  onRetry,
   getStatusBadgeClass,
   depth = 0,
 }) {
   const [liveStatus, setLiveStatus] = useState(null)
+  const [isRetrying, setIsRetrying] = useState(false)
 
   const isRunning = workflow.status === 'PENDING' || workflow.status === 'ENQUEUED'
+  const canRetry = ['SUCCESS', 'ERROR', 'CANCELLED', 'WARNING', 'RETRIES_EXCEEDED'].includes(workflow.status)
 
   // Compute effective status - show WARNING if there are errors even if workflow "succeeded"
   const getEffectiveStatus = () => {
@@ -797,6 +1100,17 @@ export default function WorkflowRow({
     }
   }
 
+  const handleRetry = async (e) => {
+    e.stopPropagation()
+    if (isRetrying || !onRetry) return
+    setIsRetrying(true)
+    try {
+      await onRetry()
+    } finally {
+      setIsRetrying(false)
+    }
+  }
+
   return (
     <div className={`workflow-row ${isExpanded ? 'expanded' : ''}`}>
       <div
@@ -857,6 +1171,17 @@ export default function WorkflowRow({
                 ✕
               </button>
             </>
+          )}
+          {canRetry && onRetry && (
+            <button
+              type="button"
+              className="workflow-action-btn workflow-retry"
+              onClick={handleRetry}
+              disabled={isRetrying}
+              title="Retry workflow"
+            >
+              {isRetrying ? '...' : '↻'}
+            </button>
           )}
         </div>
       </div>
@@ -931,6 +1256,7 @@ export default function WorkflowRow({
           </div>
 
           <CommandBlock command={command} />
+          <WorkflowConfigSection workflow={workflow} liveStatus={liveStatus} />
           {liveStatus && (
             <WorkflowStepsSection
               workflow={workflow}
@@ -941,6 +1267,7 @@ export default function WorkflowRow({
               depth={depth}
             />
           )}
+          <WorkflowOutputSection workflow={workflow} liveStatus={liveStatus} />
         </div>
       )}
     </div>

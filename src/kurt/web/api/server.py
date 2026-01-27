@@ -1577,6 +1577,150 @@ def api_cancel_workflow(workflow_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/workflows/{workflow_id}/retry")
+def api_retry_workflow(workflow_id: str):
+    """Retry a workflow by starting a new run with the same inputs.
+
+    Reads the original workflow's inputs from workflow_runs table,
+    then starts a new workflow run with the same configuration.
+
+    Only works for completed (success, error, cancelled) workflows.
+    """
+    db = _get_dolt_db()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        # Get original workflow details
+        result = db.query(
+            "SELECT id, workflow, status, inputs, metadata_json FROM workflow_runs WHERE id LIKE CONCAT(?, '%') LIMIT 1",
+            [workflow_id],
+        )
+        if not result.rows:
+            raise HTTPException(status_code=404, detail="Workflow not found")
+
+        row = result.rows[0]
+        current_status = row.get("status")
+
+        # Only allow retry for terminal states
+        if current_status in ("pending", "running", "canceling"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot retry workflow with status '{current_status}'. Wait for it to complete.",
+            )
+
+        workflow_name = row.get("workflow", "")
+        original_id = row.get("id")
+
+        # Parse inputs
+        raw_inputs = row.get("inputs")
+        inputs = {}
+        if raw_inputs:
+            try:
+                inputs = json.loads(raw_inputs) if isinstance(raw_inputs, str) else raw_inputs
+            except Exception:
+                pass
+
+        # Parse metadata to get workflow type and definition name
+        metadata = {}
+        raw_metadata = row.get("metadata_json")
+        if raw_metadata:
+            try:
+                metadata = json.loads(raw_metadata) if isinstance(raw_metadata, str) else raw_metadata
+            except Exception:
+                pass
+
+        workflow_type = metadata.get("workflow_type")
+        definition_name = metadata.get("definition_name")
+
+        # Handle agent workflows
+        if workflow_type == "agent" and definition_name:
+            from kurt.workflows.agents import run_definition
+
+            # Extract original inputs from the inputs dict (if they were stored there)
+            agent_inputs = inputs.get("inputs") if isinstance(inputs.get("inputs"), dict) else {}
+
+            result = run_definition(
+                definition_name=definition_name,
+                inputs=agent_inputs,
+                background=True,
+                trigger="retry",
+            )
+            return {
+                "status": "started",
+                "workflow_id": result.get("workflow_id"),
+                "original_workflow_id": original_id,
+            }
+
+        # Handle map/fetch workflows via CLI subprocess
+        if workflow_name in ("map_workflow", "fetch_workflow"):
+            # Build CLI command from inputs
+            cmd = ["kurt", "content"]
+
+            if workflow_name == "map_workflow":
+                cmd.append("map")
+                if inputs.get("source_url"):
+                    cmd.append(inputs["source_url"])
+                elif inputs.get("url"):
+                    cmd.append(inputs["url"])
+                if inputs.get("max_depth") is not None:
+                    cmd.extend(["--max-depth", str(inputs["max_depth"])])
+                if inputs.get("max_pages") is not None:
+                    cmd.extend(["--max-pages", str(inputs["max_pages"])])
+                if inputs.get("include_pattern"):
+                    cmd.extend(["--include", inputs["include_pattern"]])
+                if inputs.get("exclude_pattern"):
+                    cmd.extend(["--exclude", inputs["exclude_pattern"]])
+            elif workflow_name == "fetch_workflow":
+                cmd.append("fetch")
+                if inputs.get("fetch_engine"):
+                    cmd.extend(["--engine", inputs["fetch_engine"]])
+
+            # Always run in background
+            cmd.append("--background")
+
+            # Run the CLI command
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=str(Path.cwd()),
+            )
+
+            stdout, stderr = proc.communicate(timeout=30)
+
+            if proc.returncode != 0:
+                error_msg = stderr.decode("utf-8", errors="replace").strip() if stderr else "Unknown error"
+                raise HTTPException(status_code=500, detail=f"Failed to start workflow: {error_msg}")
+
+            # Try to extract workflow ID from output
+            output = stdout.decode("utf-8", errors="replace").strip()
+            new_workflow_id = None
+
+            # Look for workflow ID in output (format: "Workflow started: <uuid>")
+            import re
+            match = re.search(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", output, re.IGNORECASE)
+            if match:
+                new_workflow_id = match.group(0)
+
+            return {
+                "status": "started",
+                "workflow_id": new_workflow_id,
+                "original_workflow_id": original_id,
+            }
+
+        # Unsupported workflow type
+        raise HTTPException(
+            status_code=400,
+            detail=f"Retry not supported for workflow type: {workflow_name}",
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/workflows/{workflow_id}/status")
 def api_get_workflow_status(workflow_id: str):
     """Get live workflow status with progress information from Dolt.

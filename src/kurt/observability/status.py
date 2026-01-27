@@ -91,12 +91,15 @@ def get_live_status(db: "DoltDB", workflow_id: str) -> dict[str, Any] | None:
     # Parse inputs
     inputs = _parse_json_field(workflow_row.get("inputs"))
 
-    # Parse metadata for cli_command
+    # Parse metadata for cli_command and output info
     metadata = _parse_json_field(workflow_row.get("metadata_json"))
     cli_command = metadata.get("cli_command") if metadata else None
 
     # Determine effective status
     status = _determine_effective_status(workflow_row["status"], steps)
+
+    # Build output/result section from metadata and steps
+    output = _build_output_summary(metadata, steps, latest_events)
 
     return {
         "workflow_id": full_id,
@@ -111,6 +114,7 @@ def get_live_status(db: "DoltDB", workflow_id: str) -> dict[str, Any] | None:
         "error": workflow_row.get("error"),
         "started_at": _format_datetime(workflow_row.get("started_at")),
         "completed_at": _format_datetime(workflow_row.get("completed_at")),
+        "output": output,
     }
 
 
@@ -344,6 +348,83 @@ def _determine_effective_status(
         if has_errors:
             return "completed_with_errors"
     return workflow_status
+
+
+def _build_output_summary(
+    metadata: dict[str, Any] | None,
+    steps: list[dict[str, Any]],
+    events: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Build output summary from workflow metadata, steps, and events.
+
+    For agent workflows, extracts:
+    - agent_turns: Number of conversation turns
+    - tokens_in/out: Token usage
+    - cost_usd: API cost
+    - tool_calls: Number of tool invocations
+    - stop_reason: Why the workflow stopped
+
+    For tool workflows, extracts:
+    - total_output: Sum of output_count from all steps
+    - total_success: Sum of success counts
+    - total_errors: Sum of error counts
+
+    Args:
+        metadata: Workflow metadata dict from workflow_runs
+        steps: List of step dicts
+        events: List of recent events
+
+    Returns:
+        Dict with output summary information
+    """
+    output: dict[str, Any] = {}
+
+    if metadata:
+        # Agent workflow metrics (stored by executor.py)
+        if metadata.get("agent_turns") is not None:
+            output["agent_turns"] = metadata["agent_turns"]
+        if metadata.get("tokens_in") is not None:
+            output["tokens_in"] = metadata["tokens_in"]
+        if metadata.get("tokens_out") is not None:
+            output["tokens_out"] = metadata["tokens_out"]
+        if metadata.get("cost_usd") is not None:
+            output["cost_usd"] = metadata["cost_usd"]
+        if metadata.get("tool_calls") is not None:
+            output["tool_calls"] = metadata["tool_calls"]
+        if metadata.get("stop_reason"):
+            output["stop_reason"] = metadata["stop_reason"]
+        if metadata.get("duration_seconds") is not None:
+            output["duration_seconds"] = metadata["duration_seconds"]
+
+    # Calculate totals from steps
+    total_output = 0
+    total_success = 0
+    total_errors = 0
+
+    for step in steps:
+        output_count = step.get("output_count") or 0
+        success_count = step.get("success") or 0
+        error_count = step.get("error") or 0
+
+        total_output += output_count
+        total_success += success_count
+        total_errors += error_count
+
+    if total_output > 0:
+        output["total_output"] = total_output
+    if total_success > 0:
+        output["total_success"] = total_success
+    if total_errors > 0:
+        output["total_errors"] = total_errors
+
+    # Check events for result_preview (agent workflow result text)
+    for event in events:
+        event_metadata = _parse_json_field(event.get("metadata_json"))
+        if event_metadata and event_metadata.get("result_preview"):
+            output["result_preview"] = event_metadata["result_preview"]
+            break
+
+    return output
 
 
 def _map_step_status(status: str) -> str:
