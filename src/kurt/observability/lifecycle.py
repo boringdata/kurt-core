@@ -680,6 +680,86 @@ class WorkflowLifecycle:
         self.update_status(run_id, "failed", error=error)
 
     # =========================================================================
+    # Cancellation Support
+    # =========================================================================
+
+    def check_cancel_requested(self, run_id: str) -> bool:
+        """Check if workflow cancellation has been requested.
+
+        Workflows should call this periodically to detect cancel requests.
+        If cancellation is detected, the workflow should cleanup and call
+        on_workflow_cancel() to complete the cancellation.
+
+        Args:
+            run_id: The workflow run ID.
+
+        Returns:
+            True if the workflow should cancel, False otherwise.
+
+        Example:
+            # In workflow loop:
+            if lifecycle.check_cancel_requested(run_id):
+                lifecycle.on_workflow_cancel(run_id)
+                return
+        """
+        try:
+            row = self._db.query_one(
+                "SELECT status FROM workflow_runs WHERE id = ?",
+                [run_id],
+            )
+            if row is None:
+                return False
+            return row.get("status") == "canceling"
+        except Exception:
+            return False
+
+    def on_workflow_cancel(self, run_id: str, message: str | None = None) -> None:
+        """Callback for workflow cancellation (status=canceling -> canceled).
+
+        Call this when the workflow has detected cancellation and finished cleanup.
+
+        Args:
+            run_id: The workflow run ID.
+            message: Optional message describing cancellation.
+        """
+        # Get current status first
+        try:
+            row = self._db.query_one(
+                "SELECT status FROM workflow_runs WHERE id = ?",
+                [run_id],
+            )
+            if row is None:
+                logger.warning(f"Cannot cancel workflow {run_id}: not found")
+                return
+            if row.get("status") != "canceling":
+                logger.warning(f"Cannot cancel workflow {run_id}: status is {row.get('status')}")
+                return
+        except Exception as e:
+            logger.warning(f"Cannot check workflow status {run_id}: {e}")
+            return
+
+        # Update to canceled
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        error_msg = message or "Workflow cancelled by user"
+        try:
+            self._db.execute(
+                "UPDATE workflow_runs SET status = 'canceled', completed_at = ?, error = ? WHERE id = ?",
+                [now, error_msg, run_id],
+            )
+            logger.info(f"Workflow {run_id} cancelled")
+
+            if self._emit_events:
+                self._emit_event(
+                    run_id=run_id,
+                    step_id="workflow",
+                    status="failed",
+                    message=error_msg,
+                    metadata={"status": "canceled"},
+                )
+        except Exception as e:
+            logger.error(f"Failed to cancel workflow {run_id}: {e}")
+
+    # =========================================================================
     # Internal Helpers
     # =========================================================================
 
