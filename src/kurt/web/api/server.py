@@ -1317,7 +1317,7 @@ def api_list_workflows(
 
     try:
         # Build query against workflow_runs table (Dolt observability schema)
-        sql = "SELECT id, workflow, status, started_at, completed_at, inputs, metadata FROM workflow_runs"
+        sql = "SELECT id, workflow, status, started_at, completed_at, error, inputs, metadata_json FROM workflow_runs"
         params: list[Any] = []
         conditions = []
 
@@ -1344,9 +1344,10 @@ def api_list_workflows(
 
             # Parse metadata for workflow_type and parent info
             metadata = {}
-            if row.get("metadata"):
+            raw_metadata = row.get("metadata_json") or row.get("metadata")
+            if raw_metadata:
                 try:
-                    metadata = json.loads(row["metadata"]) if isinstance(row["metadata"], str) else row["metadata"]
+                    metadata = json.loads(raw_metadata) if isinstance(raw_metadata, str) else raw_metadata
                 except Exception:
                     pass
 
@@ -1380,6 +1381,7 @@ def api_list_workflows(
                 "status": row.get("status", "unknown"),
                 "created_at": str(row.get("started_at")) if row.get("started_at") else None,
                 "updated_at": str(row.get("completed_at")) if row.get("completed_at") else None,
+                "error": row.get("error"),
                 "parent_workflow_id": parent_workflow_id,
                 "workflow_type": wf_type,
             }
@@ -1414,7 +1416,7 @@ def api_get_workflow(workflow_id: str):
 
     try:
         sql = """
-            SELECT id, workflow, status, started_at, completed_at, error, inputs, metadata
+            SELECT id, workflow, status, started_at, completed_at, error, inputs, metadata_json
             FROM workflow_runs
             WHERE id LIKE CONCAT(?, '%')
             LIMIT 1
@@ -1428,9 +1430,10 @@ def api_get_workflow(workflow_id: str):
 
         # Parse metadata
         metadata = {}
-        if row.get("metadata"):
+        raw_metadata = row.get("metadata_json") or row.get("metadata")
+        if raw_metadata:
             try:
-                metadata = json.loads(row["metadata"]) if isinstance(row["metadata"], str) else row["metadata"]
+                metadata = json.loads(raw_metadata) if isinstance(raw_metadata, str) else raw_metadata
             except Exception:
                 pass
 
@@ -1495,7 +1498,7 @@ def api_get_workflow_status(workflow_id: str):
         # Get workflow run
         result = db.query(
             """
-            SELECT id, workflow, status, started_at, completed_at, error, metadata
+            SELECT id, workflow, status, started_at, completed_at, error, metadata_json
             FROM workflow_runs
             WHERE id LIKE CONCAT(?, '%')
             LIMIT 1
@@ -1511,9 +1514,10 @@ def api_get_workflow_status(workflow_id: str):
 
         # Parse metadata
         metadata = {}
-        if row.get("metadata"):
+        raw_metadata = row.get("metadata_json") or row.get("metadata")
+        if raw_metadata:
             try:
-                metadata = json.loads(row["metadata"]) if isinstance(row["metadata"], str) else row["metadata"]
+                metadata = json.loads(raw_metadata) if isinstance(raw_metadata, str) else raw_metadata
             except Exception:
                 pass
 

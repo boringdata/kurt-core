@@ -312,12 +312,23 @@ def history_cmd(name: str, limit: int):
         console.print("[dim]Run a workflow first to create the database.[/dim]")
         return
 
+    # Ensure observability tables exist
+    try:
+        from kurt.db.dolt import check_schema_exists, init_observability_schema
+
+        schema_status = check_schema_exists(db)
+        if not schema_status.get("workflow_runs", False):
+            console.print("[dim]Initializing workflow tracking tables...[/dim]")
+            init_observability_schema(db)
+    except Exception as e:
+        console.print(f"[yellow]Warning: Could not initialize tables: {e}[/yellow]")
+
     try:
         # Query workflow_runs for this definition
         # Filter by workflow name pattern (agent:<name> or steps:<name>)
         result = db.query(
             """
-            SELECT id, workflow, status, started_at, completed_at, inputs, metadata, error
+            SELECT id, workflow, status, started_at, completed_at, inputs, metadata_json, error
             FROM workflow_runs
             WHERE workflow LIKE ? OR workflow LIKE ?
             ORDER BY started_at DESC
@@ -366,12 +377,13 @@ def history_cmd(name: str, limit: int):
                 except Exception:
                     pass
 
-            # Get trigger from metadata
+            # Get trigger from metadata (column is metadata_json)
             trigger = "-"
-            if row.get("metadata"):
+            metadata = row.get("metadata_json") or row.get("metadata")
+            if metadata:
                 try:
                     import json
-                    meta = json.loads(row["metadata"]) if isinstance(row["metadata"], str) else row["metadata"]
+                    meta = json.loads(metadata) if isinstance(metadata, str) else metadata
                     trigger = meta.get("trigger", "-")
                 except Exception:
                     pass
@@ -388,7 +400,7 @@ def history_cmd(name: str, limit: int):
 
     except Exception as e:
         console.print(f"[yellow]Warning: Could not query run history: {e}[/yellow]")
-        console.print("[dim]Make sure the Dolt database is initialized.[/dim]")
+        console.print("[dim]Run 'kurt init --force' to reinitialize the database.[/dim]")
 
 
 @agents_group.command(name="track-tool", hidden=True)

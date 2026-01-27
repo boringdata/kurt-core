@@ -684,8 +684,16 @@ class DoltDB:
             elif isinstance(param, bytes):
                 value = f"X'{param.hex()}'"
             else:
+                # Escape special characters for SQL string literals
+                escaped = str(param)
+                # Escape backslashes first (before adding more)
+                escaped = escaped.replace("\\", "\\\\")
                 # Escape single quotes by doubling them
-                escaped = str(param).replace("'", "''")
+                escaped = escaped.replace("'", "''")
+                # Escape newlines and other control characters
+                escaped = escaped.replace("\n", "\\n")
+                escaped = escaped.replace("\r", "\\r")
+                escaped = escaped.replace("\t", "\\t")
                 value = f"'{escaped}'"
             result = result.replace("?", value, 1)
 
@@ -718,19 +726,42 @@ class DoltDB:
             logger.debug(f"Non-JSON output: {output[:100]}...")
             return QueryResult(rows=[])
 
-    def _execute_embedded(self, sql: str, params: list[Any] | None = None) -> QueryResult:
-        """Execute statement using dolt CLI."""
+    def _execute_embedded(self, sql: str, params: list[Any] | None = None, max_retries: int = 5) -> QueryResult:
+        """Execute statement using dolt CLI with retry for concurrent access."""
+        import time
+        import random
+
         interpolated = self._interpolate_params(sql, params)
-        output = self._run_cli(["sql", "-q", interpolated])
 
-        # Parse affected rows from output if present
-        affected = 0
-        if "Query OK" in output:
-            match = re.search(r"(\d+) rows? affected", output)
-            if match:
-                affected = int(match.group(1))
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                output = self._run_cli(["sql", "-q", interpolated])
 
-        return QueryResult(rows=[], affected_rows=affected)
+                # Parse affected rows from output if present
+                affected = 0
+                if "Query OK" in output:
+                    match = re.search(r"(\d+) rows? affected", output)
+                    if match:
+                        affected = int(match.group(1))
+
+                return QueryResult(rows=[], affected_rows=affected)
+
+            except DoltQueryError as e:
+                error_msg = str(e).lower()
+                # Retry on concurrent access errors
+                if "read only" in error_msg or "database is locked" in error_msg or "manifest" in error_msg:
+                    last_error = e
+                    if attempt < max_retries - 1:
+                        # Exponential backoff with jitter: 0.1s, 0.2s, 0.4s, 0.8s, 1.6s
+                        delay = (0.1 * (2 ** attempt)) + (random.random() * 0.05)
+                        logger.debug(f"Dolt write conflict, retrying in {delay:.2f}s (attempt {attempt + 1}/{max_retries})")
+                        time.sleep(delay)
+                        continue
+                raise  # Non-retryable error
+
+        # All retries exhausted
+        raise last_error or DoltQueryError("Max retries exceeded for Dolt write")
 
     def _query_server(self, sql: str, params: list[Any] | None = None) -> QueryResult:
         """Execute query using MySQL connection."""
@@ -1099,7 +1130,7 @@ def _get_observability_models() -> list[type[SQLModel]]:
 
 
 def init_observability_schema(db: "DoltDB") -> list[str]:
-    """Initialize observability tables in Dolt database using SQLModel.
+    """Initialize observability tables in Dolt database.
 
     Creates the following tables if they don't exist:
     - workflow_runs: Workflow execution tracking
@@ -1107,6 +1138,9 @@ def init_observability_schema(db: "DoltDB") -> list[str]:
     - step_events: Append-only progress events
     - document_id_registry: Central document ID registry
     - llm_traces: LLM call traces
+
+    In server mode, uses SQLModel.metadata.create_all().
+    In embedded mode, uses raw SQL CREATE TABLE statements.
 
     Args:
         db: DoltDB client instance.
@@ -1121,17 +1155,113 @@ def init_observability_schema(db: "DoltDB") -> list[str]:
         tables = init_observability_schema(db)
         print(f"Initialized tables: {tables}")
     """
-    # Get SQLModel classes
-    models = _get_observability_models()
-
-    # Create tables using SQLAlchemy/SQLModel
-    engine = db._get_engine()
-    SQLModel.metadata.create_all(
-        bind=engine,
-        tables=[model.__table__ for model in models],
-    )
+    if db.mode == "server":
+        # Server mode: use SQLAlchemy/SQLModel
+        models = _get_observability_models()
+        engine = db._get_engine()
+        SQLModel.metadata.create_all(
+            bind=engine,
+            tables=[model.__table__ for model in models],
+        )
+    else:
+        # Embedded mode: use raw SQL for each table
+        _create_observability_tables_raw(db)
 
     return OBSERVABILITY_TABLES
+
+
+def _create_observability_tables_raw(db: "DoltDB") -> None:
+    """Create observability tables using raw SQL (for embedded mode).
+
+    This function creates tables using dolt sql CLI commands,
+    which works without requiring the Dolt SQL server to be running.
+    """
+    # workflow_runs table
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS workflow_runs (
+            id VARCHAR(36) PRIMARY KEY,
+            workflow VARCHAR(255) NOT NULL,
+            status VARCHAR(20) DEFAULT 'pending',
+            started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            completed_at DATETIME NULL,
+            error TEXT NULL,
+            inputs JSON NULL,
+            metadata_json JSON NULL,
+            user_id VARCHAR(255) NULL,
+            workspace_id VARCHAR(255) NULL
+        )
+    """)
+
+    # step_logs table
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS step_logs (
+            id VARCHAR(36) PRIMARY KEY,
+            run_id VARCHAR(36) NOT NULL,
+            step_id VARCHAR(255) NOT NULL,
+            tool VARCHAR(50) NOT NULL,
+            status VARCHAR(20) DEFAULT 'pending',
+            started_at DATETIME NULL,
+            completed_at DATETIME NULL,
+            input_count INT NULL,
+            output_count INT NULL,
+            error_count INT DEFAULT 0,
+            errors JSON NULL,
+            metadata_json JSON NULL,
+            user_id VARCHAR(255) NULL,
+            workspace_id VARCHAR(255) NULL
+        )
+    """)
+
+    # step_events table
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS step_events (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            run_id VARCHAR(36) NOT NULL,
+            step_id VARCHAR(255) NOT NULL,
+            substep VARCHAR(255) NULL,
+            status VARCHAR(20) DEFAULT 'pending',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            current INT NULL,
+            total INT NULL,
+            message TEXT NULL,
+            metadata_json JSON NULL,
+            user_id VARCHAR(255) NULL,
+            workspace_id VARCHAR(255) NULL
+        )
+    """)
+
+    # document_id_registry table
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS document_id_registry (
+            doc_id VARCHAR(36) PRIMARY KEY,
+            url VARCHAR(2048) NOT NULL UNIQUE,
+            url_hash VARCHAR(64) NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            user_id VARCHAR(255) NULL,
+            workspace_id VARCHAR(255) NULL
+        )
+    """)
+
+    # llm_traces table
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS llm_traces (
+            id VARCHAR(36) PRIMARY KEY,
+            workflow_id VARCHAR(255) NOT NULL,
+            step_id VARCHAR(255) NULL,
+            model VARCHAR(255) NOT NULL,
+            provider VARCHAR(100) NOT NULL,
+            tokens_in INT DEFAULT 0,
+            tokens_out INT DEFAULT 0,
+            cost FLOAT DEFAULT 0.0,
+            latency_ms INT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            metadata_json JSON NULL,
+            user_id VARCHAR(255) NULL,
+            workspace_id VARCHAR(255) NULL
+        )
+    """)
+
+    logger.info("Created observability tables using raw SQL")
 
 
 def check_schema_exists(db: "DoltDBProtocol") -> dict[str, bool]:

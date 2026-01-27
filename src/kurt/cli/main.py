@@ -21,7 +21,7 @@ load_dotenv()
 
 
 def _auto_migrate_schema():
-    """Auto-migrate schema on startup (adds missing columns)."""
+    """Auto-migrate schema on startup (adds missing columns and tables)."""
     try:
         from kurt.db.auto_migrate import auto_migrate
 
@@ -35,6 +35,40 @@ def _auto_migrate_schema():
                     console.print(f"[dim]Created table: {table}[/dim]")
                 else:
                     console.print(f"[dim]Added columns to {table}: {', '.join(cols)}[/dim]")
+    except Exception:
+        pass  # Silent fail - don't block CLI
+
+    # Also ensure Dolt observability tables exist if using Dolt
+    try:
+        from pathlib import Path
+
+        dolt_path = Path.cwd() / ".dolt"
+        if dolt_path.exists():
+            from kurt.db.dolt import DoltDB, check_schema_exists, init_observability_schema
+
+            db = DoltDB(Path.cwd())
+            schema_status = check_schema_exists(db)
+
+            # Only initialize if any table is missing
+            if not all(schema_status.values()):
+                missing = [t for t, exists in schema_status.items() if not exists]
+                init_observability_schema(db)
+
+                from rich.console import Console
+
+                console = Console()
+                for table in missing:
+                    console.print(f"[dim]Created Dolt table: {table}[/dim]")
+
+            # Cleanup stale "running" workflows (orphaned processes)
+            from kurt.observability.lifecycle import cleanup_stale_workflows
+
+            stale_count = cleanup_stale_workflows(db, stale_minutes=60)
+            if stale_count > 0:
+                from rich.console import Console
+
+                console = Console()
+                console.print(f"[dim]Cleaned up {stale_count} stale workflow(s)[/dim]")
     except Exception:
         pass  # Silent fail - don't block CLI
 

@@ -293,7 +293,13 @@ class WorkflowLifecycle:
         # Merge metadata if provided
         merged_metadata = None
         if metadata:
-            existing = json.loads(current_row["metadata_json"]) if current_row.get("metadata_json") else {}
+            raw = current_row.get("metadata_json")
+            if isinstance(raw, dict):
+                existing = raw
+            elif raw:
+                existing = json.loads(raw)
+            else:
+                existing = {}
             merged_metadata = json.dumps({**existing, **metadata})
 
         if is_terminal:
@@ -492,7 +498,13 @@ class WorkflowLifecycle:
             params.append(json.dumps(errors))
 
         if metadata is not None:
-            existing = json.loads(current_row["metadata_json"]) if current_row.get("metadata_json") else {}
+            raw = current_row.get("metadata_json")
+            if isinstance(raw, dict):
+                existing = raw
+            elif raw:
+                existing = json.loads(raw)
+            else:
+                existing = {}
             merged = {**existing, **metadata}
             updates.append("metadata_json = ?")
             params.append(json.dumps(merged))
@@ -700,3 +712,59 @@ class WorkflowLifecycle:
                 metadata=metadata,
                 db=self._db,
             )
+
+
+def cleanup_stale_workflows(
+    db: DoltDB,
+    stale_minutes: int = 60,
+) -> int:
+    """Mark stale 'running' workflows as failed.
+
+    Workflows that have been in 'running' status for longer than stale_minutes
+    are likely orphaned (process crashed, was killed, etc.) and should be
+    marked as failed.
+
+    Args:
+        db: Database connection.
+        stale_minutes: Minutes after which a running workflow is considered stale.
+
+    Returns:
+        Number of workflows marked as failed.
+    """
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+    # Find stale running workflows
+    sql = """
+        SELECT id, workflow, started_at FROM workflow_runs
+        WHERE status = 'running'
+        AND started_at < datetime('now', ?)
+    """
+    try:
+        result = db.query(sql, [f"-{stale_minutes} minutes"])
+    except DoltQueryError:
+        # Try MySQL/Dolt syntax
+        sql = """
+            SELECT id, workflow, started_at FROM workflow_runs
+            WHERE status = 'running'
+            AND started_at < DATE_SUB(NOW(), INTERVAL ? MINUTE)
+        """
+        result = db.query(sql, [stale_minutes])
+
+    if not result.rows:
+        return 0
+
+    # Mark each as failed
+    count = 0
+    for row in result.rows:
+        run_id = row.get("id")
+        try:
+            db.execute(
+                "UPDATE workflow_runs SET status = 'failed', completed_at = ?, error = ? WHERE id = ?",
+                [now, f"Workflow orphaned (no activity for {stale_minutes} minutes)", run_id],
+            )
+            count += 1
+            logger.info(f"Marked stale workflow {run_id} as failed")
+        except DoltQueryError as e:
+            logger.warning(f"Failed to cleanup stale workflow {run_id}: {e}")
+
+    return count

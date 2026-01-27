@@ -107,23 +107,100 @@ def _get_dolt_db():
     help="Run in background and return immediately",
 )
 @click.option(
+    "--foreground",
+    "-f",
+    is_flag=True,
+    help="Run in foreground (blocking) - for agent workflows",
+)
+@click.option(
     "--dry-run",
     is_flag=True,
     help="Parse and validate workflow without executing",
 )
 @track_command
-def run_cmd(workflow_path: Path, inputs: tuple[str, ...], background: bool, dry_run: bool):
-    """Run a workflow from a TOML file.
+def run_cmd(workflow_path: Path, inputs: tuple[str, ...], background: bool, foreground: bool, dry_run: bool):
+    """Run a workflow from a TOML or Markdown file.
+
+    Supports both workflow types:
+    - TOML workflows (.toml): Engine-driven data pipelines with DAG steps
+    - Agent workflows (.md, .toml with [agent]): Claude Code agent workflows
 
     Parses the workflow, merges inputs with defaults, and executes.
     Outputs JSON with run_id and status.
 
     Examples:
-        kurt run workflows/pipeline.toml
-        kurt run workflows/pipeline.toml --input url=https://example.com
-        kurt run workflows/pipeline.toml -i url=https://example.com -i max_pages=100
-        kurt run workflows/pipeline.toml --background
+        kurt workflow run workflows/pipeline.toml
+        kurt workflow run workflows/agent-task.md --foreground
+        kurt workflow run workflows/pipeline.toml --input url=https://example.com
+        kurt workflow run workflows/pipeline.toml -i url=https://example.com -i max_pages=100
+        kurt workflow run workflows/pipeline.toml --background
     """
+    # Detect workflow type by extension
+    suffix = workflow_path.suffix.lower()
+    is_agent_workflow = suffix == ".md"
+
+    # For TOML files, check if it's an agent workflow (has [agent] section but no [steps])
+    if suffix == ".toml" and not dry_run:
+        try:
+            from kurt.workflows.agents.parser import parse_workflow as parse_agent_workflow
+            parsed = parse_agent_workflow(workflow_path)
+            # If it has agent config but no steps, treat as agent workflow
+            if parsed.agent is not None and not parsed.steps:
+                is_agent_workflow = True
+        except Exception:
+            pass  # Fall back to TOML executor
+
+    # Route agent workflows to the agent executor
+    if is_agent_workflow:
+        from kurt.workflows.agents.executor import run_from_path
+
+        # Parse inputs for agent workflow
+        parsed_inputs: dict[str, Any] = {}
+        for input_str in inputs:
+            key, value = _parse_input(input_str)
+            parsed_inputs[key] = value
+
+        # Agent workflows use --foreground flag (default is background)
+        # For backwards compat with TOML CLI, also support --background flag
+        run_background = not foreground if not background else True
+
+        try:
+            result = run_from_path(
+                workflow_path,
+                inputs=parsed_inputs if parsed_inputs else None,
+                background=run_background,
+                trigger="manual",
+            )
+        except ValueError as e:
+            console.print(f"[red]Error:[/red] {e}")
+            raise click.Abort()
+        except Exception as e:
+            console.print(f"[red]Error running workflow:[/red] {e}")
+            raise click.Abort()
+
+        # Display results
+        if result.get("workflow_id") and run_background:
+            console.print("[green]Workflow started[/green]")
+            console.print(f"  Workflow ID: {result['workflow_id']}")
+            console.print()
+            console.print(
+                f"[dim]Monitor with: [cyan]kurt workflow status {result['workflow_id']}[/cyan][/dim]"
+            )
+        else:
+            console.print("[green]Workflow completed[/green]")
+            console.print(f"  Status: {result.get('status')}")
+            if result.get('turns'):
+                console.print(f"  Turns: {result.get('turns')}")
+            if result.get('tool_calls'):
+                console.print(f"  Tool Calls: {result.get('tool_calls')}")
+            tokens = (result.get('tokens_in', 0) or 0) + (result.get('tokens_out', 0) or 0)
+            if tokens:
+                console.print(f"  Tokens: {tokens:,}")
+            if result.get('duration_seconds'):
+                console.print(f"  Duration: {result.get('duration_seconds')}s")
+        return
+
+    # --- TOML workflow execution below ---
     from kurt.workflows.toml import parse_workflow
     from kurt.workflows.toml.executor import execute_workflow
 
