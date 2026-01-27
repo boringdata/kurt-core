@@ -46,7 +46,7 @@ def _start_process(label: str, cmd: list[str], cwd: Path, env: dict[str, str]):
 
 
 @click.command()
-@click.option("--host", default="127.0.0.1", help="Host for the web UI")
+@click.option("--host", default="0.0.0.0", help="Host for the web UI (use 127.0.0.1 for local only)")
 @click.option("--port", default=8765, type=int, help="Port for the web server")
 @click.option("--no-browser", is_flag=True, help="Do not open the browser automatically")
 @click.option("--reload", is_flag=True, help="Enable auto-reload (for development)")
