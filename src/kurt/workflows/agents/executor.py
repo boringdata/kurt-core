@@ -315,11 +315,14 @@ Workflow ID: {run_id}
         workflow_dir = get_workflow_dir(definition.name)
 
         # Create step log for agent execution
+        # step_type="queue" indicates this step can spawn child workflows
+        # (via KURT_PARENT_STEP_NAME="agent_execution" env var)
         lifecycle.create_step_log(
             run_id=run_id,
             step_id="agent_execution",
             tool="ClaudeCLI",
             metadata={
+                "step_type": "queue",
                 "model": definition.agent.model,
                 "max_turns": definition.agent.max_turns,
             },
@@ -367,8 +370,15 @@ Workflow ID: {run_id}
             },
         )
 
-        # Complete workflow
-        lifecycle.update_status(run_id, "completed")
+        # Complete workflow with token/cost metadata for API display
+        lifecycle.update_status(run_id, "completed", metadata={
+            "agent_turns": result.get("turns"),
+            "tokens_in": result.get("tokens_in"),
+            "tokens_out": result.get("tokens_out"),
+            "cost_usd": result.get("cost_usd"),
+            "tool_calls": result.get("tool_calls"),
+            "duration_seconds": result.get("duration_seconds"),
+        })
 
         track_event(
             run_id=run_id,
