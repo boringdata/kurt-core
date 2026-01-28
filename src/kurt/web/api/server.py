@@ -25,7 +25,7 @@ from kurt.cloud.auth import (
     get_workspace_id_from_config,
     load_credentials,
 )
-from kurt.db.tenant import is_cloud_mode
+from kurt.cloud.tenant import is_cloud_mode
 from kurt.web.api.auth import (
     auth_middleware_setup,
     get_authenticated_user,

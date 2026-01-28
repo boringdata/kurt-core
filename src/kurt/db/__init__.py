@@ -54,7 +54,7 @@ from kurt.db.models import (
     TenantMixin,
     TimestampMixin,
 )
-from kurt.db.tenant import (
+from kurt.cloud.tenant import (
     add_workspace_filter,
     clear_workspace_context,
     get_mode,

@@ -377,7 +377,7 @@ def status_cmd():
                     "workspace_id"
                 )
                 if candidate_workspace_id:
-                    from kurt.db.tenant import _set_workspace_id_in_config
+                    from kurt.cloud.tenant import _set_workspace_id_in_config
 
                     if _set_workspace_id_in_config(candidate_workspace_id):
                         workspace_id = candidate_workspace_id

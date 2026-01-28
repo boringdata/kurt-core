@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from kurt.db.tenant import (
+from kurt.cloud.tenant import (
     WorkspaceContext,
     _ensure_workspace_id_in_config,
     _set_workspace_id_in_config,
@@ -300,7 +300,7 @@ class TestInitWorkspaceFromConfig:
         mock_config.WORKSPACE_ID = "ws-from-config"
 
         with (
-            patch("kurt.db.tenant.is_cloud_mode", return_value=False),
+            patch("kurt.cloud.tenant.is_cloud_mode", return_value=False),
             patch("kurt.config.config_file_exists", return_value=True),
             patch("kurt.config.load_config", return_value=mock_config),
         ):
@@ -312,7 +312,7 @@ class TestInitWorkspaceFromConfig:
 
     def test_returns_false_in_cloud_mode(self):
         """Test returns False when in cloud mode."""
-        with patch("kurt.db.tenant.is_cloud_mode", return_value=True):
+        with patch("kurt.cloud.tenant.is_cloud_mode", return_value=True):
             result = init_workspace_from_config()
 
         assert result is False
@@ -320,7 +320,7 @@ class TestInitWorkspaceFromConfig:
     def test_returns_false_when_no_config(self):
         """Test returns False when config file doesn't exist."""
         with (
-            patch("kurt.db.tenant.is_cloud_mode", return_value=False),
+            patch("kurt.cloud.tenant.is_cloud_mode", return_value=False),
             patch("kurt.config.config_file_exists", return_value=False),
         ):
             result = init_workspace_from_config()
@@ -338,11 +338,11 @@ class TestInitWorkspaceFromConfig:
         generated_id = "auto-generated-uuid"
 
         with (
-            patch("kurt.db.tenant.is_cloud_mode", return_value=False),
+            patch("kurt.cloud.tenant.is_cloud_mode", return_value=False),
             patch("kurt.config.config_file_exists", return_value=True),
             patch("kurt.config.load_config", return_value=mock_config),
             patch(
-                "kurt.db.tenant._ensure_workspace_id_in_config",
+                "kurt.cloud.tenant._ensure_workspace_id_in_config",
                 return_value=generated_id,
             ),
         ):
@@ -355,7 +355,7 @@ class TestInitWorkspaceFromConfig:
         """Test returns True immediately when context already set."""
         set_workspace_context(workspace_id="already-set")
 
-        with patch("kurt.db.tenant.is_cloud_mode", return_value=False):
+        with patch("kurt.cloud.tenant.is_cloud_mode", return_value=False):
             result = init_workspace_from_config()
 
         assert result is True
