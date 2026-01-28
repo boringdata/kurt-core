@@ -110,7 +110,12 @@ content/
 
 # Project-specific files (not code)
 .dolt/
+.doltcfg/
+/config.yaml
 kurt.toml
 sources/
 # bd worktree
 test-feature/
+
+# bv (beads viewer) local config and caches
+.bv/
