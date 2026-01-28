@@ -15,7 +15,7 @@ from kurt.cli.init import (
     _check_hooks_installed,
     _check_workflows_dir,
     _create_config,
-    _create_content_dir,
+    _create_sources_dir,
     _create_workflows_dir,
     _detect_partial_init,
     _update_gitignore,
@@ -87,11 +87,6 @@ class TestCheckFunctions:
     def test_check_config_exists_toml(self, cli_runner_isolated):
         """Test _check_config_exists returns True with kurt.toml."""
         (Path.cwd() / "kurt.toml").write_text("")
-        assert _check_config_exists() is True
-
-    def test_check_config_exists_config(self, cli_runner_isolated):
-        """Test _check_config_exists returns True with kurt.config."""
-        (Path.cwd() / "kurt.config").write_text("")
         assert _check_config_exists() is True
 
     def test_check_workflows_dir_false(self, cli_runner_isolated):
@@ -174,10 +169,11 @@ class TestCreateConfig:
         assert (Path.cwd() / "kurt.toml").exists()
 
     def test_config_has_workspace_id(self, cli_runner_isolated):
-        """Test config includes workspace_id."""
+        """Test config includes workspace section with id."""
         _create_config()
         content = (Path.cwd() / "kurt.toml").read_text()
-        assert "workspace_id" in content
+        assert "[workspace]" in content
+        assert 'id = "' in content
 
     def test_config_has_paths(self, cli_runner_isolated):
         """Test config includes paths section."""
@@ -185,15 +181,14 @@ class TestCreateConfig:
         content = (Path.cwd() / "kurt.toml").read_text()
         assert "[paths]" in content
         assert 'workflows = "workflows"' in content
-        assert 'content = "content"' in content
+        assert 'sources = "sources"' in content
 
-    def test_config_has_indexing(self, cli_runner_isolated):
-        """Test config includes indexing section."""
+    def test_config_has_tool_settings(self, cli_runner_isolated):
+        """Test config includes tool settings."""
         _create_config()
         content = (Path.cwd() / "kurt.toml").read_text()
-        assert "[indexing]" in content
-        assert "llm_model" in content
-        assert "embedding_model" in content
+        assert "[tool.batch-llm]" in content
+        assert "[tool.batch-embedding]" in content
 
     def test_config_skips_if_exists(self, cli_runner_isolated):
         """Test config creation skips if file exists."""
@@ -235,21 +230,21 @@ class TestCreateWorkflowsDir:
         assert example.read_text() == "custom content"
 
 
-class TestCreateContentDir:
-    """Tests for _create_content_dir function."""
+class TestCreateSourcesDir:
+    """Tests for _create_sources_dir function."""
 
-    def test_creates_content_directory(self, cli_runner_isolated):
-        """Test content directory creation."""
-        assert _create_content_dir() is True
-        assert (Path.cwd() / "content").is_dir()
+    def test_creates_sources_directory(self, cli_runner_isolated):
+        """Test sources directory creation."""
+        assert _create_sources_dir() is True
+        assert (Path.cwd() / "sources").is_dir()
 
     def test_idempotent(self, cli_runner_isolated):
-        """Test content directory creation is idempotent."""
-        (Path.cwd() / "content").mkdir()
-        (Path.cwd() / "content" / "file.txt").write_text("test")
+        """Test sources directory creation is idempotent."""
+        (Path.cwd() / "sources").mkdir()
+        (Path.cwd() / "sources" / "file.txt").write_text("test")
 
-        assert _create_content_dir() is True
-        assert (Path.cwd() / "content" / "file.txt").exists()
+        assert _create_sources_dir() is True
+        assert (Path.cwd() / "sources" / "file.txt").exists()
 
 
 class TestUpdateGitignore:
@@ -264,7 +259,7 @@ class TestUpdateGitignore:
         """Test .gitignore has Kurt-specific entries."""
         _update_gitignore()
         content = (Path.cwd() / ".gitignore").read_text()
-        assert "content/" in content
+        assert "sources/" in content
         assert ".dolt/noms/" in content
         assert ".env" in content
 
@@ -275,16 +270,16 @@ class TestUpdateGitignore:
         _update_gitignore()
         content = (Path.cwd() / ".gitignore").read_text()
         assert "*.pyc" in content
-        assert "content/" in content
+        assert "sources/" in content
 
     def test_gitignore_no_duplicates(self, cli_runner_isolated):
         """Test .gitignore doesn't add duplicates."""
-        (Path.cwd() / ".gitignore").write_text("content/\n.env\n")
+        (Path.cwd() / ".gitignore").write_text("sources/\n.env\n")
 
         _update_gitignore()
         content = (Path.cwd() / ".gitignore").read_text()
-        # Count occurrences of content/
-        assert content.count("content/") == 1
+        # Count occurrences of sources/
+        assert content.count("sources/") == 1
 
 
 class TestInitFunctionalNoDolt:
@@ -330,14 +325,14 @@ class TestInitFunctionalNoDolt:
 
             assert (Path.cwd() / "workflows").is_dir()
 
-    def test_init_no_dolt_creates_content(self, cli_runner_isolated):
-        """Test init --no-dolt creates content directory."""
+    def test_init_no_dolt_creates_sources(self, cli_runner_isolated):
+        """Test init --no-dolt creates sources directory."""
         with patch("kurt.cli.init.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
 
             cli_runner_isolated.invoke(init, ["--no-dolt"])
 
-            assert (Path.cwd() / "content").is_dir()
+            assert (Path.cwd() / "sources").is_dir()
 
     def test_init_no_dolt_creates_gitignore(self, cli_runner_isolated):
         """Test init --no-dolt creates .gitignore."""
@@ -361,14 +356,17 @@ class TestInitPartialDetection:
         assert result.exit_code == 1
         assert "already initialized" in result.output.lower() or "existing project" in result.output.lower()
 
-    def test_detects_missing_components(self, cli_runner_isolated):
-        """Test init reports missing components."""
+    def test_git_only_proceeds_with_init(self, cli_runner_isolated):
+        """Test init proceeds when only Git exists (no Dolt)."""
         (Path.cwd() / ".git").mkdir()  # Only Git
 
-        result = cli_runner_isolated.invoke(init, [])
+        with patch("kurt.cli.init.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
 
-        assert result.exit_code == 1
-        assert "missing" in result.output.lower()
+            result = cli_runner_isolated.invoke(init, ["--no-dolt"])
+
+            # Should proceed successfully since Dolt doesn't exist
+            assert result.exit_code == 0
 
     def test_force_completes_partial(self, cli_runner_isolated):
         """Test init --force completes partial setup."""
