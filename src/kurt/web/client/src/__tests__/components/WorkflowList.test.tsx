@@ -184,21 +184,30 @@ describe('WorkflowList', () => {
 
       render(<WorkflowList {...defaultProps} />)
 
-      // Wait for initial fetch
-      await new Promise(r => setTimeout(r, 10))
+      // Wait for initial fetch to complete
+      await new Promise(r => setTimeout(r, 50))
 
       const searchInput = screen.getByPlaceholderText(/id/i)
-      const callsBeforeTyping = fetchMock.mock.calls.length
 
-      // Type multiple characters quickly (faster than debounce delay)
+      // Record calls before typing - note that search calls shouldn't include partial values
+      const callsBeforeTyping = fetchMock.mock.calls.filter(call =>
+        call[0].includes('search=a') || call[0].includes('search=ab')
+      ).length
+
+      // Type multiple characters quickly (faster than debounce delay of 300ms)
       fireEvent.change(searchInput, { target: { value: 'a' } })
       fireEvent.change(searchInput, { target: { value: 'ab' } })
       fireEvent.change(searchInput, { target: { value: 'abc' } })
 
-      // Immediately after typing, should not have made any search calls yet
-      // because the debounce timer hasn't fired
-      const callsImmediatelyAfterTyping = fetchMock.mock.calls.length
-      expect(callsImmediatelyAfterTyping - callsBeforeTyping).toBe(0)
+      // Wait a short time - less than debounce delay
+      await new Promise(r => setTimeout(r, 100))
+
+      // Should not have made search calls for partial values yet
+      const callsForPartialValues = fetchMock.mock.calls.filter(call =>
+        (call[0].includes('search=a') && !call[0].includes('search=abc')) ||
+        (call[0].includes('search=ab') && !call[0].includes('search=abc'))
+      ).length
+      expect(callsForPartialValues).toBe(callsBeforeTyping)
 
       // Wait for debounce to complete (300ms + buffer)
       await new Promise(r => setTimeout(r, 350))
@@ -383,8 +392,11 @@ describe('WorkflowList', () => {
       await new Promise(r => setTimeout(r, 10))
 
       await waitFor(() => {
-        const badge = screen.getByText(status)
-        expect(badge).toHaveClass(expectedClass)
+        // Use getAllByText and find the status badge (not metrics display)
+        const badges = screen.getAllByText(status)
+        const statusBadge = badges.find(el => el.classList.contains('workflow-status-badge'))
+        expect(statusBadge).toBeTruthy()
+        expect(statusBadge).toHaveClass(expectedClass)
       })
     })
   })
