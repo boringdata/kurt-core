@@ -3864,6 +3864,186 @@ html {
   overflow: auto;
 }
 
+/* Distinct Config Section Styles */
+.workflow-config-section {
+  border-left: 3px solid var(--color-info);
+}
+
+.workflow-config-header {
+  background: rgba(var(--color-info-rgb, 59, 130, 246), 0.05);
+}
+
+.workflow-config-header:hover {
+  background: rgba(var(--color-info-rgb, 59, 130, 246), 0.1);
+}
+
+/* Distinct Output Section Styles */
+.workflow-output-section {
+  border-left: 3px solid var(--color-success);
+}
+
+.workflow-output-header {
+  background: rgba(var(--color-success-rgb, 34, 197, 94), 0.05);
+}
+
+.workflow-output-header:hover {
+  background: rgba(var(--color-success-rgb, 34, 197, 94), 0.1);
+}
+
+.workflow-output-section.workflow-output-error {
+  border-left-color: var(--color-error);
+}
+
+/* Section Icon */
+.workflow-section-icon {
+  font-size: 11px;
+  flex-shrink: 0;
+  margin-right: 2px;
+}
+
+/* Step Logs in Timeline */
+.workflow-step-logs {
+  grid-column: 1 / -1;
+  margin-top: var(--space-2);
+  padding: var(--space-2);
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+}
+
+.workflow-step-logs-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-2);
+  padding-bottom: var(--space-1);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.workflow-step-logs-title {
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-primary);
+}
+
+.workflow-step-logs-count {
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+}
+
+.workflow-step-logs-loading,
+.workflow-step-logs-empty {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  text-align: center;
+  padding: var(--space-2);
+}
+
+.workflow-step-logs-list {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.workflow-step-log-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 11px;
+}
+
+.workflow-step-log-entry:last-child {
+  border-bottom: none;
+}
+
+.workflow-step-log-icon {
+  width: 14px;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+.workflow-step-log-running .workflow-step-log-icon,
+.workflow-step-log-progress .workflow-step-log-icon {
+  color: var(--color-warning);
+}
+
+.workflow-step-log-completed .workflow-step-log-icon,
+.workflow-step-log-success .workflow-step-log-icon {
+  color: var(--color-success);
+}
+
+.workflow-step-log-failed .workflow-step-log-icon,
+.workflow-step-log-error .workflow-step-log-icon {
+  color: var(--color-error);
+}
+
+.workflow-step-log-time {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+  width: 60px;
+}
+
+.workflow-step-log-message {
+  flex: 1;
+  color: var(--color-text-primary);
+  word-break: break-word;
+}
+
+.workflow-step-log-progress {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+  background: var(--color-bg-tertiary);
+  padding: 1px 4px;
+  border-radius: var(--radius-sm);
+}
+
+/* Timeline row expansion styles */
+.workflow-timeline-row {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: var(--space-2);
+  align-items: center;
+  padding: var(--space-1) 0;
+}
+
+.workflow-timeline-row-expanded {
+  grid-template-rows: auto auto;
+}
+
+.workflow-timeline-label {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.workflow-timeline-label:hover {
+  color: var(--color-text-primary);
+}
+
+.workflow-timeline-expand-icon {
+  font-size: 8px;
+  color: var(--color-text-tertiary);
+  transition: transform 0.15s ease;
+}
+
+.workflow-timeline-expand-icon.expanded {
+  transform: rotate(90deg);
+}
+
+.workflow-timeline-bar {
+  cursor: pointer;
+}
+
+.workflow-timeline-bar:hover {
+  opacity: 0.85;
+}
+
 .workflow-step-box {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);

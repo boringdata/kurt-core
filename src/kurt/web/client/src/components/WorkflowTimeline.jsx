@@ -1,4 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+
+const apiBase = import.meta.env.VITE_API_URL || ''
+const apiUrl = (path) => `${apiBase}${path}`
 
 /**
  * WorkflowTimeline - Horizontal timeline visualization for workflow steps
@@ -7,6 +10,7 @@ import { useState } from 'react'
  * - Step name on the left
  * - Duration bar proportional to execution time
  * - Status color coding (green=success, red=error, blue=running, gray=pending)
+ * - Click to expand and see step log events
  * - Hover tooltip with details (duration_ms, output_count, errors)
  */
 
@@ -109,7 +113,68 @@ function StepTooltip({ step, position }) {
   )
 }
 
-function TimelineBar({ step, maxDuration, onHover, onLeave }) {
+function StepLogs({ events, isLoading }) {
+  if (isLoading) {
+    return (
+      <div className="workflow-step-logs">
+        <div className="workflow-step-logs-loading">Loading events...</div>
+      </div>
+    )
+  }
+
+  if (!events || events.length === 0) {
+    return (
+      <div className="workflow-step-logs">
+        <div className="workflow-step-logs-empty">No events recorded</div>
+      </div>
+    )
+  }
+
+  const formatTime = (timestamp) => {
+    if (!timestamp) return ''
+    const date = new Date(timestamp)
+    return date.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  }
+
+  const getEventIcon = (status) => {
+    switch (status) {
+      case 'completed':
+      case 'success':
+        return '✓'
+      case 'failed':
+      case 'error':
+        return '✗'
+      case 'running':
+      case 'progress':
+        return '▸'
+      default:
+        return '○'
+    }
+  }
+
+  return (
+    <div className="workflow-step-logs">
+      <div className="workflow-step-logs-header">
+        <span className="workflow-step-logs-title">Step Events</span>
+        <span className="workflow-step-logs-count">{events.length} events</span>
+      </div>
+      <div className="workflow-step-logs-list">
+        {events.map((event, idx) => (
+          <div key={event.id || idx} className={`workflow-step-log-entry workflow-step-log-${event.status || 'info'}`}>
+            <span className="workflow-step-log-icon">{getEventIcon(event.status)}</span>
+            <span className="workflow-step-log-time">{formatTime(event.created_at)}</span>
+            <span className="workflow-step-log-message">{event.message || event.status}</span>
+            {event.current != null && event.total != null && (
+              <span className="workflow-step-log-progress">{event.current}/{event.total}</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function TimelineBar({ step, maxDuration, onHover, onLeave, isExpanded, onToggle, events, isLoadingEvents }) {
   const statusColor = getStatusColor(step)
   const duration = step.duration_ms || 0
   const widthPercent = maxDuration > 0 ? Math.max((duration / maxDuration) * 100, 2) : 2
@@ -123,8 +188,21 @@ function TimelineBar({ step, maxDuration, onHover, onLeave }) {
   }
 
   return (
-    <div className="workflow-timeline-row">
-      <div className="workflow-timeline-label" title={step.name}>
+    <div className={`workflow-timeline-row ${isExpanded ? 'workflow-timeline-row-expanded' : ''}`}>
+      <div
+        className="workflow-timeline-label"
+        title={step.name}
+        onClick={onToggle}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onToggle()
+          }
+        }}
+      >
+        <span className={`workflow-timeline-expand-icon ${isExpanded ? 'expanded' : ''}`}>▶</span>
         {formatStepName(step.name)}
       </div>
       <div className="workflow-timeline-bar-container">
@@ -133,20 +211,67 @@ function TimelineBar({ step, maxDuration, onHover, onLeave }) {
           style={{ width: `${widthPercent}%` }}
           onMouseEnter={handleMouseEnter}
           onMouseLeave={onLeave}
-          role="progressbar"
+          onClick={onToggle}
+          role="button"
+          tabIndex={0}
           aria-valuenow={duration}
           aria-valuemax={maxDuration}
           aria-label={`${formatStepName(step.name)}: ${formatDuration(duration)}`}
+          aria-expanded={isExpanded}
         />
         <span className="workflow-timeline-duration">{formatDuration(duration)}</span>
       </div>
+      {isExpanded && (
+        <StepLogs events={events} isLoading={isLoadingEvents} />
+      )}
     </div>
   )
 }
 
-export default function WorkflowTimeline({ steps = [] }) {
+export default function WorkflowTimeline({ steps = [], workflowId }) {
   const [hoveredStep, setHoveredStep] = useState(null)
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 })
+  const [expandedSteps, setExpandedSteps] = useState(new Set())
+  const [stepEvents, setStepEvents] = useState({})
+  const [loadingSteps, setLoadingSteps] = useState(new Set())
+
+  // Fetch events for a specific step
+  const fetchStepEvents = useCallback(async (stepName) => {
+    if (!workflowId || stepEvents[stepName] || loadingSteps.has(stepName)) return
+
+    setLoadingSteps(prev => new Set([...prev, stepName]))
+    try {
+      const response = await fetch(apiUrl(`/api/workflows/${workflowId}/logs?step_id=${encodeURIComponent(stepName)}&limit=50`))
+      if (response.ok) {
+        const data = await response.json()
+        setStepEvents(prev => ({ ...prev, [stepName]: data.events || [] }))
+      }
+    } catch (err) {
+      console.error('Failed to fetch step events:', err)
+      setStepEvents(prev => ({ ...prev, [stepName]: [] }))
+    } finally {
+      setLoadingSteps(prev => {
+        const next = new Set(prev)
+        next.delete(stepName)
+        return next
+      })
+    }
+  }, [workflowId, stepEvents, loadingSteps])
+
+  // Handle step expansion toggle
+  const handleToggleStep = useCallback((stepName) => {
+    setExpandedSteps(prev => {
+      const next = new Set(prev)
+      if (next.has(stepName)) {
+        next.delete(stepName)
+      } else {
+        next.add(stepName)
+        // Fetch events when expanding
+        fetchStepEvents(stepName)
+      }
+      return next
+    })
+  }, [fetchStepEvents])
 
   if (!steps || steps.length === 0) {
     return null
@@ -195,6 +320,10 @@ export default function WorkflowTimeline({ steps = [] }) {
             maxDuration={maxDuration}
             onHover={handleHover}
             onLeave={handleLeave}
+            isExpanded={expandedSteps.has(step.name)}
+            onToggle={() => handleToggleStep(step.name)}
+            events={stepEvents[step.name]}
+            isLoadingEvents={loadingSteps.has(step.name)}
           />
         ))}
       </div>

@@ -706,9 +706,9 @@ function WorkflowConfigSection({ workflow, liveStatus }) {
   }
 
   return (
-    <div className="workflow-collapsible-section">
+    <div className="workflow-collapsible-section workflow-config-section">
       <div
-        className="workflow-section-header"
+        className="workflow-section-header workflow-config-header"
         onClick={() => setIsExpanded(!isExpanded)}
         role="button"
         tabIndex={0}
@@ -722,6 +722,7 @@ function WorkflowConfigSection({ workflow, liveStatus }) {
         <span className="workflow-section-toggle">
           {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         </span>
+        <span className="workflow-section-icon">⚙</span>
         <span className="workflow-section-label">Config</span>
         <span className="workflow-section-preview">{previewText}</span>
       </div>
@@ -829,9 +830,9 @@ function WorkflowOutputSection({ workflow, liveStatus }) {
   }
 
   return (
-    <div className={`workflow-collapsible-section ${hasErrors ? 'workflow-output-error' : ''}`}>
+    <div className={`workflow-collapsible-section workflow-output-section ${hasErrors ? 'workflow-output-error' : ''}`}>
       <div
-        className="workflow-section-header"
+        className="workflow-section-header workflow-output-header"
         onClick={() => setIsExpanded(!isExpanded)}
         role="button"
         tabIndex={0}
@@ -845,6 +846,7 @@ function WorkflowOutputSection({ workflow, liveStatus }) {
         <span className="workflow-section-toggle">
           {isExpanded || shouldAutoExpand ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         </span>
+        <span className="workflow-section-icon">📊</span>
         <span className="workflow-section-label">Output</span>
         <span className={`workflow-section-preview ${hasErrors ? 'workflow-output-error-text' : ''}`}>
           {previewText}
@@ -1280,7 +1282,7 @@ export default function WorkflowRow({
             />
           )}
           {liveStatus?.steps?.length > 0 && (
-            <WorkflowTimeline steps={liveStatus.steps} />
+            <WorkflowTimeline steps={liveStatus.steps} workflowId={workflow.workflow_uuid} />
           )}
           <WorkflowOutputSection workflow={workflow} liveStatus={liveStatus} />
         </div>
