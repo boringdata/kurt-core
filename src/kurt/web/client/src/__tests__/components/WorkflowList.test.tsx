@@ -184,21 +184,28 @@ describe('WorkflowList', () => {
 
       render(<WorkflowList {...defaultProps} />)
 
+      // Wait for initial fetch
       await new Promise(r => setTimeout(r, 10))
 
       const searchInput = screen.getByPlaceholderText(/id/i)
+      const callsBeforeTyping = fetchMock.mock.calls.length
 
-      // Type multiple characters quickly
+      // Type multiple characters quickly (faster than debounce delay)
       fireEvent.change(searchInput, { target: { value: 'a' } })
       fireEvent.change(searchInput, { target: { value: 'ab' } })
       fireEvent.change(searchInput, { target: { value: 'abc' } })
 
-      const callsBeforeDebounce = fetchMock.mock.calls.length
+      // Immediately after typing, should not have made any search calls yet
+      // because the debounce timer hasn't fired
+      const callsImmediatelyAfterTyping = fetchMock.mock.calls.length
+      expect(callsImmediatelyAfterTyping - callsBeforeTyping).toBe(0)
 
-      await new Promise(r => setTimeout(r, 10))
+      // Wait for debounce to complete (300ms + buffer)
+      await new Promise(r => setTimeout(r, 350))
 
-      // Should not have made many additional calls due to debouncing
-      expect(fetchMock.mock.calls.length - callsBeforeDebounce).toBeLessThanOrEqual(1)
+      // Should have made exactly one call with the final search value
+      const searchCalls = fetchMock.mock.calls.filter(call => call[0].includes('search=abc'))
+      expect(searchCalls.length).toBe(1)
     })
   })
 

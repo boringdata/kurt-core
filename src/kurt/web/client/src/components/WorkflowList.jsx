@@ -34,12 +34,16 @@ const PAGE_SIZE = 50
 const apiBase = import.meta.env.VITE_API_URL || ''
 const apiUrl = (path) => `${apiBase}${path}`
 
+// Debounce delay for search input (in milliseconds)
+const SEARCH_DEBOUNCE_MS = 300
+
 export default function WorkflowList({ onAttachWorkflow, onOpenWorkflowDetail }) {
   const [workflows, setWorkflows] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [statusFilter, setStatusFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('')
   const [expandedId, setExpandedId] = useState(null)
   const [error, setError] = useState(null)
   const [hasMore, setHasMore] = useState(false)
@@ -56,7 +60,7 @@ export default function WorkflowList({ onAttachWorkflow, onOpenWorkflowDetail })
       const params = new URLSearchParams()
       if (statusFilter) params.set('status', statusFilter)
       if (typeFilter) params.set('workflow_type', typeFilter)
-      if (searchQuery) params.set('search', searchQuery)
+      if (debouncedSearchQuery) params.set('search', debouncedSearchQuery)
       params.set('limit', String(PAGE_SIZE))
       params.set('offset', String(loadMore ? offset : 0))
 
@@ -88,7 +92,7 @@ export default function WorkflowList({ onAttachWorkflow, onOpenWorkflowDetail })
     } finally {
       setIsLoading(false)
     }
-  }, [statusFilter, typeFilter, searchQuery, offset])
+  }, [statusFilter, typeFilter, debouncedSearchQuery, offset])
 
   // Determine if any workflow is actively running
   const hasRunningWorkflows = useMemo(() => {
@@ -115,10 +119,18 @@ export default function WorkflowList({ onAttachWorkflow, onOpenWorkflowDetail })
   // Track polling interval changes for logging (debug)
   const prevIntervalRef = useRef(pollingInterval)
 
+  // Debounce search query to avoid excessive API calls
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery)
+    }, SEARCH_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+  }, [searchQuery])
+
   // Initial fetch and adaptive polling
   useEffect(() => {
     fetchWorkflows(false)
-  }, [statusFilter, typeFilter, searchQuery])
+  }, [statusFilter, typeFilter, debouncedSearchQuery])
 
   // Adaptive polling based on workflow state
   useEffect(() => {
@@ -134,7 +146,7 @@ export default function WorkflowList({ onAttachWorkflow, onOpenWorkflowDetail })
     prevIntervalRef.current = pollingInterval
 
     return () => clearInterval(interval)
-  }, [pollingInterval, statusFilter, typeFilter, searchQuery, fetchWorkflows])
+  }, [pollingInterval, statusFilter, typeFilter, debouncedSearchQuery, fetchWorkflows])
 
   // Auto-expand workflows with error status on first load
   useEffect(() => {
