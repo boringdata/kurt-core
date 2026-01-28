@@ -30,7 +30,8 @@ class DocumentIdRegistry(TimestampMixin, TenantMixin, SQLModel, table=True):
     Maps URLs to stable document IDs. Used as the primary key registry
     that other workflow tables (map_documents, fetch_documents) reference.
 
-    The document_id is a 12-character hex string derived from URL hash.
+    The document_id is typically a 12-character hex string from URL hash,
+    matching the format used in map_documents and fetch_documents tables.
     """
 
     __tablename__ = "document_id_registry"
@@ -39,7 +40,7 @@ class DocumentIdRegistry(TimestampMixin, TenantMixin, SQLModel, table=True):
         Index("idx_registry_url_hash", "url_hash", unique=True),
     )
 
-    document_id: str = Field(primary_key=True, max_length=12)
+    document_id: str = Field(primary_key=True)
     url: str = Field(max_length=2048)
     url_hash: str = Field(max_length=64, index=True)
     source_type: str = Field(default="url", max_length=20)
