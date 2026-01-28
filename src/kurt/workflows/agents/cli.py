@@ -419,7 +419,6 @@ def track_tool_cmd():
     """
     import os
     import sys
-    from datetime import datetime
 
     workflow_id = os.environ.get("KURT_PARENT_WORKFLOW_ID")
     if not workflow_id:
@@ -467,8 +466,9 @@ def track_tool_cmd():
                     result_summary = str(tool_result)[:300]
 
         # Write directly to Dolt step_events for real-time monitoring
-        from kurt.db.dolt import DoltDB
         from pathlib import Path
+
+        from kurt.db.dolt import DoltDB
 
         db = DoltDB(Path.cwd())
         metadata_json = json.dumps({

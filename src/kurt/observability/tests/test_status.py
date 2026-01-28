@@ -6,8 +6,6 @@ import json
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock
 
-import pytest
-
 from kurt.observability.status import (
     _build_steps_array,
     _calculate_duration,

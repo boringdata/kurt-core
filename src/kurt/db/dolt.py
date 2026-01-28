@@ -728,8 +728,8 @@ class DoltDB:
 
     def _execute_embedded(self, sql: str, params: list[Any] | None = None, max_retries: int = 5) -> QueryResult:
         """Execute statement using dolt CLI with retry for concurrent access."""
-        import time
         import random
+        import time
 
         interpolated = self._interpolate_params(sql, params)
 

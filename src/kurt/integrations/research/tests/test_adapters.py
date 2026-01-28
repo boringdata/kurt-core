@@ -530,8 +530,6 @@ class TestApifyAdapter:
 
     def test_keyword_filtering(self):
         """Test keyword filtering in fetch_signals."""
-        adapter = ApifyAdapter({"api_token": "test"})
-
         # Test signal that matches keywords
         signal_match = Signal(
             signal_id="test_1",
