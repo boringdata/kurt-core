@@ -332,7 +332,9 @@ def _flatten_toml(data: dict, prefix: str = "") -> dict:
                                     result[flat_key] = param_value
                             else:
                                 # Fallback: store as TOOL.X_PARAM
-                                result[f"TOOL.{tool_name.upper()}_{param_name.upper()}"] = param_value
+                                result[f"TOOL.{tool_name.upper()}_{param_name.upper()}"] = (
+                                    param_value
+                                )
                     else:
                         # Direct value under [tool]
                         result[f"TOOL_{tool_name.upper()}"] = tool_config
@@ -506,9 +508,29 @@ def create_config(
     return config
 
 
+def _get_active_config_file() -> Path | None:
+    """Get the path to the active config file (kurt.toml or kurt.config).
+
+    Returns the path to the first config file that exists, in order:
+    1. kurt.toml (current format)
+    2. kurt.config (legacy format)
+
+    Returns None if neither exists.
+    """
+    toml_file = get_config_file_path()  # kurt.toml
+    if toml_file.exists():
+        return toml_file
+
+    legacy_file = Path.cwd() / "kurt.config"
+    if legacy_file.exists():
+        return legacy_file
+
+    return None
+
+
 def config_file_exists() -> bool:
-    """Check if kurt.config configuration file exists."""
-    return get_config_file_path().exists()
+    """Check if a kurt configuration file exists (kurt.toml or kurt.config)."""
+    return _get_active_config_file() is not None
 
 
 def get_config_or_default() -> KurtConfig:
@@ -527,12 +549,16 @@ def get_config_or_default() -> KurtConfig:
 
 def update_config(config: KurtConfig) -> None:
     """
-    Update the kurt.config file with new configuration values.
+    Update the configuration file with new values.
+
+    Writes to the active config file (kurt.toml or kurt.config if it exists).
+    If neither exists, creates a new kurt.toml file.
 
     Args:
         config: KurtConfig instance to save
     """
-    config_file = get_config_file_path()
+    # Use the active config file (or default to kurt.toml for new files)
+    config_file = _get_active_config_file() or get_config_file_path()
 
     # Write updated config
     with open(config_file, "w") as f:
@@ -819,7 +845,7 @@ def validate_config(config: KurtConfig) -> list[str]:
     db_dir = db_path.parent
     if not db_dir.exists():
         issues.append(
-            f"Database directory does not exist: {db_dir}\n" f"Create it with: mkdir -p {db_dir}"
+            f"Database directory does not exist: {db_dir}\nCreate it with: mkdir -p {db_dir}"
         )
 
     # Check if sources directory exists
@@ -842,8 +868,7 @@ def validate_config(config: KurtConfig) -> list[str]:
     rules_path = config.get_absolute_rules_path()
     if not rules_path.exists():
         issues.append(
-            f"Rules directory does not exist: {rules_path}\n"
-            f"Create it with: mkdir -p {rules_path}"
+            f"Rules directory does not exist: {rules_path}\nCreate it with: mkdir -p {rules_path}"
         )
 
     # Validate LLM model format

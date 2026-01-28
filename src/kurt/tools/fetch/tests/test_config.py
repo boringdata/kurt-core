@@ -142,33 +142,34 @@ class TestHasEmbeddingApiKeys:
 class TestFetchConfigFromFile:
     """Test FetchConfig loading from kurt.config file."""
 
-    def test_from_config_fetch_engine(self, tmp_project):
+    def test_from_config_fetch_engine(self, tmp_project_with_legacy_config):
         """Test loading FETCH.FETCH_ENGINE from config file."""
-        from kurt.config.base import get_config_file_path
+        from pathlib import Path
 
-        config_file = get_config_file_path()
+        # Use legacy config file for dot-notation support
+        config_file = Path.cwd() / "kurt.config"
         with open(config_file, "a") as f:
             f.write("FETCH.FETCH_ENGINE=tavily\n")
 
         config = FetchConfig.from_config("fetch")
         assert config.fetch_engine == "tavily"
 
-    def test_from_config_batch_size(self, tmp_project):
+    def test_from_config_batch_size(self, tmp_project_with_legacy_config):
         """Test loading FETCH.BATCH_SIZE from config file."""
-        from kurt.config.base import get_config_file_path
+        from pathlib import Path
 
-        config_file = get_config_file_path()
+        config_file = Path.cwd() / "kurt.config"
         with open(config_file, "a") as f:
             f.write("FETCH.BATCH_SIZE=15\n")
 
         config = FetchConfig.from_config("fetch")
         assert config.batch_size == 15
 
-    def test_from_config_multiple_params(self, tmp_project):
+    def test_from_config_multiple_params(self, tmp_project_with_legacy_config):
         """Test loading multiple FETCH params from config file."""
-        from kurt.config.base import get_config_file_path
+        from pathlib import Path
 
-        config_file = get_config_file_path()
+        config_file = Path.cwd() / "kurt.config"
         with open(config_file, "a") as f:
             f.write("FETCH.FETCH_ENGINE=firecrawl\n")
             f.write("FETCH.BATCH_SIZE=50\n")
@@ -179,11 +180,11 @@ class TestFetchConfigFromFile:
         assert config.batch_size == 50
         assert config.embedding_max_chars == 2000
 
-    def test_from_config_with_overrides(self, tmp_project):
+    def test_from_config_with_overrides(self, tmp_project_with_legacy_config):
         """Test from_config with CLI overrides."""
-        from kurt.config.base import get_config_file_path
+        from pathlib import Path
 
-        config_file = get_config_file_path()
+        config_file = Path.cwd() / "kurt.config"
         with open(config_file, "a") as f:
             f.write("FETCH.FETCH_ENGINE=trafilatura\n")
             f.write("FETCH.BATCH_SIZE=10\n")

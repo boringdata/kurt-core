@@ -5,7 +5,6 @@ from typing import Optional
 import pytest
 
 from kurt.config import ConfigParam, ModelConfig, StepConfig
-from kurt.config.base import get_config_file_path
 
 
 class TestConfigParam:
@@ -69,10 +68,8 @@ class TestStepConfigBasic:
         assert config.value == 100
         assert config.name == "custom"
 
-    def test_step_config_from_config_module_only(self, tmp_project):
+    def test_step_config_from_config_module_only(self, config_file):
         """Test from_config with module-only name (workflow config)."""
-        config_file = get_config_file_path()
-
         with open(config_file, "a") as f:
             f.write("TEST.VALUE=100\n")
             f.write('TEST.NAME="custom"\n')
@@ -85,10 +82,8 @@ class TestStepConfigBasic:
         assert config.value == 100
         assert config.name == "custom"
 
-    def test_step_config_from_config_module_step(self, tmp_project):
+    def test_step_config_from_config_module_step(self, config_file):
         """Test from_config with module.step name (step config)."""
-        config_file = get_config_file_path()
-
         with open(config_file, "a") as f:
             f.write("TEST.MODEL.VALUE=100\n")
             f.write('TEST.MODEL.NAME="custom"\n')
@@ -101,10 +96,8 @@ class TestStepConfigBasic:
         assert config.value == 100
         assert config.name == "custom"
 
-    def test_step_config_from_config_with_overrides(self, tmp_project):
+    def test_step_config_from_config_with_overrides(self, config_file):
         """Test from_config with overrides."""
-        config_file = get_config_file_path()
-
         with open(config_file, "a") as f:
             f.write("TEST.VALUE=100\n")
             f.write('TEST.NAME="from_config"\n')
@@ -127,10 +120,8 @@ class TestStepConfigBasic:
         config = TestConfig.from_config("test")
         assert config.llm_model == "openai/gpt-4o-mini"
 
-    def test_step_config_step_specific_overrides_fallback(self, tmp_project):
+    def test_step_config_step_specific_overrides_fallback(self, config_file):
         """Test step-specific config overrides fallback."""
-        config_file = get_config_file_path()
-
         with open(config_file, "a") as f:
             f.write('TEST.MODEL.LLM_MODEL="anthropic/claude-3-haiku"\n')
 
@@ -144,10 +135,8 @@ class TestStepConfigBasic:
 class TestStepConfigTypeCoercion:
     """Test type coercion in StepConfig."""
 
-    def test_type_coercion_int(self, tmp_project):
+    def test_type_coercion_int(self, config_file):
         """Test StepConfig coerces string to int."""
-        config_file = get_config_file_path()
-
         with open(config_file, "a") as f:
             f.write("TEST.COUNT=42\n")
 
@@ -158,10 +147,8 @@ class TestStepConfigTypeCoercion:
         assert config.count == 42
         assert isinstance(config.count, int)
 
-    def test_type_coercion_float(self, tmp_project):
+    def test_type_coercion_float(self, config_file):
         """Test StepConfig coerces string to float."""
-        config_file = get_config_file_path()
-
         with open(config_file, "a") as f:
             f.write("TEST.EPS=0.25\n")
 
@@ -172,10 +159,8 @@ class TestStepConfigTypeCoercion:
         assert config.eps == 0.25
         assert isinstance(config.eps, float)
 
-    def test_type_coercion_bool(self, tmp_project):
+    def test_type_coercion_bool(self, config_file):
         """Test StepConfig coerces string to bool."""
-        config_file = get_config_file_path()
-
         with open(config_file, "a") as f:
             f.write("TEST.ENABLED=true\n")
             f.write("TEST.DISABLED=false\n")
@@ -201,10 +186,8 @@ class TestStepConfigTypeCoercion:
 class TestStepConfigValidation:
     """Test validation constraints in StepConfig."""
 
-    def test_validation_ge(self, tmp_project):
+    def test_validation_ge(self, config_file):
         """Test StepConfig validates ge constraint."""
-        config_file = get_config_file_path()
-
         with open(config_file, "a") as f:
             f.write("TEST.VALUE=-1\n")
 
@@ -214,10 +197,8 @@ class TestStepConfigValidation:
         with pytest.raises(ValueError, match="must be >= 0"):
             TestConfig.from_config("test")
 
-    def test_validation_le(self, tmp_project):
+    def test_validation_le(self, config_file):
         """Test StepConfig validates le constraint."""
-        config_file = get_config_file_path()
-
         with open(config_file, "a") as f:
             f.write("TEST.VALUE=200\n")
 
@@ -276,10 +257,8 @@ class TestStepConfigHelpers:
 class TestWorkflowConfigs:
     """Test realistic workflow config scenarios."""
 
-    def test_map_config_workflow_level(self, tmp_project):
+    def test_map_config_workflow_level(self, config_file):
         """Test MapConfig-style workflow config."""
-        config_file = get_config_file_path()
-
         with open(config_file, "a") as f:
             f.write("MAP.MAX_PAGES=500\n")
             f.write("MAP.DRY_RUN=true\n")
@@ -294,10 +273,8 @@ class TestWorkflowConfigs:
         assert config.max_depth is None  # Not set, uses default
         assert config.dry_run is True
 
-    def test_map_discovery_step_level(self, tmp_project):
+    def test_map_discovery_step_level(self, config_file):
         """Test step-level config within a workflow."""
-        config_file = get_config_file_path()
-
         with open(config_file, "a") as f:
             f.write("MAP.DISCOVERY.MAX_DEPTH=3\n")
             f.write("MAP.DISCOVERY.TIMEOUT=60\n")
@@ -339,10 +316,8 @@ class TestWorkflowConfigs:
 class TestWorkflowFallback:
     """Test workflow_fallback feature for step configs."""
 
-    def test_step_inherits_from_workflow(self, tmp_project):
+    def test_step_inherits_from_workflow(self, config_file):
         """Test step config inherits value from workflow config."""
-        config_file = get_config_file_path()
-
         # Set workflow-level config only
         with open(config_file, "a") as f:
             f.write("MAP.MAX_DEPTH=5\n")
@@ -355,10 +330,8 @@ class TestWorkflowFallback:
         assert config.max_depth == 5  # Inherited from MAP.MAX_DEPTH
         assert config.timeout == 30  # Default (not in config)
 
-    def test_step_overrides_workflow(self, tmp_project):
+    def test_step_overrides_workflow(self, config_file):
         """Test step-specific config overrides workflow config."""
-        config_file = get_config_file_path()
-
         # Set both workflow and step level
         with open(config_file, "a") as f:
             f.write("MAP.MAX_DEPTH=5\n")
@@ -380,10 +353,8 @@ class TestWorkflowFallback:
         config = ExtractStepConfig.from_config("fetch.extract")
         assert config.llm_model == "openai/gpt-4o-mini"  # Falls back to global
 
-    def test_workflow_fallback_priority(self, tmp_project):
+    def test_workflow_fallback_priority(self, config_file):
         """Test fallback priority: step > workflow > global > default."""
-        config_file = get_config_file_path()
-
         with open(config_file, "a") as f:
             f.write("FETCH.FETCH_ENGINE=httpx\n")  # Workflow level
 
@@ -397,10 +368,8 @@ class TestWorkflowFallback:
         config = ExtractStepConfig.from_config("fetch.extract")
         assert config.fetch_engine == "httpx"  # Workflow level wins over global
 
-    def test_no_workflow_fallback_ignores_workflow(self, tmp_project):
+    def test_no_workflow_fallback_ignores_workflow(self, config_file):
         """Test that without workflow_fallback, workflow config is ignored."""
-        config_file = get_config_file_path()
-
         with open(config_file, "a") as f:
             f.write("MAP.MAX_DEPTH=5\n")
 

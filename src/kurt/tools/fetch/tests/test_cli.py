@@ -192,7 +192,11 @@ class TestFetchCommand:
                 result = invoke_cli(
                     cli_runner,
                     fetch_cmd,
-                    ["--urls", "https://example.com/article,https://example.com/other", "--dry-run"],
+                    [
+                        "--urls",
+                        "https://example.com/article,https://example.com/other",
+                        "--dry-run",
+                    ],
                 )
                 assert_cli_success(result)
 

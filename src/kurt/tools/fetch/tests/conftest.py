@@ -51,3 +51,29 @@ def tool_context_with_dolt(tmp_dolt_project):
     return ToolContext(
         settings={"project_root": str(repo_path)},
     )
+
+
+@pytest.fixture
+def tmp_project_with_legacy_config(tmp_project):
+    """
+    Wrap tmp_project to use legacy kurt.config format.
+
+    This allows tests to use dot-notation keys like FETCH.FETCH_ENGINE=tavily
+    which are not valid in TOML format but supported in the legacy format.
+
+    Yields:
+        Path: The temp project path
+    """
+    # Convert kurt.toml to kurt.config (legacy format)
+    # This allows dot-notation keys in tests
+    toml_file = tmp_project / "kurt.toml"
+    legacy_file = tmp_project / "kurt.config"
+
+    if toml_file.exists():
+        # Copy the content to legacy format
+        content = toml_file.read_text()
+        legacy_file.write_text(content)
+        # Remove the TOML file so load_config() uses the legacy file
+        toml_file.unlink()
+
+    yield tmp_project
