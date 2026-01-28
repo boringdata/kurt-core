@@ -416,7 +416,7 @@ class TestFetchToolExecution:
             }
 
         with patch.object(tool, "_fetch_single_url", side_effect=mock_fetch):
-            with patch("kurt.tools.fetch.httpx.AsyncClient") as mock_client_class:
+            with patch("kurt.tools.fetch.tool.httpx.AsyncClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client.__aenter__ = AsyncMock(return_value=mock_client)
                 mock_client.__aexit__ = AsyncMock(return_value=None)
@@ -460,7 +460,7 @@ class TestFetchToolExecution:
             }
 
         with patch.object(tool, "_fetch_single_url", side_effect=mock_fetch):
-            with patch("kurt.tools.fetch.httpx.AsyncClient") as mock_client_class:
+            with patch("kurt.tools.fetch.tool.httpx.AsyncClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client.__aenter__ = AsyncMock(return_value=mock_client)
                 mock_client.__aexit__ = AsyncMock(return_value=None)
@@ -498,7 +498,7 @@ class TestFetchToolExecution:
             }
 
         with patch.object(tool, "_fetch_single_url", side_effect=mock_fetch):
-            with patch("kurt.tools.fetch.httpx.AsyncClient") as mock_client_class:
+            with patch("kurt.tools.fetch.tool.httpx.AsyncClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client.__aenter__ = AsyncMock(return_value=mock_client)
                 mock_client.__aexit__ = AsyncMock(return_value=None)
@@ -554,7 +554,7 @@ class TestFetchToolExecution:
         )
 
         with patch.object(tool, "_fetch_single_url", side_effect=mock_fetch):
-            with patch("kurt.tools.fetch.httpx.AsyncClient") as mock_client_class:
+            with patch("kurt.tools.fetch.tool.httpx.AsyncClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client.__aenter__ = AsyncMock(return_value=mock_client)
                 mock_client.__aexit__ = AsyncMock(return_value=None)
@@ -588,7 +588,7 @@ class TestFetchToolExecution:
             }
 
         with patch.object(tool, "_fetch_single_url", side_effect=mock_fetch):
-            with patch("kurt.tools.fetch.httpx.AsyncClient") as mock_client_class:
+            with patch("kurt.tools.fetch.tool.httpx.AsyncClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client.__aenter__ = AsyncMock(return_value=mock_client)
                 mock_client.__aexit__ = AsyncMock(return_value=None)
@@ -628,7 +628,7 @@ class TestFetchToolExecution:
             }
 
         with patch.object(tool, "_fetch_single_url", side_effect=mock_fetch):
-            with patch("kurt.tools.fetch.httpx.AsyncClient") as mock_client_class:
+            with patch("kurt.tools.fetch.tool.httpx.AsyncClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client.__aenter__ = AsyncMock(return_value=mock_client)
                 mock_client.__aexit__ = AsyncMock(return_value=None)
@@ -723,7 +723,7 @@ class TestFetchToolPersistence:
         )
 
         with patch.object(tool, "_fetch_single_url", side_effect=mock_fetch):
-            with patch("kurt.tools.fetch.httpx.AsyncClient") as mock_client_class:
+            with patch("kurt.tools.fetch.tool.httpx.AsyncClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client.__aenter__ = AsyncMock(return_value=mock_client)
                 mock_client.__aexit__ = AsyncMock(return_value=None)

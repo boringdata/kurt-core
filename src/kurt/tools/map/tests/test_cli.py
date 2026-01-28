@@ -94,9 +94,9 @@ class TestMapCommand:
             return [{"url": "https://example.com/page1", "source_type": "page", "depth": 0}]
 
         # Mock discover_from_crawl in map module (where it's actually called)
-        with patch("kurt.tools.map.discover_from_crawl", new=mock_crawl):
+        with patch("kurt.tools.map.tool.discover_from_crawl", new=mock_crawl):
             # Also mock discover_from_sitemap to verify it's NOT called
-            with patch("kurt.tools.map.discover_from_sitemap") as mock_sitemap:
+            with patch("kurt.tools.map.tool.discover_from_sitemap") as mock_sitemap:
                 mock_sitemap.side_effect = Exception("sitemap should not be tried")
 
                 result = cli_runner.invoke(

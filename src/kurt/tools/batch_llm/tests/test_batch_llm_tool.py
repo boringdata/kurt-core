@@ -361,7 +361,7 @@ class TestBatchLLMProcessor:
         async def mock_call_openai(*args, **kwargs):
             return "Summary text", 10, 5, 0.001
 
-        with patch("kurt.tools.batch_llm.call_openai", mock_call_openai):
+        with patch("kurt.tools.batch_llm.tool.call_openai", mock_call_openai):
             with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
                 events: list[dict[str, Any]] = []
 
@@ -406,7 +406,7 @@ class TestBatchLLMProcessor:
                 raise Exception("API Error")
             return "Summary", 10, 5, 0.001
 
-        with patch("kurt.tools.batch_llm.call_openai", mock_call_with_errors):
+        with patch("kurt.tools.batch_llm.tool.call_openai", mock_call_with_errors):
             with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
                 processor = BatchLLMProcessor(
                     config=sample_config,
@@ -437,7 +437,7 @@ class TestBatchLLMProcessor:
 
         inputs = [BatchLLMInput(row={"content": "test"})]
 
-        with patch("kurt.tools.batch_llm.call_openai", mock_with_rate_limit):
+        with patch("kurt.tools.batch_llm.tool.call_openai", mock_with_rate_limit):
             with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
                 processor = BatchLLMProcessor(
                     config=sample_config,
@@ -464,7 +464,7 @@ class TestBatchLLMProcessor:
                 return "Success", 10, 5, 0.001
             raise QuotaExceededError("Quota exceeded")
 
-        with patch("kurt.tools.batch_llm.call_openai", mock_with_quota):
+        with patch("kurt.tools.batch_llm.tool.call_openai", mock_with_quota):
             with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
                 # Use concurrency=1 to ensure sequential processing
                 config = BatchLLMConfig(
@@ -528,7 +528,7 @@ class TestBatchLLMTool:
         async def mock_call(*args, **kwargs):
             return "Summarized text", 10, 5, 0.001
 
-        with patch("kurt.tools.batch_llm.call_openai", mock_call):
+        with patch("kurt.tools.batch_llm.tool.call_openai", mock_call):
             with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
                 tool = BatchLLMTool()
                 params = BatchLLMParams(inputs=sample_inputs, config=sample_config)
@@ -588,7 +588,7 @@ class TestBatchLLMTool:
                 "reasoning": "Happy words",
             }, 15, 10, 0.002
 
-        with patch("kurt.tools.batch_llm.call_openai", mock_call):
+        with patch("kurt.tools.batch_llm.tool.call_openai", mock_call):
             with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
                 tool = BatchLLMTool()
                 config = BatchLLMConfig(
@@ -616,7 +616,7 @@ class TestBatchLLMTool:
         async def mock_call(*args, **kwargs):
             return "Test", 10, 5, 0.001
 
-        with patch("kurt.tools.batch_llm.call_openai", mock_call):
+        with patch("kurt.tools.batch_llm.tool.call_openai", mock_call):
             with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
                 tool = BatchLLMTool()
                 params = BatchLLMParams(inputs=sample_inputs, config=sample_config)
@@ -651,7 +651,7 @@ class TestErrorHandling:
         async def mock_call(*args, **kwargs):
             return "Test", 10, 5, 0.001
 
-        with patch("kurt.tools.batch_llm.call_openai", mock_call):
+        with patch("kurt.tools.batch_llm.tool.call_openai", mock_call):
             with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
                 tool = BatchLLMTool()
                 inputs = [
@@ -674,7 +674,7 @@ class TestErrorHandling:
         async def mock_timeout(*args, **kwargs):
             raise asyncio.TimeoutError()
 
-        with patch("kurt.tools.batch_llm.call_openai", mock_timeout):
+        with patch("kurt.tools.batch_llm.tool.call_openai", mock_timeout):
             with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
                 tool = BatchLLMTool()
                 params = BatchLLMParams(inputs=sample_inputs, config=sample_config)
@@ -698,7 +698,7 @@ class TestErrorHandling:
                 raise Exception("Error on even")
             return "Success", 10, 5, 0.001
 
-        with patch("kurt.tools.batch_llm.call_openai", mock_partial):
+        with patch("kurt.tools.batch_llm.tool.call_openai", mock_partial):
             with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
                 tool = BatchLLMTool()
                 inputs = [BatchLLMInput(row={"content": f"test{i}"}) for i in range(4)]
