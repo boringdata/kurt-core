@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Copy, ChevronDown, ChevronRight } from 'lucide-react'
+import WorkflowTimeline from './WorkflowTimeline'
 
 const apiBase = import.meta.env.VITE_API_URL || ''
 const apiUrl = (path) => `${apiBase}${path}`
@@ -962,6 +963,7 @@ export default function WorkflowRow({
   onAttach,
   onCancel,
   onRetry,
+  onOpenDetail,
   getStatusBadgeClass,
   depth = 0,
 }) {
@@ -1152,6 +1154,16 @@ export default function WorkflowRow({
           </span>
         )}
         <div className="workflow-actions" onClick={(e) => e.stopPropagation()}>
+          {onOpenDetail && (
+            <button
+              type="button"
+              className="workflow-action-btn workflow-open-detail"
+              onClick={onOpenDetail}
+              title="Open in panel"
+            >
+              ↗
+            </button>
+          )}
           {isRunning && (
             <>
               <button
@@ -1266,6 +1278,9 @@ export default function WorkflowRow({
               onCancel={onCancel}
               depth={depth}
             />
+          )}
+          {liveStatus?.steps?.length > 0 && (
+            <WorkflowTimeline steps={liveStatus.steps} />
           )}
           <WorkflowOutputSection workflow={workflow} liveStatus={liveStatus} />
         </div>

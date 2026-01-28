@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import WorkflowRow from './WorkflowRow'
+import WorkflowMetrics from './WorkflowMetrics'
 
 // Polling intervals in milliseconds
 const POLLING_FAST = 2000   // When workflows are running
@@ -33,7 +34,7 @@ const PAGE_SIZE = 50
 const apiBase = import.meta.env.VITE_API_URL || ''
 const apiUrl = (path) => `${apiBase}${path}`
 
-export default function WorkflowList({ onAttachWorkflow }) {
+export default function WorkflowList({ onAttachWorkflow, onOpenWorkflowDetail }) {
   const [workflows, setWorkflows] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [statusFilter, setStatusFilter] = useState('')
@@ -277,6 +278,8 @@ export default function WorkflowList({ onAttachWorkflow }) {
         </button>
       </div>
 
+      <WorkflowMetrics workflows={workflows} />
+
       <div className="workflow-list">
         {error && (
           <div className="workflow-list-error">
@@ -298,6 +301,7 @@ export default function WorkflowList({ onAttachWorkflow }) {
                 onAttach={() => handleAttach(workflow.workflow_uuid)}
                 onCancel={() => handleCancel(workflow.workflow_uuid)}
                 onRetry={() => handleRetry(workflow.workflow_uuid)}
+                onOpenDetail={() => onOpenWorkflowDetail?.(workflow.workflow_uuid)}
                 getStatusBadgeClass={getStatusBadgeClass}
               />
             ))}
