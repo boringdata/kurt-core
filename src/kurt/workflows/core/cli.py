@@ -200,13 +200,20 @@ def parse_inputs(inputs: tuple[str, ...]) -> dict[str, Any]:
     Returns:
         Dictionary of parsed inputs
 
+    Raises:
+        click.BadParameter: If any input is not in key=value format.
+
     Example:
         >>> parse_inputs(("topic=AI", 'tags=["a","b"]', "count=5"))
         {"topic": "AI", "tags": ["a", "b"], "count": 5}
     """
     result: dict[str, Any] = {}
     for inp in inputs:
+        if "=" not in inp:
+            raise click.BadParameter(f"Input must be in key=value format: {inp}")
         key, _, value = inp.partition("=")
+        key = key.strip()
+        value = value.strip()
         if not key:
             continue
         result[key] = parse_input_value(value)
