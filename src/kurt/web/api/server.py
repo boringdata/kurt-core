@@ -1280,25 +1280,9 @@ def api_git_show(path: str = Query(..., description="File path relative to repo 
 
 def _get_dolt_db():
     """Get a DoltDB instance for workflow queries."""
-    from pathlib import Path
+    from kurt.db.utils import get_dolt_db
 
-    from kurt.config import get_config_file_path
-    from kurt.db.dolt import DoltDB
-
-    try:
-        project_root = get_config_file_path().parent
-    except Exception:
-        project_root = Path.cwd()
-
-    dolt_path = os.environ.get("DOLT_PATH", ".")
-    path = Path(dolt_path)
-    if not path.is_absolute():
-        path = project_root / path
-
-    db = DoltDB(path)
-    if not db.exists():
-        return None
-    return db
+    return get_dolt_db(return_none_if_missing=True)
 
 
 def _normalize_workflow_status(dolt_status: str) -> str:

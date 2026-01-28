@@ -20,8 +20,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from kurt.config import get_config_file_path
-from kurt.db.dolt import DoltDB, check_schema_exists, init_observability_schema
+from kurt.config import get_config_file_path, get_project_root
+from kurt.db.dolt import DoltDB
+from kurt.db.utils import get_dolt_db
 from kurt.observability import WorkflowLifecycle
 from kurt.observability.tracking import track_event
 
@@ -131,28 +132,12 @@ def _cleanup_tool_tracking(settings_path: str, tool_log_path: str) -> tuple[int,
 
 def _get_project_root() -> str:
     """Get the project root directory."""
-    return str(get_config_file_path().parent)
+    return str(get_project_root())
 
 
 def _get_dolt_db(project_root: Path | None = None) -> DoltDB:
     """Get or initialize Dolt database for observability."""
-    if project_root is None:
-        project_root = Path(_get_project_root())
-
-    dolt_path = os.environ.get("DOLT_PATH", ".")
-    path = Path(dolt_path)
-    if not path.is_absolute():
-        path = project_root / path
-
-    db = DoltDB(path)
-    if not db.exists():
-        db.init()
-        init_observability_schema(db)
-    else:
-        schema_status = check_schema_exists(db)
-        if not all(schema_status.values()):
-            init_observability_schema(db)
-    return db
+    return get_dolt_db(project_root=project_root, init_schema=True)
 
 
 # Progress callback type for step events

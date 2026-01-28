@@ -252,6 +252,24 @@ def get_config_file_path() -> Path:
     return Path.cwd() / "kurt.toml"
 
 
+def get_project_root(project_root: str | Path | None = None) -> Path:
+    """Get the project root directory.
+
+    Consolidates the various _get_project_root() patterns in the codebase.
+
+    Args:
+        project_root: Optional explicit project root. If provided, it is
+            resolved to an absolute path and returned directly.
+            If None, the project root is derived from get_config_file_path().
+
+    Returns:
+        Absolute Path to the project root directory.
+    """
+    if project_root is not None:
+        return Path(project_root).resolve()
+    return get_config_file_path().parent
+
+
 def _load_toml(path: Path) -> dict:
     """Load TOML file, using tomllib (3.11+) or tomli (3.10)."""
     try:

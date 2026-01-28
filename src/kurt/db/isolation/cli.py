@@ -46,12 +46,9 @@ console = Console()
 
 def _get_dolt_db():
     """Get DoltDB instance for the current project."""
-    from kurt.config import get_config
-    from kurt.db.dolt import DoltDB
+    from kurt.db.utils import get_dolt_db
 
-    config = get_config()
-    dolt_path = config.get("DOLT_PATH", ".dolt")
-    return DoltDB(dolt_path)
+    return get_dolt_db()
 
 
 def _get_git_path() -> Path:

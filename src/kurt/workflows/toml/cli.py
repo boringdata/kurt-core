@@ -78,18 +78,9 @@ def _parse_input(input_str: str) -> tuple[str, Any]:
 
 def _get_dolt_db():
     """Get or create DoltDB instance."""
-    import os
+    from kurt.db.utils import get_dolt_db
 
-    # DOLT_PATH should point to the repo root (containing .dolt), not .dolt itself
-    dolt_path = os.environ.get("DOLT_PATH", ".")
-    from kurt.db.dolt import DoltDB
-
-    db = DoltDB(dolt_path)
-    if not db.exists():
-        console.print("[red]Error: Dolt database not initialized[/red]")
-        console.print("[dim]Run 'kurt init' to initialize the project[/dim]")
-        raise click.Abort()
-    return db
+    return get_dolt_db(error_if_missing=True)
 
 
 @click.command(name="run")

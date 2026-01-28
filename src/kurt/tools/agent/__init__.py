@@ -287,11 +287,9 @@ def _cleanup_temp_files(*paths: str) -> None:
 
 def _get_project_root() -> str:
     """Get the project root directory."""
-    # Try to find kurt.config in current or parent directories
-    from kurt.config import get_config_file_path
+    from kurt.config import get_project_root
 
-    config_path = get_config_file_path()
-    return str(config_path.parent)
+    return str(get_project_root())
 
 
 # ============================================================================

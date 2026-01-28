@@ -17,7 +17,9 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from kurt.db.dolt import DoltDB, check_schema_exists, init_observability_schema
+from kurt.config import get_project_root
+from kurt.db.dolt import DoltDB
+from kurt.db.utils import get_dolt_db
 from kurt.observability import WorkflowLifecycle
 from kurt.observability.tracking import track_event
 from kurt.tools.core.base import SubstepEvent
@@ -26,39 +28,15 @@ from kurt.tools.core.registry import execute_tool, get_tool
 
 
 def _get_project_root(project_root: str | None = None) -> Path:
-    if project_root:
-        return Path(project_root).resolve()
-    return Path.cwd().resolve()
+    return get_project_root(project_root)
 
 
 def _get_dolt_db(project_root: Path | None = None) -> DoltDB:
     """Get DoltDB client, initializing observability schema if needed.
 
     Uses get_database_client() to respect DATABASE_URL environment variable.
-
-    Args:
-        project_root: Optional project root (unused, kept for backwards compatibility).
     """
-    from kurt.db import get_database_client
-
-    db = get_database_client()
-
-    # For local/embedded mode, check if initialization is needed
-    if db.mode == "embedded":
-        if not db.exists():
-            db.init()
-            init_observability_schema(db)
-        else:
-            schema_status = check_schema_exists(db)
-            if not all(schema_status.values()):
-                init_observability_schema(db)
-    else:
-        # Server mode - check schema exists
-        schema_status = check_schema_exists(db)
-        if not all(schema_status.values()):
-            init_observability_schema(db)
-
-    return db
+    return get_dolt_db(use_database_client=True, init_schema=True)
 
 
 def _summarize_inputs(params: dict[str, Any]) -> dict[str, Any]:

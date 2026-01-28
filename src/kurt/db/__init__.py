@@ -26,6 +26,7 @@ from kurt.db.database import (
     init_database,
     managed_session,
 )
+from kurt.db.utils import get_dolt_db
 
 # Dolt client and schema
 from kurt.db.dolt import (
@@ -77,6 +78,7 @@ from kurt.cloud.tenant import (
 __all__ = [
     # Database client
     "get_database_client",
+    "get_dolt_db",
     "get_engine",
     "KurtCloudAuthError",
     # Session management
