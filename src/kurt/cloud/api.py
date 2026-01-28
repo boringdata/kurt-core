@@ -28,5 +28,3 @@ def get_auth_token() -> str:
         raise KurtCloudAuthError("Kurt Cloud session expired. Run 'kurt cloud login' to refresh.")
 
     return creds.access_token
-
-

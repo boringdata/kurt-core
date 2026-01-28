@@ -14,7 +14,7 @@ Usage:
         session.add(LLMTrace(...))
 """
 
-from kurt.db.cloud_api import KurtCloudAuthError
+from kurt.cloud.api import KurtCloudAuthError
 from kurt.db.database import (
     async_session_scope,
     dispose_async_resources,
