@@ -4320,6 +4320,44 @@ html {
   border-radius: var(--radius-sm);
 }
 
+/* Tool call event styles */
+.workflow-step-event-tool {
+  flex-wrap: wrap;
+  background: var(--color-bg-secondary);
+}
+
+.workflow-step-event-tool .workflow-step-event-icon {
+  color: var(--color-info);
+}
+
+.workflow-step-event-tool-detail {
+  width: 100%;
+  margin-top: var(--space-1);
+  margin-left: 22px;
+  padding: var(--space-1);
+  background: var(--color-bg-primary);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.workflow-step-event-tool-label {
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  font-weight: var(--font-medium);
+}
+
+.workflow-step-event-tool-code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  word-break: break-all;
+  white-space: pre-wrap;
+  background: transparent;
+}
+
 .workflow-step-children,
 .workflow-unassigned-children {
   margin-top: var(--space-2);

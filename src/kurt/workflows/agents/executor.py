@@ -31,6 +31,31 @@ from .registry import get_workflow_dir
 logger = logging.getLogger(__name__)
 
 
+def _get_kurt_executable() -> str:
+    """Get the absolute path to the kurt executable."""
+    import shutil
+    import sys
+
+    # First try to find kurt in PATH
+    kurt_path = shutil.which("kurt")
+    if kurt_path:
+        return kurt_path
+
+    # Try virtualenv bin directory
+    venv_kurt = Path(sys.prefix) / "bin" / "kurt"
+    if venv_kurt.exists():
+        return str(venv_kurt)
+
+    # Try project root .venv
+    project_root = get_config_file_path().parent
+    local_venv_kurt = project_root / ".venv" / "bin" / "kurt"
+    if local_venv_kurt.exists():
+        return str(local_venv_kurt)
+
+    # Fall back to "kurt" and hope it's in PATH when the hook runs
+    return "kurt"
+
+
 def _create_tool_tracking_settings() -> tuple[str, str]:
     """
     Create temp settings file with PostToolUse hook for tool call tracking.
@@ -42,6 +67,11 @@ def _create_tool_tracking_settings() -> tuple[str, str]:
     tool_log_fd, tool_log_path = tempfile.mkstemp(suffix=".jsonl", prefix="kurt_tools_")
     os.close(tool_log_fd)
 
+    # Get absolute path to kurt executable for the hook command
+    kurt_path = _get_kurt_executable()
+    # Hook command - workflow_id will be passed via KURT_PARENT_WORKFLOW_ID env var
+    hook_command = f"{kurt_path} workflow track-tool"
+
     # Create temp settings file with PostToolUse hook
     settings = {
         "hooks": {
@@ -51,7 +81,7 @@ def _create_tool_tracking_settings() -> tuple[str, str]:
                     "hooks": [
                         {
                             "type": "command",
-                            "command": "kurt agents track-tool",
+                            "command": hook_command,
                             "timeout": 5,
                         }
                     ],
@@ -482,12 +512,10 @@ def agent_execution_step(
 
     # Set up environment for subprocess
     env = os.environ.copy()
-    env["KURT_TOOL_LOG_FILE"] = tool_log_path
-    # Pass parent workflow ID and step name so child workflows can be nested
+    env["KURT_TOOL_LOG_FILE"] = tool_log_path  # Legacy, kept for backward compat
+    # Pass workflow ID for tool tracking and nested workflow support
     if run_id:
-        env["KURT_PARENT_WORKFLOW_ID"] = run_id
-        # For agent workflows, use "agent_execution" as the step name
-        # This allows frontend to group child workflows under the agent step
+        env["KURT_PARENT_WORKFLOW_ID"] = run_id  # Used by tool hook for real-time events
         env["KURT_PARENT_STEP_NAME"] = "agent_execution"
 
     # Add workflow directory to PYTHONPATH for custom tool imports

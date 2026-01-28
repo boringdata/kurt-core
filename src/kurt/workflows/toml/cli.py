@@ -1324,6 +1324,7 @@ from kurt.workflows.agents.cli import history_cmd as agents_history_cmd  # noqa:
 from kurt.workflows.agents.cli import init_cmd as agents_init_cmd  # noqa: E402
 from kurt.workflows.agents.cli import list_cmd as agents_list_cmd  # noqa: E402
 from kurt.workflows.agents.cli import show_cmd as agents_show_cmd  # noqa: E402
+from kurt.workflows.agents.cli import track_tool_cmd as agents_track_tool_cmd  # noqa: E402
 from kurt.workflows.agents.cli import validate_cmd as agents_validate_cmd  # noqa: E402
 
 workflow_group.add_command(agents_list_cmd, name="list")
@@ -1332,3 +1333,4 @@ workflow_group.add_command(agents_validate_cmd, name="validate")
 workflow_group.add_command(agents_history_cmd, name="history")
 workflow_group.add_command(agents_init_cmd, name="init")
 workflow_group.add_command(agents_create_cmd, name="create")
+workflow_group.add_command(agents_track_tool_cmd, name="track-tool")  # Hidden internal command

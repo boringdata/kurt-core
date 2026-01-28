@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import patch
 
 from click.testing import CliRunner
@@ -319,11 +320,11 @@ class TestRunCommand:
 class TestTrackToolCommand:
     """Tests for track-tool hidden command."""
 
-    def test_track_tool_no_env_var(self, cli_runner: CliRunner):
-        """Test track-tool exits silently when KURT_TOOL_LOG_FILE not set."""
+    def test_track_tool_no_workflow_id(self, cli_runner: CliRunner):
+        """Test track-tool exits silently when KURT_PARENT_WORKFLOW_ID not set."""
         from kurt.workflows.agents.cli import agents_group
 
-        # Without KURT_TOOL_LOG_FILE, command should exit 0
+        # Without KURT_PARENT_WORKFLOW_ID, command should exit 0
         result = cli_runner.invoke(
             agents_group,
             ["track-tool"],
@@ -331,46 +332,142 @@ class TestTrackToolCommand:
         )
         assert result.exit_code == 0
 
-    def test_track_tool_with_env_var(self, cli_runner: CliRunner, tmp_path):
-        """Test track-tool logs tool calls to file."""
+    def test_track_tool_writes_to_db(self, cli_runner: CliRunner):
+        """Test track-tool writes tool call events to Dolt database."""
         from kurt.workflows.agents.cli import agents_group
 
-        log_file = tmp_path / "tools.jsonl"
+        captured_calls = []
 
-        result = cli_runner.invoke(
-            agents_group,
-            ["track-tool"],
-            input='{"tool_name": "Bash", "tool_use_id": "tool-123"}',
-            env={"KURT_TOOL_LOG_FILE": str(log_file)},
-        )
+        class MockDoltDB:
+            def __init__(self, path):
+                pass
+
+            def execute(self, sql, params):
+                captured_calls.append({"sql": sql, "params": params})
+
+        with patch("kurt.db.dolt.DoltDB", MockDoltDB):
+            result = cli_runner.invoke(
+                agents_group,
+                ["track-tool"],
+                input='{"tool_name": "Bash", "tool_use_id": "tool-123", "tool_input": {"command": "echo hello"}}',
+                env={"KURT_PARENT_WORKFLOW_ID": "wf-abc-123"},
+            )
+
         assert result.exit_code == 0
+        assert len(captured_calls) == 1
 
-        # Verify file was written
-        assert log_file.exists()
-        content = log_file.read_text()
-        assert "Bash" in content
-        assert "tool-123" in content
+        # Verify SQL and params
+        call = captured_calls[0]
+        assert "INSERT INTO step_events" in call["sql"]
+        assert call["params"][0] == "wf-abc-123"  # run_id (workflow_id)
+        assert call["params"][1] == "agent_execution"  # step_id
+        assert call["params"][2] == "tool_call"  # substep
+        assert call["params"][3] == "completed"  # status
+        assert "Bash" in call["params"][4]  # message
+        assert "echo hello" in call["params"][4]  # input summary in message
 
-    def test_track_tool_appends(self, cli_runner: CliRunner, tmp_path):
-        """Test track-tool appends to existing file."""
+    def test_track_tool_extracts_input_summary(self, cli_runner: CliRunner):
+        """Test track-tool extracts correct input summary for different tool types."""
         from kurt.workflows.agents.cli import agents_group
 
-        log_file = tmp_path / "tools.jsonl"
-        log_file.write_text('{"tool_name": "Read", "tool_use_id": "1"}\n')
+        test_cases = [
+            ("Bash", {"command": "ls -la"}, "ls -la"),
+            ("Read", {"file_path": "/path/to/file.txt"}, "/path/to/file.txt"),
+            ("Write", {"file_path": "/output.txt"}, "/output.txt"),
+            ("Glob", {"pattern": "**/*.py"}, "**/*.py"),
+            ("Grep", {"pattern": "TODO"}, "TODO"),
+            ("WebFetch", {"url": "https://example.com"}, "https://example.com"),
+            ("WebSearch", {"query": "python docs"}, "python docs"),
+        ]
 
-        result = cli_runner.invoke(
-            agents_group,
-            ["track-tool"],
-            input='{"tool_name": "Write", "tool_use_id": "2"}',
-            env={"KURT_TOOL_LOG_FILE": str(log_file)},
-        )
+        for tool_name, tool_input, expected_summary in test_cases:
+            captured_calls = []
+
+            class MockDoltDB:
+                def __init__(self, path):
+                    pass
+
+                def execute(self, sql, params):
+                    captured_calls.append({"sql": sql, "params": params})
+
+            input_json = json.dumps({"tool_name": tool_name, "tool_input": tool_input})
+
+            with patch("kurt.db.dolt.DoltDB", MockDoltDB):
+                result = cli_runner.invoke(
+                    agents_group,
+                    ["track-tool"],
+                    input=input_json,
+                    env={"KURT_PARENT_WORKFLOW_ID": "wf-test"},
+                )
+
+            assert result.exit_code == 0, f"Failed for {tool_name}"
+            assert len(captured_calls) == 1, f"No DB call for {tool_name}"
+
+            # Verify input summary in message
+            message = captured_calls[0]["params"][4]
+            assert tool_name in message
+            assert expected_summary[:50] in message, f"Expected '{expected_summary}' in message for {tool_name}"
+
+    def test_track_tool_metadata_json(self, cli_runner: CliRunner):
+        """Test track-tool stores correct metadata in JSON format."""
+        from kurt.workflows.agents.cli import agents_group
+
+        captured_calls = []
+
+        class MockDoltDB:
+            def __init__(self, path):
+                pass
+
+            def execute(self, sql, params):
+                captured_calls.append({"sql": sql, "params": params})
+
+        input_data = {
+            "tool_name": "Read",
+            "tool_use_id": "read-456",
+            "tool_input": {"file_path": "/etc/hosts"},
+            "tool_result": "127.0.0.1 localhost",
+        }
+
+        with patch("kurt.db.dolt.DoltDB", MockDoltDB):
+            result = cli_runner.invoke(
+                agents_group,
+                ["track-tool"],
+                input=json.dumps(input_data),
+                env={"KURT_PARENT_WORKFLOW_ID": "wf-test"},
+            )
+
         assert result.exit_code == 0
+        assert len(captured_calls) == 1
 
-        # Verify both entries exist
-        content = log_file.read_text()
-        assert "Read" in content
-        assert "Write" in content
-        assert content.count("\n") == 2
+        # Parse and verify metadata JSON
+        metadata_json = captured_calls[0]["params"][5]
+        metadata = json.loads(metadata_json)
+        assert metadata["tool_name"] == "Read"
+        assert metadata["tool_use_id"] == "read-456"
+        assert metadata["input_summary"] == "/etc/hosts"
+        assert "127.0.0.1" in metadata["result_summary"]
+
+    def test_track_tool_handles_db_error(self, cli_runner: CliRunner):
+        """Test track-tool handles database errors gracefully."""
+        from kurt.workflows.agents.cli import agents_group
+
+        class MockDoltDB:
+            def __init__(self, path):
+                pass
+
+            def execute(self, sql, params):
+                raise Exception("Database connection failed")
+
+        with patch("kurt.db.dolt.DoltDB", MockDoltDB):
+            result = cli_runner.invoke(
+                agents_group,
+                ["track-tool"],
+                input='{"tool_name": "Bash"}',
+                env={"KURT_PARENT_WORKFLOW_ID": "wf-test"},
+            )
+
+        # Should still exit 0 (don't fail the Claude hook)
+        assert result.exit_code == 0
 
     def test_track_tool_hidden(self, cli_runner: CliRunner):
         """Test track-tool command is hidden from help."""

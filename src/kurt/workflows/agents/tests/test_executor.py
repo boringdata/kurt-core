@@ -26,10 +26,9 @@ class TestToolTrackingHelpers:
             assert "hooks" in settings
             assert "PostToolUse" in settings["hooks"]
             assert settings["hooks"]["PostToolUse"][0]["matcher"] == "*"
-            assert (
-                "kurt agents track-tool"
-                in settings["hooks"]["PostToolUse"][0]["hooks"][0]["command"]
-            )
+            # Hook command should use "kurt workflow track-tool"
+            hook_cmd = settings["hooks"]["PostToolUse"][0]["hooks"][0]["command"]
+            assert "workflow track-tool" in hook_cmd
 
             # Verify tool log file exists
             assert os.path.exists(tool_log_path)
@@ -43,6 +42,16 @@ class TestToolTrackingHelpers:
                 os.unlink(tool_log_path)
             except Exception:
                 pass
+
+    def test_get_kurt_executable_finds_path(self):
+        """Test _get_kurt_executable finds kurt in PATH or venv."""
+        from kurt.workflows.agents.executor import _get_kurt_executable
+
+        result = _get_kurt_executable()
+
+        # Should return a path (either from PATH or venv)
+        assert result is not None
+        assert "kurt" in result
 
     def test_cleanup_tool_tracking_counts_lines(self, tmp_path):
         """Test _cleanup_tool_tracking counts tool calls correctly."""
@@ -59,9 +68,13 @@ class TestToolTrackingHelpers:
             '{"tool_name": "Write", "tool_use_id": "3"}\n'
         )
 
-        count = _cleanup_tool_tracking(str(settings_path), str(tool_log_path))
+        count, details = _cleanup_tool_tracking(str(settings_path), str(tool_log_path))
 
         assert count == 3
+        assert len(details) == 3
+        assert details[0]["tool_name"] == "Bash"
+        assert details[1]["tool_name"] == "Read"
+        assert details[2]["tool_name"] == "Write"
         # Verify files were deleted
         assert not settings_path.exists()
         assert not tool_log_path.exists()
@@ -76,9 +89,10 @@ class TestToolTrackingHelpers:
         settings_path.write_text("{}")
         tool_log_path.write_text("")
 
-        count = _cleanup_tool_tracking(str(settings_path), str(tool_log_path))
+        count, details = _cleanup_tool_tracking(str(settings_path), str(tool_log_path))
 
         assert count == 0
+        assert details == []
 
     def test_cleanup_tool_tracking_missing_file(self, tmp_path):
         """Test _cleanup_tool_tracking handles missing files gracefully."""
@@ -87,9 +101,10 @@ class TestToolTrackingHelpers:
         settings_path = tmp_path / "nonexistent_settings.json"
         tool_log_path = tmp_path / "nonexistent_tools.jsonl"
 
-        # Should not raise, should return 0
-        count = _cleanup_tool_tracking(str(settings_path), str(tool_log_path))
+        # Should not raise, should return 0 and empty list
+        count, details = _cleanup_tool_tracking(str(settings_path), str(tool_log_path))
         assert count == 0
+        assert details == []
 
 
 class TestResolveTemplate:

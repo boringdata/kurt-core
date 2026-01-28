@@ -408,7 +408,7 @@ def track_tool_cmd():
     """
     Internal command called by PostToolUse hook.
 
-    Reads tool call JSON from stdin and appends to KURT_TOOL_LOG_FILE.
+    Writes tool call events directly to Dolt for real-time monitoring.
     This command is not meant to be called directly by users.
 
     Claude Code passes:
@@ -421,19 +421,18 @@ def track_tool_cmd():
     import sys
     from datetime import datetime
 
-    log_file = os.environ.get("KURT_TOOL_LOG_FILE")
-    if not log_file:
-        sys.exit(0)  # No tracking configured, skip silently
+    workflow_id = os.environ.get("KURT_PARENT_WORKFLOW_ID")
+    if not workflow_id:
+        sys.exit(0)  # No workflow context, skip silently
 
     try:
         data = json.load(sys.stdin)
+        tool_name = data.get("tool_name", "Unknown")
 
         # Extract tool input summary
         tool_input = data.get("tool_input", {})
         input_summary = None
         if isinstance(tool_input, dict):
-            # Extract key info based on tool type
-            tool_name = data.get("tool_name", "")
             if tool_name == "Bash":
                 input_summary = tool_input.get("command", "")[:200]
             elif tool_name == "Read":
@@ -456,23 +455,36 @@ def track_tool_cmd():
                         break
 
         # Extract result summary (truncate long results)
-        tool_result = data.get("tool_result", "")
+        tool_result = data.get("tool_result") or data.get("result") or data.get("output") or ""
         result_summary = None
         if tool_result:
             if isinstance(tool_result, str):
                 result_summary = tool_result[:300] if len(tool_result) > 300 else tool_result
             elif isinstance(tool_result, dict):
-                result_summary = str(tool_result)[:300]
+                if "content" in tool_result:
+                    result_summary = str(tool_result["content"])[:300]
+                else:
+                    result_summary = str(tool_result)[:300]
 
-        record = {
-            "tool_name": data.get("tool_name"),
+        # Write directly to Dolt step_events for real-time monitoring
+        from kurt.db.dolt import DoltDB
+        from pathlib import Path
+
+        db = DoltDB(Path.cwd())
+        metadata_json = json.dumps({
+            "tool_name": tool_name,
             "tool_use_id": data.get("tool_use_id"),
             "input_summary": input_summary,
             "result_summary": result_summary,
-            "timestamp": datetime.utcnow().isoformat(),
-        }
-        with open(log_file, "a") as f:
-            f.write(json.dumps(record) + "\n")
+        })
+        message = f"{tool_name}: {input_summary[:80] if input_summary else ''}"
+
+        db.execute(
+            """INSERT INTO step_events (run_id, step_id, substep, status, message, metadata_json)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            [workflow_id, "agent_execution", "tool_call", "completed", message, metadata_json]
+        )
+
     except Exception:
         pass  # Don't fail the hook, Claude should continue
 

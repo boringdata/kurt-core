@@ -321,16 +321,32 @@ function StepBox({
                 <div className="workflow-step-events-loading">Loading...</div>
               ) : events && events.length > 0 ? (
                 <div className="workflow-step-events-list">
-                  {events.map((event, idx) => (
-                    <div key={event.id || idx} className={`workflow-step-event workflow-step-event-${event.status || 'info'}`}>
-                      <span className="workflow-step-event-icon">{getEventIcon(event.status)}</span>
-                      <span className="workflow-step-event-time">{formatEventTime(event.created_at)}</span>
-                      <span className="workflow-step-event-message">{event.message || event.status}</span>
-                      {event.current != null && event.total != null && (
-                        <span className="workflow-step-event-progress">{event.current}/{event.total}</span>
-                      )}
-                    </div>
-                  ))}
+                  {events.map((event, idx) => {
+                    const isToolCall = event.substep === 'tool_call'
+                    const toolMeta = event.metadata || {}
+                    return (
+                      <div key={event.id || idx} className={`workflow-step-event workflow-step-event-${event.status || 'info'} ${isToolCall ? 'workflow-step-event-tool' : ''}`}>
+                        <span className="workflow-step-event-icon">{isToolCall ? '⚙' : getEventIcon(event.status)}</span>
+                        <span className="workflow-step-event-time">{formatEventTime(event.created_at)}</span>
+                        <span className="workflow-step-event-message">{event.message || event.status}</span>
+                        {event.current != null && event.total != null && (
+                          <span className="workflow-step-event-progress">{event.current}/{event.total}</span>
+                        )}
+                        {isToolCall && toolMeta.input_summary && (
+                          <div className="workflow-step-event-tool-detail">
+                            <span className="workflow-step-event-tool-label">Input:</span>
+                            <code className="workflow-step-event-tool-code">{toolMeta.input_summary}</code>
+                          </div>
+                        )}
+                        {isToolCall && toolMeta.result_summary && (
+                          <div className="workflow-step-event-tool-detail">
+                            <span className="workflow-step-event-tool-label">Output:</span>
+                            <code className="workflow-step-event-tool-code">{toolMeta.result_summary.length > 200 ? `${toolMeta.result_summary.slice(0, 200)}...` : toolMeta.result_summary}</code>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               ) : (
                 <div className="workflow-step-events-empty">No events recorded</div>
