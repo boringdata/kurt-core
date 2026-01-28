@@ -319,13 +319,13 @@ model = "openai/gpt-4o"
 
 [tool.batch-llm]
 model = "openai/gpt-4o-mini"
-max_concurrent = 50
+concurrency = 50
 
 [tool.batch-embedding]
 model = "openai/text-embedding-3-small"
 
 [tool.fetch]
-engine = "trafilatura"
+fetch_engine = "trafilatura"
 
 [telemetry]
 enabled = true
