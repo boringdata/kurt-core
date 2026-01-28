@@ -4173,6 +4173,49 @@ html {
   white-space: nowrap;
 }
 
+/* Step Details (from logs metadata) */
+.workflow-step-details {
+  margin-top: var(--space-2);
+  padding: var(--space-2);
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+}
+
+.workflow-step-details-header {
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-primary);
+  margin-bottom: var(--space-2);
+  padding-bottom: var(--space-1);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.workflow-step-details-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-1) var(--space-3);
+}
+
+.workflow-step-details-row {
+  display: contents;
+}
+
+.workflow-step-details-label {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+.workflow-step-details-value {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--color-text-primary);
+}
+
+.workflow-step-details-cost {
+  color: var(--color-violet);
+}
+
 /* Step Events (integrated in StepBox) */
 .workflow-step-events {
   margin-top: var(--space-2);

@@ -263,6 +263,53 @@ function StepBox({
             </div>
           )}
 
+          {/* Step details from logs metadata */}
+          {showLogs && logs?.length > 0 && logs[0]?.metadata && (
+            <div className="workflow-step-details">
+              <div className="workflow-step-details-header">Details</div>
+              <div className="workflow-step-details-grid">
+                {logs[0].tool && (
+                  <div className="workflow-step-details-row">
+                    <span className="workflow-step-details-label">Tool</span>
+                    <span className="workflow-step-details-value">{logs[0].tool}</span>
+                  </div>
+                )}
+                {logs[0].metadata.model && (
+                  <div className="workflow-step-details-row">
+                    <span className="workflow-step-details-label">Model</span>
+                    <span className="workflow-step-details-value">{logs[0].metadata.model}</span>
+                  </div>
+                )}
+                {logs[0].metadata.tokens_in != null && (
+                  <div className="workflow-step-details-row">
+                    <span className="workflow-step-details-label">Tokens In</span>
+                    <span className="workflow-step-details-value">{logs[0].metadata.tokens_in?.toLocaleString()}</span>
+                  </div>
+                )}
+                {logs[0].metadata.tokens_out != null && (
+                  <div className="workflow-step-details-row">
+                    <span className="workflow-step-details-label">Tokens Out</span>
+                    <span className="workflow-step-details-value">{logs[0].metadata.tokens_out?.toLocaleString()}</span>
+                  </div>
+                )}
+                {logs[0].metadata.cost_usd != null && (
+                  <div className="workflow-step-details-row">
+                    <span className="workflow-step-details-label">Cost</span>
+                    <span className="workflow-step-details-value workflow-step-details-cost">
+                      ${logs[0].metadata.cost_usd < 0.01 ? logs[0].metadata.cost_usd.toFixed(4) : logs[0].metadata.cost_usd.toFixed(2)}
+                    </span>
+                  </div>
+                )}
+                {logs[0].metadata.stop_reason && (
+                  <div className="workflow-step-details-row">
+                    <span className="workflow-step-details-label">Stop Reason</span>
+                    <span className="workflow-step-details-value">{logs[0].metadata.stop_reason}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Step events (from logs endpoint) */}
           {showLogs && (
             <div className="workflow-step-events">
@@ -288,20 +335,6 @@ function StepBox({
               ) : (
                 <div className="workflow-step-events-empty">No events recorded</div>
               )}
-            </div>
-          )}
-
-          {/* Legacy logs display */}
-          {showLogs && logs?.length > 0 && (
-            <div className="workflow-step-logs">
-              {logs.map((log, logIdx) => (
-                <div
-                  key={logIdx}
-                  className={`workflow-step-log ${log.level === 'error' ? 'log-error' : ''}`}
-                >
-                  {log.message}
-                </div>
-              ))}
             </div>
           )}
           {children}

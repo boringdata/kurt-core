@@ -410,9 +410,16 @@ def track_tool_cmd():
 
     Reads tool call JSON from stdin and appends to KURT_TOOL_LOG_FILE.
     This command is not meant to be called directly by users.
+
+    Claude Code passes:
+    - tool_name: The tool that was used (Bash, Read, Write, etc.)
+    - tool_use_id: Unique ID for this tool call
+    - tool_input: The input parameters passed to the tool
+    - tool_result: The result/output from the tool (may be truncated)
     """
     import os
     import sys
+    from datetime import datetime
 
     log_file = os.environ.get("KURT_TOOL_LOG_FILE")
     if not log_file:
@@ -420,9 +427,49 @@ def track_tool_cmd():
 
     try:
         data = json.load(sys.stdin)
+
+        # Extract tool input summary
+        tool_input = data.get("tool_input", {})
+        input_summary = None
+        if isinstance(tool_input, dict):
+            # Extract key info based on tool type
+            tool_name = data.get("tool_name", "")
+            if tool_name == "Bash":
+                input_summary = tool_input.get("command", "")[:200]
+            elif tool_name == "Read":
+                input_summary = tool_input.get("file_path", "")
+            elif tool_name == "Write":
+                input_summary = tool_input.get("file_path", "")
+            elif tool_name == "Edit":
+                input_summary = tool_input.get("file_path", "")
+            elif tool_name in ("Glob", "Grep"):
+                input_summary = tool_input.get("pattern", "")
+            elif tool_name == "WebFetch":
+                input_summary = tool_input.get("url", "")
+            elif tool_name == "WebSearch":
+                input_summary = tool_input.get("query", "")
+            else:
+                # Generic: try to get first string value
+                for v in tool_input.values():
+                    if isinstance(v, str) and v:
+                        input_summary = v[:100]
+                        break
+
+        # Extract result summary (truncate long results)
+        tool_result = data.get("tool_result", "")
+        result_summary = None
+        if tool_result:
+            if isinstance(tool_result, str):
+                result_summary = tool_result[:300] if len(tool_result) > 300 else tool_result
+            elif isinstance(tool_result, dict):
+                result_summary = str(tool_result)[:300]
+
         record = {
             "tool_name": data.get("tool_name"),
             "tool_use_id": data.get("tool_use_id"),
+            "input_summary": input_summary,
+            "result_summary": result_summary,
+            "timestamp": datetime.utcnow().isoformat(),
         }
         with open(log_file, "a") as f:
             f.write(json.dumps(record) + "\n")

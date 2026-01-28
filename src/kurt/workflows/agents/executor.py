@@ -67,21 +67,25 @@ def _create_tool_tracking_settings() -> tuple[str, str]:
     return settings_path, tool_log_path
 
 
-def _cleanup_tool_tracking(settings_path: str, tool_log_path: str) -> int:
+def _cleanup_tool_tracking(settings_path: str, tool_log_path: str) -> tuple[int, list[dict]]:
     """
-    Clean up temp files and return tool call count.
+    Clean up temp files and return tool call count and details.
 
     Args:
         settings_path: Path to temp settings file
         tool_log_path: Path to temp tool log file
 
     Returns:
-        Number of tool calls logged
+        Tuple of (tool_call_count, list of tool call details)
     """
-    tool_calls = 0
+    tool_calls = []
     try:
         with open(tool_log_path) as f:
-            tool_calls = sum(1 for _ in f)
+            for line in f:
+                try:
+                    tool_calls.append(json.loads(line.strip()))
+                except Exception:
+                    pass
     except Exception:
         pass
 
@@ -92,7 +96,7 @@ def _cleanup_tool_tracking(settings_path: str, tool_log_path: str) -> int:
         except Exception:
             pass
 
-    return tool_calls
+    return len(tool_calls), tool_calls
 
 
 def _get_project_root() -> str:
@@ -539,8 +543,22 @@ def agent_execution_step(
             env=env,
         )
 
-        # Get tool call count from hook logs (tracks ALL tools, not just web)
-        tool_calls = _cleanup_tool_tracking(settings_path, tool_log_path)
+        # Get tool call count and details from hook logs (tracks ALL tools, not just web)
+        tool_call_count, tool_call_details = _cleanup_tool_tracking(settings_path, tool_log_path)
+
+        # Emit tool call events for each tool used
+        if on_progress and tool_call_details:
+            for tc in tool_call_details:
+                on_progress({
+                    "substep": "tool_call",
+                    "status": "completed",
+                    "message": f"{tc.get('tool_name', 'Unknown')}: {tc.get('input_summary', '')[:100]}",
+                    "metadata": {
+                        "tool_name": tc.get("tool_name"),
+                        "input_summary": tc.get("input_summary"),
+                        "result_summary": tc.get("result_summary"),
+                    },
+                })
 
         # Parse JSON output if available
         output_data = {}
@@ -601,7 +619,7 @@ def agent_execution_step(
 
     except subprocess.TimeoutExpired:
         # Ensure cleanup on timeout
-        tool_calls = _cleanup_tool_tracking(settings_path, tool_log_path)
+        tool_call_count, _ = _cleanup_tool_tracking(settings_path, tool_log_path)
         stop_reason = f"max_time ({max_time}s) exceeded"
         turns = 0
         tokens_in = 0
@@ -632,7 +650,7 @@ def agent_execution_step(
 
     return {
         "turns": turns,
-        "tool_calls": tool_calls,
+        "tool_calls": tool_call_count,
         "tokens_in": tokens_in,
         "tokens_out": tokens_out,
         "cost_usd": cost,
