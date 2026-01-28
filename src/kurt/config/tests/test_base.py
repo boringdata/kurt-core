@@ -115,7 +115,7 @@ class TestConfigFileOperations:
     def test_get_config_file_path(self, tmp_project):
         """Test getting config file path."""
         config_path = get_config_file_path()
-        assert config_path.name == "kurt.config"
+        assert config_path.name == "kurt.toml"
         assert config_path.parent == Path.cwd()
 
     def test_config_exists_true(self, tmp_project):
@@ -146,7 +146,7 @@ class TestConfigFileOperations:
         content = config_file.read_text()
         assert 'PATH_DB=".kurt/kurt.sqlite"' in content
         assert 'PATH_SOURCES="sources"' in content
-        assert "TELEMETRY_ENABLED=True" in content
+        assert "TELEMETRY_ENABLED=true" in content
 
     def test_create_config_custom(self, tmp_project):
         """Test creating config with custom values."""
@@ -273,8 +273,8 @@ class TestBooleanTypeHandling:
         update_config(config)
 
         content = get_config_file_path().read_text()
-        assert "TELEMETRY_ENABLED=True" in content
-        assert 'TELEMETRY_ENABLED="True"' not in content
+        assert "TELEMETRY_ENABLED=true" in content
+        assert 'TELEMETRY_ENABLED="true"' not in content
 
         loaded = load_config()
         assert loaded.TELEMETRY_ENABLED is True
@@ -287,7 +287,7 @@ class TestBooleanTypeHandling:
         update_config(config)
 
         content = get_config_file_path().read_text()
-        assert "TELEMETRY_ENABLED=False" in content
+        assert "TELEMETRY_ENABLED=false" in content
 
         loaded = load_config()
         assert loaded.TELEMETRY_ENABLED is False

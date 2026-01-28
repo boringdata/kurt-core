@@ -125,7 +125,9 @@ class TestCheckDoltInitialized:
 
     def test_dolt_not_initialized(self, tmp_path: Path):
         """Test when Dolt is not initialized."""
-        result = check_dolt_initialized(tmp_path)
+        # Pass the .dolt path (which doesn't exist)
+        dolt_path = tmp_path / ".dolt"
+        result = check_dolt_initialized(dolt_path)
         assert result.status == CheckStatus.FAIL
         assert "not initialized" in result.message
 
@@ -134,15 +136,16 @@ class TestCheckDoltInitialized:
         dolt_dir = tmp_path / ".dolt"
         dolt_dir.mkdir()
         (dolt_dir / "noms").mkdir()
-        result = check_dolt_initialized(tmp_path)
+        # Pass the .dolt directory path as the function expects
+        result = check_dolt_initialized(dolt_dir)
         assert result.status == CheckStatus.PASS
 
     def test_dolt_corrupted(self, tmp_path: Path):
         """Test when Dolt directory exists but is corrupted."""
         dolt_dir = tmp_path / ".dolt"
         dolt_dir.mkdir()
-        # Missing noms directory
-        result = check_dolt_initialized(tmp_path)
+        # Missing noms directory - pass .dolt path
+        result = check_dolt_initialized(dolt_dir)
         assert result.status == CheckStatus.FAIL
         assert "corrupted" in result.message
 

@@ -494,10 +494,12 @@ def create_config(
         f.write('# EMBEDDING_API_BASE="http://localhost:8080/v1/"\n')
         f.write('# EMBEDDING_MODEL="nomic-embed-text"\n')
         f.write("\n# Telemetry Configuration\n")
-        # Write boolean as True/False (not "True"/"False" string)
-        f.write(f"TELEMETRY_ENABLED={config.TELEMETRY_ENABLED}\n")
+        # Write boolean as lowercase true/false for valid TOML
+        telemetry_val = "true" if config.TELEMETRY_ENABLED else "false"
+        f.write(f"TELEMETRY_ENABLED={telemetry_val}\n")
         f.write("\n# Cloud Auth Configuration\n")
-        f.write(f"CLOUD_AUTH={config.CLOUD_AUTH}\n")
+        cloud_auth_val = "true" if config.CLOUD_AUTH else "false"
+        f.write(f"CLOUD_AUTH={cloud_auth_val}\n")
         f.write("\n# Workspace Configuration\n")
         f.write(f'WORKSPACE_ID="{config.WORKSPACE_ID}"\n')
 
@@ -546,10 +548,12 @@ def update_config(config: KurtConfig) -> None:
         f.write(f'INGESTION_FETCH_ENGINE="{config.INGESTION_FETCH_ENGINE}"\n')
         f.write(f"MAX_CONCURRENT_INDEXING={config.MAX_CONCURRENT_INDEXING}\n")
         f.write("\n# Telemetry Configuration\n")
-        # Write boolean as True/False (not "True"/"False" string)
-        f.write(f"TELEMETRY_ENABLED={config.TELEMETRY_ENABLED}\n")
+        # Write boolean as lowercase true/false for valid TOML
+        telemetry_val = "true" if config.TELEMETRY_ENABLED else "false"
+        f.write(f"TELEMETRY_ENABLED={telemetry_val}\n")
         f.write("\n# Cloud Auth Configuration\n")
-        f.write(f"CLOUD_AUTH={config.CLOUD_AUTH}\n")
+        cloud_auth_val = "true" if config.CLOUD_AUTH else "false"
+        f.write(f"CLOUD_AUTH={cloud_auth_val}\n")
         f.write("\n# Workspace Configuration\n")
         if config.WORKSPACE_ID:
             f.write(f'WORKSPACE_ID="{config.WORKSPACE_ID}"\n')
