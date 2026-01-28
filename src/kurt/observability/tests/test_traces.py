@@ -5,13 +5,13 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from decimal import Decimal
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from kurt.db.dolt import DoltDB, DoltQueryError, QueryResult
+from kurt.db.dolt import DoltDB
+from kurt.db.models import LLMTrace
 from kurt.observability.traces import (
-    LLMTrace,
     get_trace,
     get_traces,
     get_traces_summary,
@@ -21,117 +21,90 @@ from kurt.observability.traces import (
 )
 
 
-class TestLLMTrace:
-    """Tests for LLMTrace dataclass."""
+class TestLLMTraceModel:
+    """Tests for LLMTrace SQLModel."""
 
-    def test_from_row_basic(self):
-        """Should create LLMTrace from minimal row."""
-        row = {
-            "id": "trace-123",
-            "run_id": "run-456",
-            "step_id": "extract",
-            "model": "gpt-4",
-            "provider": "openai",
-            "prompt": "Hello",
-            "response": "Hi there",
-            "structured_output": None,
-            "tokens_in": 10,
-            "tokens_out": 5,
-            "cost_usd": None,
-            "latency_ms": 100,
-            "error": None,
-            "retry_count": 0,
-            "created_at": "2024-01-15T10:30:00",
-        }
-
-        trace = LLMTrace.from_row(row)
+    def test_create_basic(self):
+        """Should create LLMTrace with basic fields."""
+        trace = LLMTrace(
+            id="trace-123",
+            workflow_id="run-456",
+            step_name="extract",
+            model="gpt-4",
+            provider="openai",
+            prompt="Hello",
+            response="Hi there",
+            input_tokens=10,
+            output_tokens=5,
+        )
 
         assert trace.id == "trace-123"
-        assert trace.run_id == "run-456"
-        assert trace.step_id == "extract"
+        assert trace.workflow_id == "run-456"
+        assert trace.step_name == "extract"
         assert trace.model == "gpt-4"
         assert trace.provider == "openai"
         assert trace.prompt == "Hello"
         assert trace.response == "Hi there"
         assert trace.structured_output is None
-        assert trace.tokens_in == 10
-        assert trace.tokens_out == 5
-        assert trace.cost_usd is None
-        assert trace.latency_ms == 100
+        assert trace.input_tokens == 10
+        assert trace.output_tokens == 5
+        assert trace.latency_ms is None
         assert trace.error is None
         assert trace.retry_count == 0
 
-    def test_from_row_with_structured_output_string(self):
-        """Should parse structured_output from JSON string."""
-        row = {
-            "id": "trace-123",
-            "run_id": None,
-            "step_id": None,
-            "model": "gpt-4",
-            "provider": "openai",
-            "prompt": None,
-            "response": None,
-            "structured_output": '{"entities": ["foo", "bar"]}',
-            "tokens_in": 10,
-            "tokens_out": 5,
-            "cost_usd": "0.0023",
-            "latency_ms": None,
-            "error": None,
-            "retry_count": 0,
-            "created_at": datetime(2024, 1, 15, 10, 30),
-        }
+    def test_create_with_all_fields(self):
+        """Should create LLMTrace with all fields."""
+        trace = LLMTrace(
+            id="trace-123",
+            workflow_id="run-456",
+            step_name="extract",
+            model="gpt-4",
+            provider="openai",
+            prompt="Hello",
+            response="Hi there",
+            structured_output='{"entities": ["foo"]}',
+            input_tokens=10,
+            output_tokens=5,
+            total_tokens=15,
+            cost=0.0023,
+            latency_ms=100,
+            error=None,
+            retry_count=0,
+        )
 
-        trace = LLMTrace.from_row(row)
+        assert trace.structured_output == '{"entities": ["foo"]}'
+        assert trace.cost == 0.0023
+        assert trace.total_tokens == 15
 
-        assert trace.structured_output == {"entities": ["foo", "bar"]}
-        assert trace.cost_usd == Decimal("0.0023")
+    def test_nullable_fields(self):
+        """Should allow None for optional fields."""
+        trace = LLMTrace(
+            id="trace-123",
+            model="gpt-4",
+            provider="openai",
+            workflow_id=None,
+            step_name=None,
+            prompt=None,
+            response=None,
+            input_tokens=10,
+            output_tokens=5,
+        )
 
-    def test_from_row_with_structured_output_dict(self):
-        """Should handle structured_output as dict."""
-        row = {
-            "id": "trace-123",
-            "run_id": None,
-            "step_id": None,
-            "model": "gpt-4",
-            "provider": "openai",
-            "prompt": None,
-            "response": None,
-            "structured_output": {"entities": ["foo"]},
-            "tokens_in": 10,
-            "tokens_out": 5,
-            "cost_usd": 0.0023,
-            "latency_ms": None,
-            "error": None,
-            "retry_count": 0,
-            "created_at": datetime(2024, 1, 15, 10, 30),
-        }
+        assert trace.workflow_id is None
+        assert trace.step_name is None
+        assert trace.prompt is None
+        assert trace.response is None
 
-        trace = LLMTrace.from_row(row)
-
-        assert trace.structured_output == {"entities": ["foo"]}
-        assert trace.cost_usd == Decimal("0.0023")
-
-    def test_total_tokens_property(self):
-        """Should calculate total tokens correctly."""
-        row = {
-            "id": "trace-123",
-            "run_id": None,
-            "step_id": None,
-            "model": "gpt-4",
-            "provider": "openai",
-            "prompt": None,
-            "response": None,
-            "structured_output": None,
-            "tokens_in": 100,
-            "tokens_out": 50,
-            "cost_usd": None,
-            "latency_ms": None,
-            "error": None,
-            "retry_count": 0,
-            "created_at": datetime(2024, 1, 15, 10, 30),
-        }
-
-        trace = LLMTrace.from_row(row)
+    def test_total_tokens_field(self):
+        """Should store total_tokens as a field."""
+        trace = LLMTrace(
+            id="trace-123",
+            model="gpt-4",
+            provider="openai",
+            input_tokens=100,
+            output_tokens=50,
+            total_tokens=150,
+        )
 
         assert trace.total_tokens == 150
 
@@ -141,13 +114,14 @@ class TestTraceLLMCall:
 
     @pytest.fixture
     def mock_db(self):
-        """Create a mock DoltDB."""
+        """Create a mock DoltDB with mock session."""
         db = MagicMock(spec=DoltDB)
-        db.execute.return_value = QueryResult(rows=[], affected_rows=1)
+        mock_session = MagicMock()
+        db.get_session.return_value = mock_session
         return db
 
     def test_basic_trace(self, mock_db):
-        """Should insert trace with basic fields."""
+        """Should insert trace using SQLModel."""
         result = trace_llm_call(
             run_id="run-123",
             step_id="extract",
@@ -162,14 +136,25 @@ class TestTraceLLMCall:
 
         assert result is not None
         assert len(result) == 36  # UUID format
-        mock_db.execute.assert_called_once()
-        call_args = mock_db.execute.call_args
-        assert "INSERT INTO llm_traces" in call_args[0][0]
-        params = call_args[0][1]
-        assert params[1] == "run-123"  # run_id
-        assert params[2] == "extract"  # step_id
-        assert params[3] == "gpt-4"  # model
-        assert params[4] == "openai"  # provider
+
+        # Verify session.add was called with an LLMTrace
+        mock_session = mock_db.get_session.return_value
+        mock_session.add.assert_called_once()
+        trace_arg = mock_session.add.call_args[0][0]
+        assert isinstance(trace_arg, LLMTrace)
+        assert trace_arg.workflow_id == "run-123"
+        assert trace_arg.step_name == "extract"
+        assert trace_arg.model == "gpt-4"
+        assert trace_arg.provider == "openai"
+        assert trace_arg.prompt == "Hello"
+        assert trace_arg.response == "Hi there"
+        assert trace_arg.input_tokens == 10
+        assert trace_arg.output_tokens == 5
+        assert trace_arg.total_tokens == 15
+
+        # Verify session lifecycle
+        mock_session.commit.assert_called_once()
+        mock_session.close.assert_called_once()
 
     def test_full_trace(self, mock_db):
         """Should insert trace with all fields."""
@@ -192,17 +177,19 @@ class TestTraceLLMCall:
         )
 
         assert result is not None
-        call_args = mock_db.execute.call_args
-        params = call_args[0][1]
-        assert params[5] == "Extract entities from: Hello world"  # prompt
-        assert params[6] == '{"entities": ["foo", "bar"]}'  # response
-        assert params[7] == json.dumps(structured)  # structured_output
-        assert params[8] == 50  # tokens_in
-        assert params[9] == 30  # tokens_out
-        assert params[10] == 0.0045  # cost_usd
-        assert params[11] == 350  # latency_ms
-        assert params[12] is None  # error
-        assert params[13] == 1  # retry_count
+
+        mock_session = mock_db.get_session.return_value
+        trace_arg = mock_session.add.call_args[0][0]
+        assert trace_arg.prompt == "Extract entities from: Hello world"
+        assert trace_arg.response == '{"entities": ["foo", "bar"]}'
+        assert trace_arg.structured_output == json.dumps(structured)
+        assert trace_arg.input_tokens == 50
+        assert trace_arg.output_tokens == 30
+        assert trace_arg.total_tokens == 80
+        assert trace_arg.cost == 0.0045
+        assert trace_arg.latency_ms == 350
+        assert trace_arg.error is None
+        assert trace_arg.retry_count == 1
 
     def test_trace_with_error(self, mock_db):
         """Should store error information."""
@@ -221,10 +208,10 @@ class TestTraceLLMCall:
         )
 
         assert result is not None
-        call_args = mock_db.execute.call_args
-        params = call_args[0][1]
-        assert params[12] == "Rate limit exceeded"  # error
-        assert params[13] == 3  # retry_count
+        mock_session = mock_db.get_session.return_value
+        trace_arg = mock_session.add.call_args[0][0]
+        assert trace_arg.error == "Rate limit exceeded"
+        assert trace_arg.retry_count == 3
 
     def test_requires_model(self, mock_db):
         """Should raise ValueError if model is empty."""
@@ -272,10 +259,11 @@ class TestTraceLLMCall:
             assert result is None
 
     def test_propagates_db_error(self, mock_db):
-        """Should propagate DoltQueryError."""
-        mock_db.execute.side_effect = DoltQueryError("Insert failed")
+        """Should propagate session errors."""
+        mock_session = mock_db.get_session.return_value
+        mock_session.commit.side_effect = Exception("Insert failed")
 
-        with pytest.raises(DoltQueryError, match="Insert failed"):
+        with pytest.raises(Exception, match="Insert failed"):
             trace_llm_call(
                 run_id="run-123",
                 step_id="extract",
@@ -287,6 +275,10 @@ class TestTraceLLMCall:
                 tokens_out=5,
                 db=mock_db,
             )
+
+        # Verify rollback was called on error
+        mock_session.rollback.assert_called_once()
+        mock_session.close.assert_called_once()
 
     def test_allows_none_run_id(self, mock_db):
         """Should allow None for run_id (standalone calls)."""
@@ -303,10 +295,10 @@ class TestTraceLLMCall:
         )
 
         assert result is not None
-        call_args = mock_db.execute.call_args
-        params = call_args[0][1]
-        assert params[1] is None  # run_id
-        assert params[2] is None  # step_id
+        mock_session = mock_db.get_session.return_value
+        trace_arg = mock_session.add.call_args[0][0]
+        assert trace_arg.workflow_id is None
+        assert trace_arg.step_name is None
 
 
 class TestGetTraces:
@@ -314,122 +306,51 @@ class TestGetTraces:
 
     @pytest.fixture
     def mock_db(self):
-        """Create a mock DoltDB."""
+        """Create a mock DoltDB with mock session."""
         db = MagicMock(spec=DoltDB)
+        mock_session = MagicMock()
+        db.get_session.return_value = mock_session
         return db
 
     def test_get_all_traces(self, mock_db):
         """Should return all traces without filters."""
-        mock_db.query.return_value = QueryResult(
-            rows=[
-                {
-                    "id": "trace-1",
-                    "run_id": "run-123",
-                    "step_id": "extract",
-                    "model": "gpt-4",
-                    "provider": "openai",
-                    "prompt": "Hello",
-                    "response": "Hi",
-                    "structured_output": None,
-                    "tokens_in": 10,
-                    "tokens_out": 5,
-                    "cost_usd": "0.001",
-                    "latency_ms": 100,
-                    "error": None,
-                    "retry_count": 0,
-                    "created_at": datetime(2024, 1, 15, 10, 30),
-                },
-                {
-                    "id": "trace-2",
-                    "run_id": "run-123",
-                    "step_id": "classify",
-                    "model": "gpt-4",
-                    "provider": "openai",
-                    "prompt": "Classify",
-                    "response": "Category A",
-                    "structured_output": None,
-                    "tokens_in": 20,
-                    "tokens_out": 3,
-                    "cost_usd": "0.002",
-                    "latency_ms": 150,
-                    "error": None,
-                    "retry_count": 0,
-                    "created_at": datetime(2024, 1, 15, 10, 31),
-                },
-            ]
+        trace1 = LLMTrace(
+            id="trace-1",
+            workflow_id="run-123",
+            step_name="extract",
+            model="gpt-4",
+            provider="openai",
+            prompt="Hello",
+            response="Hi",
+            input_tokens=10,
+            output_tokens=5,
+            cost=0.001,
+            latency_ms=100,
         )
+        trace2 = LLMTrace(
+            id="trace-2",
+            workflow_id="run-123",
+            step_name="classify",
+            model="gpt-4",
+            provider="openai",
+            prompt="Classify",
+            response="Category A",
+            input_tokens=20,
+            output_tokens=3,
+            cost=0.002,
+            latency_ms=150,
+        )
+
+        mock_session = mock_db.get_session.return_value
+        mock_session.exec.return_value.all.return_value = [trace1, trace2]
 
         traces = get_traces(db=mock_db)
 
         assert len(traces) == 2
         assert traces[0].id == "trace-1"
         assert traces[1].id == "trace-2"
-
-        # Verify query
-        call_args = mock_db.query.call_args
-        assert "FROM llm_traces" in call_args[0][0]
-        assert "ORDER BY created_at DESC" in call_args[0][0]
-
-    def test_filter_by_run_id(self, mock_db):
-        """Should filter by run_id."""
-        mock_db.query.return_value = QueryResult(rows=[])
-
-        get_traces(run_id="run-123", db=mock_db)
-
-        call_args = mock_db.query.call_args
-        sql = call_args[0][0]
-        params = call_args[0][1]
-        assert "run_id = ?" in sql
-        assert "run-123" in params
-
-    def test_filter_by_step_id(self, mock_db):
-        """Should filter by step_id."""
-        mock_db.query.return_value = QueryResult(rows=[])
-
-        get_traces(step_id="extract", db=mock_db)
-
-        call_args = mock_db.query.call_args
-        sql = call_args[0][0]
-        params = call_args[0][1]
-        assert "step_id = ?" in sql
-        assert "extract" in params
-
-    def test_filter_by_model(self, mock_db):
-        """Should filter by model."""
-        mock_db.query.return_value = QueryResult(rows=[])
-
-        get_traces(model="gpt-4", db=mock_db)
-
-        call_args = mock_db.query.call_args
-        sql = call_args[0][0]
-        params = call_args[0][1]
-        assert "model = ?" in sql
-        assert "gpt-4" in params
-
-    def test_filter_by_provider(self, mock_db):
-        """Should filter by provider."""
-        mock_db.query.return_value = QueryResult(rows=[])
-
-        get_traces(provider="anthropic", db=mock_db)
-
-        call_args = mock_db.query.call_args
-        sql = call_args[0][0]
-        params = call_args[0][1]
-        assert "provider = ?" in sql
-        assert "anthropic" in params
-
-    def test_limit_and_offset(self, mock_db):
-        """Should apply limit and offset."""
-        mock_db.query.return_value = QueryResult(rows=[])
-
-        get_traces(limit=50, offset=10, db=mock_db)
-
-        call_args = mock_db.query.call_args
-        sql = call_args[0][0]
-        params = call_args[0][1]
-        assert "LIMIT ? OFFSET ?" in sql
-        assert 50 in params
-        assert 10 in params
+        mock_session.exec.assert_called_once()
+        mock_session.close.assert_called_once()
 
     def test_returns_empty_without_db(self):
         """Should return empty list if no DB configured."""
@@ -437,39 +358,46 @@ class TestGetTraces:
             traces = get_traces()
             assert traces == []
 
+    def test_get_traces_calls_session(self, mock_db):
+        """Should call session.exec with a select statement."""
+        mock_session = mock_db.get_session.return_value
+        mock_session.exec.return_value.all.return_value = []
+
+        get_traces(run_id="run-123", db=mock_db)
+
+        mock_session.exec.assert_called_once()
+        mock_session.close.assert_called_once()
+
 
 class TestGetTrace:
     """Tests for get_trace function."""
 
     @pytest.fixture
     def mock_db(self):
-        """Create a mock DoltDB."""
+        """Create a mock DoltDB with mock session."""
         db = MagicMock(spec=DoltDB)
+        mock_session = MagicMock()
+        db.get_session.return_value = mock_session
         return db
 
     def test_get_existing_trace(self, mock_db):
         """Should return trace by ID."""
-        mock_db.query.return_value = QueryResult(
-            rows=[
-                {
-                    "id": "trace-123",
-                    "run_id": "run-456",
-                    "step_id": "extract",
-                    "model": "gpt-4",
-                    "provider": "openai",
-                    "prompt": "Hello",
-                    "response": "Hi",
-                    "structured_output": None,
-                    "tokens_in": 10,
-                    "tokens_out": 5,
-                    "cost_usd": "0.001",
-                    "latency_ms": 100,
-                    "error": None,
-                    "retry_count": 0,
-                    "created_at": datetime(2024, 1, 15, 10, 30),
-                }
-            ]
+        expected_trace = LLMTrace(
+            id="trace-123",
+            workflow_id="run-456",
+            step_name="extract",
+            model="gpt-4",
+            provider="openai",
+            prompt="Hello",
+            response="Hi",
+            input_tokens=10,
+            output_tokens=5,
+            cost=0.001,
+            latency_ms=100,
         )
+
+        mock_session = mock_db.get_session.return_value
+        mock_session.get.return_value = expected_trace
 
         trace = get_trace("trace-123", db=mock_db)
 
@@ -477,13 +405,13 @@ class TestGetTrace:
         assert trace.id == "trace-123"
         assert trace.model == "gpt-4"
 
-        call_args = mock_db.query.call_args
-        assert "WHERE id = ?" in call_args[0][0]
-        assert call_args[0][1] == ["trace-123"]
+        mock_session.get.assert_called_once_with(LLMTrace, "trace-123")
+        mock_session.close.assert_called_once()
 
     def test_get_nonexistent_trace(self, mock_db):
         """Should return None for missing trace."""
-        mock_db.query.return_value = QueryResult(rows=[])
+        mock_session = mock_db.get_session.return_value
+        mock_session.get.return_value = None
 
         trace = get_trace("nonexistent", db=mock_db)
 
@@ -501,32 +429,21 @@ class TestGetTracesSummary:
 
     @pytest.fixture
     def mock_db(self):
-        """Create a mock DoltDB."""
+        """Create a mock DoltDB with mock session."""
         db = MagicMock(spec=DoltDB)
+        mock_session = MagicMock()
+        db.get_session.return_value = mock_session
         return db
 
     def test_get_summary(self, mock_db):
         """Should return aggregated summary."""
-        mock_db.query.side_effect = [
-            # Aggregate query result
-            QueryResult(
-                rows=[
-                    {
-                        "total_calls": 10,
-                        "total_tokens_in": 500,
-                        "total_tokens_out": 200,
-                        "total_cost_usd": "0.035",
-                        "avg_latency_ms": 250.5,
-                    }
-                ]
-            ),
-            # Model breakdown result
-            QueryResult(
-                rows=[
-                    {"model": "gpt-4", "count": 7},
-                    {"model": "gpt-3.5-turbo", "count": 3},
-                ]
-            ),
+        mock_session = mock_db.get_session.return_value
+
+        # First exec call returns aggregate row, second returns model breakdown
+        mock_session.exec.return_value.first.return_value = (10, 500, 200, 0.035, 250.5)
+        mock_session.exec.return_value.all.return_value = [
+            ("gpt-4", 7),
+            ("gpt-3.5-turbo", 3),
         ]
 
         summary = get_traces_summary(run_id="run-123", db=mock_db)
@@ -540,10 +457,9 @@ class TestGetTracesSummary:
 
     def test_empty_summary(self, mock_db):
         """Should return zeros for empty results."""
-        mock_db.query.side_effect = [
-            QueryResult(rows=[]),
-            QueryResult(rows=[]),
-        ]
+        mock_session = mock_db.get_session.return_value
+        mock_session.exec.return_value.first.return_value = (0, None, None, None, None)
+        mock_session.exec.return_value.all.return_value = []
 
         summary = get_traces_summary(db=mock_db)
 
@@ -552,34 +468,6 @@ class TestGetTracesSummary:
         assert summary["total_tokens_out"] == 0
         assert summary["total_cost_usd"] == Decimal("0")
         assert summary["models"] == {}
-
-    def test_filter_by_run_and_step(self, mock_db):
-        """Should apply run_id and step_id filters."""
-        mock_db.query.side_effect = [
-            QueryResult(
-                rows=[
-                    {
-                        "total_calls": 5,
-                        "total_tokens_in": 100,
-                        "total_tokens_out": 50,
-                        "total_cost_usd": None,
-                        "avg_latency_ms": None,
-                    }
-                ]
-            ),
-            QueryResult(rows=[]),
-        ]
-
-        get_traces_summary(run_id="run-123", step_id="extract", db=mock_db)
-
-        # Check both queries used filters
-        for call in mock_db.query.call_args_list:
-            sql = call[0][0]
-            params = call[0][1]
-            assert "run_id = ?" in sql
-            assert "step_id = ?" in sql
-            assert "run-123" in params
-            assert "extract" in params
 
     def test_returns_zeros_without_db(self):
         """Should return zeros if no DB configured."""

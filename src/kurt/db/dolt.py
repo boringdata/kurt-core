@@ -1242,20 +1242,26 @@ def _create_observability_tables_raw(db: "DoltDB") -> None:
         )
     """)
 
-    # llm_traces table
+    # llm_traces table (matches LLMTrace SQLModel in kurt.db.models)
     db.execute("""
         CREATE TABLE IF NOT EXISTS llm_traces (
             id VARCHAR(36) PRIMARY KEY,
-            workflow_id VARCHAR(255) NOT NULL,
-            step_id VARCHAR(255) NULL,
+            workflow_id VARCHAR(255) NULL,
+            step_name VARCHAR(255) NULL,
             model VARCHAR(255) NOT NULL,
-            provider VARCHAR(100) NOT NULL,
-            tokens_in INT DEFAULT 0,
-            tokens_out INT DEFAULT 0,
+            provider VARCHAR(100) NOT NULL DEFAULT 'anthropic',
+            prompt TEXT NULL,
+            response TEXT NULL,
+            structured_output TEXT NULL,
+            input_tokens INT DEFAULT 0,
+            output_tokens INT DEFAULT 0,
+            total_tokens INT DEFAULT 0,
             cost FLOAT DEFAULT 0.0,
             latency_ms INT NULL,
+            error TEXT NULL,
+            retry_count INT DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            metadata_json JSON NULL,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             user_id VARCHAR(255) NULL,
             workspace_id VARCHAR(255) NULL
         )

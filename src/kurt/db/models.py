@@ -64,21 +64,22 @@ class LLMTrace(TimestampMixin, TenantMixin, SQLModel, table=True):
     LLM call traces for debugging and cost tracking.
 
     Records every LLM API call with prompts, responses, token usage, and cost.
+    This SQLModel is the single source of truth for the llm_traces table schema.
     """
 
     __tablename__ = "llm_traces"
 
-    id: Optional[int] = Field(default=None, primary_key=True)
-    workflow_id: str = Field(index=True)
-    step_name: str = Field(index=True)
+    id: Optional[str] = Field(default=None, primary_key=True, max_length=36)
+    workflow_id: Optional[str] = Field(default=None, index=True)
+    step_name: Optional[str] = Field(default=None, index=True)
 
     # Model info
     model: str
     provider: str = Field(default="anthropic")
 
     # Request/Response
-    prompt: str
-    response: str
+    prompt: Optional[str] = Field(default=None)
+    response: Optional[str] = Field(default=None)
     structured_output: Optional[str] = Field(default=None)  # JSON string of parsed output
 
     # Token usage
@@ -90,7 +91,7 @@ class LLMTrace(TimestampMixin, TenantMixin, SQLModel, table=True):
     cost: float = Field(default=0.0)
 
     # Timing
-    latency_ms: int = Field(default=0)
+    latency_ms: Optional[int] = Field(default=None)
 
     # Error tracking
     error: Optional[str] = Field(default=None)
