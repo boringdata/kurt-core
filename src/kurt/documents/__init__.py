@@ -15,7 +15,7 @@ from kurt.documents.registry import DocumentRegistry
 
 # Lazy import to avoid requiring heavy ML dependencies (trafilatura, lxml) in API mode
 if TYPE_CHECKING:
-    from kurt.workflows.fetch.utils import load_document_content as _load_document_content
+    from kurt.tools.fetch.utils import load_document_content as _load_document_content
 else:
     _load_document_content = None
 
@@ -32,7 +32,7 @@ def load_document_content(*args, **kwargs):
     """Lazy wrapper for load_document_content to avoid importing trafilatura in API mode."""
     global _load_document_content
     if _load_document_content is None:
-        from kurt.workflows.fetch.utils import load_document_content as _ldc
+        from kurt.tools.fetch.utils import load_document_content as _ldc
 
         _load_document_content = _ldc
     return _load_document_content(*args, **kwargs)
@@ -63,6 +63,7 @@ def resolve_documents(
     Resolve documents from CLI parameters to list of dicts for workflow input.
 
     This is the CLI adapter layer that maps CLI option names to internal filter names.
+    Uses DocumentRegistry for document storage.
 
     Args:
         identifier: Single document ID or URL
@@ -82,32 +83,33 @@ def resolve_documents(
         urls: Comma-separated URLs (filter to only these URLs)
         files: Comma-separated file paths (filter to only these files)
     """
-    import hashlib
     from pathlib import Path
 
+    from sqlmodel import select
+
     from kurt.db import managed_session
-    from kurt.workflows.fetch.models import FetchStatus
-    from kurt.workflows.map.models import MapDocument, MapStatus
+    from kurt.tools.core import make_document_id
+    from kurt.tools.map.models import MapDocument, MapStatus
 
     # If identifier looks like a URL, auto-create MapDocument if needed
     if identifier and identifier.startswith(("http://", "https://")):
-        from sqlmodel import select
-
         with managed_session() as session:
             existing = session.exec(
                 select(MapDocument).where(MapDocument.source_url == identifier)
             ).first()
+
             if not existing:
-                doc_id = hashlib.sha256(identifier.encode()).hexdigest()[:12]
+                doc_id = make_document_id(identifier)
                 doc = MapDocument(
                     document_id=doc_id,
                     source_url=identifier,
                     source_type="url",
-                    status=MapStatus.SUCCESS,
                     discovery_method="cli",
+                    discovery_url=identifier,
+                    status=MapStatus.SUCCESS,
+                    is_new=True,
                 )
                 session.add(doc)
-                session.commit()
 
     # Build list of source URLs to filter by (from urls/files options)
     source_urls_filter: list[str] | None = None
@@ -144,23 +146,19 @@ def resolve_documents(
             source_urls_filter = []
         source_urls_filter.append(identifier)
 
-    # Map CLI status to internal
+    # Map CLI status to internal fetch_status
     if with_status:
         status_upper = with_status.upper()
         if status_upper == "NOT_FETCHED":
             filters.not_fetched = True
         elif status_upper == "FETCHED":
-            filters.fetch_status = FetchStatus.SUCCESS
+            filters.fetch_status = "success"
         elif status_upper == "ERROR":
-            filters.fetch_status = FetchStatus.ERROR
+            filters.fetch_status = "error"
 
-    # Query documents
+    # Query documents using DocumentRegistry
     registry = DocumentRegistry()
-    with managed_session() as session:
-        docs = registry.list(session, filters)
-
-    # Apply post-query filters (glob patterns are applied in registry.list via apply_glob_filters)
-    # Apply additional substring/extension filters here
+    docs = registry.list(filters=filters)
     result_docs = list(docs)
 
     # Filter by specific URLs/files if provided
@@ -170,13 +168,13 @@ def resolve_documents(
     # File extension filter
     if file_ext:
         ext = file_ext.lstrip(".")  # Normalize: "md" or ".md" -> "md"
-        result_docs = [d for d in result_docs if d.source_url.endswith(f".{ext}")]
+        result_docs = [d for d in result_docs if d.source_url and d.source_url.endswith(f".{ext}")]
 
     # Deduplicate by source_url (keep first occurrence - older document)
     seen_urls: set[str] = set()
     unique_docs = []
     for d in result_docs:
-        if d.source_url not in seen_urls:
+        if d.source_url and d.source_url not in seen_urls:
             seen_urls.add(d.source_url)
             unique_docs.append(d)
     result_docs = unique_docs

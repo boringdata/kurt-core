@@ -14,6 +14,7 @@ import EmptyPanel from './panels/EmptyPanel'
 import ReviewPanel from './panels/ReviewPanel'
 import WorkflowsPanel from './panels/WorkflowsPanel'
 import WorkflowTerminalPanel from './panels/WorkflowTerminalPanel'
+import WorkflowDetailPanel from './panels/WorkflowDetailPanel'
 import ClaudeStreamChat from './components/chat/ClaudeStreamChat'
 
 // POC mode - add ?poc=chat, ?poc=diff, or ?poc=tiptap-diff to URL to test
@@ -31,6 +32,7 @@ const components = {
   review: ReviewPanel,
   workflows: WorkflowsPanel,
   workflowTerminal: WorkflowTerminalPanel,
+  workflowDetail: WorkflowDetailPanel,
 }
 
 const KNOWN_COMPONENTS = new Set(Object.keys(components))
@@ -1626,6 +1628,72 @@ export default function App() {
     [dockApi]
   )
 
+  // Open a workflow detail panel
+  const openWorkflowDetail = useCallback(
+    (workflowId) => {
+      if (!dockApi) return
+
+      const panelId = `workflow-detail-${workflowId}`
+      const existingPanel = dockApi.getPanel(panelId)
+
+      if (existingPanel) {
+        existingPanel.api.setActive()
+        return
+      }
+
+      // Add in center area
+      const position = centerGroupRef.current
+        ? { referenceGroup: centerGroupRef.current }
+        : { direction: 'right', referencePanel: 'filetree' }
+
+      // Close empty panel if present
+      const emptyPanel = dockApi.getPanel('empty-center')
+
+      const panel = dockApi.addPanel({
+        id: panelId,
+        component: 'workflowDetail',
+        title: `Workflow: ${workflowId.slice(0, 8)}`,
+        position,
+        params: {
+          workflowId,
+          onClose: () => {
+            const p = dockApi.getPanel(panelId)
+            if (p) p.api.close()
+          },
+          onAttach: openWorkflowTerminal,
+          onCancel: async (wfId) => {
+            try {
+              await fetch(apiUrl(`/api/workflows/${wfId}/cancel`), { method: 'POST' })
+            } catch (err) {
+              console.error('Failed to cancel workflow:', err)
+            }
+          },
+          onRetry: async (wfId) => {
+            try {
+              await fetch(apiUrl(`/api/workflows/${wfId}/retry`), { method: 'POST' })
+            } catch (err) {
+              console.error('Failed to retry workflow:', err)
+            }
+          },
+        },
+      })
+
+      if (emptyPanel) {
+        emptyPanel.api.close()
+      }
+
+      if (panel?.group) {
+        panel.group.header.hidden = false
+        centerGroupRef.current = panel.group
+        panel.group.api.setConstraints({
+          minimumHeight: 200,
+          maximumHeight: Infinity,
+        })
+      }
+    },
+    [dockApi, openWorkflowTerminal]
+  )
+
   // Update workflows panel params
   // projectRoot dependency ensures this runs after layout restoration
   useEffect(() => {
@@ -1636,6 +1704,7 @@ export default function App() {
         collapsed: collapsed.workflows,
         onToggleCollapse: toggleWorkflows,
         onAttachWorkflow: openWorkflowTerminal,
+        onOpenWorkflowDetail: openWorkflowDetail,
       })
     }
     // Also update shell panel with collapse state for the tab button
@@ -1646,7 +1715,7 @@ export default function App() {
         onToggleCollapse: toggleWorkflows,
       })
     }
-  }, [dockApi, collapsed.workflows, toggleWorkflows, openWorkflowTerminal, projectRoot])
+  }, [dockApi, collapsed.workflows, toggleWorkflows, openWorkflowTerminal, openWorkflowDetail, projectRoot])
 
   // Restore saved tabs when dockApi and projectRoot become available
   const hasRestoredTabs = useRef(false)

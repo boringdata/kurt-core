@@ -14,7 +14,7 @@ from typing import Any, Optional
 
 from fastapi import HTTPException, Request
 
-from kurt.db.tenant import is_cloud_mode
+from kurt.cloud.tenant import is_cloud_mode
 
 
 class AuthUser:
@@ -144,7 +144,7 @@ async def auth_middleware_setup(request: Request, call_next):
     In local mode:
     - Passes through without authentication
     """
-    from kurt.db.tenant import clear_workspace_context, set_workspace_context
+    from kurt.cloud.tenant import clear_workspace_context, set_workspace_context
 
     if not is_cloud_mode():
         # Local mode - no auth required

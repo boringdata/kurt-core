@@ -8,8 +8,9 @@ from __future__ import annotations
 
 from typing import Optional
 
-from sqlmodel import Session, select
+from sqlmodel import Session, delete, select
 
+from kurt.db import managed_session
 from kurt.documents.filtering import (
     DocumentFilters,
     apply_glob_filters,
@@ -17,8 +18,8 @@ from kurt.documents.filtering import (
     build_map_query,
 )
 from kurt.documents.models import DocumentView
-from kurt.workflows.fetch.models import FetchDocument
-from kurt.workflows.map.models import MapDocument
+from kurt.tools.fetch.models import FetchDocument
+from kurt.tools.map.models import MapDocument
 
 
 class DocumentRegistry:
@@ -30,47 +31,50 @@ class DocumentRegistry:
 
     def list(
         self,
-        session: Session,
+        session: Optional[Session] = None,
         filters: Optional[DocumentFilters] = None,
     ) -> list[DocumentView]:
         """List documents matching filters across all workflow stages.
 
         Args:
-            session: Database session
+            session: Database session (creates one if not provided)
             filters: Optional filters to apply
 
         Returns:
             List of DocumentView with data from all workflow stages
         """
-        filters = filters or DocumentFilters()
+        with managed_session(session) as sess:
+            filters = filters or DocumentFilters()
 
-        # If glob filters are set, don't apply SQL limit - we need to filter first
-        # then apply limit to the filtered results
-        saved_limit = None
-        if (filters.include or filters.exclude) and filters.limit:
-            saved_limit = filters.limit
-            filters.limit = None
+            # If glob filters are set, don't apply SQL limit - we need to filter first
+            # then apply limit to the filtered results
+            saved_limit = None
+            if (filters.include or filters.exclude) and filters.limit:
+                saved_limit = filters.limit
+                filters.limit = None
 
-        query = build_joined_query(filters)
-        results = session.exec(query).all()
+            query = build_joined_query(filters)
+            results = sess.exec(query).all()
 
-        views = [self._to_view(map_doc, fetch_doc) for map_doc, fetch_doc in results]
+            views = [self._to_view(map_doc, fetch_doc) for map_doc, fetch_doc in results]
 
-        # Apply glob filters post-query (fnmatch doesn't translate to SQL)
-        if filters.include or filters.exclude:
-            views = apply_glob_filters(views, filters.include, filters.exclude)
+            # Apply glob filters post-query (fnmatch doesn't translate to SQL)
+            if filters.include or filters.exclude:
+                views = apply_glob_filters(views, filters.include, filters.exclude)
 
-        # Apply limit after glob filtering
-        if saved_limit:
-            views = views[:saved_limit]
+            # Apply limit after glob filtering
+            if saved_limit:
+                views = views[:saved_limit]
 
-        return views
+            return views
 
-    def get(self, session: Session, document_id: str) -> Optional[DocumentView]:
+    def get(
+        self, session: Optional[Session] = None, document_id: str = None
+    ) -> Optional[DocumentView]:
         """Get a single document's full lifecycle view.
 
         Args:
-            session: Database session
+            session: Database session (creates one if not provided)
             document_id: Document ID to fetch
 
         Returns:
@@ -82,20 +86,21 @@ class DocumentRegistry:
 
     def list_map_only(
         self,
-        session: Session,
+        session: Optional[Session] = None,
         filters: Optional[DocumentFilters] = None,
     ) -> list[MapDocument]:
         """List only from map_documents table (faster, no join).
 
         Use when you only need map stage data.
         """
-        filters = filters or DocumentFilters()
-        query = build_map_query(filters)
-        return list(session.exec(query).all())
+        with managed_session(session) as sess:
+            filters = filters or DocumentFilters()
+            query = build_map_query(filters)
+            return list(sess.exec(query).all())
 
     def list_fetchable(
         self,
-        session: Session,
+        session: Optional[Session] = None,
         filters: Optional[DocumentFilters] = None,
     ) -> list[DocumentView]:
         """List documents ready to be fetched.
@@ -108,7 +113,7 @@ class DocumentRegistry:
 
     def list_with_errors(
         self,
-        session: Session,
+        session: Optional[Session] = None,
         filters: Optional[DocumentFilters] = None,
     ) -> list[DocumentView]:
         """List documents with errors in any stage.
@@ -121,7 +126,7 @@ class DocumentRegistry:
 
     def count(
         self,
-        session: Session,
+        session: Optional[Session] = None,
         filters: Optional[DocumentFilters] = None,
     ) -> int:
         """Count documents matching filters.
@@ -132,12 +137,36 @@ class DocumentRegistry:
         # For now, simple implementation - could optimize with COUNT query
         return len(self.list(session, filters))
 
-    def exists(self, session: Session, document_id: str) -> bool:
+    def exists(self, session: Optional[Session] = None, document_id: str = None) -> bool:
         """Check if a document exists in any workflow stage."""
-        result = session.exec(
-            select(MapDocument.document_id).where(MapDocument.document_id == document_id)
-        ).first()
-        return result is not None
+        with managed_session(session) as sess:
+            result = sess.exec(
+                select(MapDocument.document_id).where(MapDocument.document_id == document_id)
+            ).first()
+            return result is not None
+
+    def delete(self, session: Optional[Session] = None, document_id: str = None) -> bool:
+        """Delete a document from both map_documents and fetch_documents tables.
+
+        Args:
+            session: Database session (creates one if not provided)
+            document_id: Document ID to delete
+
+        Returns:
+            True if document was deleted, False if not found
+        """
+        with managed_session(session) as sess:
+            # Check if document exists
+            if not self.exists(sess, document_id):
+                return False
+
+            # Delete from fetch_documents first (may not exist)
+            sess.exec(delete(FetchDocument).where(FetchDocument.document_id == document_id))
+
+            # Delete from map_documents (must exist if exists() returned True)
+            sess.exec(delete(MapDocument).where(MapDocument.document_id == document_id))
+
+            return True
 
     def _to_view(
         self,

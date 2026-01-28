@@ -296,7 +296,7 @@ class TestParseTomlWorkflow:
         assert result.agent.prompt == "Do something simple."
         assert result.effective_prompt == "Do something simple."
         assert result.is_agent_driven is True
-        assert result.is_dbos_driven is False
+        assert result.is_steps_driven is False
 
     def test_parse_full_toml_workflow(self, tmp_path):
         """Test parsing a fully-specified TOML workflow."""
@@ -362,8 +362,8 @@ class TestParseTomlWorkflow:
         assert "daily" in result.tags
         assert "research" in result.tags
 
-    def test_parse_dbos_driven_workflow(self, tmp_path):
-        """Test parsing a DBOS-driven workflow with steps."""
+    def test_parse_steps_driven_workflow(self, tmp_path):
+        """Test parsing a step-driven workflow with DAG steps."""
         from kurt.workflows.agents.parser import parse_workflow
 
         workflow_file = tmp_path / "dag.toml"
@@ -403,7 +403,7 @@ class TestParseTomlWorkflow:
         result = parse_workflow(workflow_file)
 
         assert result.name == "dag-workflow"
-        assert result.is_dbos_driven is True
+        assert result.is_steps_driven is True
         assert result.is_agent_driven is False
         assert len(result.steps) == 4
 
@@ -901,10 +901,10 @@ class TestParsedWorkflow:
         )
 
         assert workflow.is_agent_driven is True
-        assert workflow.is_dbos_driven is False
+        assert workflow.is_steps_driven is False
 
-    def test_is_dbos_driven(self):
-        """Test is_dbos_driven property."""
+    def test_is_steps_driven(self):
+        """Test is_steps_driven property."""
         from kurt.workflows.agents.parser import ParsedWorkflow, StepConfig
 
         workflow = ParsedWorkflow(
@@ -914,7 +914,7 @@ class TestParsedWorkflow:
         )
 
         assert workflow.is_agent_driven is False
-        assert workflow.is_dbos_driven is True
+        assert workflow.is_steps_driven is True
 
     def test_effective_prompt_from_agent(self):
         """Test effective_prompt returns agent.prompt for TOML."""
