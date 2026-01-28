@@ -17,8 +17,8 @@ from kurt.conftest import (
     assert_output_contains,
     invoke_cli,
 )
+from kurt.workflows.core.cli import parse_input_value, parse_inputs
 from kurt.workflows.toml.cli import (
-    _parse_input,
     cancel_cmd,
     logs_cmd,
     run_cmd,
@@ -96,75 +96,64 @@ def mock_lifecycle():
 
 
 class TestInputParsing:
-    """Tests for _parse_input helper function."""
+    """Tests for parse_input_value and parse_inputs shared utilities."""
 
     def test_parse_string_value(self):
-        """Test parsing a string value."""
-        key, value = _parse_input("url=https://example.com")
-        assert key == "url"
-        assert value == "https://example.com"
+        """Test parsing a string value via parse_inputs."""
+        result = parse_inputs(("url=https://example.com",))
+        assert result["url"] == "https://example.com"
 
     def test_parse_integer_value(self):
         """Test parsing an integer value."""
-        key, value = _parse_input("max_pages=100")
-        assert key == "max_pages"
-        assert value == 100
-        assert isinstance(value, int)
+        result = parse_inputs(("max_pages=100",))
+        assert result["max_pages"] == 100
+        assert isinstance(result["max_pages"], int)
 
     def test_parse_negative_integer(self):
         """Test parsing a negative integer."""
-        key, value = _parse_input("offset=-10")
-        assert key == "offset"
-        assert value == -10
-        assert isinstance(value, int)
+        result = parse_inputs(("offset=-10",))
+        assert result["offset"] == -10
+        assert isinstance(result["offset"], int)
 
     def test_parse_float_value(self):
         """Test parsing a float value."""
-        key, value = _parse_input("threshold=0.75")
-        assert key == "threshold"
-        assert value == 0.75
-        assert isinstance(value, float)
+        result = parse_inputs(("threshold=0.75",))
+        assert result["threshold"] == 0.75
+        assert isinstance(result["threshold"], float)
 
     def test_parse_boolean_true(self):
         """Test parsing a boolean true value."""
-        key, value = _parse_input("enabled=true")
-        assert key == "enabled"
-        assert value is True
-        assert isinstance(value, bool)
+        result = parse_inputs(("enabled=true",))
+        assert result["enabled"] is True
+        assert isinstance(result["enabled"], bool)
 
     def test_parse_boolean_false(self):
         """Test parsing a boolean false value."""
-        key, value = _parse_input("enabled=false")
-        assert key == "enabled"
-        assert value is False
-        assert isinstance(value, bool)
+        result = parse_inputs(("enabled=false",))
+        assert result["enabled"] is False
+        assert isinstance(result["enabled"], bool)
 
     def test_parse_boolean_uppercase(self):
         """Test parsing boolean with different case."""
-        key, value = _parse_input("enabled=TRUE")
-        assert value is True
-
-        key, value = _parse_input("enabled=False")
-        assert value is False
+        assert parse_input_value("TRUE") is True
+        assert parse_input_value("False") is False
 
     def test_parse_value_with_equals(self):
         """Test parsing value containing equals sign."""
-        key, value = _parse_input("query=name=john&age=30")
-        assert key == "query"
-        assert value == "name=john&age=30"
+        result = parse_inputs(("query=name=john&age=30",))
+        assert result["query"] == "name=john&age=30"
 
     def test_parse_empty_value(self):
         """Test parsing empty value."""
-        key, value = _parse_input("empty=")
-        assert key == "empty"
-        assert value == ""
+        result = parse_inputs(("empty=",))
+        assert result["empty"] == ""
 
-    def test_parse_invalid_format(self, cli_runner: CliRunner):
-        """Test that invalid format raises error."""
-        import click
-
-        with pytest.raises(click.BadParameter):
-            _parse_input("invalid_no_equals")
+    def test_parse_multiple_inputs(self):
+        """Test parsing multiple key=value inputs."""
+        result = parse_inputs(("url=https://example.com", "max_pages=10", "enabled=true"))
+        assert result["url"] == "https://example.com"
+        assert result["max_pages"] == 10
+        assert result["enabled"] is True
 
 
 # =============================================================================

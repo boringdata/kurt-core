@@ -33,47 +33,9 @@ from rich.console import Console
 from rich.table import Table
 
 from kurt.admin.telemetry.decorators import track_command
+from kurt.workflows.core.cli import parse_inputs
 
 console = Console()
-
-
-def _parse_input(input_str: str) -> tuple[str, Any]:
-    """Parse a key=value input string.
-
-    Handles type coercion:
-    - "true"/"false" -> bool
-    - integers -> int
-    - floats -> float
-    - everything else -> string
-
-    Args:
-        input_str: String in "key=value" format.
-
-    Returns:
-        Tuple of (key, parsed_value).
-
-    Raises:
-        click.BadParameter: If format is invalid.
-    """
-    if "=" not in input_str:
-        raise click.BadParameter(f"Input must be in key=value format: {input_str}")
-
-    key, value = input_str.split("=", 1)
-    key = key.strip()
-    value = value.strip()
-
-    # Type coercion
-    if value.lower() == "true":
-        return key, True
-    elif value.lower() == "false":
-        return key, False
-    elif value.isdigit() or (value.startswith("-") and value[1:].isdigit()):
-        return key, int(value)
-    else:
-        try:
-            return key, float(value)
-        except ValueError:
-            return key, value
 
 
 def _get_dolt_db():
@@ -147,10 +109,7 @@ def run_cmd(workflow_path: Path, inputs: tuple[str, ...], background: bool, fore
         from kurt.workflows.agents.executor import run_from_path
 
         # Parse inputs for agent workflow
-        parsed_inputs: dict[str, Any] = {}
-        for input_str in inputs:
-            key, value = _parse_input(input_str)
-            parsed_inputs[key] = value
+        parsed_inputs = parse_inputs(inputs)
 
         # Agent workflows use --foreground flag (default is background)
         # For backwards compat with TOML CLI, also support --background flag
@@ -197,10 +156,7 @@ def run_cmd(workflow_path: Path, inputs: tuple[str, ...], background: bool, fore
     from kurt.workflows.toml.executor import execute_workflow
 
     # Parse inputs
-    parsed_inputs: dict[str, Any] = {}
-    for input_str in inputs:
-        key, value = _parse_input(input_str)
-        parsed_inputs[key] = value
+    parsed_inputs = parse_inputs(inputs)
 
     # Parse workflow
     try:
@@ -1118,10 +1074,7 @@ def test_cmd(
     )
 
     # Parse inputs
-    parsed_inputs: dict[str, Any] = {}
-    for input_str in inputs:
-        key, value = _parse_input(input_str)
-        parsed_inputs[key] = value
+    parsed_inputs = parse_inputs(inputs)
 
     # Parse workflow
     try:
