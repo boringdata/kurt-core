@@ -179,7 +179,7 @@ class TestRunCommand:
         """Test run command shows help."""
         result = invoke_cli(cli_runner, run_cmd, ["--help"])
         assert_cli_success(result)
-        assert_output_contains(result, "Run a workflow from a TOML file")
+        assert_output_contains(result, "Run a workflow from a TOML or Markdown file")
 
     def test_run_shows_options(self, cli_runner: CliRunner):
         """Test run command lists options in help."""
