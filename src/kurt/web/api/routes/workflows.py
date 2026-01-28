@@ -547,8 +547,6 @@ async def api_stream_workflow_status(workflow_id: str):
     """
     import asyncio
 
-    from fastapi.responses import StreamingResponse
-
     from kurt.observability.status import get_live_status
 
     db = _get_dolt_db()
@@ -623,7 +621,6 @@ async def api_stream_workflow_logs(
     """
     import asyncio
 
-    from fastapi.responses import StreamingResponse
 
     db = _get_dolt_db()
     if db is None:

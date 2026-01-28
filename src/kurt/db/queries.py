@@ -17,7 +17,6 @@ import re
 from typing import Any, Generator
 
 from kurt.db.exceptions import (
-    DoltConnectionError,
     DoltQueryError,
     QueryResult,
 )

@@ -48,7 +48,6 @@ from __future__ import annotations
 
 # Re-export all public API from sub-modules for backwards compatibility.
 # All existing imports like `from kurt.db.dolt import DoltDB` continue to work.
-
 from kurt.db.connection import (
     ConnectionPool,
     DoltDBConnection,
@@ -70,7 +69,6 @@ from kurt.db.schema import (
     check_schema_exists,
     init_observability_schema,
 )
-
 
 # =============================================================================
 # Composed DoltDB Class

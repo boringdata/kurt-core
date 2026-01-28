@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import Optional
 
@@ -17,7 +16,7 @@ from kurt.cloud.auth import (
 )
 from kurt.cloud.tenant import is_cloud_mode
 from kurt.web.api.auth import get_authenticated_user
-from kurt.web.api.server_helpers import get_session_for_request, get_storage, project_root
+from kurt.web.api.server_helpers import get_session_for_request, project_root
 
 router = APIRouter()
 

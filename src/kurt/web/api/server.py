@@ -16,6 +16,13 @@ from fastapi.staticfiles import StaticFiles
 
 from kurt.cloud.tenant import is_cloud_mode
 from kurt.web.api.auth import auth_middleware_setup
+from kurt.web.api.routes.approval import router as approval_router
+from kurt.web.api.routes.claude import router as claude_router
+from kurt.web.api.routes.documents import router as documents_router
+from kurt.web.api.routes.files import router as files_router
+from kurt.web.api.routes.system import router as system_router
+from kurt.web.api.routes.websockets import router as websockets_router
+from kurt.web.api.routes.workflows import router as workflows_router
 
 # Ensure working directory is project root (when running from worktree)
 # Skip in cloud deployments where filesystem may be read-only
@@ -48,16 +55,7 @@ app.add_middleware(
 if is_cloud_mode():
     app.middleware("http")(auth_middleware_setup)
 
-
 # --- Include route modules ---
-from kurt.web.api.routes.approval import router as approval_router
-from kurt.web.api.routes.claude import router as claude_router
-from kurt.web.api.routes.documents import router as documents_router
-from kurt.web.api.routes.files import router as files_router
-from kurt.web.api.routes.system import router as system_router
-from kurt.web.api.routes.websockets import router as websockets_router
-from kurt.web.api.routes.workflows import router as workflows_router
-
 app.include_router(system_router)
 app.include_router(documents_router)
 app.include_router(files_router)
