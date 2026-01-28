@@ -1132,15 +1132,18 @@ def _get_observability_models() -> list[type[SQLModel]]:
 def init_observability_schema(db: "DoltDB") -> list[str]:
     """Initialize observability tables in Dolt database.
 
-    Creates the following tables if they don't exist:
+    Creates the following tables if they don't exist, using the
+    authoritative SQLModel definitions from their respective modules:
     - workflow_runs: Workflow execution tracking
     - step_logs: Step-level summaries
     - step_events: Append-only progress events
     - document_id_registry: Central document ID registry
     - llm_traces: LLM call traces
 
-    In server mode, uses SQLModel.metadata.create_all().
-    In embedded mode, uses raw SQL CREATE TABLE statements.
+    Uses SQLModel.metadata.create_all() to create tables from model
+    definitions, ensuring the schema always matches the SQLModel source
+    of truth. In embedded mode, _get_engine() will auto-start the Dolt
+    SQL server if needed.
 
     Args:
         db: DoltDB client instance.
@@ -1155,119 +1158,14 @@ def init_observability_schema(db: "DoltDB") -> list[str]:
         tables = init_observability_schema(db)
         print(f"Initialized tables: {tables}")
     """
-    if db.mode == "server":
-        # Server mode: use SQLAlchemy/SQLModel
-        models = _get_observability_models()
-        engine = db._get_engine()
-        SQLModel.metadata.create_all(
-            bind=engine,
-            tables=[model.__table__ for model in models],
-        )
-    else:
-        # Embedded mode: use raw SQL for each table
-        _create_observability_tables_raw(db)
+    models = _get_observability_models()
+    engine = db._get_engine()
+    SQLModel.metadata.create_all(
+        bind=engine,
+        tables=[model.__table__ for model in models],
+    )
 
     return OBSERVABILITY_TABLES
-
-
-def _create_observability_tables_raw(db: "DoltDB") -> None:
-    """Create observability tables using raw SQL (for embedded mode).
-
-    This function creates tables using dolt sql CLI commands,
-    which works without requiring the Dolt SQL server to be running.
-    """
-    # workflow_runs table
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS workflow_runs (
-            id VARCHAR(36) PRIMARY KEY,
-            workflow VARCHAR(255) NOT NULL,
-            status VARCHAR(20) DEFAULT 'pending',
-            started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            completed_at DATETIME NULL,
-            error TEXT NULL,
-            inputs JSON NULL,
-            metadata_json JSON NULL,
-            user_id VARCHAR(255) NULL,
-            workspace_id VARCHAR(255) NULL
-        )
-    """)
-
-    # step_logs table
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS step_logs (
-            id VARCHAR(36) PRIMARY KEY,
-            run_id VARCHAR(36) NOT NULL,
-            step_id VARCHAR(255) NOT NULL,
-            tool VARCHAR(50) NOT NULL,
-            status VARCHAR(20) DEFAULT 'pending',
-            started_at DATETIME NULL,
-            completed_at DATETIME NULL,
-            input_count INT NULL,
-            output_count INT NULL,
-            error_count INT DEFAULT 0,
-            errors JSON NULL,
-            metadata_json JSON NULL,
-            user_id VARCHAR(255) NULL,
-            workspace_id VARCHAR(255) NULL
-        )
-    """)
-
-    # step_events table
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS step_events (
-            id BIGINT AUTO_INCREMENT PRIMARY KEY,
-            run_id VARCHAR(36) NOT NULL,
-            step_id VARCHAR(255) NOT NULL,
-            substep VARCHAR(255) NULL,
-            status VARCHAR(20) DEFAULT 'pending',
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            current INT NULL,
-            total INT NULL,
-            message TEXT NULL,
-            metadata_json JSON NULL,
-            user_id VARCHAR(255) NULL,
-            workspace_id VARCHAR(255) NULL
-        )
-    """)
-
-    # document_id_registry table
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS document_id_registry (
-            doc_id VARCHAR(36) PRIMARY KEY,
-            url VARCHAR(2048) NOT NULL UNIQUE,
-            url_hash VARCHAR(64) NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            user_id VARCHAR(255) NULL,
-            workspace_id VARCHAR(255) NULL
-        )
-    """)
-
-    # llm_traces table (matches LLMTrace SQLModel in kurt.db.models)
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS llm_traces (
-            id VARCHAR(36) PRIMARY KEY,
-            workflow_id VARCHAR(255) NULL,
-            step_name VARCHAR(255) NULL,
-            model VARCHAR(255) NOT NULL,
-            provider VARCHAR(100) NOT NULL DEFAULT 'anthropic',
-            prompt TEXT NULL,
-            response TEXT NULL,
-            structured_output TEXT NULL,
-            input_tokens INT DEFAULT 0,
-            output_tokens INT DEFAULT 0,
-            total_tokens INT DEFAULT 0,
-            cost FLOAT DEFAULT 0.0,
-            latency_ms INT NULL,
-            error TEXT NULL,
-            retry_count INT DEFAULT 0,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            user_id VARCHAR(255) NULL,
-            workspace_id VARCHAR(255) NULL
-        )
-    """)
-
-    logger.info("Created observability tables using raw SQL")
 
 
 def check_schema_exists(db: "DoltDBProtocol") -> dict[str, bool]:
