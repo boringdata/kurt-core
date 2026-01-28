@@ -1,6 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Copy, ChevronDown, ChevronRight } from 'lucide-react'
-import WorkflowTimeline from './WorkflowTimeline'
 
 const apiBase = import.meta.env.VITE_API_URL || ''
 const apiUrl = (path) => `${apiBase}${path}`
@@ -156,11 +155,14 @@ function CommandBlock({ command }) {
 function StepBox({
   step,
   logs,
+  events,
   isExpanded,
   onToggle,
   onOpen,
   children,
   showLogs = true,
+  maxDuration = 1,
+  isLoadingEvents = false,
 }) {
   const successCount = step.success ?? 0
   const errorCount = step.error ?? 0
@@ -180,11 +182,37 @@ function StepBox({
       ? 'step-status-success'
       : 'step-status-running'
 
+  // Timeline bar width calculation
+  const durationMs = step.duration_ms || 0
+  const barWidthPercent = maxDuration > 0 ? Math.max((durationMs / maxDuration) * 100, 2) : 2
+
   const handleToggle = () => {
     if (!isExpanded && onOpen && showLogs) {
       onOpen()
     }
     onToggle()
+  }
+
+  const formatEventTime = (timestamp) => {
+    if (!timestamp) return ''
+    const date = new Date(timestamp)
+    return date.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  }
+
+  const getEventIcon = (status) => {
+    switch (status) {
+      case 'completed':
+      case 'success':
+        return '✓'
+      case 'failed':
+      case 'error':
+        return '✗'
+      case 'running':
+      case 'progress':
+        return '▸'
+      default:
+        return '○'
+    }
   }
 
   return (
@@ -214,6 +242,17 @@ function StepBox({
       </div>
       {isExpanded && (
         <div className="workflow-step-box-body">
+          {/* Timeline bar */}
+          <div className="workflow-step-timeline-bar-container">
+            <div
+              className={`workflow-step-timeline-bar workflow-step-timeline-bar-${resolvedStatus}`}
+              style={{ width: `${barWidthPercent}%` }}
+              title={`Duration: ${duration}`}
+            />
+            <span className="workflow-step-timeline-duration">{duration}</span>
+          </div>
+
+          {/* Step errors */}
           {step.errors?.length > 0 && (
             <div className="workflow-step-errors">
               {step.errors.map((err, errIdx) => (
@@ -223,6 +262,36 @@ function StepBox({
               ))}
             </div>
           )}
+
+          {/* Step events (from logs endpoint) */}
+          {showLogs && (
+            <div className="workflow-step-events">
+              <div className="workflow-step-events-header">
+                <span className="workflow-step-events-title">Events</span>
+                {events && <span className="workflow-step-events-count">{events.length}</span>}
+              </div>
+              {isLoadingEvents ? (
+                <div className="workflow-step-events-loading">Loading...</div>
+              ) : events && events.length > 0 ? (
+                <div className="workflow-step-events-list">
+                  {events.map((event, idx) => (
+                    <div key={event.id || idx} className={`workflow-step-event workflow-step-event-${event.status || 'info'}`}>
+                      <span className="workflow-step-event-icon">{getEventIcon(event.status)}</span>
+                      <span className="workflow-step-event-time">{formatEventTime(event.created_at)}</span>
+                      <span className="workflow-step-event-message">{event.message || event.status}</span>
+                      {event.current != null && event.total != null && (
+                        <span className="workflow-step-event-progress">{event.current}/{event.total}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="workflow-step-events-empty">No events recorded</div>
+              )}
+            </div>
+          )}
+
+          {/* Legacy logs display */}
           {showLogs && logs?.length > 0 && (
             <div className="workflow-step-logs">
               {logs.map((log, logIdx) => (
@@ -253,6 +322,8 @@ function WorkflowStepsSection({
   const [stepsExpanded, setStepsExpanded] = useState(false)
   const [expandedSteps, setExpandedSteps] = useState({})
   const [stepLogs, setStepLogs] = useState({})
+  const [stepEvents, setStepEvents] = useState({})
+  const [loadingEvents, setLoadingEvents] = useState({})
   const [childWorkflows, setChildWorkflows] = useState([])
   const [childFetchAttempted, setChildFetchAttempted] = useState(false)
 
@@ -260,6 +331,8 @@ function WorkflowStepsSection({
     setStepsExpanded(depth > 0)
     setExpandedSteps({})
     setStepLogs({})
+    setStepEvents({})
+    setLoadingEvents({})
     setChildWorkflows([])
     setChildFetchAttempted(false)
   }, [workflow?.workflow_uuid])
@@ -269,12 +342,39 @@ function WorkflowStepsSection({
   const totalError = steps.reduce((sum, s) => sum + (s.error || 0), 0)
   const total = totalSuccess + totalError
 
+  // Calculate max duration for timeline bar scaling
+  const maxDuration = useMemo(() => {
+    return Math.max(...steps.map((s) => s.duration_ms || 0), 1)
+  }, [steps])
+
   const hasSteps = steps.length > 0 ||
     childWorkflows.length > 0 ||
     workflow?.workflow_type === 'agent'
 
+  // Fetch step events from logs endpoint
+  const fetchStepEvents = useCallback(async (stepName) => {
+    if (!workflow?.workflow_uuid || stepEvents[stepName] || loadingEvents[stepName]) return
+    setLoadingEvents((prev) => ({ ...prev, [stepName]: true }))
+    try {
+      const response = await fetch(
+        apiUrl(`/api/workflows/${workflow.workflow_uuid}/logs?step_id=${encodeURIComponent(stepName)}&limit=50`)
+      )
+      if (response.ok) {
+        const data = await response.json()
+        setStepEvents((prev) => ({ ...prev, [stepName]: data.events || [] }))
+      }
+    } catch (err) {
+      console.error('Failed to fetch step events:', err)
+      setStepEvents((prev) => ({ ...prev, [stepName]: [] }))
+    } finally {
+      setLoadingEvents((prev) => ({ ...prev, [stepName]: false }))
+    }
+  }, [workflow?.workflow_uuid, stepEvents, loadingEvents])
+
   const fetchStepLogs = useCallback(async (stepName) => {
     if (!workflow?.workflow_uuid || stepLogs[stepName]) return
+    // Also fetch events when fetching logs
+    fetchStepEvents(stepName)
     try {
       const response = await fetch(
         apiUrl(`/api/workflows/${workflow.workflow_uuid}/step-logs?step=${encodeURIComponent(stepName)}`)
@@ -428,8 +528,11 @@ function WorkflowStepsSection({
                 key={step.name}
                 step={step}
                 logs={stepLogs[step.name]}
+                events={stepEvents[step.name]}
                 isExpanded={stepIsExpanded}
                 showLogs={showStepLogs}
+                maxDuration={maxDuration}
+                isLoadingEvents={loadingEvents[step.name]}
                 onToggle={() =>
                   setExpandedSteps((prev) => ({
                     ...prev,
@@ -1280,9 +1383,6 @@ export default function WorkflowRow({
               onCancel={onCancel}
               depth={depth}
             />
-          )}
-          {liveStatus?.steps?.length > 0 && (
-            <WorkflowTimeline steps={liveStatus.steps} workflowId={workflow.workflow_uuid} />
           )}
           <WorkflowOutputSection workflow={workflow} liveStatus={liveStatus} />
         </div>
