@@ -281,6 +281,44 @@ def _load_toml(path: Path) -> dict:
         return tomllib.load(f)
 
 
+def _get_section_prefix(section_name: str) -> str:
+    """Derive config key prefix from a TOML section name.
+
+    Maps TOML section names to KurtConfig field prefixes by inspecting
+    the declared fields on KurtConfig. For example, KurtConfig has fields
+    like PATH_DB and PATH_SOURCES, so the section "paths" maps to prefix
+    "PATH".
+
+    Falls back to uppercasing the section name if no matching fields are
+    found.
+
+    Args:
+        section_name: Lowercase TOML section name (e.g., "paths", "telemetry")
+
+    Returns:
+        Uppercase prefix string (e.g., "PATH", "TELEMETRY")
+    """
+    upper = section_name.upper()
+
+    # Collect prefixes from KurtConfig declared fields
+    field_prefixes: set[str] = set()
+    for field_name in KurtConfig.model_fields:
+        if "_" in field_name:
+            prefix = field_name.split("_", 1)[0]
+            field_prefixes.add(prefix)
+
+    # Direct match (e.g., "telemetry" -> "TELEMETRY")
+    if upper in field_prefixes:
+        return upper
+
+    # Plural to singular (e.g., "paths" -> "PATH")
+    if upper.endswith("S") and upper[:-1] in field_prefixes:
+        return upper[:-1]
+
+    # No match found - use uppercased section name as-is
+    return upper
+
+
 def _flatten_toml(data: dict, prefix: str = "") -> dict:
     """Flatten nested TOML structure to flat keys for KurtConfig.
 
@@ -290,69 +328,35 @@ def _flatten_toml(data: dict, prefix: str = "") -> dict:
     becomes:
         PATH_SOURCES = "sources"
 
-    Tool sections map to existing flat keys for compatibility:
-        [tool.llm]
+    Tool sections are flattened as top-level sections so each tool can
+    self-register via its own StepConfig. For example:
+        [tool.batch-llm]
         model = "openai/gpt-4o-mini"
     becomes:
-        INDEXING_LLM_MODEL = "openai/gpt-4o-mini"  (for tools)
-        LLM_MODEL = "openai/gpt-4o-mini"  (global fallback)
+        BATCH-LLM.MODEL = "openai/gpt-4o-mini"
 
-        [tool.embed]
-        model = "openai/text-embedding-3-small"
-    becomes:
-        EMBEDDING_MODEL = "openai/text-embedding-3-small"
+    Tools read their config via StepConfig.from_config("batch-llm"),
+    which looks for BATCH-LLM.* keys in the extra fields.
 
-        [tool.fetch]
-        engine = "trafilatura"
-    becomes:
-        INGESTION_FETCH_ENGINE = "trafilatura"
+    Section prefixes are derived dynamically from KurtConfig field names
+    via _get_section_prefix(), so no hardcoded mapping is needed.
     """
     result = {}
 
-    # Special mappings for tool subsections to flat keys
-    # Maps [tool.X.key] to the flat key that tools expect
-    tool_key_mappings = {
-        ("batch-llm", "model"): ["INDEXING_LLM_MODEL", "LLM_MODEL"],
-        ("batch-llm", "api_base"): ["LLM_API_BASE"],
-        ("batch-llm", "api_key"): ["LLM_API_KEY"],
-        ("batch-llm", "max_concurrent"): ["MAX_CONCURRENT_INDEXING"],
-        ("batch-embedding", "model"): ["EMBEDDING_MODEL"],
-        ("batch-embedding", "api_base"): ["EMBEDDING_API_BASE"],
-        ("batch-embedding", "api_key"): ["EMBEDDING_API_KEY"],
-        ("fetch", "engine"): ["INGESTION_FETCH_ENGINE"],
-    }
-
-    # Mapping from TOML section names to config key prefixes
-    section_mappings = {
-        "paths": "PATH",
-        "agent": "AGENT",
-        "telemetry": "TELEMETRY",
-        "cloud": "CLOUD",
-        "workspace": "WORKSPACE",
-        # Legacy mappings for backwards compatibility
-        "indexing": "INDEXING",
-        "answer": "ANSWER",
-    }
-
     for key, value in data.items():
         if isinstance(value, dict):
-            # Special handling for [tool] section
+            # [tool] section: flatten each subsection as a top-level
+            # section so tools self-register via StepConfig
             if key == "tool" and not prefix:
-                # Process tool subsections specially
                 for tool_name, tool_config in value.items():
                     if isinstance(tool_config, dict):
+                        # Flatten tool params as dot-notation keys
+                        # e.g., [tool.batch-llm].model -> BATCH-LLM.MODEL
+                        tool_prefix = tool_name.upper()
                         for param_name, param_value in tool_config.items():
-                            # Look up the mapping for this tool.param combination
-                            mapping_key = (tool_name, param_name)
-                            if mapping_key in tool_key_mappings:
-                                # Map to all the expected flat keys
-                                for flat_key in tool_key_mappings[mapping_key]:
-                                    result[flat_key] = param_value
-                            else:
-                                # Fallback: store as TOOL.X_PARAM
-                                result[f"TOOL.{tool_name.upper()}_{param_name.upper()}"] = (
-                                    param_value
-                                )
+                            result[f"{tool_prefix}.{param_name.upper()}"] = (
+                                param_value
+                            )
                     else:
                         # Direct value under [tool]
                         result[f"TOOL_{tool_name.upper()}"] = tool_config
@@ -363,8 +367,8 @@ def _flatten_toml(data: dict, prefix: str = "") -> dict:
                 # Already in a section - use dot notation
                 new_prefix = f"{prefix}.{key.upper()}"
             else:
-                # Top-level section
-                new_prefix = section_mappings.get(key, key.upper())
+                # Top-level section - derive prefix from KurtConfig fields
+                new_prefix = _get_section_prefix(key)
 
             nested = _flatten_toml(value, new_prefix)
             result.update(nested)
