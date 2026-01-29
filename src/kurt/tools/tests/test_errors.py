@@ -138,6 +138,27 @@ class TestExponentialBackoff:
         assert backoff.max_retries == 5
         assert backoff.attempt == 0
 
+    def test_backoff_validation_negative_base(self):
+        """Test that negative base is rejected."""
+        with pytest.raises(ValueError, match="base must be >= 0"):
+            ExponentialBackoff(base=-1.0)
+
+    def test_backoff_validation_zero_max_wait(self):
+        """Test that zero max_wait is rejected."""
+        with pytest.raises(ValueError, match="max_wait must be > 0"):
+            ExponentialBackoff(max_wait=0.0)
+
+    def test_backoff_validation_negative_max_wait(self):
+        """Test that negative max_wait is rejected."""
+        with pytest.raises(ValueError, match="max_wait must be > 0"):
+            ExponentialBackoff(max_wait=-1.0)
+
+    def test_backoff_zero_base_returns_zero_wait(self):
+        """Test that base=0 returns zero wait time."""
+        backoff = ExponentialBackoff(base=0.0, max_wait=60.0)
+        wait_time = backoff.get_wait_time()
+        assert wait_time == 0.0
+
     def test_backoff_reset(self):
         """Test resetting backoff state."""
         backoff = ExponentialBackoff()

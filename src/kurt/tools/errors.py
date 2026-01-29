@@ -136,10 +136,18 @@ class ExponentialBackoff:
         """Initialize backoff parameters.
 
         Args:
-            base: Initial backoff time in seconds
-            max_wait: Maximum wait time between retries
+            base: Initial backoff time in seconds (must be >= 0)
+            max_wait: Maximum wait time between retries (must be > 0)
             max_retries: Maximum number of retries before giving up
+
+        Raises:
+            ValueError: If base < 0 or max_wait <= 0
         """
+        if base < 0:
+            raise ValueError(f"base must be >= 0, got {base}")
+        if max_wait <= 0:
+            raise ValueError(f"max_wait must be > 0, got {max_wait}")
+
         self.base = base
         self.max_wait = max_wait
         self.max_retries = max_retries
@@ -172,12 +180,19 @@ class ExponentialBackoff:
         """Get the next wait time without sleeping.
 
         Returns:
-            The number of seconds to wait
+            The number of seconds to wait (0 if base is 0)
+
+        Raises:
+            RuntimeError: If max retries exceeded
         """
         if self.attempt >= self.max_retries:
             raise RuntimeError(
                 f"Maximum retries ({self.max_retries}) exceeded"
             )
+
+        # If base is 0, return 0 immediately (no backoff)
+        if self.base == 0:
+            return 0.0
 
         cap = min(self.max_wait, self.base * (2 ** self.attempt))
         return time.time() % cap
