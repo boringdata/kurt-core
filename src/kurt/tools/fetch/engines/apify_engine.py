@@ -5,7 +5,7 @@ from datetime import datetime
 
 from kurt.tools.fetch.core import BaseFetcher, FetcherConfig, FetchResult
 from kurt.tools.errors import EngineError, AuthError, TimeoutError as EngineTimeoutError
-from kurt.tools.api_keys import global_key_manager
+from kurt.tools.api_keys import get_api_key, configure_engines
 
 
 class ApifyFetcher(BaseFetcher):
@@ -19,9 +19,11 @@ class ApifyFetcher(BaseFetcher):
     def __init__(self, config: Optional[FetcherConfig] = None):
         """Initialize Apify fetcher."""
         super().__init__(config)
-        self.api_key = global_key_manager.get("apify")
-        if not self.api_key:
-            raise AuthError("Apify API key not configured")
+        configure_engines()  # Register all engines
+        try:
+            self.api_key = get_api_key("apify")
+        except Exception as e:
+            raise AuthError(f"Apify API key not configured: {e}")
 
     def fetch(self, url: str) -> FetchResult:
         """Fetch content from URL using appropriate Apify actor.

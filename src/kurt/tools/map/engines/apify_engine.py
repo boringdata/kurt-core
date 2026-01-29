@@ -7,7 +7,7 @@ from datetime import datetime
 from kurt.tools.map.core import BaseMapper, MapperConfig, MapperResult
 from kurt.tools.map.models import DocType
 from kurt.tools.errors import EngineError, AuthError, RateLimitError
-from kurt.tools.api_keys import global_key_manager
+from kurt.tools.api_keys import get_api_key, configure_engines
 
 
 class ApifyEngine(BaseMapper):
@@ -21,9 +21,11 @@ class ApifyEngine(BaseMapper):
     def __init__(self, config: Optional[MapperConfig] = None):
         """Initialize Apify engine."""
         super().__init__(config)
-        self.api_key = global_key_manager.get("apify")
-        if not self.api_key:
-            raise AuthError("Apify API key not configured")
+        configure_engines()  # Register all engines
+        try:
+            self.api_key = get_api_key("apify")
+        except Exception as e:
+            raise AuthError(f"Apify API key not configured: {e}")
 
     def map(self, source: str, doc_type: DocType = DocType.DOC) -> MapperResult:
         """Discover content using Apify actors.
