@@ -110,15 +110,15 @@ class TokenBucket:
             Time waited in seconds
         """
         start = time.time()
-        with self._lock:
-            while True:
+        while True:
+            with self._lock:
                 self._refill()
                 if self.tokens >= tokens:
                     self.tokens -= tokens
                     return time.time() - start
 
-        # Minimal sleep to avoid busy waiting
-        time.sleep(0.01)
+            # Release lock and sleep briefly before retrying to avoid busy-waiting
+            time.sleep(0.001)
 
     @property
     def available(self) -> float:
