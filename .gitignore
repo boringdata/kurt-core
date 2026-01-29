@@ -99,6 +99,9 @@ test.db
 # BD (Beads) workflow tool
 .beads/
 
+# NTM runtime data (logs, pids)
+.ntm/
+
 vscode-source/**
 
 # Temporary/test files
@@ -114,8 +117,8 @@ content/
 /config.yaml
 kurt.toml
 sources/
-# bd worktree
 test-feature/
 
 # bv (beads viewer) local config and caches
 .bv/
+kurt-core-45f/
