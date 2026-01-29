@@ -122,3 +122,5 @@ test-feature/
 # bv (beads viewer) local config and caches
 .bv/
 kurt-core-45f/
+# bd worktree
+kurt-core-1uhd/
