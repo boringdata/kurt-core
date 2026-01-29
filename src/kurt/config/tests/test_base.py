@@ -115,23 +115,26 @@ class TestConfigFileOperations:
     def test_get_config_file_path(self, tmp_project):
         """Test getting config file path."""
         config_path = get_config_file_path()
-        assert config_path.name == "kurt.config"
+        # get_config_file_path returns the default path (kurt.toml)
+        assert config_path.name == "kurt.toml"
         assert config_path.parent == Path.cwd()
 
     def test_config_exists_true(self, tmp_project):
         """Test config_exists when config file exists."""
+        # The fixture creates kurt.config, so config_exists should return True
+        # (it checks for kurt.toml via get_config_file_path, but load_config
+        # falls back to kurt.config)
         assert config_exists() is True
 
-    def test_config_exists_false(self, tmp_project):
+    def test_config_exists_false(self, config_file):
         """Test config_exists when config file doesn't exist."""
-        config_file = get_config_file_path()
         config_file.unlink()
 
         assert config_exists() is False
 
-    def test_create_config_default(self, tmp_project):
+    def test_create_config_default(self, config_file):
         """Test creating config with default values."""
-        config_file = get_config_file_path()
+        # Remove the fixture config first
         config_file.unlink()
 
         config = create_config()
@@ -141,16 +144,18 @@ class TestConfigFileOperations:
         assert config.PATH_PROJECTS == "projects"
         assert config.PATH_RULES == "rules"
 
-        assert config_file.exists()
+        # create_config creates kurt.toml
+        created_file = get_config_file_path()
+        assert created_file.exists()
 
-        content = config_file.read_text()
+        content = created_file.read_text()
         assert 'PATH_DB=".kurt/kurt.sqlite"' in content
         assert 'PATH_SOURCES="sources"' in content
-        assert "TELEMETRY_ENABLED=True" in content
+        assert "TELEMETRY_ENABLED=true" in content
 
-    def test_create_config_custom(self, tmp_project):
+    def test_create_config_custom(self, config_file):
         """Test creating config with custom values."""
-        config_file = get_config_file_path()
+        # Remove the fixture config first
         config_file.unlink()
 
         config = create_config(
@@ -165,7 +170,8 @@ class TestConfigFileOperations:
         assert config.PATH_PROJECTS == "work"
         assert config.PATH_RULES == "config"
 
-        content = config_file.read_text()
+        created_file = get_config_file_path()
+        content = created_file.read_text()
         assert 'PATH_DB=".data/custom.db"' in content
         assert 'PATH_SOURCES="content"' in content
 
@@ -177,9 +183,8 @@ class TestConfigFileOperations:
         assert config.PATH_DB == ".kurt/kurt.sqlite"
         assert config.PATH_SOURCES == "sources"
 
-    def test_load_config_not_found(self, tmp_project):
+    def test_load_config_not_found(self, config_file):
         """Test loading config when file doesn't exist."""
-        config_file = get_config_file_path()
         config_file.unlink()
 
         with pytest.raises(FileNotFoundError) as exc_info:
@@ -188,10 +193,8 @@ class TestConfigFileOperations:
         assert "Kurt configuration file not found" in str(exc_info.value)
         assert "Run 'kurt init' to initialize a Kurt project" in str(exc_info.value)
 
-    def test_load_config_with_comments(self, tmp_project):
+    def test_load_config_with_comments(self, config_file):
         """Test loading config ignores comments and empty lines."""
-        config_file = get_config_file_path()
-
         with open(config_file, "a") as f:
             f.write("\n# This is a comment\n")
             f.write("\n")
@@ -200,10 +203,8 @@ class TestConfigFileOperations:
         config = load_config()
         assert isinstance(config, KurtConfig)
 
-    def test_load_config_with_extra_fields(self, tmp_project):
+    def test_load_config_with_extra_fields(self, config_file):
         """Test loading config with integration extra fields."""
-        config_file = get_config_file_path()
-
         with open(config_file, "a") as f:
             f.write('\nANALYTICS_POSTHOG_API_KEY="phx_test123"\n')
             f.write('CMS_SANITY_PROD_PROJECT_ID="sanity123"\n')
@@ -221,18 +222,19 @@ class TestConfigFileOperations:
         assert isinstance(config, KurtConfig)
         assert config.PATH_DB == ".kurt/kurt.sqlite"
 
-    def test_get_config_or_default_not_exists(self, tmp_project):
+    def test_get_config_or_default_not_exists(self, config_file):
         """Test get_config_or_default when config doesn't exist."""
-        config_file = get_config_file_path()
         config_file.unlink()
 
         config = get_config_or_default()
 
         assert isinstance(config, KurtConfig)
         assert config.PATH_DB == ".kurt/kurt.sqlite"
+        # Neither kurt.toml nor kurt.config should exist
         assert not config_file.exists()
+        assert not get_config_file_path().exists()
 
-    def test_update_config_basic_fields(self, tmp_project):
+    def test_update_config_basic_fields(self, config_file):
         """Test updating config with basic fields."""
         config = load_config()
         config.PATH_DB = ".data/new.db"
@@ -244,9 +246,8 @@ class TestConfigFileOperations:
         assert loaded.PATH_DB == ".data/new.db"
         assert loaded.INDEXING_LLM_MODEL == "anthropic/claude-3-5-sonnet-20241022"
 
-    def test_update_config_preserves_extra_fields(self, tmp_project):
+    def test_update_config_preserves_extra_fields(self, config_file):
         """Test that update_config preserves extra fields from integrations."""
-        config_file = get_config_file_path()
         with open(config_file, "a") as f:
             f.write('\nANALYTICS_POSTHOG_API_KEY="phx_existing"\n')
             f.write('CMS_SANITY_PROD_PROJECT_ID="sanity_existing"\n')
@@ -266,36 +267,35 @@ class TestConfigFileOperations:
 class TestBooleanTypeHandling:
     """Test boolean type handling in config save/load cycle."""
 
-    def test_telemetry_enabled_true_roundtrip(self, tmp_project):
+    def test_telemetry_enabled_true_roundtrip(self, config_file):
         """Test saving and loading TELEMETRY_ENABLED=True."""
         config = load_config()
         config.TELEMETRY_ENABLED = True
         update_config(config)
 
-        content = get_config_file_path().read_text()
-        assert "TELEMETRY_ENABLED=True" in content
-        assert 'TELEMETRY_ENABLED="True"' not in content
+        content = config_file.read_text()
+        assert "TELEMETRY_ENABLED=true" in content
+        assert 'TELEMETRY_ENABLED="true"' not in content
 
         loaded = load_config()
         assert loaded.TELEMETRY_ENABLED is True
         assert isinstance(loaded.TELEMETRY_ENABLED, bool)
 
-    def test_telemetry_enabled_false_roundtrip(self, tmp_project):
+    def test_telemetry_enabled_false_roundtrip(self, config_file):
         """Test saving and loading TELEMETRY_ENABLED=False."""
         config = load_config()
         config.TELEMETRY_ENABLED = False
         update_config(config)
 
-        content = get_config_file_path().read_text()
-        assert "TELEMETRY_ENABLED=False" in content
+        content = config_file.read_text()
+        assert "TELEMETRY_ENABLED=false" in content
 
         loaded = load_config()
         assert loaded.TELEMETRY_ENABLED is False
         assert isinstance(loaded.TELEMETRY_ENABLED, bool)
 
-    def test_boolean_string_variations(self, tmp_project):
+    def test_boolean_string_variations(self, config_file):
         """Test loading boolean from various string representations."""
-        config_file = get_config_file_path()
 
         def set_telemetry(value: str):
             content = config_file.read_text()
@@ -378,10 +378,8 @@ class TestValidateConfig:
 class TestDotNotationConfig:
     """Test dot notation for module-specific configuration."""
 
-    def test_load_config_with_dot_notation(self, tmp_project):
+    def test_load_config_with_dot_notation(self, config_file):
         """Test loading config with dot notation keys."""
-        config_file = get_config_file_path()
-
         with open(config_file, "a") as f:
             f.write('\nINDEXING.SECTION_EXTRACTIONS.LLM_MODEL="anthropic/claude-3-5-sonnet"\n')
             f.write("INDEXING.ENTITY_CLUSTERING.EPS=0.25\n")
@@ -397,10 +395,8 @@ class TestDotNotationConfig:
         assert config.__pydantic_extra__["INDEXING.ENTITY_CLUSTERING.EPS"] == "0.25"
         assert config.__pydantic_extra__["INDEXING.ENTITY_CLUSTERING.MIN_SAMPLES"] == "2"
 
-    def test_get_step_config_returns_step_specific(self, tmp_project):
+    def test_get_step_config_returns_step_specific(self, config_file):
         """Test get_step_config returns step-specific value when set."""
-        config_file = get_config_file_path()
-
         with open(config_file, "a") as f:
             f.write('\nINDEXING.SECTION_EXTRACTIONS.LLM_MODEL="anthropic/claude-3-5-sonnet"\n')
 
@@ -447,10 +443,8 @@ class TestDotNotationConfig:
 
         assert result == "my_default"
 
-    def test_get_step_config_workflow_module(self, tmp_project):
+    def test_get_step_config_workflow_module(self, config_file):
         """Test get_step_config with workflow module like MAP or FETCH."""
-        config_file = get_config_file_path()
-
         with open(config_file, "a") as f:
             f.write("MAP.MAX_PAGES=500\n")
             f.write("MAP.DISCOVERY.MAX_DEPTH=3\n")
@@ -470,10 +464,8 @@ class TestDotNotationConfig:
         result = get_step_config(config, "FETCH", None, "ENGINE", default="trafilatura")
         assert result == "firecrawl"
 
-    def test_update_config_preserves_dot_notation(self, tmp_project):
+    def test_update_config_preserves_dot_notation(self, config_file):
         """Test that update_config preserves dot notation keys."""
-        config_file = get_config_file_path()
-
         with open(config_file, "a") as f:
             f.write('\nINDEXING.SECTION_EXTRACTIONS.LLM_MODEL="anthropic/claude-3-5-sonnet"\n')
             f.write("INDEXING.ENTITY_CLUSTERING.EPS=0.25\n")

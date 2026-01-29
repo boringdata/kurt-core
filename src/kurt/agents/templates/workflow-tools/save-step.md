@@ -122,5 +122,5 @@ Check the `errors` array in the response for specific issues.
 workflows/my_workflow/
 ├── workflow.toml    # Workflow definition
 ├── models.py        # SQLModel tables (required for save-to-db)
-└── tools.py         # DBOS step functions (for type=function steps)
+└── tools.py         # Step functions (for type=function steps)
 ```

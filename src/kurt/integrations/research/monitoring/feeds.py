@@ -11,8 +11,6 @@ from time import mktime
 from typing import Optional
 from urllib.parse import urlparse
 
-import feedparser
-
 from kurt.integrations.research.monitoring.models import Signal
 
 
@@ -43,6 +41,8 @@ class FeedAdapter:
             List of Signal objects
         """
         try:
+            import feedparser
+
             # Parse feed
             feed = feedparser.parse(feed_url)
 
@@ -146,6 +146,8 @@ class FeedAdapter:
             Dictionary with feed metadata
         """
         try:
+            import feedparser
+
             feed = feedparser.parse(feed_url)
 
             if feed.bozo and hasattr(feed, "bozo_exception"):

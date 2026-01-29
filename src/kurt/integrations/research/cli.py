@@ -27,7 +27,7 @@ def research_group():
 @click.option(
     "--source",
     default="perplexity",
-    type=click.Choice(["perplexity"]),
+    type=click.Choice(["perplexity", "apify"]),
     help="Research source to configure",
 )
 @track_command
@@ -75,6 +75,14 @@ def onboard_cmd(source: str):
             console.print("\n[bold]Perplexity Setup:[/bold]")
             console.print("  API_KEY: Get from https://www.perplexity.ai/settings/api")
             console.print("  DEFAULT_MODEL: sonar-reasoning (recommended)")
+        elif source == "apify":
+            console.print("\n[bold]Apify Setup:[/bold]")
+            console.print("  API_TOKEN: Get from https://console.apify.com/account/integrations")
+            console.print("  DEFAULT_ACTOR: apidojo/tweet-scraper (for Twitter)")
+            console.print("\n[bold]Available Actors:[/bold]")
+            console.print("  Twitter:   apidojo/tweet-scraper, quacker/twitter-scraper")
+            console.print("  LinkedIn:  curious_coder/linkedin-post-search-scraper")
+            console.print("  Threads:   apidojo/threads-scraper")
         return
 
     # Test connection
@@ -88,6 +96,19 @@ def onboard_cmd(source: str):
             adapter = PerplexityAdapter(source_config)
             if adapter.test_connection():
                 console.print(f"[green]\u2713 Connected to {source.capitalize()}[/green]")
+            else:
+                console.print("[red]\u2717 Connection failed[/red]")
+                raise click.Abort()
+        elif source == "apify":
+            from .monitoring.apify import ApifyAdapter
+
+            adapter = ApifyAdapter(source_config)
+            if adapter.test_connection():
+                console.print(f"[green]\u2713 Connected to {source.capitalize()}[/green]")
+                user_info = adapter.get_user_info()
+                if user_info:
+                    username = user_info.get("username", "unknown")
+                    console.print(f"[dim]  Logged in as: {username}[/dim]")
             else:
                 console.print("[red]\u2717 Connection failed[/red]")
                 raise click.Abort()
@@ -128,7 +149,7 @@ def status_cmd():
         return
 
     # Check each known source
-    known_sources = ["perplexity"]
+    known_sources = ["perplexity", "apify"]
 
     for source in known_sources:
         if source_configured(source):

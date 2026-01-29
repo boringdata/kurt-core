@@ -245,15 +245,6 @@ def config_exists_for_prefix(prefix: str, levels: int = 2) -> bool:
         return False
 
 
-# Backwards compatibility alias
-def prefixed_config_exists(prefix: str, levels: int = 2) -> bool:
-    """
-    Deprecated: Use config_exists_for_prefix() instead.
-    Check if any configuration exists for the given prefix.
-    """
-    return config_exists_for_prefix(prefix, levels)
-
-
 def has_placeholder_values(config_dict: Dict[str, Any]) -> bool:
     """
     Check if a config dictionary contains placeholder values.

@@ -2,14 +2,26 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 from click.testing import CliRunner
 
-from kurt.cli.init import init
-from kurt.core.tests.conftest import (
+from kurt.cli.init import (
+    _check_config_exists,
+    _check_dolt_repo,
+    _check_git_repo,
+    _check_hooks_installed,
+    _check_workflows_dir,
+    _create_config,
+    _create_sources_dir,
+    _create_workflows_dir,
+    _detect_partial_init,
+    _update_gitignore,
+    init,
+)
+from kurt.conftest import (
     assert_cli_success,
     assert_output_contains,
     invoke_cli,
@@ -17,7 +29,7 @@ from kurt.core.tests.conftest import (
 
 
 class TestInitCommand:
-    """Tests for `kurt init` command."""
+    """Tests for `kurt init` command help and options."""
 
     def test_init_help(self, cli_runner: CliRunner):
         """Test init command shows help."""
@@ -29,270 +41,457 @@ class TestInitCommand:
         """Test init command lists options in help."""
         result = invoke_cli(cli_runner, init, ["--help"])
         assert_cli_success(result)
-        assert_output_contains(result, "--db-path")
-        assert_output_contains(result, "--sources-path")
-        assert_output_contains(result, "--projects-path")
-        assert_output_contains(result, "--rules-path")
-        assert_output_contains(result, "--ide")
+        assert_output_contains(result, "--no-dolt")
+        assert_output_contains(result, "--no-hooks")
+        assert_output_contains(result, "--force")
 
-    def test_init_ide_choices(self, cli_runner: CliRunner):
-        """Test init --ide accepts valid choices."""
+    def test_init_shows_path_argument(self, cli_runner: CliRunner):
+        """Test init command shows path argument in help."""
         result = invoke_cli(cli_runner, init, ["--help"])
         assert_cli_success(result)
-        assert_output_contains(result, "claude")
-        assert_output_contains(result, "cursor")
-        assert_output_contains(result, "both")
+        assert_output_contains(result, "PATH")
 
 
 @pytest.fixture
-def cli_runner_sqlite(cli_runner: CliRunner, monkeypatch):
-    """CLI runner with isolated filesystem and SQLite database."""
-    # Remove DATABASE_URL to force SQLite
-    monkeypatch.delenv("DATABASE_URL", raising=False)
+def cli_runner_isolated(cli_runner: CliRunner):
+    """CLI runner with isolated filesystem."""
     with cli_runner.isolated_filesystem():
         yield cli_runner
 
 
-class TestInitFunctional:
-    """Functional tests for `kurt init` command using SQLite."""
+class TestCheckFunctions:
+    """Tests for detection helper functions."""
 
-    def test_init_creates_config_file(self, cli_runner_sqlite):
-        """Test init command creates config file.
+    def test_check_git_repo_false(self, cli_runner_isolated):
+        """Test _check_git_repo returns False when not a git repo."""
+        assert _check_git_repo() is False
 
-        This test catches bugs where init fails to create configuration files.
-        """
-        result = cli_runner_sqlite.invoke(init, [])
-        assert_cli_success(result)
-        assert_output_contains(result, "Created config")
-        assert Path("kurt.config").exists()
+    def test_check_git_repo_true(self, cli_runner_isolated):
+        """Test _check_git_repo returns True when git repo exists."""
+        (Path.cwd() / ".git").mkdir()
+        assert _check_git_repo() is True
 
-    def test_init_creates_database(self, cli_runner_sqlite):
-        """Test init command creates database."""
-        result = cli_runner_sqlite.invoke(init, [])
-        assert_cli_success(result)
-        assert Path(".kurt/kurt.sqlite").exists()
+    def test_check_dolt_repo_false(self, cli_runner_isolated):
+        """Test _check_dolt_repo returns False when not a dolt repo."""
+        assert _check_dolt_repo() is False
 
-    def test_init_creates_env_example(self, cli_runner_sqlite):
-        """Test init command creates .env.example file."""
-        result = cli_runner_sqlite.invoke(init, [])
-        assert_cli_success(result)
-        assert_output_contains(result, ".env.example")
-        assert Path(".env.example").exists()
+    def test_check_dolt_repo_true(self, cli_runner_isolated):
+        """Test _check_dolt_repo returns True when dolt repo exists."""
+        (Path.cwd() / ".dolt").mkdir()
+        assert _check_dolt_repo() is True
 
-    def test_init_custom_db_path(self, cli_runner_sqlite):
-        """Test init command respects --db-path option.
+    def test_check_config_exists_false(self, cli_runner_isolated):
+        """Test _check_config_exists returns False when no config."""
+        assert _check_config_exists() is False
 
-        This test catches bugs where options are not passed correctly.
-        """
-        result = cli_runner_sqlite.invoke(init, ["--db-path", "custom/data.db"])
-        assert_cli_success(result)
-        assert_output_contains(result, "custom/data.db")
+    def test_check_config_exists_toml(self, cli_runner_isolated):
+        """Test _check_config_exists returns True with kurt.toml."""
+        (Path.cwd() / "kurt.toml").write_text("")
+        assert _check_config_exists() is True
 
-    def test_init_custom_sources_path(self, cli_runner_sqlite):
-        """Test init command respects --sources-path option."""
-        result = cli_runner_sqlite.invoke(init, ["--sources-path", "my_sources"])
-        assert_cli_success(result)
-        assert_output_contains(result, "my_sources")
+    def test_check_workflows_dir_false(self, cli_runner_isolated):
+        """Test _check_workflows_dir returns False when no directory."""
+        assert _check_workflows_dir() is False
 
-    def test_init_custom_projects_path(self, cli_runner_sqlite):
-        """Test init command respects --projects-path option."""
-        result = cli_runner_sqlite.invoke(init, ["--projects-path", "my_projects"])
-        assert_cli_success(result)
-        assert_output_contains(result, "my_projects")
+    def test_check_workflows_dir_true(self, cli_runner_isolated):
+        """Test _check_workflows_dir returns True when directory exists."""
+        (Path.cwd() / "workflows").mkdir()
+        assert _check_workflows_dir() is True
 
-    def test_init_custom_rules_path(self, cli_runner_sqlite):
-        """Test init command respects --rules-path option."""
-        result = cli_runner_sqlite.invoke(init, ["--rules-path", "my_rules"])
-        assert_cli_success(result)
-        assert_output_contains(result, "my_rules")
+    def test_check_hooks_installed_no_git(self, cli_runner_isolated):
+        """Test _check_hooks_installed returns False without .git."""
+        assert _check_hooks_installed() is False
 
-    def test_init_config_has_correct_values(self, cli_runner_sqlite):
-        """Test init command writes correct values to config."""
-        result = cli_runner_sqlite.invoke(
-            init,
-            [
-                "--db-path",
-                "test.db",
-                "--sources-path",
-                "src_content",
-                "--projects-path",
-                "proj",
-                "--rules-path",
-                "r",
-            ],
-        )
-        assert_cli_success(result)
+    def test_check_hooks_installed_no_hooks(self, cli_runner_isolated):
+        """Test _check_hooks_installed returns False without hooks."""
+        (Path.cwd() / ".git" / "hooks").mkdir(parents=True)
+        assert _check_hooks_installed() is False
 
-        # Read and verify config
-        from kurt.config import load_config
+    def test_check_hooks_installed_with_kurt_hook(self, cli_runner_isolated):
+        """Test _check_hooks_installed returns True with Kurt hook."""
+        hooks_dir = Path.cwd() / ".git" / "hooks"
+        hooks_dir.mkdir(parents=True)
+        hook = hooks_dir / "post-commit"
+        hook.write_text("#!/bin/bash\n# Kurt Git Hook\necho 'hello'")
+        assert _check_hooks_installed() is True
 
-        config = load_config()
-        assert config.PATH_DB == "test.db"
-        assert config.PATH_SOURCES == "src_content"
-        assert config.PATH_PROJECTS == "proj"
-        assert config.PATH_RULES == "r"
-
-    def test_init_ide_claude_only(self, cli_runner_sqlite):
-        """Test init command with --ide claude.
-
-        The command should succeed even if AGENTS.md isn't found in package.
-        """
-        result = cli_runner_sqlite.invoke(init, ["--ide", "claude"])
-        assert_cli_success(result)
-        # Should mention Claude Code setup (either success or warning)
-        assert "Claude Code" in result.output or "claude" in result.output.lower()
-
-    def test_init_ide_cursor_only(self, cli_runner_sqlite):
-        """Test init command with --ide cursor.
-
-        The command should succeed even if AGENTS.md isn't found in package.
-        """
-        result = cli_runner_sqlite.invoke(init, ["--ide", "cursor"])
-        assert_cli_success(result)
-        # Should mention Cursor setup (either success or warning)
-        assert "Cursor" in result.output or "cursor" in result.output.lower()
+    def test_check_hooks_installed_with_non_kurt_hook(self, cli_runner_isolated):
+        """Test _check_hooks_installed returns False with non-Kurt hook."""
+        hooks_dir = Path.cwd() / ".git" / "hooks"
+        hooks_dir.mkdir(parents=True)
+        hook = hooks_dir / "post-commit"
+        hook.write_text("#!/bin/bash\necho 'hello'")
+        assert _check_hooks_installed() is False
 
 
-class TestInitIdempotency:
-    """Tests for init command idempotency behavior."""
+class TestDetectPartialInit:
+    """Tests for _detect_partial_init function."""
 
-    def test_init_detects_existing_project(self, cli_runner_sqlite):
-        """Test init detects when project already exists."""
-        # First init
-        result = cli_runner_sqlite.invoke(init, [])
-        assert_cli_success(result)
+    def test_detect_empty_directory(self, cli_runner_isolated):
+        """Test detection in empty directory."""
+        status = _detect_partial_init()
+        assert status == {
+            "git": False,
+            "dolt": False,
+            "config": False,
+            "workflows": False,
+            "hooks": False,
+        }
 
-        # Second init should warn
-        result = cli_runner_sqlite.invoke(init, [], input="n\n")
-        assert_cli_success(result)
-        assert_output_contains(result, "already initialized")
+    def test_detect_git_only(self, cli_runner_isolated):
+        """Test detection with only Git initialized."""
+        (Path.cwd() / ".git").mkdir()
+        status = _detect_partial_init()
+        assert status["git"] is True
+        assert status["dolt"] is False
+
+    def test_detect_full_init(self, cli_runner_isolated):
+        """Test detection with all components."""
+        (Path.cwd() / ".git" / "hooks").mkdir(parents=True)
+        (Path.cwd() / ".dolt").mkdir()
+        (Path.cwd() / "kurt.toml").write_text("")
+        (Path.cwd() / "workflows").mkdir()
+
+        # Add Kurt hook
+        hook = Path.cwd() / ".git" / "hooks" / "post-commit"
+        hook.write_text("#!/bin/bash\n# Kurt Git Hook\necho 'hello'")
+
+        status = _detect_partial_init()
+        assert all(status.values())
 
 
-class TestInitIdeSetup:
-    """Tests for IDE-specific setup (agents, hooks, symlinks)."""
+class TestCreateConfig:
+    """Tests for _create_config function."""
 
-    def test_init_creates_agents_directory(self, cli_runner_sqlite):
-        """Test init creates .agents directory with AGENTS.md."""
-        result = cli_runner_sqlite.invoke(init, [])
-        assert_cli_success(result)
+    def test_creates_kurt_toml(self, cli_runner_isolated):
+        """Test config file creation."""
+        assert _create_config() is True
+        assert (Path.cwd() / "kurt.toml").exists()
 
-        agents_dir = Path(".agents")
-        agents_md = agents_dir / "AGENTS.md"
+    def test_config_has_workspace_id(self, cli_runner_isolated):
+        """Test config includes workspace section with id."""
+        _create_config()
+        content = (Path.cwd() / "kurt.toml").read_text()
+        assert "[workspace]" in content
+        assert 'id = "' in content
 
-        assert agents_dir.exists(), ".agents directory should be created"
-        assert agents_md.exists(), ".agents/AGENTS.md should be created"
+    def test_config_has_paths(self, cli_runner_isolated):
+        """Test config includes paths section."""
+        _create_config()
+        content = (Path.cwd() / "kurt.toml").read_text()
+        assert "[paths]" in content
+        assert 'workflows = "workflows"' in content
+        assert 'sources = "sources"' in content
 
-    def test_init_creates_claude_symlink(self, cli_runner_sqlite):
-        """Test init creates .claude/CLAUDE.md symlink to .agents/AGENTS.md."""
-        result = cli_runner_sqlite.invoke(init, ["--ide", "claude"])
-        assert_cli_success(result)
+    def test_config_has_tool_settings(self, cli_runner_isolated):
+        """Test config includes tool settings."""
+        _create_config()
+        content = (Path.cwd() / "kurt.toml").read_text()
+        assert "[tool.batch-llm]" in content
+        assert "[tool.batch-embedding]" in content
 
-        claude_md = Path(".claude/CLAUDE.md")
-        assert claude_md.exists() or claude_md.is_symlink(), ".claude/CLAUDE.md should exist"
+    def test_config_skips_if_exists(self, cli_runner_isolated):
+        """Test config creation skips if file exists."""
+        (Path.cwd() / "kurt.toml").write_text("existing content")
+        assert _create_config() is True
+        assert (Path.cwd() / "kurt.toml").read_text() == "existing content"
 
-        if claude_md.is_symlink():
-            target = claude_md.resolve()
-            assert target.name == "AGENTS.md", "Symlink should point to AGENTS.md"
 
-    def test_init_creates_claude_instructions_symlink(self, cli_runner_sqlite):
-        """Test init creates .claude/instructions/AGENTS.md symlink."""
-        result = cli_runner_sqlite.invoke(init, ["--ide", "claude"])
-        assert_cli_success(result)
+class TestCreateWorkflowsDir:
+    """Tests for _create_workflows_dir function."""
 
-        instructions_md = Path(".claude/instructions/AGENTS.md")
-        assert (
-            instructions_md.exists() or instructions_md.is_symlink()
-        ), ".claude/instructions/AGENTS.md should exist"
+    def test_creates_workflows_directory(self, cli_runner_isolated):
+        """Test workflows directory creation."""
+        assert _create_workflows_dir() is True
+        assert (Path.cwd() / "workflows").is_dir()
 
-    def test_init_creates_claude_settings_with_hooks(self, cli_runner_sqlite):
-        """Test init creates .claude/settings.json with hooks configured."""
-        result = cli_runner_sqlite.invoke(init, ["--ide", "claude"])
-        assert_cli_success(result)
+    def test_creates_example_workflow(self, cli_runner_isolated):
+        """Test example workflow file is created."""
+        _create_workflows_dir()
+        example = Path.cwd() / "workflows" / "example.md"
+        assert example.exists()
 
-        settings_file = Path(".claude/settings.json")
-        assert settings_file.exists(), ".claude/settings.json should be created"
+    def test_example_workflow_content(self, cli_runner_isolated):
+        """Test example workflow has valid content."""
+        _create_workflows_dir()
+        content = (Path.cwd() / "workflows" / "example.md").read_text()
+        assert "---" in content  # Has frontmatter
+        assert "name: example" in content
+        assert "agent:" in content
+        assert "guardrails:" in content
 
-        with open(settings_file) as f:
-            settings = json.load(f)
+    def test_skips_existing_example(self, cli_runner_isolated):
+        """Test example workflow not overwritten if exists."""
+        (Path.cwd() / "workflows").mkdir()
+        example = Path.cwd() / "workflows" / "example.md"
+        example.write_text("custom content")
 
-        assert "hooks" in settings, "settings.json should contain hooks"
-        hooks = settings["hooks"]
+        _create_workflows_dir()
+        assert example.read_text() == "custom content"
 
-        # Check for expected hook types
-        assert "SessionStart" in hooks, "SessionStart hook should be configured"
-        assert "PreToolUse" in hooks, "PreToolUse hook should be configured"
-        assert "PostToolUse" in hooks, "PostToolUse hook should be configured"
 
-    def test_init_claude_hooks_have_correct_structure(self, cli_runner_sqlite):
-        """Test Claude hooks have the expected structure."""
-        result = cli_runner_sqlite.invoke(init, ["--ide", "claude"])
-        assert_cli_success(result)
+class TestCreateSourcesDir:
+    """Tests for _create_sources_dir function."""
 
-        settings_file = Path(".claude/settings.json")
-        with open(settings_file) as f:
-            settings = json.load(f)
+    def test_creates_sources_directory(self, cli_runner_isolated):
+        """Test sources directory creation."""
+        assert _create_sources_dir() is True
+        assert (Path.cwd() / "sources").is_dir()
 
-        # Check SessionStart hook structure
-        session_start = settings["hooks"]["SessionStart"]
-        assert isinstance(session_start, list), "SessionStart should be a list"
-        assert len(session_start) > 0, "SessionStart should have at least one entry"
-        assert "hooks" in session_start[0], "Hook entry should have 'hooks' key"
+    def test_idempotent(self, cli_runner_isolated):
+        """Test sources directory creation is idempotent."""
+        (Path.cwd() / "sources").mkdir()
+        (Path.cwd() / "sources" / "file.txt").write_text("test")
 
-        # Check that hooks contain kurt status command
-        hook_commands = []
-        for entry in session_start:
-            for hook in entry.get("hooks", []):
-                if hook.get("type") == "command":
-                    hook_commands.append(hook.get("command", ""))
+        assert _create_sources_dir() is True
+        assert (Path.cwd() / "sources" / "file.txt").exists()
 
-        assert any(
-            "kurt status" in cmd for cmd in hook_commands
-        ), "SessionStart should include 'kurt status' command"
 
-    def test_init_creates_cursor_symlink(self, cli_runner_sqlite):
-        """Test init creates .cursor/rules/KURT.mdc symlink."""
-        result = cli_runner_sqlite.invoke(init, ["--ide", "cursor"])
-        assert_cli_success(result)
+class TestUpdateGitignore:
+    """Tests for _update_gitignore function."""
 
-        cursor_rule = Path(".cursor/rules/KURT.mdc")
-        assert (
-            cursor_rule.exists() or cursor_rule.is_symlink()
-        ), ".cursor/rules/KURT.mdc should exist"
+    def test_creates_gitignore(self, cli_runner_isolated):
+        """Test .gitignore creation."""
+        assert _update_gitignore() is True
+        assert (Path.cwd() / ".gitignore").exists()
 
-        if cursor_rule.is_symlink():
-            target = cursor_rule.resolve()
-            assert target.name == "AGENTS.md", "Symlink should point to AGENTS.md"
+    def test_gitignore_has_kurt_entries(self, cli_runner_isolated):
+        """Test .gitignore has Kurt-specific entries."""
+        _update_gitignore()
+        content = (Path.cwd() / ".gitignore").read_text()
+        assert "sources/" in content
+        assert ".dolt/noms/" in content
+        assert ".env" in content
 
-    def test_init_both_ides_creates_all_files(self, cli_runner_sqlite):
-        """Test init --ide both creates both Claude and Cursor configurations."""
-        result = cli_runner_sqlite.invoke(init, ["--ide", "both"])
-        assert_cli_success(result)
+    def test_gitignore_preserves_existing(self, cli_runner_isolated):
+        """Test .gitignore preserves existing content."""
+        (Path.cwd() / ".gitignore").write_text("*.pyc\n__pycache__/\n")
 
-        # Check Claude files
-        assert Path(".claude/CLAUDE.md").exists() or Path(".claude/CLAUDE.md").is_symlink()
-        assert Path(".claude/settings.json").exists()
+        _update_gitignore()
+        content = (Path.cwd() / ".gitignore").read_text()
+        assert "*.pyc" in content
+        assert "sources/" in content
 
-        # Check Cursor files
-        assert (
-            Path(".cursor/rules/KURT.mdc").exists() or Path(".cursor/rules/KURT.mdc").is_symlink()
-        )
+    def test_gitignore_no_duplicates(self, cli_runner_isolated):
+        """Test .gitignore doesn't add duplicates."""
+        (Path.cwd() / ".gitignore").write_text("sources/\n.env\n")
 
-    def test_init_preserves_existing_settings(self, cli_runner_sqlite):
-        """Test init merges hooks into existing settings.json without overwriting."""
-        # Create existing settings with custom key
-        claude_dir = Path(".claude")
-        claude_dir.mkdir(parents=True, exist_ok=True)
-        existing_settings = {"customKey": "customValue", "hooks": {"CustomHook": []}}
-        with open(claude_dir / "settings.json", "w") as f:
-            json.dump(existing_settings, f)
+        _update_gitignore()
+        content = (Path.cwd() / ".gitignore").read_text()
+        # Count occurrences of sources/
+        assert content.count("sources/") == 1
 
-        result = cli_runner_sqlite.invoke(init, ["--ide", "claude"])
-        assert_cli_success(result)
 
-        with open(claude_dir / "settings.json") as f:
-            settings = json.load(f)
+class TestInitFunctionalNoDolt:
+    """Functional tests for `kurt init --no-dolt` (no external dependencies)."""
 
-        # Custom key should be preserved
-        assert settings.get("customKey") == "customValue", "Existing keys should be preserved"
-        # Kurt hooks should be added
-        assert "SessionStart" in settings["hooks"], "Kurt hooks should be added"
+    def test_init_no_dolt_creates_git(self, cli_runner_isolated):
+        """Test init --no-dolt creates git repository."""
+        with patch("kurt.cli.init.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+
+            cli_runner_isolated.invoke(init, ["--no-dolt"])
+
+            # Git init should be called
+            calls = [str(c) for c in mock_run.call_args_list]
+            assert any("git" in str(c) and "init" in str(c) for c in calls)
+
+    def test_init_no_dolt_skips_dolt(self, cli_runner_isolated):
+        """Test init --no-dolt skips Dolt initialization."""
+        with patch("kurt.cli.init.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+
+            cli_runner_isolated.invoke(init, ["--no-dolt"])
+
+            # Dolt init should NOT be called
+            calls = [str(c) for c in mock_run.call_args_list]
+            assert not any("dolt" in str(c) for c in calls)
+
+    def test_init_no_dolt_creates_config(self, cli_runner_isolated):
+        """Test init --no-dolt creates config file."""
+        with patch("kurt.cli.init.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+
+            cli_runner_isolated.invoke(init, ["--no-dolt"])
+
+            assert (Path.cwd() / "kurt.toml").exists()
+
+    def test_init_no_dolt_creates_workflows(self, cli_runner_isolated):
+        """Test init --no-dolt creates workflows directory."""
+        with patch("kurt.cli.init.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+
+            cli_runner_isolated.invoke(init, ["--no-dolt"])
+
+            assert (Path.cwd() / "workflows").is_dir()
+
+    def test_init_no_dolt_creates_sources(self, cli_runner_isolated):
+        """Test init --no-dolt creates sources directory."""
+        with patch("kurt.cli.init.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+
+            cli_runner_isolated.invoke(init, ["--no-dolt"])
+
+            assert (Path.cwd() / "sources").is_dir()
+
+    def test_init_no_dolt_creates_gitignore(self, cli_runner_isolated):
+        """Test init --no-dolt creates .gitignore."""
+        with patch("kurt.cli.init.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+
+            cli_runner_isolated.invoke(init, ["--no-dolt"])
+
+            assert (Path.cwd() / ".gitignore").exists()
+
+
+class TestInitPartialDetection:
+    """Tests for partial initialization detection."""
+
+    def test_detects_existing_dolt(self, cli_runner_isolated):
+        """Test init detects existing Dolt repository."""
+        (Path.cwd() / ".dolt").mkdir()
+
+        result = cli_runner_isolated.invoke(init, [])
+
+        assert result.exit_code == 1
+        assert "already initialized" in result.output.lower() or "existing project" in result.output.lower()
+
+    def test_git_only_proceeds_with_init(self, cli_runner_isolated):
+        """Test init proceeds when only Git exists (no Dolt)."""
+        (Path.cwd() / ".git").mkdir()  # Only Git
+
+        with patch("kurt.cli.init.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+
+            result = cli_runner_isolated.invoke(init, ["--no-dolt"])
+
+            # Should proceed successfully since Dolt doesn't exist
+            assert result.exit_code == 0
+
+    def test_force_completes_partial(self, cli_runner_isolated):
+        """Test init --force completes partial setup."""
+        (Path.cwd() / ".git").mkdir()
+
+        with patch("kurt.cli.init.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            with patch("kurt.cli.init._install_hooks") as mock_hooks:
+                mock_hooks.return_value = True
+
+                cli_runner_isolated.invoke(init, ["--force", "--no-dolt"])
+
+                # Should create missing components
+                assert (Path.cwd() / "kurt.toml").exists()
+                assert (Path.cwd() / "workflows").is_dir()
+
+
+class TestInitExitCodes:
+    """Tests for exit codes."""
+
+    def test_exit_code_0_on_success(self, cli_runner_isolated):
+        """Test exit code 0 on successful init."""
+        with patch("kurt.cli.init.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+
+            result = cli_runner_isolated.invoke(init, ["--no-dolt"])
+
+            assert result.exit_code == 0
+
+    def test_exit_code_1_already_initialized(self, cli_runner_isolated):
+        """Test exit code 1 when already initialized."""
+        (Path.cwd() / ".dolt").mkdir()
+
+        result = cli_runner_isolated.invoke(init, [])
+
+        assert result.exit_code == 1
+
+    def test_exit_code_2_on_git_failure(self, cli_runner_isolated):
+        """Test exit code 2 when Git init fails."""
+        with patch("kurt.cli.init.subprocess.run") as mock_run:
+            mock_run.side_effect = FileNotFoundError()
+
+            result = cli_runner_isolated.invoke(init, ["--no-dolt"])
+
+            assert result.exit_code == 2
+
+
+class TestInitWithPath:
+    """Tests for init with path argument."""
+
+    def test_init_with_path_creates_directory(self, cli_runner_isolated):
+        """Test init creates target directory if needed."""
+        original_cwd = Path.cwd()
+        with patch("kurt.cli.init.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+
+            cli_runner_isolated.invoke(init, ["new_project", "--no-dolt"])
+
+            # The directory should exist (cwd changes during init)
+            assert (original_cwd / "new_project").is_dir()
+
+    def test_init_with_existing_path(self, cli_runner_isolated):
+        """Test init works with existing directory."""
+        (Path.cwd() / "existing").mkdir()
+
+        with patch("kurt.cli.init.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+
+            result = cli_runner_isolated.invoke(init, ["existing", "--no-dolt"])
+
+            assert result.exit_code == 0
+
+
+class TestInitNoHooks:
+    """Tests for --no-hooks option."""
+
+    def test_no_hooks_skips_hook_install(self, cli_runner_isolated):
+        """Test --no-hooks skips hook installation."""
+        with patch("kurt.cli.init.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            with patch("kurt.cli.init._install_hooks") as mock_hooks:
+                cli_runner_isolated.invoke(init, ["--no-dolt", "--no-hooks"])
+
+                mock_hooks.assert_not_called()
+
+    def test_no_dolt_implies_no_hooks(self, cli_runner_isolated):
+        """Test --no-dolt implies hooks are skipped (hooks need dolt)."""
+        with patch("kurt.cli.init.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            with patch("kurt.cli.init._install_hooks") as mock_hooks:
+                result = cli_runner_isolated.invoke(init, ["--no-dolt"])
+
+                # Hooks should not be installed with --no-dolt
+                mock_hooks.assert_not_called()
+                assert "skipped" in result.output.lower()
+
+
+class TestInitOutput:
+    """Tests for init command output format."""
+
+    def test_shows_initialized_message(self, cli_runner_isolated):
+        """Test init shows initialized message."""
+        with patch("kurt.cli.init.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+
+            result = cli_runner_isolated.invoke(init, ["--no-dolt"])
+
+            assert "initialized" in result.output.lower()
+
+    def test_shows_component_status(self, cli_runner_isolated):
+        """Test init shows status of each component."""
+        with patch("kurt.cli.init.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+
+            result = cli_runner_isolated.invoke(init, ["--no-dolt"])
+
+            assert "Git" in result.output or "git" in result.output.lower()
+            assert "config" in result.output.lower()
+            assert "workflows" in result.output.lower()
+
+    def test_shows_doctor_hint(self, cli_runner_isolated):
+        """Test init shows 'kurt doctor' hint."""
+        with patch("kurt.cli.init.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+
+            result = cli_runner_isolated.invoke(init, ["--no-dolt"])
+
+            assert "kurt doctor" in result.output

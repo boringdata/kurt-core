@@ -153,9 +153,9 @@ class TestApiMe:
         from kurt.web.api.server import app
 
         with patch.dict(os.environ, {}, clear=True):
-            with patch("kurt.web.api.server.get_authenticated_user", return_value=None):
-                with patch("kurt.web.api.server.load_credentials", return_value=None):
-                    with patch("kurt.web.api.server.is_cloud_mode", return_value=False):
+            with patch("kurt.web.api.routes.system.get_authenticated_user", return_value=None):
+                with patch("kurt.web.api.routes.system.load_credentials", return_value=None):
+                    with patch("kurt.web.api.routes.system.is_cloud_mode", return_value=False):
                         client = TestClient(app)
                         response = client.get("/api/me")
 
@@ -175,7 +175,7 @@ class TestApiMe:
             workspace_id="ws-456",
         )
 
-        with patch("kurt.web.api.server.get_authenticated_user", return_value=mock_user):
+        with patch("kurt.web.api.routes.system.get_authenticated_user", return_value=mock_user):
             client = TestClient(app)
             response = client.get("/api/me")
 

@@ -15,13 +15,7 @@ from typing import Any, Literal, Optional
 import frontmatter
 from pydantic import BaseModel, Field
 
-
-class ScheduleConfig(BaseModel):
-    """Cron schedule configuration."""
-
-    cron: str
-    timezone: str = "UTC"
-    enabled: bool = True
+from kurt.workflows.core import GuardrailsConfig, ScheduleConfig
 
 
 class WorkflowConfig(BaseModel):
@@ -45,7 +39,7 @@ class AgentConfig(BaseModel):
 
 
 class StepConfig(BaseModel):
-    """DAG step configuration for DBOS-driven workflows."""
+    """DAG step configuration for step-driven workflows."""
 
     type: Literal["function", "agent", "llm"]
     depends_on: list[str] = Field(default_factory=list)
@@ -61,14 +55,6 @@ class StepConfig(BaseModel):
     # type=llm
     prompt_template: Optional[str] = None
     output_schema: Optional[str] = None  # Pydantic model name
-
-
-class GuardrailsConfig(BaseModel):
-    """Safety guardrails configuration."""
-
-    max_tokens: int = 500000  # Max total tokens (in + out) per run
-    max_tool_calls: int = 200  # Max tool invocations per run
-    max_time: int = 3600  # Max execution time in seconds
 
 
 class ParsedWorkflow(BaseModel):
@@ -104,8 +90,8 @@ class ParsedWorkflow(BaseModel):
         return self.agent is not None and not self.steps
 
     @property
-    def is_dbos_driven(self) -> bool:
-        """Check if this is a DBOS-driven workflow with DAG steps."""
+    def is_steps_driven(self) -> bool:
+        """Check if this is a step-driven workflow with DAG steps."""
         return bool(self.steps)
 
     @property
@@ -298,8 +284,8 @@ def validate_workflow(path: Path) -> list[str]:
             if not parsed.effective_prompt.strip():
                 errors.append("Workflow body (prompt) is empty")
 
-        # For DBOS-driven workflows, check steps
-        if parsed.is_dbos_driven:
+        # For step-driven workflows, check steps
+        if parsed.is_steps_driven:
             for step_name, step in parsed.steps.items():
                 if step.type == "function" and not step.function:
                     errors.append(f"Step '{step_name}': type=function requires 'function' field")

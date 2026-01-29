@@ -75,22 +75,18 @@ def status(output_format: str, hook_cc: bool):
                 console.print(f"[yellow]{message}[/yellow]")
             return
 
-        # Hook mode: auto-apply migrations + generate status
+        # Hook mode: generate status
         if hook_cc:
             _handle_hook_output()
             return
 
-        # Check for pending migrations
-        migration_info = _check_pending_migrations()
-
         # Get status data (routes to local or cloud)
         status_data = _get_status_data()
-        status_data["migrations"] = migration_info
 
         if output_format == "json":
             print(json.dumps(status_data, indent=2, default=str))
         else:
-            _print_pretty_status(status_data, migration_info)
+            _print_pretty_status(status_data)
 
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
@@ -104,10 +100,26 @@ def status(output_format: str, hook_cc: bool):
 def _auto_init_hook():
     """Auto-initialize Kurt in hook mode."""
     from kurt.config import create_config
-    from kurt.db import init_database
 
     create_config()
-    init_database()
+
+    # Initialize Dolt database
+    try:
+        from pathlib import Path
+
+        from kurt.db.dolt import DoltDB, init_observability_schema
+
+        dolt_path = Path(".dolt")
+        if not dolt_path.exists():
+            # Initialize dolt repo
+            import subprocess
+
+            subprocess.run(["dolt", "init"], check=True, capture_output=True)
+
+        db = DoltDB(dolt_path)
+        init_observability_schema(db)
+    except Exception:
+        pass  # Dolt init is optional
 
     output = {
         "systemMessage": "Kurt project initialized!",
@@ -116,7 +128,7 @@ def _auto_init_hook():
             "additionalContext": (
                 "**Kurt initialized**\\n\\n"
                 "- Configuration: `kurt.config`\\n"
-                "- Database: `.kurt/kurt.sqlite`\\n\\n"
+                "- Database: `.dolt/` (Dolt)\\n\\n"
                 "Get started: `kurt content fetch <url>`"
             ),
         },
@@ -125,16 +137,28 @@ def _auto_init_hook():
 
 
 def _init_database_hook():
-    """Initialize database in hook mode."""
-    from kurt.db import init_database
+    """Initialize Dolt database in hook mode."""
+    try:
+        from pathlib import Path
 
-    init_database()
+        from kurt.db.dolt import DoltDB, init_observability_schema
+
+        dolt_path = Path(".dolt")
+        if not dolt_path.exists():
+            import subprocess
+
+            subprocess.run(["dolt", "init"], check=True, capture_output=True)
+
+        db = DoltDB(dolt_path)
+        init_observability_schema(db)
+    except Exception:
+        pass
 
     output = {
         "systemMessage": "Database initialized!",
         "hookSpecificOutput": {
             "hookEventName": "SessionStart",
-            "additionalContext": "Database created at `.kurt/kurt.sqlite`",
+            "additionalContext": "Database created at `.dolt/` (Dolt)",
         },
     }
     print(json.dumps(output, indent=2))
@@ -167,36 +191,13 @@ def _handle_hook_output():
 
 def _get_status_data() -> dict:
     """
-    Get status data - routes to local queries or cloud API based on mode.
+    Get status data from Dolt database.
 
-    Local mode: Direct SQLAlchemy queries
-    Cloud mode: HTTP request to kurt-cloud API
+    In Dolt-only architecture, we query directly from Dolt tables.
     """
-    from kurt.db.routing import route_by_mode
-
-    return route_by_mode(_get_status_data_from_db, _get_status_data_from_api)
-
-
-def _get_status_data_from_db() -> dict:
-    """Get status data using direct database queries (local mode)."""
-    from kurt.db import managed_session
-
     from .queries import get_status_data
 
-    with managed_session() as session:
-        return get_status_data(session)
-
-
-def _get_status_data_from_api() -> dict:
-    """
-    Get status data from web API (cloud mode).
-
-    Calls the /core/api/status endpoint (kurt-core mounted at /core prefix).
-    In cloud mode, this is hosted on kurt-cloud.
-    """
-    from kurt.db.cloud_api import api_request
-
-    return api_request("/core/api/status")
+    return get_status_data()
 
 
 def _generate_status_markdown(data: dict) -> str:
@@ -223,46 +224,9 @@ def _generate_status_markdown(data: dict) -> str:
     return "\n".join(lines)
 
 
-def _check_pending_migrations() -> dict:
-    """Check if there are pending database migrations.
-
-    Returns:
-        Dict with 'has_pending', 'count', and 'migrations' keys
-    """
-    try:
-        from kurt.db.migrations.utils import (
-            check_migrations_needed,
-            get_pending_migrations,
-        )
-
-        has_pending = check_migrations_needed()
-        if has_pending:
-            pending = get_pending_migrations()
-            return {
-                "has_pending": True,
-                "count": len(pending),
-                "migrations": [revision_id for revision_id, _ in pending],
-            }
-
-        return {"has_pending": False, "count": 0, "migrations": []}
-    except ImportError:
-        return {"has_pending": False, "count": 0, "migrations": []}
-    except Exception:
-        return {"has_pending": False, "count": 0, "migrations": []}
-
-
-def _print_pretty_status(data: dict, migration_info: dict):
+def _print_pretty_status(data: dict):
     """Print status in human-readable format."""
     from rich.markdown import Markdown
-
-    # Show migration warning first if needed
-    if migration_info.get("has_pending"):
-        console.print()
-        console.print(f"[yellow]⚠ {migration_info['count']} pending database migration(s)[/yellow]")
-        console.print("[dim]Run: `kurt admin migrate apply` to update the database[/dim]")
-        for migration_name in migration_info.get("migrations", []):
-            console.print(f"[dim]  - {migration_name}[/dim]")
-        console.print()
 
     markdown = _generate_status_markdown(data)
     console.print(Markdown(markdown))

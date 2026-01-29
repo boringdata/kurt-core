@@ -1316,3 +1316,437 @@ Context about the task.
 | Quick task | 5-10 | 50,000 | 120 |
 | Standard | 15-25 | 150,000 | 600 |
 | Complex | 30-50 | 300,000 | 1800 |
+
+---
+
+## Workflow Observability API
+
+Kurt uses Dolt (a Git-versioned database) for workflow tracking with three main tables. The observability system provides comprehensive tracking of workflow execution, step-level progress, and real-time event streaming.
+
+### Table Schemas
+
+#### workflow_runs
+
+Main workflow execution records. One row per workflow run.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | VARCHAR(36) | Primary key (UUID) |
+| `workflow` | VARCHAR(255) | Workflow name (e.g., "map_workflow", "fetch_workflow") |
+| `status` | VARCHAR(20) | Current status (see Status Values below) |
+| `started_at` | DATETIME | When the workflow started |
+| `completed_at` | DATETIME | When the workflow completed (NULL if running) |
+| `error` | TEXT | Error message (for failed/cancelled workflows) |
+| `inputs` | JSON | Input parameters passed to the workflow |
+| `metadata_json` | JSON | Additional metadata (workflow_type, cli_command, etc.) |
+| `user_id` | VARCHAR | User ID (multi-tenancy) |
+| `workspace_id` | VARCHAR | Workspace ID (multi-tenancy) |
+
+**Indexes:** `status`, `started_at`, `workflow`
+
+#### step_logs
+
+Summary records per step per workflow run. Updated in place as steps progress.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | VARCHAR(36) | Primary key (UUID) |
+| `run_id` | VARCHAR(36) | Foreign key to workflow_runs.id |
+| `step_id` | VARCHAR(255) | Step identifier (e.g., "fetch", "extract", "map") |
+| `tool` | VARCHAR(50) | Tool name (e.g., "FetchTool", "MapTool") |
+| `status` | VARCHAR(20) | Step status (pending, running, completed, failed, skipped) |
+| `started_at` | DATETIME | When the step started |
+| `completed_at` | DATETIME | When the step completed |
+| `input_count` | INT | Number of input items processed |
+| `output_count` | INT | Number of output items produced |
+| `error_count` | INT | Number of errors encountered |
+| `errors` | JSON | List of error details: `[{row_idx, error_type, message}]` |
+| `metadata_json` | JSON | Additional step metadata |
+
+**Indexes:** `(run_id, step_id)`, `step_id`
+
+#### step_events
+
+Append-only event stream for real-time progress tracking.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | BIGINT | Auto-increment primary key (for cursor-based pagination) |
+| `run_id` | VARCHAR(36) | Foreign key to workflow_runs.id |
+| `step_id` | VARCHAR(255) | Step identifier |
+| `substep` | VARCHAR(255) | Optional substep name (e.g., "fetch", "parse") |
+| `status` | VARCHAR(20) | Event status: "running", "progress", "completed", "failed" |
+| `created_at` | DATETIME | Event timestamp |
+| `current` | INT | Current progress count |
+| `total` | INT | Total items to process |
+| `message` | TEXT | Human-readable status message |
+| `metadata_json` | JSON | Additional event data |
+
+**Indexes:** `(run_id, id)`
+
+### Status Values
+
+**Workflow Status** (workflow_runs.status):
+- `pending` - Workflow queued but not started
+- `running` - Workflow actively executing
+- `completed` - Workflow finished successfully
+- `failed` - Workflow failed with error
+- `canceling` - Cancellation requested, waiting for cleanup
+- `canceled` - Workflow cancelled by user
+
+**Step Status** (step_logs.status):
+- `pending` - Step not yet started
+- `running` - Step actively executing
+- `completed` - Step finished successfully
+- `failed` - Step failed with error
+- `skipped` - Step skipped (e.g., dry-run mode)
+
+**Event Status** (step_events.status):
+- `running` - Step started or continuing
+- `progress` - Progress update (includes current/total)
+- `completed` - Step finished
+- `failed` - Step failed
+
+**Valid Status Transitions:**
+```
+Workflow: pending -> running -> completed
+                  -> running -> failed
+                  -> running -> canceling -> canceled
+
+Step: pending -> running -> completed
+             -> running -> failed
+             -> running -> canceled
+```
+
+### API Endpoints
+
+#### List Workflows
+
+```
+GET /api/workflows
+```
+
+Query parameters:
+- `status` (optional): Filter by status
+- `limit` (default: 50, max: 200): Number of results
+- `offset` (default: 0): Pagination offset
+- `search` (optional): Search by ID or workflow name
+- `workflow_type` (optional): Filter by type ("agent", "tool")
+- `parent_id` (optional): Filter children of a parent workflow
+
+Response:
+```json
+{
+  "workflows": [
+    {
+      "workflow_uuid": "abc-123-def",
+      "name": "map_workflow",
+      "status": "completed",
+      "created_at": "2024-01-15T10:30:00",
+      "updated_at": "2024-01-15T10:35:00",
+      "error": null,
+      "parent_workflow_id": null,
+      "workflow_type": "tool"
+    }
+  ],
+  "total": 42,
+  "has_more": true,
+  "offset": 0,
+  "limit": 50
+}
+```
+
+#### Get Workflow Details
+
+```
+GET /api/workflows/{workflow_id}
+```
+
+Response:
+```json
+{
+  "workflow_uuid": "abc-123-def",
+  "name": "map_workflow",
+  "status": "completed",
+  "created_at": "2024-01-15T10:30:00",
+  "updated_at": "2024-01-15T10:35:00",
+  "error": null,
+  "inputs": {"url": "https://example.com", "max_pages": 100},
+  "metadata": {"workflow_type": "tool", "cli_command": "kurt content map ..."}
+}
+```
+
+#### Get Live Status with Progress
+
+```
+GET /api/workflows/{workflow_id}/status
+```
+
+Returns comprehensive status including step details and progress.
+
+Response:
+```json
+{
+  "workflow_id": "abc-123-def",
+  "name": "map_workflow",
+  "status": "running",
+  "stage": "fetch",
+  "progress": {"current": 45, "total": 100},
+  "steps": [
+    {
+      "name": "fetch",
+      "status": "running",
+      "success": 45,
+      "error": 2,
+      "duration_ms": 12500,
+      "errors": ["Timeout fetching page 12", "404 on page 37"],
+      "step_type": "step",
+      "input_count": 100,
+      "output_count": 47
+    }
+  ],
+  "duration_ms": 15000,
+  "inputs": {"url": "https://example.com"},
+  "cli_command": "kurt content map https://example.com",
+  "error": null,
+  "started_at": "2024-01-15T10:30:00",
+  "completed_at": null,
+  "output": {
+    "total_output": 47,
+    "total_success": 45,
+    "total_errors": 2
+  }
+}
+```
+
+#### Get Step Logs
+
+```
+GET /api/workflows/{workflow_id}/step-logs
+```
+
+Query parameters:
+- `step` (optional): Filter by step name
+- `limit` (default: 100, max: 500): Number of results
+
+Response:
+```json
+{
+  "logs": [
+    {
+      "step_id": "fetch",
+      "tool": "FetchTool",
+      "status": "completed",
+      "started_at": "2024-01-15T10:30:05",
+      "completed_at": "2024-01-15T10:32:15",
+      "input_count": 100,
+      "output_count": 95,
+      "error_count": 5,
+      "errors": [
+        {"row_idx": 12, "error_type": "timeout", "message": "Request timed out"}
+      ],
+      "metadata": {}
+    }
+  ],
+  "step": null
+}
+```
+
+#### Get Workflow Logs (Events)
+
+```
+GET /api/workflows/{workflow_id}/logs
+```
+
+Query parameters:
+- `step_id` (optional): Filter by step ID
+- `since_id` (default: 0): Return events after this ID (cursor pagination)
+- `limit` (default: 100, max: 1000): Number of results
+- `include_file_logs` (default: true): Include file-based logs
+
+Response:
+```json
+{
+  "workflow_id": "abc-123-def",
+  "events": [
+    {
+      "id": 1234,
+      "step_id": "fetch",
+      "substep": "download",
+      "status": "progress",
+      "current": 45,
+      "total": 100,
+      "message": "Fetched page 45 of 100",
+      "created_at": "2024-01-15T10:31:00"
+    }
+  ],
+  "total_events": 50,
+  "has_more": false,
+  "since_id": 0,
+  "limit": 100,
+  "file_content": null
+}
+```
+
+#### Stream Status (SSE)
+
+```
+GET /api/workflows/{workflow_id}/status/stream
+```
+
+Server-Sent Events stream. Sends JSON status updates every 0.5s until workflow completes.
+
+```
+data: {"workflow_id": "abc-123", "status": "running", "progress": {"current": 45, "total": 100}, ...}
+
+data: {"workflow_id": "abc-123", "status": "running", "progress": {"current": 67, "total": 100}, ...}
+
+data: {"workflow_id": "abc-123", "status": "completed", ...}
+```
+
+#### Stream Logs (SSE)
+
+```
+GET /api/workflows/{workflow_id}/logs/stream
+```
+
+Query parameters:
+- `step_id` (optional): Filter by step ID
+
+Server-Sent Events stream for real-time log updates.
+
+```
+data: {"type": "event", "event": {"id": 1234, "step_id": "fetch", "status": "progress", ...}}
+
+data: {"type": "log", "content": "File-based log content..."}
+
+data: {"done": true, "status": "completed"}
+```
+
+#### Cancel Workflow
+
+```
+POST /api/workflows/{workflow_id}/cancel
+```
+
+Sets workflow status to "canceling". The workflow runner must detect this and call `on_workflow_cancel()` to complete.
+
+Response:
+```json
+{"status": "canceling", "workflow_id": "abc-123-def"}
+```
+
+#### Retry Workflow
+
+```
+POST /api/workflows/{workflow_id}/retry
+```
+
+Starts a new workflow run with the same inputs. Only works for terminal states (completed, failed, cancelled).
+
+Response:
+```json
+{
+  "status": "started",
+  "workflow_id": "new-workflow-id",
+  "original_workflow_id": "abc-123-def"
+}
+```
+
+### Querying Workflow Status Programmatically
+
+Using the Python API:
+
+```python
+from kurt.observability.status import get_live_status
+from kurt.db.dolt import DoltDB
+
+db = DoltDB(".dolt")
+status = get_live_status(db, "abc-123")
+
+if status:
+    print(f"Status: {status['status']}")
+    print(f"Progress: {status['progress']['current']}/{status['progress']['total']}")
+    for step in status['steps']:
+        print(f"  {step['name']}: {step['status']} ({step['success']}/{step['output_count']})")
+```
+
+Using the Lifecycle API:
+
+```python
+from kurt.observability.lifecycle import WorkflowLifecycle
+from kurt.db.dolt import DoltDB
+
+db = DoltDB(".dolt")
+lifecycle = WorkflowLifecycle(db)
+
+# Create and track a workflow
+run_id = lifecycle.create_run("my_workflow", inputs={"url": "https://example.com"})
+
+# Track step progress
+lifecycle.create_step_log(run_id, "fetch", "FetchTool", input_count=100)
+lifecycle.update_step_log(run_id, "fetch", status="completed", output_count=95, error_count=5)
+
+# Complete workflow
+lifecycle.update_status(run_id, "completed")
+```
+
+Using the Event Tracker for high-throughput progress:
+
+```python
+from kurt.observability.tracking import track_event, EventTracker
+from kurt.db.dolt import DoltDB
+
+db = DoltDB(".dolt")
+
+# Single event
+track_event(
+    run_id="abc-123",
+    step_id="fetch",
+    substep="download",
+    status="progress",
+    current=45,
+    total=100,
+    message="Fetched page 45 of 100",
+    db=db,
+)
+
+# Batched events (high throughput)
+with EventTracker(db) as tracker:
+    for i in range(1000):
+        tracker.track(
+            run_id="abc-123",
+            step_id="process",
+            status="progress",
+            current=i,
+            total=1000,
+        )
+```
+
+### Metadata Conventions
+
+The `metadata_json` field in `workflow_runs` stores workflow-specific data:
+
+| Key | Description | Example |
+|-----|-------------|---------|
+| `workflow_type` | Type classification | "agent", "tool", "map", "fetch" |
+| `cli_command` | Original CLI command | "kurt content map https://..." |
+| `parent_workflow_id` | Parent workflow UUID | "abc-123-def" |
+| `parent_step_name` | Step that spawned this workflow | "claude_execution" |
+| `definition_name` | Agent workflow definition | "daily-report" |
+| `trigger` | How workflow was started | "cli", "api", "schedule", "retry" |
+| `agent_turns` | Agent conversation turns | 15 |
+| `tokens_in` | Input tokens used | 50000 |
+| `tokens_out` | Output tokens used | 12000 |
+| `cost_usd` | API cost | 0.45 |
+| `tool_calls` | Number of tool invocations | 42 |
+| `stop_reason` | Why agent stopped | "end_turn", "max_turns" |
+
+### Files
+
+- `src/kurt/observability/models.py` - SQLModel table definitions
+- `src/kurt/observability/lifecycle.py` - WorkflowLifecycle class for tracking
+- `src/kurt/observability/tracking.py` - Event tracking (track_event, EventTracker)
+- `src/kurt/observability/status.py` - Status query functions (get_live_status)
+- `src/kurt/observability/streaming.py` - SSE streaming utilities
+- `src/kurt/web/api/server.py` - API endpoints
