@@ -59,8 +59,11 @@ class ApifyEngine(BaseMapper):
 
     def _map_profiles(self, query: str) -> MapperResult:
         """Discover social media profiles."""
-        # Determine platform from config or query context
-        platform = self._detect_platform(query)
+        # Prioritize explicit platform from config, fall back to query detection
+        platform = self.config.platform or self._detect_platform(query)
+
+        if not platform:
+            raise EngineError("Platform not specified and could not be detected from query")
 
         if platform == "twitter":
             return self._search_twitter_profiles(query)
@@ -73,7 +76,11 @@ class ApifyEngine(BaseMapper):
 
     def _map_posts(self, source: str) -> MapperResult:
         """Discover posts from a profile or search."""
-        platform = self._detect_platform(source)
+        # Prioritize explicit platform from config, fall back to query detection
+        platform = self.config.platform or self._detect_platform(source)
+
+        if not platform:
+            raise EngineError("Platform not specified and could not be detected from source")
 
         if platform == "twitter":
             return self._get_twitter_posts(source)

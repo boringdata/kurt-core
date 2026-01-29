@@ -70,7 +70,7 @@ class MapProfileSubcommand:
         Returns:
             List of discovered ProfileMetadata
         """
-        config = MapperConfig(max_urls=limit)
+        config = MapperConfig(max_urls=limit, platform=platform)
         self.mapper.config = config
 
         result = self.mapper.map(query, DocType.PROFILE)

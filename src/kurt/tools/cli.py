@@ -1,6 +1,7 @@
 """CLI commands for map and fetch operations with backward compatibility."""
 
 import click
+import json
 import warnings
 from typing import Optional
 
@@ -14,6 +15,11 @@ from kurt.tools.fetch.subcommands import (
     FetchProfileSubcommand,
     FetchPostsSubcommand,
 )
+from kurt.tools.map.engines.crawl import CrawlMapper
+from kurt.tools.map.engines.apify_engine import ApifyEngine
+from kurt.tools.map.core import MapperConfig
+from kurt.tools.fetch.engines.trafilatura import TrafilaturaFetcher
+from kurt.tools.fetch.core import FetcherConfig
 
 
 @click.group("tools")
@@ -61,10 +67,32 @@ def fetch_group():
 )
 def map_doc(url: str, depth: int, include_pattern: Optional[str], exclude_pattern: Optional[str], engine: str):
     """Discover document URLs from a website."""
-    click.echo(f"Mapping documents from {url} with depth={depth}")
-    click.echo(f"  Include pattern: {include_pattern}")
-    click.echo(f"  Exclude pattern: {exclude_pattern}")
-    click.echo(f"  Engine: {engine}")
+    try:
+        config = MapperConfig(
+            max_depth=depth,
+            include_pattern=include_pattern,
+            exclude_pattern=exclude_pattern,
+        )
+
+        # Select mapper engine
+        if engine == "crawl":
+            mapper = CrawlMapper(config)
+        elif engine == "apify":
+            mapper = ApifyEngine(config)
+        else:
+            click.echo(f"Error: Unknown engine '{engine}'", err=True)
+            raise click.Exit(1)
+
+        subcommand = MapDocSubcommand(mapper)
+        results = subcommand.run(url, depth=depth, include_pattern=include_pattern, exclude_pattern=exclude_pattern)
+
+        # Output results
+        click.echo(f"Discovered {len(results)} documents:")
+        for result in results:
+            click.echo(result.url)
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        raise click.Exit(1)
 
 
 @map_group.command("profile")
@@ -83,8 +111,18 @@ def map_doc(url: str, depth: int, include_pattern: Optional[str], exclude_patter
 )
 def map_profile(query: str, platform: str, limit: int):
     """Discover social media profiles matching a query."""
-    click.echo(f"Mapping {platform} profiles for query: {query}")
-    click.echo(f"  Limit: {limit}")
+    try:
+        config = MapperConfig(max_urls=limit)
+        mapper = ApifyEngine(config)
+        subcommand = MapProfileSubcommand(mapper)
+        results = subcommand.run(query, platform=platform, limit=limit)
+
+        click.echo(f"Discovered {len(results)} {platform} profiles:")
+        for result in results:
+            click.echo(f"{result.url} (@{result.username})")
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        raise click.Exit(1)
 
 
 @map_group.command("posts")
@@ -107,12 +145,18 @@ def map_profile(query: str, platform: str, limit: int):
 )
 def map_posts(source: Optional[str], limit: int, since: Optional[str], platform: Optional[str]):
     """Discover social media posts."""
-    click.echo(f"Mapping posts from source: {source}")
-    click.echo(f"  Limit: {limit}")
-    if since:
-        click.echo(f"  Since: {since}")
-    if platform:
-        click.echo(f"  Platform: {platform}")
+    try:
+        config = MapperConfig(max_urls=limit)
+        mapper = ApifyEngine(config)
+        subcommand = MapPostsSubcommand(mapper)
+        results = subcommand.run(source or "", limit=limit, since=since)
+
+        click.echo(f"Discovered {len(results)} posts:")
+        for result in results:
+            click.echo(f"{result.url}")
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        raise click.Exit(1)
 
 
 # Fetch commands
@@ -126,9 +170,20 @@ def map_posts(source: Optional[str], limit: int, since: Optional[str], platform:
 )
 def fetch_doc(urls: tuple, engine: str):
     """Fetch document content from URLs."""
-    click.echo(f"Fetching {len(urls)} documents using {engine} engine")
-    for url in urls:
-        click.echo(f"  {url}")
+    try:
+        config = FetcherConfig()
+        fetcher = TrafilaturaFetcher(config)
+        subcommand = FetchDocSubcommand(fetcher)
+        results = subcommand.run(list(urls))
+
+        click.echo(f"Fetched {len(results)} documents:")
+        for result in results:
+            click.echo(f"URL: {result.url}")
+            click.echo(f"Content length: {len(result.content_text)} chars")
+            click.echo()
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        raise click.Exit(1)
 
 
 @fetch_group.command("profile")
@@ -141,9 +196,21 @@ def fetch_doc(urls: tuple, engine: str):
 )
 def fetch_profile(urls: tuple, platform: str):
     """Fetch full profile details from social platforms."""
-    click.echo(f"Fetching {len(urls)} {platform} profiles")
-    for url in urls:
-        click.echo(f"  {url}")
+    try:
+        from kurt.tools.fetch.engines.apify_engine import ApifyFetcher
+        config = FetcherConfig()
+        fetcher = ApifyFetcher(config)
+        subcommand = FetchProfileSubcommand(fetcher)
+        results = subcommand.run(list(urls), platform=platform)
+
+        click.echo(f"Fetched {len(results)} {platform} profiles:")
+        for result in results:
+            click.echo(f"Username: @{result.username}")
+            click.echo(f"Bio: {result.bio[:100] if result.bio else 'N/A'}...")
+            click.echo()
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        raise click.Exit(1)
 
 
 @fetch_group.command("posts")
@@ -156,9 +223,22 @@ def fetch_profile(urls: tuple, platform: str):
 )
 def fetch_posts(urls: tuple, platform: str):
     """Fetch full post content from social platforms."""
-    click.echo(f"Fetching {len(urls)} {platform} posts")
-    for url in urls:
-        click.echo(f"  {url}")
+    try:
+        from kurt.tools.fetch.engines.apify_engine import ApifyFetcher
+        config = FetcherConfig()
+        fetcher = ApifyFetcher(config)
+        subcommand = FetchPostsSubcommand(fetcher)
+        results = subcommand.run(list(urls), platform=platform)
+
+        click.echo(f"Fetched {len(results)} {platform} posts:")
+        for result in results:
+            click.echo(f"Post ID: {result.post_id}")
+            click.echo(f"Content: {result.content_text[:100]}...")
+            click.echo(f"Likes: {result.likes_count}, Replies: {result.replies_count}")
+            click.echo()
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        raise click.Exit(1)
 
 
 # Deprecated aliases for backward compatibility

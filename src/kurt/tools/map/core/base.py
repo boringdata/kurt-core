@@ -17,6 +17,7 @@ class MapperConfig(BaseModel):
     follow_external: bool = Field(default=False)
     include_pattern: Optional[str] = Field(default=None)
     exclude_pattern: Optional[str] = Field(default=None)
+    platform: Optional[str] = Field(default=None, description="Platform for profile/post discovery (twitter, linkedin, instagram)")
 
 
 class MapperResult(BaseModel):
