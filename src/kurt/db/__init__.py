@@ -15,6 +15,21 @@ Usage:
 """
 
 from kurt.cloud.api import KurtCloudAuthError
+from kurt.cloud.tenant import (
+    add_workspace_filter,
+    clear_workspace_context,
+    get_mode,
+    get_user_id,
+    get_workspace_context,
+    get_workspace_id,
+    init_workspace_from_config,
+    is_cloud_mode,
+    is_multi_tenant,
+    load_context_from_credentials,
+    register_tenant_listeners,
+    require_workspace_id,
+    set_workspace_context,
+)
 from kurt.db.database import (
     async_session_scope,
     dispose_async_resources,
@@ -26,7 +41,6 @@ from kurt.db.database import (
     init_database,
     managed_session,
 )
-from kurt.db.utils import get_dolt_db
 
 # Dolt client and schema
 from kurt.db.dolt import (
@@ -55,21 +69,7 @@ from kurt.db.models import (
     TenantMixin,
     TimestampMixin,
 )
-from kurt.cloud.tenant import (
-    add_workspace_filter,
-    clear_workspace_context,
-    get_mode,
-    get_user_id,
-    get_workspace_context,
-    get_workspace_id,
-    init_workspace_from_config,
-    is_cloud_mode,
-    is_multi_tenant,
-    load_context_from_credentials,
-    register_tenant_listeners,
-    require_workspace_id,
-    set_workspace_context,
-)
+from kurt.db.utils import get_dolt_db
 
 # Isolation module (Git+Dolt branch sync, merge, remote operations)
 # Import lazily to avoid circular imports - use: from kurt.db.isolation import ...
