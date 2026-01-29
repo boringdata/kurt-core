@@ -37,12 +37,24 @@ class FetchStatus(str, Enum):
     SKIPPED = "SKIPPED"
 
 
+class DocType(str, Enum):
+    """Type of document being fetched."""
+
+    DOC = "doc"
+    PROFILE = "profile"
+    POSTS = "posts"
+
+
 class FetchDocument(EmbeddingMixin, TimestampMixin, TenantMixin, SQLModel, table=True):
     """Persisted fetch results for documents."""
 
     __tablename__ = "fetch_documents"
 
     document_id: str = Field(primary_key=True)
+
+    # Document type
+    doc_type: DocType = Field(default=DocType.DOC, index=True)
+    platform: Optional[str] = Field(default=None, index=True)
 
     # Status
     status: FetchStatus = Field(default=FetchStatus.PENDING)
@@ -61,3 +73,60 @@ class FetchDocument(EmbeddingMixin, TimestampMixin, TenantMixin, SQLModel, table
 
     # Metadata
     metadata_json: Optional[dict] = Field(sa_column=Column(JSON), default=None)
+
+
+class Profile(TimestampMixin, TenantMixin, SQLModel, table=True):
+    """Social media profile metadata."""
+
+    __tablename__ = "profiles"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+
+    # Profile identity
+    platform: str = Field(index=True)  # twitter, linkedin, etc.
+    platform_id: str = Field(unique=True, index=True)  # Platform-specific ID
+    username: str = Field(index=True)
+    display_name: Optional[str] = Field(default=None)
+
+    # Profile info
+    bio: Optional[str] = Field(default=None)
+    followers_count: int = Field(default=0)
+    following_count: int = Field(default=0)
+    posts_count: int = Field(default=0)
+
+    # Profile URLs and assets
+    profile_url: Optional[str] = Field(default=None, unique=True)
+    avatar_url: Optional[str] = Field(default=None)
+    verified: bool = Field(default=False)
+
+    # Raw metadata
+    raw_metadata: Optional[dict] = Field(sa_column=Column(JSON), default=None)
+
+
+class Post(TimestampMixin, TenantMixin, SQLModel, table=True):
+    """Social media post metadata."""
+
+    __tablename__ = "posts"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+
+    # Post identity
+    platform: str = Field(index=True)  # twitter, linkedin, etc.
+    platform_id: str = Field(unique=True, index=True)  # Platform-specific post ID
+    profile_id: Optional[int] = Field(default=None, foreign_key="profiles.id", index=True)
+
+    # Post content
+    content_text: Optional[str] = Field(default=None)
+    content_html: Optional[str] = Field(default=None)
+    media_urls: Optional[list[str]] = Field(sa_column=Column(JSON), default=None)
+
+    # Engagement metrics
+    likes_count: int = Field(default=0)
+    shares_count: int = Field(default=0)
+    comments_count: int = Field(default=0)
+
+    # Post timing
+    published_at: Optional[str] = Field(default=None, index=True)
+
+    # Raw metadata
+    raw_metadata: Optional[dict] = Field(sa_column=Column(JSON), default=None)
