@@ -144,15 +144,20 @@ class APIKeyManager:
                 # Navigate nested keys (e.g., 'INTEGRATIONS.APIFY.KEY')
                 parts = config_key.split(".")
                 value = config
-                for part in parts:
-                    value = value.get(part, {})
-                    if isinstance(value, dict) and part != parts[-1]:
-                        continue
-                    elif not isinstance(value, dict):
-                        break
 
-                if isinstance(value, str) and value:
-                    self.add_key(engine, value)
+                # Navigate through all parts except the last
+                for i, part in enumerate(parts[:-1]):
+                    if not isinstance(value, dict):
+                        # Intermediate value is not a dict, path is invalid
+                        value = None
+                        break
+                    value = value.get(part)
+
+                # Only process if we have a dict and can get the final key
+                if isinstance(value, dict):
+                    final_value = value.get(parts[-1])
+                    if isinstance(final_value, str) and final_value:
+                        self.add_key(engine, final_value)
             except (AttributeError, TypeError, KeyError):
                 # Skip if config structure doesn't match
                 pass

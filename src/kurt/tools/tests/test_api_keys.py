@@ -168,6 +168,38 @@ class TestAPIKeyManager:
         key = manager.get_key("test", raise_on_missing=False)
         assert key is None
 
+    def test_load_from_config_scalar_intermediate(self):
+        """Test that scalar intermediate values don't cause misconfig."""
+        manager = APIKeyManager()
+        manager.register_engine("test", "TEST_KEY", "INTEGRATIONS.TEST.KEY")
+
+        # Config has a scalar where a dict is expected
+        config = {
+            "INTEGRATIONS": "not_a_dict",  # Should not be treated as valid
+        }
+        manager.load_from_config(config)
+
+        # Should not have loaded any key
+        key = manager.get_key("test", raise_on_missing=False)
+        assert key is None
+
+    def test_load_from_config_partial_path(self):
+        """Test that partial paths don't load intermediate values."""
+        manager = APIKeyManager()
+        manager.register_engine("test", "TEST_KEY", "INTEGRATIONS.TEST.KEY")
+
+        # Config has correct structure up to a point
+        config = {
+            "INTEGRATIONS": {
+                "TEST": "not_dict",  # Should not be treated as valid
+            },
+        }
+        manager.load_from_config(config)
+
+        # Should not have loaded "not_dict" as a key
+        key = manager.get_key("test", raise_on_missing=False)
+        assert key is None
+
     def test_validate_key(self):
         """Test API key validation."""
         manager = APIKeyManager()
