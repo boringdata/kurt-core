@@ -1,4 +1,4 @@
-"""File and git routes: tree, file CRUD, git diff/status/show."""
+"""File and git routes: tree, file CRUD, git diff/status/show, raw media serving."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from shutil import which
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from kurt.web.api.server_helpers import get_storage
@@ -166,6 +167,49 @@ def _git_status() -> dict[str, str]:
 
 
 # --- Endpoints ---
+
+@router.get("/api/file/raw")
+def api_get_file_raw(path: str = Query(...)):
+    """Serve raw file content (video, image, audio, font) with proper MIME type.
+
+    Used by video/image/motion-canvas panels to load media files.
+    Supports cache-busting via ?v=<timestamp> query parameter.
+    """
+    import mimetypes
+
+    try:
+        # Resolve relative to project root, prevent path traversal
+        file_path = Path(path)
+        if file_path.is_absolute():
+            resolved = file_path.resolve()
+        else:
+            resolved = (Path.cwd() / file_path).resolve()
+
+        # Guard against path traversal
+        cwd_resolved = Path.cwd().resolve()
+        if not str(resolved).startswith(str(cwd_resolved)):
+            raise HTTPException(status_code=403, detail="Path traversal not allowed")
+
+        if not resolved.exists():
+            raise HTTPException(status_code=404, detail="File not found")
+        if not resolved.is_file():
+            raise HTTPException(status_code=400, detail="Not a file")
+
+        # Detect MIME type
+        mime_type, _ = mimetypes.guess_type(str(resolved))
+        if not mime_type:
+            mime_type = "application/octet-stream"
+
+        return FileResponse(
+            path=str(resolved),
+            media_type=mime_type,
+            filename=resolved.name,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/api/tree")
 def api_tree(path: Optional[str] = Query(".")):

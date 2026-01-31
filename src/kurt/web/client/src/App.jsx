@@ -15,6 +15,11 @@ import ReviewPanel from './panels/ReviewPanel'
 import WorkflowsPanel from './panels/WorkflowsPanel'
 import WorkflowTerminalPanel from './panels/WorkflowTerminalPanel'
 import WorkflowDetailPanel from './panels/WorkflowDetailPanel'
+import DataTablePanel from './panels/DataTablePanel'
+import ImageViewerPanel from './panels/ImageViewerPanel'
+import MotionCanvasPanel from './panels/MotionCanvasPanel'
+import VideoEditorPanel from './panels/VideoEditorPanel'
+import VideoSequencePanel from './panels/VideoSequencePanel'
 import ClaudeStreamChat from './components/chat/ClaudeStreamChat'
 
 // POC mode - add ?poc=chat, ?poc=diff, or ?poc=tiptap-diff to URL to test
@@ -33,6 +38,20 @@ const components = {
   workflows: WorkflowsPanel,
   workflowTerminal: WorkflowTerminalPanel,
   workflowDetail: WorkflowDetailPanel,
+  dataTable: DataTablePanel,
+  imageViewer: ImageViewerPanel,
+  motionCanvas: MotionCanvasPanel,
+  videoEditor: VideoEditorPanel,
+  videoSequence: VideoSequencePanel,
+}
+
+// Maps workflow page types to dockview component names
+const PAGE_TYPE_TO_COMPONENT = {
+  'data-table': 'dataTable',
+  'image': 'imageViewer',
+  'motion-canvas': 'motionCanvas',
+  'video': 'videoEditor',
+  'video-sequence': 'videoSequence',
 }
 
 const KNOWN_COMPONENTS = new Set(Object.keys(components))
@@ -1694,6 +1713,48 @@ export default function App() {
     [dockApi, openWorkflowTerminal]
   )
 
+  // Open a workflow page panel (data-table, image, video, motion-canvas, etc.)
+  const openWorkflowPage = useCallback(
+    (workflowId, page) => {
+      if (!dockApi || !page) return
+
+      const componentName = PAGE_TYPE_TO_COMPONENT[page.type]
+      if (!componentName) {
+        console.warn(`Unknown page type: ${page.type}`)
+        return
+      }
+
+      const panelId = `workflow-page-${workflowId}-${page.id}`
+      const existingPanel = dockApi.getPanel(panelId)
+
+      if (existingPanel) {
+        existingPanel.api.setActive()
+        return
+      }
+
+      const position = centerGroupRef.current
+        ? { referenceGroup: centerGroupRef.current }
+        : { direction: 'right', referencePanel: 'filetree' }
+
+      const panel = dockApi.addPanel({
+        id: panelId,
+        component: componentName,
+        title: page.title || page.id,
+        position,
+        params: {
+          workflowId,
+          page,
+        },
+      })
+
+      if (panel?.group) {
+        panel.group.header.hidden = false
+        centerGroupRef.current = panel.group
+      }
+    },
+    [dockApi]
+  )
+
   // Update workflows panel params
   // projectRoot dependency ensures this runs after layout restoration
   useEffect(() => {
@@ -1705,6 +1766,7 @@ export default function App() {
         onToggleCollapse: toggleWorkflows,
         onAttachWorkflow: openWorkflowTerminal,
         onOpenWorkflowDetail: openWorkflowDetail,
+        onOpenWorkflowPage: openWorkflowPage,
       })
     }
     // Also update shell panel with collapse state for the tab button
@@ -1715,7 +1777,7 @@ export default function App() {
         onToggleCollapse: toggleWorkflows,
       })
     }
-  }, [dockApi, collapsed.workflows, toggleWorkflows, openWorkflowTerminal, openWorkflowDetail, projectRoot])
+  }, [dockApi, collapsed.workflows, toggleWorkflows, openWorkflowTerminal, openWorkflowDetail, openWorkflowPage, projectRoot])
 
   // Restore saved tabs when dockApi and projectRoot become available
   const hasRestoredTabs = useRef(false)

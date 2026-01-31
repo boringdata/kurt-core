@@ -57,6 +57,91 @@ class StepConfig(BaseModel):
     output_schema: Optional[str] = None  # Pydantic model name
 
 
+class ColumnConfig(BaseModel):
+    """Column definition for data table pages."""
+
+    name: str  # Column identifier
+    label: Optional[str] = None  # Display label (defaults to name)
+    type: Literal["text", "number", "boolean", "url", "date", "select"] = "text"
+    editable: bool = True
+    required: bool = False
+    options: Optional[list[str]] = None  # For select type
+    width: Optional[int] = None  # Column width in px
+
+
+class SceneConfig(BaseModel):
+    """A scene segment within a video sequence composition.
+
+    Scenes can be Motion Canvas scenes (.tsx) or video clips.
+    Motion Canvas is the composition layer - all scenes render
+    through MC, with video clips wrapped as MC Video elements.
+    """
+
+    id: str  # Unique scene identifier
+    type: Literal["motion-canvas", "clip"]  # MC scene or video clip
+    title: Optional[str] = None
+
+    # For type=motion-canvas
+    scene_path: Optional[str] = None  # Path to .tsx scene file
+    rendered_path: Optional[str] = None  # Path to rendered output
+
+    # For type=clip
+    source_path: Optional[str] = None  # Path to video clip file
+    trim_start: Optional[float] = None  # Trim start (seconds)
+    trim_end: Optional[float] = None  # Trim end (seconds)
+
+
+class TransitionConfig(BaseModel):
+    """Transition between two scenes in a video sequence."""
+
+    between: list[int] = Field(default_factory=list)  # [scene_index_a, scene_index_b]
+    type: str = "crossfade"  # crossfade, cut, wipe, etc.
+    duration: float = 0.5  # Transition duration in seconds
+
+
+class PageConfig(BaseModel):
+    """Configuration for a workflow page (editor view opened from a step).
+
+    Pages define how workflow step inputs/outputs are displayed and edited.
+    Each page type maps to a dedicated panel component in the UI.
+    """
+
+    id: str  # Unique page identifier within the workflow
+    type: Literal["data-table", "image", "motion-canvas", "video", "video-sequence"]
+    title: str  # Display title for the tab
+    step: Optional[str] = None  # Associated workflow step name
+    description: Optional[str] = None
+
+    # Shared fields
+    assets_dir: Optional[str] = None  # Path to assets directory (shapes, fonts)
+    output_path: Optional[str] = None  # Path to rendered output (video/frames)
+
+    # data-table specific
+    columns: list[ColumnConfig] = Field(default_factory=list)
+    seed: bool = False  # If true, editing triggers workflow re-run offer
+    data_path: Optional[str] = None  # Path to data file (CSV/JSON)
+
+    # image specific
+    image_path: Optional[str] = None  # Path pattern for output images
+    editable: bool = False  # Allow intent capture UI (text, shapes, etc.)
+
+    # motion-canvas specific
+    scene_path: Optional[str] = None  # Path to Motion Canvas scene file (.tsx)
+    preview_url: Optional[str] = None  # URL for live MC dev server preview
+    duration: Optional[float] = None  # Duration in seconds
+    fps: int = 30
+
+    # video specific
+    video_path: Optional[str] = None  # Path to video file
+    trim: bool = True  # Allow trim/cut editing
+    max_duration: Optional[float] = None  # Max duration in seconds
+
+    # video-sequence specific (Motion Canvas as composition layer)
+    scenes: list[SceneConfig] = Field(default_factory=list)
+    transitions: list[TransitionConfig] = Field(default_factory=list)
+    resolution: list[int] = Field(default_factory=lambda: [1920, 1080])
+
+
 class ParsedWorkflow(BaseModel):
     """Parsed workflow definition from a TOML or Markdown file."""
 
@@ -72,6 +157,9 @@ class ParsedWorkflow(BaseModel):
     schedule: Optional[ScheduleConfig] = None
     agent: Optional[AgentConfig] = None
     steps: dict[str, StepConfig] = Field(default_factory=dict)
+
+    # Workflow pages (editor views opened from steps)
+    pages: list[PageConfig] = Field(default_factory=list)
 
     # Common config
     guardrails: GuardrailsConfig = Field(default_factory=GuardrailsConfig)
@@ -100,6 +188,17 @@ class ParsedWorkflow(BaseModel):
         if self.agent and self.agent.prompt:
             return self.agent.prompt
         return self.body
+
+
+# Resolve forward references for Pydantic v2 with `from __future__ import annotations`
+WorkflowConfig.model_rebuild()
+AgentConfig.model_rebuild()
+StepConfig.model_rebuild()
+ColumnConfig.model_rebuild()
+SceneConfig.model_rebuild()
+TransitionConfig.model_rebuild()
+PageConfig.model_rebuild()
+ParsedWorkflow.model_rebuild()
 
 
 def detect_file_format(path: Path) -> Literal["toml", "markdown"]:
@@ -176,6 +275,19 @@ def parse_toml_workflow(path: Path) -> ParsedWorkflow:
     inputs = data.get("inputs", {})
     tags = data.get("tags", [])
 
+    # Extract pages (workflow editor views)
+    pages: list[PageConfig] = []
+    pages_data = data.get("pages", [])
+    if isinstance(pages_data, dict):
+        # Allow dict format: [pages.my_page] in TOML
+        for page_id, page_data in pages_data.items():
+            if "id" not in page_data:
+                page_data["id"] = page_id
+            pages.append(PageConfig(**page_data))
+    elif isinstance(pages_data, list):
+        for page_data in pages_data:
+            pages.append(PageConfig(**page_data))
+
     return ParsedWorkflow(
         name=workflow_config.name,
         title=workflow_config.title,
@@ -183,6 +295,7 @@ def parse_toml_workflow(path: Path) -> ParsedWorkflow:
         workflow=workflow_config,
         agent=agent_config,
         steps=steps,
+        pages=pages,
         schedule=schedule_config,
         guardrails=guardrails_config,
         inputs=inputs,
@@ -212,6 +325,7 @@ def parse_markdown_workflow(path: Path) -> ParsedWorkflow:
     schedule_data = metadata.pop("schedule", None)
     agent_data = metadata.pop("agent", None)
     guardrails_data = metadata.pop("guardrails", None)
+    pages_data = metadata.pop("pages", [])
 
     # Build agent config with body as implicit prompt
     agent_config = None
@@ -221,6 +335,12 @@ def parse_markdown_workflow(path: Path) -> ParsedWorkflow:
         # For backwards compat, create default agent config
         agent_config = AgentConfig()
 
+    # Build page configs
+    pages: list[PageConfig] = []
+    if isinstance(pages_data, list):
+        for page_data in pages_data:
+            pages.append(PageConfig(**page_data))
+
     return ParsedWorkflow(
         name=metadata.get("name", path.stem),
         title=metadata.get("title", path.stem),
@@ -229,6 +349,7 @@ def parse_markdown_workflow(path: Path) -> ParsedWorkflow:
         schedule=ScheduleConfig(**schedule_data) if schedule_data else None,
         agent=agent_config,
         steps={},  # Markdown format doesn't support steps
+        pages=pages,
         guardrails=GuardrailsConfig(**guardrails_data) if guardrails_data else GuardrailsConfig(),
         inputs=metadata.get("inputs", {}),
         tags=metadata.get("tags", []),
@@ -325,6 +446,27 @@ def validate_workflow(path: Path) -> list[str]:
             errors.append("guardrails.max_tool_calls must be at least 1")
         if parsed.guardrails.max_time < 60:
             errors.append("guardrails.max_time must be at least 60 seconds")
+
+        # Validate pages
+        page_ids = set()
+        for page in parsed.pages:
+            if page.id in page_ids:
+                errors.append(f"Duplicate page id: '{page.id}'")
+            page_ids.add(page.id)
+
+            if page.type == "data-table" and not page.columns and not page.data_path:
+                errors.append(f"Page '{page.id}': data-table requires columns or data_path")
+            if page.type == "image" and not page.image_path:
+                errors.append(f"Page '{page.id}': image page requires image_path")
+            if page.type == "motion-canvas" and not page.scene_path:
+                errors.append(f"Page '{page.id}': motion-canvas page requires scene_path")
+            if page.type == "video" and not page.video_path:
+                errors.append(f"Page '{page.id}': video page requires video_path")
+            if page.type == "video-sequence" and not page.scenes:
+                errors.append(f"Page '{page.id}': video-sequence requires at least one scene")
+
+            if page.step and parsed.is_steps_driven and page.step not in parsed.steps:
+                errors.append(f"Page '{page.id}': step '{page.step}' does not exist")
 
     except Exception as e:
         errors.append(f"Parse error: {e}")
