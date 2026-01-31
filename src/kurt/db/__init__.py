@@ -1,17 +1,12 @@
 """Database module for kurt - models, database connection, and migrations.
 
-Supported database backends:
-- SQLite (local development): .kurt/kurt.sqlite
-- PostgreSQL (production): Direct connection via DATABASE_URL
-
-Cloud mode (DATABASE_URL="kurt"):
-- CLI commands route to kurt-cloud API via HTTP
-- Backend uses direct PostgreSQL connection
+Supported database backend:
+- Dolt (local development): .dolt/ with git-like versioning via MySQL protocol
 
 Usage:
     from kurt.db import get_database_client, managed_session
 
-    # Auto-detect backend from DATABASE_URL
+    # Get Dolt client (auto-detect from DATABASE_URL)
     db = get_database_client()
 
     # Use managed_session for CRUD operations
@@ -19,25 +14,9 @@ Usage:
         session.add(LLMTrace(...))
 """
 
-from kurt.db.base import DatabaseClient, get_database_client
-from kurt.db.cloud_api import KurtCloudAuthError
-from kurt.db.database import (
-    async_session_scope,
-    dispose_async_resources,
-    ensure_tables,
-    get_async_session_maker,
-    get_session,
-    init_database,
-    managed_session,
-)
-from kurt.db.models import (
-    ConfidenceMixin,
-    EmbeddingMixin,
-    LLMTrace,
-    TenantMixin,
-    TimestampMixin,
-)
-from kurt.db.tenant import (
+from kurt.cloud.api import KurtCloudAuthError
+from kurt.cloud.tenant import (
+    add_workspace_filter,
     clear_workspace_context,
     get_mode,
     get_user_id,
@@ -46,18 +25,61 @@ from kurt.db.tenant import (
     init_workspace_from_config,
     is_cloud_mode,
     is_multi_tenant,
-    is_postgres,
     load_context_from_credentials,
     register_tenant_listeners,
     require_workspace_id,
-    set_rls_context,
     set_workspace_context,
 )
+from kurt.db.database import (
+    async_session_scope,
+    dispose_async_resources,
+    ensure_tables,
+    get_async_session_maker,
+    get_database_client,
+    get_engine,
+    get_session,
+    init_database,
+    managed_session,
+)
+
+# Dolt client and schema
+from kurt.db.dolt import (
+    # Schema helpers
+    OBSERVABILITY_TABLES,
+    BranchInfo,
+    ConnectionPool,
+    DoltBranchError,
+    DoltConnectionError,
+    # Client classes
+    DoltDB,
+    DoltDBProtocol,
+    # Exceptions
+    DoltError,
+    DoltQueryError,
+    DoltTransaction,
+    DoltTransactionError,
+    QueryResult,
+    check_schema_exists,
+    init_observability_schema,
+)
+from kurt.db.models import (
+    ConfidenceMixin,
+    EmbeddingMixin,
+    LLMTrace,
+    TenantMixin,
+    TimestampMixin,
+)
+from kurt.db.utils import get_dolt_db
+
+# Isolation module (Git+Dolt branch sync, merge, remote operations)
+# Import lazily to avoid circular imports - use: from kurt.db.isolation import ...
+# from kurt.db import isolation  # or access via kurt.db.isolation
 
 __all__ = [
-    # Database clients
-    "DatabaseClient",
+    # Database client
     "get_database_client",
+    "get_dolt_db",
+    "get_engine",
     "KurtCloudAuthError",
     # Session management
     "get_session",
@@ -83,10 +105,26 @@ __all__ = [
     "require_workspace_id",
     "is_multi_tenant",
     "is_cloud_mode",
-    "is_postgres",
     "get_mode",
     "init_workspace_from_config",
     "load_context_from_credentials",
     "register_tenant_listeners",
-    "set_rls_context",
+    "add_workspace_filter",
+    # Dolt client
+    "DoltDB",
+    "DoltTransaction",
+    "QueryResult",
+    "BranchInfo",
+    "ConnectionPool",
+    # Dolt exceptions
+    "DoltError",
+    "DoltConnectionError",
+    "DoltQueryError",
+    "DoltTransactionError",
+    "DoltBranchError",
+    # Dolt schema helpers
+    "DoltDBProtocol",
+    "OBSERVABILITY_TABLES",
+    "init_observability_schema",
+    "check_schema_exists",
 ]

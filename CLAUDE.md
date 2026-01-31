@@ -1316,3 +1316,635 @@ Context about the task.
 | Quick task | 5-10 | 50,000 | 120 |
 | Standard | 15-25 | 150,000 | 600 |
 | Complex | 30-50 | 300,000 | 1800 |
+
+### Workflow Pages (Integrated Editor Views)
+
+Workflow pages define interactive views that open from workflow steps in the web UI.
+All media panels follow the **agent-as-editor model**: the UI is a viewer with
+lightweight intent-capture controls. Editing requests are dispatched to the Claude
+Code agent, which performs the actual file modifications (editing Motion Canvas
+`.tsx` scenes, running `ffmpeg` commands, using ImageMagick/Pillow for images).
+
+Pages are defined in the `pages` array in workflow frontmatter (YAML/TOML) and
+displayed as clickable buttons on workflow steps.
+
+#### Page Types
+
+| Type | Component | Use Case |
+|------|-----------|----------|
+| `data-table` | Editable spreadsheet | Seed data, extracted results, configuration |
+| `image` | Image viewer + intent toolbar | Generated images, charts, screenshots |
+| `motion-canvas` | Rendered MC output viewer + intent toolbar | Animated graphics, data visualizations |
+| `video` | Video player with trim/cut + intent toolbar | Individual video files |
+| `video-sequence` | Multi-scene composition timeline | Composed videos (MC scenes + clips) |
+
+#### Architecture: Agent-as-Editor
+
+```
+User clicks "Add Text" --> UI captures intent (what, where) -->
+dispatches to agent --> agent edits .tsx / runs ffmpeg / uses Pillow -->
+file changes --> panel polls mtime --> auto-refresh preview
+```
+
+Panels never modify files directly. The **IntentToolbar** (shared across image,
+motion-canvas, video, and video-sequence panels) captures structured intents:
+
+| Control | Intent Dispatched |
+|---------|-------------------|
+| Add Text | `{ action: "add_text", text, position, style: { font, size, color } }` |
+| Add Shape | `{ action: "add_shape", shape_id, position, size, animated }` |
+| Move | `{ action: "move_element", element_id, new_position }` |
+| Resize | `{ action: "resize_element", element_id, new_size }` |
+| Delete | `{ action: "delete_element", element_id }` |
+
+Intents are converted to natural language prompts server-side and dispatched to
+the agent via `POST /api/workflows/{id}/pages/{page_id}/edit`.
+
+#### Video Composition with Motion Canvas
+
+The `video-sequence` page type uses Motion Canvas as the composition layer.
+Multiple scenes (MC animations + video clips) compose into a single video:
+
+```yaml
+pages:
+  - id: final-video
+    type: video-sequence
+    title: Final Presentation
+    step: compose_video
+    output_path: output/final.mp4
+    resolution: [1920, 1080]
+    scenes:
+      - id: intro
+        type: motion-canvas
+        title: Animated Intro
+        scene_path: scenes/intro.tsx
+        rendered_path: output/intro.mp4
+      - id: interview
+        type: clip
+        title: Interview Footage
+        source_path: footage/interview.mp4
+        trim_start: 5.0
+        trim_end: 30.0
+```
+
+#### Defining Pages in Markdown
+
+```yaml
+---
+name: topic-research
+title: Topic Research Workflow
+agent:
+  model: claude-sonnet-4-20250514
+  max_turns: 25
+
+pages:
+  - id: seed-topics
+    type: data-table
+    title: Seed Topics
+    step: research_topics
+    seed: true
+    data_path: data/topics.csv
+    columns:
+      - name: topic
+        label: Topic
+        type: text
+        required: true
+      - name: priority
+        label: Priority
+        type: select
+        options: [high, medium, low]
+
+  - id: output-chart
+    type: image
+    title: Research Chart
+    step: generate_chart
+    image_path: output/research-chart.png
+    editable: true
+    assets_dir: assets
+
+  - id: summary-animation
+    type: motion-canvas
+    title: Summary Animation
+    step: create_animation
+    scene_path: scenes/summary.tsx
+    output_path: output/summary.mp4
+    duration: 10
+    fps: 30
+
+  - id: presentation-video
+    type: video
+    title: Presentation
+    step: render_video
+    video_path: output/presentation.mp4
+    trim: true
+    max_duration: 120
+---
+```
+
+#### Seed Data Tables
+
+When a page has `seed: true`, it acts as input data for the workflow:
+
+1. User opens the seed data table from the workflow step
+2. Adds/edits rows (e.g., adding new research topics)
+3. Clicks **Save** to persist changes to `data_path`
+4. UI prompts: "Seed data updated. Run the workflow with new data?"
+5. Clicking **Run Workflow** starts a new workflow execution with the updated data
+
+#### Column Types
+
+| Type | Input | Description |
+|------|-------|-------------|
+| `text` | Text input | Default, free-form text |
+| `number` | Number input | Numeric values |
+| `boolean` | Checkbox | True/false toggle |
+| `url` | Text input | URL values |
+| `date` | Text input | Date strings |
+| `select` | Dropdown | Choose from `options` list |
+
+#### File Refresh After Agent Edits
+
+All media panels use the `useFileWatch` hook which polls the page data endpoint
+every 2 seconds. When the file's `mtime` changes, the panel auto-refreshes the
+preview. Cache-busting is handled via `?v=<timestamp>` query parameters on
+file URLs.
+
+#### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/workflows/{id}/pages` | GET | List pages for a workflow |
+| `/api/workflows/{id}/pages/{page_id}/data` | GET | Get page data (table rows, file metadata with mtime) |
+| `/api/workflows/{id}/pages/{page_id}/data` | PUT | Update data-table rows |
+| `/api/workflows/{id}/pages/{page_id}/run` | POST | Re-run workflow from seed data |
+| `/api/workflows/{id}/pages/{page_id}/edit` | POST | Dispatch editing intents to agent |
+| `/api/file/raw?path=<path>` | GET | Serve raw media files (video, image, font, SVG) |
+| `/api/assets/shapes` | GET | Get SVG shape library manifest |
+| `/api/assets/fonts` | GET | Get custom font library manifest |
+
+#### Custom SVG Shapes
+
+Store SVG shapes in `assets/shapes/` with a `manifest.json`:
+
+```json
+{
+  "shapes": [
+    {
+      "id": "arrow-expand",
+      "category": "arrows",
+      "title": "Expanding Arrow",
+      "svg_path": "arrows/arrow-expand.svg",
+      "animated": true
+    }
+  ]
+}
+```
+
+#### Custom Fonts
+
+Store fonts in `assets/fonts/` with a `manifest.json`:
+
+```json
+{
+  "fonts": [
+    { "id": "montserrat-bold", "family": "Montserrat", "weight": 700, "path": "Montserrat-Bold.woff2" }
+  ]
+}
+```
+
+Panels load fonts dynamically via the Font Loading API. The agent references
+fonts by family name in MC scenes or by file path in ffmpeg/ImageMagick commands.
+
+---
+
+## Workflow Observability API
+
+Kurt uses Dolt (a Git-versioned database) for workflow tracking with three main tables. The observability system provides comprehensive tracking of workflow execution, step-level progress, and real-time event streaming.
+
+### Table Schemas
+
+#### workflow_runs
+
+Main workflow execution records. One row per workflow run.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | VARCHAR(36) | Primary key (UUID) |
+| `workflow` | VARCHAR(255) | Workflow name (e.g., "map_workflow", "fetch_workflow") |
+| `status` | VARCHAR(20) | Current status (see Status Values below) |
+| `started_at` | DATETIME | When the workflow started |
+| `completed_at` | DATETIME | When the workflow completed (NULL if running) |
+| `error` | TEXT | Error message (for failed/cancelled workflows) |
+| `inputs` | JSON | Input parameters passed to the workflow |
+| `metadata_json` | JSON | Additional metadata (workflow_type, cli_command, etc.) |
+| `user_id` | VARCHAR | User ID (multi-tenancy) |
+| `workspace_id` | VARCHAR | Workspace ID (multi-tenancy) |
+
+**Indexes:** `status`, `started_at`, `workflow`
+
+#### step_logs
+
+Summary records per step per workflow run. Updated in place as steps progress.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | VARCHAR(36) | Primary key (UUID) |
+| `run_id` | VARCHAR(36) | Foreign key to workflow_runs.id |
+| `step_id` | VARCHAR(255) | Step identifier (e.g., "fetch", "extract", "map") |
+| `tool` | VARCHAR(50) | Tool name (e.g., "FetchTool", "MapTool") |
+| `status` | VARCHAR(20) | Step status (pending, running, completed, failed, skipped) |
+| `started_at` | DATETIME | When the step started |
+| `completed_at` | DATETIME | When the step completed |
+| `input_count` | INT | Number of input items processed |
+| `output_count` | INT | Number of output items produced |
+| `error_count` | INT | Number of errors encountered |
+| `errors` | JSON | List of error details: `[{row_idx, error_type, message}]` |
+| `metadata_json` | JSON | Additional step metadata |
+
+**Indexes:** `(run_id, step_id)`, `step_id`
+
+#### step_events
+
+Append-only event stream for real-time progress tracking.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | BIGINT | Auto-increment primary key (for cursor-based pagination) |
+| `run_id` | VARCHAR(36) | Foreign key to workflow_runs.id |
+| `step_id` | VARCHAR(255) | Step identifier |
+| `substep` | VARCHAR(255) | Optional substep name (e.g., "fetch", "parse") |
+| `status` | VARCHAR(20) | Event status: "running", "progress", "completed", "failed" |
+| `created_at` | DATETIME | Event timestamp |
+| `current` | INT | Current progress count |
+| `total` | INT | Total items to process |
+| `message` | TEXT | Human-readable status message |
+| `metadata_json` | JSON | Additional event data |
+
+**Indexes:** `(run_id, id)`
+
+### Status Values
+
+**Workflow Status** (workflow_runs.status):
+- `pending` - Workflow queued but not started
+- `running` - Workflow actively executing
+- `completed` - Workflow finished successfully
+- `failed` - Workflow failed with error
+- `canceling` - Cancellation requested, waiting for cleanup
+- `canceled` - Workflow cancelled by user
+
+**Step Status** (step_logs.status):
+- `pending` - Step not yet started
+- `running` - Step actively executing
+- `completed` - Step finished successfully
+- `failed` - Step failed with error
+- `skipped` - Step skipped (e.g., dry-run mode)
+
+**Event Status** (step_events.status):
+- `running` - Step started or continuing
+- `progress` - Progress update (includes current/total)
+- `completed` - Step finished
+- `failed` - Step failed
+
+**Valid Status Transitions:**
+```
+Workflow: pending -> running -> completed
+                  -> running -> failed
+                  -> running -> canceling -> canceled
+
+Step: pending -> running -> completed
+             -> running -> failed
+             -> running -> canceled
+```
+
+### API Endpoints
+
+#### List Workflows
+
+```
+GET /api/workflows
+```
+
+Query parameters:
+- `status` (optional): Filter by status
+- `limit` (default: 50, max: 200): Number of results
+- `offset` (default: 0): Pagination offset
+- `search` (optional): Search by ID or workflow name
+- `workflow_type` (optional): Filter by type ("agent", "tool")
+- `parent_id` (optional): Filter children of a parent workflow
+
+Response:
+```json
+{
+  "workflows": [
+    {
+      "workflow_uuid": "abc-123-def",
+      "name": "map_workflow",
+      "status": "completed",
+      "created_at": "2024-01-15T10:30:00",
+      "updated_at": "2024-01-15T10:35:00",
+      "error": null,
+      "parent_workflow_id": null,
+      "workflow_type": "tool"
+    }
+  ],
+  "total": 42,
+  "has_more": true,
+  "offset": 0,
+  "limit": 50
+}
+```
+
+#### Get Workflow Details
+
+```
+GET /api/workflows/{workflow_id}
+```
+
+Response:
+```json
+{
+  "workflow_uuid": "abc-123-def",
+  "name": "map_workflow",
+  "status": "completed",
+  "created_at": "2024-01-15T10:30:00",
+  "updated_at": "2024-01-15T10:35:00",
+  "error": null,
+  "inputs": {"url": "https://example.com", "max_pages": 100},
+  "metadata": {"workflow_type": "tool", "cli_command": "kurt content map ..."}
+}
+```
+
+#### Get Live Status with Progress
+
+```
+GET /api/workflows/{workflow_id}/status
+```
+
+Returns comprehensive status including step details and progress.
+
+Response:
+```json
+{
+  "workflow_id": "abc-123-def",
+  "name": "map_workflow",
+  "status": "running",
+  "stage": "fetch",
+  "progress": {"current": 45, "total": 100},
+  "steps": [
+    {
+      "name": "fetch",
+      "status": "running",
+      "success": 45,
+      "error": 2,
+      "duration_ms": 12500,
+      "errors": ["Timeout fetching page 12", "404 on page 37"],
+      "step_type": "step",
+      "input_count": 100,
+      "output_count": 47
+    }
+  ],
+  "duration_ms": 15000,
+  "inputs": {"url": "https://example.com"},
+  "cli_command": "kurt content map https://example.com",
+  "error": null,
+  "started_at": "2024-01-15T10:30:00",
+  "completed_at": null,
+  "output": {
+    "total_output": 47,
+    "total_success": 45,
+    "total_errors": 2
+  }
+}
+```
+
+#### Get Step Logs
+
+```
+GET /api/workflows/{workflow_id}/step-logs
+```
+
+Query parameters:
+- `step` (optional): Filter by step name
+- `limit` (default: 100, max: 500): Number of results
+
+Response:
+```json
+{
+  "logs": [
+    {
+      "step_id": "fetch",
+      "tool": "FetchTool",
+      "status": "completed",
+      "started_at": "2024-01-15T10:30:05",
+      "completed_at": "2024-01-15T10:32:15",
+      "input_count": 100,
+      "output_count": 95,
+      "error_count": 5,
+      "errors": [
+        {"row_idx": 12, "error_type": "timeout", "message": "Request timed out"}
+      ],
+      "metadata": {}
+    }
+  ],
+  "step": null
+}
+```
+
+#### Get Workflow Logs (Events)
+
+```
+GET /api/workflows/{workflow_id}/logs
+```
+
+Query parameters:
+- `step_id` (optional): Filter by step ID
+- `since_id` (default: 0): Return events after this ID (cursor pagination)
+- `limit` (default: 100, max: 1000): Number of results
+- `include_file_logs` (default: true): Include file-based logs
+
+Response:
+```json
+{
+  "workflow_id": "abc-123-def",
+  "events": [
+    {
+      "id": 1234,
+      "step_id": "fetch",
+      "substep": "download",
+      "status": "progress",
+      "current": 45,
+      "total": 100,
+      "message": "Fetched page 45 of 100",
+      "created_at": "2024-01-15T10:31:00"
+    }
+  ],
+  "total_events": 50,
+  "has_more": false,
+  "since_id": 0,
+  "limit": 100,
+  "file_content": null
+}
+```
+
+#### Stream Status (SSE)
+
+```
+GET /api/workflows/{workflow_id}/status/stream
+```
+
+Server-Sent Events stream. Sends JSON status updates every 0.5s until workflow completes.
+
+```
+data: {"workflow_id": "abc-123", "status": "running", "progress": {"current": 45, "total": 100}, ...}
+
+data: {"workflow_id": "abc-123", "status": "running", "progress": {"current": 67, "total": 100}, ...}
+
+data: {"workflow_id": "abc-123", "status": "completed", ...}
+```
+
+#### Stream Logs (SSE)
+
+```
+GET /api/workflows/{workflow_id}/logs/stream
+```
+
+Query parameters:
+- `step_id` (optional): Filter by step ID
+
+Server-Sent Events stream for real-time log updates.
+
+```
+data: {"type": "event", "event": {"id": 1234, "step_id": "fetch", "status": "progress", ...}}
+
+data: {"type": "log", "content": "File-based log content..."}
+
+data: {"done": true, "status": "completed"}
+```
+
+#### Cancel Workflow
+
+```
+POST /api/workflows/{workflow_id}/cancel
+```
+
+Sets workflow status to "canceling". The workflow runner must detect this and call `on_workflow_cancel()` to complete.
+
+Response:
+```json
+{"status": "canceling", "workflow_id": "abc-123-def"}
+```
+
+#### Retry Workflow
+
+```
+POST /api/workflows/{workflow_id}/retry
+```
+
+Starts a new workflow run with the same inputs. Only works for terminal states (completed, failed, cancelled).
+
+Response:
+```json
+{
+  "status": "started",
+  "workflow_id": "new-workflow-id",
+  "original_workflow_id": "abc-123-def"
+}
+```
+
+### Querying Workflow Status Programmatically
+
+Using the Python API:
+
+```python
+from kurt.observability.status import get_live_status
+from kurt.db.dolt import DoltDB
+
+db = DoltDB(".dolt")
+status = get_live_status(db, "abc-123")
+
+if status:
+    print(f"Status: {status['status']}")
+    print(f"Progress: {status['progress']['current']}/{status['progress']['total']}")
+    for step in status['steps']:
+        print(f"  {step['name']}: {step['status']} ({step['success']}/{step['output_count']})")
+```
+
+Using the Lifecycle API:
+
+```python
+from kurt.observability.lifecycle import WorkflowLifecycle
+from kurt.db.dolt import DoltDB
+
+db = DoltDB(".dolt")
+lifecycle = WorkflowLifecycle(db)
+
+# Create and track a workflow
+run_id = lifecycle.create_run("my_workflow", inputs={"url": "https://example.com"})
+
+# Track step progress
+lifecycle.create_step_log(run_id, "fetch", "FetchTool", input_count=100)
+lifecycle.update_step_log(run_id, "fetch", status="completed", output_count=95, error_count=5)
+
+# Complete workflow
+lifecycle.update_status(run_id, "completed")
+```
+
+Using the Event Tracker for high-throughput progress:
+
+```python
+from kurt.observability.tracking import track_event, EventTracker
+from kurt.db.dolt import DoltDB
+
+db = DoltDB(".dolt")
+
+# Single event
+track_event(
+    run_id="abc-123",
+    step_id="fetch",
+    substep="download",
+    status="progress",
+    current=45,
+    total=100,
+    message="Fetched page 45 of 100",
+    db=db,
+)
+
+# Batched events (high throughput)
+with EventTracker(db) as tracker:
+    for i in range(1000):
+        tracker.track(
+            run_id="abc-123",
+            step_id="process",
+            status="progress",
+            current=i,
+            total=1000,
+        )
+```
+
+### Metadata Conventions
+
+The `metadata_json` field in `workflow_runs` stores workflow-specific data:
+
+| Key | Description | Example |
+|-----|-------------|---------|
+| `workflow_type` | Type classification | "agent", "tool", "map", "fetch" |
+| `cli_command` | Original CLI command | "kurt content map https://..." |
+| `parent_workflow_id` | Parent workflow UUID | "abc-123-def" |
+| `parent_step_name` | Step that spawned this workflow | "claude_execution" |
+| `definition_name` | Agent workflow definition | "daily-report" |
+| `trigger` | How workflow was started | "cli", "api", "schedule", "retry" |
+| `agent_turns` | Agent conversation turns | 15 |
+| `tokens_in` | Input tokens used | 50000 |
+| `tokens_out` | Output tokens used | 12000 |
+| `cost_usd` | API cost | 0.45 |
+| `tool_calls` | Number of tool invocations | 42 |
+| `stop_reason` | Why agent stopped | "end_turn", "max_turns" |
+
+### Files
+
+- `src/kurt/observability/models.py` - SQLModel table definitions
+- `src/kurt/observability/lifecycle.py` - WorkflowLifecycle class for tracking
+- `src/kurt/observability/tracking.py` - Event tracking (track_event, EventTracker)
+- `src/kurt/observability/status.py` - Status query functions (get_live_status)
+- `src/kurt/observability/streaming.py` - SSE streaming utilities
+- `src/kurt/web/api/server.py` - API endpoints

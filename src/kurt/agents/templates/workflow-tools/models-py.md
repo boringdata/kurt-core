@@ -197,8 +197,8 @@ from sqlmodel import select
 from kurt.db import managed_session
 from .models import CompetitorAnalysis
 
-@DBOS.step()
 def generate_report(context: dict) -> dict:
+    """Generate report from saved analysis results."""
     workflow_id = context["workflow_id"]
 
     with managed_session() as session:

@@ -201,3 +201,96 @@ def ensure_workflows_dir() -> Path:
     workflows_dir = get_workflows_dir()
     workflows_dir.mkdir(parents=True, exist_ok=True)
     return workflows_dir
+
+
+def find_definition_by_workflow_id(workflow_id: str) -> list[dict]:
+    """Find page definitions for a workflow by its workflow ID.
+
+    Looks up the definition_name from workflow events, then reads pages from
+    the workflow definition file.
+
+    Returns:
+        List of page config dicts, or empty list if none found.
+    """
+    try:
+        from kurt.db.utils import get_dolt_db
+
+        db = get_dolt_db(return_none_if_missing=True)
+        if not db:
+            return []
+
+        # Look up definition name from workflow metadata
+        result = db.query(
+            "SELECT metadata_json FROM workflow_runs WHERE workflow_id = ? LIMIT 1",
+            [workflow_id],
+        )
+        if not result.rows:
+            return []
+
+        import json
+
+        metadata = result.rows[0].get("metadata_json", "{}")
+        if isinstance(metadata, str):
+            metadata = json.loads(metadata) if metadata else {}
+        definition_name = metadata.get("definition_name")
+        if not definition_name:
+            return []
+
+        parsed = get_definition(definition_name)
+        if not parsed or not parsed.pages:
+            return []
+
+        return [page.model_dump() for page in parsed.pages]
+    except Exception:
+        return []
+
+
+def get_page_config(workflow_id: str, page_id: str) -> Optional[dict]:
+    """Get a specific page config for a workflow.
+
+    Returns:
+        Page config dict or None if not found.
+    """
+    pages = find_definition_by_workflow_id(workflow_id)
+    for page in pages:
+        if page.get("id") == page_id:
+            return page
+    return None
+
+
+def get_definition_for_workflow(workflow_id: str) -> Optional[dict]:
+    """Get the workflow definition associated with a workflow ID.
+
+    Returns:
+        Workflow definition as dict, or None if not found.
+    """
+    try:
+        from kurt.db.utils import get_dolt_db
+
+        import json
+
+        db = get_dolt_db(return_none_if_missing=True)
+        if not db:
+            return None
+
+        result = db.query(
+            "SELECT metadata_json FROM workflow_runs WHERE workflow_id = ? LIMIT 1",
+            [workflow_id],
+        )
+        if not result.rows:
+            return None
+
+        metadata = result.rows[0].get("metadata_json", "{}")
+        if isinstance(metadata, str):
+            metadata = json.loads(metadata) if metadata else {}
+        definition_name = metadata.get("definition_name")
+        if not definition_name:
+            return None
+
+        parsed = get_definition(definition_name)
+        if not parsed:
+            return None
+
+        return {"name": parsed.name, "title": parsed.title}
+    except Exception:
+        return None

@@ -18,8 +18,9 @@ WHEN TO USE THIS WORKFLOW
 ─────────────────────────────────────────────────────────────────
 When a user wants to create a custom workflow with:
 - Agent automation (workflow.toml)
-- Custom DBOS tools (tools.py)
-- Database persistence (models.py)
+- Built-in tools (map, fetch, llm, embed, sql, write)
+- Custom Python functions
+- Database persistence (Dolt tables)
 
 ═══════════════════════════════════════════════════════════════════
 WORKFLOW TYPES
@@ -30,10 +31,10 @@ WORKFLOW TYPES
    - Claude orchestrates everything
    - Good for: exploration, analysis, simple tasks
 
-2. DBOS-DRIVEN (complex)
-   - Directory with workflow.toml + tools.py + models.py
-   - [steps.xxx] sections define DAG
-   - Good for: pipelines, data processing, multi-step tasks
+2. TOOL-DRIVEN (pipelines)
+   - Single .toml file with [steps.xxx] sections
+   - Uses built-in tools: map, fetch, llm, embed, sql, write
+   - Good for: data pipelines, batch processing, ETL
 
 ═══════════════════════════════════════════════════════════════════
 STRUCTURE: AGENT-DRIVEN (Simple)
@@ -82,147 +83,157 @@ tags = ["analysis", "automation"]
 ```
 
 ═══════════════════════════════════════════════════════════════════
-STRUCTURE: DBOS-DRIVEN (Complex)
+STRUCTURE: TOOL-DRIVEN (Pipeline)
 ═══════════════════════════════════════════════════════════════════
 
-workflows/data_pipeline/
-├── workflow.toml    # Config + step definitions
-├── tools.py         # @DBOS.step() functions
-└── models.py        # SQLModel tables
+workflows/data_pipeline.toml   # Single file with step definitions
 
 ─────────────────────────────────────────────────────────────────
-EXAMPLE: DBOS-Driven Workflow (workflow.toml)
+EXAMPLE: Tool-Driven Workflow (workflow.toml)
 ─────────────────────────────────────────────────────────────────
 
 ```toml
 [workflow]
 name = "data-pipeline"
-title = "Data Processing Pipeline"
-description = "Fetch, enrich with LLM, save to database"
+description = "Map, fetch, and analyze website content"
 
 [inputs]
-source_url = "https://api.example.com/items"
-max_items = 100
+source_url = { type = "string", default = "https://example.com" }
+limit = { type = "int", default = 10 }
 
-[steps.fetch]
-type = "function"
-function = "fetch_items"
+# Step 1: Discover URLs from source
+[steps.discover]
+type = "map"
+[steps.discover.config]
+source = "url"
+url = "{{source_url}}"
+depth = 1
+max_pages = 50
 
+# Step 2: Fetch content (receives input_data from discover)
+[steps.fetch_docs]
+type = "fetch"
+depends_on = ["discover"]
+[steps.fetch_docs.config]
+engine = "trafilatura"
+limit = "{{limit:int}}"
+
+# Step 3: Query results with SQL
+[steps.query]
+type = "sql"
+depends_on = ["fetch_docs"]
+[steps.query.config]
+query = "SELECT document_id, url, fetch_status FROM documents LIMIT 10"
+
+# Step 4: Enrich with LLM
 [steps.enrich]
 type = "llm"
-depends_on = ["fetch"]
-prompt_template = \"\"\"
-Analyze this item:
-Title: {title}
-Content: {content}
+depends_on = ["fetch_docs"]
+[steps.enrich.config]
+prompt = "Summarize this content: {{content}}"
+model = "gpt-4o-mini"
 
-Return JSON with: summary, keywords, sentiment
-\"\"\"
-output_schema = "EnrichmentOutput"
-
-[steps.analyze]
-type = "agent"
-depends_on = ["enrich"]
-model = "claude-sonnet-4-20250514"
-max_turns = 10
-prompt = \"\"\"
-Review the enriched items from {outputs.enrich}.
-
-Save analysis using:
-```bash
-kurt agent tool save-to-db --table=analysis --data='{"key": "value"}'
-```
-\"\"\"
-
-[steps.report]
-type = "function"
-depends_on = ["analyze"]
-function = "generate_report"
-
-[guardrails]
-max_tokens = 200000
-max_tool_calls = 150
-max_time = 900
-
-tags = ["pipeline", "dbos-driven"]
+# Step 5: Generate embeddings
+[steps.embed]
+type = "embed"
+depends_on = ["fetch_docs"]
+[steps.embed.config]
+model = "text-embedding-3-small"
+batch_size = 100
 ```
 
 ─────────────────────────────────────────────────────────────────
-STEP TYPES
+BUILT-IN TOOL TYPES
 ─────────────────────────────────────────────────────────────────
 
-type = "function"    # Call @DBOS.step() from tools.py
-  function = "function_name"
+type = "map"        # Discover URLs from websites, folders, or CMS
+  config.source     # "url" | "folder" | "cms"
+  config.url        # Source URL to crawl
+  config.depth      # Crawl depth (default: 1)
+  config.max_pages  # Max pages to discover
 
-type = "agent"       # Spawn Claude Code subprocess
+type = "fetch"      # Fetch and extract content
+  config.engine     # "trafilatura" | "httpx" | "firecrawl"
+  config.limit      # Max items to process
+
+type = "llm"        # Batch LLM processing
+  config.prompt     # Prompt template with {{field}} variables
+  config.model      # Model name (gpt-4o-mini, claude-3-haiku, etc.)
+
+type = "embed"      # Generate embeddings
+  config.model      # Embedding model name
+  config.batch_size # Batch size (default: 100)
+
+type = "sql"        # Query Dolt database
+  config.query      # SQL query string
+
+type = "write"      # Write output to files
+  config.output     # Output path template
+
+type = "function"   # Call custom Python function
+  function = "module.function_name"
+
+type = "agent"      # Spawn Claude Code subprocess
   model = "claude-sonnet-4-20250514"
   max_turns = 10
   prompt = "..."
 
-type = "llm"         # Batch LLM processing via LLMStep
-  prompt_template = "..."
-  output_schema = "ModelName"  # From models.py
+─────────────────────────────────────────────────────────────────
+CUSTOM PYTHON FUNCTIONS
+─────────────────────────────────────────────────────────────────
 
-─────────────────────────────────────────────────────────────────
-EXAMPLE: tools.py
-─────────────────────────────────────────────────────────────────
+Create a tools.py file in your workflow directory:
+
+workflows/my_pipeline/
+├── workflow.toml
+└── tools.py
 
 ```python
-\"\"\"DBOS step functions for data_pipeline workflow.\"\"\"
+\"\"\"Custom functions for my_pipeline workflow.\"\"\"
 
-from dbos import DBOS
-
-
-@DBOS.step()
-def fetch_items(context: dict) -> dict:
-    \"\"\"Fetch items from source.\"\"\"
+def process_items(context: dict) -> dict:
+    \"\"\"Process items from previous step.\"\"\"
+    input_data = context.get("input_data", [])
     inputs = context.get("inputs", {})
-    url = inputs.get("source_url")
 
-    import httpx
-    response = httpx.get(url)
-    items = response.json()
+    results = []
+    for item in input_data:
+        # Transform each item
+        results.append({
+            "id": item.get("document_id"),
+            "processed": True,
+        })
 
-    return {"items": items, "count": len(items)}
+    return {"items": results, "count": len(results)}
 
 
-@DBOS.step()
 def generate_report(context: dict) -> dict:
     \"\"\"Generate final report.\"\"\"
     outputs = context.get("outputs", {})
     return {"status": "completed", "summary": "..."}
 ```
 
-─────────────────────────────────────────────────────────────────
-EXAMPLE: models.py
-─────────────────────────────────────────────────────────────────
+Reference in workflow.toml:
 
-```python
-\"\"\"SQLModel tables for data_pipeline workflow.\"\"\"
-
-from typing import Optional
-from pydantic import BaseModel
-from sqlalchemy import Column, JSON
-from sqlmodel import Field, SQLModel
-
-
-# Output schema for LLM step
-class EnrichmentOutput(BaseModel):
-    summary: str
-    keywords: list[str]
-    sentiment: str
-
-
-# Database table
-class AnalysisResult(SQLModel, table=True):
-    __tablename__ = "analysis"
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-    workflow_id: str = Field(index=True)
-    item_id: str
-    summary: str
-    keywords: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+```toml
+[steps.process]
+type = "function"
+function = "process_items"  # Function name from tools.py
+depends_on = ["fetch"]
 ```
+
+═══════════════════════════════════════════════════════════════════
+DATA FLOW BETWEEN STEPS
+═══════════════════════════════════════════════════════════════════
+
+Steps pass data via:
+- input_data: List of items from previous step(s)
+- outputs: Dict of all previous step outputs
+
+Example: map → fetch → llm
+1. map outputs: [{"url": "...", "document_id": "..."}, ...]
+2. fetch receives input_data from map
+3. llm receives input_data from fetch
 
 ═══════════════════════════════════════════════════════════════════
 TEMPLATE VARIABLES
@@ -235,71 +246,57 @@ In prompts, use double braces:
 {{datetime}}       - ISO timestamp
 {{project_root}}   - Project directory
 
+Type hints for inputs:
+{{limit:int}}      - Convert to integer
+{{enabled:bool}}   - Convert to boolean
+
 In step prompts, reference previous outputs:
 
 {outputs.step_name}        - Full output from step
 {outputs.fetch.items}      - Nested value
 
 ═══════════════════════════════════════════════════════════════════
-AGENT TOOLS (for type="agent" steps)
-═══════════════════════════════════════════════════════════════════
-
-Agents can use these CLI commands to persist data:
-
-# Save to database
-kurt agent tool save-to-db --table=TABLE --data='{"key": "value"}'
-
-# Batch LLM processing
-kurt agent tool llm --prompt="Analyze: {text}" --data='[{"text": "..."}]'
-
-# Generate embeddings
-kurt agent tool embedding --texts='["text1", "text2"]' --output=embeddings.json
-
-═══════════════════════════════════════════════════════════════════
 STEPS TO CREATE A WORKFLOW
 ═══════════════════════════════════════════════════════════════════
 
 1. ASK user what the workflow should do
-2. DECIDE: agent-driven (simple) or DBOS-driven (complex)?
+2. DECIDE: agent-driven (simple) or tool-driven (pipeline)?
 
 For AGENT-DRIVEN:
 3. CREATE workflows/{name}.toml with [workflow] + [agent] sections
 4. VALIDATE: kurt agents validate workflows/{name}.toml
 5. TEST: kurt agents run {name} --foreground
 
-For DBOS-DRIVEN:
-3. CREATE workflows/{name}/ directory
-4. WRITE workflow.toml with [steps.xxx] sections
-5. WRITE tools.py with @DBOS.step() functions
-6. WRITE models.py with SQLModel tables (if needed)
-7. VALIDATE: kurt agents validate workflows/{name}/
-8. TEST: kurt agents run {name} --foreground
+For TOOL-DRIVEN:
+3. CREATE workflows/{name}.toml with [steps.xxx] sections
+4. ADD custom tools.py if needed (for type="function")
+5. TEST: kurt run workflows/{name}.toml --dry-run
+6. RUN: kurt run workflows/{name}.toml
 
 ═══════════════════════════════════════════════════════════════════
 CLI COMMANDS
 ═══════════════════════════════════════════════════════════════════
 
-# List workflows
+# Run workflow (tool-driven)
+kurt run workflows/my-pipeline.toml
+kurt run workflows/my-pipeline.toml --dry-run
+kurt run workflows/my-pipeline.toml -i source_url=https://example.com
+
+# Test workflow
+kurt test workflows/my-pipeline.toml
+
+# Agent workflows
 kurt agents list
-
-# Show details
-kurt agents show {name}
-
-# Validate
-kurt agents validate
-kurt agents validate workflows/my-workflow.toml
-
-# Run
 kurt agents run {name}
 kurt agents run {name} --foreground
-kurt agents run {name} --input company="MyCompany"
+kurt agents validate workflows/{name}.toml
 
-# Create from template
-kurt agents create --name my-workflow
-kurt agents create --name my-pipeline --with-steps --with-tools
-
-# Initialize with examples
-kurt agents init
+# Direct tool commands (for testing)
+kurt map https://example.com --depth 1
+kurt fetch --limit 10
+kurt sql "SELECT * FROM documents LIMIT 5"
+kurt llm --prompt "Summarize: {{content}}"
+kurt embed --model text-embedding-3-small
 
 ═══════════════════════════════════════════════════════════════════
 DETAILED DOCUMENTATION
@@ -307,14 +304,15 @@ DETAILED DOCUMENTATION
 
 For detailed documentation on each component:
 
-# Agent tools documentation
-kurt show save-step      # Database persistence (SaveStep)
-kurt show llm-step       # Batch LLM processing (LLMStep)
-kurt show embedding-step # Vector embeddings (EmbeddingStep)
+# Tool documentation
+kurt tool map --help
+kurt tool fetch --help
+kurt tool llm --help
+kurt tool embed --help
+kurt tool sql --help
 
-# File format guides
+# Show command help
 kurt show models-py      # SQLModel table definitions
-kurt show tools-py       # DBOS step functions
 
 ═══════════════════════════════════════════════════════════════════
 """
