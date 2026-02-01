@@ -1,18 +1,32 @@
 /**
- * UI Components - Main export file
+ * Boring UI Component Library
+ * A comprehensive, accessible, production-ready UI component library
  */
 
+// Form Components
 export { Input } from './Input';
-export { Table } from './Table';
-export { List } from './List';
-export { ListItem } from './ListItem';
-
-// New components (Story N, O, P)
-export { default as Breadcrumb } from './Breadcrumb';
-export { Tabs, TabList, TabButton, TabPanel, type TabItem, type TabsProps } from './Tabs';
-export { Accordion, AccordionItem, type AccordionProps } from './Accordion';
-
-// Type exports
 export type { InputProps } from '../types/input';
-export type { TableProps, TableColumn, SortOrder, SortState, TableState } from '../types/table';
-export type { ListProps, ListItemProps, AvatarProps, ListIconProps } from '../types/list';
+
+export { Select } from './Select';
+export type { SelectProps, SelectOption, SelectGroup } from '../types/select';
+
+export { Textarea } from './Textarea';
+export type { TextareaProps } from '../types/textarea';
+
+export { Checkbox, CheckboxGroup } from './Checkbox';
+export type { CheckboxProps, CheckboxGroupProps } from '../types/checkbox';
+
+export { Radio, RadioGroup } from './Radio';
+export type { RadioProps, RadioGroupProps } from '../types/checkbox';
+
+export {
+  FormGroup,
+  FormLayout,
+  ValidationMessage,
+  FormSection,
+} from './Form';
+export type {
+  FormGroupProps,
+  FormLayoutProps,
+  ValidationMessageProps,
+} from '../types/form';
