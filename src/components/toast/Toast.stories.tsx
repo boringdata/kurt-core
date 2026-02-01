@@ -113,28 +113,54 @@ export const Default: Story = {
   ),
 };
 
+function TopLeftDemo() {
+  const toast = useToast();
+  return (
+    <button
+      onClick={() => toast.info('Top left notification')}
+      style={{
+        padding: '8px 16px',
+        backgroundColor: '#3b82f6',
+        color: 'white',
+        border: 'none',
+        borderRadius: '4px',
+        cursor: 'pointer',
+        position: 'absolute',
+        top: '20px',
+        left: '20px',
+      }}
+    >
+      Show Top Left
+    </button>
+  );
+}
+
+function TopRightDemo() {
+  const toast = useToast();
+  return (
+    <button
+      onClick={() => toast.info('Top right notification')}
+      style={{
+        padding: '8px 16px',
+        backgroundColor: '#3b82f6',
+        color: 'white',
+        border: 'none',
+        borderRadius: '4px',
+        cursor: 'pointer',
+        position: 'absolute',
+        top: '20px',
+        right: '20px',
+      }}
+    >
+      Show Top Right
+    </button>
+  );
+}
+
 export const TopLeft: Story = {
   render: () => (
     <ToastContainer position="top-left">
-      <button
-        onClick={() => {
-          const toast = useToast();
-          toast.info('Top left notification');
-        }}
-        style={{
-          padding: '8px 16px',
-          backgroundColor: '#3b82f6',
-          color: 'white',
-          border: 'none',
-          borderRadius: '4px',
-          cursor: 'pointer',
-          position: 'absolute',
-          top: '20px',
-          left: '20px',
-        }}
-      >
-        Show Top Left
-      </button>
+      <TopLeftDemo />
     </ToastContainer>
   ),
 };
@@ -142,25 +168,7 @@ export const TopLeft: Story = {
 export const TopRight: Story = {
   render: () => (
     <ToastContainer position="top-right">
-      <button
-        onClick={() => {
-          const toast = useToast();
-          toast.info('Top right notification');
-        }}
-        style={{
-          padding: '8px 16px',
-          backgroundColor: '#3b82f6',
-          color: 'white',
-          border: 'none',
-          borderRadius: '4px',
-          cursor: 'pointer',
-          position: 'absolute',
-          top: '20px',
-          right: '20px',
-        }}
-      >
-        Show Top Right
-      </button>
+      <TopRightDemo />
     </ToastContainer>
   ),
 };
