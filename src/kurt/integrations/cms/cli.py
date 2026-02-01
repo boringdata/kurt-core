@@ -11,7 +11,7 @@ from rich.console import Console
 from rich.table import Table
 
 from kurt.admin.telemetry.decorators import track_command
-from kurt.cli.options import format_option, limit_option
+from kurt.tools.core import format_option, limit_option
 
 console = Console()
 
@@ -487,3 +487,65 @@ def publish_cmd(
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
         raise click.Abort()
+
+
+@cms_group.command("help")
+@track_command
+def help_cmd():
+    """
+    Show CMS integration setup instructions.
+
+    Displays detailed instructions for configuring and using
+    CMS integrations (Sanity, Contentful, WordPress).
+
+    Example:
+        kurt connect cms help
+    """
+    content = """
+===============================================================
+CMS INTEGRATION
+===============================================================
+
+Kurt supports CMS integrations for reading and publishing content.
+Currently only Sanity is supported; Contentful and WordPress are
+coming soon.
+
+===============================================================
+READING FROM CMS
+===============================================================
+
+CHECK CONFIGURATION:
+kurt connect cms status
+
+IF NOT CONFIGURED:
+kurt connect cms onboard --platform {platform}
+
+FETCH CONTENT:
+kurt tool fetch {cms-url}
+
+  - Automatically uses CMS adapters
+  - For detailed workflow, run: kurt help source-workflow
+
+===============================================================
+KEEPING CMS CONTENT UP TO DATE
+===============================================================
+
+Periodically update sources to discover new or modified content.
+
+See "Updating Existing Sources" section in:
+  kurt help source-workflow
+
+===============================================================
+PUBLISHING TO CMS
+===============================================================
+
+PUBLISH AS DRAFT:
+kurt connect cms publish --file {path} --content-type {type}
+
+IMPORTANT:
+  - Kurt only creates drafts, never publishes to live status
+  - User must review and publish manually in CMS
+
+===============================================================
+"""
+    click.echo(content.strip())

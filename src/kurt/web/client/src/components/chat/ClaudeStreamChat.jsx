@@ -24,6 +24,19 @@ import ToolUseBlock, { ToolOutput } from './ToolUseBlock'
 import PermissionPanel from './PermissionPanel'
 import './styles.css'
 
+// Generate a valid UUID, with fallback for environments without crypto.randomUUID
+const generateUUID = () => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID()
+  }
+  // Fallback: generate UUID v4 format using Math.random
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0
+    const v = c === 'x' ? r : (r & 0x3) | 0x8
+    return v.toString(16)
+  })
+}
+
 // Helper to safely find content in arrays (content might be a string sometimes)
 const findContent = (content, predicate) => {
   if (!Array.isArray(content)) return undefined
@@ -670,7 +683,7 @@ const useClaudeStreamRuntime = (
           }
           setIsConnected(false)
           // Generate new session ID and reconnect
-          const newSessionId = crypto.randomUUID()
+          const newSessionId = generateUUID()
           setCurrentSessionId(newSessionId)
           resumeRef.current = false
           // Explicitly reconnect after state update
@@ -1191,37 +1204,50 @@ const useClaudeStreamRuntime = (
         if (payload.type === 'result') {
           running = false
 
-          const finalText = extractResultText(payload)
-          if (finalText && !hasAssistantText) {
-            parts.push({ type: 'text', text: finalText })
+          // Handle error_during_execution - display errors to the user
+          if (payload.subtype === 'error_during_execution' || payload.errors?.length > 0) {
+            const errors = payload.errors || []
+            const errorMessages = errors.map(e => typeof e === 'string' ? e : e.message || JSON.stringify(e))
+            const errorText = errorMessages.length > 0
+              ? `⚠️ Error: ${errorMessages.join('\n')}`
+              : '⚠️ An error occurred during execution'
+            console.log('[ClaudeStream] Error during execution:', errorText)
+            parts.push({ type: 'text', text: errorText })
             textPartIndex = parts.length - 1
-          }
-
-          // Add the latest command output (if any) now that we have the final result
-          if (latestCommandOutput) {
-            console.log('[ClaudeStream] Adding final output:', latestCommandOutput.slice(0, 50))
-            parts.push({ type: 'text', text: latestCommandOutput })
-            textPartIndex = parts.length - 1
-          }
-
-          // Check for permission denials BEFORE signaling end
-          // In --print mode, Claude reports denied tools in the result
-          if (payload.permission_denials?.length > 0) {
-            console.log('[ClaudeStream] Permission denials found:', JSON.stringify(payload.permission_denials, null, 2))
-            // Show the first denied tool for user to grant permission
-            const denial = payload.permission_denials[0]
-            onStreamingChange?.({
-              type: 'permission_denied',
-              payload: {
-                tool_name: denial.tool_name,
-                tool_use_id: denial.tool_use_id,
-                tool_input: denial.tool_input,
-              },
-            })
-            // Don't call onStreamingChange(false) - keep showing the panel
-          } else {
-            // No denials, signal end of streaming
             onStreamingChange?.(false)
+          } else {
+            const finalText = extractResultText(payload)
+            if (finalText && !hasAssistantText) {
+              parts.push({ type: 'text', text: finalText })
+              textPartIndex = parts.length - 1
+            }
+
+            // Add the latest command output (if any) now that we have the final result
+            if (latestCommandOutput) {
+              console.log('[ClaudeStream] Adding final output:', latestCommandOutput.slice(0, 50))
+              parts.push({ type: 'text', text: latestCommandOutput })
+              textPartIndex = parts.length - 1
+            }
+
+            // Check for permission denials BEFORE signaling end
+            // In --print mode, Claude reports denied tools in the result
+            if (payload.permission_denials?.length > 0) {
+              console.log('[ClaudeStream] Permission denials found:', JSON.stringify(payload.permission_denials, null, 2))
+              // Show the first denied tool for user to grant permission
+              const denial = payload.permission_denials[0]
+              onStreamingChange?.({
+                type: 'permission_denied',
+                payload: {
+                  tool_name: denial.tool_name,
+                  tool_use_id: denial.tool_use_id,
+                  tool_input: denial.tool_input,
+                },
+              })
+              // Don't call onStreamingChange(false) - keep showing the panel
+            } else {
+              // No denials, signal end of streaming
+              onStreamingChange?.(false)
+            }
           }
         }
 

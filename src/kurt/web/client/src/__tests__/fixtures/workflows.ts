@@ -10,6 +10,11 @@ export interface WorkflowFixture {
   created_at: string
   updated_at: string
   workflow_type?: string
+  definition_name?: string
+  tokens_in?: number
+  tokens_out?: number
+  cost_usd?: number
+  agent_turns?: number
 }
 
 export interface WorkflowStatusFixture {
@@ -76,6 +81,27 @@ export const workflows = {
     workflow_uuid: 'cancelled-1234-5678-9abc-def012345678',
     status: 'CANCELLED',
     name: 'map',
+  }),
+
+  // Agent workflow with tokens and cost
+  agentSuccess: createWorkflow({
+    workflow_uuid: 'agent-success-1234-5678-9abc-def012345678',
+    status: 'SUCCESS',
+    name: 'execute_agent_workflow',
+    workflow_type: 'agent',
+    definition_name: 'test-agent',
+    tokens_in: 50000,
+    tokens_out: 1500,
+    cost_usd: 0.12,
+    agent_turns: 5,
+  }),
+
+  agentPending: createWorkflow({
+    workflow_uuid: 'agent-pending-1234-5678-9abc-def012345678',
+    status: 'PENDING',
+    name: 'execute_agent_workflow',
+    workflow_type: 'agent',
+    definition_name: 'research-agent',
   }),
 }
 

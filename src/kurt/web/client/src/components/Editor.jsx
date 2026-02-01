@@ -591,6 +591,9 @@ export default function Editor({
       StarterKit.configure({
         // Disable default codeBlock, we use CodeBlockLowlight for syntax highlighting
         codeBlock: false,
+        // Disable extensions we configure separately to avoid duplicate extension warnings
+        link: false,
+        underline: false,
       }),
       Underline,
       Link.configure({

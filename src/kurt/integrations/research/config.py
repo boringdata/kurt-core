@@ -127,6 +127,11 @@ def create_template_config(source: str) -> dict[str, Any]:
             "max_tokens": "4000",
             "temperature": "0.2",
         }
+    elif source == "apify":
+        return {
+            "api_token": "YOUR_APIFY_API_TOKEN",
+            "default_actor": "apidojo/tweet-scraper",
+        }
     else:
         return {
             "api_key": "YOUR_API_KEY",

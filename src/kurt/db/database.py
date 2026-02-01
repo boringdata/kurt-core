@@ -2,7 +2,7 @@
 Database initialization and management.
 
 This module provides a unified interface for database operations.
-Supports both SQLite (local dev) and PostgreSQL (production via DBOS).
+Uses Dolt for local development with git-like versioning.
 
 Usage:
     from kurt.db import get_database_client, get_session
@@ -27,17 +27,86 @@ Or use convenience functions:
 """
 
 from contextlib import asynccontextmanager, contextmanager
+from pathlib import Path
 from typing import Optional
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel import Session, SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from kurt.db.base import DatabaseClient, get_database_client
+from kurt.db.dolt import DoltDB
+
+# =============================================================================
+# Database Client Factory
+# =============================================================================
+
+
+def _get_database_url_from_config() -> str | None:
+    """Get DATABASE_URL from kurt.config if available."""
+    try:
+        from kurt.config import config_file_exists, load_config
+
+        if config_file_exists():
+            config = load_config()
+            return config.DATABASE_URL
+    except Exception:
+        pass
+    return None
+
+
+def get_database_client() -> DoltDB:
+    """
+    Factory function to get the DoltDB client.
+
+    Priority order for DATABASE_URL:
+    1. Environment variable DATABASE_URL
+    2. kurt.config DATABASE_URL field
+
+    Routing:
+    - "mysql://...": DoltDB connecting to remote Dolt server
+    - None, empty, or other: DoltDB for local .dolt database
+
+    Returns:
+        DoltDB: Database client for the environment
+    """
+    import os
+
+    # Priority 1: Environment variable
+    database_url = os.environ.get("DATABASE_URL")
+
+    # Priority 2: Config file
+    if not database_url:
+        database_url = _get_database_url_from_config()
+
+    # MySQL/Dolt connection (Dolt exposes MySQL-compatible protocol)
+    if database_url and database_url.startswith("mysql"):
+        # Parse URL to extract connection params
+        # Format: mysql+pymysql://user@host:port/database
+        from urllib.parse import urlparse
+
+        parsed = urlparse(database_url)
+        return DoltDB(
+            path=Path.cwd(),
+            mode="server",
+            host=parsed.hostname or "localhost",
+            port=parsed.port or 3306,
+            user=parsed.username or "root",
+            password=parsed.password or "",
+            database=parsed.path.lstrip("/") if parsed.path else None,
+        )
+
+    # Default: Local Dolt database
+    return DoltDB(Path.cwd())
+
+
+def get_engine():
+    """Get SQLAlchemy engine from database client."""
+    db = get_database_client()
+    return db._get_engine()
 
 __all__ = [
     "get_database_client",
-    "DatabaseClient",
+    "DoltDB",
     "Session",
     "init_database",
     "get_session",
@@ -59,12 +128,6 @@ def get_session() -> Session:
     """Get a database session."""
     db = get_database_client()
     return db.get_session()
-
-
-def check_database_exists() -> bool:
-    """Check if the database exists."""
-    db = get_database_client()
-    return db.check_database_exists()
 
 
 def ensure_tables(models: list[type[SQLModel]], session: Optional[Session] = None) -> None:
@@ -91,9 +154,7 @@ def ensure_tables(models: list[type[SQLModel]], session: Optional[Session] = Non
 def managed_session(session: Optional[Session] = None):
     """Transactional context manager with automatic commit/rollback.
 
-    Works with all database backends:
-    - SQLite: Standard SQLModel session
-    - PostgreSQL: SQLModel session + RLS context via SET LOCAL
+    Works with Dolt database backend.
 
     Args:
         session: Optional existing session to use (will NOT be closed/committed)
@@ -106,17 +167,11 @@ def managed_session(session: Optional[Session] = None):
             session.add(LLMTrace(workflow_id="123", ...))
             # Auto-commits on exit, rolls back on exception
     """
-    from kurt.db.tenant import set_rls_context
-
     if session is not None:
-        # Set RLS context on existing session
-        set_rls_context(session)
         yield session
     else:
         _session = get_session()
         try:
-            # Set RLS context for PostgreSQL mode
-            set_rls_context(_session)
             yield _session
             _session.commit()
         except Exception:

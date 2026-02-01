@@ -26,10 +26,9 @@ class TestToolTrackingHelpers:
             assert "hooks" in settings
             assert "PostToolUse" in settings["hooks"]
             assert settings["hooks"]["PostToolUse"][0]["matcher"] == "*"
-            assert (
-                "kurt agents track-tool"
-                in settings["hooks"]["PostToolUse"][0]["hooks"][0]["command"]
-            )
+            # Hook command should use "kurt workflow track-tool"
+            hook_cmd = settings["hooks"]["PostToolUse"][0]["hooks"][0]["command"]
+            assert "workflow track-tool" in hook_cmd
 
             # Verify tool log file exists
             assert os.path.exists(tool_log_path)
@@ -43,6 +42,16 @@ class TestToolTrackingHelpers:
                 os.unlink(tool_log_path)
             except Exception:
                 pass
+
+    def test_get_kurt_executable_finds_path(self):
+        """Test _get_kurt_executable finds kurt in PATH or venv."""
+        from kurt.workflows.agents.executor import _get_kurt_executable
+
+        result = _get_kurt_executable()
+
+        # Should return a path (either from PATH or venv)
+        assert result is not None
+        assert "kurt" in result
 
     def test_cleanup_tool_tracking_counts_lines(self, tmp_path):
         """Test _cleanup_tool_tracking counts tool calls correctly."""
@@ -59,9 +68,13 @@ class TestToolTrackingHelpers:
             '{"tool_name": "Write", "tool_use_id": "3"}\n'
         )
 
-        count = _cleanup_tool_tracking(str(settings_path), str(tool_log_path))
+        count, details = _cleanup_tool_tracking(str(settings_path), str(tool_log_path))
 
         assert count == 3
+        assert len(details) == 3
+        assert details[0]["tool_name"] == "Bash"
+        assert details[1]["tool_name"] == "Read"
+        assert details[2]["tool_name"] == "Write"
         # Verify files were deleted
         assert not settings_path.exists()
         assert not tool_log_path.exists()
@@ -76,9 +89,10 @@ class TestToolTrackingHelpers:
         settings_path.write_text("{}")
         tool_log_path.write_text("")
 
-        count = _cleanup_tool_tracking(str(settings_path), str(tool_log_path))
+        count, details = _cleanup_tool_tracking(str(settings_path), str(tool_log_path))
 
         assert count == 0
+        assert details == []
 
     def test_cleanup_tool_tracking_missing_file(self, tmp_path):
         """Test _cleanup_tool_tracking handles missing files gracefully."""
@@ -87,9 +101,10 @@ class TestToolTrackingHelpers:
         settings_path = tmp_path / "nonexistent_settings.json"
         tool_log_path = tmp_path / "nonexistent_tools.jsonl"
 
-        # Should not raise, should return 0
-        count = _cleanup_tool_tracking(str(settings_path), str(tool_log_path))
+        # Should not raise, should return 0 and empty list
+        count, details = _cleanup_tool_tracking(str(settings_path), str(tool_log_path))
         assert count == 0
+        assert details == []
 
 
 class TestResolveTemplate:
@@ -158,17 +173,13 @@ class TestAgentExecutionStep:
 
         mock_which.return_value = None
 
-        # Mock DBOS
-        with patch("kurt.workflows.agents.executor.DBOS") as mock_dbos:
-            mock_dbos.workflow_id = "test-123"
-
-            with pytest.raises(RuntimeError, match="Claude Code CLI not found"):
-                agent_execution_step(
-                    prompt="Test",
-                    model="claude-sonnet-4-20250514",
-                    max_turns=5,
-                    allowed_tools=["Bash"],
-                )
+        with pytest.raises(RuntimeError, match="Claude Code CLI not found"):
+            agent_execution_step(
+                prompt="Test",
+                model="claude-sonnet-4-20250514",
+                max_turns=5,
+                allowed_tools=["Bash"],
+            )
 
     @patch("shutil.which")
     @patch("subprocess.run")
@@ -196,32 +207,27 @@ class TestAgentExecutionStep:
         mock_result.stderr = ""
         mock_run.return_value = mock_result
 
-        # Mock DBOS
-        with patch("kurt.workflows.agents.executor.DBOS") as mock_dbos:
-            mock_dbos.workflow_id = "test-123"
-            mock_dbos.write_stream = MagicMock()
-            mock_dbos.set_event = MagicMock()
+        # Mock tool tracking
+        with patch(
+            "kurt.workflows.agents.executor._create_tool_tracking_settings"
+        ) as mock_create:
+            settings_file = tmp_path / "settings.json"
+            tool_log_file = tmp_path / "tools.jsonl"
+            settings_file.write_text("{}")
+            tool_log_file.write_text('{"tool_name": "Bash"}\n' '{"tool_name": "Read"}\n')
+            mock_create.return_value = (str(settings_file), str(tool_log_file))
 
-            # Mock tool tracking
-            with patch(
-                "kurt.workflows.agents.executor._create_tool_tracking_settings"
-            ) as mock_create:
-                settings_file = tmp_path / "settings.json"
-                tool_log_file = tmp_path / "tools.jsonl"
-                settings_file.write_text("{}")
-                tool_log_file.write_text('{"tool_name": "Bash"}\n' '{"tool_name": "Read"}\n')
-                mock_create.return_value = (str(settings_file), str(tool_log_file))
+            with patch("kurt.workflows.agents.executor._get_project_root") as mock_root:
+                mock_root.return_value = str(tmp_path)
 
-                with patch("kurt.workflows.agents.executor._get_project_root") as mock_root:
-                    mock_root.return_value = str(tmp_path)
-
-                    result = agent_execution_step(
-                        prompt="Test prompt",
-                        model="claude-sonnet-4-20250514",
-                        max_turns=5,
-                        allowed_tools=["Bash", "Read"],
-                        max_time=300,
-                    )
+                result = agent_execution_step(
+                    prompt="Test prompt",
+                    model="claude-sonnet-4-20250514",
+                    max_turns=5,
+                    allowed_tools=["Bash", "Read"],
+                    max_time=300,
+                    run_id="test-123",  # Pass run_id for parent workflow tracking
+                )
 
         assert result["turns"] == 3
         assert result["tool_calls"] == 2  # From our mock tool log
@@ -255,29 +261,25 @@ class TestAgentExecutionStep:
         mock_which.return_value = "/usr/bin/claude"
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="claude", timeout=10)
 
-        with patch("kurt.workflows.agents.executor.DBOS") as mock_dbos:
-            mock_dbos.workflow_id = "test-123"
-            mock_dbos.write_stream = MagicMock()
+        with patch(
+            "kurt.workflows.agents.executor._create_tool_tracking_settings"
+        ) as mock_create:
+            settings_file = tmp_path / "settings.json"
+            tool_log_file = tmp_path / "tools.jsonl"
+            settings_file.write_text("{}")
+            tool_log_file.write_text("")
+            mock_create.return_value = (str(settings_file), str(tool_log_file))
 
-            with patch(
-                "kurt.workflows.agents.executor._create_tool_tracking_settings"
-            ) as mock_create:
-                settings_file = tmp_path / "settings.json"
-                tool_log_file = tmp_path / "tools.jsonl"
-                settings_file.write_text("{}")
-                tool_log_file.write_text("")
-                mock_create.return_value = (str(settings_file), str(tool_log_file))
+            with patch("kurt.workflows.agents.executor._get_project_root") as mock_root:
+                mock_root.return_value = str(tmp_path)
 
-                with patch("kurt.workflows.agents.executor._get_project_root") as mock_root:
-                    mock_root.return_value = str(tmp_path)
-
-                    result = agent_execution_step(
-                        prompt="Test",
-                        model="claude-sonnet-4-20250514",
-                        max_turns=5,
-                        allowed_tools=["Bash"],
-                        max_time=10,
-                    )
+                result = agent_execution_step(
+                    prompt="Test",
+                    model="claude-sonnet-4-20250514",
+                    max_turns=5,
+                    allowed_tools=["Bash"],
+                    max_time=10,
+                )
 
         assert "max_time" in result["stop_reason"]
         assert result["turns"] == 0
@@ -292,35 +294,31 @@ class TestAgentExecutionStep:
         mock_which.return_value = "/usr/bin/claude"
         mock_run.side_effect = Exception("Test error")
 
-        with patch("kurt.workflows.agents.executor.DBOS") as mock_dbos:
-            mock_dbos.workflow_id = "test-123"
-            mock_dbos.write_stream = MagicMock()
+        with patch(
+            "kurt.workflows.agents.executor._create_tool_tracking_settings"
+        ) as mock_create:
+            settings_file = tmp_path / "settings.json"
+            tool_log_file = tmp_path / "tools.jsonl"
+            settings_file.write_text("{}")
+            tool_log_file.write_text("")
+            mock_create.return_value = (str(settings_file), str(tool_log_file))
 
-            with patch(
-                "kurt.workflows.agents.executor._create_tool_tracking_settings"
-            ) as mock_create:
-                settings_file = tmp_path / "settings.json"
-                tool_log_file = tmp_path / "tools.jsonl"
-                settings_file.write_text("{}")
-                tool_log_file.write_text("")
-                mock_create.return_value = (str(settings_file), str(tool_log_file))
+            with patch("kurt.workflows.agents.executor._cleanup_tool_tracking") as mock_cleanup:
+                mock_cleanup.return_value = 0
 
-                with patch("kurt.workflows.agents.executor._cleanup_tool_tracking") as mock_cleanup:
-                    mock_cleanup.return_value = 0
+                with patch("kurt.workflows.agents.executor._get_project_root") as mock_root:
+                    mock_root.return_value = str(tmp_path)
 
-                    with patch("kurt.workflows.agents.executor._get_project_root") as mock_root:
-                        mock_root.return_value = str(tmp_path)
+                    with pytest.raises(Exception, match="Test error"):
+                        agent_execution_step(
+                            prompt="Test",
+                            model="claude-sonnet-4-20250514",
+                            max_turns=5,
+                            allowed_tools=["Bash"],
+                        )
 
-                        with pytest.raises(Exception, match="Test error"):
-                            agent_execution_step(
-                                prompt="Test",
-                                model="claude-sonnet-4-20250514",
-                                max_turns=5,
-                                allowed_tools=["Bash"],
-                            )
-
-                    # Verify cleanup was called
-                    mock_cleanup.assert_called_once()
+                # Verify cleanup was called
+                mock_cleanup.assert_called_once()
 
 
 class TestRunDefinition:
@@ -337,15 +335,9 @@ class TestRunDefinition:
             run_definition("nonexistent")
 
     @patch("kurt.workflows.agents.registry.get_definition")
-    @patch("kurt.core.run_workflow")
-    def test_run_background(self, mock_run_workflow, mock_get_def):
+    @patch("kurt.workflows.agents.executor._spawn_background_agent_run")
+    def test_run_background(self, mock_spawn, mock_get_def):
         """Test running definition in background."""
-        # Import run_definition fresh to pick up patched dependencies
-        import importlib
-
-        import kurt.workflows.agents.executor as executor_module
-
-        importlib.reload(executor_module)
         from kurt.workflows.agents.executor import run_definition
         from kurt.workflows.agents.parser import AgentConfig, GuardrailsConfig, ParsedWorkflow
 
@@ -357,7 +349,7 @@ class TestRunDefinition:
             guardrails=GuardrailsConfig(),
             inputs={"default_key": "default_value"},
         )
-        mock_run_workflow.return_value = "wf-123"
+        mock_spawn.return_value = {"workflow_id": "wf-123", "status": "started"}
 
         result = run_definition("test-workflow", inputs={"custom_key": "custom_value"})
 
@@ -365,20 +357,16 @@ class TestRunDefinition:
         assert result["status"] == "started"
 
         # Verify inputs were merged
-        call_args = mock_run_workflow.call_args
-        inputs_arg = call_args[0][2]  # Third positional arg is inputs
+        mock_spawn.assert_called_once()
+        call_kwargs = mock_spawn.call_args[1]
+        inputs_arg = call_kwargs["inputs"]
         assert inputs_arg["default_key"] == "default_value"
         assert inputs_arg["custom_key"] == "custom_value"
 
     @patch("kurt.workflows.agents.registry.get_definition")
-    @patch("kurt.core.run_workflow")
-    def test_run_foreground(self, mock_run_workflow, mock_get_def):
+    @patch("kurt.workflows.agents.executor.execute_agent_workflow")
+    def test_run_foreground(self, mock_execute, mock_get_def):
         """Test running definition in foreground."""
-        import importlib
-
-        import kurt.workflows.agents.executor as executor_module
-
-        importlib.reload(executor_module)
         from kurt.workflows.agents.executor import run_definition
         from kurt.workflows.agents.parser import AgentConfig, GuardrailsConfig, ParsedWorkflow
 
@@ -389,7 +377,7 @@ class TestRunDefinition:
             agent=AgentConfig(model="claude-sonnet-4-20250514"),
             guardrails=GuardrailsConfig(),
         )
-        mock_run_workflow.return_value = {
+        mock_execute.return_value = {
             "workflow_id": "wf-123",
             "status": "completed",
             "turns": 2,
@@ -398,8 +386,7 @@ class TestRunDefinition:
         result = run_definition("test-workflow", background=False)
 
         assert result["status"] == "completed"
-        mock_run_workflow.assert_called_once()
-        assert mock_run_workflow.call_args[1]["background"] is False
+        mock_execute.assert_called_once()
 
 
 class TestToolExtraction:
@@ -418,24 +405,28 @@ class TestToolExtraction:
             "---\nname: my-workflow\ntitle: My\nagent:\n  model: claude-sonnet-4-20250514\n---\nBody"
         )
 
-        # Create tools.py with DBOS decorators
+        # Create tools.py with decorated functions
         tools_content = '''
 """Tools for my workflow."""
 
-from dbos import DBOS
 
-@DBOS.workflow()
+def tool(fn):
+    """Marker decorator for tools."""
+    return fn
+
+
+@tool
 def analyze_data(url: str) -> dict:
     """Analyze data from URL and return insights."""
     return {"result": "analyzed"}
 
-@DBOS.step()
+@tool
 def process_item(item: str, count: int = 1) -> list:
     """Process a single item."""
     return [item] * count
 
 def helper_function():
-    """This is not a tool."""
+    """This is not a tool (no decorator)."""
     pass
 '''
         (workflow_dir / "tools.py").write_text(tools_content)
@@ -524,30 +515,25 @@ class TestPythonPathSetup:
         workflow_dir = tmp_path / "workflows" / "my_workflow"
         workflow_dir.mkdir(parents=True)
 
-        with patch("kurt.workflows.agents.executor.DBOS") as mock_dbos:
-            mock_dbos.workflow_id = "test-123"
-            mock_dbos.write_stream = MagicMock()
-            mock_dbos.set_event = MagicMock()
+        with patch(
+            "kurt.workflows.agents.executor._create_tool_tracking_settings"
+        ) as mock_create:
+            settings_file = tmp_path / "settings.json"
+            tool_log_file = tmp_path / "tools.jsonl"
+            settings_file.write_text("{}")
+            tool_log_file.write_text("")
+            mock_create.return_value = (str(settings_file), str(tool_log_file))
 
-            with patch(
-                "kurt.workflows.agents.executor._create_tool_tracking_settings"
-            ) as mock_create:
-                settings_file = tmp_path / "settings.json"
-                tool_log_file = tmp_path / "tools.jsonl"
-                settings_file.write_text("{}")
-                tool_log_file.write_text("")
-                mock_create.return_value = (str(settings_file), str(tool_log_file))
+            with patch("kurt.workflows.agents.executor._get_project_root") as mock_root:
+                mock_root.return_value = str(tmp_path)
 
-                with patch("kurt.workflows.agents.executor._get_project_root") as mock_root:
-                    mock_root.return_value = str(tmp_path)
-
-                    agent_execution_step(
-                        prompt="Test",
-                        model="claude-sonnet-4-20250514",
-                        max_turns=5,
-                        allowed_tools=["Bash"],
-                        workflow_dir=str(workflow_dir),
-                    )
+                agent_execution_step(
+                    prompt="Test",
+                    model="claude-sonnet-4-20250514",
+                    max_turns=5,
+                    allowed_tools=["Bash"],
+                    workflow_dir=str(workflow_dir),
+                )
 
         # Check PYTHONPATH was set
         call_args = mock_run.call_args
@@ -573,30 +559,25 @@ class TestPythonPathSetup:
         # Capture original PYTHONPATH if any
         original_pythonpath = os.environ.get("PYTHONPATH", "")
 
-        with patch("kurt.workflows.agents.executor.DBOS") as mock_dbos:
-            mock_dbos.workflow_id = "test-123"
-            mock_dbos.write_stream = MagicMock()
-            mock_dbos.set_event = MagicMock()
+        with patch(
+            "kurt.workflows.agents.executor._create_tool_tracking_settings"
+        ) as mock_create:
+            settings_file = tmp_path / "settings.json"
+            tool_log_file = tmp_path / "tools.jsonl"
+            settings_file.write_text("{}")
+            tool_log_file.write_text("")
+            mock_create.return_value = (str(settings_file), str(tool_log_file))
 
-            with patch(
-                "kurt.workflows.agents.executor._create_tool_tracking_settings"
-            ) as mock_create:
-                settings_file = tmp_path / "settings.json"
-                tool_log_file = tmp_path / "tools.jsonl"
-                settings_file.write_text("{}")
-                tool_log_file.write_text("")
-                mock_create.return_value = (str(settings_file), str(tool_log_file))
+            with patch("kurt.workflows.agents.executor._get_project_root") as mock_root:
+                mock_root.return_value = str(tmp_path)
 
-                with patch("kurt.workflows.agents.executor._get_project_root") as mock_root:
-                    mock_root.return_value = str(tmp_path)
-
-                    agent_execution_step(
-                        prompt="Test",
-                        model="claude-sonnet-4-20250514",
-                        max_turns=5,
-                        allowed_tools=["Bash"],
-                        workflow_dir=None,  # No workflow dir
-                    )
+                agent_execution_step(
+                    prompt="Test",
+                    model="claude-sonnet-4-20250514",
+                    max_turns=5,
+                    allowed_tools=["Bash"],
+                    workflow_dir=None,  # No workflow dir
+                )
 
         # Check PYTHONPATH wasn't modified beyond original
         call_args = mock_run.call_args

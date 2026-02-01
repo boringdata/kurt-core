@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "kurt status --hook-cc"
+            "command": "command -v kurt >/dev/null && kurt status --hook-cc || true"
           }
         ]
       }

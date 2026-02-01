@@ -13,7 +13,7 @@ You use the kurt CLI to assist with your work:
 
 ```bash
 kurt --help
-kurt show profile-workflow
+kurt guides profile
 kurt content list
 ```
 
@@ -38,7 +38,7 @@ Optional feedback is gathered after project planning + writing stages, to improv
 
 Before creating ANY outline, draft, or content:
 1. **Check profile** → `kurt/profile.md` exists? If not, create it first.
-2. **Check format templates** → `kurt show format-templates` - select or create appropriate template
+2. **Check format templates** → `kurt guides formats` - select or create appropriate template
 3. **Clarify vague requests** → If user says "write something about X" without specifying format, ASK what type of content they want (blog post, product page, tutorial, etc.)
 4. **Search sources** → Use `kurt content list` or grep to find relevant content
 5. **Create outline/draft** → Only after steps 1-4 are complete
@@ -52,27 +52,34 @@ Agents should use these commands to dynamically discover options and access work
 **⚠️ Content Operations (use these exact commands):**
 - `kurt content list` - List all indexed documents
 - `kurt content list --url-contains "topic"` - Filter by URL substring
-- `kurt content map <url>` - Discover content from a URL (crawls site)
-- `kurt content fetch` - Fetch and index discovered documents
+- `kurt map <url>` - Discover content from a URL (crawls site)
+- `kurt fetch` - Fetch and index discovered documents
 - `kurt content get <doc-id>` - Get document by ID or URL
 
+**Direct Tool Commands (for pipelines):**
+- `kurt map <url>` - Map/discover URLs from a source
+- `kurt fetch` - Fetch content from discovered URLs
+- `kurt llm --prompt "..." ` - Run LLM prompt over documents
+- `kurt embed` - Generate embeddings
+- `kurt sql "SELECT ..."` - Query the Dolt database
+
 **Format & Options:**
-- `kurt show format-templates` - List available format templates
+- `kurt guides formats` - List available format templates
 - `kurt status` - Check project status
 
-**Workflows (run when needed):**
-- `kurt show project-workflow` - Create or edit writing projects
-- `kurt show source-workflow` - Add sources (URLs, CMS, pasted content)
-- `kurt show template-workflow` - Create or customize format templates
-- `kurt show profile-workflow` - Create or edit writer profile
-- `kurt show plan-template-workflow` - Modify base plan template
-- `kurt show feedback-workflow` - Collect user feedback
-- `kurt show discovery-methods` - Methods for finding existing content
+**Guides (interactive prompts for agents):**
+- `kurt guides project` - Create or edit writing projects
+- `kurt guides source` - Add sources (URLs, CMS, pasted content)
+- `kurt guides template` - Create or customize format templates
+- `kurt guides profile` - Create or edit writer profile
+- `kurt guides plan-template` - Modify base plan template
+- `kurt guides feedback` - Collect user feedback
+- `kurt guides discovery` - Methods for finding existing content
 
 **Reference & Strategy:**
-- `kurt show source-gathering` - Iterative source gathering strategy
-- `kurt show cms-setup` - CMS integration setup
-- `kurt show analytics-setup` - Analytics integration setup
+- `kurt guides source-gathering` - Iterative source gathering strategy
+- `kurt connect cms help` - CMS integration setup
+- `kurt connect analytics help` - Analytics integration setup
 
 ---
 
@@ -84,8 +91,8 @@ Agents should use these commands to dynamically discover options and access work
 
 1. **Check if `kurt/profile.md` exists.**
 2. **If it exists:** Load it and use it as context for all writing.
-3. **If it does NOT exist:** You MUST immediately run `kurt show profile-workflow` to create one. **Do NOT proceed with any writing tasks until the profile is created.**
-4. The user can request changes to their profile at any time. Update it by running `kurt show profile-workflow`.
+3. **If it does NOT exist:** You MUST immediately run `kurt guides profile` to create one. **Do NOT proceed with any writing tasks until the profile is created.**
+4. The user can request changes to their profile at any time. Update it by running `kurt guides profile`.
 
 The writer profile contains key information about the writer's company, role and writing goals.
 
@@ -107,9 +114,9 @@ The project plan contains information on the documents to be produced, and the d
 1. Identify whether they've referred to an existing project in a `/projects/` subfolder (either by direct or indirect reference).
 2. If they are, open the relevant <project_subfolder> and the <project_plan> and follow the user's instructions in the context of the <project_plan>.
 3. Ask the user if they'd like to just do ad hoc research + exploration, or create a new project to organize their work.
-4. If they want to create a new project, run: `kurt show project-workflow`
+4. If they want to create a new project, run: `kurt guides project`
 
-For detailed project creation and editing instructions, run: `kurt show project-workflow`
+For detailed project creation and editing instructions, run: `kurt guides project`
 
 ---
 
@@ -140,7 +147,7 @@ The project plan (`projects/{{project-name}}/plan.md`) is the **SINGLE SOURCE OF
 
 ## Adding Sources
 
-When a user shares a URL or pastes content, or when you need to update existing sources to check for new content, run: `kurt show source-workflow`
+When a user shares a URL or pastes content, or when you need to update existing sources to check for new content, run: `kurt guides source`
 
 This covers:
 - Adding new sources (CMS, websites, pasted content)
@@ -151,7 +158,7 @@ This covers:
 
 ## Format Templates
 
-Kurt provides 17 default format templates. Run `kurt show format-templates` to see available options.
+Kurt provides 17 default format templates. Run `kurt guides formats` to see available options.
 
 **Templates are stored in app-space and copied to user workspace on first use for customization.**
 
@@ -179,11 +186,11 @@ Default templates include:
 
 When a user requests content in a format that doesn't match existing templates:
 
-1. Check available templates: `kurt show format-templates`
-2. **Immediately run: `kurt show template-workflow`** to create the template
+1. Check available templates: `kurt guides formats`
+2. **Immediately run: `kurt guides template`** to create the template
 3. Do NOT proceed with writing until the format template exists
 
-Users can also explicitly request to add or update format templates by running: `kurt show template-workflow`
+Users can also explicitly request to add or update format templates by running: `kurt guides template`
 
 ---
 
@@ -224,7 +231,7 @@ To achieve this goal:
 
 Optionally collect user feedback to improve Kurt's output quality.
 
-Run: `kurt show feedback-workflow` for the full workflow.
+Run: `kurt guides feedback` for the full workflow.
 
 **When to ask:**
 - After completing a multi-document project or significant writing task
@@ -244,13 +251,13 @@ Run: `kurt show feedback-workflow` for the full workflow.
 
 Kurt supports CMS integrations for reading and publishing content. Currently only Sanity is supported; Contentful and WordPress are coming soon.
 
-For setup instructions, run: `kurt show cms-setup`
+For setup instructions, run: `kurt connect cms help`
 
 **Quick reference:**
 - Check configuration: `kurt integrations cms status`
 - If not configured: `kurt integrations cms onboard --platform {platform}`
 - Fetch content: `kurt content fetch {cms-url}` (automatically uses CMS adapters)
-- For detailed workflow, run: `kurt show source-workflow`
+- For detailed workflow, run: `kurt guides source`
 
 **Publishing to CMS:**
 - Publish as draft: `kurt integrations cms publish --file {path} --content-type {type}`
@@ -263,7 +270,7 @@ For setup instructions, run: `kurt show cms-setup`
 
 Kurt can analyze web analytics to assist with project planning and content performance analysis (currently supports PostHog).
 
-For setup instructions, run: `kurt show analytics-setup`
+For setup instructions, run: `kurt connect analytics help`
 
 **Quick reference:**
 - Check existing: `kurt integrations analytics list`
@@ -325,37 +332,37 @@ When gathering sources, you MUST follow an iterative, multi-method approach. **D
 
 **Do NOT give up after a single attempt.** Try different query patterns, synonyms, and related topics before concluding no sources exist.
 
-For detailed discovery methods, run: `kurt show discovery-methods`
+For detailed discovery methods, run: `kurt guides discovery`
 
 ---
 
 ## ⚠️ Common Mistakes to Avoid
 
-### 1. Using wrong CLI command syntax
+### 1. Using CLI commands correctly
 
-**❌ Don't:**
+**✅ Top-level tool commands (recommended):**
 ```bash
-kurt map url <url>      # Wrong - "map" is not a subcommand
-kurt fetch              # Wrong - "fetch" is not a subcommand
-kurt fetch <url>        # Wrong - "fetch" is not a subcommand
+kurt map <url>          # Discover URLs from a source
+kurt fetch              # Fetch discovered documents
+kurt sql "SELECT ..."   # Query the database
 ```
 
-**✅ Do:**
+**✅ Content subcommands (also valid):**
 ```bash
-kurt content map <url>  # Correct - use "content" subcommand
-kurt content fetch      # Correct - use "content" subcommand
-kurt content list       # Correct - use "content" subcommand
+kurt content list       # List indexed documents
+kurt content get <id>   # Get document by ID
 ```
 
-**Why:** The kurt CLI uses a subcommand structure. Content operations go under `kurt content`.
+**Why:** Kurt provides both top-level tool commands (`kurt map`, `kurt fetch`) and the `kurt content` group for document management.
 
 ### 2. Not knowing about the database
 
-Kurt has a **database** with document metadata (URLs, fetch status, embeddings).
+Kurt uses **Dolt** (a Git-like SQL database) to track document metadata (URLs, fetch status, embeddings).
 
 **Be aware:**
 - `kurt content list` shows what's indexed and fetch status
-- `grep` in `.kurt/sources/` searches actual content
+- `kurt sql "SELECT * FROM documents"` queries the database directly
+- `grep` in `content/` searches actual fetched content
 - Both are valid - use whichever fits your task
 - The database is the source of truth for "what have we indexed from where"
 
@@ -396,7 +403,7 @@ Kurt has a **database** with document metadata (URLs, fetch status, embeddings).
 
 **✅ Do:**
 - Always check `kurt/profile.md` exists first
-- Run `kurt show profile-workflow` if missing
+- Run `kurt guides profile` if missing
 - Load profile as context for all writing
 - See "MANDATORY FIRST STEP: Writer Profile Check" above
 
@@ -410,15 +417,15 @@ Kurt has a **database** with document metadata (URLs, fetch status, embeddings).
 - **For vague requests like "write something about X" - just start writing**
 
 **✅ Do:**
-- **FIRST** check: `kurt show format-templates`
+- **FIRST** check: `kurt guides formats`
 - Match user request to an existing template
-- If no match → Run: `kurt show template-workflow`
+- If no match → Run: `kurt guides template`
 - Do NOT proceed with writing until template exists
 - **For vague requests: ASK the user what format they want before proceeding**
 
 **Order of operations for any writing task:**
 1. Check profile exists (`kurt/profile.md`)
-2. Check format templates (`kurt show format-templates`)
+2. Check format templates (`kurt guides formats`)
 3. **If request is vague (no clear format): ask user to choose from available formats**
 4. Search for source content
 5. Create outline/draft
@@ -429,12 +436,12 @@ Kurt has a **database** with document metadata (URLs, fetch status, embeddings).
 
 Users can customize Kurt's system in several ways:
 
-- **Modify profile**: `kurt show profile-workflow`
-- **Create/customize format templates**: `kurt show template-workflow`
-- **Modify project plan template**: `kurt show plan-template-workflow`
-- **Collect feedback**: `kurt show feedback-workflow`
-- **Add sources**: `kurt show source-workflow`
-- **Create custom workflows with tools**: `kurt show workflow-create`
+- **Modify profile**: `kurt guides profile`
+- **Create/customize format templates**: `kurt guides template`
+- **Modify project plan template**: `kurt guides plan-template`
+- **Collect feedback**: `kurt guides feedback`
+- **Add sources**: `kurt guides source`
+- **Create custom workflows with tools**: `kurt help workflow-create`
 - **(ADVANCED!)** Modify document metadata template: `@kurt/templates/doc-metadata-template.md`
 - **(ADVANCED!)** Additional CMS, research and analytics integrations can be added to the open source `kurt-core` repo on GitHub
 
@@ -442,20 +449,27 @@ Users can customize Kurt's system in several ways:
 
 ## Database Management
 
-Kurt stores all your indexed content, research, and project data in a local SQLite database at `.kurt/kurt.sqlite`. Each workspace has a unique `WORKSPACE_ID` (auto-generated at `kurt init`) that tags all data.
+Kurt stores all your indexed content, research, and project data in a **Dolt database** at `.dolt/`. Dolt is a Git-like SQL database that provides version control for your data. Each workspace has a unique `WORKSPACE_ID` (auto-generated at `kurt init`) that tags all data.
 
-For detailed cloud setup instructions, run: `kurt show cloud-setup`
+For detailed cloud setup instructions, run: `kurt cloud help`
 
 ### Check Database Status
 
 ```bash
-kurt db status
+kurt status
 ```
 
 This shows:
-- Current mode (sqlite, cloud, or postgresql)
-- Table row counts
-- Workspace ID
+- Document counts by status
+- Recent activity
+- Workspace info
+
+### Query the Database
+
+```bash
+kurt sql "SELECT * FROM documents LIMIT 10"
+kurt sql "SELECT COUNT(*) FROM documents WHERE fetch_status = 'success'"
+```
 
 ### Export and Import Data
 
@@ -525,7 +539,7 @@ kurt db export --output backup.json --pretty
 kurt db import backup.json --workspace-id <WORKSPACE_ID>
 ```
 
-For detailed instructions: `kurt show cloud-setup`
+For detailed instructions: `kurt cloud help`
 
 ### Kurt Cloud (Future)
 
@@ -536,27 +550,27 @@ Full Kurt Cloud with managed hosting will provide:
 
 ---
 
-## Workflows Reference
+## Guides Reference
 
-When user requests specific actions, run the appropriate workflow command:
+When user requests specific actions, run the appropriate guide command:
 
 | User Request | Command to Run |
 |--------------|----------------|
-| Create/edit project | `kurt show project-workflow` |
-| Add source (URL, CMS, pasted) | `kurt show source-workflow` |
-| Create/customize format template | `kurt show template-workflow` |
-| Setup/edit writer profile | `kurt show profile-workflow` |
-| Modify plan template | `kurt show plan-template-workflow` |
-| Collect feedback | `kurt show feedback-workflow` |
-| Find existing sources | `kurt show discovery-methods` |
-| Setup CMS integration | `kurt show cms-setup` |
-| Setup analytics integration | `kurt show analytics-setup` |
-| View source gathering strategy | `kurt show source-gathering` |
-| List format templates | `kurt show format-templates` |
+| Create/edit project | `kurt guides project` |
+| Add source (URL, CMS, pasted) | `kurt guides source` |
+| Create/customize format template | `kurt guides template` |
+| Setup/edit writer profile | `kurt guides profile` |
+| Modify plan template | `kurt guides plan-template` |
+| Collect feedback | `kurt guides feedback` |
+| Find existing sources | `kurt guides discovery` |
+| Setup CMS integration | `kurt connect cms help` |
+| Setup analytics integration | `kurt connect analytics help` |
+| View source gathering strategy | `kurt guides source-gathering` |
+| List format templates | `kurt guides formats` |
 | Check database status | `kurt db status` |
 | Export data | `kurt db export --output backup.json` |
 | Import data | `kurt db import backup.json --workspace-id <WORKSPACE_ID>` |
 | Login to cloud | `kurt cloud login` |
 | Check cloud status | `kurt cloud status` |
 | Invite team member | `kurt cloud invite <email>` |
-| Database/cloud setup | `kurt show cloud-setup` |
+| Database/cloud setup | `kurt cloud help` |

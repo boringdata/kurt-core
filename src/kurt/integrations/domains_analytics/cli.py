@@ -11,7 +11,7 @@ from rich.console import Console
 from rich.table import Table
 
 from kurt.admin.telemetry.decorators import track_command
-from kurt.cli.options import format_option, limit_option
+from kurt.tools.core import format_option, limit_option
 
 console = Console()
 
@@ -289,6 +289,61 @@ def list_cmd(output_format: str):
                 has_data = "[green]Yes[/green]" if d.has_data else "[dim]No[/dim]"
                 console.print(f"  Has data: {has_data}")
                 console.print()
+
+
+@analytics_group.command("help")
+@track_command
+def help_cmd():
+    """
+    Show analytics integration setup instructions.
+
+    Displays detailed instructions for configuring and using
+    domain analytics integrations (PostHog, GA4, Plausible).
+
+    Example:
+        kurt connect analytics help
+    """
+    content = """
+===============================================================
+ANALYTICS INTEGRATION
+===============================================================
+
+Kurt can analyze web analytics to assist with project planning and
+content performance analysis (currently supports PostHog).
+
+===============================================================
+SETUP
+===============================================================
+
+CHECK EXISTING:
+kurt connect analytics list
+
+CONFIGURE NEW:
+kurt connect analytics onboard [domain] --platform {platform}
+
+===============================================================
+USAGE
+===============================================================
+
+SYNC DATA:
+kurt connect analytics sync [domain]
+
+QUERY ANALYTICS:
+kurt connect analytics query [domain]
+
+  - Filter by traffic, trends, URL patterns
+  - Find high-traffic pages not yet indexed:
+    kurt connect analytics query [domain] --missing-docs
+
+QUERY WITH DOCUMENTS:
+kurt docs list --with-analytics
+
+  - Documents enriched with analytics data
+  - Useful for prioritization and performance analysis
+
+===============================================================
+"""
+    click.echo(content.strip())
 
 
 @analytics_group.command("query")

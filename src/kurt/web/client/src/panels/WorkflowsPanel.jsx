@@ -6,6 +6,7 @@ export default function WorkflowsPanel({ params }) {
     collapsed,
     onToggleCollapse,
     onAttachWorkflow,
+    onOpenWorkflowDetail,
   } = params || {}
 
   if (collapsed) {
@@ -44,7 +45,10 @@ export default function WorkflowsPanel({ params }) {
       </div>
 
       <div className="workflows-content">
-        <WorkflowList onAttachWorkflow={onAttachWorkflow} />
+        <WorkflowList
+          onAttachWorkflow={onAttachWorkflow}
+          onOpenWorkflowDetail={onOpenWorkflowDetail}
+        />
       </div>
     </div>
   )

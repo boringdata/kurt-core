@@ -184,21 +184,37 @@ describe('WorkflowList', () => {
 
       render(<WorkflowList {...defaultProps} />)
 
-      await new Promise(r => setTimeout(r, 10))
+      // Wait for initial fetch to complete
+      await new Promise(r => setTimeout(r, 50))
 
       const searchInput = screen.getByPlaceholderText(/id/i)
 
-      // Type multiple characters quickly
+      // Record calls before typing - note that search calls shouldn't include partial values
+      const callsBeforeTyping = fetchMock.mock.calls.filter(call =>
+        call[0].includes('search=a') || call[0].includes('search=ab')
+      ).length
+
+      // Type multiple characters quickly (faster than debounce delay of 300ms)
       fireEvent.change(searchInput, { target: { value: 'a' } })
       fireEvent.change(searchInput, { target: { value: 'ab' } })
       fireEvent.change(searchInput, { target: { value: 'abc' } })
 
-      const callsBeforeDebounce = fetchMock.mock.calls.length
+      // Wait a short time - less than debounce delay
+      await new Promise(r => setTimeout(r, 100))
 
-      await new Promise(r => setTimeout(r, 10))
+      // Should not have made search calls for partial values yet
+      const callsForPartialValues = fetchMock.mock.calls.filter(call =>
+        (call[0].includes('search=a') && !call[0].includes('search=abc')) ||
+        (call[0].includes('search=ab') && !call[0].includes('search=abc'))
+      ).length
+      expect(callsForPartialValues).toBe(callsBeforeTyping)
 
-      // Should not have made many additional calls due to debouncing
-      expect(fetchMock.mock.calls.length - callsBeforeDebounce).toBeLessThanOrEqual(1)
+      // Wait for debounce to complete (300ms + buffer)
+      await new Promise(r => setTimeout(r, 350))
+
+      // Should have made exactly one call with the final search value
+      const searchCalls = fetchMock.mock.calls.filter(call => call[0].includes('search=abc'))
+      expect(searchCalls.length).toBe(1)
     })
   })
 
@@ -376,8 +392,11 @@ describe('WorkflowList', () => {
       await new Promise(r => setTimeout(r, 10))
 
       await waitFor(() => {
-        const badge = screen.getByText(status)
-        expect(badge).toHaveClass(expectedClass)
+        // Use getAllByText and find the status badge (not metrics display)
+        const badges = screen.getAllByText(status)
+        const statusBadge = badges.find(el => el.classList.contains('workflow-status-badge'))
+        expect(statusBadge).toBeTruthy()
+        expect(statusBadge).toHaveClass(expectedClass)
       })
     })
   })
@@ -395,6 +414,64 @@ describe('WorkflowList', () => {
       // Verify limit=50 was included in the API request
       const workflowCalls = fetchMock.mock.calls.filter(call => call[0].includes('/api/workflows'))
       expect(workflowCalls.some(call => call[0].includes('limit=50'))).toBe(true)
+    })
+
+    it('shows load more button when page is full', async () => {
+      setupApiMocks({
+        '/api/workflows': { workflows: createWorkflowList(50) },
+      })
+
+      render(<WorkflowList {...defaultProps} />)
+
+      await new Promise(r => setTimeout(r, 10))
+
+      await waitFor(() => {
+        expect(screen.getByText(/load more/i)).toBeInTheDocument()
+      })
+    })
+
+    it('hides load more button when less than page size', async () => {
+      setupApiMocks({
+        '/api/workflows': { workflows: createWorkflowList(10) },
+      })
+
+      render(<WorkflowList {...defaultProps} />)
+
+      await new Promise(r => setTimeout(r, 10))
+
+      await waitFor(() => {
+        expect(screen.queryByText(/load more/i)).not.toBeInTheDocument()
+      })
+    })
+
+    it('loads more workflows when load more button is clicked', async () => {
+      const fetchMock = setupApiMocks({
+        '/api/workflows': (url: string) => {
+          // Simulate pagination
+          if (url.includes('offset=50')) {
+            return { workflows: createWorkflowList(10) }
+          }
+          return { workflows: createWorkflowList(50) }
+        },
+      })
+
+      render(<WorkflowList {...defaultProps} />)
+
+      await new Promise(r => setTimeout(r, 10))
+
+      await waitFor(() => {
+        expect(screen.getByText(/load more/i)).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByText(/load more/i))
+
+      await new Promise(r => setTimeout(r, 10))
+
+      // Verify offset parameter was used
+      await waitFor(() => {
+        const offsetCalls = fetchMock.mock.calls.filter(call => call[0].includes('offset=50'))
+        expect(offsetCalls.length).toBeGreaterThan(0)
+      })
     })
   })
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from click.testing import CliRunner
 
-from kurt.core.tests.conftest import (
+from kurt.conftest import (
     assert_cli_success,
     assert_output_contains,
     invoke_cli,

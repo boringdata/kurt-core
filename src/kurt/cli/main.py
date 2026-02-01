@@ -1,11 +1,76 @@
-"""Kurt CLI - Main command-line interface."""
+"""Kurt CLI - Main command-line interface.
 
-import sys
+Simplified CLI structure with ~13 top-level commands:
+- init, status, doctor, repair, serve: Core operations
+- workflow: Unified workflow management (TOML + MD in workflows/)
+- tool: All tools (map, fetch, llm, embed, save, sql, research, signals)
+- docs: Document management
+- sync: Version control (pull, push, branch, merge)
+- connect: CMS and analytics integrations
+- cloud: Kurt Cloud operations
+- admin: Administrative commands
+- guides: Interactive guides for agents (project, source, template, etc.)
+- help: Documentation and tool references
+"""
+
 
 import click
 from dotenv import load_dotenv
 
 load_dotenv()
+
+
+def _auto_migrate_schema():
+    """Auto-migrate schema on startup (adds missing columns and tables)."""
+    try:
+        from kurt.db.auto_migrate import auto_migrate
+
+        changes = auto_migrate()
+        if changes:
+            from rich.console import Console
+
+            console = Console()
+            for table, cols in changes.items():
+                if cols and cols[0].startswith("[created"):
+                    console.print(f"[dim]Created table: {table}[/dim]")
+                else:
+                    console.print(f"[dim]Added columns to {table}: {', '.join(cols)}[/dim]")
+    except Exception:
+        pass  # Silent fail - don't block CLI
+
+    # Also ensure Dolt observability tables exist if using Dolt
+    try:
+        from pathlib import Path
+
+        dolt_path = Path.cwd() / ".dolt"
+        if dolt_path.exists():
+            from kurt.db.dolt import DoltDB, check_schema_exists, init_observability_schema
+
+            db = DoltDB(Path.cwd())
+            schema_status = check_schema_exists(db)
+
+            # Only initialize if any table is missing
+            if not all(schema_status.values()):
+                missing = [t for t, exists in schema_status.items() if not exists]
+                init_observability_schema(db)
+
+                from rich.console import Console
+
+                console = Console()
+                for table in missing:
+                    console.print(f"[dim]Created Dolt table: {table}[/dim]")
+
+            # Cleanup stale "running" workflows (orphaned processes)
+            from kurt.observability.lifecycle import cleanup_stale_workflows
+
+            stale_count = cleanup_stale_workflows(db, stale_minutes=60)
+            if stale_count > 0:
+                from rich.console import Console
+
+                console = Console()
+                console.print(f"[dim]Cleaned up {stale_count} stale workflow(s)[/dim]")
+    except Exception:
+        pass  # Silent fail - don't block CLI
 
 
 class LazyGroup(click.Group):
@@ -37,17 +102,16 @@ class LazyGroup(click.Group):
 @click.group(
     cls=LazyGroup,
     lazy_subcommands={
-        "content": ("kurt.documents.cli", "content_group"),
-        "integrations": ("kurt.integrations.cli", "integrations_group"),
-        "workflows": ("kurt.cli.workflows", "workflows_group"),
-        "research": ("kurt.workflows.research.cli", "research_group"),
-        "signals": ("kurt.workflows.signals.cli", "signals_group"),
-        "agents": ("kurt.workflows.agents.cli", "agents_group"),
-        "agent": ("kurt.workflows.agents.cli", "agent_group"),
-        "admin": ("kurt.cli.admin", "admin"),
-        "show": ("kurt.cli.show", "show_group"),
-        "cloud": ("kurt.cli.cloud", "cloud_group"),
-        "db": ("kurt.cli.db", "db_group"),
+        # Core command groups
+        "workflow": ("kurt.workflows.toml.cli", "workflow_group"),
+        "tool": ("kurt.tools.cli", "tools_group"),
+        "docs": ("kurt.documents.cli", "docs_group"),
+        "sync": ("kurt.db.isolation.cli", "sync_group"),
+        "connect": ("kurt.integrations.cli", "integrations_group"),
+        "cloud": ("kurt.cloud.cli", "cloud_group"),
+        "admin": ("kurt.admin.cli", "admin"),
+        "guides": ("kurt.cli.guides", "guides_group"),
+        "help": ("kurt.cli.show", "show_group"),
     },
 )
 @click.version_option(package_name="kurt-core", prog_name="kurt")
@@ -60,82 +124,29 @@ def main(ctx):
     """
     from kurt.config import config_file_exists
 
-    # Skip migration check for init, admin, cloud, and db (which handle DB themselves)
-    if ctx.invoked_subcommand in ["init", "admin", "cloud", "db"]:
+    # Skip auto-migrate for init command (no DB yet)
+    if ctx.invoked_subcommand in ["init", "help"]:
         return
 
-    # Skip migration check if running in hook mode
-    if "--hook-cc" in sys.argv:
-        return
-
-    # Check if project is initialized
+    # Skip if no project initialized
     if not config_file_exists():
         return
 
-    _check_migrations()
+    # Auto-migrate schema (adds missing columns)
+    _auto_migrate_schema()
 
 
-def _check_migrations():
-    """Check and optionally apply pending database migrations."""
-    try:
-        from kurt.db.migrations.utils import (
-            apply_migrations,
-            check_migrations_needed,
-            get_pending_migrations,
-        )
-
-        if not check_migrations_needed():
-            return
-
-        from rich.console import Console
-
-        console = Console()
-        pending = get_pending_migrations()
-        is_interactive = sys.stdin.isatty() and sys.stdout.isatty()
-
-        console.print()
-        console.print("[yellow]⚠ Database migrations are pending[/yellow]")
-        console.print(f"[dim]{len(pending)} migration(s) need to be applied[/dim]")
-        console.print()
-        console.print(
-            "[dim]Run [cyan]kurt admin migrate apply[/cyan] to update your database[/dim]"
-        )
-        console.print("[dim]Or run [cyan]kurt admin migrate status[/cyan] to see details[/dim]")
-        console.print()
-
-        if is_interactive:
-            from rich.prompt import Confirm
-
-            if Confirm.ask("[bold]Apply migrations now?[/bold]", default=False):
-                result = apply_migrations(auto_confirm=True)
-                if not result["success"]:
-                    raise click.Abort()
-            else:
-                console.print(
-                    "[yellow]⚠ Proceeding without migration. Some features may not work.[/yellow]"
-                )
-                console.print()
-        else:
-            result = apply_migrations(auto_confirm=True, silent=True)
-            if result["success"] and result["applied"]:
-                console.print(f"[green]✓ Applied {result['count']} migration(s)[/green]")
-                console.print()
-
-    except ImportError:
-        pass
-    except Exception:
-        pass
-
-
+# Core top-level commands (not under any group)
+from kurt.cli.doctor import doctor_cmd, repair_cmd  # noqa: E402
 from kurt.cli.init import init  # noqa: E402
-from kurt.cli.update import update  # noqa: E402
-from kurt.cli.web import serve  # noqa: E402
 from kurt.status import status  # noqa: E402
+from kurt.web.cli import serve  # noqa: E402
 
 main.add_command(init)
 main.add_command(status)
-main.add_command(update)
 main.add_command(serve)
+main.add_command(doctor_cmd, name="doctor")
+main.add_command(repair_cmd, name="repair")
 
 
 if __name__ == "__main__":
