@@ -1,7 +1,19 @@
 /**
  * Boring UI Components Export
- * Stories K, L, M: Toast, Alert, Modal
+ * Stories F-M: Button, Card, Badge/Tag/Chip, Toast, Alert, Modal
  */
+
+// Button Component (Story F)
+export { Button } from './button';
+export type { ButtonProps } from './button';
+
+// Card Component (Story G)
+export { Card, CardHeader, CardBody, CardFooter } from './card';
+export type { CardProps, CardHeaderProps, CardBodyProps, CardFooterProps, ShadowVariant } from './card';
+
+// Badge, Tag, Chip Components (Story H)
+export { Badge, Tag, Chip } from './badge-tag-chip';
+export type { BadgeProps, TagProps, ChipProps } from './badge-tag-chip';
 
 // Toast Components (Story K)
 export { Toast, ToastContainer } from './toast';
