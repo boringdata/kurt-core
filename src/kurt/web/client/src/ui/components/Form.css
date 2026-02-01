@@ -1,0 +1,253 @@
+/* Form Component Styles */
+
+/* FormGroup */
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.form-group--error {
+  /* Error styling inherited from child elements */
+}
+
+.form-group-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-primary, #1f2937);
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+  cursor: pointer;
+}
+
+.form-required {
+  color: var(--color-error, #ef4444);
+  font-weight: 600;
+}
+
+.form-group-hint {
+  font-size: 0.8125rem;
+  color: var(--text-secondary, #6b7280);
+  line-height: 1.4;
+}
+
+.form-group-content {
+  width: 100%;
+}
+
+.form-group-error {
+  font-size: 0.8125rem;
+  color: var(--color-error, #ef4444);
+  line-height: 1.4;
+  font-weight: 500;
+}
+
+/* FormLayout */
+
+.form-layout {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.form-layout--vertical {
+  flex-direction: column;
+}
+
+.form-layout--horizontal {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.form-layout--inline {
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Gap utilities */
+
+.form-layout--gap-sm {
+  gap: 1rem;
+}
+
+.form-layout--gap-md {
+  gap: 1.5rem;
+}
+
+.form-layout--gap-lg {
+  gap: 2rem;
+}
+
+.form-layout--horizontal .form-group,
+.form-layout--inline .form-group {
+  flex: 1;
+  min-width: 200px;
+}
+
+/* ValidationMessage */
+
+.validation-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.validation-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+  margin-top: 0.125rem;
+}
+
+.validation-text {
+  flex: 1;
+}
+
+.validation-message--error {
+  background-color: var(--bg-error, #fee2e2);
+  color: var(--color-error, #ef4444);
+  border: 1px solid var(--border-error, #fecaca);
+}
+
+.validation-message--warning {
+  background-color: var(--bg-warning, #fef3c7);
+  color: var(--color-warning, #d97706);
+  border: 1px solid var(--border-warning, #fcd34d);
+}
+
+.validation-message--success {
+  background-color: var(--bg-success, #dcfce7);
+  color: var(--color-success, #16a34a);
+  border: 1px solid var(--border-success, #bbf7d0);
+}
+
+.validation-message--error .validation-icon {
+  color: var(--color-error, #ef4444);
+}
+
+.validation-message--warning .validation-icon {
+  color: var(--color-warning, #d97706);
+}
+
+.validation-message--success .validation-icon {
+  color: var(--color-success, #16a34a);
+}
+
+/* FormSection */
+
+.form-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.5rem;
+  border: 1px solid var(--border-color, #d1d5db);
+  border-radius: 0.5rem;
+  background-color: var(--bg-white, #ffffff);
+}
+
+.form-section-title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text-primary, #1f2937);
+  line-height: 1.5;
+}
+
+.form-section-description {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-secondary, #6b7280);
+  line-height: 1.6;
+}
+
+.form-section-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Responsive */
+
+@media (max-width: 768px) {
+  .form-layout--horizontal {
+    flex-direction: column;
+  }
+
+  .form-layout--horizontal .form-group {
+    min-width: 100%;
+  }
+
+  .form-layout--inline {
+    flex-direction: column;
+  }
+
+  .form-layout--inline .form-group {
+    min-width: 100%;
+    align-items: stretch;
+  }
+
+  .form-section {
+    padding: 1rem;
+  }
+
+  .form-section-title {
+    font-size: 1rem;
+  }
+}
+
+/* Dark mode */
+
+@media (prefers-color-scheme: dark) {
+  .form-group-label {
+    color: var(--text-dark, #f3f4f6);
+  }
+
+  .form-group-hint {
+    color: var(--text-dark-secondary, #9ca3af);
+  }
+
+  .form-section {
+    background-color: var(--bg-dark, #1f2937);
+    border-color: var(--border-dark, #374151);
+  }
+
+  .form-section-title {
+    color: var(--text-dark, #f3f4f6);
+  }
+
+  .form-section-description {
+    color: var(--text-dark-secondary, #9ca3af);
+  }
+
+  .validation-message--error {
+    background-color: var(--bg-error-dark, #7f1d1d);
+    border-color: var(--border-error-dark, #991b1b);
+  }
+
+  .validation-message--warning {
+    background-color: var(--bg-warning-dark, #78350f);
+    border-color: var(--border-warning-dark, #92400e);
+  }
+
+  .validation-message--success {
+    background-color: var(--bg-success-dark, #064e3b);
+    border-color: var(--border-success-dark, #047857);
+  }
+}
+
+/* Reduced motion */
+
+@media (prefers-reduced-motion: reduce) {
+  .validation-message {
+    animation: none;
+  }
+}
