@@ -1,0 +1,271 @@
+/**
+ * Chip component styles
+ * Pill-shaped interactive component with selection support
+ */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-weight: 500;
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
+  transition: all 0.2s ease-in-out;
+  position: relative;
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
+  &:focus-visible {
+    outline: 2px solid transparent;
+    outline-offset: 2px;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.5);
+  }
+}
+
+/* Size variants */
+.chip-sm {
+  padding: 0.25rem 0.75rem;
+  font-size: 0.875rem;
+  min-height: 1.75rem;
+}
+
+.chip-md {
+  padding: 0.375rem 1rem;
+  font-size: 0.875rem;
+  min-height: 2rem;
+}
+
+/* Color variants */
+.chip-default {
+  background-color: #e5e7eb;
+  color: #374151;
+
+  &:hover:not(:disabled) {
+    background-color: #d1d5db;
+  }
+
+  &:active:not(:disabled) {
+    background-color: #9ca3af;
+  }
+}
+
+.chip-success {
+  background-color: #dcfce7;
+  color: #166534;
+
+  &:hover:not(:disabled) {
+    background-color: #bbf7d0;
+  }
+
+  &:active:not(:disabled) {
+    background-color: #86efac;
+  }
+}
+
+.chip-warning {
+  background-color: #fef3c7;
+  color: #92400e;
+
+  &:hover:not(:disabled) {
+    background-color: #fde68a;
+  }
+
+  &:active:not(:disabled) {
+    background-color: #fcd34d;
+  }
+}
+
+.chip-error {
+  background-color: #fee2e2;
+  color: #991b1b;
+
+  &:hover:not(:disabled) {
+    background-color: #fecaca;
+  }
+
+  &:active:not(:disabled) {
+    background-color: #fca5a5;
+  }
+}
+
+.chip-info {
+  background-color: #cffafe;
+  color: #164e63;
+
+  &:hover:not(:disabled) {
+    background-color: #a5f3fc;
+  }
+
+  &:active:not(:disabled) {
+    background-color: #67e8f9;
+  }
+}
+
+/* Selectable state */
+.chip-selectable {
+  border: 1px solid transparent;
+
+  &:hover:not(:disabled) {
+    border-color: currentColor;
+  }
+}
+
+.chip-selected {
+  font-weight: 600;
+
+  &.chip-default {
+    background-color: #9ca3af;
+    color: white;
+  }
+
+  &.chip-success {
+    background-color: #16a34a;
+    color: white;
+  }
+
+  &.chip-warning {
+    background-color: #d97706;
+    color: white;
+  }
+
+  &.chip-error {
+    background-color: #dc2626;
+    color: white;
+  }
+
+  &.chip-info {
+    background-color: #0891b2;
+    color: white;
+  }
+}
+
+/* Icon styles */
+.chip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+
+  svg,
+  img {
+    width: 1em;
+    height: 1em;
+  }
+}
+
+.chip-text {
+  display: inline;
+}
+
+/* Remove button styles */
+.chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  margin-right: -0.25rem;
+  margin-left: 0.25rem;
+  color: inherit;
+  opacity: 0.7;
+  transition: opacity 0.2s ease-in-out;
+  font-size: 0.75em;
+
+  &:hover {
+    opacity: 1;
+  }
+
+  &:focus-visible {
+    outline: 2px solid transparent;
+    outline-offset: -2px;
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 2px rgba(59, 130, 246, 0.5);
+  }
+
+  svg {
+    width: 1em;
+    height: 1em;
+  }
+}
+
+/* Removable state */
+.chip-removable {
+  padding-right: 0.25rem;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .chip-default {
+    background-color: #4b5563;
+    color: #f3f4f6;
+
+    &:hover:not(:disabled) {
+      background-color: #6b7280;
+    }
+
+    &:active:not(:disabled) {
+      background-color: #9ca3af;
+    }
+  }
+
+  .chip-success {
+    background-color: #064e3b;
+    color: #d1fae5;
+
+    &:hover:not(:disabled) {
+      background-color: #0d5c42;
+    }
+
+    &:active:not(:disabled) {
+      background-color: #047857;
+    }
+  }
+
+  .chip-warning {
+    background-color: #78350f;
+    color: #fef08a;
+
+    &:hover:not(:disabled) {
+      background-color: #92400e;
+    }
+
+    &:active:not(:disabled) {
+      background-color: #b45309;
+    }
+  }
+
+  .chip-error {
+    background-color: #7f1d1d;
+    color: #fee2e2;
+
+    &:hover:not(:disabled) {
+      background-color: #991b1b;
+    }
+
+    &:active:not(:disabled) {
+      background-color: #b91c1c;
+    }
+  }
+
+  .chip-info {
+    background-color: #06414f;
+    color: #cffafe;
+
+    &:hover:not(:disabled) {
+      background-color: #164e63;
+    }
+
+    &:active:not(:disabled) {
+      background-color: #155e75;
+    }
+  }
+}
