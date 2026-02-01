@@ -30,3 +30,13 @@ export type {
   FormLayoutProps,
   ValidationMessageProps,
 } from '../types/form';
+
+// Data Display Components
+export { Table } from './Table';
+export type { TableProps, TableColumn, SortOrder, SortState, TableState } from '../types/table';
+
+export { List } from './List';
+export type { ListProps } from '../types/list';
+
+export { ListItem } from './ListItem';
+export type { ListItemProps, AvatarProps, ListIconProps } from '../types/list';
