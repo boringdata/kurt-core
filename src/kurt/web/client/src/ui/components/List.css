@@ -1,0 +1,74 @@
+/* List Component Styles */
+
+:root {
+  --list-color-background: #fff;
+  --list-color-text: #1a1a1a;
+  --list-color-text-secondary: #6b7280;
+  --list-color-border: #e5e7eb;
+  --list-color-background-hover: #f9fafb;
+  --list-color-background-selected: #eff6ff;
+  --list-color-accent: #3b82f6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --list-color-background: #1f2937;
+    --list-color-text: #f3f4f6;
+    --list-color-text-secondary: #9ca3af;
+    --list-color-border: #374151;
+    --list-color-background-hover: #2d3748;
+    --list-color-background-selected: #1e3a8a;
+    --list-color-accent: #60a5fa;
+  }
+}
+
+/* Base List */
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background-color: var(--list-color-background);
+  color: var(--list-color-text);
+  border-radius: 0.375rem;
+  overflow: hidden;
+}
+
+/* Ordered list - show numbers */
+.list--ol {
+  padding-left: 1.5rem;
+  list-style-type: decimal;
+}
+
+.list--ol li {
+  margin-left: 0;
+}
+
+/* Unordered list - no bullets */
+.list--ul {
+  list-style: none;
+}
+
+/* Divided variant - borders between items */
+.list--divided li:not(:last-child) {
+  border-bottom: 1px solid var(--list-color-border);
+}
+
+/* Compact spacing */
+.list--compact {
+  font-size: 0.875rem;
+}
+
+.list--compact li {
+  padding: 0;
+}
+
+.list--compact .list-item {
+  padding: 0.5rem;
+}
+
+/* List item base */
+li {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}

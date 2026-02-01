@@ -1,0 +1,67 @@
+/**
+ * Toast Container Styles
+ * Fixed positioning for stacked toasts
+ */
+
+.toast-container {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 9999;
+  pointer-events: none;
+  padding: 16px;
+}
+
+.toast-container > * {
+  pointer-events: auto;
+}
+
+/* Position variants */
+.toast-container--top-left {
+  top: 0;
+  left: 0;
+  align-items: flex-start;
+}
+
+.toast-container--top-right {
+  top: 0;
+  right: 0;
+  align-items: flex-end;
+}
+
+.toast-container--bottom-left {
+  bottom: 0;
+  left: 0;
+  align-items: flex-start;
+}
+
+.toast-container--bottom-right {
+  bottom: 0;
+  right: 0;
+  align-items: flex-end;
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  .toast-container {
+    padding: 8px;
+    width: calc(100% - 16px);
+  }
+
+  .toast-container--top-left,
+  .toast-container--top-right {
+    top: 0;
+    left: 0;
+    right: 0;
+    align-items: stretch;
+  }
+
+  .toast-container--bottom-left,
+  .toast-container--bottom-right {
+    bottom: 0;
+    left: 0;
+    right: 0;
+    align-items: stretch;
+  }
+}

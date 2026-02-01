@@ -1,0 +1,98 @@
+/**
+ * Badge component styles
+ * Non-interactive label component
+ */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-weight: 500;
+  border-radius: 0.25rem;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+/* Size variants */
+.badge-sm {
+  padding: 0.125rem 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.badge-md {
+  padding: 0.25rem 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+/* Color variants */
+.badge-default {
+  background-color: #e5e7eb;
+  color: #374151;
+}
+
+.badge-success {
+  background-color: #dcfce7;
+  color: #166534;
+}
+
+.badge-warning {
+  background-color: #fef3c7;
+  color: #92400e;
+}
+
+.badge-error {
+  background-color: #fee2e2;
+  color: #991b1b;
+}
+
+.badge-info {
+  background-color: #cffafe;
+  color: #164e63;
+}
+
+/* Icon styles */
+.badge-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+
+  svg,
+  img {
+    width: 1em;
+    height: 1em;
+  }
+}
+
+.badge-text {
+  display: inline;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .badge-default {
+    background-color: #4b5563;
+    color: #f3f4f6;
+  }
+
+  .badge-success {
+    background-color: #064e3b;
+    color: #d1fae5;
+  }
+
+  .badge-warning {
+    background-color: #78350f;
+    color: #fef08a;
+  }
+
+  .badge-error {
+    background-color: #7f1d1d;
+    color: #fee2e2;
+  }
+
+  .badge-info {
+    background-color: #06414f;
+    color: #cffafe;
+  }
+}
