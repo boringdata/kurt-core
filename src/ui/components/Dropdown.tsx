@@ -223,9 +223,13 @@ export const Dropdown: React.FC<DropdownProps> = ({
           >
             <div
               style={{
-                position: 'absolute',
-                top: triggerRef.current?.getBoundingClientRect().bottom,
-                left: triggerRef.current?.getBoundingClientRect().left,
+                position: 'fixed',
+                top:
+                  (triggerRef.current?.getBoundingClientRect().bottom ?? 0) +
+                  window.scrollY,
+                left:
+                  (triggerRef.current?.getBoundingClientRect().left ?? 0) +
+                  window.scrollX,
                 zIndex: 1000,
               }}
               className={placementClass}

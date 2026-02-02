@@ -42,7 +42,7 @@ export const Toast: React.FC<ToastProps> = ({
     const timer = setTimeout(() => {
       setIsExiting(true);
       // Allow animation to complete before removing
-      setTimeout(onRemove, 300);
+      if (onRemove) setTimeout(onRemove, 300);
     }, duration);
 
     return () => clearTimeout(timer);
@@ -50,7 +50,7 @@ export const Toast: React.FC<ToastProps> = ({
 
   const handleClose = () => {
     setIsExiting(true);
-    setTimeout(onRemove, 300);
+    if (onRemove) setTimeout(onRemove, 300);
   };
 
   const handleActionClick = () => {

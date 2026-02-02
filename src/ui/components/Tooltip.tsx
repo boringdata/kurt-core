@@ -149,12 +149,10 @@ export const Tooltip: React.FC<TooltipProps> = ({
               top: position.top,
               left: position.left,
               zIndex: 1000,
-            }}
-            className={`px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap shadow-lg ${className}`}
-            style={{
               backgroundColor: bgColor,
               color: textColor,
             }}
+            className={`px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap shadow-lg ${className}`}
             role="tooltip"
           >
             {content}
