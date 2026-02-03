@@ -14,7 +14,6 @@ from kurt.tools.fetch.engines.tavily import TavilyEngine
 from kurt.tools.fetch.engines.trafilatura import TrafilaturaFetcher
 from kurt.tools.fetch.models import DocType
 
-
 # Check if APIFY_API_KEY is available for integration tests
 HAS_APIFY_KEY = bool(os.environ.get("APIFY_API_KEY"))
 
@@ -230,8 +229,8 @@ class TestApifyEngine:
 
     def test_apify_with_config(self):
         """Test Apify with custom config and mocked client."""
-        with patch("kurt.tools.fetch.engines.apify.ApifyClient") as MockClient:
-            MockClient.return_value = MagicMock()
+        with patch("kurt.tools.fetch.engines.apify.ApifyClient") as mock_client_class:
+            mock_client_class.return_value = MagicMock()
             config = ApifyFetcherConfig(
                 api_key="test_key",
                 platform="twitter",
@@ -248,9 +247,9 @@ class TestApifyEngine:
 
     def test_apify_fetch_mocked(self):
         """Test fetch with mocked Apify client."""
-        with patch("kurt.tools.fetch.engines.apify.ApifyClient") as MockClient:
+        with patch("kurt.tools.fetch.engines.apify.ApifyClient") as mock_client_class:
             mock_client = MagicMock()
-            MockClient.return_value = mock_client
+            mock_client_class.return_value = mock_client
             # Mock the fetch method to return a list of ParsedItem-like objects
             mock_item = MagicMock()
             mock_item.url = "https://twitter.com/user"
@@ -283,8 +282,8 @@ class TestEngineIntegration:
 
     def test_apify_engine_inherits_from_base(self):
         """Test ApifyEngine inherits from BaseFetcher."""
-        with patch("kurt.tools.fetch.engines.apify.ApifyClient") as MockClient:
-            MockClient.return_value = MagicMock()
+        with patch("kurt.tools.fetch.engines.apify.ApifyClient") as mock_client_class:
+            mock_client_class.return_value = MagicMock()
             config = ApifyFetcherConfig(api_key="test_key")
             engine = ApifyEngine(config)
             assert isinstance(engine, BaseFetcher)
@@ -302,9 +301,9 @@ class TestEngineIntegration:
 
     def test_apify_engine_returns_fetch_result(self):
         """Test ApifyEngine returns FetchResult."""
-        with patch("kurt.tools.fetch.engines.apify.ApifyClient") as MockClient:
+        with patch("kurt.tools.fetch.engines.apify.ApifyClient") as mock_client_class:
             mock_client = MagicMock()
-            MockClient.return_value = mock_client
+            mock_client_class.return_value = mock_client
             mock_item = MagicMock()
             mock_item.url = "https://example.com"
             mock_item.text = "Content"
@@ -322,8 +321,8 @@ class TestEngineIntegration:
         """Test Apify with different platforms."""
         platforms = ["twitter", "linkedin", "threads", "substack"]
 
-        with patch("kurt.tools.fetch.engines.apify.ApifyClient") as MockClient:
-            MockClient.return_value = MagicMock()
+        with patch("kurt.tools.fetch.engines.apify.ApifyClient") as mock_client_class:
+            mock_client_class.return_value = MagicMock()
             for platform in platforms:
                 config = ApifyFetcherConfig(api_key="test_key", platform=platform)
                 engine = ApifyEngine(config)

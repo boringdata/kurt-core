@@ -14,22 +14,15 @@ import hashlib
 from datetime import datetime
 from typing import Any, Callable, Optional
 
-from kurt.integrations.apify.client import ApifyClient, ApifyAuthError, ApifyError
+from kurt.integrations.apify.client import ApifyAuthError, ApifyClient, ApifyError
+from kurt.integrations.apify.parsers import (
+    FieldMapping,
+)
 from kurt.integrations.apify.registry import (
     ACTOR_REGISTRY,
     PLATFORM_DEFAULTS,
     PROFILE_ACTORS,
     ActorConfig,
-    get_actor_config,
-    get_default_actor,
-    get_profile_actor,
-    guess_source_from_actor,
-    list_actors as _list_actors,
-)
-from kurt.integrations.apify.parsers import (
-    FieldMapping,
-    ParsedItem,
-    parse_items,
 )
 from kurt.integrations.research.monitoring.models import Signal
 

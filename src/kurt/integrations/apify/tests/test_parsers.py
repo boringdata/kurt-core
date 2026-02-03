@@ -2,8 +2,6 @@
 
 from datetime import datetime
 
-import pytest
-
 from kurt.integrations.apify.parsers import (
     FieldMapping,
     ParsedItem,
@@ -70,13 +68,19 @@ class TestExtractField:
     def test_callable_field_spec(self):
         """Test extraction with callable field spec."""
         item = {"parts": ["Hello", "World"]}
-        extractor = lambda x: " ".join(x.get("parts", []))
+
+        def extractor(x):
+            return " ".join(x.get("parts", []))
+
         assert extract_field(item, extractor) == "Hello World"
 
     def test_callable_with_error(self):
         """Test callable that raises exception returns None."""
         item = {"data": "test"}
-        extractor = lambda x: x["missing"]["value"]
+
+        def extractor(x):
+            return x["missing"]["value"]
+
         assert extract_field(item, extractor) is None
 
 

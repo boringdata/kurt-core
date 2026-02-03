@@ -13,10 +13,8 @@ import httpx
 
 from kurt.integrations.apify.parsers import FieldMapping, ParsedItem, parse_items
 from kurt.integrations.apify.registry import (
-    ACTOR_REGISTRY,
     PLATFORM_DEFAULTS,
     PROFILE_ACTORS,
-    ActorConfig,
     get_actor_config,
     guess_source_from_actor,
 )
@@ -165,9 +163,12 @@ class ApifyClient:
         """
         timeout = timeout or self.timeout
 
+        # Apify API requires ~ instead of / in actor IDs for URL paths
+        actor_id_url = actor_id.replace("/", "~")
+
         try:
             response = self.client.post(
-                f"{self.BASE_URL}/acts/{actor_id}/run-sync-get-dataset-items",
+                f"{self.BASE_URL}/acts/{actor_id_url}/run-sync-get-dataset-items",
                 json=actor_input,
                 timeout=timeout,
             )
@@ -209,9 +210,12 @@ class ApifyClient:
         Raises:
             ApifyError: If actor start fails
         """
+        # Apify API requires ~ instead of / in actor IDs for URL paths
+        actor_id_url = actor_id.replace("/", "~")
+
         try:
             response = self.client.post(
-                f"{self.BASE_URL}/acts/{actor_id}/runs",
+                f"{self.BASE_URL}/acts/{actor_id_url}/runs",
                 json=actor_input,
             )
             response.raise_for_status()
