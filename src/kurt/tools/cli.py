@@ -28,6 +28,10 @@ def tools_cli():
     pass
 
 
+# Alias for main CLI registration
+tools_group = tools_cli
+
+
 @tools_cli.group("map")
 def map_group():
     """Discover content URLs and metadata."""
