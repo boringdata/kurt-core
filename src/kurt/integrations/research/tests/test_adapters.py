@@ -417,41 +417,34 @@ class TestApifyAdapter:
         assert "Custom content" in signal.title
         assert signal.score == 50
 
-    @patch("httpx.get")
-    def test_test_connection_success(self, mock_get):
+    @patch("kurt.integrations.apify.client.ApifyClient.test_connection")
+    def test_test_connection_success(self, mock_test):
         """Test successful connection test."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_get.return_value = mock_response
+        mock_test.return_value = True
 
         adapter = ApifyAdapter({"api_token": "valid_token"})
         result = adapter.test_connection()
 
         assert result is True
-        mock_get.assert_called_once()
+        mock_test.assert_called_once()
 
-    @patch("httpx.get")
-    def test_test_connection_failure(self, mock_get):
+    @patch("kurt.integrations.apify.client.ApifyClient.test_connection")
+    def test_test_connection_failure(self, mock_test):
         """Test failed connection test."""
-        mock_response = MagicMock()
-        mock_response.status_code = 401
-        mock_get.return_value = mock_response
+        mock_test.return_value = False
 
         adapter = ApifyAdapter({"api_token": "invalid_token"})
         result = adapter.test_connection()
 
         assert result is False
 
-    @patch("httpx.post")
-    def test_run_actor(self, mock_post):
+    @patch("kurt.integrations.apify.client.ApifyClient.run_actor")
+    def test_run_actor(self, mock_run):
         """Test running an actor."""
-        mock_response = MagicMock()
-        mock_response.json.return_value = [
+        mock_run.return_value = [
             {"id": "1", "text": "Result 1"},
             {"id": "2", "text": "Result 2"},
         ]
-        mock_response.raise_for_status = MagicMock()
-        mock_post.return_value = mock_response
 
         adapter = ApifyAdapter({"api_token": "test"})
         results = adapter.run_actor(
@@ -459,13 +452,12 @@ class TestApifyAdapter:
         )
 
         assert len(results) == 2
-        mock_post.assert_called_once()
+        mock_run.assert_called_once()
 
-    @patch("httpx.post")
-    def test_fetch_signals(self, mock_post):
+    @patch("kurt.integrations.apify.client.ApifyClient.run_actor")
+    def test_fetch_signals(self, mock_run):
         """Test fetching signals with actor."""
-        mock_response = MagicMock()
-        mock_response.json.return_value = [
+        mock_run.return_value = [
             {
                 "id": "tweet1",
                 "text": "AI is changing the world",
@@ -475,8 +467,6 @@ class TestApifyAdapter:
                 "createdAt": "2024-01-15T10:00:00Z",
             }
         ]
-        mock_response.raise_for_status = MagicMock()
-        mock_post.return_value = mock_response
 
         adapter = ApifyAdapter({"api_token": "test"})
         signals = adapter.fetch_signals(
@@ -486,11 +476,10 @@ class TestApifyAdapter:
         assert len(signals) == 1
         assert signals[0].source == "twitter"
 
-    @patch("httpx.post")
-    def test_search_twitter(self, mock_post):
+    @patch("kurt.integrations.apify.client.ApifyClient.run_actor")
+    def test_search_twitter(self, mock_run):
         """Test Twitter search convenience method."""
-        mock_response = MagicMock()
-        mock_response.json.return_value = [
+        mock_run.return_value = [
             {
                 "id": "1",
                 "text": "Test tweet",
@@ -498,8 +487,6 @@ class TestApifyAdapter:
                 "createdAt": "2024-01-15T10:00:00Z",
             }
         ]
-        mock_response.raise_for_status = MagicMock()
-        mock_post.return_value = mock_response
 
         adapter = ApifyAdapter({"api_token": "test"})
         signals = adapter.search_twitter("test query")
@@ -507,11 +494,10 @@ class TestApifyAdapter:
         assert len(signals) == 1
         assert signals[0].source == "twitter"
 
-    @patch("httpx.post")
-    def test_search_linkedin(self, mock_post):
+    @patch("kurt.integrations.apify.client.ApifyClient.run_actor")
+    def test_search_linkedin(self, mock_run):
         """Test LinkedIn search convenience method."""
-        mock_response = MagicMock()
-        mock_response.json.return_value = [
+        mock_run.return_value = [
             {
                 "id": "post1",
                 "postContent": "LinkedIn post",
@@ -519,8 +505,6 @@ class TestApifyAdapter:
                 "createdAt": "2024-01-15T10:00:00Z",
             }
         ]
-        mock_response.raise_for_status = MagicMock()
-        mock_post.return_value = mock_response
 
         adapter = ApifyAdapter({"api_token": "test"})
         signals = adapter.search_linkedin("B2B marketing")
