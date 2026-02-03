@@ -165,11 +165,11 @@ ACTOR_REGISTRY: dict[str, ActorConfig] = {
         build_input=_build_linkedin_search_input,
         description="Search LinkedIn for posts matching a query",
     ),
-    "anchor/linkedin-profile-scraper": ActorConfig(
-        actor_id="anchor/linkedin-profile-scraper",
+    "apimaestro/linkedin-profile-detail": ActorConfig(
+        actor_id="apimaestro/linkedin-profile-detail",
         source_name="linkedin",
         build_input=_build_linkedin_profile_input,
-        description="Scrape LinkedIn profile data",
+        description="Scrape LinkedIn profile data (pay-per-use $0.005/profile)",
     ),
     # -------------------------------------------------------------------------
     # Threads actors
@@ -230,7 +230,7 @@ PLATFORM_DEFAULTS: dict[str, str] = {
 # Profile-specific actors for each platform
 PROFILE_ACTORS: dict[str, str] = {
     "twitter": "apidojo/twitter-user-scraper",
-    "linkedin": "anchor/linkedin-profile-scraper",
+    "linkedin": "apimaestro/linkedin-profile-detail",
     "substack": "epctex/substack-scraper",  # Same actor handles profiles
 }
 
