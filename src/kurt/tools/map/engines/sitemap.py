@@ -1,6 +1,6 @@
 """Sitemap-based content mapping engine."""
 
-from kurt.tools.map.core import BaseMapper, MapperConfig, MapperResult
+from kurt.tools.map.core import BaseMapper, MapperResult
 from kurt.tools.map.models import DocType
 
 

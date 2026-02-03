@@ -1,13 +1,11 @@
 """Apify-based mapper engine for content discovery via Apify actors."""
 
-from typing import Optional, Any
-import os
-from datetime import datetime
+from typing import Optional
 
+from kurt.tools.api_keys import configure_engines, get_api_key
+from kurt.tools.errors import AuthError, EngineError
 from kurt.tools.map.core import BaseMapper, MapperConfig, MapperResult
 from kurt.tools.map.models import DocType
-from kurt.tools.errors import EngineError, AuthError, RateLimitError
-from kurt.tools.api_keys import get_api_key, configure_engines
 
 
 class ApifyEngine(BaseMapper):
@@ -141,7 +139,6 @@ class ApifyEngine(BaseMapper):
 
     def _get_instagram_posts(self, profile_url: str) -> MapperResult:
         """Get posts from Instagram profile."""
-        username = profile_url.split("/")[-1]
         urls = [
             f"https://instagram.com/p/post{i}/"
             for i in range(1, min(11, self.config.max_urls + 1))

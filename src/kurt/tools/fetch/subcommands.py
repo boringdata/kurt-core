@@ -1,11 +1,10 @@
 """Fetch subcommands for content retrieval."""
 
-from typing import Optional
 from datetime import datetime
+from typing import Optional
 
-from kurt.tools.fetch.core import BaseFetcher, FetcherConfig, FetchResult
-from kurt.tools.map.core.models import DocContent, ProfileContent, PostContent
-from kurt.tools.fetch.models import DocType, FetchDocument, FetchStatus
+from kurt.tools.fetch.core import BaseFetcher
+from kurt.tools.map.core.models import DocContent, PostContent, ProfileContent
 
 
 class FetchDocSubcommand:

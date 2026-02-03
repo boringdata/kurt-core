@@ -1,6 +1,5 @@
 """Tests for rate limiting infrastructure."""
 
-import asyncio
 import threading
 import time
 

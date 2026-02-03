@@ -1,11 +1,12 @@
 """Apify-based fetcher engine for content extraction via Apify actors."""
 
-from typing import Optional, Any
 from datetime import datetime
+from typing import Optional
 
+from kurt.tools.api_keys import configure_engines, get_api_key
+from kurt.tools.errors import AuthError, EngineError
+from kurt.tools.errors import TimeoutError as EngineTimeoutError
 from kurt.tools.fetch.core import BaseFetcher, FetcherConfig, FetchResult
-from kurt.tools.errors import EngineError, AuthError, TimeoutError as EngineTimeoutError
-from kurt.tools.api_keys import get_api_key, configure_engines
 
 
 class ApifyFetcher(BaseFetcher):

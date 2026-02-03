@@ -3,10 +3,10 @@
 import pytest
 
 from kurt.tools.map.engines import EngineRegistry
-from kurt.tools.map.engines.sitemap import SitemapEngine
+from kurt.tools.map.engines.apify import ApifyEngine, ApifyMapperConfig
 from kurt.tools.map.engines.crawl import CrawlEngine
 from kurt.tools.map.engines.rss import RssEngine
-from kurt.tools.map.engines.apify import ApifyEngine, ApifyMapperConfig
+from kurt.tools.map.engines.sitemap import SitemapEngine
 from kurt.tools.map.models import DocType
 
 

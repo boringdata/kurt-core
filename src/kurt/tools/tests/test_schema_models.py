@@ -1,12 +1,10 @@
 """Tests for Phase 1 database schema models."""
 
-import pytest
-from datetime import datetime
 
+from kurt.tools.fetch.models import DocType as FetchDocType
+from kurt.tools.fetch.models import FetchDocument, FetchStatus, Post, Profile
 from kurt.tools.map.models import DocType as MapDocType
 from kurt.tools.map.models import MapDocument, MapStatus
-from kurt.tools.fetch.models import DocType as FetchDocType
-from kurt.tools.fetch.models import FetchDocument, FetchStatus, Profile, Post
 
 
 class TestMapDocument:

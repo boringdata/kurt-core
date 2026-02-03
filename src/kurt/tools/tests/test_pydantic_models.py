@@ -1,15 +1,16 @@
 """Tests for Pydantic models (Phase 3)."""
 
-import pytest
 from datetime import datetime
 
+import pytest
+
 from kurt.tools.map.core.models import (
-    DocMetadata,
     DocContent,
-    ProfileMetadata,
-    ProfileContent,
-    PostMetadata,
+    DocMetadata,
     PostContent,
+    PostMetadata,
+    ProfileContent,
+    ProfileMetadata,
 )
 
 

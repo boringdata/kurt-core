@@ -1,7 +1,8 @@
 """Tests for error handling patterns."""
 
-import pytest
 import time
+
+import pytest
 
 from kurt.tools.errors import (
     AuthError,

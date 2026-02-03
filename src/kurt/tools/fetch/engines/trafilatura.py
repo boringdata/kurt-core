@@ -1,6 +1,6 @@
 """Trafilatura content extraction engine."""
 
-from kurt.tools.fetch.core import BaseFetcher, FetcherConfig, FetchResult
+from kurt.tools.fetch.core import BaseFetcher, FetchResult
 
 
 class TrafilaturaEngine(BaseFetcher):

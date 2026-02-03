@@ -1,7 +1,7 @@
 """Utility functions for content mapping."""
 
-from urllib.parse import urljoin, urlparse
 from typing import Optional
+from urllib.parse import urljoin, urlparse
 
 
 def normalize_url(url: str) -> str:

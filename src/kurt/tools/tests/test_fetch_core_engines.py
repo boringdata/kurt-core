@@ -2,12 +2,12 @@
 
 import pytest
 
-from kurt.tools.fetch.core import BaseFetcher, FetcherConfig, FetchResult, FetchDocumentStorage
+from kurt.tools.fetch.core import BaseFetcher, FetchDocumentStorage, FetcherConfig, FetchResult
 from kurt.tools.fetch.engines import EngineRegistry
-from kurt.tools.fetch.engines.trafilatura import TrafilaturaEngine
+from kurt.tools.fetch.engines.apify import ApifyEngine, ApifyFetcherConfig
 from kurt.tools.fetch.engines.firecrawl import FirecrawlEngine
 from kurt.tools.fetch.engines.tavily import TavilyEngine
-from kurt.tools.fetch.engines.apify import ApifyEngine, ApifyFetcherConfig
+from kurt.tools.fetch.engines.trafilatura import TrafilaturaEngine
 from kurt.tools.fetch.models import DocType
 
 

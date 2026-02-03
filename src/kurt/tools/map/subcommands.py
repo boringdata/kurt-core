@@ -2,9 +2,9 @@
 
 from typing import Optional
 
-from kurt.tools.map.core import BaseMapper, MapperConfig, MapperResult
-from kurt.tools.map.core.models import DocMetadata, DocContent, ProfileMetadata, PostMetadata
-from kurt.tools.map.models import DocType, MapDocument
+from kurt.tools.map.core import BaseMapper, MapperConfig
+from kurt.tools.map.core.models import DocMetadata, PostMetadata, ProfileMetadata
+from kurt.tools.map.models import DocType
 
 
 class MapDocSubcommand:

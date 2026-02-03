@@ -1,6 +1,5 @@
 """Tests for unified API key management."""
 
-import os
 import pytest
 
 from kurt.tools.api_keys import (
