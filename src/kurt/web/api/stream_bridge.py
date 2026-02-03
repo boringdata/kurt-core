@@ -1028,10 +1028,10 @@ async def handle_stream_websocket(
                     break
 
             # Build args with the correct resume flag
-            # - Frontend tracks whether session is new or should be resumed
-            # - Backend registry tracks whether we've seen this session before (for mode changes)
-            # - Use resume if EITHER frontend says so OR session was in registry
-            use_resume = resume or should_resume
+            # - Only use --resume if the session was in our registry (meaning Claude CLI knows about it)
+            # - Frontend's resume flag is ignored because frontend doesn't know if CLI has the session
+            # - This prevents "No conversation found" errors when frontend sends stale session IDs
+            use_resume = should_resume
             args = build_stream_args(
                 base_args or [],
                 session_id,
