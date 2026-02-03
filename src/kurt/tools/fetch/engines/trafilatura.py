@@ -3,7 +3,7 @@
 from kurt.tools.fetch.core import BaseFetcher, FetchResult
 
 
-class TrafilaturaEngine(BaseFetcher):
+class TrafilaturaFetcher(BaseFetcher):
     """Extracts content using Trafilatura library."""
 
     def fetch(self, url: str) -> FetchResult:
