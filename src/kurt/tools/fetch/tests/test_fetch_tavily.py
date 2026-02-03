@@ -330,3 +330,246 @@ class TestFetchWithTavily:
 
         with pytest.raises(ValueError, match="Rate limit exceeded"):
             fetch_with_tavily("https://example.com")
+
+    @patch("kurt.tools.fetch.tavily.httpx.Client")
+    @patch("kurt.tools.fetch.tavily.os.getenv")
+    def test_http_403_raises_url_not_supported(self, mock_getenv, mock_client_class):
+        """Test that 403 response raises URL not supported error."""
+        import httpx
+
+        from kurt.tools.fetch.tavily import fetch_with_tavily
+
+        mock_getenv.return_value = "test-api-key"
+
+        mock_response = MagicMock()
+        mock_response.status_code = 403
+        error = httpx.HTTPStatusError("", request=MagicMock(), response=mock_response)
+
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.post.side_effect = error
+        mock_client_class.return_value = mock_client
+
+        with pytest.raises(ValueError, match="URL not supported"):
+            fetch_with_tavily("https://example.com")
+
+    @patch("kurt.tools.fetch.tavily.httpx.Client")
+    @patch("kurt.tools.fetch.tavily.os.getenv")
+    def test_http_432_raises_credit_limit(self, mock_getenv, mock_client_class):
+        """Test that 432 response raises credit limit error."""
+        import httpx
+
+        from kurt.tools.fetch.tavily import fetch_with_tavily
+
+        mock_getenv.return_value = "test-api-key"
+
+        mock_response = MagicMock()
+        mock_response.status_code = 432
+        error = httpx.HTTPStatusError("", request=MagicMock(), response=mock_response)
+
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.post.side_effect = error
+        mock_client_class.return_value = mock_client
+
+        with pytest.raises(ValueError, match="Credit or plan limit exceeded"):
+            fetch_with_tavily("https://example.com")
+
+    @patch("kurt.tools.fetch.tavily.httpx.Client")
+    @patch("kurt.tools.fetch.tavily.os.getenv")
+    def test_http_500_raises_generic_error(self, mock_getenv, mock_client_class):
+        """Test that 500 response raises generic API error."""
+        import httpx
+
+        from kurt.tools.fetch.tavily import fetch_with_tavily
+
+        mock_getenv.return_value = "test-api-key"
+
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        error = httpx.HTTPStatusError("Server error", request=MagicMock(), response=mock_response)
+
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.post.side_effect = error
+        mock_client_class.return_value = mock_client
+
+        with pytest.raises(ValueError, match=r"API error \(500\)"):
+            fetch_with_tavily("https://example.com")
+
+    @patch("kurt.tools.fetch.tavily.httpx.Client")
+    @patch("kurt.tools.fetch.tavily.os.getenv")
+    def test_request_error_raises_connection_error(self, mock_getenv, mock_client_class):
+        """Test that connection errors are handled."""
+        import httpx
+
+        from kurt.tools.fetch.tavily import fetch_with_tavily
+
+        mock_getenv.return_value = "test-api-key"
+
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.post.side_effect = httpx.ConnectError("Connection refused")
+        mock_client_class.return_value = mock_client
+
+        with pytest.raises(ValueError, match="Request error.*ConnectError"):
+            fetch_with_tavily("https://example.com")
+
+
+class TestTavilyFetcher:
+    """Test suite for TavilyFetcher engine class."""
+
+    def test_import(self):
+        """Test that TavilyFetcher can be imported."""
+        from kurt.tools.fetch.engines.tavily import TavilyFetcher
+
+        assert TavilyFetcher is not None
+
+    def test_engine_alias(self):
+        """Test that TavilyEngine alias exists for backwards compatibility."""
+        from kurt.tools.fetch.engines.tavily import TavilyEngine, TavilyFetcher
+
+        assert TavilyEngine is TavilyFetcher
+
+    @patch("kurt.tools.fetch.tavily.httpx.Client")
+    @patch("kurt.tools.fetch.tavily.os.getenv")
+    def test_fetch_success(self, mock_getenv, mock_client_class):
+        """Test successful fetch via TavilyFetcher."""
+        from kurt.tools.fetch.engines.tavily import TavilyFetcher
+
+        mock_getenv.return_value = "test-api-key"
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "results": [
+                {
+                    "url": "https://example.com",
+                    "raw_content": "# Fetched Content\n\nThis is the content.",
+                }
+            ],
+            "response_time": 1.2,
+        }
+
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.post.return_value = mock_response
+        mock_client_class.return_value = mock_client
+
+        fetcher = TavilyFetcher()
+        result = fetcher.fetch("https://example.com")
+
+        assert result.success is True
+        assert result.content == "# Fetched Content\n\nThis is the content."
+        assert result.metadata["engine"] == "tavily"
+        assert result.error is None
+
+    @patch("kurt.tools.fetch.tavily.os.getenv")
+    def test_fetch_missing_api_key(self, mock_getenv):
+        """Test TavilyFetcher returns error when API key missing."""
+        from kurt.tools.fetch.engines.tavily import TavilyFetcher
+
+        mock_getenv.return_value = None
+
+        fetcher = TavilyFetcher()
+        result = fetcher.fetch("https://example.com")
+
+        assert result.success is False
+        assert "TAVILY_API_KEY" in result.error
+        assert result.metadata["engine"] == "tavily"
+
+    @patch("kurt.tools.fetch.tavily.httpx.Client")
+    @patch("kurt.tools.fetch.tavily.os.getenv")
+    def test_fetch_empty_result(self, mock_getenv, mock_client_class):
+        """Test TavilyFetcher handles empty results."""
+        from kurt.tools.fetch.engines.tavily import TavilyFetcher
+
+        mock_getenv.return_value = "test-api-key"
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"results": []}
+
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.post.return_value = mock_response
+        mock_client_class.return_value = mock_client
+
+        fetcher = TavilyFetcher()
+        result = fetcher.fetch("https://example.com")
+
+        assert result.success is False
+        assert "No result" in result.error
+
+    @patch("kurt.tools.fetch.tavily.httpx.Client")
+    @patch("kurt.tools.fetch.tavily.os.getenv")
+    def test_fetch_with_config(self, mock_getenv, mock_client_class):
+        """Test TavilyFetcher accepts config."""
+        from kurt.tools.fetch.core.base import FetcherConfig
+        from kurt.tools.fetch.engines.tavily import TavilyFetcher
+
+        mock_getenv.return_value = "test-api-key"
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "results": [{"url": "https://example.com", "raw_content": "Content"}]
+        }
+
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.post.return_value = mock_response
+        mock_client_class.return_value = mock_client
+
+        config = FetcherConfig(timeout=60.0)
+        fetcher = TavilyFetcher(config)
+
+        assert fetcher.config.timeout == 60.0
+
+        result = fetcher.fetch("https://example.com")
+        assert result.success is True
+
+    @patch("kurt.tools.fetch.engines.tavily.fetch_with_tavily")
+    def test_fetch_unexpected_exception(self, mock_fetch):
+        """Test TavilyFetcher handles unexpected exceptions."""
+        from kurt.tools.fetch.engines.tavily import TavilyFetcher
+
+        mock_fetch.side_effect = RuntimeError("Unexpected failure")
+
+        fetcher = TavilyFetcher()
+        result = fetcher.fetch("https://example.com")
+
+        assert result.success is False
+        assert "Unexpected error" in result.error
+        assert "RuntimeError" in result.error
+        assert result.metadata["engine"] == "tavily"
+
+    @patch("kurt.tools.fetch.tavily.httpx.Client")
+    @patch("kurt.tools.fetch.tavily.os.getenv")
+    def test_fetch_result_is_exception(self, mock_getenv, mock_client_class):
+        """Test TavilyFetcher handles Exception objects in results dict."""
+        from kurt.tools.fetch.engines.tavily import TavilyFetcher
+
+        mock_getenv.return_value = "test-api-key"
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "results": [{"url": "https://example.com", "raw_content": ""}],  # Empty content
+        }
+
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.post.return_value = mock_response
+        mock_client_class.return_value = mock_client
+
+        fetcher = TavilyFetcher()
+        result = fetcher.fetch("https://example.com")
+
+        # Empty content is marked as error by fetch_with_tavily
+        assert result.success is False
+        assert "Empty content" in result.error

@@ -169,14 +169,30 @@ def map_posts(source: Optional[str], limit: int, since: Optional[str], platform:
 @click.option(
     "--engine",
     default="trafilatura",
-    type=click.Choice(["trafilatura", "firecrawl", "apify"]),
+    type=click.Choice(["trafilatura", "firecrawl", "apify", "tavily"]),
     help="Fetch engine",
 )
 def fetch_doc(urls: tuple, engine: str):
     """Fetch document content from URLs."""
     try:
         config = FetcherConfig()
-        fetcher = TrafilaturaFetcher(config)
+
+        # Select fetcher engine
+        if engine == "trafilatura":
+            fetcher = TrafilaturaFetcher(config)
+        elif engine == "firecrawl":
+            from kurt.tools.fetch.engines.firecrawl import FirecrawlFetcher
+            fetcher = FirecrawlFetcher(config)
+        elif engine == "apify":
+            from kurt.tools.fetch.engines.apify_engine import ApifyFetcher
+            fetcher = ApifyFetcher(config)
+        elif engine == "tavily":
+            from kurt.tools.fetch.engines.tavily import TavilyFetcher
+            fetcher = TavilyFetcher(config)
+        else:
+            click.echo(f"Error: Unknown engine '{engine}'", err=True)
+            raise click.Exit(1)
+
         subcommand = FetchDocSubcommand(fetcher)
         results = subcommand.run(list(urls))
 
@@ -198,12 +214,25 @@ def fetch_doc(urls: tuple, engine: str):
     type=click.Choice(["twitter", "linkedin", "instagram"]),
     help="Platform to fetch from",
 )
-def fetch_profile(urls: tuple, platform: str):
+@click.option(
+    "--engine",
+    default="apify",
+    type=click.Choice(["apify"]),
+    help="Fetch engine",
+)
+def fetch_profile(urls: tuple, platform: str, engine: str):
     """Fetch full profile details from social platforms."""
     try:
-        from kurt.tools.fetch.engines.apify_engine import ApifyFetcher
         config = FetcherConfig()
-        fetcher = ApifyFetcher(config)
+
+        # Select fetcher engine
+        if engine == "apify":
+            from kurt.tools.fetch.engines.apify_engine import ApifyFetcher
+            fetcher = ApifyFetcher(config)
+        else:
+            click.echo(f"Error: Unknown engine '{engine}'", err=True)
+            raise click.Exit(1)
+
         subcommand = FetchProfileSubcommand(fetcher)
         results = subcommand.run(list(urls), platform=platform)
 
@@ -225,12 +254,25 @@ def fetch_profile(urls: tuple, platform: str):
     type=click.Choice(["twitter", "linkedin", "instagram"]),
     help="Platform to fetch from",
 )
-def fetch_posts(urls: tuple, platform: str):
+@click.option(
+    "--engine",
+    default="apify",
+    type=click.Choice(["apify"]),
+    help="Fetch engine",
+)
+def fetch_posts(urls: tuple, platform: str, engine: str):
     """Fetch full post content from social platforms."""
     try:
-        from kurt.tools.fetch.engines.apify_engine import ApifyFetcher
         config = FetcherConfig()
-        fetcher = ApifyFetcher(config)
+
+        # Select fetcher engine
+        if engine == "apify":
+            from kurt.tools.fetch.engines.apify_engine import ApifyFetcher
+            fetcher = ApifyFetcher(config)
+        else:
+            click.echo(f"Error: Unknown engine '{engine}'", err=True)
+            raise click.Exit(1)
+
         subcommand = FetchPostsSubcommand(fetcher)
         results = subcommand.run(list(urls), platform=platform)
 

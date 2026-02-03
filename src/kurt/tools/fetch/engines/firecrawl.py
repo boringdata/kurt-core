@@ -32,3 +32,7 @@ class FirecrawlEngine(BaseFetcher):
             content="",
             metadata={"engine": "firecrawl"},
         )
+
+
+# Backwards compatibility alias
+FirecrawlFetcher = FirecrawlEngine
