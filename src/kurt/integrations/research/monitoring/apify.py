@@ -1,125 +1,37 @@
 """
 Apify adapter for social media monitoring.
 
-Uses Apify's API to run actors for Twitter/X, LinkedIn, and other platforms.
+Uses the shared Apify integration layer for Twitter/X, LinkedIn, Threads, and Substack.
 Requires an API token configured in kurt.config as RESEARCH_APIFY_API_TOKEN.
 
-Supports flexible actor configuration:
-- Use built-in actor presets for common platforms
-- Pass raw actor input for full control
-- Configure field mappings for custom actors
+This adapter wraps the shared ApifyClient to provide Signal objects for
+backward compatibility with the SignalsTool and research monitoring system.
 """
 
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Callable, Optional
 
-import httpx
-
+from kurt.integrations.apify.client import ApifyClient, ApifyAuthError, ApifyError
+from kurt.integrations.apify.registry import (
+    ACTOR_REGISTRY,
+    PLATFORM_DEFAULTS,
+    PROFILE_ACTORS,
+    ActorConfig,
+    get_actor_config,
+    get_default_actor,
+    get_profile_actor,
+    guess_source_from_actor,
+    list_actors as _list_actors,
+)
+from kurt.integrations.apify.parsers import (
+    FieldMapping,
+    ParsedItem,
+    parse_items,
+)
 from kurt.integrations.research.monitoring.models import Signal
-
-
-@dataclass
-class FieldMapping:
-    """
-    Maps actor output fields to Signal fields.
-
-    Each field can be:
-    - A string: direct field name lookup
-    - A list of strings: try each in order, use first non-null
-    - A callable: function(item) -> value for complex extraction
-    """
-
-    text: str | list[str] | Callable[[dict], str] = field(
-        default_factory=lambda: ["text", "content", "title", "postContent", "description"]
-    )
-    url: str | list[str] | Callable[[dict], str] = field(
-        default_factory=lambda: ["url", "postUrl", "link", "profileUrl"]
-    )
-    id: str | list[str] | Callable[[dict], str] = field(
-        default_factory=lambda: ["id", "postId", "objectID", "tweetId"]
-    )
-    score: str | list[str] | Callable[[dict], int] = field(
-        default_factory=lambda: ["likeCount", "likes", "numLikes", "reactions", "favoriteCount"]
-    )
-    comments: str | list[str] | Callable[[dict], int] = field(
-        default_factory=lambda: ["replyCount", "replies", "commentCount", "numComments"]
-    )
-    author: str | list[str] | Callable[[dict], str] = field(
-        default_factory=lambda: ["author", "username", "authorName", "user"]
-    )
-    timestamp: str | list[str] | Callable[[dict], str] = field(
-        default_factory=lambda: ["createdAt", "created_at", "publishedAt", "postedAt", "date"]
-    )
-
-
-@dataclass
-class ActorConfig:
-    """
-    Configuration for a specific Apify actor.
-
-    Defines how to build input and parse output for an actor.
-    """
-
-    actor_id: str
-    source_name: str  # e.g., "twitter", "linkedin"
-
-    # Input configuration
-    # Function to build actor input: (query, max_items, **kwargs) -> dict
-    build_input: Callable[[str, int, dict], dict] | None = None
-
-    # Output configuration
-    field_mapping: FieldMapping = field(default_factory=FieldMapping)
-
-    # Description for CLI help
-    description: str = ""
-
-
-def _build_twitter_search_input(query: str, max_items: int, kwargs: dict) -> dict:
-    """Build input for Twitter search actors."""
-    return {
-        "searchTerms": [query],
-        "maxItems": max_items,
-        "sort": kwargs.get("sort", "Latest"),
-        **{k: v for k, v in kwargs.items() if k != "sort"},
-    }
-
-
-def _build_twitter_profile_input(query: str, max_items: int, kwargs: dict) -> dict:
-    """Build input for Twitter profile scraper actors."""
-    return {
-        "handles": [query] if not isinstance(query, list) else query,
-        "maxItems": max_items,
-        "tweetsDesired": kwargs.get("tweets_desired", max_items),
-        **{k: v for k, v in kwargs.items() if k not in ["tweets_desired"]},
-    }
-
-
-def _build_linkedin_search_input(query: str, max_items: int, kwargs: dict) -> dict:
-    """Build input for LinkedIn search actors."""
-    # Check if query is already a URL
-    if query.startswith("http"):
-        search_url = query
-    else:
-        search_url = f"https://www.linkedin.com/search/results/content/?keywords={query}"
-    return {
-        "searchUrl": search_url,
-        "maxItems": max_items,
-        **kwargs,
-    }
-
-
-def _build_linkedin_profile_input(query: str, max_items: int, kwargs: dict) -> dict:
-    """Build input for LinkedIn profile scraper actors."""
-    # Query can be profile URL or list of URLs
-    urls = [query] if isinstance(query, str) else query
-    return {
-        "profileUrls": urls,
-        **kwargs,
-    }
 
 
 def _build_generic_search_input(query: str, max_items: int, kwargs: dict) -> dict:
@@ -131,55 +43,15 @@ def _build_generic_search_input(query: str, max_items: int, kwargs: dict) -> dic
     }
 
 
-# Registry of known actors with their configurations
-ACTOR_REGISTRY: dict[str, ActorConfig] = {
-    # Twitter/X actors
-    "apidojo/tweet-scraper": ActorConfig(
-        actor_id="apidojo/tweet-scraper",
-        source_name="twitter",
-        build_input=_build_twitter_search_input,
-        description="Search Twitter/X for tweets matching a query",
-    ),
-    "quacker/twitter-scraper": ActorConfig(
-        actor_id="quacker/twitter-scraper",
-        source_name="twitter",
-        build_input=_build_twitter_search_input,
-        description="Alternative Twitter search scraper",
-    ),
-    "apidojo/twitter-user-scraper": ActorConfig(
-        actor_id="apidojo/twitter-user-scraper",
-        source_name="twitter",
-        build_input=_build_twitter_profile_input,
-        description="Scrape tweets from specific Twitter profiles",
-    ),
-    # LinkedIn actors
-    "curious_coder/linkedin-post-search-scraper": ActorConfig(
-        actor_id="curious_coder/linkedin-post-search-scraper",
-        source_name="linkedin",
-        build_input=_build_linkedin_search_input,
-        description="Search LinkedIn for posts matching a query",
-    ),
-    "anchor/linkedin-profile-scraper": ActorConfig(
-        actor_id="anchor/linkedin-profile-scraper",
-        source_name="linkedin",
-        build_input=_build_linkedin_profile_input,
-        description="Scrape LinkedIn profile data",
-    ),
-    # Threads actors
-    "apidojo/threads-scraper": ActorConfig(
-        actor_id="apidojo/threads-scraper",
-        source_name="threads",
-        build_input=_build_generic_search_input,
-        description="Search Threads for posts",
-    ),
-}
-
-# Platform aliases map to default actors
-PLATFORM_DEFAULTS = {
-    "twitter": "apidojo/tweet-scraper",
-    "linkedin": "curious_coder/linkedin-post-search-scraper",
-    "threads": "apidojo/threads-scraper",
-}
+# Re-export for backward compatibility
+__all__ = [
+    "ApifyAdapter",
+    "FieldMapping",
+    "ActorConfig",
+    "ACTOR_REGISTRY",
+    "PLATFORM_DEFAULTS",
+    "PROFILE_ACTORS",
+]
 
 
 class ApifyAdapter:
@@ -201,8 +73,6 @@ class ApifyAdapter:
        signals = adapter.parse_results(result, field_mapping=custom_mapping)
     """
 
-    BASE_URL = "https://api.apify.com/v2"
-
     def __init__(self, config: dict[str, Any]):
         """
         Initialize Apify adapter.
@@ -213,6 +83,12 @@ class ApifyAdapter:
         self.api_token = config.get("api_token") or config.get("api_key")
         if not self.api_token:
             raise ValueError("api_token is required for ApifyAdapter")
+
+        # Initialize shared ApifyClient
+        try:
+            self._client = ApifyClient(api_key=self.api_token)
+        except ApifyAuthError as e:
+            raise ValueError(f"Invalid API token: {e}")
 
         self.default_actor = config.get("default_actor", PLATFORM_DEFAULTS["twitter"])
 
@@ -232,29 +108,11 @@ class ApifyAdapter:
 
     def test_connection(self) -> bool:
         """Test API token validity."""
-        try:
-            response = httpx.get(
-                f"{self.BASE_URL}/users/me",
-                headers={"Authorization": f"Bearer {self.api_token}"},
-                timeout=10.0,
-            )
-            return response.status_code == 200
-        except httpx.RequestError:
-            return False
+        return self._client.test_connection()
 
     def get_user_info(self) -> dict[str, Any] | None:
         """Get user account information."""
-        try:
-            response = httpx.get(
-                f"{self.BASE_URL}/users/me",
-                headers={"Authorization": f"Bearer {self.api_token}"},
-                timeout=10.0,
-            )
-            if response.status_code == 200:
-                return response.json()
-            return None
-        except httpx.RequestError:
-            return None
+        return self._client.get_user_info()
 
     def list_actors(self) -> list[dict[str, str]]:
         """List all registered actors with descriptions."""
@@ -292,23 +150,9 @@ class ApifyAdapter:
             Exception: If actor run fails
         """
         try:
-            response = httpx.post(
-                f"{self.BASE_URL}/acts/{actor}/run-sync-get-dataset-items",
-                headers={
-                    "Authorization": f"Bearer {self.api_token}",
-                    "Content-Type": "application/json",
-                },
-                json=actor_input,
-                timeout=timeout,
-            )
-            response.raise_for_status()
-            return response.json()
-        except httpx.TimeoutException:
-            raise Exception(f"Apify actor {actor} timed out after {timeout} seconds")
-        except httpx.HTTPStatusError as e:
-            raise Exception(f"Apify API error: {e.response.status_code} - {e.response.text}")
-        except httpx.RequestError as e:
-            raise Exception(f"Failed to connect to Apify: {e}")
+            return self._client.run_actor(actor, actor_input, timeout=timeout)
+        except ApifyError as e:
+            raise Exception(str(e))
 
     def parse_results(
         self,
