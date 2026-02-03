@@ -39,12 +39,16 @@ def _check_engine_status(engine: str) -> tuple[str, str]:
         if os.getenv("TAVILY_API_KEY"):
             return "ready", "Tavily Extract API"
         return "missing", "Set TAVILY_API_KEY"
+    if engine == "apify":
+        if os.getenv("APIFY_API_KEY"):
+            return "ready", "Apify social platform extraction"
+        return "missing", "Set APIFY_API_KEY"
     return "unknown", "Unknown engine"
 
 
 def _list_engines(output_format: str) -> None:
     """List available fetch engines and their status."""
-    engines = ["trafilatura", "httpx", "firecrawl", "tavily"]
+    engines = ["trafilatura", "httpx", "firecrawl", "tavily", "apify"]
     engine_info = []
 
     for engine in engines:
@@ -89,8 +93,17 @@ def _list_engines(output_format: str) -> None:
 @click.option("--files", "files_paths", help="Comma-separated list of local file paths")
 @click.option(
     "--engine",
-    type=click.Choice(["firecrawl", "trafilatura", "httpx", "tavily"], case_sensitive=False),
+    type=click.Choice(["firecrawl", "trafilatura", "httpx", "tavily", "apify"], case_sensitive=False),
     help="Fetch engine to use",
+)
+@click.option(
+    "--platform",
+    type=click.Choice(["twitter", "linkedin", "threads", "substack"], case_sensitive=False),
+    help="Social platform for apify engine",
+)
+@click.option(
+    "--apify-actor",
+    help="Specific Apify actor ID (e.g., 'apidojo/tweet-scraper')",
 )
 @click.option(
     "--batch-size",
@@ -129,6 +142,8 @@ def fetch_cmd(
     single_file: str | None,
     files_paths: str | None,
     engine: str | None,
+    platform: str | None,
+    apify_actor: str | None,
     batch_size: int | None,
     list_engines: bool,
     refetch: bool,
@@ -147,6 +162,12 @@ def fetch_cmd(
       httpx         HTTP fetch + trafilatura (respects proxies)
       firecrawl     Firecrawl API - requires FIRECRAWL_API_KEY
       tavily        Tavily Extract API - requires TAVILY_API_KEY
+      apify         Social platform extraction - requires APIFY_API_KEY
+
+    \b
+    Apify Usage:
+      --engine apify --platform twitter https://twitter.com/user
+      --engine apify --apify-actor apidojo/tweet-scraper https://twitter.com/user
     """
     if list_engines:
         _list_engines(output_format)
@@ -268,6 +289,10 @@ def fetch_cmd(
         config_overrides["batch_size"] = batch_size
     if embed is not None:
         config_overrides["embed"] = embed
+    if platform:
+        config_overrides["platform"] = platform.lower()
+    if apify_actor:
+        config_overrides["apify_actor"] = apify_actor
     config = FetchConfig.from_config("fetch", **config_overrides)
 
     inputs = [
@@ -286,6 +311,8 @@ def fetch_cmd(
         "engine": config.fetch_engine,
         "batch_size": config.batch_size,
         "embed": config.embed,
+        "platform": config_overrides.get("platform"),
+        "apify_actor": config_overrides.get("apify_actor"),
     }
 
     cli_command = "kurt " + " ".join(sys.argv[1:])
