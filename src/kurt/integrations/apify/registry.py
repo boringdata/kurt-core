@@ -8,7 +8,7 @@ and field mappings.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Callable
 
 from kurt.integrations.apify.parsers import FieldMapping
 

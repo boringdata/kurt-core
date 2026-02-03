@@ -1,7 +1,5 @@
 """Tests for the Apify registry module."""
 
-import pytest
-
 from kurt.integrations.apify.registry import (
     ACTOR_REGISTRY,
     PLATFORM_DEFAULTS,

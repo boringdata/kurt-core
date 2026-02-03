@@ -9,7 +9,6 @@ from kurt.integrations.apify.client import (
     ApifyActorError,
     ApifyAuthError,
     ApifyClient,
-    ApifyError,
     ApifyTimeoutError,
     run_actor,
 )
@@ -214,10 +213,10 @@ class TestRunActorFunction:
 
     def test_run_actor_function(self):
         """Test run_actor convenience function."""
-        with patch("kurt.integrations.apify.client.ApifyClient") as MockClient:
+        with patch("kurt.integrations.apify.client.ApifyClient") as mock_client_class:
             mock_instance = MagicMock()
             mock_instance.run_actor.return_value = [{"text": "content"}]
-            MockClient.return_value.__enter__.return_value = mock_instance
+            mock_client_class.return_value.__enter__.return_value = mock_instance
 
             result = run_actor(
                 "apidojo/tweet-scraper",
