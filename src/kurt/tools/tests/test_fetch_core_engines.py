@@ -7,7 +7,7 @@ from kurt.tools.fetch.engines import EngineRegistry
 from kurt.tools.fetch.engines.apify import ApifyEngine, ApifyFetcherConfig
 from kurt.tools.fetch.engines.firecrawl import FirecrawlEngine
 from kurt.tools.fetch.engines.tavily import TavilyEngine
-from kurt.tools.fetch.engines.trafilatura import TrafilaturaEngine
+from kurt.tools.fetch.engines.trafilatura import TrafilaturaFetcher
 from kurt.tools.fetch.models import DocType
 
 
@@ -132,14 +132,14 @@ class TestEngineRegistry:
 
     def test_register_engine(self):
         """Test registering an engine."""
-        EngineRegistry.register("test_fetch", TrafilaturaEngine)
+        EngineRegistry.register("test_fetch", TrafilaturaFetcher)
         assert "test_fetch" in EngineRegistry.list_engines()
 
     def test_get_engine(self):
         """Test getting a registered engine."""
-        EngineRegistry.register("trafilatura", TrafilaturaEngine)
+        EngineRegistry.register("trafilatura", TrafilaturaFetcher)
         engine_class = EngineRegistry.get("trafilatura")
-        assert engine_class == TrafilaturaEngine
+        assert engine_class == TrafilaturaFetcher
 
     def test_get_unknown_engine_raises(self):
         """Test getting unknown engine raises KeyError."""
@@ -148,22 +148,22 @@ class TestEngineRegistry:
 
     def test_is_available(self):
         """Test checking engine availability."""
-        EngineRegistry.register("available_fetch", TrafilaturaEngine)
+        EngineRegistry.register("available_fetch", TrafilaturaFetcher)
         assert EngineRegistry.is_available("available_fetch") is True
         assert EngineRegistry.is_available("unavailable_fetch") is False
 
 
-class TestTrafilaturaEngine:
-    """Test TrafilaturaEngine."""
+class TestTrafilaturaFetcher:
+    """Test TrafilaturaFetcher."""
 
     def test_trafilatura_creation(self):
         """Test creating Trafilatura engine."""
-        engine = TrafilaturaEngine()
+        engine = TrafilaturaFetcher()
         assert engine is not None
 
     def test_trafilatura_fetch(self):
         """Test fetch with Trafilatura."""
-        engine = TrafilaturaEngine()
+        engine = TrafilaturaFetcher()
         result = engine.fetch("https://example.com")
         assert result.metadata["engine"] == "trafilatura"
 
@@ -238,7 +238,7 @@ class TestEngineIntegration:
     def test_all_fetch_engines_inherit_from_base(self):
         """Test all engines inherit from BaseFetcher."""
         engines = [
-            TrafilaturaEngine(),
+            TrafilaturaFetcher(),
             FirecrawlEngine(),
             TavilyEngine(),
             ApifyEngine(),
@@ -249,7 +249,7 @@ class TestEngineIntegration:
     def test_all_engines_return_fetch_result(self):
         """Test all engines return FetchResult."""
         engines = [
-            TrafilaturaEngine(),
+            TrafilaturaFetcher(),
             FirecrawlEngine(),
             TavilyEngine(),
             ApifyEngine(),

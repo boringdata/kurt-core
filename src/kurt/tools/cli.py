@@ -14,7 +14,7 @@ from kurt.tools.fetch.subcommands import (
 )
 from kurt.tools.map.core import MapperConfig
 from kurt.tools.map.engines.apify_engine import ApifyEngine
-from kurt.tools.map.engines.crawl import CrawlMapper
+from kurt.tools.map.engines.crawl import CrawlEngine
 from kurt.tools.map.subcommands import (
     MapDocSubcommand,
     MapPostsSubcommand,
@@ -76,7 +76,7 @@ def map_doc(url: str, depth: int, include_pattern: Optional[str], exclude_patter
 
         # Select mapper engine
         if engine == "crawl":
-            mapper = CrawlMapper(config)
+            mapper = CrawlEngine(config)
         elif engine == "apify":
             mapper = ApifyEngine(config)
         else:
