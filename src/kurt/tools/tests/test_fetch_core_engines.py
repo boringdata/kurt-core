@@ -1,7 +1,11 @@
 """Tests for fetch core and engines modules."""
 
+import os
+from unittest.mock import MagicMock, patch
+
 import pytest
 
+from kurt.tools.errors import AuthError
 from kurt.tools.fetch.core import BaseFetcher, FetchDocumentStorage, FetcherConfig, FetchResult
 from kurt.tools.fetch.engines import EngineRegistry
 from kurt.tools.fetch.engines.apify import ApifyEngine, ApifyFetcherConfig
@@ -9,6 +13,10 @@ from kurt.tools.fetch.engines.firecrawl import FirecrawlEngine
 from kurt.tools.fetch.engines.tavily import TavilyEngine
 from kurt.tools.fetch.engines.trafilatura import TrafilaturaFetcher
 from kurt.tools.fetch.models import DocType
+
+
+# Check if APIFY_API_KEY is available for integration tests
+HAS_APIFY_KEY = bool(os.environ.get("APIFY_API_KEY"))
 
 
 class TestFetcherConfig:
@@ -211,58 +219,112 @@ class TestTavilyEngine:
 class TestApifyEngine:
     """Test ApifyEngine."""
 
-    def test_apify_creation(self):
-        """Test creating Apify engine."""
-        engine = ApifyEngine()
-        assert engine is not None
+    def test_apify_requires_api_key(self):
+        """Test ApifyEngine raises AuthError when no API key provided."""
+        with patch.dict(os.environ, {}, clear=True):
+            # Ensure no env var fallback
+            if "APIFY_API_KEY" in os.environ:
+                del os.environ["APIFY_API_KEY"]
+            with pytest.raises(AuthError):
+                ApifyEngine()
 
     def test_apify_with_config(self):
-        """Test Apify with custom config."""
-        config = ApifyFetcherConfig(
-            api_key="test_key",
-            platform="twitter",
-        )
-        engine = ApifyEngine(config)
-        assert engine.config.api_key == "test_key"
+        """Test Apify with custom config and mocked client."""
+        with patch("kurt.tools.fetch.engines.apify.ApifyClient") as MockClient:
+            MockClient.return_value = MagicMock()
+            config = ApifyFetcherConfig(
+                api_key="test_key",
+                platform="twitter",
+            )
+            engine = ApifyEngine(config)
+            assert engine._config.api_key == "test_key"
 
-    def test_apify_fetch(self):
-        """Test fetch with Apify."""
+    @pytest.mark.skipif(not HAS_APIFY_KEY, reason="APIFY_API_KEY not set")
+    def test_apify_fetch_integration(self):
+        """Test fetch with Apify (requires API key)."""
         engine = ApifyEngine()
         result = engine.fetch("https://twitter.com/user")
         assert result.metadata["engine"] == "apify"
+
+    def test_apify_fetch_mocked(self):
+        """Test fetch with mocked Apify client."""
+        with patch("kurt.tools.fetch.engines.apify.ApifyClient") as MockClient:
+            mock_client = MagicMock()
+            MockClient.return_value = mock_client
+            # Mock the fetch method to return a list of ParsedItem-like objects
+            mock_item = MagicMock()
+            mock_item.url = "https://twitter.com/user"
+            mock_item.text = "Test content"
+            mock_item.title = "Test Title"
+            mock_item.author = "testuser"
+            mock_item.timestamp = "2024-01-01"
+            mock_client.fetch.return_value = [mock_item]
+
+            config = ApifyFetcherConfig(api_key="test_key", platform="twitter")
+            engine = ApifyEngine(config)
+            result = engine.fetch("https://twitter.com/user")
+
+            assert result.metadata["engine"] == "apify"
+            assert result.success is True
 
 
 class TestEngineIntegration:
     """Test engine integration."""
 
-    def test_all_fetch_engines_inherit_from_base(self):
-        """Test all engines inherit from BaseFetcher."""
+    def test_non_apify_engines_inherit_from_base(self):
+        """Test non-Apify engines inherit from BaseFetcher."""
         engines = [
             TrafilaturaFetcher(),
             FirecrawlEngine(),
             TavilyEngine(),
-            ApifyEngine(),
         ]
         for engine in engines:
             assert isinstance(engine, BaseFetcher)
 
-    def test_all_engines_return_fetch_result(self):
-        """Test all engines return FetchResult."""
+    def test_apify_engine_inherits_from_base(self):
+        """Test ApifyEngine inherits from BaseFetcher."""
+        with patch("kurt.tools.fetch.engines.apify.ApifyClient") as MockClient:
+            MockClient.return_value = MagicMock()
+            config = ApifyFetcherConfig(api_key="test_key")
+            engine = ApifyEngine(config)
+            assert isinstance(engine, BaseFetcher)
+
+    def test_non_apify_engines_return_fetch_result(self):
+        """Test non-Apify engines return FetchResult."""
         engines = [
             TrafilaturaFetcher(),
             FirecrawlEngine(),
             TavilyEngine(),
-            ApifyEngine(),
         ]
         for engine in engines:
             result = engine.fetch("https://example.com")
             assert isinstance(result, FetchResult)
 
+    def test_apify_engine_returns_fetch_result(self):
+        """Test ApifyEngine returns FetchResult."""
+        with patch("kurt.tools.fetch.engines.apify.ApifyClient") as MockClient:
+            mock_client = MagicMock()
+            MockClient.return_value = mock_client
+            mock_item = MagicMock()
+            mock_item.url = "https://example.com"
+            mock_item.text = "Content"
+            mock_item.title = "Title"
+            mock_item.author = None
+            mock_item.timestamp = None
+            mock_client.fetch.return_value = [mock_item]
+
+            config = ApifyFetcherConfig(api_key="test_key", platform="twitter")
+            engine = ApifyEngine(config)
+            result = engine.fetch("https://twitter.com/user")
+            assert isinstance(result, FetchResult)
+
     def test_multi_platform_apify_config(self):
         """Test Apify with different platforms."""
-        platforms = ["twitter", "linkedin", "instagram"]
+        platforms = ["twitter", "linkedin", "threads", "substack"]
 
-        for platform in platforms:
-            config = ApifyFetcherConfig(platform=platform)
-            engine = ApifyEngine(config)
-            assert engine.config.platform == platform
+        with patch("kurt.tools.fetch.engines.apify.ApifyClient") as MockClient:
+            MockClient.return_value = MagicMock()
+            for platform in platforms:
+                config = ApifyFetcherConfig(api_key="test_key", platform=platform)
+                engine = ApifyEngine(config)
+                assert engine._config.platform == platform

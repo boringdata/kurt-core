@@ -13,7 +13,7 @@ from kurt.tools.fetch.subcommands import (
     FetchProfileSubcommand,
 )
 from kurt.tools.map.core import MapperConfig
-from kurt.tools.map.engines.apify_engine import ApifyEngine
+from kurt.tools.map.engines.apify import ApifyEngine
 from kurt.tools.map.engines.crawl import CrawlEngine
 from kurt.tools.map.subcommands import (
     MapDocSubcommand,
@@ -184,7 +184,7 @@ def fetch_doc(urls: tuple, engine: str):
             from kurt.tools.fetch.engines.firecrawl import FirecrawlFetcher
             fetcher = FirecrawlFetcher(config)
         elif engine == "apify":
-            from kurt.tools.fetch.engines.apify_engine import ApifyFetcher
+            from kurt.tools.fetch.engines.apify import ApifyFetcher
             fetcher = ApifyFetcher(config)
         elif engine == "tavily":
             from kurt.tools.fetch.engines.tavily import TavilyFetcher
@@ -227,7 +227,7 @@ def fetch_profile(urls: tuple, platform: str, engine: str):
 
         # Select fetcher engine
         if engine == "apify":
-            from kurt.tools.fetch.engines.apify_engine import ApifyFetcher
+            from kurt.tools.fetch.engines.apify import ApifyFetcher
             fetcher = ApifyFetcher(config)
         else:
             click.echo(f"Error: Unknown engine '{engine}'", err=True)
@@ -267,7 +267,7 @@ def fetch_posts(urls: tuple, platform: str, engine: str):
 
         # Select fetcher engine
         if engine == "apify":
-            from kurt.tools.fetch.engines.apify_engine import ApifyFetcher
+            from kurt.tools.fetch.engines.apify import ApifyFetcher
             fetcher = ApifyFetcher(config)
         else:
             click.echo(f"Error: Unknown engine '{engine}'", err=True)

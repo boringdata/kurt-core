@@ -1,13 +1,24 @@
 """Tests for map engines module."""
 
+import os
+from unittest.mock import MagicMock, patch
+
 import pytest
 
+from kurt.tools.errors import AuthError
 from kurt.tools.map.engines import EngineRegistry
 from kurt.tools.map.engines.apify import ApifyEngine, ApifyMapperConfig
 from kurt.tools.map.engines.crawl import CrawlEngine
 from kurt.tools.map.engines.rss import RssEngine
 from kurt.tools.map.engines.sitemap import SitemapEngine
 from kurt.tools.map.models import DocType
+
+# Skip Apify tests if no API key is configured
+APIFY_API_KEY = os.getenv("APIFY_API_KEY")
+skip_without_apify = pytest.mark.skipif(
+    not APIFY_API_KEY,
+    reason="APIFY_API_KEY not set - skipping Apify integration tests",
+)
 
 
 class TestEngineRegistry:
@@ -98,51 +109,133 @@ class TestRssEngine:
 class TestApifyEngine:
     """Test ApifyEngine."""
 
-    def test_apify_engine_creation(self):
-        """Test creating Apify engine."""
-        engine = ApifyEngine()
-        assert engine is not None
+    def test_apify_engine_requires_api_key(self):
+        """Test that Apify engine requires an API key."""
+        # Clear env var to test error case
+        with patch.dict(os.environ, {}, clear=True):
+            if "APIFY_API_KEY" in os.environ:
+                del os.environ["APIFY_API_KEY"]
+            with pytest.raises(AuthError, match="Apify API key not configured"):
+                ApifyEngine()
 
-    def test_apify_engine_with_config(self):
-        """Test creating Apify engine with config."""
+    def test_apify_engine_with_config_validates_api_key(self):
+        """Test creating Apify engine with config validates API key."""
         config = ApifyMapperConfig(
             api_key="test_key",
             platform="twitter",
         )
+        # Should not raise - api_key is provided in config
         engine = ApifyEngine(config)
-        assert engine.config.api_key == "test_key"
-        assert engine.config.platform == "twitter"
+        assert engine._config.api_key == "test_key"
+        assert engine._config.platform == "twitter"
 
+    @skip_without_apify
+    def test_apify_engine_creation(self):
+        """Test creating Apify engine with real API key."""
+        engine = ApifyEngine()
+        assert engine is not None
+
+    @skip_without_apify
     def test_apify_engine_map_profile(self):
-        """Test mapping profiles with Apify."""
-        engine = ApifyEngine()
-        result = engine.map("twitter_search_query", DocType.PROFILE)
-        assert result.count == 0
-        assert result.urls == []
+        """Test mapping profiles with Apify (requires API key)."""
+        config = ApifyMapperConfig(platform="twitter")
+        engine = ApifyEngine(config)
+        result = engine.map("@testuser", DocType.PROFILE)
         assert result.metadata["engine"] == "apify"
+        assert result.metadata["platform"] == "twitter"
 
+    @skip_without_apify
     def test_apify_engine_map_posts(self):
-        """Test mapping posts with Apify."""
-        engine = ApifyEngine()
-        result = engine.map("twitter_user", DocType.POSTS)
-        assert result.count == 0
-        assert result.urls == []
+        """Test mapping posts with Apify (requires API key)."""
+        config = ApifyMapperConfig(platform="twitter")
+        engine = ApifyEngine(config)
+        result = engine.map("AI agents", DocType.POSTS)
         assert result.metadata["engine"] == "apify"
+        assert result.metadata["platform"] == "twitter"
+
+
+class TestApifyEngineMocked:
+    """Test ApifyEngine with mocked client."""
+
+    @patch("kurt.tools.map.engines.apify.ApifyClient")
+    def test_apify_engine_with_mock_client(self, mock_client_class):
+        """Test Apify engine with mocked client."""
+        # Setup mock
+        mock_client = MagicMock()
+        mock_client_class.return_value = mock_client
+
+        # Mock the fetch response
+        mock_item = MagicMock()
+        mock_item.url = "https://twitter.com/testuser"
+        mock_item.id = "testuser"
+        mock_client.fetch.return_value = [mock_item]
+
+        # Create engine with config
+        config = ApifyMapperConfig(api_key="fake_key", platform="twitter")
+        engine = ApifyEngine(config)
+
+        # Test mapping
+        result = engine.map("AI agents", DocType.POSTS)
+
+        assert result.count == 1
+        assert result.urls == ["https://twitter.com/testuser"]
+        assert result.metadata["engine"] == "apify"
+        assert result.metadata["platform"] == "twitter"
+
+    @patch("kurt.tools.map.engines.apify.ApifyClient")
+    def test_apify_engine_detect_platform_from_url(self, mock_client_class):
+        """Test platform detection from URL."""
+        mock_client = MagicMock()
+        mock_client_class.return_value = mock_client
+        mock_client.fetch.return_value = []
+
+        config = ApifyMapperConfig(api_key="fake_key")
+        engine = ApifyEngine(config)
+
+        # Test Twitter detection
+        assert engine._detect_platform("https://twitter.com/user") == "twitter"
+        assert engine._detect_platform("https://x.com/user") == "twitter"
+
+        # Test LinkedIn detection
+        assert engine._detect_platform("https://linkedin.com/in/user") == "linkedin"
+
+        # Test Substack detection
+        assert engine._detect_platform("https://newsletter.substack.com") == "substack"
+
+        # Test Threads detection
+        assert engine._detect_platform("https://threads.net/user") == "threads"
+
+        # Test @ prefix (assumes Twitter)
+        assert engine._detect_platform("@username") == "twitter"
+
+        # Test unknown
+        assert engine._detect_platform("random query") is None
 
 
 class TestEngineIntegration:
     """Test engine integration."""
 
-    def test_all_engines_inherit_from_base_mapper(self):
-        """Test all engines inherit from BaseMapper."""
+    def test_non_apify_engines_inherit_from_base_mapper(self):
+        """Test non-Apify engines inherit from BaseMapper."""
         from kurt.tools.map.core import BaseMapper
 
-        engines = [SitemapEngine(), CrawlEngine(), RssEngine(), ApifyEngine()]
+        engines = [SitemapEngine(), CrawlEngine(), RssEngine()]
         for engine in engines:
             assert isinstance(engine, BaseMapper)
 
+    @patch("kurt.tools.map.engines.apify.ApifyClient")
+    def test_apify_engine_inherits_from_base_mapper(self, mock_client_class):
+        """Test Apify engine inherits from BaseMapper."""
+        from kurt.tools.map.core import BaseMapper
+
+        mock_client_class.return_value = MagicMock()
+
+        config = ApifyMapperConfig(api_key="fake_key", platform="twitter")
+        engine = ApifyEngine(config)
+        assert isinstance(engine, BaseMapper)
+
     def test_all_engines_support_doc_types(self):
-        """Test all engines support different doc types."""
+        """Test all non-Apify engines support different doc types."""
         engines = [SitemapEngine(), CrawlEngine(), RssEngine()]
 
         for engine in engines:
@@ -150,11 +243,14 @@ class TestEngineIntegration:
                 result = engine.map("https://example.com", doc_type)
                 assert result is not None
 
-    def test_apify_with_multiple_platforms(self):
+    @patch("kurt.tools.map.engines.apify.ApifyClient")
+    def test_apify_with_multiple_platforms(self, mock_client_class):
         """Test Apify engine with different platforms."""
-        platforms = ["twitter", "linkedin", "instagram"]
+        mock_client_class.return_value = MagicMock()
+
+        platforms = ["twitter", "linkedin"]
 
         for platform in platforms:
-            config = ApifyMapperConfig(platform=platform)
+            config = ApifyMapperConfig(api_key="fake_key", platform=platform)
             engine = ApifyEngine(config)
-            assert engine.config.platform == platform
+            assert engine._config.platform == platform
