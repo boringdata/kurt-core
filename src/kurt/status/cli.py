@@ -135,7 +135,8 @@ def _auto_init_hook():
 
             subprocess.run(["dolt", "init"], check=True, capture_output=True)
 
-        db = DoltDB(dolt_path)
+        # DoltDB expects project root (dir containing .dolt), not .dolt itself
+        db = DoltDB(Path.cwd())
         init_observability_schema(db)
     except Exception:
         pass  # Dolt init is optional
@@ -168,7 +169,8 @@ def _init_database_hook():
 
             subprocess.run(["dolt", "init"], check=True, capture_output=True)
 
-        db = DoltDB(dolt_path)
+        # DoltDB expects project root (dir containing .dolt), not .dolt itself
+        db = DoltDB(Path.cwd())
         init_observability_schema(db)
     except Exception:
         pass

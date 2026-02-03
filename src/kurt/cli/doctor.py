@@ -622,7 +622,8 @@ def do_sync_branch(git_path: Path, dolt_path: Path) -> bool:
     from kurt.db.dolt import DoltDB
     from kurt.db.isolation.branch import sync_to_git
 
-    dolt_db = DoltDB(dolt_path)
+    # DoltDB expects project root (dir containing .dolt), not .dolt itself
+    dolt_db = DoltDB(dolt_path.parent)
     try:
         sync_to_git(git_path, dolt_db)
         return True

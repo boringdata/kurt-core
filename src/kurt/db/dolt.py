@@ -23,11 +23,11 @@ Usage:
     from kurt.db.dolt import DoltDB, init_observability_schema
 
     # Embedded mode (default) - uses dolt CLI
-    db = DoltDB("/path/to/.dolt")
+    db = DoltDB("/path/to/project")  # Project root, not .dolt directory
     result = db.query("SELECT * FROM users")
 
     # Server mode - connects to running dolt sql-server
-    db = DoltDB("/path/to/.dolt", mode="server", host="localhost", port=3306)
+    db = DoltDB("/path/to/project", mode="server", host="localhost", port=3306)
 
     # Initialize observability schema
     init_observability_schema(db)

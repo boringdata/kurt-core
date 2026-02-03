@@ -92,7 +92,7 @@ def init_observability_schema(db: "DoltDBConnection") -> list[str]:
     Example:
         from kurt.db.dolt import DoltDB, init_observability_schema
 
-        db = DoltDB(".dolt")
+        db = DoltDB(".")  # Project root, not .dolt directory
         tables = init_observability_schema(db)
         print(f"Initialized tables: {tables}")
     """
@@ -102,6 +102,20 @@ def init_observability_schema(db: "DoltDBConnection") -> list[str]:
         bind=engine,
         tables=[model.__table__ for model in models],
     )
+
+    # Commit the DDL changes via SQL server so embedded CLI mode can see the tables.
+    # Dolt's SQL server has a separate working set from the CLI, so we need to
+    # commit using Dolt's stored procedures through the server connection.
+    try:
+        from sqlalchemy import text
+
+        with engine.connect() as conn:
+            conn.execute(text("CALL dolt_add('-A')"))
+            conn.execute(text("CALL dolt_commit('-m', 'Initialize observability tables')"))
+            conn.commit()
+    except Exception as e:
+        # Commit may fail if nothing changed (tables already existed)
+        logger.debug(f"Dolt commit after table creation: {e}")
 
     return OBSERVABILITY_TABLES
 

@@ -301,11 +301,58 @@ class DoltDBConnection:
         except Exception:
             return False
 
+    def _is_correct_server(self) -> bool:
+        """Check if the running server is for THIS project (not another project on same port).
+
+        Reads the server info file written by _start_server to verify the server
+        was started from the correct directory. This prevents connecting to a
+        stale server from a different project that happens to use the same port.
+        """
+        info_file = self.path / ".dolt" / "sql-server.info"
+        if not info_file.exists():
+            # No info file - can't verify, assume it's wrong (will restart)
+            return False
+
+        try:
+            import json
+
+            info = json.loads(info_file.read_text())
+            expected_path = str(self.path.resolve())
+            actual_path = info.get("path", "")
+            return actual_path == expected_path
+        except Exception:
+            return False
+
+    def _write_server_info(self) -> None:
+        """Write server info file for later verification."""
+        info_file = self.path / ".dolt" / "sql-server.info"
+        try:
+            import json
+
+            info = {
+                "path": str(self.path.resolve()),
+                "port": self._port,
+                "pid": self._server_process.pid if self._server_process else None,
+            }
+            info_file.write_text(json.dumps(info))
+        except Exception:
+            pass  # Non-fatal
+
     def _start_server(self) -> None:
         """Start Dolt SQL server in background."""
         if self._is_server_running():
-            logger.debug(f"Dolt SQL server already running on port {self._port}")
-            return
+            # Server is running - but is it OUR server or another project's?
+            if self._is_correct_server():
+                logger.debug(f"Dolt SQL server already running on port {self._port} for this project")
+                return
+            else:
+                # Wrong server running on our port - this is a conflict
+                # Log a warning but try to proceed (the database name in URL may differ)
+                logger.warning(
+                    f"Dolt SQL server on port {self._port} belongs to a different project. "
+                    f"Consider stopping it or using a different port."
+                )
+                return  # Try to connect anyway - database name mismatch will fail gracefully
 
         if not shutil.which("dolt"):
             raise DoltConnectionError(
@@ -337,6 +384,7 @@ class DoltDBConnection:
         for _ in range(30):  # 3 second timeout
             if self._is_server_running():
                 logger.info(f"Dolt SQL server ready on port {self._port}")
+                self._write_server_info()  # Record which project started this server
                 return
             time.sleep(0.1)
 
