@@ -10,7 +10,13 @@ Doctor checks:
 3. branch_sync: Git branch matches Dolt branch
 4. no_uncommitted_dolt: Dolt status is clean
 5. remotes_configured: Both Git and Dolt have 'origin' remote
-6. no_stale_locks: No .git/kurt-hook.lock older than 30s
+6. sql_server: Dolt SQL server reachable (server mode required)
+7. no_stale_locks: No .git/kurt-hook.lock older than 30s
+
+SQL Runtime:
+Kurt uses server mode exclusively for SQL operations. The dolt sql-server
+is auto-started for local targets (localhost) if not running. Remote servers
+must be started and accessible independently.
 """
 
 from __future__ import annotations
@@ -349,6 +355,106 @@ def check_remotes_configured(git_path: Path, dolt_path: Path) -> CheckResult:
     )
 
 
+def _parse_server_config() -> tuple[str, int]:
+    """Parse server host and port from environment.
+
+    Respects both KURT_DOLT_SERVER_URL and KURT_DOLT_PORT overrides.
+    Returns (host, port) tuple with safe defaults on parse errors.
+    """
+    server_url = os.environ.get("KURT_DOLT_SERVER_URL", "localhost:3306")
+    parts = server_url.split(":")
+    host = parts[0]
+
+    # Default port from URL or 3306
+    port = 3306
+    if len(parts) > 1:
+        try:
+            port = int(parts[1])
+        except ValueError:
+            pass  # Use default on parse error
+
+    # KURT_DOLT_PORT overrides port from URL (consistent with database.py)
+    if os.environ.get("KURT_DOLT_PORT"):
+        try:
+            port = int(os.environ["KURT_DOLT_PORT"])
+        except ValueError:
+            pass  # Use URL port or default on parse error
+
+    return host, port
+
+
+def check_sql_server(dolt_path: Path) -> CheckResult:
+    """Check if Dolt SQL server is reachable.
+
+    Server mode is the only supported runtime for SQL operations.
+    For local servers (localhost), Kurt auto-starts the server if needed.
+    For remote servers, the server must be running and accessible.
+    """
+    import socket
+
+    # Get server configuration from environment
+    host, port = _parse_server_config()
+
+    # Check if this is a local server target
+    is_local = host in ("localhost", "127.0.0.1", "::1")
+
+    # Try to connect to the server
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(2)
+        result = sock.connect_ex((host if host != "localhost" else "127.0.0.1", port))
+        sock.close()
+        server_running = result == 0
+    except Exception:
+        server_running = False
+
+    if server_running:
+        # For local servers, verify it's the correct project's server
+        if is_local:
+            info_file = dolt_path / "sql-server.info"
+            if info_file.exists():
+                try:
+                    import json as json_mod
+
+                    info = json_mod.loads(info_file.read_text())
+                    expected_path = str(dolt_path.parent.resolve())
+                    actual_path = info.get("path", "")
+                    if actual_path != expected_path:
+                        return CheckResult(
+                            name="sql_server",
+                            status=CheckStatus.WARN,
+                            message=f"SQL server on port {port} belongs to different project",
+                            details=f"Expected: {expected_path}\nActual: {actual_path}\n"
+                            "Consider using a different port or stopping the other server.",
+                        )
+                except Exception:
+                    pass  # Can't verify, assume it's ok
+
+        return CheckResult(
+            name="sql_server",
+            status=CheckStatus.PASS,
+            message=f"Dolt SQL server reachable at {host}:{port}",
+        )
+
+    # Server not running
+    if is_local:
+        return CheckResult(
+            name="sql_server",
+            status=CheckStatus.FAIL,
+            message=f"Dolt SQL server not running on {host}:{port}",
+            details="Run 'kurt repair' to auto-start, or manually run:\n"
+            f"  cd {dolt_path.parent} && dolt sql-server --port {port}",
+        )
+    else:
+        return CheckResult(
+            name="sql_server",
+            status=CheckStatus.FAIL,
+            message=f"Cannot connect to remote Dolt SQL server at {host}:{port}",
+            details="Ensure the Dolt SQL server is running on the remote host.\n"
+            "Check network connectivity and firewall settings.",
+        )
+
+
 def check_no_stale_locks(git_path: Path) -> CheckResult:
     """Check for stale kurt-hook.lock files."""
     lock_dir = git_path / ".git" / "kurt-hook.lock"
@@ -420,12 +526,13 @@ def run_doctor(git_path: Path, dolt_path: Path) -> DoctorReport:
     checks.append(check_hooks_installed(git_path))
     checks.append(check_dolt_initialized(dolt_path))
 
-    # Only check branch sync if Dolt is initialized
+    # Only check branch sync and SQL server if Dolt is initialized
     dolt_init_result = checks[-1]
     if dolt_init_result.status == CheckStatus.PASS:
         checks.append(check_branch_sync(git_path, dolt_path))
         checks.append(check_no_uncommitted_dolt(dolt_path))
         checks.append(check_remotes_configured(git_path, dolt_path))
+        checks.append(check_sql_server(dolt_path))
 
     checks.append(check_no_stale_locks(git_path))
 
@@ -605,6 +712,26 @@ def get_repair_actions(report: DoctorReport) -> list[RepairAction]:
                     action="remove_lock",
                 )
             )
+        elif check.name == "sql_server" and check.status == CheckStatus.FAIL:
+            # Use consistent server config parsing
+            host, _ = _parse_server_config()
+            if host in ("localhost", "127.0.0.1", "::1"):
+                actions.append(
+                    RepairAction(
+                        check_name="sql_server",
+                        description="Start Dolt SQL server",
+                        action="start_server",
+                    )
+                )
+            else:
+                # Remote server - can't auto-start, but show it needs attention
+                actions.append(
+                    RepairAction(
+                        check_name="sql_server",
+                        description="Remote SQL server unreachable (manual start required)",
+                        action="notify_remote_server",
+                    )
+                )
 
     return actions
 
@@ -671,6 +798,92 @@ def do_remove_lock(git_path: Path) -> bool:
     return True
 
 
+def do_start_server(dolt_path: Path) -> bool:
+    """Start Dolt SQL server for local development.
+
+    Only works for local servers (localhost). For remote servers,
+    the server must be started manually on the remote host.
+    """
+    import shutil
+    import socket
+
+    # Use consistent server config parsing
+    host, port = _parse_server_config()
+
+    # Safety check: only start local servers
+    if host not in ("localhost", "127.0.0.1", "::1"):
+        console.print(f"[yellow]Cannot auto-start remote server at {host}[/yellow]")
+        return False
+
+    # Check if server is already running
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(1)
+        result = sock.connect_ex(("127.0.0.1", port))
+        sock.close()
+        if result == 0:
+            console.print(f"[yellow]Server already running on port {port}[/yellow]")
+            return True
+    except Exception:
+        pass
+
+    # Check dolt CLI is available
+    if not shutil.which("dolt"):
+        console.print("[red]Dolt CLI not installed[/red]")
+        return False
+
+    # Start the server
+    try:
+        subprocess.Popen(
+            ["dolt", "sql-server", "--port", str(port), "--host", "127.0.0.1"],
+            cwd=dolt_path.parent,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+
+        # Wait for server to be ready
+        import time
+
+        for _ in range(30):  # 3 second timeout
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(1)
+                result = sock.connect_ex(("127.0.0.1", port))
+                sock.close()
+                if result == 0:
+                    # Write server info file
+                    info_file = dolt_path / "sql-server.info"
+                    try:
+                        import json as json_mod
+
+                        info = {"path": str(dolt_path.parent.resolve()), "port": port}
+                        info_file.write_text(json_mod.dumps(info))
+                    except Exception:
+                        pass
+                    return True
+            except Exception:
+                pass
+            time.sleep(0.1)
+
+        return False
+    except Exception as e:
+        console.print(f"[red]Failed to start server: {e}[/red]")
+        return False
+
+
+def do_notify_remote_server() -> bool:
+    """Notify user that remote server needs manual attention.
+
+    This action doesn't fix anything - it just surfaces the issue
+    so the repair command doesn't falsely report "healthy".
+    """
+    host, port = _parse_server_config()
+    console.print(f"[yellow]Remote SQL server at {host}:{port} is unreachable.[/yellow]")
+    console.print("[yellow]Please start the server manually on the remote host.[/yellow]")
+    return False  # Return False so it shows as FAILED in repair output
+
+
 # =============================================================================
 # Repair Command
 # =============================================================================
@@ -692,6 +905,11 @@ def repair_cmd(dry_run: bool, yes: bool, check_name: str | None, force: bool):
     - branch_sync=fail: Sync Dolt branch to match Git
     - no_uncommitted_dolt=warn: Commit pending Dolt changes
     - no_stale_locks=fail: Remove stale lock files
+    - sql_server=fail: Start Dolt SQL server (local only)
+
+    SQL Server Repair:
+      For local servers (localhost), Kurt will auto-start the dolt sql-server.
+      For remote servers, you must start the server manually on the remote host.
 
     Use --dry-run to preview repairs without making changes.
 
@@ -699,6 +917,7 @@ def repair_cmd(dry_run: bool, yes: bool, check_name: str | None, force: bool):
         kurt repair                  # Fix all issues
         kurt repair --dry-run        # Preview repairs
         kurt repair --check=hooks_installed  # Fix specific check
+        kurt repair --check=sql_server       # Start local SQL server
         kurt repair --yes            # Skip confirmations
     """
     try:
@@ -763,6 +982,10 @@ def repair_cmd(dry_run: bool, yes: bool, check_name: str | None, force: bool):
                 success = do_commit_dolt(dolt_path)
             elif action.action == "remove_lock":
                 success = do_remove_lock(git_path)
+            elif action.action == "start_server":
+                success = do_start_server(dolt_path)
+            elif action.action == "notify_remote_server":
+                success = do_notify_remote_server()
 
             if success:
                 console.print("[green]OK[/green]")
