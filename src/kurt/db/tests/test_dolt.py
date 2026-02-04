@@ -226,22 +226,7 @@ class TestDoltTransaction:
 
 
 class TestDoltDBInit:
-    """Tests for DoltDB initialization."""
-
-    def test_init_embedded_mode_with_dolt(self, dolt_available: bool):
-        """Test embedded mode initialization when dolt is available."""
-        if not dolt_available:
-            pytest.skip("Dolt CLI not installed")
-
-        # Should not raise
-        db = DoltDB("/tmp/test", mode="embedded")
-        assert db.mode == "embedded"
-
-    def test_init_embedded_mode_without_dolt(self):
-        """Test embedded mode raises when dolt is not available."""
-        with patch("shutil.which", return_value=None):
-            with pytest.raises(DoltConnectionError, match="Dolt CLI not found"):
-                DoltDB("/tmp/test", mode="embedded")
+    """Tests for DoltDB initialization (server-only mode)."""
 
     def test_init_server_mode_no_dolt_check(self):
         """Test server mode doesn't check for dolt CLI."""
@@ -250,21 +235,20 @@ class TestDoltDBInit:
             db = DoltDB("/tmp/test", mode="server")
             assert db.mode == "server"
 
-    def test_init_default_settings(self, dolt_available: bool):
-        """Test default initialization settings."""
-        if not dolt_available:
-            pytest.skip("Dolt CLI not installed")
+    def test_init_default_settings(self):
+        """Test default initialization settings (server mode)."""
+        with patch("shutil.which", return_value=None):
+            # Server mode is default and doesn't require dolt CLI
+            db = DoltDB("/tmp/test_repo")
 
-        db = DoltDB("/tmp/test_repo")
-
-        assert db.path == Path("/tmp/test_repo").resolve()
-        assert db.mode == "embedded"
-        assert db._host == "localhost"
-        assert db._port == 3306
-        assert db._user == "root"
-        assert db._password == ""
-        assert db._database == "test_repo"
-        assert db._pool_size == 5
+            assert db.path == Path("/tmp/test_repo").resolve()
+            assert db.mode == "server"
+            assert db._host == "localhost"
+            assert db._port == 3306
+            assert db._user == "root"
+            assert db._password == ""
+            assert db._database == "test_repo"
+            assert db._pool_size == 5
 
     def test_init_custom_server_settings(self):
         """Test custom server mode settings."""
