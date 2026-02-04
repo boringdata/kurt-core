@@ -496,6 +496,17 @@ def agent_execution_step(
     settings_path, tool_log_path = _create_tool_tracking_settings()
 
     # Set up environment for subprocess
+    # Load .env from project root to ensure API keys are available
+    project_root = Path(_get_project_root())
+    env_file = project_root / ".env"
+    if env_file.exists():
+        from dotenv import dotenv_values
+        env_vars = dotenv_values(env_file)
+        # Merge into os.environ so subprocess inherits them
+        for key, value in env_vars.items():
+            if value is not None:
+                os.environ[key] = value
+
     env = os.environ.copy()
     env["KURT_TOOL_LOG_FILE"] = tool_log_path  # Legacy, kept for backward compat
     # Pass workflow ID for tool tracking and nested workflow support
@@ -530,6 +541,9 @@ def agent_execution_step(
         model,
         "--settings",
         settings_path,  # Use custom settings with tool tracking hook
+        # Use system prompt to clearly define the task
+        "--system-prompt",
+        f"You are executing a workflow task. Focus ONLY on the task in the user message. Ignore any other project instructions.",
     ]
 
     # Add allowed tools if specified
