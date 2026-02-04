@@ -1317,6 +1317,204 @@ Context about the task.
 | Standard | 15-25 | 150,000 | 600 |
 | Complex | 30-50 | 300,000 | 1800 |
 
+### Workflow Pages (Integrated Editor Views)
+
+Workflow pages define interactive views that open from workflow steps in the web UI.
+All media panels follow the **agent-as-editor model**: the UI is a viewer with
+lightweight intent-capture controls. Editing requests are dispatched to the Claude
+Code agent, which performs the actual file modifications (editing Motion Canvas
+`.tsx` scenes, running `ffmpeg` commands, using ImageMagick/Pillow for images).
+
+Pages are defined in the `pages` array in workflow frontmatter (YAML/TOML) and
+displayed as clickable buttons on workflow steps.
+
+#### Page Types
+
+| Type | Component | Use Case |
+|------|-----------|----------|
+| `data-table` | Editable spreadsheet | Seed data, extracted results, configuration |
+| `image` | Image viewer + intent toolbar | Generated images, charts, screenshots |
+| `motion-canvas` | Rendered MC output viewer + intent toolbar | Animated graphics, data visualizations |
+| `video` | Video player with trim/cut + intent toolbar | Individual video files |
+| `video-sequence` | Multi-scene composition timeline | Composed videos (MC scenes + clips) |
+
+#### Architecture: Agent-as-Editor
+
+```
+User clicks "Add Text" --> UI captures intent (what, where) -->
+dispatches to agent --> agent edits .tsx / runs ffmpeg / uses Pillow -->
+file changes --> panel polls mtime --> auto-refresh preview
+```
+
+Panels never modify files directly. The **IntentToolbar** (shared across image,
+motion-canvas, video, and video-sequence panels) captures structured intents:
+
+| Control | Intent Dispatched |
+|---------|-------------------|
+| Add Text | `{ action: "add_text", text, position, style: { font, size, color } }` |
+| Add Shape | `{ action: "add_shape", shape_id, position, size, animated }` |
+| Move | `{ action: "move_element", element_id, new_position }` |
+| Resize | `{ action: "resize_element", element_id, new_size }` |
+| Delete | `{ action: "delete_element", element_id }` |
+
+Intents are converted to natural language prompts server-side and dispatched to
+the agent via `POST /api/workflows/{id}/pages/{page_id}/edit`.
+
+#### Video Composition with Motion Canvas
+
+The `video-sequence` page type uses Motion Canvas as the composition layer.
+Multiple scenes (MC animations + video clips) compose into a single video:
+
+```yaml
+pages:
+  - id: final-video
+    type: video-sequence
+    title: Final Presentation
+    step: compose_video
+    output_path: output/final.mp4
+    resolution: [1920, 1080]
+    scenes:
+      - id: intro
+        type: motion-canvas
+        title: Animated Intro
+        scene_path: scenes/intro.tsx
+        rendered_path: output/intro.mp4
+      - id: interview
+        type: clip
+        title: Interview Footage
+        source_path: footage/interview.mp4
+        trim_start: 5.0
+        trim_end: 30.0
+```
+
+#### Defining Pages in Markdown
+
+```yaml
+---
+name: topic-research
+title: Topic Research Workflow
+agent:
+  model: claude-sonnet-4-20250514
+  max_turns: 25
+
+pages:
+  - id: seed-topics
+    type: data-table
+    title: Seed Topics
+    step: research_topics
+    seed: true
+    data_path: data/topics.csv
+    columns:
+      - name: topic
+        label: Topic
+        type: text
+        required: true
+      - name: priority
+        label: Priority
+        type: select
+        options: [high, medium, low]
+
+  - id: output-chart
+    type: image
+    title: Research Chart
+    step: generate_chart
+    image_path: output/research-chart.png
+    editable: true
+    assets_dir: assets
+
+  - id: summary-animation
+    type: motion-canvas
+    title: Summary Animation
+    step: create_animation
+    scene_path: scenes/summary.tsx
+    output_path: output/summary.mp4
+    duration: 10
+    fps: 30
+
+  - id: presentation-video
+    type: video
+    title: Presentation
+    step: render_video
+    video_path: output/presentation.mp4
+    trim: true
+    max_duration: 120
+---
+```
+
+#### Seed Data Tables
+
+When a page has `seed: true`, it acts as input data for the workflow:
+
+1. User opens the seed data table from the workflow step
+2. Adds/edits rows (e.g., adding new research topics)
+3. Clicks **Save** to persist changes to `data_path`
+4. UI prompts: "Seed data updated. Run the workflow with new data?"
+5. Clicking **Run Workflow** starts a new workflow execution with the updated data
+
+#### Column Types
+
+| Type | Input | Description |
+|------|-------|-------------|
+| `text` | Text input | Default, free-form text |
+| `number` | Number input | Numeric values |
+| `boolean` | Checkbox | True/false toggle |
+| `url` | Text input | URL values |
+| `date` | Text input | Date strings |
+| `select` | Dropdown | Choose from `options` list |
+
+#### File Refresh After Agent Edits
+
+All media panels use the `useFileWatch` hook which polls the page data endpoint
+every 2 seconds. When the file's `mtime` changes, the panel auto-refreshes the
+preview. Cache-busting is handled via `?v=<timestamp>` query parameters on
+file URLs.
+
+#### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/workflows/{id}/pages` | GET | List pages for a workflow |
+| `/api/workflows/{id}/pages/{page_id}/data` | GET | Get page data (table rows, file metadata with mtime) |
+| `/api/workflows/{id}/pages/{page_id}/data` | PUT | Update data-table rows |
+| `/api/workflows/{id}/pages/{page_id}/run` | POST | Re-run workflow from seed data |
+| `/api/workflows/{id}/pages/{page_id}/edit` | POST | Dispatch editing intents to agent |
+| `/api/file/raw?path=<path>` | GET | Serve raw media files (video, image, font, SVG) |
+| `/api/assets/shapes` | GET | Get SVG shape library manifest |
+| `/api/assets/fonts` | GET | Get custom font library manifest |
+
+#### Custom SVG Shapes
+
+Store SVG shapes in `assets/shapes/` with a `manifest.json`:
+
+```json
+{
+  "shapes": [
+    {
+      "id": "arrow-expand",
+      "category": "arrows",
+      "title": "Expanding Arrow",
+      "svg_path": "arrows/arrow-expand.svg",
+      "animated": true
+    }
+  ]
+}
+```
+
+#### Custom Fonts
+
+Store fonts in `assets/fonts/` with a `manifest.json`:
+
+```json
+{
+  "fonts": [
+    { "id": "montserrat-bold", "family": "Montserrat", "weight": 700, "path": "Montserrat-Bold.woff2" }
+  ]
+}
+```
+
+Panels load fonts dynamically via the Font Loading API. The agent references
+fonts by family name in MC scenes or by file path in ffmpeg/ImageMagick commands.
+
 ---
 
 ## Workflow Observability API

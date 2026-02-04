@@ -37,7 +37,7 @@ const apiUrl = (path) => `${apiBase}${path}`
 // Debounce delay for search input (in milliseconds)
 const SEARCH_DEBOUNCE_MS = 300
 
-export default function WorkflowList({ onAttachWorkflow, onOpenWorkflowDetail }) {
+export default function WorkflowList({ onAttachWorkflow, onOpenWorkflowDetail, onOpenWorkflowPage }) {
   const [workflows, setWorkflows] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [statusFilter, setStatusFilter] = useState('')
@@ -314,6 +314,7 @@ export default function WorkflowList({ onAttachWorkflow, onOpenWorkflowDetail })
                 onCancel={() => handleCancel(workflow.workflow_uuid)}
                 onRetry={() => handleRetry(workflow.workflow_uuid)}
                 onOpenDetail={() => onOpenWorkflowDetail?.(workflow.workflow_uuid)}
+                onOpenPage={(page) => onOpenWorkflowPage?.(workflow.workflow_uuid, page)}
                 getStatusBadgeClass={getStatusBadgeClass}
               />
             ))}
