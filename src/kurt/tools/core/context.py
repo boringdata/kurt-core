@@ -87,19 +87,19 @@ class StorageSettings(BaseModel):
 
 
 class DoltSettings(BaseModel):
-    """Dolt database configuration."""
+    """Dolt database configuration.
 
-    mode: Literal["embedded", "server"] = Field(
-        default="embedded",
-        description="Dolt mode: 'embedded' (CLI) or 'server' (MySQL)",
-    )
+    Server mode is the only supported runtime for SQL operations.
+    The dolt sql-server is auto-started for local targets if not running.
+    """
+
     path: str = Field(
         default=".dolt",
         description="Path to Dolt repository",
     )
     server_url: str = Field(
         default="localhost:3306",
-        description="Dolt server URL (for server mode)",
+        description="Dolt server URL (host:port)",
     )
     user: str = Field(
         default="root",
@@ -144,8 +144,7 @@ ENV_MAPPING = {
     "KURT_FETCH_TIMEOUT": ("fetch", "timeout"),
     # Storage settings
     "KURT_CONTENT_DIR": ("storage", "content_dir"),
-    # Dolt settings
-    "KURT_DOLT_MODE": ("dolt", "mode"),
+    # Dolt settings (server mode only - no mode override)
     "KURT_DOLT_PATH": ("dolt", "path"),
     "KURT_DOLT_SERVER_URL": ("dolt", "server_url"),
 }
@@ -417,6 +416,9 @@ def load_tool_context(
 def _init_dolt_db(dolt_settings: DoltSettings, project_dir: Path) -> "DoltDB | None":
     """Initialize DoltDB from settings.
 
+    Server mode is the only supported runtime. The dolt sql-server is
+    auto-started for local targets if not already running.
+
     Args:
         dolt_settings: Dolt configuration.
         project_dir: Project directory for resolving relative paths.
@@ -439,10 +441,10 @@ def _init_dolt_db(dolt_settings: DoltSettings, project_dir: Path) -> "DoltDB | N
         else:
             repo_path = dolt_path
 
-        # Parse server URL if in server mode
+        # Parse server URL
         host = "localhost"
         port = 3306
-        if dolt_settings.mode == "server" and dolt_settings.server_url:
+        if dolt_settings.server_url:
             parts = dolt_settings.server_url.split(":")
             host = parts[0]
             if len(parts) > 1:
@@ -453,7 +455,7 @@ def _init_dolt_db(dolt_settings: DoltSettings, project_dir: Path) -> "DoltDB | N
 
         return DoltDB(
             path=repo_path,
-            mode=dolt_settings.mode,
+            mode="server",
             host=host,
             port=port,
             user=dolt_settings.user,
@@ -529,12 +531,6 @@ def validate_settings(settings: Settings) -> list[str]:
         issues.append(
             "FIRECRAWL_API_KEY is required when using firecrawl fetch engine. "
             "Set it in environment or kurt.toml [fetch] section."
-        )
-
-    # Validate dolt mode
-    if settings.dolt.mode not in ("embedded", "server"):
-        issues.append(
-            f"Invalid dolt.mode: {settings.dolt.mode}. Must be 'embedded' or 'server'."
         )
 
     return issues

@@ -238,7 +238,7 @@ class DoltDBConnection:
     def __init__(
         self,
         path: str | Path,
-        mode: Literal["embedded", "server"] = "server",
+        mode: Literal["server"] = "server",
         host: str = "localhost",
         port: int = 3306,
         user: str = "root",
@@ -265,10 +265,6 @@ class DoltDBConnection:
         self._server_process: Optional[subprocess.Popen] = None
         self._engine: Optional["Engine"] = None
         self._async_engine: Optional[AsyncEngine] = None
-
-        # Verify dolt is available for embedded mode
-        if mode == "embedded":
-            self._verify_dolt_cli()
 
     def _verify_dolt_cli(self) -> None:
         """Verify dolt CLI is available."""
