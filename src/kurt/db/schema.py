@@ -29,7 +29,7 @@ class DoltDBProtocol(Protocol):
     """Protocol defining the DoltDB client interface.
 
     This protocol allows schema functions to work with any implementation
-    that provides the required methods (embedded or server mode).
+    that provides the required methods via MySQL protocol.
     """
 
     def execute(self, sql: str, params: list | None = None) -> int:
@@ -80,8 +80,8 @@ def init_observability_schema(db: "DoltDBConnection") -> list[str]:
 
     Uses SQLModel.metadata.create_all() to create tables from model
     definitions, ensuring the schema always matches the SQLModel source
-    of truth. In embedded mode, _get_engine() will auto-start the Dolt
-    SQL server if needed.
+    of truth. The Dolt SQL server is auto-started for local targets
+    if not already running.
 
     Args:
         db: DoltDB client instance.
@@ -103,9 +103,9 @@ def init_observability_schema(db: "DoltDBConnection") -> list[str]:
         tables=[model.__table__ for model in models],
     )
 
-    # Commit the DDL changes via SQL server so embedded CLI mode can see the tables.
-    # Dolt's SQL server has a separate working set from the CLI, so we need to
-    # commit using Dolt's stored procedures through the server connection.
+    # Commit the DDL changes via SQL server so Dolt CLI can see the tables.
+    # The SQL server has a separate working set from the CLI, so we commit
+    # using Dolt's stored procedures through the server connection.
     try:
         from sqlalchemy import text
 

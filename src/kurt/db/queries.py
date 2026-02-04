@@ -8,7 +8,7 @@ This module contains query execution logic for DoltDB:
 - Subscription (polling-based) for streaming events
 
 Server mode is the only supported runtime for SQL operations.
-Embedded CLI mode code paths are deprecated and will be removed.
+The dolt sql-server is auto-started for local targets if not running.
 """
 
 from __future__ import annotations
@@ -30,10 +30,11 @@ class DoltDBQueries:
     """Mixin providing query methods for DoltDB.
 
     Server mode (dolt sql-server) is the only supported runtime.
-    Embedded mode code paths are deprecated and will be removed.
+    SQL operations use MySQL protocol via connection pool.
+    Dolt CLI is used only for version control operations (commit, branch, etc).
 
     This mixin expects the host class to provide:
-    - self.mode: "server" (embedded is deprecated)
+    - self.mode: "server" (the only supported mode)
     - self._get_pool(): ConnectionPool instance
     - self._run_cli(args, check): Run dolt CLI command (for version control only)
     """
