@@ -274,12 +274,24 @@ class DoltDBConnection:
             )
 
     def _is_local_server_target(self) -> bool:
-        """Whether this client should manage a local dolt sql-server."""
-        return self.mode == "server" and self._host in {"localhost", "127.0.0.1", "::1"}
+        """Whether this client targets a local dolt sql-server that we can manage.
+
+        Returns True only for localhost targets where we can:
+        - Auto-start the server if not running
+        - Write server info files for project verification
+        - Manage server lifecycle
+
+        Remote hosts are never auto-started or managed - they must be running.
+        """
+        return self._host in {"localhost", "127.0.0.1", "::1"}
 
     def _get_pool(self) -> ConnectionPool:
-        """Get or create connection pool for dolt sql-server."""
-        if self.mode == "server" and self._auto_start and self._is_local_server_target():
+        """Get or create connection pool for dolt sql-server.
+
+        Auto-starts the server for local targets if not running.
+        Remote servers must be running - we never try to start them.
+        """
+        if self._auto_start and self._is_local_server_target():
             if not self._is_server_running():
                 self._start_server()
 
@@ -299,7 +311,10 @@ class DoltDBConnection:
     # =========================================================================
 
     def _is_server_running(self) -> bool:
-        """Check if Dolt SQL server is running on configured port."""
+        """Check if Dolt SQL server is running on configured host:port.
+
+        Works for both local and remote servers by attempting a socket connection.
+        """
         try:
             import socket
 
@@ -312,12 +327,18 @@ class DoltDBConnection:
             return False
 
     def _is_correct_server(self) -> bool:
-        """Check if the running server is for THIS project (not another project on same port).
+        """Check if the running LOCAL server is for THIS project.
+
+        Only meaningful for local servers where we can read the server info file.
+        For remote servers, we always return False (can't verify).
 
         Reads the server info file written by _start_server to verify the server
         was started from the correct directory. This prevents connecting to a
         stale server from a different project that happens to use the same port.
         """
+        # Can only verify local servers via info file
+        if not self._is_local_server_target():
+            return False
         info_file = self.path / ".dolt" / "sql-server.info"
         if not info_file.exists():
             # No info file - can't verify, assume it's wrong (will restart)
@@ -334,7 +355,14 @@ class DoltDBConnection:
             return False
 
     def _write_server_info(self) -> None:
-        """Write server info file for later verification."""
+        """Write server info file for later verification.
+
+        Only writes for local servers where we manage the .dolt directory.
+        """
+        # Safety: only write info for local servers
+        if not self._is_local_server_target():
+            return
+
         info_file = self.path / ".dolt" / "sql-server.info"
         try:
             import json
@@ -349,7 +377,19 @@ class DoltDBConnection:
             pass  # Non-fatal
 
     def _start_server(self) -> None:
-        """Start Dolt SQL server in background."""
+        """Start Dolt SQL server in background.
+
+        Only manages local servers (localhost/127.0.0.1/::1).
+        Should never be called for remote hosts - callers must check _is_local_server_target().
+        """
+        # Defense in depth: never try to start a remote server
+        if not self._is_local_server_target():
+            logger.warning(
+                f"Refusing to auto-start server on remote host {self._host}. "
+                f"Ensure the Dolt SQL server is running on the remote host."
+            )
+            return
+
         if self._is_server_running():
             # Server is running - but is it OUR server or another project's?
             if self._is_correct_server():
