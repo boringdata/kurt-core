@@ -1,18 +1,18 @@
 """
-Dolt database client with embedded and server mode support.
+Dolt database client with server mode support.
 
 Unified DoltDB class providing:
-- Git-like version control operations (branching, commits)
-- SQLModel ORM access (sessions, transactions)
+- Git-like version control operations (branching, commits) via Dolt CLI
+- SQLModel ORM access (sessions, transactions) via dolt sql-server
 - Server lifecycle management (start/stop dolt sql-server)
-- Both embedded CLI mode and MySQL protocol server mode
+- MySQL protocol server mode for all SQL operations
 
 Dolt is a SQL database with Git-like version control features.
 This module provides:
 
 1. DoltDB class - unified interface for database operations:
-   - Embedded mode: Uses `dolt sql` CLI for single-process operation
-   - Server mode: Connects via MySQL protocol for concurrent access
+   - Server mode (default): Connects via MySQL protocol for concurrent access
+   - Dolt CLI: Used only for version control operations (branch, commit, push, pull)
 
 2. Schema initialization for workflow observability:
    - workflow_runs: One row per workflow execution
@@ -22,17 +22,17 @@ This module provides:
 Usage:
     from kurt.db.dolt import DoltDB, init_observability_schema
 
-    # Embedded mode (default) - uses dolt CLI
+    # Server mode (default) - connects to dolt sql-server
     db = DoltDB("/path/to/project")  # Project root, not .dolt directory
     result = db.query("SELECT * FROM users")
 
-    # Server mode - connects to running dolt sql-server
+    # Explicit server mode with custom settings
     db = DoltDB("/path/to/project", mode="server", host="localhost", port=3306)
 
     # Initialize observability schema
     init_observability_schema(db)
 
-    # Branch operations
+    # Branch operations (use Dolt CLI)
     db.branch_create("feature/experiment")
     db.branch_switch("feature/experiment")
     current = db.branch_current()
@@ -77,7 +77,7 @@ from kurt.db.schema import (
 
 class DoltDB(DoltDBQueries, DoltDBConnection):
     """
-    Dolt database client supporting embedded and server modes.
+    Dolt database client using server mode for SQL operations.
 
     Composed from:
     - DoltDBConnection (connection.py): Connection pool, server lifecycle,
@@ -86,31 +86,32 @@ class DoltDB(DoltDBQueries, DoltDBConnection):
     - DoltDBQueries (queries.py): Query execution (query, execute, query_one),
       parameter interpolation, subscription/polling
 
-    Embedded mode (default):
-        Uses `dolt sql` CLI for operations. Best for single-process access.
-        No server required, but writes lock the database.
+    Server mode (default):
+        Connects to a `dolt sql-server` via MySQL protocol.
+        Best for concurrent access and reduces state drift risk.
+        The server is auto-started for local targets if not running.
 
-    Server mode:
-        Connects to a running `dolt sql-server` via MySQL protocol.
-        Best for concurrent access from multiple processes.
+    Dolt CLI:
+        Used only for version control operations (branch, commit, push, pull).
+        Not used for SQL queries.
 
     Args:
         path: Path to the Dolt repository (contains .dolt directory)
-        mode: "embedded" (CLI) or "server" (MySQL protocol)
-        host: Server host (server mode only, default: localhost)
-        port: Server port (server mode only, default: 3306)
-        user: Server user (server mode only, default: root)
-        password: Server password (server mode only, default: "")
-        database: Database name (server mode only, default: repo name)
-        pool_size: Connection pool size (server mode only, default: 5)
+        mode: "server" (MySQL protocol) - server mode is the default and recommended
+        host: Server host (default: localhost)
+        port: Server port (default: 3306)
+        user: Server user (default: root)
+        password: Server password (default: "")
+        database: Database name (default: repo name)
+        pool_size: Connection pool size (default: 5)
 
     Example:
-        # Embedded mode
+        # Server mode (default)
         db = DoltDB("/path/to/repo")
         db.query("SELECT * FROM users")
 
-        # Server mode
-        db = DoltDB("/path/to/repo", mode="server")
+        # Explicit server mode with custom settings
+        db = DoltDB("/path/to/repo", mode="server", port=3307)
         db.query("SELECT * FROM users")
     """
 

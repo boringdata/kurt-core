@@ -4,9 +4,11 @@ Dolt database query methods.
 This module contains query execution logic for DoltDB:
 - query() and query_one() for SELECT operations
 - execute() for INSERT/UPDATE/DELETE/DDL operations
-- Parameter interpolation for embedded CLI mode
-- Server mode query execution via MySQL protocol
+- Query execution via MySQL protocol (dolt sql-server)
 - Subscription (polling-based) for streaming events
+
+Server mode is the only supported runtime for SQL operations.
+Embedded CLI mode code paths are deprecated and will be removed.
 """
 
 from __future__ import annotations
@@ -27,10 +29,13 @@ logger = logging.getLogger(__name__)
 class DoltDBQueries:
     """Mixin providing query methods for DoltDB.
 
+    Server mode (dolt sql-server) is the only supported runtime.
+    Embedded mode code paths are deprecated and will be removed.
+
     This mixin expects the host class to provide:
-    - self.mode: "embedded" or "server"
+    - self.mode: "server" (embedded is deprecated)
     - self._get_pool(): ConnectionPool instance
-    - self._run_cli(args, check): Run dolt CLI command
+    - self._run_cli(args, check): Run dolt CLI command (for version control only)
     """
 
     # =========================================================================

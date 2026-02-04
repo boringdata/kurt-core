@@ -2,12 +2,15 @@
 DoltDB connection management, server lifecycle, and session support.
 
 This module contains the core DoltDB class infrastructure:
-- ConnectionPool for server mode MySQL connections
+- ConnectionPool for MySQL protocol connections to dolt sql-server
 - Server lifecycle management (start/stop dolt sql-server)
 - SQLAlchemy engine and session management (sync and async)
 - Repository management (init, exists)
 - Transaction support
-- CLI helpers
+- CLI helpers (for version control operations only)
+
+Server mode is the only supported runtime for SQL operations.
+Dolt CLI is used only for version control operations (branch, commit, push, pull).
 
 The DoltDB class defined here provides all connection and session
 functionality. Query methods are mixed in from queries.py.
@@ -52,7 +55,7 @@ logger = logging.getLogger(__name__)
 
 
 class ConnectionPool:
-    """Simple connection pool for server mode."""
+    """Simple connection pool for MySQL protocol connections to dolt sql-server."""
 
     def __init__(
         self,
@@ -218,21 +221,24 @@ class DoltDBConnection:
     This class contains all non-query functionality of DoltDB.
     Query methods are provided by DoltDBQueries mixin (see queries.py).
 
+    Server mode is the default and recommended runtime. The server is
+    auto-started for local targets if not already running.
+
     Args:
         path: Path to the Dolt repository (contains .dolt directory)
-        mode: "embedded" (CLI) or "server" (MySQL protocol)
-        host: Server host (server mode only, default: localhost)
-        port: Server port (server mode only, default: 3306)
-        user: Server user (server mode only, default: root)
-        password: Server password (server mode only, default: "")
-        database: Database name (server mode only, default: repo name)
-        pool_size: Connection pool size (server mode only, default: 5)
+        mode: "server" (MySQL protocol) - server mode is the default
+        host: Server host (default: localhost)
+        port: Server port (default: 3306)
+        user: Server user (default: root)
+        password: Server password (default: "")
+        database: Database name (default: repo name)
+        pool_size: Connection pool size (default: 5)
     """
 
     def __init__(
         self,
         path: str | Path,
-        mode: Literal["embedded", "server"] = "embedded",
+        mode: Literal["embedded", "server"] = "server",
         host: str = "localhost",
         port: int = 3306,
         user: str = "root",
@@ -271,8 +277,16 @@ class DoltDBConnection:
                 "Dolt CLI not found. Install from https://docs.dolthub.com/introduction/installation"
             )
 
+    def _is_local_server_target(self) -> bool:
+        """Whether this client should manage a local dolt sql-server."""
+        return self.mode == "server" and self._host in {"localhost", "127.0.0.1", "::1"}
+
     def _get_pool(self) -> ConnectionPool:
-        """Get or create connection pool for server mode."""
+        """Get or create connection pool for dolt sql-server."""
+        if self.mode == "server" and self._auto_start and self._is_local_server_target():
+            if not self._is_server_running():
+                self._start_server()
+
         if self._pool is None:
             self._pool = ConnectionPool(
                 host=self._host,
@@ -411,7 +425,7 @@ class DoltDBConnection:
     def _get_engine(self) -> "Engine":
         """Get or create SQLAlchemy engine."""
         if self._engine is None:
-            if self._auto_start and not self._is_server_running():
+            if self._auto_start and self._is_local_server_target() and not self._is_server_running():
                 self._start_server()
 
             self._engine = create_engine(
@@ -423,7 +437,7 @@ class DoltDBConnection:
 
     def init_database(self) -> None:
         """Initialize the database and create all SQLModel tables."""
-        if self._auto_start:
+        if self._auto_start and self._is_local_server_target():
             if not self.exists():
                 self.init()
             self._start_server()
@@ -470,7 +484,7 @@ class DoltDBConnection:
     def get_async_engine(self) -> AsyncEngine:
         """Get or create async SQLAlchemy engine."""
         if self._async_engine is None:
-            if self._auto_start and not self._is_server_running():
+            if self._auto_start and self._is_local_server_target() and not self._is_server_running():
                 self._start_server()
 
             async_url = self._make_async_url(self.get_database_url())
@@ -519,8 +533,7 @@ class DoltDBConnection:
         """
         Context manager for transaction-like batch operations.
 
-        In embedded mode, statements are queued and executed on commit.
-        In server mode, uses actual MySQL transactions.
+        Uses MySQL transactions via dolt sql-server.
 
         Example:
             with db.transaction() as tx:

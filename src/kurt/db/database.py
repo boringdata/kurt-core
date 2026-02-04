@@ -28,7 +28,7 @@ Or use convenience functions:
 
 from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel import Session, SQLModel
@@ -54,6 +54,73 @@ def _get_database_url_from_config() -> str | None:
     return None
 
 
+def _resolve_repo_path() -> Path:
+    """Resolve Dolt repo root from DOLT_PATH (defaults to current directory)."""
+    import os
+
+    raw_path = os.environ.get("DOLT_PATH", ".")
+    path = Path(raw_path)
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    path = path.resolve()
+
+    # Allow either repo root or ".dolt" directory in DOLT_PATH.
+    if path.name == ".dolt":
+        return path.parent
+    return path
+
+
+def _resolve_local_mode() -> Literal["server"]:
+    """Resolve Dolt mode for local runtime.
+
+    Always returns `server` for a single SQL access path.
+    Embedded mode has been removed to reduce state drift and corruption risk.
+    """
+    return "server"
+
+
+def _parse_server_url(url: str) -> tuple[str, int]:
+    """Parse host:port, falling back to localhost:3306."""
+    host = "localhost"
+    port = 3306
+
+    parts = url.split(":", 1)
+    if parts[0].strip():
+        host = parts[0].strip()
+    if len(parts) > 1 and parts[1].strip():
+        try:
+            port = int(parts[1].strip())
+        except ValueError:
+            pass
+    return host, port
+
+
+def _build_local_dolt_client(path: Path) -> DoltDB:
+    """Build DoltDB client for local repo using server mode.
+
+    Server mode is the only supported runtime for local Dolt access.
+    This ensures a single SQL access path and reduces state drift risk.
+    """
+    import os
+
+    host, port = _parse_server_url(os.environ.get("KURT_DOLT_SERVER_URL", "localhost:3306"))
+    if os.environ.get("KURT_DOLT_PORT"):
+        try:
+            port = int(os.environ["KURT_DOLT_PORT"])
+        except ValueError:
+            pass
+
+    return DoltDB(
+        path=path,
+        mode="server",
+        host=host,
+        port=port,
+        user=os.environ.get("KURT_DOLT_USER", "root"),
+        password=os.environ.get("KURT_DOLT_PASSWORD", ""),
+        database=os.environ.get("KURT_DOLT_DATABASE", path.name),
+    )
+
+
 def get_database_client() -> DoltDB:
     """
     Factory function to get the DoltDB client.
@@ -63,8 +130,11 @@ def get_database_client() -> DoltDB:
     2. kurt.config DATABASE_URL field
 
     Routing:
-    - "mysql://...": DoltDB connecting to remote Dolt server
-    - None, empty, or other: DoltDB for local .dolt database
+    - "mysql://...": DoltDB connecting to explicit MySQL/Dolt endpoint
+    - None/empty: local Dolt repo using server mode (dolt sql-server)
+
+    Server mode is the only supported runtime for local Dolt access.
+    This ensures a single SQL access path and reduces state drift risk.
 
     Returns:
         DoltDB: Database client for the environment
@@ -86,7 +156,7 @@ def get_database_client() -> DoltDB:
 
         parsed = urlparse(database_url)
         return DoltDB(
-            path=Path.cwd(),
+            path=_resolve_repo_path(),
             mode="server",
             host=parsed.hostname or "localhost",
             port=parsed.port or 3306,
@@ -95,8 +165,8 @@ def get_database_client() -> DoltDB:
             database=parsed.path.lstrip("/") if parsed.path else None,
         )
 
-    # Default: Local Dolt database
-    return DoltDB(Path.cwd())
+    # Default: local Dolt with server mode (single SQL path).
+    return _build_local_dolt_client(_resolve_repo_path())
 
 
 def get_engine():
