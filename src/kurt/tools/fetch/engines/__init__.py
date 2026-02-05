@@ -1,8 +1,32 @@
-"""Fetch engines module - content extraction engines."""
+"""Fetch engines module - content extraction engines.
+
+This module provides content fetching engines that implement the BaseFetcher
+interface. Each engine handles a different data source or extraction method.
+
+Available engines:
+- TrafilaturaFetcher: Free, local HTML extraction using trafilatura library
+- TavilyFetcher: Tavily API-based content extraction
+- FirecrawlEngine: Firecrawl API-based content extraction (handles JS rendering)
+- ApifyFetcher: Apify-based social media content extraction
+
+Usage:
+    from kurt.tools.fetch.engines import TrafilaturaFetcher
+
+    fetcher = TrafilaturaFetcher()
+    result = fetcher.fetch("https://example.com")
+    if result.success:
+        print(result.content)
+"""
 
 from typing import Dict, Type
 
 from kurt.tools.fetch.core import BaseFetcher
+
+# Import engine classes for easy access
+from kurt.tools.fetch.engines.trafilatura import TrafilaturaFetcher
+from kurt.tools.fetch.engines.tavily import TavilyFetcher, TavilyEngine
+from kurt.tools.fetch.engines.firecrawl import FirecrawlEngine, FirecrawlFetcher
+from kurt.tools.fetch.engines.apify import ApifyFetcher, ApifyEngine
 
 
 class EngineRegistry:
@@ -59,4 +83,15 @@ class EngineRegistry:
         return name in cls._engines
 
 
-__all__ = ["EngineRegistry"]
+__all__ = [
+    # Registry
+    "EngineRegistry",
+    # Engine classes
+    "TrafilaturaFetcher",
+    "TavilyFetcher",
+    "TavilyEngine",  # Alias for TavilyFetcher
+    "FirecrawlEngine",
+    "FirecrawlFetcher",  # Alias for FirecrawlEngine
+    "ApifyFetcher",
+    "ApifyEngine",  # Alias for ApifyFetcher
+]

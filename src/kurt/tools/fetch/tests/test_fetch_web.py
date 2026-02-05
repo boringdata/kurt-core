@@ -22,24 +22,32 @@ class TestFetchFromWeb:
         assert result == {}
 
     @patch("kurt.tools.fetch.utils.trafilatura")
-    @patch("kurt.tools.fetch.trafilatura.trafilatura")
-    def test_routes_to_trafilatura_by_default(self, mock_traf_fetch, mock_traf_utils):
-        """Test that default engine uses trafilatura."""
+    @patch("trafilatura.fetch_url")
+    def test_routes_to_trafilatura_by_default(self, mock_fetch_url, mock_traf_utils):
+        """Test that default engine uses trafilatura.
+
+        Note: trafilatura implementation is now in engines/trafilatura.py.
+        The root-level trafilatura.py is a deprecated wrapper.
+        """
         from kurt.tools.fetch.web import fetch_from_web
 
-        mock_traf_fetch.fetch_url.return_value = "<html>Test</html>"
+        mock_fetch_url.return_value = "<html>Test</html>"
         mock_traf_utils.extract.return_value = "# Test Content"
         mock_traf_utils.extract_metadata.return_value = MagicMock(
             title="Test", author=None, date=None, description=None, fingerprint="abc"
         )
 
-        results = fetch_from_web(["https://example.com"], "trafilatura")
+        # Suppress deprecation warning in test
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            results = fetch_from_web(["https://example.com"], "trafilatura")
 
         assert "https://example.com" in results
         content, metadata = results["https://example.com"]
         assert content == "# Test Content"
         assert metadata["title"] == "Test"
-        mock_traf_fetch.fetch_url.assert_called_once()
+        mock_fetch_url.assert_called_once()
 
     @patch("kurt.tools.fetch.utils.trafilatura")
     @patch("kurt.tools.fetch.httpx_engine.httpx")
