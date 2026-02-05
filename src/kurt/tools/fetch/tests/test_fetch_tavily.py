@@ -1,12 +1,30 @@
 """Tests for Tavily fetch provider."""
 
+import warnings
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def reset_tavily_singleton():
+    """Reset the module-level TavilyFetcher singleton between tests.
+
+    The deprecated tavily.py wrapper uses a lazy singleton pattern.
+    Without resetting, tests pollute each other's API key state.
+    """
+    import kurt.tools.fetch.tavily as tavily_module
+
+    # Reset the singleton before each test
+    tavily_module._fetcher = None
+    yield
+    # Clean up after test
+    tavily_module._fetcher = None
+
+
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
 class TestFetchWithTavily:
-    """Test suite for fetch_with_tavily."""
+    """Test suite for fetch_with_tavily (deprecated wrapper)."""
 
     def test_import(self):
         """Test that fetch_with_tavily can be imported."""
@@ -21,7 +39,7 @@ class TestFetchWithTavily:
         result = fetch_with_tavily([])
         assert result == {}
 
-    @patch("kurt.tools.fetch.tavily.os.getenv")
+    @patch("kurt.tools.fetch.engines.tavily.os.getenv")
     def test_requires_api_key(self, mock_getenv):
         """Test that tavily raises error without API key."""
         from kurt.tools.fetch.tavily import fetch_with_tavily
@@ -40,8 +58,8 @@ class TestFetchWithTavily:
         with pytest.raises(ValueError, match="Maximum 20 URLs"):
             fetch_with_tavily(urls)
 
-    @patch("kurt.tools.fetch.tavily.httpx.Client")
-    @patch("kurt.tools.fetch.tavily.os.getenv")
+    @patch("kurt.tools.fetch.engines.tavily.httpx.Client")
+    @patch("kurt.tools.fetch.engines.tavily.os.getenv")
     def test_successful_single_url_extraction(self, mock_getenv, mock_client_class):
         """Test successful content extraction for single URL."""
         from kurt.tools.fetch.tavily import fetch_with_tavily
@@ -85,8 +103,8 @@ class TestFetchWithTavily:
         assert call_args[1]["json"]["urls"] == "https://example.com"
         assert call_args[1]["json"]["format"] == "markdown"
 
-    @patch("kurt.tools.fetch.tavily.httpx.Client")
-    @patch("kurt.tools.fetch.tavily.os.getenv")
+    @patch("kurt.tools.fetch.engines.tavily.httpx.Client")
+    @patch("kurt.tools.fetch.engines.tavily.os.getenv")
     def test_successful_batch_extraction(self, mock_getenv, mock_client_class):
         """Test successful batch content extraction."""
         from kurt.tools.fetch.tavily import fetch_with_tavily
@@ -137,8 +155,8 @@ class TestFetchWithTavily:
             "https://example2.com",
         ]
 
-    @patch("kurt.tools.fetch.tavily.httpx.Client")
-    @patch("kurt.tools.fetch.tavily.os.getenv")
+    @patch("kurt.tools.fetch.engines.tavily.httpx.Client")
+    @patch("kurt.tools.fetch.engines.tavily.os.getenv")
     def test_no_results_returns_failed_urls(self, mock_getenv, mock_client_class):
         """Test that empty results marks URLs as failed."""
         from kurt.tools.fetch.tavily import fetch_with_tavily
@@ -160,8 +178,8 @@ class TestFetchWithTavily:
         assert isinstance(results["https://example.com"], Exception)
         assert "No result" in str(results["https://example.com"])
 
-    @patch("kurt.tools.fetch.tavily.httpx.Client")
-    @patch("kurt.tools.fetch.tavily.os.getenv")
+    @patch("kurt.tools.fetch.engines.tavily.httpx.Client")
+    @patch("kurt.tools.fetch.engines.tavily.os.getenv")
     def test_empty_content_marked_as_failed(self, mock_getenv, mock_client_class):
         """Test that empty content is marked as failed."""
         from kurt.tools.fetch.tavily import fetch_with_tavily
@@ -185,8 +203,8 @@ class TestFetchWithTavily:
         assert isinstance(results["https://example.com"], Exception)
         assert "Empty content" in str(results["https://example.com"])
 
-    @patch("kurt.tools.fetch.tavily.httpx.Client")
-    @patch("kurt.tools.fetch.tavily.os.getenv")
+    @patch("kurt.tools.fetch.engines.tavily.httpx.Client")
+    @patch("kurt.tools.fetch.engines.tavily.os.getenv")
     def test_partial_failure_handling(self, mock_getenv, mock_client_class):
         """Test that partial failures are handled correctly."""
         from kurt.tools.fetch.tavily import fetch_with_tavily
@@ -224,8 +242,8 @@ class TestFetchWithTavily:
         assert isinstance(results["https://failed.com"], Exception)
         assert "Access denied" in str(results["https://failed.com"])
 
-    @patch("kurt.tools.fetch.tavily.httpx.Client")
-    @patch("kurt.tools.fetch.tavily.os.getenv")
+    @patch("kurt.tools.fetch.engines.tavily.httpx.Client")
+    @patch("kurt.tools.fetch.engines.tavily.os.getenv")
     def test_missing_url_marked_as_failed(self, mock_getenv, mock_client_class):
         """Test that URLs not in response are marked as failed."""
         from kurt.tools.fetch.tavily import fetch_with_tavily
@@ -255,8 +273,8 @@ class TestFetchWithTavily:
         assert isinstance(results["https://missing.com"], Exception)
         assert "No result" in str(results["https://missing.com"])
 
-    @patch("kurt.tools.fetch.tavily.httpx.Client")
-    @patch("kurt.tools.fetch.tavily.os.getenv")
+    @patch("kurt.tools.fetch.engines.tavily.httpx.Client")
+    @patch("kurt.tools.fetch.engines.tavily.os.getenv")
     def test_extracts_favicon_metadata(self, mock_getenv, mock_client_class):
         """Test that favicon is extracted from response."""
         from kurt.tools.fetch.tavily import fetch_with_tavily
@@ -285,10 +303,10 @@ class TestFetchWithTavily:
 
         assert metadata["favicon"] == "https://example.com/favicon.ico"
 
-    @patch("kurt.tools.fetch.tavily.httpx.Client")
-    @patch("kurt.tools.fetch.tavily.os.getenv")
-    def test_http_401_raises_invalid_api_key(self, mock_getenv, mock_client_class):
-        """Test that 401 response raises invalid API key error."""
+    @patch("kurt.tools.fetch.engines.tavily.httpx.Client")
+    @patch("kurt.tools.fetch.engines.tavily.os.getenv")
+    def test_http_401_returns_invalid_api_key_error(self, mock_getenv, mock_client_class):
+        """Test that 401 response returns invalid API key error in results."""
         import httpx
 
         from kurt.tools.fetch.tavily import fetch_with_tavily
@@ -305,13 +323,15 @@ class TestFetchWithTavily:
         mock_client.post.side_effect = error
         mock_client_class.return_value = mock_client
 
-        with pytest.raises(ValueError, match="Invalid API key"):
-            fetch_with_tavily("https://example.com")
+        results = fetch_with_tavily("https://example.com")
+        assert "https://example.com" in results
+        assert isinstance(results["https://example.com"], Exception)
+        assert "Invalid API key" in str(results["https://example.com"])
 
-    @patch("kurt.tools.fetch.tavily.httpx.Client")
-    @patch("kurt.tools.fetch.tavily.os.getenv")
-    def test_http_429_raises_rate_limit(self, mock_getenv, mock_client_class):
-        """Test that 429 response raises rate limit error."""
+    @patch("kurt.tools.fetch.engines.tavily.httpx.Client")
+    @patch("kurt.tools.fetch.engines.tavily.os.getenv")
+    def test_http_429_returns_rate_limit_error(self, mock_getenv, mock_client_class):
+        """Test that 429 response returns rate limit error in results."""
         import httpx
 
         from kurt.tools.fetch.tavily import fetch_with_tavily
@@ -328,13 +348,15 @@ class TestFetchWithTavily:
         mock_client.post.side_effect = error
         mock_client_class.return_value = mock_client
 
-        with pytest.raises(ValueError, match="Rate limit exceeded"):
-            fetch_with_tavily("https://example.com")
+        results = fetch_with_tavily("https://example.com")
+        assert "https://example.com" in results
+        assert isinstance(results["https://example.com"], Exception)
+        assert "Rate limit exceeded" in str(results["https://example.com"])
 
-    @patch("kurt.tools.fetch.tavily.httpx.Client")
-    @patch("kurt.tools.fetch.tavily.os.getenv")
-    def test_http_403_raises_url_not_supported(self, mock_getenv, mock_client_class):
-        """Test that 403 response raises URL not supported error."""
+    @patch("kurt.tools.fetch.engines.tavily.httpx.Client")
+    @patch("kurt.tools.fetch.engines.tavily.os.getenv")
+    def test_http_403_returns_url_not_supported_error(self, mock_getenv, mock_client_class):
+        """Test that 403 response returns URL not supported error in results."""
         import httpx
 
         from kurt.tools.fetch.tavily import fetch_with_tavily
@@ -351,13 +373,15 @@ class TestFetchWithTavily:
         mock_client.post.side_effect = error
         mock_client_class.return_value = mock_client
 
-        with pytest.raises(ValueError, match="URL not supported"):
-            fetch_with_tavily("https://example.com")
+        results = fetch_with_tavily("https://example.com")
+        assert "https://example.com" in results
+        assert isinstance(results["https://example.com"], Exception)
+        assert "URL not supported" in str(results["https://example.com"])
 
-    @patch("kurt.tools.fetch.tavily.httpx.Client")
-    @patch("kurt.tools.fetch.tavily.os.getenv")
-    def test_http_432_raises_credit_limit(self, mock_getenv, mock_client_class):
-        """Test that 432 response raises credit limit error."""
+    @patch("kurt.tools.fetch.engines.tavily.httpx.Client")
+    @patch("kurt.tools.fetch.engines.tavily.os.getenv")
+    def test_http_432_returns_credit_limit_error(self, mock_getenv, mock_client_class):
+        """Test that 432 response returns credit limit error in results."""
         import httpx
 
         from kurt.tools.fetch.tavily import fetch_with_tavily
@@ -374,13 +398,15 @@ class TestFetchWithTavily:
         mock_client.post.side_effect = error
         mock_client_class.return_value = mock_client
 
-        with pytest.raises(ValueError, match="Credit or plan limit exceeded"):
-            fetch_with_tavily("https://example.com")
+        results = fetch_with_tavily("https://example.com")
+        assert "https://example.com" in results
+        assert isinstance(results["https://example.com"], Exception)
+        assert "Credit or plan limit exceeded" in str(results["https://example.com"])
 
-    @patch("kurt.tools.fetch.tavily.httpx.Client")
-    @patch("kurt.tools.fetch.tavily.os.getenv")
-    def test_http_500_raises_generic_error(self, mock_getenv, mock_client_class):
-        """Test that 500 response raises generic API error."""
+    @patch("kurt.tools.fetch.engines.tavily.httpx.Client")
+    @patch("kurt.tools.fetch.engines.tavily.os.getenv")
+    def test_http_500_returns_generic_error(self, mock_getenv, mock_client_class):
+        """Test that 500 response returns generic API error in results."""
         import httpx
 
         from kurt.tools.fetch.tavily import fetch_with_tavily
@@ -397,13 +423,15 @@ class TestFetchWithTavily:
         mock_client.post.side_effect = error
         mock_client_class.return_value = mock_client
 
-        with pytest.raises(ValueError, match=r"API error \(500\)"):
-            fetch_with_tavily("https://example.com")
+        results = fetch_with_tavily("https://example.com")
+        assert "https://example.com" in results
+        assert isinstance(results["https://example.com"], Exception)
+        assert "API error (500)" in str(results["https://example.com"])
 
-    @patch("kurt.tools.fetch.tavily.httpx.Client")
-    @patch("kurt.tools.fetch.tavily.os.getenv")
-    def test_request_error_raises_connection_error(self, mock_getenv, mock_client_class):
-        """Test that connection errors are handled."""
+    @patch("kurt.tools.fetch.engines.tavily.httpx.Client")
+    @patch("kurt.tools.fetch.engines.tavily.os.getenv")
+    def test_request_error_returns_connection_error(self, mock_getenv, mock_client_class):
+        """Test that connection errors are returned in results."""
         import httpx
 
         from kurt.tools.fetch.tavily import fetch_with_tavily
@@ -416,8 +444,11 @@ class TestFetchWithTavily:
         mock_client.post.side_effect = httpx.ConnectError("Connection refused")
         mock_client_class.return_value = mock_client
 
-        with pytest.raises(ValueError, match="Request error.*ConnectError"):
-            fetch_with_tavily("https://example.com")
+        results = fetch_with_tavily("https://example.com")
+        assert "https://example.com" in results
+        assert isinstance(results["https://example.com"], Exception)
+        assert "Request error" in str(results["https://example.com"])
+        assert "ConnectError" in str(results["https://example.com"])
 
 
 class TestTavilyFetcher:
@@ -435,8 +466,8 @@ class TestTavilyFetcher:
 
         assert TavilyEngine is TavilyFetcher
 
-    @patch("kurt.tools.fetch.tavily.httpx.Client")
-    @patch("kurt.tools.fetch.tavily.os.getenv")
+    @patch("kurt.tools.fetch.engines.tavily.httpx.Client")
+    @patch("kurt.tools.fetch.engines.tavily.os.getenv")
     def test_fetch_success(self, mock_getenv, mock_client_class):
         """Test successful fetch via TavilyFetcher."""
         from kurt.tools.fetch.engines.tavily import TavilyFetcher
@@ -468,7 +499,7 @@ class TestTavilyFetcher:
         assert result.metadata["engine"] == "tavily"
         assert result.error is None
 
-    @patch("kurt.tools.fetch.tavily.os.getenv")
+    @patch("kurt.tools.fetch.engines.tavily.os.getenv")
     def test_fetch_missing_api_key(self, mock_getenv):
         """Test TavilyFetcher returns error when API key missing."""
         from kurt.tools.fetch.engines.tavily import TavilyFetcher
@@ -482,8 +513,8 @@ class TestTavilyFetcher:
         assert "TAVILY_API_KEY" in result.error
         assert result.metadata["engine"] == "tavily"
 
-    @patch("kurt.tools.fetch.tavily.httpx.Client")
-    @patch("kurt.tools.fetch.tavily.os.getenv")
+    @patch("kurt.tools.fetch.engines.tavily.httpx.Client")
+    @patch("kurt.tools.fetch.engines.tavily.os.getenv")
     def test_fetch_empty_result(self, mock_getenv, mock_client_class):
         """Test TavilyFetcher handles empty results."""
         from kurt.tools.fetch.engines.tavily import TavilyFetcher
@@ -505,8 +536,8 @@ class TestTavilyFetcher:
         assert result.success is False
         assert "No result" in result.error
 
-    @patch("kurt.tools.fetch.tavily.httpx.Client")
-    @patch("kurt.tools.fetch.tavily.os.getenv")
+    @patch("kurt.tools.fetch.engines.tavily.httpx.Client")
+    @patch("kurt.tools.fetch.engines.tavily.os.getenv")
     def test_fetch_with_config(self, mock_getenv, mock_client_class):
         """Test TavilyFetcher accepts config."""
         from kurt.tools.fetch.core.base import FetcherConfig
@@ -533,12 +564,20 @@ class TestTavilyFetcher:
         result = fetcher.fetch("https://example.com")
         assert result.success is True
 
-    @patch("kurt.tools.fetch.engines.tavily.fetch_with_tavily")
-    def test_fetch_unexpected_exception(self, mock_fetch):
+    @patch("kurt.tools.fetch.engines.tavily.httpx.Client")
+    @patch("kurt.tools.fetch.engines.tavily.os.getenv")
+    def test_fetch_unexpected_exception(self, mock_getenv, mock_client_class):
         """Test TavilyFetcher handles unexpected exceptions."""
         from kurt.tools.fetch.engines.tavily import TavilyFetcher
 
-        mock_fetch.side_effect = RuntimeError("Unexpected failure")
+        mock_getenv.return_value = "test-api-key"
+
+        # Make httpx.Client raise an unexpected exception
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.post.side_effect = RuntimeError("Unexpected failure")
+        mock_client_class.return_value = mock_client
 
         fetcher = TavilyFetcher()
         result = fetcher.fetch("https://example.com")
@@ -548,8 +587,8 @@ class TestTavilyFetcher:
         assert "RuntimeError" in result.error
         assert result.metadata["engine"] == "tavily"
 
-    @patch("kurt.tools.fetch.tavily.httpx.Client")
-    @patch("kurt.tools.fetch.tavily.os.getenv")
+    @patch("kurt.tools.fetch.engines.tavily.httpx.Client")
+    @patch("kurt.tools.fetch.engines.tavily.os.getenv")
     def test_fetch_result_is_exception(self, mock_getenv, mock_client_class):
         """Test TavilyFetcher handles Exception objects in results dict."""
         from kurt.tools.fetch.engines.tavily import TavilyFetcher
