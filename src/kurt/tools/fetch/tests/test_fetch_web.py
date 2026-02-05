@@ -94,16 +94,24 @@ class TestFetchFromWeb:
                 assert "FIRECRAWL_API_KEY" in error_str or "firecrawl" in error_str.lower()
 
     def test_tavily_returns_error_on_missing_key(self):
-        """Test that tavily returns error without API key."""
+        """Test that tavily returns error without API key.
+
+        Note: tavily implementation is now in engines/tavily.py.
+        The root-level tavily.py is a deprecated wrapper.
+        """
         from kurt.tools.fetch.web import fetch_from_web
 
-        with patch("kurt.tools.fetch.tavily.os.getenv", return_value=None):
-            # fetch_from_web catches exceptions and returns them in results dict
-            results = fetch_from_web(["https://example.com"], "tavily")
+        # Suppress deprecation warning in test
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            with patch("kurt.tools.fetch.engines.tavily.os.getenv", return_value=None):
+                # fetch_from_web catches exceptions and returns them in results dict
+                results = fetch_from_web(["https://example.com"], "tavily")
 
-            assert "https://example.com" in results
-            assert isinstance(results["https://example.com"], Exception)
-            assert "TAVILY_API_KEY" in str(results["https://example.com"])
+                assert "https://example.com" in results
+                assert isinstance(results["https://example.com"], Exception)
+                assert "TAVILY_API_KEY" in str(results["https://example.com"])
 
 
 class TestExtractWithTrafilatura:
