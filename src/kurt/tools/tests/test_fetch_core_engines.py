@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from kurt.tools.errors import AuthError
-from kurt.tools.fetch.core import BaseFetcher, FetchDocumentStorage, FetcherConfig, FetchResult
+from kurt.tools.fetch.core import BaseFetcher, FetcherConfig, FetchResult
 from kurt.tools.fetch.engines import EngineRegistry
 from kurt.tools.fetch.engines.apify import ApifyEngine, ApifyFetcherConfig
 from kurt.tools.fetch.engines.firecrawl import FirecrawlEngine
@@ -105,33 +105,6 @@ class TestBaseFetcher:
         assert doc.public_url == "https://example.com"
         assert doc.doc_type == DocType.PROFILE
         assert doc.fetch_engine == "mock"
-
-
-class TestFetchDocumentStorage:
-    """Test FetchDocumentStorage."""
-
-    def test_save_document(self):
-        """Test saving a document."""
-        from kurt.tools.fetch.models import FetchDocument
-
-        doc = FetchDocument(document_id="test_1")
-        result = FetchDocumentStorage.save_document(doc)
-        assert result is True
-
-    def test_get_by_url(self):
-        """Test get_by_url returns None (not implemented)."""
-        result = FetchDocumentStorage.get_by_url("https://example.com")
-        assert result is None
-
-    def test_count_by_status(self):
-        """Test count_by_status returns 0 (not implemented)."""
-        count = FetchDocumentStorage.count_by_status("SUCCESS")
-        assert count == 0
-
-    def test_count_pending(self):
-        """Test count_pending returns 0 (not implemented)."""
-        count = FetchDocumentStorage.count_pending()
-        assert count == 0
 
 
 class TestEngineRegistry:
