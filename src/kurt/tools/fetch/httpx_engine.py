@@ -1,16 +1,36 @@
-"""HTTPX fetch provider (proxy-friendly, uses trafilatura for extraction)."""
+"""HTTPX fetch provider (proxy-friendly, uses trafilatura for extraction).
+
+DEPRECATED: This module is deprecated. Use HttpxFetcher from
+kurt.tools.fetch.engines.httpx instead.
+
+This module is kept for backward compatibility and will be removed in a future release.
+"""
 
 from __future__ import annotations
 
-import httpx
+import warnings
 
 from .models import FetchResult
-from .utils import extract_with_trafilatura
+
+# Import the canonical implementation
+from .engines.httpx import HttpxFetcher
+
+# Module-level singleton for backward compatibility
+_fetcher = HttpxFetcher()
 
 
 def fetch_with_httpx(url: str) -> FetchResult:
     """
     Fetch content using httpx + trafilatura extraction (proxy-friendly).
+
+    DEPRECATED: Use HttpxFetcher.fetch() or HttpxFetcher.fetch_raw() instead.
+
+    This function is kept for backward compatibility. New code should use:
+        from kurt.tools.fetch.engines.httpx import HttpxFetcher
+        fetcher = HttpxFetcher()
+        result = fetcher.fetch(url)  # Returns FetchResult object
+        # Or for tuple format:
+        content, metadata = fetcher.fetch_raw(url)
 
     Args:
         url: URL to fetch
@@ -21,14 +41,10 @@ def fetch_with_httpx(url: str) -> FetchResult:
     Raises:
         ValueError: If fetch fails
     """
-    try:
-        response = httpx.get(url, follow_redirects=True, timeout=30.0)
-        response.raise_for_status()
-        downloaded = response.text
-    except Exception as e:
-        raise ValueError(f"[httpx] Download error: {type(e).__name__}: {str(e)}") from e
-
-    if not downloaded:
-        raise ValueError(f"[httpx] No content from: {url}")
-
-    return extract_with_trafilatura(downloaded, url)
+    warnings.warn(
+        "fetch_with_httpx() is deprecated. "
+        "Use HttpxFetcher from kurt.tools.fetch.engines.httpx instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return _fetcher.fetch_raw(url)

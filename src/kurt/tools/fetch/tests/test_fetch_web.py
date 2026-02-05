@@ -50,9 +50,13 @@ class TestFetchFromWeb:
         mock_fetch_url.assert_called_once()
 
     @patch("kurt.tools.fetch.utils.trafilatura")
-    @patch("kurt.tools.fetch.httpx_engine.httpx")
+    @patch("kurt.tools.fetch.engines.httpx.httpx")
     def test_routes_to_httpx(self, mock_httpx, mock_traf_utils):
-        """Test that httpx engine is routed correctly."""
+        """Test that httpx engine is routed correctly.
+
+        Note: httpx implementation is now in engines/httpx.py.
+        The root-level httpx_engine.py is a deprecated wrapper.
+        """
         from kurt.tools.fetch.web import fetch_from_web
 
         mock_response = MagicMock()
@@ -64,7 +68,11 @@ class TestFetchFromWeb:
             title="HTTPX Test", author=None, date=None, description=None, fingerprint="def"
         )
 
-        results = fetch_from_web(["https://example.com"], "httpx")
+        # Suppress deprecation warning in test
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            results = fetch_from_web(["https://example.com"], "httpx")
 
         assert "https://example.com" in results
         content, metadata = results["https://example.com"]
