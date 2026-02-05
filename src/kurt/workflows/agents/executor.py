@@ -503,8 +503,10 @@ def agent_execution_step(
         from dotenv import dotenv_values
         env_vars = dotenv_values(env_file)
         # Merge into os.environ so subprocess inherits them
+        # Only set keys that aren't already present to avoid overwriting
+        # explicit env vars (e.g., from CI or deployment environment)
         for key, value in env_vars.items():
-            if value is not None:
+            if value is not None and key not in os.environ:
                 os.environ[key] = value
 
     env = os.environ.copy()

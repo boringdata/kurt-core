@@ -290,9 +290,19 @@ class DoltDBConnection:
 
         Auto-starts the server for local targets if not running.
         Remote servers must be running - we never try to start them.
+
+        For local servers, verifies the running server matches this project
+        to prevent connecting to a stale server from a different project.
         """
         if self._auto_start and self._is_local_server_target():
             if not self._is_server_running():
+                self._start_server()
+            elif not self._is_correct_server():
+                # Server running but for wrong project - restart it
+                logger.warning(
+                    f"Dolt server on port {self._port} is for a different project. Restarting..."
+                )
+                self._stop_server()
                 self._start_server()
 
         if self._pool is None:
