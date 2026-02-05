@@ -543,7 +543,7 @@ def agent_execution_step(
         settings_path,  # Use custom settings with tool tracking hook
         # Use system prompt to clearly define the task
         "--system-prompt",
-        f"You are executing a workflow task. Focus ONLY on the task in the user message. Ignore any other project instructions.",
+        "You are executing a workflow task. Focus ONLY on the task in the user message. Ignore any other project instructions.",
     ]
 
     # Add allowed tools if specified
