@@ -9,7 +9,7 @@ from kurt.tools.errors import AuthError
 from kurt.tools.fetch.core import BaseFetcher, FetcherConfig, FetchResult
 from kurt.tools.fetch.engines import EngineRegistry
 from kurt.tools.fetch.engines.apify import ApifyEngine, ApifyFetcherConfig
-from kurt.tools.fetch.engines.firecrawl import FirecrawlEngine
+from kurt.tools.fetch.engines.firecrawl import FirecrawlFetcher
 from kurt.tools.fetch.engines.tavily import TavilyEngine
 from kurt.tools.fetch.engines.trafilatura import TrafilaturaFetcher
 from kurt.tools.fetch.models import DocType
@@ -148,22 +148,22 @@ class TestTrafilaturaFetcher:
         assert result.metadata["engine"] == "trafilatura"
 
 
-class TestFirecrawlEngine:
-    """Test FirecrawlEngine."""
+class TestFirecrawlFetcher:
+    """Test FirecrawlFetcher."""
 
     def test_firecrawl_creation(self):
         """Test creating Firecrawl engine."""
-        engine = FirecrawlEngine()
+        engine = FirecrawlFetcher()
         assert engine is not None
 
     def test_firecrawl_with_api_key(self):
         """Test Firecrawl with API key."""
-        engine = FirecrawlEngine(api_key="test_key")
+        engine = FirecrawlFetcher(api_key="test_key")
         assert engine.api_key == "test_key"
 
     def test_firecrawl_fetch(self):
         """Test fetch with Firecrawl."""
-        engine = FirecrawlEngine()
+        engine = FirecrawlFetcher()
         result = engine.fetch("https://example.com")
         assert result.metadata["engine"] == "firecrawl"
 
@@ -247,7 +247,7 @@ class TestEngineIntegration:
         """Test non-Apify engines inherit from BaseFetcher."""
         engines = [
             TrafilaturaFetcher(),
-            FirecrawlEngine(),
+            FirecrawlFetcher(),
             TavilyEngine(),
         ]
         for engine in engines:
@@ -265,7 +265,7 @@ class TestEngineIntegration:
         """Test non-Apify engines return FetchResult."""
         engines = [
             TrafilaturaFetcher(),
-            FirecrawlEngine(),
+            FirecrawlFetcher(),
             TavilyEngine(),
         ]
         for engine in engines:

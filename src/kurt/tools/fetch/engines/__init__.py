@@ -6,7 +6,7 @@ interface. Each engine handles a different data source or extraction method.
 Available engines:
 - TrafilaturaFetcher: Free, local HTML extraction using trafilatura library
 - TavilyFetcher: Tavily API-based content extraction
-- FirecrawlEngine: Firecrawl API-based content extraction (handles JS rendering)
+- FirecrawlFetcher: Firecrawl API-based content extraction (handles JS rendering)
 - ApifyFetcher: Apify-based social media content extraction
 
 Usage:
@@ -23,9 +23,10 @@ from typing import Dict, Type
 from kurt.tools.fetch.core import BaseFetcher
 
 # Import engine classes for easy access
+# Primary names are *Fetcher, *Engine aliases exist for backward compatibility
 from kurt.tools.fetch.engines.trafilatura import TrafilaturaFetcher
 from kurt.tools.fetch.engines.tavily import TavilyFetcher, TavilyEngine
-from kurt.tools.fetch.engines.firecrawl import FirecrawlEngine, FirecrawlFetcher
+from kurt.tools.fetch.engines.firecrawl import FirecrawlFetcher, FirecrawlEngine
 from kurt.tools.fetch.engines.apify import ApifyFetcher, ApifyEngine
 
 
@@ -86,12 +87,13 @@ class EngineRegistry:
 __all__ = [
     # Registry
     "EngineRegistry",
-    # Engine classes
+    # Engine classes (primary *Fetcher names)
     "TrafilaturaFetcher",
     "TavilyFetcher",
-    "TavilyEngine",  # Alias for TavilyFetcher
-    "FirecrawlEngine",
-    "FirecrawlFetcher",  # Alias for FirecrawlEngine
+    "FirecrawlFetcher",
     "ApifyFetcher",
-    "ApifyEngine",  # Alias for ApifyFetcher
+    # Backward compatibility aliases (*Engine names)
+    "TavilyEngine",
+    "FirecrawlEngine",
+    "ApifyEngine",
 ]
