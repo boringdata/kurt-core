@@ -72,18 +72,26 @@ class TestFetchFromWeb:
         mock_httpx.get.assert_called_once()
 
     def test_firecrawl_returns_error_on_missing_key(self):
-        """Test that firecrawl returns error without API key (or if not installed)."""
+        """Test that firecrawl returns error without API key (or if not installed).
+
+        Note: firecrawl implementation is now in engines/firecrawl.py.
+        The root-level firecrawl.py is a deprecated wrapper.
+        """
         from kurt.tools.fetch.web import fetch_from_web
 
-        with patch("kurt.tools.fetch.firecrawl.os.getenv", return_value=None):
-            # fetch_from_web catches exceptions and returns them in results dict
-            results = fetch_from_web(["https://example.com"], "firecrawl")
+        # Suppress deprecation warning in test
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            with patch("kurt.tools.fetch.engines.firecrawl.os.getenv", return_value=None):
+                # fetch_from_web catches exceptions and returns them in results dict
+                results = fetch_from_web(["https://example.com"], "firecrawl")
 
-            assert "https://example.com" in results
-            assert isinstance(results["https://example.com"], Exception)
-            # Accept either "API key not set" or "module not found" (optional dep)
-            error_str = str(results["https://example.com"])
-            assert "FIRECRAWL_API_KEY" in error_str or "firecrawl" in error_str.lower()
+                assert "https://example.com" in results
+                assert isinstance(results["https://example.com"], Exception)
+                # Accept either "API key not set" or "module not found" (optional dep)
+                error_str = str(results["https://example.com"])
+                assert "FIRECRAWL_API_KEY" in error_str or "firecrawl" in error_str.lower()
 
     def test_tavily_returns_error_on_missing_key(self):
         """Test that tavily returns error without API key."""
