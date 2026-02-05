@@ -54,10 +54,18 @@ class FirecrawlFetcher(BaseFetcher):
 
         Args:
             config: Fetcher configuration
-            api_key: Optional API key (defaults to FIRECRAWL_API_KEY env var)
+            api_key: Optional API key (if not provided, reads FIRECRAWL_API_KEY
+                     from environment on each call)
         """
         super().__init__(config)
-        self.api_key = api_key or os.getenv("FIRECRAWL_API_KEY")
+        self._explicit_api_key = api_key  # Only store if explicitly provided
+
+    def _get_api_key(self) -> Optional[str]:
+        """Get API key, re-reading from env if not explicitly provided.
+
+        This allows long-lived processes to pick up env var changes.
+        """
+        return self._explicit_api_key or os.getenv("FIRECRAWL_API_KEY")
 
     def fetch(self, url: str) -> FetchResult:
         """Fetch and extract content using Firecrawl.
@@ -84,7 +92,8 @@ class FirecrawlFetcher(BaseFetcher):
                 error="[Firecrawl] firecrawl-py package not installed",
             )
 
-        if not self.api_key:
+        api_key = self._get_api_key()
+        if not api_key:
             return FetchResult(
                 content="",
                 metadata={"engine": "firecrawl"},
@@ -93,7 +102,7 @@ class FirecrawlFetcher(BaseFetcher):
             )
 
         try:
-            app = FirecrawlApp(api_key=self.api_key)
+            app = FirecrawlApp(api_key=api_key)
             # Use batch scrape - poll_interval=2 means check every 2 seconds
             batch_result = app.batch_scrape_urls([url], {"formats": ["markdown", "html"]}, 2)
         except Exception as e:
@@ -174,7 +183,8 @@ class FirecrawlFetcher(BaseFetcher):
                 )
             return results
 
-        if not self.api_key:
+        api_key = self._get_api_key()
+        if not api_key:
             for url in urls:
                 results[url] = FetchResult(
                     content="",
@@ -185,7 +195,7 @@ class FirecrawlFetcher(BaseFetcher):
             return results
 
         try:
-            app = FirecrawlApp(api_key=self.api_key)
+            app = FirecrawlApp(api_key=api_key)
             batch_result = app.batch_scrape_urls(urls, {"formats": ["markdown", "html"]}, 2)
         except Exception as e:
             for url in urls:
