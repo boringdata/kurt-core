@@ -65,14 +65,9 @@ __all__ = [
     "VALID_CONTENT_TYPES",
     # Config helpers
     "has_embedding_api_keys",
-    # Internal utilities (exported for testing)
-    "_compute_content_hash",
-    "_fetch_with_firecrawl",
-    "_fetch_with_httpx",
-    "_fetch_with_retry",
-    "_fetch_with_tavily",
-    "_fetch_with_trafilatura",
-    "_generate_content_path",
-    "_is_retryable_error",
-    "_save_content",
 ]
+
+# Note: Internal utilities (_compute_content_hash, _fetch_with_*, etc.) are
+# imported above but NOT exported in __all__. They can still be accessed via
+# direct import for testing purposes:
+#   from kurt.tools.fetch.tool import _compute_content_hash
