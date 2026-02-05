@@ -367,13 +367,13 @@ async def _fetch_with_tavily(
     Raises:
         ValueError: If Tavily returns an error for the URL
     """
-    from kurt.tools.fetch.tavily import fetch_with_tavily
+    from kurt.tools.fetch.engines.tavily import TavilyFetcher
 
-    results = await asyncio.to_thread(fetch_with_tavily, url)
-    result = results.get(url)
-    if isinstance(result, Exception) or result is None:
-        raise ValueError(str(result) if result else "No result from Tavily")
-    return result
+    fetcher = TavilyFetcher()
+    result = await asyncio.to_thread(fetcher.fetch, url)
+    if not result.success:
+        raise ValueError(result.error or "No result from Tavily")
+    return result.content, result.metadata
 
 
 async def _fetch_with_firecrawl(
@@ -395,13 +395,13 @@ async def _fetch_with_firecrawl(
     Raises:
         ValueError: If Firecrawl returns an error for the URL
     """
-    from kurt.tools.fetch.firecrawl import fetch_with_firecrawl
+    from kurt.tools.fetch.engines.firecrawl import FirecrawlFetcher
 
-    results = await asyncio.to_thread(fetch_with_firecrawl, url)
-    result = results.get(url)
-    if isinstance(result, Exception) or result is None:
-        raise ValueError(str(result) if result else "No result from Firecrawl")
-    return result
+    fetcher = FirecrawlFetcher()
+    result = await asyncio.to_thread(fetcher.fetch, url)
+    if not result.success:
+        raise ValueError(result.error or "No result from Firecrawl")
+    return result.content, result.metadata
 
 
 # Engine dispatcher
