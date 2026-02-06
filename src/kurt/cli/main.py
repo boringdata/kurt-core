@@ -25,7 +25,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import robot mode utilities for global --json flag
-from kurt.cli.robot import OutputContext
+from kurt.cli.robot import OutputContext  # noqa: E402
 
 
 def _auto_migrate_schema():
