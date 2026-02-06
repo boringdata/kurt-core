@@ -527,7 +527,7 @@ type = "function"
 function = "generate_data"
 
 [steps.write]
-type = "write"
+type = "write-db"
 depends_on = ["generate"]
 [steps.write.config]
 table = "test_data"

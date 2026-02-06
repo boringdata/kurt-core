@@ -49,7 +49,7 @@ def _ensure_tools_loaded() -> None:
         "kurt.tools.map",
         "kurt.tools.fetch",
         "kurt.tools.sql",
-        "kurt.tools.write",
+        "kurt.tools.write_db",
         "kurt.tools.batch_embedding",
         "kurt.tools.batch_llm",
         "kurt.tools.agent",

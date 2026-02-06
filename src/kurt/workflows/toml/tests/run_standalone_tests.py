@@ -269,7 +269,7 @@ print("\nTestParseWorkflowStepTypes:")
 
 
 def test_valid_step_types():
-    for step_type in ["map", "fetch", "llm", "embed", "write", "sql", "agent"]:
+    for step_type in ["map", "fetch", "llm", "embed", "write-db", "sql", "agent"]:
         with tempfile.TemporaryDirectory() as tmp_dir:
             toml_path = write_toml(
                 Path(tmp_dir) / f"{step_type}.toml",
@@ -798,7 +798,7 @@ def test_complex_dag():
             depends_on = ["merge"]
 
             [steps.save]
-            type = "write"
+            type = "write-db"
             depends_on = ["analyze", "embed"]
             """,
         )
@@ -839,7 +839,7 @@ def test_all_step_types():
             depends_on = ["step_llm", "step_embed"]
 
             [steps.step_write]
-            type = "write"
+            type = "write-db"
             depends_on = ["step_sql"]
 
             [steps.step_agent]
@@ -849,7 +849,7 @@ def test_all_step_types():
         )
         result = parse_workflow(toml_path, validate_tools=False)
         types_used = {step.type for step in result.steps.values()}
-        assert types_used == {"map", "fetch", "llm", "embed", "sql", "write", "agent"}
+        assert types_used == {"map", "fetch", "llm", "embed", "sql", "write-db", "agent"}
 
 
 test("all_step_types", test_all_step_types)

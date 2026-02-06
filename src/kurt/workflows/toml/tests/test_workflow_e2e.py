@@ -321,7 +321,7 @@ name = { type = "string", required = true }
 value = { type = "string", required = true }
 
 [steps.write]
-type = "write"
+type = "write-db"
 [steps.write.config]
 table = "test_data"
 mode = "insert"
@@ -355,7 +355,7 @@ mode = "insert"
 name = "write-upsert-test"
 
 [steps.write]
-type = "write"
+type = "write-db"
 [steps.write.config]
 table = "test_data"
 mode = "upsert"
@@ -541,7 +541,7 @@ depends_on = ["read"]
 id = 200
 
 [steps.write]
-type = "write"
+type = "write-db"
 depends_on = ["transform"]
 [steps.write.config]
 table = "results"

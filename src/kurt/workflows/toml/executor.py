@@ -444,7 +444,7 @@ class WorkflowExecutor:
     async def _execute_step(self, step_id: str, step_def: StepDef) -> StepResult:
         """Execute a single step."""
         started_at = datetime.now(timezone.utc)
-        # Resolve step type aliases (e.g., "write" -> "write-db")
+        # Resolve step type aliases (e.g., "llm" -> "batch-llm")
         tool_name = resolve_step_type(step_def.type)
 
         # Emit step start event

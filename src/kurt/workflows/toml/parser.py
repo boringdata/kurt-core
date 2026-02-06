@@ -33,12 +33,11 @@ InputType = Literal["string", "int", "float", "bool"]
 STEP_TYPE_ALIASES: dict[str, str] = {
     "llm": "batch-llm",
     "embed": "batch-embedding",
-    "write": "write-db",
 }
 
 # Valid step types - must match tool registry keys (after alias resolution)
 # "function" is special: executes user-defined Python function from tools.py
-VALID_STEP_TYPES = frozenset(["map", "fetch", "llm", "embed", "write", "write-db", "sql", "agent", "function"])
+VALID_STEP_TYPES = frozenset(["map", "fetch", "llm", "embed", "write-db", "sql", "agent", "function"])
 
 
 def resolve_step_type(step_type: str) -> str:
