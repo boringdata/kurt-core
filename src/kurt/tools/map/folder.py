@@ -1,21 +1,12 @@
+"""Folder discovery helper - thin wrapper around engines/folder.py.
+
+This module provides backward compatibility for existing code using
+discover_from_folder(). New code should use FolderEngine from engines/folder.py.
+"""
+
 from __future__ import annotations
 
-import hashlib
-import logging
 from pathlib import Path
-
-from .utils import filter_items
-
-logger = logging.getLogger(__name__)
-
-
-def compute_file_hash(file_path: Path) -> str:
-    """Compute SHA256 hash of file content for deduplication."""
-    sha256 = hashlib.sha256()
-    with file_path.open("rb") as f:
-        for chunk in iter(lambda: f.read(8192), b""):
-            sha256.update(chunk)
-    return sha256.hexdigest()
 
 
 def discover_from_folder(
@@ -24,71 +15,54 @@ def discover_from_folder(
     include_patterns: tuple[str, ...] = (),
     exclude_patterns: tuple[str, ...] = (),
 ) -> dict:
-    """
-    Discover markdown files from a local folder.
-    """
-    folder = Path(folder_path)
-    files = discover_markdown_files(folder, recursive=True)
+    """Discover markdown files from a local folder.
 
-    files = filter_items(
-        files,
+    This is a backward-compatible wrapper around the canonical implementation
+    in engines/folder.py. New code should use FolderEngine directly.
+
+    Args:
+        folder_path: Path to folder to discover from
+        include_patterns: Glob patterns to include
+        exclude_patterns: Glob patterns to exclude
+
+    Returns:
+        Dict with discovered files and metadata
+    """
+    from kurt.tools.map.engines.folder import discover_from_folder_impl
+
+    return discover_from_folder_impl(
+        folder_path=folder_path,
         include_patterns=include_patterns,
         exclude_patterns=exclude_patterns,
-        to_string=lambda f: str(f.relative_to(folder)),
     )
 
-    results = []
-    for file_path in files:
-        try:
-            title = _extract_title(file_path)
-            content_hash = compute_file_hash(file_path)
-            results.append(
-                {
-                    "path": str(file_path),
-                    "title": title,
-                    "content_hash": content_hash,
-                    "created": True,
-                }
-            )
-        except Exception as exc:
-            results.append(
-                {
-                    "path": str(file_path),
-                    "error": str(exc),
-                    "created": False,
-                }
-            )
 
-    return {
-        "discovered": results,
-        "total": len(results),
-        "method": "folder",
-    }
+# Re-export helper functions for backward compatibility
+def compute_file_hash(file_path: Path) -> str:
+    """Compute SHA256 hash of file content for deduplication.
+
+    Backward-compatible wrapper. Import from engines/folder.py for new code.
+    """
+    from kurt.tools.map.engines.folder import compute_file_hash as _compute_file_hash
+
+    return _compute_file_hash(file_path)
 
 
 def discover_markdown_files(directory: Path, recursive: bool = True) -> list[Path]:
-    if not directory.is_dir():
-        raise ValueError(f"Not a directory: {directory}")
+    """Discover markdown files in a directory.
 
-    if recursive:
-        md_files = list(directory.rglob("*.md"))
-        mdx_files = list(directory.rglob("*.mdx"))
-        all_files = md_files + mdx_files
-    else:
-        md_files = list(directory.glob("*.md"))
-        mdx_files = list(directory.glob("*.mdx"))
-        all_files = md_files + mdx_files
+    Backward-compatible wrapper. Import from engines/folder.py for new code.
+    """
+    from kurt.tools.map.engines.folder import discover_markdown_files as _discover_markdown_files
 
-    all_files = [f for f in all_files if not any(part.startswith(".") for part in f.parts)]
-    return sorted(all_files)
+    return _discover_markdown_files(directory, recursive=recursive)
 
 
 def _extract_title(file_path: Path) -> str:
-    with file_path.open("r", encoding="utf-8") as handle:
-        content = handle.read()
+    """Extract title from markdown file.
 
-    for line in content.split("\n"):
-        if line.startswith("# "):
-            return line[2:].strip()
+    Backward-compatible wrapper. Import from engines/folder.py for new code.
+    """
+    from kurt.tools.map.engines.folder import _extract_title as _impl_extract_title
 
-    return file_path.stem.replace("-", " ").replace("_", " ").title()
+    return _impl_extract_title(file_path)
