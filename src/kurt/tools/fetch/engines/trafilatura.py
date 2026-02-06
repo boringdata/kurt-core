@@ -98,3 +98,7 @@ class TrafilaturaFetcher(BaseFetcher):
         if not result.success:
             raise ValueError(result.error or "Fetch failed")
         return result.content, result.metadata
+
+
+# Backwards compatibility alias
+TrafilaturaEngine = TrafilaturaFetcher

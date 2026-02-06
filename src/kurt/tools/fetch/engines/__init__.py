@@ -25,7 +25,7 @@ from kurt.tools.fetch.core import BaseFetcher
 
 # Import engine classes for easy access
 # Primary names are *Fetcher, *Engine aliases exist for backward compatibility
-from kurt.tools.fetch.engines.trafilatura import TrafilaturaFetcher
+from kurt.tools.fetch.engines.trafilatura import TrafilaturaFetcher, TrafilaturaEngine
 from kurt.tools.fetch.engines.httpx import HttpxFetcher, HttpxEngine
 from kurt.tools.fetch.engines.tavily import TavilyFetcher, TavilyEngine
 from kurt.tools.fetch.engines.firecrawl import FirecrawlFetcher, FirecrawlEngine
@@ -96,6 +96,7 @@ __all__ = [
     "FirecrawlFetcher",
     "ApifyFetcher",
     # Backward compatibility aliases (*Engine names)
+    "TrafilaturaEngine",
     "HttpxEngine",
     "TavilyEngine",
     "FirecrawlEngine",
