@@ -20,6 +20,10 @@ class TrafilaturaFetcher(BaseFetcher):
     - HTML content extraction and conversion to Markdown
     - Metadata extraction (title, author, date, description, fingerprint)
 
+    Note: This fetcher does NOT perform pre-fetch content-type or size
+    validation because trafilatura.fetch_url() handles the HTTP fetch
+    internally. For validation before extraction, use HttpxFetcher instead.
+
     This is the canonical implementation - use this class instead of
     the deprecated fetch_with_trafilatura() function.
     """

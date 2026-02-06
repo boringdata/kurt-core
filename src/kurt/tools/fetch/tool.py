@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 from kurt.tools.core import ProgressCallback, Tool, ToolContext, ToolResult, register_tool
 
 from .config import FetchConfig, has_embedding_api_keys
+from .core import MAX_CONTENT_SIZE_BYTES, VALID_CONTENT_TYPES
 from .models import (
     BatchFetcher,
     BatchFetchResult,
@@ -36,23 +37,11 @@ logger = logging.getLogger(__name__)
 # Constants
 # ============================================================================
 
-# Maximum content size (10 MB)
-MAX_CONTENT_SIZE_BYTES = 10 * 1024 * 1024
-
 # HTTP status codes that should trigger a retry
 RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
 # HTTP status codes that should NOT be retried
 NON_RETRYABLE_STATUS_CODES = {400, 401, 403, 404}
-
-# Valid content types for text extraction
-VALID_CONTENT_TYPES = {
-    "text/html",
-    "text/plain",
-    "application/xhtml+xml",
-    "application/xml",
-    "text/xml",
-}
 
 
 # ============================================================================

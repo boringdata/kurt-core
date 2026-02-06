@@ -61,6 +61,8 @@ class TestFetchFromWeb:
 
         mock_response = MagicMock()
         mock_response.text = "<html>Test</html>"
+        # Mock headers for content validation
+        mock_response.headers = {"content-type": "text/html; charset=utf-8"}
         mock_httpx.get.return_value = mock_response
 
         mock_traf_utils.extract.return_value = "# HTTPX Content"
