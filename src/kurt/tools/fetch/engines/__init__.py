@@ -86,6 +86,14 @@ class EngineRegistry:
         return name in cls._engines
 
 
+# Register all engines
+EngineRegistry.register("trafilatura", TrafilaturaFetcher)
+EngineRegistry.register("httpx", HttpxFetcher)
+EngineRegistry.register("tavily", TavilyFetcher)
+EngineRegistry.register("firecrawl", FirecrawlFetcher)
+EngineRegistry.register("apify", ApifyFetcher)
+
+
 __all__ = [
     # Registry
     "EngineRegistry",

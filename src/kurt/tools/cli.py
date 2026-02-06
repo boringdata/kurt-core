@@ -6,15 +6,15 @@ from typing import Optional
 import click
 
 from kurt.tools.fetch.core import FetcherConfig
-from kurt.tools.fetch.engines.trafilatura import TrafilaturaFetcher
+from kurt.tools.fetch.engines import EngineRegistry as FetchEngineRegistry
 from kurt.tools.fetch.subcommands import (
     FetchDocSubcommand,
     FetchPostsSubcommand,
     FetchProfileSubcommand,
 )
 from kurt.tools.map.core import MapperConfig
+from kurt.tools.map.engines import EngineRegistry as MapEngineRegistry
 from kurt.tools.map.engines.apify import ApifyEngine
-from kurt.tools.map.engines.crawl import CrawlEngine
 from kurt.tools.map.subcommands import (
     MapDocSubcommand,
     MapPostsSubcommand,
@@ -66,7 +66,7 @@ def fetch_group():
 @click.option(
     "--engine",
     default="crawl",
-    type=click.Choice(["crawl", "sitemap", "rss"]),
+    type=click.Choice(["crawl", "sitemap", "rss", "cms", "folder"]),
     help="Mapper engine",
 )
 def map_doc(url: str, depth: int, include_pattern: Optional[str], exclude_pattern: Optional[str], engine: str):
@@ -78,14 +78,13 @@ def map_doc(url: str, depth: int, include_pattern: Optional[str], exclude_patter
             exclude_pattern=exclude_pattern,
         )
 
-        # Select mapper engine
-        if engine == "crawl":
-            mapper = CrawlEngine(config)
-        elif engine == "apify":
-            mapper = ApifyEngine(config)
-        else:
+        # Select mapper engine from registry
+        try:
+            engine_class = MapEngineRegistry.get(engine)
+            mapper = engine_class(config)
+        except KeyError:
             click.echo(f"Error: Unknown engine '{engine}'", err=True)
-            raise click.Exit(1)
+            raise SystemExit(1)
 
         subcommand = MapDocSubcommand(mapper)
         results = subcommand.run(url, depth=depth, include_pattern=include_pattern, exclude_pattern=exclude_pattern)
@@ -96,7 +95,7 @@ def map_doc(url: str, depth: int, include_pattern: Optional[str], exclude_patter
             click.echo(result.url)
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
-        raise click.Exit(1)
+        raise SystemExit(1)
 
 
 @map_group.command("profile")
@@ -126,7 +125,7 @@ def map_profile(query: str, platform: str, limit: int):
             click.echo(f"{result.url} (@{result.username})")
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
-        raise click.Exit(1)
+        raise SystemExit(1)
 
 
 @map_group.command("posts")
@@ -160,7 +159,7 @@ def map_posts(source: Optional[str], limit: int, since: Optional[str], platform:
             click.echo(f"{result.url}")
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
-        raise click.Exit(1)
+        raise SystemExit(1)
 
 
 # Fetch commands
@@ -169,7 +168,7 @@ def map_posts(source: Optional[str], limit: int, since: Optional[str], platform:
 @click.option(
     "--engine",
     default="trafilatura",
-    type=click.Choice(["trafilatura", "firecrawl", "apify", "tavily"]),
+    type=click.Choice(["trafilatura", "httpx", "firecrawl", "apify", "tavily"]),
     help="Fetch engine",
 )
 def fetch_doc(urls: tuple, engine: str):
@@ -177,21 +176,13 @@ def fetch_doc(urls: tuple, engine: str):
     try:
         config = FetcherConfig()
 
-        # Select fetcher engine
-        if engine == "trafilatura":
-            fetcher = TrafilaturaFetcher(config)
-        elif engine == "firecrawl":
-            from kurt.tools.fetch.engines.firecrawl import FirecrawlFetcher
-            fetcher = FirecrawlFetcher(config)
-        elif engine == "apify":
-            from kurt.tools.fetch.engines.apify import ApifyFetcher
-            fetcher = ApifyFetcher(config)
-        elif engine == "tavily":
-            from kurt.tools.fetch.engines.tavily import TavilyFetcher
-            fetcher = TavilyFetcher(config)
-        else:
+        # Select fetcher engine from registry
+        try:
+            engine_class = FetchEngineRegistry.get(engine)
+            fetcher = engine_class(config)
+        except KeyError:
             click.echo(f"Error: Unknown engine '{engine}'", err=True)
-            raise click.Exit(1)
+            raise SystemExit(1)
 
         subcommand = FetchDocSubcommand(fetcher)
         results = subcommand.run(list(urls))
@@ -203,7 +194,7 @@ def fetch_doc(urls: tuple, engine: str):
             click.echo()
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
-        raise click.Exit(1)
+        raise SystemExit(1)
 
 
 @fetch_group.command("profile")
@@ -225,13 +216,13 @@ def fetch_profile(urls: tuple, platform: str, engine: str):
     try:
         config = FetcherConfig()
 
-        # Select fetcher engine
-        if engine == "apify":
-            from kurt.tools.fetch.engines.apify import ApifyFetcher
-            fetcher = ApifyFetcher(config)
-        else:
+        # Select fetcher engine from registry
+        try:
+            engine_class = FetchEngineRegistry.get(engine)
+            fetcher = engine_class(config)
+        except KeyError:
             click.echo(f"Error: Unknown engine '{engine}'", err=True)
-            raise click.Exit(1)
+            raise SystemExit(1)
 
         subcommand = FetchProfileSubcommand(fetcher)
         results = subcommand.run(list(urls), platform=platform)
@@ -243,7 +234,7 @@ def fetch_profile(urls: tuple, platform: str, engine: str):
             click.echo()
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
-        raise click.Exit(1)
+        raise SystemExit(1)
 
 
 @fetch_group.command("posts")
@@ -265,13 +256,13 @@ def fetch_posts(urls: tuple, platform: str, engine: str):
     try:
         config = FetcherConfig()
 
-        # Select fetcher engine
-        if engine == "apify":
-            from kurt.tools.fetch.engines.apify import ApifyFetcher
-            fetcher = ApifyFetcher(config)
-        else:
+        # Select fetcher engine from registry
+        try:
+            engine_class = FetchEngineRegistry.get(engine)
+            fetcher = engine_class(config)
+        except KeyError:
             click.echo(f"Error: Unknown engine '{engine}'", err=True)
-            raise click.Exit(1)
+            raise SystemExit(1)
 
         subcommand = FetchPostsSubcommand(fetcher)
         results = subcommand.run(list(urls), platform=platform)
@@ -284,7 +275,7 @@ def fetch_posts(urls: tuple, platform: str, engine: str):
             click.echo()
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
-        raise click.Exit(1)
+        raise SystemExit(1)
 
 
 # Deprecated aliases for backward compatibility
