@@ -51,7 +51,11 @@ class OutputContext:
 
         This is the key beads pattern: agents piping output
         automatically get JSON without needing to remember the flag.
+
+        Set FORCE_TTY=1 to disable hybrid activation (for tests).
         """
+        if os.environ.get("FORCE_TTY"):
+            return self._json_flag
         return self._json_flag or not sys.stdout.isatty()
 
     @property
