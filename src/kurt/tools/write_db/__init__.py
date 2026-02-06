@@ -396,7 +396,7 @@ class WriteTool(Tool[WriteParams, WriteOutput]):
     - Creates 'id' column as primary key if not provided
     """
 
-    name = "write"
+    name = "write-db"
     description = "Persist data to Dolt database tables"
     InputModel = WriteParams
     OutputModel = WriteOutput
@@ -427,7 +427,7 @@ class WriteTool(Tool[WriteParams, WriteOutput]):
         # Validate that we have a database client
         if context.db is None:
             raise ToolExecutionError(
-                tool_name="write",
+                tool_name="write-db",
                 message="No database client available in context",
             )
 
@@ -473,7 +473,7 @@ class WriteTool(Tool[WriteParams, WriteOutput]):
                 logger.info(f"Created table {config.table}")
             except Exception as e:
                 raise ToolExecutionError(
-                    tool_name="write",
+                    tool_name="write-db",
                     message=f"Failed to create table {config.table}: {e}",
                     cause=e,
                 )
@@ -532,7 +532,7 @@ class WriteTool(Tool[WriteParams, WriteOutput]):
 
                         if not config.continue_on_error:
                             raise ToolExecutionError(
-                                tool_name="write",
+                                tool_name="write-db",
                                 message=f"Write failed at row {idx}: {error_msg}",
                                 cause=e,
                             )
@@ -558,7 +558,7 @@ class WriteTool(Tool[WriteParams, WriteOutput]):
         except Exception as e:
             # Transaction rolled back
             raise ToolExecutionError(
-                tool_name="write",
+                tool_name="write-db",
                 message=f"Transaction failed: {e}",
                 cause=e,
             )

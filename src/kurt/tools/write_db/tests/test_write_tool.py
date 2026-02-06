@@ -10,7 +10,7 @@ import pytest
 from pydantic import ValidationError
 
 from kurt.tools.core import TOOLS, SubstepEvent, ToolContext, ToolExecutionError, clear_registry
-from kurt.tools.write import (
+from kurt.tools.write_db import (
     WriteConfig,
     WriteInput,
     WriteOutput,
@@ -38,7 +38,7 @@ def clean_registry():
     saved_tools = dict(TOOLS)
     clear_registry()
     # Re-register WriteTool
-    TOOLS["write"] = WriteTool
+    TOOLS["write-db"] = WriteTool
     yield
     clear_registry()
     TOOLS.update(saved_tools)
@@ -425,12 +425,12 @@ class TestWriteToolRegistration:
 
     def test_tool_registered(self):
         """WriteTool is registered in TOOLS."""
-        assert "write" in TOOLS
-        assert TOOLS["write"] is WriteTool
+        assert "write-db" in TOOLS
+        assert TOOLS["write-db"] is WriteTool
 
     def test_tool_attributes(self):
         """WriteTool has correct attributes."""
-        assert WriteTool.name == "write"
+        assert WriteTool.name == "write-db"
         assert WriteTool.description is not None
         assert WriteTool.InputModel is WriteParams
         assert WriteTool.OutputModel is WriteOutput
