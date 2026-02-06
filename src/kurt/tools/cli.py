@@ -7,6 +7,7 @@ import click
 
 from kurt.tools.fetch.core import FetcherConfig
 from kurt.tools.fetch.engines import EngineRegistry as FetchEngineRegistry
+from kurt.tools.fetch.engines.apify import ApifyFetcherConfig
 from kurt.tools.fetch.subcommands import (
     FetchDocSubcommand,
     FetchPostsSubcommand,
@@ -14,7 +15,7 @@ from kurt.tools.fetch.subcommands import (
 )
 from kurt.tools.map.core import MapperConfig
 from kurt.tools.map.engines import EngineRegistry as MapEngineRegistry
-from kurt.tools.map.engines.apify import ApifyEngine
+from kurt.tools.map.engines.apify import ApifyEngine, ApifyMapperConfig
 from kurt.tools.map.subcommands import (
     MapDocSubcommand,
     MapPostsSubcommand,
@@ -115,7 +116,7 @@ def map_doc(url: str, depth: int, include_pattern: Optional[str], exclude_patter
 def map_profile(query: str, platform: str, limit: int):
     """Discover social media profiles matching a query."""
     try:
-        config = MapperConfig(max_urls=limit)
+        config = ApifyMapperConfig(max_items=limit, platform=platform)
         mapper = ApifyEngine(config)
         subcommand = MapProfileSubcommand(mapper)
         results = subcommand.run(query, platform=platform, limit=limit)
@@ -149,7 +150,7 @@ def map_profile(query: str, platform: str, limit: int):
 def map_posts(source: Optional[str], limit: int, since: Optional[str], platform: Optional[str]):
     """Discover social media posts."""
     try:
-        config = MapperConfig(max_urls=limit)
+        config = ApifyMapperConfig(max_items=limit, platform=platform)
         mapper = ApifyEngine(config)
         subcommand = MapPostsSubcommand(mapper)
         results = subcommand.run(source or "", limit=limit, since=since)
@@ -168,7 +169,7 @@ def map_posts(source: Optional[str], limit: int, since: Optional[str], platform:
 @click.option(
     "--engine",
     default="trafilatura",
-    type=click.Choice(["trafilatura", "httpx", "firecrawl", "apify", "tavily"]),
+    type=click.Choice(["trafilatura", "httpx", "firecrawl", "apify", "tavily", "twitterapi"]),
     help="Fetch engine",
 )
 def fetch_doc(urls: tuple, engine: str):
@@ -201,20 +202,38 @@ def fetch_doc(urls: tuple, engine: str):
 @click.argument("urls", nargs=-1, required=True)
 @click.option(
     "--platform",
-    required=True,
+    required=False,
     type=click.Choice(["twitter", "linkedin", "instagram"]),
-    help="Platform to fetch from",
+    help="Platform to fetch from (auto-detected for twitterapi engine)",
 )
 @click.option(
     "--engine",
     default="apify",
-    type=click.Choice(["apify"]),
+    type=click.Choice(["apify", "twitterapi"]),
     help="Fetch engine",
 )
-def fetch_profile(urls: tuple, platform: str, engine: str):
+def fetch_profile(urls: tuple, platform: Optional[str], engine: str):
     """Fetch full profile details from social platforms."""
     try:
-        config = FetcherConfig()
+        # TwitterAPI engine doesn't need platform (auto-detects from URL)
+        if engine == "twitterapi":
+            from kurt.tools.fetch.engines.twitterapi import TwitterApiFetcher
+
+            fetcher = TwitterApiFetcher()
+            for url in urls:
+                result = fetcher.fetch(url)
+                if result.success:
+                    click.echo(result.content)
+                else:
+                    click.echo(f"Error: {result.error}", err=True)
+            return
+
+        # Apify engine requires platform
+        if not platform:
+            click.echo("Error: --platform is required for apify engine", err=True)
+            raise SystemExit(1)
+
+        config = ApifyFetcherConfig(platform=platform)
 
         # Select fetcher engine from registry
         try:
@@ -254,7 +273,7 @@ def fetch_profile(urls: tuple, platform: str, engine: str):
 def fetch_posts(urls: tuple, platform: str, engine: str):
     """Fetch full post content from social platforms."""
     try:
-        config = FetcherConfig()
+        config = ApifyFetcherConfig(platform=platform)
 
         # Select fetcher engine from registry
         try:
