@@ -26,8 +26,6 @@ def analytics_group():
       onboard   Configure analytics credentials
       list      List analytics-enabled domains
       query     Query analytics data
-
-    For syncing analytics data, use: kurt tool analytics sync
     """
     pass
 

@@ -115,6 +115,12 @@ def _list_engines(output_format: str) -> None:
     help="Social platform for apify engine",
 )
 @click.option(
+    "--content-type",
+    type=click.Choice(["auto", "doc", "profile", "post"], case_sensitive=False),
+    default="auto",
+    help="Content type (auto=detect from URL pattern, or explicit doc/profile/post)",
+)
+@click.option(
     "--apify-actor",
     help="Specific Apify actor ID (e.g., 'apidojo/tweet-scraper')",
 )
@@ -156,6 +162,7 @@ def fetch_cmd(
     files_paths: str | None,
     engine: str | None,
     platform: str | None,
+    content_type: str | None,
     apify_actor: str | None,
     batch_size: int | None,
     list_engines: bool,
@@ -181,6 +188,13 @@ def fetch_cmd(
     Apify Usage:
       --engine apify --platform twitter https://twitter.com/user
       --engine apify --apify-actor apidojo/tweet-scraper https://twitter.com/user
+
+    \b
+    Content Type (for apify engine):
+      auto     Auto-detect from URL pattern (default)
+      doc      Force document fetch
+      profile  Force profile fetch (e.g., twitter.com/user)
+      post     Force post fetch (e.g., twitter.com/user/status/123)
     """
     if list_engines:
         _list_engines(output_format)
@@ -314,6 +328,8 @@ def fetch_cmd(
         config_overrides["embed"] = embed
     if platform:
         config_overrides["platform"] = platform.lower()
+    if content_type and content_type != "auto":
+        config_overrides["content_type"] = content_type.lower()
     if apify_actor:
         config_overrides["apify_actor"] = apify_actor
     config = FetchConfig.from_config("fetch", **config_overrides)
@@ -335,6 +351,7 @@ def fetch_cmd(
         "batch_size": config.batch_size,
         "embed": config.embed,
         "platform": config_overrides.get("platform"),
+        "content_type": config_overrides.get("content_type"),
         "apify_actor": config_overrides.get("apify_actor"),
     }
 
