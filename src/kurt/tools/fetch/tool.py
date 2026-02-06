@@ -272,10 +272,12 @@ async def _fetch_with_trafilatura(
     """
     Fetch content using trafilatura for extraction.
 
+    Delegates to the consolidated TrafilaturaFetcher engine.
+
     Args:
         url: URL to fetch
-        timeout_s: Timeout in seconds
-        client: Async HTTP client
+        timeout_s: Timeout in seconds (used for config)
+        client: Async HTTP client (unused, kept for interface consistency)
 
     Returns:
         Tuple of (markdown_content, metadata_dict)
@@ -283,28 +285,13 @@ async def _fetch_with_trafilatura(
     Raises:
         ValueError: If fetch or extraction fails
     """
+    from kurt.tools.fetch.engines.trafilatura import TrafilaturaFetcher
 
-    from kurt.tools.fetch.utils import extract_with_trafilatura
-
-    # Use httpx for the download (async-compatible)
-    response = await client.get(url, timeout=timeout_s, follow_redirects=True)
-    response.raise_for_status()
-
-    # Check content type
-    content_type = response.headers.get("content-type", "")
-    if not any(ct in content_type.lower() for ct in VALID_CONTENT_TYPES):
-        raise ValueError(f"invalid_content_type: {content_type}")
-
-    # Check content length
-    content_length = len(response.content)
-    if content_length > MAX_CONTENT_SIZE_BYTES:
-        raise ValueError(f"content_too_large: {content_length} bytes")
-
-    html = response.text
-    if not html:
-        raise ValueError(f"No content from: {url}")
-
-    return extract_with_trafilatura(html, url)
+    fetcher = TrafilaturaFetcher()
+    result = await asyncio.to_thread(fetcher.fetch, url)
+    if not result.success:
+        raise ValueError(result.error or "No result from Trafilatura")
+    return result.content, result.metadata
 
 
 async def _fetch_with_httpx(
@@ -315,10 +302,12 @@ async def _fetch_with_httpx(
     """
     Fetch content using httpx + trafilatura extraction.
 
+    Delegates to the consolidated HttpxFetcher engine.
+
     Args:
         url: URL to fetch
-        timeout_s: Timeout in seconds
-        client: Async HTTP client
+        timeout_s: Timeout in seconds (used for config)
+        client: Async HTTP client (unused, kept for interface consistency)
 
     Returns:
         Tuple of (markdown_content, metadata_dict)
@@ -326,26 +315,15 @@ async def _fetch_with_httpx(
     Raises:
         ValueError: If fetch or extraction fails
     """
-    from kurt.tools.fetch.utils import extract_with_trafilatura
+    from kurt.tools.fetch.core import FetcherConfig
+    from kurt.tools.fetch.engines.httpx import HttpxFetcher
 
-    response = await client.get(url, timeout=timeout_s, follow_redirects=True)
-    response.raise_for_status()
-
-    # Check content type
-    content_type = response.headers.get("content-type", "")
-    if not any(ct in content_type.lower() for ct in VALID_CONTENT_TYPES):
-        raise ValueError(f"invalid_content_type: {content_type}")
-
-    # Check content length
-    content_length = len(response.content)
-    if content_length > MAX_CONTENT_SIZE_BYTES:
-        raise ValueError(f"content_too_large: {content_length} bytes")
-
-    html = response.text
-    if not html:
-        raise ValueError(f"No content from: {url}")
-
-    return extract_with_trafilatura(html, url)
+    config = FetcherConfig(timeout=timeout_s)
+    fetcher = HttpxFetcher(config)
+    result = await asyncio.to_thread(fetcher.fetch, url)
+    if not result.success:
+        raise ValueError(result.error or "No result from httpx")
+    return result.content, result.metadata
 
 
 async def _fetch_with_tavily(
