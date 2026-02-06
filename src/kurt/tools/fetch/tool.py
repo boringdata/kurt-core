@@ -1114,13 +1114,62 @@ class FetchTool(Tool[FetchParams, FetchOutput]):
                 "public_url": None,
             }
 
+    def _fetch_urls_sync(
+        self,
+        urls: list[str],
+        engine: str,
+    ) -> dict[str, tuple[str, dict] | Exception]:
+        """Fetch URLs synchronously using specified engine.
+
+        Args:
+            urls: List of URLs to fetch
+            engine: Engine name ('trafilatura', 'httpx', 'tavily', 'firecrawl')
+
+        Returns:
+            Dict mapping URL -> (content, metadata) tuple or Exception
+        """
+        from kurt.tools.fetch.engines.firecrawl import FirecrawlFetcher
+        from kurt.tools.fetch.engines.httpx import HttpxFetcher
+        from kurt.tools.fetch.engines.tavily import TavilyFetcher
+        from kurt.tools.fetch.engines.trafilatura import TrafilaturaFetcher
+
+        results: dict[str, tuple[str, dict] | Exception] = {}
+
+        if engine == "tavily":
+            fetcher = TavilyFetcher()
+            try:
+                results = fetcher.fetch_raw(urls)
+            except Exception as e:
+                return {url: e for url in urls}
+        elif engine == "firecrawl":
+            fetcher = FirecrawlFetcher()
+            try:
+                results = fetcher.fetch_raw(urls)
+            except Exception as e:
+                return {url: e for url in urls}
+        elif engine == "httpx":
+            fetcher = HttpxFetcher()
+            for url in urls:
+                try:
+                    results[url] = fetcher.fetch_raw(url)
+                except Exception as e:
+                    results[url] = e
+        else:
+            # trafilatura (default)
+            fetcher = TrafilaturaFetcher()
+            for url in urls:
+                try:
+                    results[url] = fetcher.fetch_raw(url)
+                except Exception as e:
+                    results[url] = e
+
+        return results
+
     async def _fetch_web_batch(
         self,
         inputs: list[FetchInput],
         config: FetchToolConfig,
     ) -> dict[str, dict[str, Any]]:
-        from kurt.tools.fetch.web import fetch_from_web
-
         urls = [input_item.url for input_item in inputs]
         if not urls:
             return {}
@@ -1132,7 +1181,9 @@ class FetchTool(Tool[FetchParams, FetchOutput]):
         results_by_url: dict[str, dict[str, Any]] = {}
         for i in range(0, len(urls), batch_size):
             batch_urls = urls[i : i + batch_size]
-            batch_results = await asyncio.to_thread(fetch_from_web, batch_urls, config.engine)
+            batch_results = await asyncio.to_thread(
+                self._fetch_urls_sync, batch_urls, config.engine
+            )
             for url in batch_urls:
                 result = batch_results.get(url)
                 if isinstance(result, Exception) or result is None:

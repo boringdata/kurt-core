@@ -159,7 +159,7 @@ class TestFirecrawlFetcher:
     def test_firecrawl_with_api_key(self):
         """Test Firecrawl with API key."""
         engine = FirecrawlFetcher(api_key="test_key")
-        assert engine.api_key == "test_key"
+        assert engine._get_api_key() == "test_key"
 
     def test_firecrawl_fetch(self):
         """Test fetch with Firecrawl."""

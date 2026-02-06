@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from kurt.tools.map.folder import (
+from kurt.tools.map.engines.folder import (
     _extract_title,
     compute_file_hash,
-    discover_from_folder,
+    discover_from_folder_impl as discover_from_folder,
     discover_markdown_files,
 )
 

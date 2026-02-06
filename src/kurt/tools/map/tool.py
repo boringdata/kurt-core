@@ -765,7 +765,7 @@ async def discover_from_cms(
         Tuple of (discovered items, error message or None)
     """
     try:
-        from kurt.tools.map.cms import discover_from_cms as discover_cms
+        from kurt.tools.map.engines.cms import discover_from_cms_impl as discover_cms
 
         result = discover_cms(platform=cms_platform, instance=cms_instance, limit=max_pages)
         items: list[dict[str, Any]] = result.get("discovered", [])

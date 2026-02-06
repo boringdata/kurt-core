@@ -1,35 +1,42 @@
-"""Tests for web fetch providers."""
+"""Tests for fetch engines."""
 
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 
-class TestFetchFromWeb:
-    """Test suite for fetch_from_web router."""
+class TestFetchEngines:
+    """Test suite for fetch engine classes."""
 
-    def test_import(self):
-        """Test that fetch_from_web can be imported."""
-        from kurt.tools.fetch.web import fetch_from_web
+    def test_trafilatura_fetcher_import(self):
+        """Test that TrafilaturaFetcher can be imported."""
+        from kurt.tools.fetch.engines.trafilatura import TrafilaturaFetcher
 
-        assert fetch_from_web is not None
+        assert TrafilaturaFetcher is not None
 
-    def test_empty_urls_returns_empty_dict(self):
-        """Test that empty URL list returns empty dict."""
-        from kurt.tools.fetch.web import fetch_from_web
+    def test_httpx_fetcher_import(self):
+        """Test that HttpxFetcher can be imported."""
+        from kurt.tools.fetch.engines.httpx import HttpxFetcher
 
-        result = fetch_from_web([], "trafilatura")
-        assert result == {}
+        assert HttpxFetcher is not None
+
+    def test_tavily_fetcher_import(self):
+        """Test that TavilyFetcher can be imported."""
+        from kurt.tools.fetch.engines.tavily import TavilyFetcher
+
+        assert TavilyFetcher is not None
+
+    def test_firecrawl_fetcher_import(self):
+        """Test that FirecrawlFetcher can be imported."""
+        from kurt.tools.fetch.engines.firecrawl import FirecrawlFetcher
+
+        assert FirecrawlFetcher is not None
 
     @patch("kurt.tools.fetch.utils.trafilatura")
     @patch("trafilatura.fetch_url")
-    def test_routes_to_trafilatura_by_default(self, mock_fetch_url, mock_traf_utils):
-        """Test that default engine uses trafilatura.
-
-        Note: trafilatura implementation is now in engines/trafilatura.py.
-        The root-level trafilatura.py is a deprecated wrapper.
-        """
-        from kurt.tools.fetch.web import fetch_from_web
+    def test_trafilatura_fetcher_fetch(self, mock_fetch_url, mock_traf_utils):
+        """Test TrafilaturaFetcher.fetch() method."""
+        from kurt.tools.fetch.engines.trafilatura import TrafilaturaFetcher
 
         mock_fetch_url.return_value = "<html>Test</html>"
         mock_traf_utils.extract.return_value = "# Test Content"
@@ -37,32 +44,25 @@ class TestFetchFromWeb:
             title="Test", author=None, date=None, description=None, fingerprint="abc"
         )
 
-        # Suppress deprecation warning in test
-        import warnings
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            results = fetch_from_web(["https://example.com"], "trafilatura")
+        fetcher = TrafilaturaFetcher()
+        result = fetcher.fetch("https://example.com")
 
-        assert "https://example.com" in results
-        content, metadata = results["https://example.com"]
-        assert content == "# Test Content"
-        assert metadata["title"] == "Test"
+        assert result.success
+        assert result.content == "# Test Content"
+        assert result.metadata["title"] == "Test"
         mock_fetch_url.assert_called_once()
 
     @patch("kurt.tools.fetch.utils.trafilatura")
     @patch("kurt.tools.fetch.engines.httpx.httpx")
-    def test_routes_to_httpx(self, mock_httpx, mock_traf_utils):
-        """Test that httpx engine is routed correctly.
-
-        Note: httpx implementation is now in engines/httpx.py.
-        The root-level httpx_engine.py is a deprecated wrapper.
-        """
-        from kurt.tools.fetch.web import fetch_from_web
+    def test_httpx_fetcher_fetch(self, mock_httpx, mock_traf_utils):
+        """Test HttpxFetcher.fetch() method."""
+        from kurt.tools.fetch.engines.httpx import HttpxFetcher
 
         mock_response = MagicMock()
         mock_response.text = "<html>Test</html>"
-        # Mock headers for content validation
+        mock_response.content = b"<html>Test</html>"
         mock_response.headers = {"content-type": "text/html; charset=utf-8"}
+        mock_response.raise_for_status = MagicMock()
         mock_httpx.get.return_value = mock_response
 
         mock_traf_utils.extract.return_value = "# HTTPX Content"
@@ -70,58 +70,36 @@ class TestFetchFromWeb:
             title="HTTPX Test", author=None, date=None, description=None, fingerprint="def"
         )
 
-        # Suppress deprecation warning in test
-        import warnings
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            results = fetch_from_web(["https://example.com"], "httpx")
+        fetcher = HttpxFetcher()
+        result = fetcher.fetch("https://example.com")
 
-        assert "https://example.com" in results
-        content, metadata = results["https://example.com"]
-        assert content == "# HTTPX Content"
+        assert result.success
+        assert result.content == "# HTTPX Content"
         mock_httpx.get.assert_called_once()
 
     def test_firecrawl_returns_error_on_missing_key(self):
-        """Test that firecrawl returns error without API key (or if not installed).
+        """Test that FirecrawlFetcher returns error on fetch without API key."""
+        from kurt.tools.fetch.engines.firecrawl import FirecrawlFetcher
 
-        Note: firecrawl implementation is now in engines/firecrawl.py.
-        The root-level firecrawl.py is a deprecated wrapper.
-        """
-        from kurt.tools.fetch.web import fetch_from_web
-
-        # Suppress deprecation warning in test
-        import warnings
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            with patch("kurt.tools.fetch.engines.firecrawl.os.getenv", return_value=None):
-                # fetch_from_web catches exceptions and returns them in results dict
-                results = fetch_from_web(["https://example.com"], "firecrawl")
-
-                assert "https://example.com" in results
-                assert isinstance(results["https://example.com"], Exception)
-                # Accept either "API key not set" or "module not found" (optional dep)
-                error_str = str(results["https://example.com"])
-                assert "FIRECRAWL_API_KEY" in error_str or "firecrawl" in error_str.lower()
+        with patch("kurt.tools.fetch.engines.firecrawl.os.getenv", return_value=None):
+            # Can be instantiated without API key
+            fetcher = FirecrawlFetcher()
+            # But fetch returns error result
+            result = fetcher.fetch("https://example.com")
+            assert result.success is False
+            assert "FIRECRAWL_API_KEY" in result.error
 
     def test_tavily_returns_error_on_missing_key(self):
-        """Test that tavily returns error without API key.
+        """Test that TavilyFetcher returns error on fetch without API key."""
+        from kurt.tools.fetch.engines.tavily import TavilyFetcher
 
-        Note: tavily implementation is now in engines/tavily.py.
-        The root-level tavily.py is a deprecated wrapper.
-        """
-        from kurt.tools.fetch.web import fetch_from_web
-
-        # Suppress deprecation warning in test
-        import warnings
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            with patch("kurt.tools.fetch.engines.tavily.os.getenv", return_value=None):
-                # fetch_from_web catches exceptions and returns them in results dict
-                results = fetch_from_web(["https://example.com"], "tavily")
-
-                assert "https://example.com" in results
-                assert isinstance(results["https://example.com"], Exception)
-                assert "TAVILY_API_KEY" in str(results["https://example.com"])
+        with patch("kurt.tools.fetch.engines.tavily.os.getenv", return_value=None):
+            # Can be instantiated without API key
+            fetcher = TavilyFetcher()
+            # But fetch returns error result
+            result = fetcher.fetch("https://example.com")
+            assert result.success is False
+            assert "TAVILY_API_KEY" in result.error
 
 
 class TestExtractWithTrafilatura:
