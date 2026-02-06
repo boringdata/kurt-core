@@ -2,7 +2,7 @@
 
 FetchTool - Content fetching tool for Kurt workflows.
 
-Fetches content from URLs using configurable engines (trafilatura, httpx, tavily, firecrawl).
+Fetches content from URLs using configurable engines (trafilatura, httpx, tavily, firecrawl, apify).
 Supports parallel fetching with concurrency control and exponential backoff retries.
 """
 
@@ -88,9 +88,17 @@ class FetchToolConfig(BaseModel):
     Note: This is distinct from FetchConfig (StepConfig) used by workflows.
     """
 
-    engine: Literal["trafilatura", "httpx", "tavily", "firecrawl"] = Field(
+    engine: Literal["trafilatura", "httpx", "tavily", "firecrawl", "apify"] = Field(
         default="trafilatura",
         description="Fetch engine to use",
+    )
+    platform: str | None = Field(
+        default=None,
+        description="Social platform for apify engine (twitter, linkedin, threads, substack)",
+    )
+    apify_actor: str | None = Field(
+        default=None,
+        description="Specific Apify actor ID (e.g., 'apidojo/tweet-scraper')",
     )
     concurrency: int = Field(
         default=5,
@@ -199,9 +207,17 @@ class FetchParams(BaseModel):
     )
 
     # Config fields (flattened for executor compatibility)
-    engine: Literal["trafilatura", "httpx", "tavily", "firecrawl"] = Field(
+    engine: Literal["trafilatura", "httpx", "tavily", "firecrawl", "apify"] = Field(
         default="trafilatura",
         description="Fetch engine to use",
+    )
+    platform: str | None = Field(
+        default=None,
+        description="Social platform for apify engine (twitter, linkedin, threads, substack)",
+    )
+    apify_actor: str | None = Field(
+        default=None,
+        description="Specific Apify actor ID (e.g., 'apidojo/tweet-scraper')",
     )
     concurrency: int = Field(
         default=5,
@@ -272,6 +288,8 @@ class FetchParams(BaseModel):
             return self.config
         return FetchToolConfig(
             engine=self.engine,
+            platform=self.platform,
+            apify_actor=self.apify_actor,
             concurrency=self.concurrency,
             timeout_ms=self.timeout_ms,
             batch_size=self.batch_size,
@@ -408,12 +426,52 @@ async def _fetch_with_firecrawl(
     return result.content, result.metadata
 
 
+async def _fetch_with_apify(
+    url: str,
+    timeout_s: float,
+    client: httpx.AsyncClient,
+    platform: str | None = None,
+    apify_actor: str | None = None,
+) -> tuple[str, dict[str, Any]]:
+    """
+    Fetch content using Apify for social platforms.
+
+    Delegates to the consolidated ApifyFetcher engine.
+
+    Args:
+        url: URL to fetch (social media profile, post, or newsletter)
+        timeout_s: Timeout in seconds (used for config)
+        client: Async HTTP client (unused, kept for interface consistency)
+        platform: Social platform (twitter, linkedin, threads, substack)
+        apify_actor: Specific Apify actor ID to use
+
+    Returns:
+        Tuple of (markdown_content, metadata_dict)
+
+    Raises:
+        ValueError: If fetch or extraction fails
+    """
+    from kurt.tools.fetch.engines.apify import ApifyFetcher, ApifyFetcherConfig
+
+    config = ApifyFetcherConfig(
+        timeout=timeout_s,
+        platform=platform,
+        apify_actor=apify_actor,
+    )
+    fetcher = ApifyFetcher(config)
+    result = await asyncio.to_thread(fetcher.fetch, url)
+    if not result.success:
+        raise ValueError(result.error or "No result from Apify")
+    return result.content, result.metadata
+
+
 # Engine dispatcher
 _FETCH_ENGINES = {
     "trafilatura": _fetch_with_trafilatura,
     "httpx": _fetch_with_httpx,
     "tavily": _fetch_with_tavily,
     "firecrawl": _fetch_with_firecrawl,
+    "apify": _fetch_with_apify,
 }
 
 
@@ -474,6 +532,7 @@ async def _fetch_with_retry(
     retries: int,
     retry_backoff_ms: int,
     client: httpx.AsyncClient,
+    **engine_kwargs: Any,
 ) -> tuple[str, dict[str, Any], int]:
     """
     Fetch a URL with exponential backoff retry.
@@ -485,6 +544,7 @@ async def _fetch_with_retry(
         retries: Maximum retry attempts
         retry_backoff_ms: Base backoff delay in milliseconds
         client: Async HTTP client
+        **engine_kwargs: Additional keyword arguments passed to engine (e.g., platform, apify_actor)
 
     Returns:
         Tuple of (content, metadata, latency_ms)
@@ -498,7 +558,11 @@ async def _fetch_with_retry(
     for attempt in range(retries + 1):
         start_time = time.monotonic()
         try:
-            content, metadata = await fetch_fn(url, timeout_s, client)
+            # Pass extra kwargs for engines that need them (e.g., apify)
+            if engine_kwargs:
+                content, metadata = await fetch_fn(url, timeout_s, client, **engine_kwargs)
+            else:
+                content, metadata = await fetch_fn(url, timeout_s, client)
             latency_ms = int((time.monotonic() - start_time) * 1000)
             return content, metadata, latency_ms
 
@@ -603,6 +667,7 @@ class FetchTool(Tool[FetchParams, FetchOutput]):
     - httpx: HTTP fetch + trafilatura extraction (proxy-friendly)
     - tavily: Tavily API (native batch support)
     - firecrawl: Firecrawl API (native batch support)
+    - apify: Apify social platform extraction (twitter, linkedin, threads, substack)
     """
 
     name = "fetch"
@@ -1135,6 +1200,14 @@ class FetchTool(Tool[FetchParams, FetchOutput]):
         """
         async with semaphore:
             try:
+                # Build engine-specific kwargs
+                engine_kwargs: dict[str, Any] = {}
+                if config.engine == "apify":
+                    if config.platform:
+                        engine_kwargs["platform"] = config.platform
+                    if config.apify_actor:
+                        engine_kwargs["apify_actor"] = config.apify_actor
+
                 content, metadata, latency_ms = await _fetch_with_retry(
                     url=url,
                     engine=config.engine,
@@ -1142,6 +1215,7 @@ class FetchTool(Tool[FetchParams, FetchOutput]):
                     retries=config.retries,
                     retry_backoff_ms=config.retry_backoff_ms,
                     client=client,
+                    **engine_kwargs,
                 )
 
                 content_hash = _compute_content_hash(content)
