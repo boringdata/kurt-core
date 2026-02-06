@@ -23,6 +23,10 @@ import pytest
 from click.testing import CliRunner
 
 from kurt.tools.core import ToolContext
+
+# Import tools module to ensure all tools are registered via @register_tool
+import kurt.tools  # noqa: F401
+
 from kurt.workflows.toml.executor import execute_workflow
 from kurt.workflows.toml.parser import parse_workflow
 

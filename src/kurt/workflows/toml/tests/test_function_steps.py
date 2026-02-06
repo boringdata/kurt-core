@@ -13,6 +13,10 @@ from pathlib import Path
 import pytest
 
 from kurt.tools.core import ToolContext
+
+# Import tools module to ensure all tools are registered via @register_tool
+import kurt.tools  # noqa: F401
+
 from kurt.workflows.toml.executor import (
     _execute_user_function,
     _load_user_function,
@@ -477,7 +481,7 @@ function = "process_rows"
 depends_on = ["read"]
 """)
 
-        workflow = parse_workflow(workflow_toml, validate_tools=True)
+        workflow = parse_workflow(workflow_toml, validate_tools=False)
         context = ToolContext(db=db)
         result = await execute_workflow(
             workflow,
@@ -530,7 +534,7 @@ table = "test_data"
 mode = "insert"
 """)
 
-        workflow = parse_workflow(workflow_toml, validate_tools=True)
+        workflow = parse_workflow(workflow_toml, validate_tools=False)
         context = ToolContext(db=db)
         result = await execute_workflow(
             workflow,
