@@ -23,12 +23,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-
-# Skip entire module in CI - requires dolt sql-server setup
-pytestmark = pytest.mark.skipif(
-    os.environ.get("CI") == "true",
-    reason="Dolt server e2e tests require manual server setup in CI",
-)
 from click.testing import CliRunner
 
 # Import tools module to ensure all tools are registered via @register_tool
@@ -36,6 +30,12 @@ import kurt.tools  # noqa: F401
 from kurt.tools.core import ToolContext
 from kurt.workflows.toml.executor import execute_workflow
 from kurt.workflows.toml.parser import parse_workflow
+
+# Skip entire module in CI - requires dolt sql-server setup
+pytestmark = pytest.mark.skipif(
+    os.environ.get("CI") == "true",
+    reason="Dolt server e2e tests require manual server setup in CI",
+)
 
 # ============================================================================
 # DoltDB Fixture
