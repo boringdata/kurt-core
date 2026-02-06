@@ -11,11 +11,11 @@ from typing import Optional
 import httpx
 
 from kurt.tools.fetch.core import (
+    MAX_CONTENT_SIZE_BYTES,
+    VALID_CONTENT_TYPES,
     BaseFetcher,
     FetcherConfig,
     FetchResult,
-    MAX_CONTENT_SIZE_BYTES,
-    VALID_CONTENT_TYPES,
 )
 from kurt.tools.fetch.utils import extract_with_trafilatura
 

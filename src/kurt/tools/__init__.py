@@ -115,10 +115,6 @@ from .fetch import (
     FetchParams,
     FetchTool,
     FetchToolConfig,
-    _compute_content_hash,
-    _generate_content_path,
-    _is_retryable_error,
-    _save_content,
 )
 from .map import MapInput, MapOutput, MapTool, normalize_url
 

@@ -7,8 +7,10 @@ import pytest
 from kurt.tools.map.engines.folder import (
     _extract_title,
     compute_file_hash,
-    discover_from_folder_impl as discover_from_folder,
     discover_markdown_files,
+)
+from kurt.tools.map.engines.folder import (
+    discover_from_folder_impl as discover_from_folder,
 )
 
 

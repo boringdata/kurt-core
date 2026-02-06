@@ -23,6 +23,27 @@ Usage:
 from typing import Dict, Type
 
 from kurt.tools.map.core import BaseMapper
+from kurt.tools.map.engines.apify import ApifyEngine
+from kurt.tools.map.engines.cms import (
+    CmsEngine,
+    CmsMapper,
+    discover_from_cms_impl,
+)
+from kurt.tools.map.engines.crawl import (
+    CrawlEngine,
+    CrawlMapper,
+    discover_from_crawl_impl,
+)
+from kurt.tools.map.engines.folder import (
+    FolderEngine,
+    FolderMapper,
+    discover_from_folder_impl,
+)
+from kurt.tools.map.engines.rss import (
+    RssEngine,
+    RssMapper,
+    discover_from_rss_impl,
+)
 
 # Import engine classes
 from kurt.tools.map.engines.sitemap import (
@@ -30,27 +51,6 @@ from kurt.tools.map.engines.sitemap import (
     SitemapMapper,
     discover_from_sitemap_impl,
 )
-from kurt.tools.map.engines.rss import (
-    RssEngine,
-    RssMapper,
-    discover_from_rss_impl,
-)
-from kurt.tools.map.engines.crawl import (
-    CrawlEngine,
-    CrawlMapper,
-    discover_from_crawl_impl,
-)
-from kurt.tools.map.engines.cms import (
-    CmsEngine,
-    CmsMapper,
-    discover_from_cms_impl,
-)
-from kurt.tools.map.engines.folder import (
-    FolderEngine,
-    FolderMapper,
-    discover_from_folder_impl,
-)
-from kurt.tools.map.engines.apify import ApifyEngine
 
 
 class EngineRegistry:

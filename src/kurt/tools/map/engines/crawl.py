@@ -8,7 +8,7 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
-from kurt.tools.map.core import BaseMapper, MapperConfig, MapperResult
+from kurt.tools.map.core import BaseMapper, MapperResult
 from kurt.tools.map.models import DocType
 
 
@@ -218,7 +218,7 @@ def discover_from_crawl_impl(
     if not urls:
         # If we couldn't crawl anything, at least include the start URL
         urls = [normalize_url(start_url)]
-        errors.append(f"Crawl yielded no results, including start URL only")
+        errors.append("Crawl yielded no results, including start URL only")
 
     return urls[:max_urls], errors
 

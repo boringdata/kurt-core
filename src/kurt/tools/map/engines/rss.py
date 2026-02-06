@@ -8,7 +8,7 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
-from kurt.tools.map.core import BaseMapper, MapperConfig, MapperResult
+from kurt.tools.map.core import BaseMapper, MapperResult
 from kurt.tools.map.models import DocType
 
 

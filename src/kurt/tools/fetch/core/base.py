@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field
 
 from kurt.tools.fetch.models import DocType, FetchDocument, FetchStatus
 
-
 # ============================================================================
 # Content Validation Constants
 # ============================================================================

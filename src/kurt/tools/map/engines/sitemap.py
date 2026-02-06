@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import xml.etree.ElementTree as ET
 from typing import Optional
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse
 
 import httpx
 
-from kurt.tools.map.core import BaseMapper, MapperConfig, MapperResult
+from kurt.tools.map.core import BaseMapper, MapperResult
 from kurt.tools.map.models import DocType
 
 

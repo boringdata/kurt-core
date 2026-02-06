@@ -21,6 +21,8 @@ from kurt.tools.fetch import (
     FetchParams,
     FetchTool,
     FetchToolConfig,
+)
+from kurt.tools.fetch.tool import (
     _compute_content_hash,
     _generate_content_path,
     _is_retryable_error,

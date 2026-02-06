@@ -12,11 +12,9 @@ from pathlib import Path
 
 import pytest
 
-from kurt.tools.core import ToolContext
-
 # Import tools module to ensure all tools are registered via @register_tool
 import kurt.tools  # noqa: F401
-
+from kurt.tools.core import ToolContext
 from kurt.workflows.toml.executor import (
     _execute_user_function,
     _load_user_function,
