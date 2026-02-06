@@ -13,17 +13,13 @@ Required environment variables:
 from __future__ import annotations
 
 import os
-import time
 
 import pytest
 
-from kurt.tools.fetch.engines.trafilatura import TrafilaturaFetcher
+from kurt.tools.fetch.core import FetchResult
 from kurt.tools.fetch.engines.httpx import HttpxFetcher
 from kurt.tools.fetch.engines.tavily import TavilyFetcher
-from kurt.tools.fetch.engines.apify import ApifyFetcher, ApifyFetcherConfig
-from kurt.tools.fetch.core import FetchResult
-from kurt.tools.errors import EngineError, AuthError
-
+from kurt.tools.fetch.engines.trafilatura import TrafilaturaFetcher
 
 # =============================================================================
 # Trafilatura Fetcher E2E Tests (Free - No API Key Required)
@@ -403,7 +399,7 @@ class TestApifyFetcherE2E:
 
     def test_apify_error_handling(self):
         """Test Apify error handling with invalid URL."""
-        from kurt.integrations.apify.client import ApifyClient, ApifyActorError
+        from kurt.integrations.apify.client import ApifyActorError, ApifyClient
 
         client = ApifyClient(api_key=self.api_key)
 
@@ -420,7 +416,6 @@ class TestApifyFetcherE2E:
             # Actor may return empty results for unreachable URLs
             print(f"\n[LIVE API] Result for invalid URL: {len(result)} items")
         except ApifyActorError as e:
-            error_msg = str(e).lower()
             if _is_quota_exceeded_error(e):
                 # When quota exceeded, test the error handling path with simulated error
                 print("\n[FIXTURE] Testing error handling (quota exceeded, using simulated error)")
@@ -434,7 +429,7 @@ class TestApifyFetcherE2E:
 
     def test_invalid_api_key_handling(self):
         """Test graceful handling of invalid API key."""
-        from kurt.integrations.apify.client import ApifyClient, ApifyAuthError, ApifyActorError
+        from kurt.integrations.apify.client import ApifyActorError, ApifyAuthError, ApifyClient
 
         # ApifyClient only validates key when making API calls, not on init
         client = ApifyClient(api_key="invalid-apify-key-12345")

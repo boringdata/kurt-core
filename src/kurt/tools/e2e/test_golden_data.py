@@ -12,28 +12,26 @@ import os
 
 import pytest
 
-from kurt.tools.fetch.engines.httpx import HttpxFetcher
-from kurt.tools.fetch.engines.trafilatura import TrafilaturaFetcher
-from kurt.tools.fetch.engines.tavily import TavilyFetcher
-from kurt.tools.map.engines import CrawlEngine, RssEngine, SitemapEngine
-from kurt.tools.map.core import MapperConfig
-
 from kurt.tools.e2e.fixtures import (
-    GOLDEN_SITEMAP_RESULT,
-    GOLDEN_RSS_RESULT,
     GOLDEN_CRAWL_RESULT,
-    GOLDEN_TRAFILATURA_RESULT,
-    GOLDEN_HTTPX_RESULT,
-    GOLDEN_TAVILY_RESULT,
     GOLDEN_EXAMPLE_COM_CONTENT,
+    GOLDEN_HTTPX_RESULT,
+    GOLDEN_NO_SITEMAP,
     GOLDEN_PYTHON_DOCS_JSON,
     GOLDEN_PYTHON_ORG_ABOUT,
-    GOLDEN_NO_SITEMAP,
-    validate_map_result,
-    validate_fetch_result,
+    GOLDEN_RSS_RESULT,
+    GOLDEN_SITEMAP_RESULT,
+    GOLDEN_TAVILY_RESULT,
+    GOLDEN_TRAFILATURA_RESULT,
     validate_content_snapshot,
+    validate_fetch_result,
+    validate_map_result,
 )
-
+from kurt.tools.fetch.engines.httpx import HttpxFetcher
+from kurt.tools.fetch.engines.tavily import TavilyFetcher
+from kurt.tools.fetch.engines.trafilatura import TrafilaturaFetcher
+from kurt.tools.map.core import MapperConfig
+from kurt.tools.map.engines import CrawlEngine, RssEngine, SitemapEngine
 
 # =============================================================================
 # Map Engine Golden Data Tests
@@ -57,7 +55,7 @@ class TestMapGoldenData:
         if result.count > 0:
             assert is_valid, f"Golden validation failed: {errors}"
         else:
-            print(f"\nNote: Sitemap returned 0 URLs (may be expected)")
+            print("\nNote: Sitemap returned 0 URLs (may be expected)")
 
     def test_rss_matches_golden(self):
         """Validate RssEngine output against golden data."""
@@ -150,7 +148,7 @@ class TestContentSnapshots:
         )
 
         assert is_valid, f"Content snapshot validation failed: {errors}"
-        print(f"\n✓ example.com content matches snapshot")
+        print("\n✓ example.com content matches snapshot")
         print(f"  Word count: {len(result.content.split())}")
 
     def test_python_json_docs_snapshot(self):
@@ -165,7 +163,7 @@ class TestContentSnapshots:
         )
 
         assert is_valid, f"Content snapshot validation failed: {errors}"
-        print(f"\n✓ Python JSON docs match snapshot")
+        print("\n✓ Python JSON docs match snapshot")
         print(f"  Word count: {len(result.content.split())}")
 
     def test_python_org_about_snapshot(self, tavily_api_key):
@@ -183,7 +181,7 @@ class TestContentSnapshots:
         )
 
         assert is_valid, f"Content snapshot validation failed: {errors}"
-        print(f"\n✓ python.org/about matches snapshot")
+        print("\n✓ python.org/about matches snapshot")
         print(f"  Word count: {len(result.content.split())}")
 
 
@@ -217,7 +215,7 @@ class TestCrossValidation:
         assert "example" in traf_result.content.lower()
         assert "example" in httpx_result.content.lower()
 
-        print(f"\n✓ Cross-engine consistency validated")
+        print("\n✓ Cross-engine consistency validated")
         print(f"  Trafilatura: {traf_len} chars")
         print(f"  HTTPX: {httpx_len} chars")
 
@@ -235,6 +233,6 @@ class TestCrossValidation:
                 assert discovered_url.startswith("http"), f"Invalid URL: {discovered_url}"
                 assert " " not in discovered_url, f"URL contains spaces: {discovered_url}"
 
-        print(f"\n✓ Map engine URL format consistency validated")
+        print("\n✓ Map engine URL format consistency validated")
         print(f"  Sitemap: {sitemap_result.count} URLs")
         print(f"  Crawl: {crawl_result.count} URLs")

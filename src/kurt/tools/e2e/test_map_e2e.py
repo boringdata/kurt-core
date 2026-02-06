@@ -17,14 +17,12 @@ from pathlib import Path
 
 import pytest
 
+from kurt.tools.map.core import MapperConfig, MapperResult
 from kurt.tools.map.engines import (
     CrawlEngine,
-    FolderEngine,
     RssEngine,
     SitemapEngine,
 )
-from kurt.tools.map.core import MapperConfig, MapperResult
-
 
 # =============================================================================
 # Sitemap Engine E2E Tests (Free - No API Key Required)
@@ -463,12 +461,12 @@ class TestCrossEngineComparison:
         crawl_result = crawl_engine.map("https://www.python.org")
 
         print("\n=== Cross-Engine Comparison: python.org ===")
-        print(f"\nSitemap engine:")
+        print("\nSitemap engine:")
         print(f"  URLs found: {sitemap_result.count}")
         print(f"  Errors: {len(sitemap_result.errors)}")
         print(f"  Sample: {sitemap_result.urls[:3] if sitemap_result.urls else 'None'}")
 
-        print(f"\nCrawl engine:")
+        print("\nCrawl engine:")
         print(f"  URLs found: {crawl_result.count}")
         print(f"  Errors: {len(crawl_result.errors)}")
         print(f"  Sample: {crawl_result.urls[:3] if crawl_result.urls else 'None'}")
@@ -496,11 +494,11 @@ class TestCrossEngineComparison:
         crawl_result = crawl_engine.map("https://blog.python.org")
 
         print("\n=== Cross-Engine Comparison: blog.python.org ===")
-        print(f"\nRSS engine:")
+        print("\nRSS engine:")
         print(f"  URLs found: {rss_result.count}")
         print(f"  Errors: {rss_result.errors[:2] if rss_result.errors else 'None'}")
 
-        print(f"\nCrawl engine:")
+        print("\nCrawl engine:")
         print(f"  URLs found: {crawl_result.count}")
         print(f"  Errors: {crawl_result.errors[:2] if crawl_result.errors else 'None'}")
 

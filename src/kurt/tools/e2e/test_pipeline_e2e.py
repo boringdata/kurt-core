@@ -12,13 +12,12 @@ import os
 
 import pytest
 
-from kurt.tools.fetch.engines.httpx import HttpxFetcher
-from kurt.tools.fetch.engines.trafilatura import TrafilaturaFetcher
-from kurt.tools.fetch.engines.tavily import TavilyFetcher
 from kurt.tools.fetch.core import FetchResult
-from kurt.tools.map.engines import CrawlEngine, RssEngine, SitemapEngine
+from kurt.tools.fetch.engines.httpx import HttpxFetcher
+from kurt.tools.fetch.engines.tavily import TavilyFetcher
+from kurt.tools.fetch.engines.trafilatura import TrafilaturaFetcher
 from kurt.tools.map.core import MapperConfig, MapperResult
-
+from kurt.tools.map.engines import CrawlEngine, RssEngine, SitemapEngine
 
 # =============================================================================
 # Sitemap → Fetch Pipeline Tests
@@ -51,7 +50,7 @@ class TestSitemapFetchPipeline:
         successful = [r for r in fetch_results if r.success]
         assert len(successful) >= 1, "At least one fetch should succeed"
 
-        print(f"\n=== Sitemap → Trafilatura Pipeline ===")
+        print("\n=== Sitemap → Trafilatura Pipeline ===")
         print(f"Discovered: {map_result.count} URLs")
         print(f"Fetched: {len(fetch_results)} pages")
         print(f"Successful: {len(successful)}")
@@ -78,7 +77,7 @@ class TestSitemapFetchPipeline:
         successful = [r for r in fetch_results if r.success]
         assert len(successful) >= 1
 
-        print(f"\n=== Sitemap → HTTPX Pipeline ===")
+        print("\n=== Sitemap → HTTPX Pipeline ===")
         print(f"Discovered: {map_result.count} URLs")
         print(f"Successful fetches: {len(successful)}/{len(fetch_results)}")
 
@@ -101,7 +100,7 @@ class TestSitemapFetchPipeline:
         successful = sum(1 for r in batch_results.values() if r.success)
         assert successful >= 1
 
-        print(f"\n=== Sitemap → Tavily Pipeline ===")
+        print("\n=== Sitemap → Tavily Pipeline ===")
         print(f"Discovered: {map_result.count} URLs")
         print(f"Batch fetched: {successful}/{len(batch_results)} successful")
 
@@ -133,7 +132,7 @@ class TestRssFetchPipeline:
         successful = [(u, r) for u, r in fetch_results if r.success]
         assert len(successful) >= 1
 
-        print(f"\n=== RSS → Trafilatura Pipeline ===")
+        print("\n=== RSS → Trafilatura Pipeline ===")
         print(f"Discovered: {map_result.count} URLs from BBC RSS")
         print(f"Fetched: {len(successful)}/{len(fetch_results)} successful")
         for url, r in successful[:2]:
@@ -157,7 +156,7 @@ class TestRssFetchPipeline:
         successful = sum(1 for r in batch_results.values() if r.success)
         assert successful >= 1
 
-        print(f"\n=== RSS → Tavily Batch Pipeline ===")
+        print("\n=== RSS → Tavily Batch Pipeline ===")
         print(f"Discovered: {map_result.count} URLs")
         print(f"Batch result: {successful}/{len(batch_results)} successful")
 
@@ -185,7 +184,7 @@ class TestRssFetchPipeline:
         for r in successful:
             assert len(r.content) > 100, "Blog posts should have content"
 
-        print(f"\n=== Python Blog Pipeline ===")
+        print("\n=== Python Blog Pipeline ===")
         print(f"Posts discovered: {map_result.count}")
         print(f"Posts fetched: {len(successful)}")
 
@@ -218,7 +217,7 @@ class TestCrawlFetchPipeline:
         successful = [(u, r) for u, r in results if r.success]
         assert len(successful) >= 1
 
-        print(f"\n=== Crawl → Trafilatura Pipeline ===")
+        print("\n=== Crawl → Trafilatura Pipeline ===")
         print(f"Crawled: {map_result.count} URLs")
         print(f"Fetched: {len(successful)}/{len(results)}")
 
@@ -238,7 +237,7 @@ class TestCrawlFetchPipeline:
         successful = sum(1 for r in results if r.success)
         assert successful >= 1
 
-        print(f"\n=== Deep Crawl → Fetch Pipeline ===")
+        print("\n=== Deep Crawl → Fetch Pipeline ===")
         print(f"Crawled (depth=2): {map_result.count} URLs")
         print(f"Sample fetched: {successful}/{len(sample_urls)}")
 
@@ -282,7 +281,7 @@ class TestMultiEnginePipeline:
 
         assert len(results) >= 1, "At least one map engine should work"
 
-        print(f"\n=== Multi-Engine Map Comparison ===")
+        print("\n=== Multi-Engine Map Comparison ===")
         for engine, data in results.items():
             print(f"{engine}: {data['discovered']} URLs, fetch={data['fetch_success']}, {data['content_len']} chars")
 
@@ -324,7 +323,7 @@ class TestMultiEnginePipeline:
         successful = sum(1 for r in results.values() if r["success"])
         assert successful >= 2, "At least 2 fetch engines should succeed"
 
-        print(f"\n=== Multi-Engine Fetch Comparison ===")
+        print("\n=== Multi-Engine Fetch Comparison ===")
         print(f"URL: {test_url[:60]}...")
         for engine, data in results.items():
             print(f"  {engine}: success={data['success']}, {data['content_len']} chars")
@@ -355,7 +354,7 @@ class TestPipelineDataConsistency:
             if result.success:
                 assert result.metadata is not None
 
-        print(f"\n=== URL Preservation Test ===")
+        print("\n=== URL Preservation Test ===")
         print(f"Verified {min(2, map_result.count)} URLs through pipeline")
 
     def test_metadata_flow_through_pipeline(self):
@@ -375,7 +374,7 @@ class TestPipelineDataConsistency:
                 assert "engine" in result.metadata
                 assert result.metadata["engine"] == "trafilatura"
 
-        print(f"\n=== Metadata Flow Test ===")
+        print("\n=== Metadata Flow Test ===")
         print(f"Map metadata: {map_result.metadata}")
 
     def test_error_propagation_in_pipeline(self):
@@ -395,7 +394,7 @@ class TestPipelineDataConsistency:
         assert isinstance(result, FetchResult)
         # Either success=False or empty content is acceptable
 
-        print(f"\n=== Error Propagation Test ===")
+        print("\n=== Error Propagation Test ===")
         print(f"Map errors: {map_result.errors[:2] if map_result.errors else 'None'}")
         print(f"Fetch success: {result.success}")
 
@@ -427,7 +426,7 @@ class TestPipelinePerformance:
         successful = sum(1 for r in batch_results.values() if r.success)
         total_content = sum(len(r.content) for r in batch_results.values() if r.success)
 
-        print(f"\n=== Batch Pipeline Throughput ===")
+        print("\n=== Batch Pipeline Throughput ===")
         print(f"URLs processed: {len(batch_results)}")
         print(f"Successful: {successful}")
         print(f"Total content: {total_content} chars")

@@ -12,7 +12,6 @@ from pathlib import Path
 import pytest
 from dotenv import load_dotenv
 
-
 # Load .env from project root
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent.parent
 ENV_FILE = PROJECT_ROOT / ".env"

@@ -5,42 +5,41 @@ and golden test data for validation.
 """
 
 from kurt.tools.e2e.fixtures.apify_responses import (
-    WEBSITE_CRAWLER_RESPONSE,
-    WEBSITE_CRAWLER_MULTI_PAGE,
-    TWITTER_SEARCH_RESPONSE,
-    TWITTER_PROFILE_RESPONSE,
-    LINKEDIN_POST_RESPONSE,
-    SUBSTACK_NEWSLETTER_RESPONSE,
-    QUOTA_EXCEEDED_ERROR,
-    AUTH_ERROR,
     ACTOR_NOT_FOUND_ERROR,
+    AUTH_ERROR,
+    LINKEDIN_POST_RESPONSE,
+    QUOTA_EXCEEDED_ERROR,
+    SUBSTACK_NEWSLETTER_RESPONSE,
+    TWITTER_PROFILE_RESPONSE,
+    TWITTER_SEARCH_RESPONSE,
+    WEBSITE_CRAWLER_MULTI_PAGE,
+    WEBSITE_CRAWLER_RESPONSE,
 )
-
 from kurt.tools.e2e.fixtures.golden_data import (
-    # Map engine golden data
-    GOLDEN_SITEMAP_RESULT,
-    GOLDEN_RSS_RESULT,
-    GOLDEN_CRAWL_RESULT,
-    # Fetch engine golden data
-    GOLDEN_TRAFILATURA_RESULT,
-    GOLDEN_HTTPX_RESULT,
-    GOLDEN_TAVILY_RESULT,
-    # Pipeline golden data
-    GOLDEN_SITEMAP_FETCH_PIPELINE,
-    GOLDEN_RSS_FETCH_PIPELINE,
-    GOLDEN_CRAWL_FETCH_PIPELINE,
-    # Content snapshots
-    GOLDEN_EXAMPLE_COM_CONTENT,
-    GOLDEN_PYTHON_DOCS_JSON,
-    GOLDEN_PYTHON_ORG_ABOUT,
     # Error cases
     GOLDEN_404_RESPONSE,
+    GOLDEN_CRAWL_FETCH_PIPELINE,
+    GOLDEN_CRAWL_RESULT,
+    # Content snapshots
+    GOLDEN_EXAMPLE_COM_CONTENT,
+    GOLDEN_HTTPX_RESULT,
     GOLDEN_INVALID_URL,
     GOLDEN_NO_SITEMAP,
+    GOLDEN_PYTHON_DOCS_JSON,
+    GOLDEN_PYTHON_ORG_ABOUT,
+    GOLDEN_RSS_FETCH_PIPELINE,
+    GOLDEN_RSS_RESULT,
+    # Pipeline golden data
+    GOLDEN_SITEMAP_FETCH_PIPELINE,
+    # Map engine golden data
+    GOLDEN_SITEMAP_RESULT,
+    GOLDEN_TAVILY_RESULT,
+    # Fetch engine golden data
+    GOLDEN_TRAFILATURA_RESULT,
+    validate_content_snapshot,
+    validate_fetch_result,
     # Validation helpers
     validate_map_result,
-    validate_fetch_result,
-    validate_content_snapshot,
 )
 
 __all__ = [

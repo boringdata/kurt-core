@@ -8,7 +8,6 @@ Usage:
     assert actual.count >= GOLDEN_SITEMAP_RESULT["min_urls"]
 """
 
-from datetime import datetime
 
 # =============================================================================
 # Map Engine Golden Data
