@@ -20,7 +20,7 @@ Example usage:
 """
 
 from .context import OutputContext, is_json_mode, is_tty
-from .output import robot_success, robot_error, ErrorCode
+from .output import ErrorCode, robot_error, robot_success
 
 __all__ = [
     "OutputContext",

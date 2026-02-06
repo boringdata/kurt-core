@@ -15,7 +15,6 @@ Doctor checks:
 
 from __future__ import annotations
 
-import json as json_module
 import os
 import subprocess
 import time
@@ -27,7 +26,7 @@ from typing import Any
 import click
 from rich.console import Console
 
-from kurt.cli.robot import OutputContext, robot_success, robot_error, ErrorCode
+from kurt.cli.robot import ErrorCode, OutputContext, robot_error, robot_success
 
 console = Console()
 

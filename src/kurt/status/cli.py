@@ -9,7 +9,7 @@ import click
 from rich.console import Console
 
 from kurt.admin.telemetry.decorators import track_command
-from kurt.cli.robot import OutputContext, robot_success, robot_error, ErrorCode
+from kurt.cli.robot import ErrorCode, OutputContext, robot_error, robot_success
 
 console = Console()
 
