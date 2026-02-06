@@ -515,46 +515,21 @@ def _generate_content_path(url: str, content_dir: str | None) -> str:
     Uses URL-based path for readability:
     - https://example.com/blog/post -> content_dir/example.com/blog/post.md
 
+    Delegates to the canonical _url_to_path() function in utils.py for the
+    URL-to-path conversion logic, then prepends the content_dir prefix.
+
     Args:
         url: Source URL
-        content_dir: Base directory for content (or None for default)
+        content_dir: Base directory for content (or None for default "sources")
 
     Returns:
         Relative path for the content file
     """
-    from urllib.parse import urlparse
-
-    parsed = urlparse(url)
-    domain = parsed.netloc or "unknown"
-    path = parsed.path.strip("/")
-
-    # Handle empty path (root URL)
-    if not path:
-        path = "index"
-
-    # Remove file extension if present (we'll add .md)
-    if path.endswith(".html") or path.endswith(".htm"):
-        path = path.rsplit(".", 1)[0]
-
-    # Sanitize path components
-    safe_chars = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_/.")
-    sanitized_path = "".join(c if c in safe_chars else "_" for c in path)
-
-    # Collapse multiple underscores
-    while "__" in sanitized_path:
-        sanitized_path = sanitized_path.replace("__", "_")
-
-    # Remove trailing underscores from path segments
-    sanitized_path = "/".join(
-        seg.strip("_") for seg in sanitized_path.split("/") if seg.strip("_")
-    )
-
-    # Handle edge case of empty path after sanitization
-    if not sanitized_path:
-        sanitized_path = "index"
+    from kurt.tools.fetch.utils import _url_to_path
 
     base_dir = content_dir or "sources"
-    return f"{base_dir}/{domain}/{sanitized_path}.md"
+    relative_path = _url_to_path(url)
+    return f"{base_dir}/{relative_path}"
 
 
 def _save_content(content: str, content_path: str, context: ToolContext) -> str:
