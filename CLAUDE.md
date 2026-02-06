@@ -18,231 +18,111 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 <!-- OPENSPEC:END -->
 
 ---
-description: kurt_new core framework for DBOS workflow creation
+description: Kurt core framework for workflow creation
 ---
 
-# kurt_new Core Framework Guide
+# Kurt Core Framework Guide
 
-This guide explains how to build DBOS workflows using the kurt_new core abstractions.
-Keep workflows minimal, durable, and observable. Use DBOS for orchestration and
-use kurt_new core for LLM batch steps and tracing.
+This guide explains how to build workflows using the Kurt core abstractions.
+Keep workflows minimal and observable.
 
-## Database Modes
+## Database: Dolt
 
-Kurt supports three database modes via `DATABASE_URL` in `kurt.config`:
+Kurt uses **Dolt** as its only database backend. Dolt is a SQL database with Git-like version control features, accessed via MySQL protocol.
 
-1. **SQLite (Local Development)**
-   ```
-   DATABASE_URL="sqlite:///.kurt/kurt.sqlite"
-   ```
-   - File-based database for local development
-   - No server required
-   - Single-user, local files only
-   - Views and JOINs work natively
-   - **DBOS Schema:** Separate `dbos` schema for organization
-   - **Isolation:** Single user (no multi-tenancy)
+### Connection Modes
 
-2. **PostgreSQL (Direct Connection)**
-   ```
-   DATABASE_URL="postgresql://user:pass@host:5432/dbname"
-   CLOUD_AUTH=true  # Optional: enables RLS policies
-   ```
-   - Direct PostgreSQL connection for team collaboration
-   - Full SQL support including views and JOINs
-   - Use for self-hosted PostgreSQL or shared Postgres
-   - **DBOS Schema:** Separate `dbos` schema (shared by all workspaces)
-   - **Isolation:** RLS policies on tables (filter by workspace_id)
-   - **Limitation:** DBOS tables not workspace-filtered (shared)
+Dolt supports two connection modes (configured automatically):
 
-3. **Kurt Cloud**
-   ```
-   DATABASE_URL="kurt"
-   ```
-   - Fully managed multi-tenant SaaS
-   - Requires `kurt cloud login` for authentication
-   - CLI commands route through kurt-cloud API
-   - **DBOS Schema:** No separate schema - lives in workspace schema
-   - **Isolation:** PostgreSQL schema-based (ws_<id> per workspace)
-   - **Security:** Database-level isolation via dedicated DB user + search_path
+| Mode | Use Case | How It Works |
+|------|----------|--------------|
+| **Embedded** | Local CLI operations | Uses `dolt sql` CLI directly |
+| **Server** | Concurrent access, web UI | Connects to `dolt sql-server` via MySQL protocol |
 
-### DBOS Schema Configuration
+The `DoltDB` class auto-starts a server when needed for SQLModel/SQLAlchemy sessions.
 
-The DBOS initialization in `src/kurt/core/dbos.py` automatically configures the schema based on mode:
+### Configuration
+
+In `kurt.toml`:
+```toml
+# No DATABASE_URL needed for local Dolt (default)
+# Optional: connect to remote Dolt server
+DATABASE_URL="mysql+pymysql://root@localhost:3306/kurt"
+```
+
+### Key Features
+
+- **Git-like versioning**: Branch, commit, merge, diff on your data
+- **MySQL protocol**: Standard SQL via SQLModel/SQLAlchemy
+- **No migrations needed**: Schema changes via Dolt commits
+- **Local-first**: Works offline, sync later
+
+### Usage
 
 ```python
-from kurt.db.tenant import is_cloud_mode
+from kurt.db import get_database_client, managed_session
 
-# In kurt-cloud mode (DATABASE_URL="kurt"), DBOS uses workspace schema via search_path
-# In local/postgres modes, use separate "dbos" schema for organization
-dbos_schema = None if is_cloud_mode() else "dbos"
+# Get Dolt client
+db = get_database_client()
 
-config = DBOSConfig(
-    name="kurt",
-    database_url=db_url,
-    dbos_system_schema=dbos_schema,  # None or "dbos"
-)
+# Raw SQL queries
+result = db.query("SELECT * FROM documents WHERE status = ?", ["completed"])
+
+# SQLModel sessions (auto-starts server if needed)
+with managed_session() as session:
+    docs = session.exec(select(Document)).all()
+
+# Git-like operations
+db.branch_create("feature/experiment")
+db.branch_switch("feature/experiment")
+db.commit("Add new documents", author="Agent <agent@kurt.dev>")
 ```
 
-**Why different schemas per mode?**
+### Files
 
-| Mode | DBOS Schema | Reason |
-|------|-------------|--------|
-| SQLite | `dbos` | Separates DBOS tables from user tables for clarity |
-| PostgreSQL | `dbos` | Shared DBOS tables across workspaces (limitation: no workspace filtering on DBOS tables) |
-| Kurt Cloud | `None` (uses workspace schema) | Complete isolation - each workspace has own DBOS tables in `ws_<id>` schema |
+- `src/kurt/db/dolt.py` - Main DoltDB class (composed from connection + queries)
+- `src/kurt/db/connection.py` - Connection pool, server lifecycle, sessions
+- `src/kurt/db/queries.py` - Query execution, parameter interpolation
+- `src/kurt/db/schema.py` - Schema initialization helpers
 
-### Cloud Mode Architecture: CLI → Web API → PostgreSQL
+### Workspace Context (Multi-Tenancy Prep)
 
-**Purpose**: Provide cloud-hosted backend with API-based access for CLI commands.
-
-**Solution**: CLI routes to web API in cloud mode, which runs SQLAlchemy queries server-side using direct PostgreSQL connection.
-
-**Architecture**:
-```
-Local Mode:
-  kurt status → queries.py → SQLite/PostgreSQL
-  kurt serve → web/api/server.py (web UI)
-
-Cloud Mode:
-  kurt status → HTTP → web/api/server.py → queries.py → PostgreSQL
-  Web UI → HTTP → web/api/server.py → queries.py → PostgreSQL
-```
-
-**Module Structure** (example: `src/kurt/status/`):
-```
-status/
-├── __init__.py     # Public exports
-├── cli.py          # Click commands - routes based on is_cloud_mode()
-└── queries.py      # SQLAlchemy queries (used by web API)
-
-documents/
-├── __init__.py     # Public exports
-├── cli.py          # Click commands - routes based on is_cloud_mode()
-├── registry.py     # DocumentRegistry class with list(), get(), count()
-├── filtering.py    # DocumentFilters
-└── models.py       # DocumentView dataclass
-
-web/api/
-└── server.py       # FastAPI app with ALL endpoints (CLI + web UI)
-```
-
-**Key points**:
-- `queries.py` contains pure SQLAlchemy - works in all modes
-  - For simple modules (status), create dedicated `queries.py`
-  - For complex modules (documents), use existing registry/service classes directly
-- `cli.py` uses `route_by_mode()` helper to route to queries/registry (local) or web API (cloud)
-- `web/api/server.py` defines ALL endpoints (used by CLI and web UI)
-- Kurt-cloud hosts `web/api/server.py` (single FastAPI app)
-- **No PostgREST emulation** - direct PostgreSQL on backend
-- **Single API** - CLI and web UI use same endpoints
-
-**Generic Routing Pattern**:
-```python
-from kurt.db.routing import route_by_mode
-
-# Route function call based on database mode
-result = route_by_mode(local_fn, cloud_fn, *args, **kwargs)
-
-# Example:
-def _get_data(filters):
-    return route_by_mode(_get_from_db, _get_from_api, filters)
-```
-
-**Benefits**:
-- ✅ Single source of truth for SQL queries
-- ✅ Single API definition (`web/api/server.py`)
-- ✅ No duplication between CLI API and web UI API
-- ✅ `kurt serve` uses same API that kurt-cloud hosts
-- ✅ Direct PostgreSQL access on backend
-
-**When adding new features**:
-1. Use existing registry/service classes OR create `module/queries.py` with SQLAlchemy queries
-2. Add `/api/module` endpoint to `web/api/server.py` that calls queries/registry directly
-3. Create `module/cli.py` that routes to queries/registry (local) or API (cloud)
-
-### Multi-Tenancy with RLS (Row Level Security)
-
-**Overview**: Kurt uses PostgreSQL RLS for multi-tenant data isolation in cloud mode.
-
-**Architecture**:
-```
-1. JWT Token → 2. Middleware → 3. Context → 4. Session → 5. PostgreSQL RLS
-   (user_id,       set_workspace_   (contextvars)  SET LOCAL    (auto-filter)
-    workspace_id)  context()                       variables
-```
-
-**Implementation**:
+Even in local mode, Kurt tracks `workspace_id` and `user_id` for future cloud sync:
 
 ```python
-# 1. Middleware (web/api/auth.py) extracts JWT claims
-async def auth_middleware_setup(request, call_next):
-    user_data = verify_token_with_supabase(token)
-    user_id = user_data.get("id")
-    workspace_id = user_data.get("user_metadata", {}).get("workspace_id")
+from kurt.db import set_workspace_context, get_workspace_id
 
-    # 2. Set workspace context (thread-local via contextvars)
-    set_workspace_context(workspace_id=workspace_id, user_id=user_id)
+# Set at CLI startup (from kurt.toml WORKSPACE_ID)
+set_workspace_context(workspace_id="ws-123", user_id="local")
 
-    try:
-        response = await call_next(request)
-        return response
-    finally:
-        clear_workspace_context()
-
-# 3. managed_session() reads context and sets PostgreSQL variables
-@contextmanager
-def managed_session():
-    session = get_session()
-    try:
-        # Calls set_rls_context(session) which does:
-        # session.execute(text("SET LOCAL app.user_id = :user_id"), {"user_id": ...})
-        # session.execute(text("SET LOCAL app.workspace_id = :workspace_id"), {"workspace_id": ...})
-        set_rls_context(session)
-        yield session
-        session.commit()
-    except Exception:
-        session.rollback()
-        raise
-    finally:
-        session.close()
-
-# 4. RLS policies in PostgreSQL automatically filter data:
-# CREATE POLICY tenant_isolation ON map_documents
-#   USING (workspace_id = current_setting('app.workspace_id', true)::uuid);
+# Auto-populated on new records via SQLAlchemy listener
+# Models with TenantMixin get workspace_id/user_id automatically
 ```
 
-**Key Points**:
-- ✅ Context variables (`set_workspace_context`) propagate across async boundaries
-- ✅ Parameterized queries prevent SQL injection (`SET LOCAL app.user_id = :user_id`)
-- ✅ Local mode (SQLite) skips RLS - no overhead
-- ✅ Cloud mode uses direct PostgreSQL with RLS
-- ✅ Tests verify SQL injection protection and context propagation
+### Cloud Authentication (Future)
 
-**Files**:
-- `src/kurt/db/tenant.py` - Context management and `set_rls_context()`
-- `src/kurt/db/database.py` - `managed_session()` calls `set_rls_context()`
-- `src/kurt/web/api/auth.py` - Middleware sets context from JWT
-- `src/kurt/web/api/tests/test_rls_integration.py` - RLS tests (4 tests passing)
+Kurt has infrastructure for future cloud sync:
 
-**Security**:
-- SQL injection prevented via parameterized queries
-- Workspace isolation enforced at database level
-- JWT validation via auth API
+```bash
+kurt cloud login    # OAuth via browser
+kurt cloud status   # Show auth status
+kurt cloud logout   # Clear credentials
+```
+
+The `is_cloud_mode()` function checks for `DATABASE_URL="kurt"` but cloud routing is not yet implemented. Currently all operations use local Dolt.
 
 ## Principles
 
 - Keep core logic small; put domain persistence in workflow modules.
-- Use DBOS for durability and workflow state.
-- Emit progress and logs via DBOS events and streams.
-- Trace LLM costs/tokens in `llm_traces` only (DBOS does not track these).
+- Track workflow state via observability tables.
+- Trace LLM costs/tokens in `llm_traces`.
 
 ## Core Components
 
-- `LLMStep` / `@llm_step`: durable, parallel LLM batch steps
+- `LLMStep` / `@llm_step`: parallel LLM batch steps
 - `StepHooks`: lifecycle hooks for tracking and tracing
-- `TrackingHooks`: DBOS events + streams (progress and logs)
 - `TracingHooks`: writes `llm_traces` with tokens/costs
-- `status` utils: `get_live_status`, `get_step_logs_page`, `get_progress_page`
+- `status` utils: `get_live_status`, `get_step_logs_page`
 
 ## Recommended Usage
 
@@ -283,13 +163,11 @@ extract_step = LLMStep(
 )
 ```
 
-### 3) Use inside a DBOS workflow
+### 3) Use in a workflow
 
 ```python
-from dbos import DBOS
 import pandas as pd
 
-@DBOS.workflow()
 def my_pipeline(docs_json: str):
     df = pd.read_json(docs_json, orient="records")
     df = extract_step.run(df)
@@ -333,67 +211,55 @@ and add `user_id` / `workspace_id` there as needed.
 
 ## Table Schema Management
 
-### Database Schema Separation
+### Schema with Dolt
 
-Kurt uses **two separate Alembic migration trees** to separate concerns:
+Kurt uses Dolt for all data storage. Schema management is simpler than traditional SQL databases:
 
-1. **Kurt-core migrations** (`src/kurt/db/migrations/`)
-   - Schema: `public` (default PostgreSQL schema)
-   - Tables: Workflow data (map_documents, fetch_documents, content_items, etc.)
-   - Owned by: kurt-core repository
-   - Applied by: `scripts/run_core_migrations.py` in kurt-cloud
+1. **Define SQLModel models** in your workflow's `models.py`
+2. **Call `ensure_tables()`** at startup to create tables
+3. **Dolt commits** track schema changes like code changes
 
-2. **Kurt-cloud migrations** (`src/kurt_cloud/db/migrations/` in kurt-cloud repo)
-   - Schema: `cloud` (separate schema)
-   - Tables: Multi-tenancy (workspaces, workspace_members, user_connections, usage_events)
-   - Owned by: kurt-cloud repository
-   - Applied by: `alembic upgrade head` in kurt-cloud
+### Creating Tables
 
-**IMPORTANT**: Workspace/auth tables belong in kurt-cloud (not kurt-core).
-
-### DBOS Tables
-
-- DBOS tables (events/streams/workflow_status) are managed by DBOS
-- Do not create or migrate DBOS tables manually
-- Use raw SQL for DBOS queries (no SQLModel models)
-
-### Creating Kurt-Core Migrations
-
-When you add workflow tables (map, fetch, content, etc.):
-
-```bash
-cd src/kurt/db/migrations
-alembic revision -m "add_my_workflow_tables"
-```
-
-Edit the generated file in `versions/`:
 ```python
-def upgrade() -> None:
-    op.create_table(
-        "my_workflow_documents",
-        sa.Column("id", sa.String(), nullable=False),
-        sa.Column("workspace_id", sa.String(), nullable=True),  # For multi-tenancy
-        # ... other columns
-    )
+from sqlmodel import Field, SQLModel
+from kurt.db.models import TimestampMixin, TenantMixin
+
+class MyDocument(TimestampMixin, TenantMixin, SQLModel, table=True):
+    """Documents for my workflow."""
+    __tablename__ = "my_workflow_documents"
+
+    id: str = Field(primary_key=True)
+    title: str
+    content: str | None = None
 ```
 
-Apply locally:
+### Initializing Schema
+
+```python
+from kurt.db import get_database_client, init_observability_schema
+
+db = get_database_client()
+
+# Initialize observability tables (workflow_runs, step_logs, step_events)
+init_observability_schema(db)
+
+# SQLModel tables are created via ensure_tables() or db.init_database()
+```
+
+### Schema Versioning
+
+Dolt tracks schema changes as commits:
+
 ```bash
-export DATABASE_URL="sqlite:///.kurt/kurt.sqlite"
-cd src/kurt/db/migrations
-alembic upgrade head
+# After adding/modifying tables
+dolt add -A
+dolt commit -m "Add my_workflow_documents table"
+
+# View schema history
+dolt log --oneline
+dolt diff HEAD~1 HEAD --schema
 ```
-
-Apply to Supabase (from kurt-cloud):
-```bash
-cd /path/to/kurt-cloud
-export SUPABASE_DB_URL="postgresql://postgres:PASSWORD@db.xxx.supabase.co:5432/postgres"
-python scripts/run_core_migrations.py
-```
-
-### SQL Migrations (Deprecated)
-
-**Do NOT use manual SQL migrations**. Use Alembic exclusively for consistency and version control.
 
 ## Testing
 
@@ -409,335 +275,88 @@ with mock_llm([extract_step], factory):
 
 ## Do / Don't
 
-- Do: keep workflow state in DBOS, not custom tables
 - Do: use hooks for tracking/tracing
+- Do: track state via observability tables
 - Don't: add domain persistence in core
-- Don't: bypass DBOS events/streams for progress
 
 ---
 
 ## Adding a New Workflow
 
-Each workflow is a **self-contained feature module** with its own configuration, steps, models, and migrations. Workflows live in `src/kurt_new/workflows/<name>/`.
+Workflows are self-contained modules in `src/kurt/workflows/<name>/`.
 
-### Workflow Structure
+### Structure
 
 ```
-src/kurt_new/workflows/<workflow_name>/
-├── __init__.py          # Public exports
-├── config.py            # Configuration schema (Pydantic)
-├── steps.py             # Step implementations (DBOS steps, LLM steps)
-├── workflow.py          # Main workflow definition
-├── models.py            # Database models (SQLModel) - workflow-specific tables
-├── utils.py             # Shared helpers (pure functions)
-├── migrations/          # Alembic migrations for this workflow's tables
-│   └── versions/
+src/kurt/workflows/<name>/
+├── __init__.py    # Public exports
+├── config.py      # Pydantic config
+├── steps.py       # Step functions
+├── workflow.py    # Main workflow function
+├── models.py      # SQLModel tables (optional)
 └── tests/
-    └── test_<name>.py
 ```
 
 ### Naming Conventions
 
 | Element | Convention | Example |
 |---------|------------|---------|
-| Workflow folder | `snake_case`, short noun | `map/`, `extract/`, `entity_resolution/` |
-| Config class | `<Name>Config` | `MapConfig`, `ExtractConfig` |
-| Workflow function | `<name>_workflow` | `map_workflow`, `extract_workflow` |
-| Step functions | `<verb>_step` or `<name>_step` | `map_step`, `extract_entities_step` |
-| DB models | `PascalCase`, singular | `ExtractedEntity`, `ResolvedClaim` |
-| Table names | `snake_case`, prefixed by workflow | `extract_entities`, `map_sources` |
+| Folder | `snake_case` | `map/`, `fetch/` |
+| Config | `<Name>Config` | `MapConfig` |
+| Workflow | `<name>_workflow` | `map_workflow` |
+| Tables | prefix with workflow | `map_documents` |
 
-### Step 1: Create the Workflow Folder
-
-```bash
-mkdir -p src/kurt_new/workflows/my_feature
-touch src/kurt_new/workflows/my_feature/__init__.py
-```
-
-### Step 2: Define Configuration (`config.py`)
-
-Configuration is the **input contract** for your workflow:
+### Minimal Example
 
 ```python
-from typing import Optional
-from pydantic import BaseModel, Field
+# config.py
+from pydantic import BaseModel
 
-class MyFeatureConfig(BaseModel):
-    """Configuration for my_feature workflow."""
+class MyConfig(BaseModel):
+    url: str
+    max_items: int = 100
 
-    # Required inputs
-    source_url: str = Field(..., description="URL to process")
-
-    # Optional parameters with defaults
-    max_items: int = Field(default=100, ge=1, le=1000)
-    include_metadata: bool = Field(default=True)
-    confidence_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
-
-    # Patterns (comma-separated strings for API compatibility)
-    include_patterns: Optional[str] = Field(default=None)
-    exclude_patterns: Optional[str] = Field(default=None)
+# workflow.py
+def my_workflow(config_dict: dict) -> dict:
+    config = MyConfig.model_validate(config_dict)
+    # ... do work
+    return {"status": "completed"}
 ```
 
-### Step 3: Define Database Models (`models.py`)
+### Mixins for Models
 
-Each workflow owns its **output tables**. Use mixins from `kurt_new.db.models`:
-
-```python
-from typing import Optional
-from sqlmodel import Field, SQLModel
-from kurt_new.db.models import TimestampMixin, TenantMixin, ConfidenceMixin
-
-class ExtractedItem(TimestampMixin, TenantMixin, ConfidenceMixin, SQLModel, table=True):
-    """Items extracted by my_feature workflow."""
-
-    __tablename__ = "my_feature_items"  # Prefix with workflow name
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-    workflow_id: str = Field(index=True)
-
-    # Workflow-specific fields
-    source_url: str
-    item_name: str
-    item_type: str
-    metadata_json: Optional[str] = Field(default=None)
-
-    # Foreign key to shared tables (optional)
-    document_id: Optional[str] = Field(default=None, index=True)
-```
-
-**Status fields should use enums.** Define a local Enum in `models.py` for status columns.
-
-**Available Mixins:**
-- `TimestampMixin`: adds `created_at`, `updated_at`
-- `TenantMixin`: adds `user_id`, `workspace_id` (for multi-tenancy)
-- `ConfidenceMixin`: adds `confidence` float field
-- `EmbeddingMixin`: adds `embedding` bytes field for vectors
-
-### Step 4: Create Steps (`steps.py`)
-
-Steps contain the business logic. Keep them focused and testable:
-
-```python
-from __future__ import annotations
-import time
-from typing import Any
-from pydantic import BaseModel, Field
-from dbos import DBOS
-
-from .config import MyFeatureConfig
-
-@DBOS.step(name="my_feature_process")
-def process_step(config_dict: dict[str, Any]) -> dict[str, Any]:
-    """Process items from source."""
-    config = MyFeatureConfig.model_validate(config_dict)
-    results = []
-    total = config.max_items
-
-    DBOS.set_event("stage_total", total)
-
-    for idx in range(total):
-        result = {"item": f"item_{idx}", "status": "success"}
-        results.append(result)
-        DBOS.set_event("stage_current", idx + 1)
-
-    return {"total": len(results), "results": results}
-
-@DBOS.transaction()
-def persist_items(items_json: str, workflow_id: str) -> int:
-    """Persist extracted items to database."""
-    # Your persistence logic using SQLModel
-    return inserted_count
-```
-
-### Step 5: Create the Workflow (`workflow.py`)
-
-The workflow orchestrates steps:
-
-```python
-from __future__ import annotations
-import time
-from typing import Any
-from dbos import DBOS
-
-from .config import MyFeatureConfig
-from .steps import process_step, persist_items
-
-@DBOS.workflow()
-def my_feature_workflow(config_dict: dict[str, Any]) -> dict[str, Any]:
-    config = MyFeatureConfig.model_validate(config_dict)
-    workflow_id = DBOS.workflow_id
-
-    DBOS.set_event("status", "running")
-
-    # Step 1: Process
-    result = process_step(config.model_dump())
-
-    # Step 2: Persist (transaction called from workflow, not step)
-    if not config.dry_run:
-        count = persist_items(result["results"], workflow_id)
-        result["persisted"] = count
-
-    DBOS.set_event("status", "completed")
-    return result
-
-def run_my_feature(config: MyFeatureConfig | dict[str, Any]) -> dict[str, Any]:
-    """Run the workflow and return result."""
-    payload = config.model_dump() if isinstance(config, MyFeatureConfig) else config
-    handle = DBOS.start_workflow(my_feature_workflow, payload)
-    return handle.get_result()
-```
-
-### Step 6: Export Public API (`__init__.py`)
-
-```python
-"""My feature workflow - processes items from sources."""
-
-from .config import MyFeatureConfig
-from .workflow import my_feature_workflow, run_my_feature
-from .steps import process_step
-
-__all__ = [
-    "MyFeatureConfig",
-    "my_feature_workflow",
-    "run_my_feature",
-    "process_step",
-]
-```
-
-### Step 7: Add Migration
-
-```bash
-cd src/kurt_new/db/migrations
-alembic revision -m "add_my_feature_tables"
-```
+- `TimestampMixin`: `created_at`, `updated_at`
+- `TenantMixin`: `user_id`, `workspace_id`
+- `ConfidenceMixin`: `confidence` float
+- `EmbeddingMixin`: `embedding` bytes
 
 ---
 
 ## Workflow Checklist
 
-When creating a new workflow, ensure:
-
-- [ ] Folder created: `src/kurt_new/workflows/<name>/`
-- [ ] `config.py` with Pydantic config class
-- [ ] `steps.py` with DBOS steps
-- [ ] `workflow.py` with `@DBOS.workflow()` function
-- [ ] `models.py` with SQLModel tables (if persisting data)
-- [ ] `__init__.py` with public exports
-- [ ] Migration created for new tables
-- [ ] Tests in `tests/test_<name>.py`
-- [ ] **E2E test** that calls `run_<workflow>()` with real DBOS
+- [ ] `config.py` with Pydantic config
+- [ ] `workflow.py` with main workflow function
+- [ ] `models.py` if persisting data
+- [ ] Tests in `tests/`
 - [ ] Table names prefixed with workflow name
 - [ ] Multi-tenancy fields (`user_id`, `workspace_id`) if needed
 
 ---
 
-## DBOS Architecture Constraints
-
-### Transactions Must Be Called From Workflow
-
-DBOS enforces strict separation:
-- **`@DBOS.step()`**: Computation, can call other steps
-- **`@DBOS.transaction()`**: Database operations, must be called **directly from a workflow**
-
-```python
-# WRONG - transaction called from step
-@DBOS.step()
-def my_step(data):
-    persist_data(data)  # ERROR!
-
-# CORRECT - transaction called from workflow
-@DBOS.workflow()
-def my_workflow(config):
-    result = my_step(config)
-    persist_data(result)  # OK
-```
-
-### Cannot Start Workflows From Within Steps
-
-DBOS steps cannot start workflows or use queues:
-- `DBOS.start_workflow()` - forbidden in steps
-- `Queue.enqueue()` - forbidden in steps
-- `EmbeddingStep.run()` or `LLMStep.run()` - use queues internally, forbidden in steps
-
-For batch operations inside a step, use direct API calls (e.g., `generate_embeddings()`) instead of step classes.
-
-### Pattern: Step Returns Data, Workflow Persists
-
-1. **Step** does processing and returns serializable data
-2. **Workflow** receives data and calls transaction to persist
-3. **Transaction** handles database operations
-
-This enables dry-run mode and proper DBOS recovery.
-
----
-
-## Testing with DBOS
+## Testing
 
 ### Key Fixtures
 
 | Fixture | Use Case |
 |---------|----------|
-| `tmp_database` | Simple DB tests without DBOS |
+| `tmp_database` | Simple DB tests |
 | `tmp_project` | Project with config and database |
-| `tmp_project_with_docs` | Project pre-populated with sample data |
-| `dbos_launched` | Real DBOS for workflow/background tests |
 | `tmp_kurt_project` | Full e2e (includes everything) |
-
-### Reset DBOS State Between Tests
-
-DBOS maintains global state. Always reset between tests:
-
-```python
-@pytest.fixture
-def reset_dbos_state():
-    def _reset():
-        try:
-            import dbos._dbos as dbos_module
-            if hasattr(dbos_module, "_dbos_global_instance"):
-                instance = dbos_module._dbos_global_instance
-                if instance and hasattr(instance, "_destroy"):
-                    instance._destroy(workflow_completion_timeout_sec=0)
-                dbos_module._dbos_global_instance = None
-        except Exception:
-            pass
-    _reset()
-    yield
-    _reset()
-```
-
-### E2E Tests Are Mandatory
-
-Unit tests do NOT catch DBOS architecture violations. Every workflow needs an e2e test:
-
-```python
-class TestMyWorkflowE2E:
-    def test_full_workflow(self, tmp_kurt_project):
-        result = run_my_workflow({"source": "...", "dry_run": False})
-        assert result["status"] == "success"
-```
-
-### Factory Fixture Pattern
-
-Create reusable, composable fixtures:
-
-```python
-@pytest.fixture
-def insert_workflow(dbos_launched):
-    def _insert(workflow_uuid, name, status):
-        with managed_session() as session:
-            session.execute(...)
-    return _insert
-
-@pytest.fixture
-def sample_workflow(insert_workflow):
-    insert_workflow("sample-001", "sample", "SUCCESS")
-    return "sample-001"
-```
 
 ### Mock LLM for Tests
 
 ```python
-from kurt_new.core import mock_llm, create_response_factory
+from kurt.core import mock_llm, create_response_factory
 
 factory = create_response_factory(OutputSchema, {"field": "value"})
 with mock_llm([my_step], factory):
@@ -779,18 +398,6 @@ subprocess.Popen(
 ```
 
 Benefits: Process isolation, CLI returns immediately, survives parent termination.
-
-### Safe Event Emission
-
-Wrap DBOS calls to avoid crashes when not initialized:
-
-```python
-def _safe_set_event(key: str, value: Any) -> None:
-    try:
-        DBOS.set_event(key, value)
-    except Exception:
-        pass
-```
 
 ### Singleton with Thread Safety
 
@@ -879,15 +486,6 @@ from sqlmodel import select
 docs = session.exec(select(Model)).all()
 ```
 
-### DBOS Internal Tables
-
-Use raw SQL for DBOS tables, don't create SQLModel models for them:
-
-```python
-from sqlalchemy import text
-session.execute(text("SELECT * FROM workflow_status WHERE ..."))
-```
-
 ### SQLModel Model Registration
 
 SQLModel doesn't auto-discover models. Call `register_all_models()` before `create_all()`.
@@ -919,834 +517,130 @@ Rule of thumb: If storing `WORKFLOW.PARAM=value` in `kurt.config` file doesn't m
 
 ## Important Gotchas
 
-1. **DBOS State Pollution**: Use `reset_dbos_state` fixture between tests.
+1. **Background Output**: Worker subprocess must redirect stdout/stderr.
 
-2. **No Workflows From Steps**: Cannot use `Queue.enqueue()`, `LLMStep.run()`, or `DBOS.start_workflow()` inside steps.
+2. **Rich Thread Safety**: Use locks when coordinating Rich `Live` displays.
 
-3. **Background Output**: Worker subprocess must redirect stdout/stderr.
+3. **Click Decorator Order**: Composed decorators apply in reverse order.
 
-4. **Rich Thread Safety**: Use locks when coordinating Rich `Live` displays.
-
-5. **Click Decorator Order**: Composed decorators apply in reverse order.
-
-6. **CLI Argument Passing**: Use keyword arguments when calling internal functions from CLI handlers to avoid silent failures.
+4. **CLI Argument Passing**: Use keyword arguments when calling internal functions from CLI handlers to avoid silent failures.
 
 ---
 
 ## Agent Workflows (Claude Code)
 
-Agent workflows execute Claude Code CLI as a subprocess inside DBOS workflows. They're defined as Markdown files with YAML frontmatter in `workflows/` (configurable via `PATH_WORKFLOWS` in `kurt.config`).
+Agent workflows execute Claude Code CLI as a subprocess. Defined as Markdown files with YAML frontmatter.
 
-### Directory Structure
-
-Three distinct directories for agent-related files:
-
-1. **`src/kurt/agents/templates/`** - Agent prompt templates
-   - Static prompt files for agent operations
-   - Example: `setup-github-workspace.md`, `plan-template.md`
-   - Shipped with the product
-   - Used by agent CLI for specific tasks
-
-2. **`src/kurt/workflows/agents/`** - Agent workflow system implementation
-   - Parser, executor, registry, scheduler
-   - CLI commands (`kurt agents list`, `kurt agents run`)
-   - Tests for the workflow system
-   - This is the **code** that runs user workflows
-
-3. **`/workflows/`** (project root) - User-defined workflows (development testing only)
-   - Gitignored via `/workflows/`
-   - Used for testing during development
-   - In production, users create workflows in their own project directories
-   - Configured via `PATH_WORKFLOWS` in `kurt.config`
-
-### Workflow Definition Format
+### Workflow Definition
 
 ```markdown
 ---
 name: my-workflow
-title: My Agent Workflow
-description: |
-  What this workflow does.
-
+title: My Workflow
 agent:
   model: claude-sonnet-4-20250514
   max_turns: 10
-  allowed_tools:
-    - Bash
-    - Read
-    - Write
-    - Glob
-  permission_mode: bypassPermissions
-
+  allowed_tools: [Bash, Read, Write, Glob]
 guardrails:
   max_tokens: 100000
-  max_tool_calls: 50
   max_time: 300
-
-schedule:
-  cron: "0 9 * * 1-5"
-  timezone: "UTC"
-  enabled: true
-
 inputs:
   task: "default value"
-
-tags: [automation, daily]
+tags: [automation]
 ---
 
-# Workflow Body
+# Task
 
-Your prompt goes here. Use template variables:
-- {{task}} - from inputs
-- {{date}} - current date (YYYY-MM-DD)
-- {{datetime}} - ISO timestamp
-- {{project_root}} - project directory
+Your prompt here. Variables: {{task}}, {{date}}, {{project_root}}
 ```
 
 ### CLI Commands
 
 ```bash
-# List all workflow definitions
-kurt agents list
-kurt agents list --tag automation
-kurt agents list --scheduled
-
-# Show workflow details
-kurt agents show my-workflow
-
-# Validate workflow files
-kurt agents validate                    # Validate all
-kurt agents validate workflows/my.md    # Validate specific file
-
-# Run a workflow
-kurt agents run my-workflow             # Background (default)
-kurt agents run my-workflow --foreground
-kurt agents run my-workflow --input task="Custom task"
-
-# View run history
-kurt agents history my-workflow --limit 20
-
-# Initialize with example
-kurt agents init
+kurt workflow list                    # List definitions
+kurt workflow run my-workflow.md      # Run (background)
+kurt workflow run my-workflow.md --foreground
+kurt workflow validate                # Validate all
 ```
 
-### Execution Model
+### Key Metrics Tracked
 
-1. **Parser** (`parser.py`): Parses Markdown frontmatter into Pydantic models
-2. **Registry** (`registry.py`): File-based discovery from `workflows/` directory
-3. **Executor** (`executor.py`): DBOS workflow that runs Claude CLI via subprocess
-4. **Scheduler** (`scheduler.py`): DBOS native cron scheduling
+`agent_turns`, `tokens_in`, `tokens_out`, `cost_usd`, `tool_calls`
 
-### Key Metrics
+### Nested Workflows
 
-The executor tracks these metrics via DBOS events:
-- `agent_turns`: Number of conversation turns
-- `tokens_in`: Input tokens (includes cache reads)
-- `tokens_out`: Output tokens
-- `cost_usd`: Total API cost
-- `tool_calls`: All tool invocations (Bash, Read, Write, Glob, etc.)
-
-#### Tool Call Tracking
-
-Tool calls are tracked using Claude Code's `PostToolUse` hook system:
-
-1. A temporary settings file is created with a hook that calls `kurt agents track-tool`
-2. Each tool invocation is logged to a temporary JSONL file
-3. After execution, the log file is read to count total tool calls
-4. Temp files are cleaned up automatically
-
-This allows accurate tracking of ALL tool calls, not just web_search/web_fetch.
-
-### Nested Workflow Display
-
-When an agent workflow runs `kurt` CLI commands (e.g., `kurt content map`, `kurt agents run`), child workflows are automatically linked to their parent. This enables hierarchical display in the web UI.
-
-#### How It Works
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  execute_agent_workflow (parent)                            │
-│  workflow_id: abc-123                                       │
-│                                                             │
-│  1. Set env: KURT_PARENT_WORKFLOW_ID=abc-123                │
-│  2. Run Claude CLI subprocess                               │
-│     │                                                       │
-│     │  ┌───────────────────────────────────────────┐        │
-│     └─▶│ Claude runs: kurt content map ...         │        │
-│        │                                           │        │
-│        │  ┌─────────────────────────────────────┐  │        │
-│        │  │ map_workflow (child)                │  │        │
-│        │  │ workflow_id: def-456                │  │        │
-│        │  │                                     │  │        │
-│        │  │ Reads KURT_PARENT_WORKFLOW_ID       │  │        │
-│        │  │ Stores: parent_workflow_id=abc-123  │  │        │
-│        │  └─────────────────────────────────────┘  │        │
-│        └───────────────────────────────────────────┘        │
-│                                                             │
-│  Result: def-456.parent_workflow_id → abc-123               │
-└─────────────────────────────────────────────────────────────┘
-```
-
-1. **Parent ID Propagation**: The executor sets `KURT_PARENT_WORKFLOW_ID` env var before running Claude
-2. **Child Workflow Storage**: Each workflow function reads the env var and stores it as a DBOS event
-3. **API Response**: The web API includes `parent_workflow_id` in workflow listings
-4. **Frontend Display**: Child workflows can be grouped/nested under their parent
-
-#### Supported Child Workflows
-
-All workflows in `src/kurt/workflows/` support parent linking via the `@with_parent_workflow_id` decorator:
-- `execute_agent_workflow` - Agent workflows running other agents
-- `map_workflow` - Content mapping via `kurt content map`
-- `fetch_workflow` - Content fetching via `kurt content fetch`
-- `research_workflow` - Research queries via `kurt research`
-- `signals_workflow` - Signal monitoring via `kurt signals`
-- `domain_analytics_workflow` - Analytics sync via `kurt analytics`
-
-#### Environment Variable
-
-```
-KURT_PARENT_WORKFLOW_ID=<parent-workflow-uuid>
-```
-
-This is automatically set by `agent_execution_step()` and inherited by all subprocess commands.
-
-#### Adding Nested Support to New Workflows
-
-Use the `@with_parent_workflow_id` decorator from `kurt.core`:
+Child workflows automatically link to parents via `KURT_PARENT_WORKFLOW_ID` env var.
 
 ```python
-from dbos import DBOS
 from kurt.core import with_parent_workflow_id
 
-@DBOS.workflow()
 @with_parent_workflow_id
 def my_workflow(config_dict: dict) -> dict:
-    workflow_id = DBOS.workflow_id
-    DBOS.set_event("status", "running")
-    # ... rest of workflow
-```
-
-The decorator automatically reads `KURT_PARENT_WORKFLOW_ID` from the environment and stores it as a DBOS event. It must be placed AFTER `@DBOS.workflow()` (decorators apply bottom-up).
-
-Alternatively, call `store_parent_workflow_id()` manually inside the workflow:
-
-```python
-from kurt.core import store_parent_workflow_id
-
-@DBOS.workflow()
-def my_workflow(config_dict: dict) -> dict:
-    store_parent_workflow_id()  # Must be inside @DBOS.workflow function
-    # ... rest of workflow
-```
-
-#### Querying Parent-Child Relationships
-
-```python
-import sqlite3
-import base64
-import pickle
-
-# Find child workflows for a parent
-cursor.execute('''
-    SELECT ws.workflow_uuid, ws.name, we.value as parent_id
-    FROM workflow_status ws
-    JOIN workflow_events we ON ws.workflow_uuid = we.workflow_uuid
-    WHERE we.key = 'parent_workflow_id'
-''')
-
-for row in cursor.fetchall():
-    parent_id = pickle.loads(base64.b64decode(row[2]))
-    print(f"Child: {row[0]} → Parent: {parent_id}")
-```
-
-#### Testing Nested Workflows
-
-Create a test workflow that runs a kurt command:
-
-```markdown
----
-name: nested-test
-title: Nested Workflow Test
-agent:
-  model: claude-sonnet-4-20250514
-  max_turns: 3
-  allowed_tools:
-    - Bash
-guardrails:
-  max_tokens: 50000
-  max_time: 120
----
-
-# Task
-
-Run this command to create a child workflow:
-
-```bash
-kurt content map https://example.com --background
-```
-
-Report the workflow ID from the output.
-```
-
-Then verify in the database:
-```bash
-# Run the workflow
-kurt agents run nested-test --foreground
-
-# Check parent_workflow_id was stored
-kurt workflows list  # Shows both parent and child
-```
-
-### Guardrails
-
-Three guardrails are enforced:
-- `max_tokens`: Maximum token budget (default: 500,000)
-- `max_tool_calls`: Maximum tool invocations (default: 200) - **not enforced by CLI**
-- `max_time`: Maximum execution time in seconds (default: 3600)
-
-### Module Structure
-
-```
-src/kurt/workflows/agents/
-├── __init__.py      # Public exports
-├── parser.py        # Frontmatter parsing (Pydantic models)
-├── registry.py      # File-based workflow registry
-├── executor.py      # DBOS workflow + Claude subprocess + tool tracking
-├── scheduler.py     # DBOS cron scheduling
-├── cli.py           # CLI commands (kurt agents ...)
-└── tests/
-    ├── __init__.py
-    ├── test_cli.py           # CLI command tests
-    ├── test_executor.py      # Executor and tool tracking tests
-    ├── test_nested_workflows.py  # Parent workflow ID tests
-    ├── test_parser.py        # Parser and config model tests
-    └── test_registry.py      # Registry function tests
-```
-
-### Configuration
-
-In `kurt.config`:
-```
-PATH_WORKFLOWS=workflows
-```
-
-### Running Workflows Programmatically
-
-```python
-from kurt.workflows.agents import run_definition
-
-# Background execution
-result = run_definition("my-workflow", inputs={"task": "..."})
-print(result["workflow_id"])
-
-# Foreground execution
-result = run_definition("my-workflow", background=False)
-print(result["status"], result["turns"], result["tokens_in"])
-```
-
----
-
-## Building Workflow Definitions
-
-### Quick Start
-
-1. Create `workflows/my-workflow.md`
-2. Add frontmatter (YAML) + prompt body (Markdown)
-3. Validate: `kurt agents validate workflows/my-workflow.md`
-4. Run: `kurt agents run my-workflow --foreground`
-
-### Frontmatter Reference
-
-```yaml
----
-name: my-workflow                    # Required: unique ID (kebab-case)
-title: My Workflow Title             # Required: display name
-
-agent:
-  model: claude-sonnet-4-20250514    # Model to use
-  max_turns: 15                      # Conversation turns limit
-  allowed_tools: [Bash, Read, Write, Glob, Grep]
-
-guardrails:
-  max_tokens: 150000                 # Token budget
-  max_time: 600                      # Timeout (seconds)
-
-inputs:
-  topic: "default value"             # Runtime parameters
-
-schedule:                            # Optional: cron scheduling
-  cron: "0 9 * * 1-5"
-  enabled: true
-
-tags: [research, daily]              # For filtering
----
-```
-
-### Template Variables
-
-| Variable | Example |
-|----------|---------|
-| `{{topic}}` | From inputs |
-| `{{date}}` | `2024-01-15` |
-| `{{datetime}}` | `2024-01-15T09:30:00` |
-| `{{project_root}}` | `/path/to/project` |
-
-### Prompt Structure
-
-```markdown
-# Workflow Title
-
-Context about the task.
-
-## Steps
-
-1. **Step One**: Use `command` to do X
-2. **Step Two**: Save to `reports/output-{{date}}.md`
-
-## Success Criteria
-
-- Output file created
-- No errors
+    # Parent ID auto-stored as workflow event
+    ...
 ```
 
 ### Guardrail Guidelines
 
-| Workflow Type | `max_turns` | `max_tokens` | `max_time` |
-|---------------|-------------|--------------|------------|
-| Quick task | 5-10 | 50,000 | 120 |
+| Type | max_turns | max_tokens | max_time |
+|------|-----------|------------|----------|
+| Quick | 5-10 | 50,000 | 120 |
 | Standard | 15-25 | 150,000 | 600 |
 | Complex | 30-50 | 300,000 | 1800 |
+
+### Files
+
+- `src/kurt/workflows/agents/` - Parser, executor, registry, scheduler, CLI
+- `src/kurt/agents/templates/` - Built-in prompt templates
 
 ---
 
 ## Workflow Observability API
 
-Kurt uses Dolt (a Git-versioned database) for workflow tracking with three main tables. The observability system provides comprehensive tracking of workflow execution, step-level progress, and real-time event streaming.
+### Tables
 
-### Table Schemas
-
-#### workflow_runs
-
-Main workflow execution records. One row per workflow run.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | VARCHAR(36) | Primary key (UUID) |
-| `workflow` | VARCHAR(255) | Workflow name (e.g., "map_workflow", "fetch_workflow") |
-| `status` | VARCHAR(20) | Current status (see Status Values below) |
-| `started_at` | DATETIME | When the workflow started |
-| `completed_at` | DATETIME | When the workflow completed (NULL if running) |
-| `error` | TEXT | Error message (for failed/cancelled workflows) |
-| `inputs` | JSON | Input parameters passed to the workflow |
-| `metadata_json` | JSON | Additional metadata (workflow_type, cli_command, etc.) |
-| `user_id` | VARCHAR | User ID (multi-tenancy) |
-| `workspace_id` | VARCHAR | Workspace ID (multi-tenancy) |
-
-**Indexes:** `status`, `started_at`, `workflow`
-
-#### step_logs
-
-Summary records per step per workflow run. Updated in place as steps progress.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | VARCHAR(36) | Primary key (UUID) |
-| `run_id` | VARCHAR(36) | Foreign key to workflow_runs.id |
-| `step_id` | VARCHAR(255) | Step identifier (e.g., "fetch", "extract", "map") |
-| `tool` | VARCHAR(50) | Tool name (e.g., "FetchTool", "MapTool") |
-| `status` | VARCHAR(20) | Step status (pending, running, completed, failed, skipped) |
-| `started_at` | DATETIME | When the step started |
-| `completed_at` | DATETIME | When the step completed |
-| `input_count` | INT | Number of input items processed |
-| `output_count` | INT | Number of output items produced |
-| `error_count` | INT | Number of errors encountered |
-| `errors` | JSON | List of error details: `[{row_idx, error_type, message}]` |
-| `metadata_json` | JSON | Additional step metadata |
-
-**Indexes:** `(run_id, step_id)`, `step_id`
-
-#### step_events
-
-Append-only event stream for real-time progress tracking.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | BIGINT | Auto-increment primary key (for cursor-based pagination) |
-| `run_id` | VARCHAR(36) | Foreign key to workflow_runs.id |
-| `step_id` | VARCHAR(255) | Step identifier |
-| `substep` | VARCHAR(255) | Optional substep name (e.g., "fetch", "parse") |
-| `status` | VARCHAR(20) | Event status: "running", "progress", "completed", "failed" |
-| `created_at` | DATETIME | Event timestamp |
-| `current` | INT | Current progress count |
-| `total` | INT | Total items to process |
-| `message` | TEXT | Human-readable status message |
-| `metadata_json` | JSON | Additional event data |
-
-**Indexes:** `(run_id, id)`
+| Table | Purpose |
+|-------|---------|
+| `workflow_runs` | One row per workflow execution (status, inputs, metadata) |
+| `step_logs` | Summary per step (input/output counts, errors) |
+| `step_events` | Append-only progress stream (current/total, messages) |
 
 ### Status Values
 
-**Workflow Status** (workflow_runs.status):
-- `pending` - Workflow queued but not started
-- `running` - Workflow actively executing
-- `completed` - Workflow finished successfully
-- `failed` - Workflow failed with error
-- `canceling` - Cancellation requested, waiting for cleanup
-- `canceled` - Workflow cancelled by user
+- **Workflow**: `pending` → `running` → `completed` / `failed` / `canceled`
+- **Step**: `pending` → `running` → `completed` / `failed` / `skipped`
 
-**Step Status** (step_logs.status):
-- `pending` - Step not yet started
-- `running` - Step actively executing
-- `completed` - Step finished successfully
-- `failed` - Step failed with error
-- `skipped` - Step skipped (e.g., dry-run mode)
+### Key API Endpoints
 
-**Event Status** (step_events.status):
-- `running` - Step started or continuing
-- `progress` - Progress update (includes current/total)
-- `completed` - Step finished
-- `failed` - Step failed
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/workflows` | List workflows (filter by status, type, parent) |
+| `GET /api/workflows/{id}` | Get workflow details |
+| `GET /api/workflows/{id}/status` | Live status with step progress |
+| `GET /api/workflows/{id}/status/stream` | SSE stream for real-time updates |
+| `POST /api/workflows/{id}/cancel` | Cancel running workflow |
+| `POST /api/workflows/{id}/retry` | Retry failed workflow |
 
-**Valid Status Transitions:**
-```
-Workflow: pending -> running -> completed
-                  -> running -> failed
-                  -> running -> canceling -> canceled
-
-Step: pending -> running -> completed
-             -> running -> failed
-             -> running -> canceled
-```
-
-### API Endpoints
-
-#### List Workflows
-
-```
-GET /api/workflows
-```
-
-Query parameters:
-- `status` (optional): Filter by status
-- `limit` (default: 50, max: 200): Number of results
-- `offset` (default: 0): Pagination offset
-- `search` (optional): Search by ID or workflow name
-- `workflow_type` (optional): Filter by type ("agent", "tool")
-- `parent_id` (optional): Filter children of a parent workflow
-
-Response:
-```json
-{
-  "workflows": [
-    {
-      "workflow_uuid": "abc-123-def",
-      "name": "map_workflow",
-      "status": "completed",
-      "created_at": "2024-01-15T10:30:00",
-      "updated_at": "2024-01-15T10:35:00",
-      "error": null,
-      "parent_workflow_id": null,
-      "workflow_type": "tool"
-    }
-  ],
-  "total": 42,
-  "has_more": true,
-  "offset": 0,
-  "limit": 50
-}
-```
-
-#### Get Workflow Details
-
-```
-GET /api/workflows/{workflow_id}
-```
-
-Response:
-```json
-{
-  "workflow_uuid": "abc-123-def",
-  "name": "map_workflow",
-  "status": "completed",
-  "created_at": "2024-01-15T10:30:00",
-  "updated_at": "2024-01-15T10:35:00",
-  "error": null,
-  "inputs": {"url": "https://example.com", "max_pages": 100},
-  "metadata": {"workflow_type": "tool", "cli_command": "kurt content map ..."}
-}
-```
-
-#### Get Live Status with Progress
-
-```
-GET /api/workflows/{workflow_id}/status
-```
-
-Returns comprehensive status including step details and progress.
-
-Response:
-```json
-{
-  "workflow_id": "abc-123-def",
-  "name": "map_workflow",
-  "status": "running",
-  "stage": "fetch",
-  "progress": {"current": 45, "total": 100},
-  "steps": [
-    {
-      "name": "fetch",
-      "status": "running",
-      "success": 45,
-      "error": 2,
-      "duration_ms": 12500,
-      "errors": ["Timeout fetching page 12", "404 on page 37"],
-      "step_type": "step",
-      "input_count": 100,
-      "output_count": 47
-    }
-  ],
-  "duration_ms": 15000,
-  "inputs": {"url": "https://example.com"},
-  "cli_command": "kurt content map https://example.com",
-  "error": null,
-  "started_at": "2024-01-15T10:30:00",
-  "completed_at": null,
-  "output": {
-    "total_output": 47,
-    "total_success": 45,
-    "total_errors": 2
-  }
-}
-```
-
-#### Get Step Logs
-
-```
-GET /api/workflows/{workflow_id}/step-logs
-```
-
-Query parameters:
-- `step` (optional): Filter by step name
-- `limit` (default: 100, max: 500): Number of results
-
-Response:
-```json
-{
-  "logs": [
-    {
-      "step_id": "fetch",
-      "tool": "FetchTool",
-      "status": "completed",
-      "started_at": "2024-01-15T10:30:05",
-      "completed_at": "2024-01-15T10:32:15",
-      "input_count": 100,
-      "output_count": 95,
-      "error_count": 5,
-      "errors": [
-        {"row_idx": 12, "error_type": "timeout", "message": "Request timed out"}
-      ],
-      "metadata": {}
-    }
-  ],
-  "step": null
-}
-```
-
-#### Get Workflow Logs (Events)
-
-```
-GET /api/workflows/{workflow_id}/logs
-```
-
-Query parameters:
-- `step_id` (optional): Filter by step ID
-- `since_id` (default: 0): Return events after this ID (cursor pagination)
-- `limit` (default: 100, max: 1000): Number of results
-- `include_file_logs` (default: true): Include file-based logs
-
-Response:
-```json
-{
-  "workflow_id": "abc-123-def",
-  "events": [
-    {
-      "id": 1234,
-      "step_id": "fetch",
-      "substep": "download",
-      "status": "progress",
-      "current": 45,
-      "total": 100,
-      "message": "Fetched page 45 of 100",
-      "created_at": "2024-01-15T10:31:00"
-    }
-  ],
-  "total_events": 50,
-  "has_more": false,
-  "since_id": 0,
-  "limit": 100,
-  "file_content": null
-}
-```
-
-#### Stream Status (SSE)
-
-```
-GET /api/workflows/{workflow_id}/status/stream
-```
-
-Server-Sent Events stream. Sends JSON status updates every 0.5s until workflow completes.
-
-```
-data: {"workflow_id": "abc-123", "status": "running", "progress": {"current": 45, "total": 100}, ...}
-
-data: {"workflow_id": "abc-123", "status": "running", "progress": {"current": 67, "total": 100}, ...}
-
-data: {"workflow_id": "abc-123", "status": "completed", ...}
-```
-
-#### Stream Logs (SSE)
-
-```
-GET /api/workflows/{workflow_id}/logs/stream
-```
-
-Query parameters:
-- `step_id` (optional): Filter by step ID
-
-Server-Sent Events stream for real-time log updates.
-
-```
-data: {"type": "event", "event": {"id": 1234, "step_id": "fetch", "status": "progress", ...}}
-
-data: {"type": "log", "content": "File-based log content..."}
-
-data: {"done": true, "status": "completed"}
-```
-
-#### Cancel Workflow
-
-```
-POST /api/workflows/{workflow_id}/cancel
-```
-
-Sets workflow status to "canceling". The workflow runner must detect this and call `on_workflow_cancel()` to complete.
-
-Response:
-```json
-{"status": "canceling", "workflow_id": "abc-123-def"}
-```
-
-#### Retry Workflow
-
-```
-POST /api/workflows/{workflow_id}/retry
-```
-
-Starts a new workflow run with the same inputs. Only works for terminal states (completed, failed, cancelled).
-
-Response:
-```json
-{
-  "status": "started",
-  "workflow_id": "new-workflow-id",
-  "original_workflow_id": "abc-123-def"
-}
-```
-
-### Querying Workflow Status Programmatically
-
-Using the Python API:
+### Python API
 
 ```python
 from kurt.observability.status import get_live_status
-from kurt.db.dolt import DoltDB
+from kurt.db import get_database_client
 
-db = DoltDB(".dolt")
-status = get_live_status(db, "abc-123")
-
-if status:
-    print(f"Status: {status['status']}")
-    print(f"Progress: {status['progress']['current']}/{status['progress']['total']}")
-    for step in status['steps']:
-        print(f"  {step['name']}: {step['status']} ({step['success']}/{step['output_count']})")
+db = get_database_client()
+status = get_live_status(db, "workflow-id")
+# Returns: {status, progress: {current, total}, steps: [...]}
 ```
 
-Using the Lifecycle API:
+### Metadata Keys
 
-```python
-from kurt.observability.lifecycle import WorkflowLifecycle
-from kurt.db.dolt import DoltDB
-
-db = DoltDB(".dolt")
-lifecycle = WorkflowLifecycle(db)
-
-# Create and track a workflow
-run_id = lifecycle.create_run("my_workflow", inputs={"url": "https://example.com"})
-
-# Track step progress
-lifecycle.create_step_log(run_id, "fetch", "FetchTool", input_count=100)
-lifecycle.update_step_log(run_id, "fetch", status="completed", output_count=95, error_count=5)
-
-# Complete workflow
-lifecycle.update_status(run_id, "completed")
-```
-
-Using the Event Tracker for high-throughput progress:
-
-```python
-from kurt.observability.tracking import track_event, EventTracker
-from kurt.db.dolt import DoltDB
-
-db = DoltDB(".dolt")
-
-# Single event
-track_event(
-    run_id="abc-123",
-    step_id="fetch",
-    substep="download",
-    status="progress",
-    current=45,
-    total=100,
-    message="Fetched page 45 of 100",
-    db=db,
-)
-
-# Batched events (high throughput)
-with EventTracker(db) as tracker:
-    for i in range(1000):
-        tracker.track(
-            run_id="abc-123",
-            step_id="process",
-            status="progress",
-            current=i,
-            total=1000,
-        )
-```
-
-### Metadata Conventions
-
-The `metadata_json` field in `workflow_runs` stores workflow-specific data:
-
-| Key | Description | Example |
-|-----|-------------|---------|
-| `workflow_type` | Type classification | "agent", "tool", "map", "fetch" |
-| `cli_command` | Original CLI command | "kurt content map https://..." |
-| `parent_workflow_id` | Parent workflow UUID | "abc-123-def" |
-| `parent_step_name` | Step that spawned this workflow | "claude_execution" |
-| `definition_name` | Agent workflow definition | "daily-report" |
-| `trigger` | How workflow was started | "cli", "api", "schedule", "retry" |
-| `agent_turns` | Agent conversation turns | 15 |
-| `tokens_in` | Input tokens used | 50000 |
-| `tokens_out` | Output tokens used | 12000 |
-| `cost_usd` | API cost | 0.45 |
-| `tool_calls` | Number of tool invocations | 42 |
-| `stop_reason` | Why agent stopped | "end_turn", "max_turns" |
+Common keys in `workflow_runs.metadata_json`:
+- `workflow_type`: "agent", "tool", "map", "fetch"
+- `cli_command`: Original CLI command
+- `parent_workflow_id`: Parent workflow UUID (for nested workflows)
+- `tokens_in`, `tokens_out`, `cost_usd`: LLM usage metrics
 
 ### Files
 
-- `src/kurt/observability/models.py` - SQLModel table definitions
-- `src/kurt/observability/lifecycle.py` - WorkflowLifecycle class for tracking
-- `src/kurt/observability/tracking.py` - Event tracking (track_event, EventTracker)
-- `src/kurt/observability/status.py` - Status query functions (get_live_status)
-- `src/kurt/observability/streaming.py` - SSE streaming utilities
+- `src/kurt/observability/` - Models, lifecycle, tracking, status queries
 - `src/kurt/web/api/server.py` - API endpoints

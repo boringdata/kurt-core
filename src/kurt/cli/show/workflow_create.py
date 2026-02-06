@@ -18,7 +18,7 @@ WHEN TO USE THIS WORKFLOW
 ─────────────────────────────────────────────────────────────────
 When a user wants to create a custom workflow with:
 - Agent automation (workflow.toml)
-- Built-in tools (map, fetch, llm, embed, sql, write)
+- Built-in tools (map, fetch, llm, embed, sql, write-db)
 - Custom Python functions
 - Database persistence (Dolt tables)
 
@@ -33,7 +33,7 @@ WORKFLOW TYPES
 
 2. TOOL-DRIVEN (pipelines)
    - Single .toml file with [steps.xxx] sections
-   - Uses built-in tools: map, fetch, llm, embed, sql, write
+   - Uses built-in tools: map, fetch, llm, embed, sql, write-db
    - Good for: data pipelines, batch processing, ETL
 
 ═══════════════════════════════════════════════════════════════════
@@ -167,8 +167,9 @@ type = "embed"      # Generate embeddings
 type = "sql"        # Query Dolt database
   config.query      # SQL query string
 
-type = "write"      # Write output to files
-  config.output     # Output path template
+type = "write-db"   # Write data to Dolt database
+  config.table      # Target table name
+  config.mode       # Write mode: insert, upsert, replace
 
 type = "function"   # Call custom Python function
   function = "module.function_name"

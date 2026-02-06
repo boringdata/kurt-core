@@ -25,6 +25,15 @@ from kurt.tools.core import (
 console = Console()
 
 
+def _normalize_http_url(url: str) -> str:
+    """Normalize HTTP(S) URLs to match map tool canonicalization."""
+    if url.startswith(("http://", "https://")):
+        from kurt.tools.map import normalize_url
+
+        return normalize_url(url)
+    return url
+
+
 def _check_engine_status(engine: str) -> tuple[str, str]:
     """Check if engine is ready (has required API key)."""
     if engine == "trafilatura":
@@ -43,12 +52,16 @@ def _check_engine_status(engine: str) -> tuple[str, str]:
         if os.getenv("APIFY_API_KEY"):
             return "ready", "Apify social platform extraction"
         return "missing", "Set APIFY_API_KEY"
+    if engine == "twitterapi":
+        if os.getenv("TWITTER_BEARER_TOKEN"):
+            return "ready", "Twitter API v2 (direct)"
+        return "missing", "Set TWITTER_BEARER_TOKEN"
     return "unknown", "Unknown engine"
 
 
 def _list_engines(output_format: str) -> None:
     """List available fetch engines and their status."""
-    engines = ["trafilatura", "httpx", "firecrawl", "tavily", "apify"]
+    engines = ["trafilatura", "httpx", "firecrawl", "tavily", "apify", "twitterapi"]
     engine_info = []
 
     for engine in engines:
@@ -93,7 +106,7 @@ def _list_engines(output_format: str) -> None:
 @click.option("--files", "files_paths", help="Comma-separated list of local file paths")
 @click.option(
     "--engine",
-    type=click.Choice(["firecrawl", "trafilatura", "httpx", "tavily", "apify"], case_sensitive=False),
+    type=click.Choice(["firecrawl", "trafilatura", "httpx", "tavily", "apify", "twitterapi"], case_sensitive=False),
     help="Fetch engine to use",
 )
 @click.option(
@@ -176,23 +189,33 @@ def fetch_cmd(
     from kurt.documents import resolve_documents
     from kurt.tools.fetch.config import FetchConfig
 
-    # Merge --url into --urls
+    # Normalize identifier if it's a URL (match map tool normalization)
+    if identifier and identifier.startswith(("http://", "https://")):
+        identifier = _normalize_http_url(identifier)
+
+    # Merge --url into --urls and normalize URL inputs
+    url_list: list[str] = []
+    if urls:
+        url_list.extend([u.strip() for u in urls.split(",") if u.strip()])
     if single_url:
-        urls = f"{urls},{single_url}" if urls else single_url
+        url_list.append(single_url.strip())
+    if url_list:
+        url_list = [_normalize_http_url(u) for u in url_list]
+        urls = ",".join(url_list)
+    else:
+        urls = None
 
     # Merge --file into --files
     if single_file:
         files_paths = f"{files_paths},{single_file}" if files_paths else single_file
 
     # Handle --urls: auto-create MapDocument entries if they don't exist
-    if urls:
+    if url_list:
         from sqlmodel import select
 
         from kurt.db import managed_session
         from kurt.tools.core import make_document_id
         from kurt.tools.map.models import MapDocument, MapStatus
-
-        url_list = [u.strip() for u in urls.split(",") if u.strip()]
 
         with managed_session() as session:
             for url in url_list:

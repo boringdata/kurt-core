@@ -15,7 +15,6 @@ Doctor checks:
 
 from __future__ import annotations
 
-import json as json_module
 import os
 import subprocess
 import time
@@ -26,6 +25,8 @@ from typing import Any
 
 import click
 from rich.console import Console
+
+from kurt.cli.robot import ErrorCode, OutputContext, robot_error, robot_success
 
 console = Console()
 
@@ -445,8 +446,9 @@ def run_doctor(git_path: Path, dolt_path: Path) -> DoctorReport:
 
 
 @click.command(name="doctor")
-@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def doctor_cmd(as_json: bool):
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON (deprecated: use global --json)")
+@click.pass_context
+def doctor_cmd(ctx, as_json: bool):
     """Check project health and report issues.
 
     Runs a series of checks to verify the Kurt project is properly configured:
@@ -457,7 +459,8 @@ def doctor_cmd(as_json: bool):
     3. branch_sync: Git branch matches Dolt branch
     4. no_uncommitted_dolt: Dolt status is clean
     5. remotes_configured: Both Git and Dolt have 'origin' remote
-    6. no_stale_locks: No .git/kurt-hook.lock older than 30s
+    6. sql_server: Dolt SQL server is reachable (server mode required)
+    7. no_stale_locks: No .git/kurt-hook.lock older than 30s
 
     Exit codes:
       0: All checks passed
@@ -466,20 +469,26 @@ def doctor_cmd(as_json: bool):
 
     Example:
         kurt doctor
+        kurt --json doctor
         kurt doctor --json
     """
+    # Get output context from global --json flag
+    output: OutputContext = ctx.obj.get("output", OutputContext()) if ctx.obj else OutputContext()
+
+    # Hybrid activation: global --json OR local --json flag
+    use_json = output.json_mode or as_json
+
     try:
         git_path = _get_git_path()
 
         # Check if Git repo
         if not _is_git_repo(git_path):
-            if as_json:
-                console.print(
-                    json_module.dumps(
-                        {
-                            "error": "Not a Git repository",
-                            "exit_code": 2,
-                        }
+            if use_json:
+                print(
+                    robot_error(
+                        ErrorCode.CONFIG_ERROR,
+                        "Not a Git repository",
+                        hint="Run: git init",
                     )
                 )
             else:
@@ -492,8 +501,9 @@ def doctor_cmd(as_json: bool):
         # Run checks
         report = run_doctor(git_path, dolt_path)
 
-        if as_json:
-            console.print(json_module.dumps(report.to_dict(), indent=2))
+        if use_json:
+            # Wrap in robot success envelope
+            print(robot_success(report.to_dict(), exit_code=report.exit_code))
         else:
             _print_report(report)
 
@@ -502,8 +512,8 @@ def doctor_cmd(as_json: bool):
     except SystemExit:
         raise
     except Exception as e:
-        if as_json:
-            console.print(json_module.dumps({"error": str(e), "exit_code": 2}))
+        if use_json:
+            print(robot_error(ErrorCode.EXEC_ERROR, str(e)))
         else:
             console.print(f"[red]Error: {e}[/red]")
         raise SystemExit(2)

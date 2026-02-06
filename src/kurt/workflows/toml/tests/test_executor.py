@@ -283,7 +283,8 @@ class TestExecuteWorkflowSequential:
             result = await execute_workflow(workflow, {})
 
         assert result.status == "completed"
-        assert call_order == ["fetch", "llm"]
+        # Note: "llm" is resolved to "batch-llm" by the executor
+        assert call_order == ["fetch", "batch-llm"]
 
     @pytest.mark.asyncio
     async def test_data_passes_between_steps(self):
@@ -312,8 +313,8 @@ class TestExecuteWorkflowSequential:
         # First step gets workflow inputs
         assert captured_params["fetch"]["input_data"] == [{"query": "test"}]
 
-        # Second step gets output from first step
-        assert captured_params["llm"]["input_data"] == [{"url": "https://example.com"}]
+        # Second step gets output from first step (llm resolved to batch-llm)
+        assert captured_params["batch-llm"]["input_data"] == [{"url": "https://example.com"}]
 
 
 # ============================================================================
@@ -390,7 +391,8 @@ class TestExecuteWorkflowParallel:
         assert execution_order[0] == "map"
         assert execution_order[-1] == "sql"
         # left and right can be in any order but between source and merge
-        assert set(execution_order[1:3]) == {"fetch", "llm"}
+        # Note: llm resolves to batch-llm
+        assert set(execution_order[1:3]) == {"fetch", "batch-llm"}
 
 
 # ============================================================================
@@ -723,8 +725,9 @@ class TestExecuteWorkflowInputs:
         ):
             await execute_workflow(workflow, {"model": "gpt-4"})
 
-        assert captured_params["llm"]["model"] == "gpt-4"
-        assert captured_params["llm"]["temperature"] == 0.7
+        # Note: llm resolves to batch-llm
+        assert captured_params["batch-llm"]["model"] == "gpt-4"
+        assert captured_params["batch-llm"]["temperature"] == 0.7
 
 
 # ============================================================================

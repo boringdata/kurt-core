@@ -135,7 +135,7 @@ class TestBuildDagLevels:
             "a": make_step("map"),
             "b": make_step("fetch", depends_on=["a"]),
             "c": make_step("llm", depends_on=["b"]),
-            "d": make_step("write", depends_on=["c"]),
+            "d": make_step("write-db", depends_on=["c"]),
         }
 
         plan = build_dag(steps)
@@ -189,7 +189,7 @@ class TestBuildDagLevels:
             "d": make_step("llm", depends_on=["b"]),
             "e": make_step("llm", depends_on=["c"]),
             "f": make_step("embed", depends_on=["c"]),
-            "g": make_step("write", depends_on=["d", "e"]),
+            "g": make_step("write-db", depends_on=["d", "e"]),
         }
 
         plan = build_dag(steps)
@@ -581,7 +581,7 @@ class TestBuildDagEdgeCases:
             "f": make_step("llm", depends_on=["e"]),
             "g": make_step("llm", depends_on=["e"]),
             "h": make_step("llm", depends_on=["e"]),
-            "i": make_step("write", depends_on=["f", "g", "h"]),
+            "i": make_step("write-db", depends_on=["f", "g", "h"]),
         }
 
         plan = build_dag(steps)

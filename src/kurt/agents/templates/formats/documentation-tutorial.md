@@ -52,26 +52,22 @@
 **Types of information needed for tutorials:**
 
 1. **Technical specifications** - API docs, SDK references
-   - Find: `kurt content list --url-contains /api/`
-   - Find: `kurt content list --url-contains /docs/`
+   - Find: `kurt docs list --url-contains /api/`
+   - Find: `kurt docs list --url-contains /docs/`
    - Or provide: Links to technical documentation
 
 2. **Working code examples** - Sample implementations, SDK examples
-   - Find: `kurt content search "example" --include "*/docs/*"`
-   - Find: `kurt content list --url-contains /example`
+   <!-- Note: kurt content search is not yet available in CLI -->
+   - Find: `kurt docs list --url-contains /example`
    - Or provide: GitHub repos, code samples, existing implementations
 
 3. **Prerequisites info** - Setup guides, tool requirements
-   - Find: `kurt content search "setup\|install\|getting-started"`
-   - After finding the tutorial doc, check what links TO it (prerequisites):
-     * `kurt content links <doc-id> --direction inbound`
-     * Look for anchor text like "Prerequisites", "Before you start", "Read this first"
-   - Or check what it links FROM (dependencies it mentions):
-     * `kurt content links <doc-id> --direction outbound`
+   <!-- Note: kurt content search is not yet available in CLI -->
+   <!-- Note: kurt content links is not yet available in CLI -->
    - Or provide: Installation guides, environment setup docs
 
 4. **Common errors** - Troubleshooting, known issues
-   - Find: `kurt content search "troubleshoot\|error" --include "*/docs/*"`
+   <!-- Note: kurt content search is not yet available in CLI -->
    - Or provide: Support docs, known issues, debugging guides
 
 **For advanced discovery/analysis**, see @find-sources rule
@@ -258,15 +254,15 @@ outline:
 
 ```bash
 # Search for tutorials/quickstarts
-kurt content list --url-contains /docs/
-kurt content list --url-contains /tutorial
-kurt content list --url-contains /quickstart
-kurt content list --url-contains /guide
+kurt docs list --url-contains /docs/
+kurt docs list --url-contains /tutorial
+kurt docs list --url-contains /quickstart
+kurt docs list --url-contains /guide
 ```
 
 **If NOT_FETCHED:**
 ```bash
-kurt content fetch --include "*/docs/*" --limit 10
+kurt tool fetch doc --include "*/docs/*" --limit 10
 ```
 
 ### Step 2: Select 3-5 Examples (Iterative with User)
@@ -283,7 +279,7 @@ Use these, or provide different URLs?"
 
 **If user provides URLs:**
 ```bash
-kurt content fetch --urls "<url1>,<url2>,<url3>"
+kurt tool fetch doc --urls "<url1>,<url2>,<url3>"
 ```
 
 **If user pastes text:**
@@ -295,8 +291,8 @@ kurt content fetch --urls "<url1>,<url2>,<url3>"
 
 ```bash
 # Read tutorials
-kurt content get <doc-id-1>
-kurt content get <doc-id-2>
+kurt docs get <doc-id-1>
+kurt docs get <doc-id-2>
 ```
 
 **Note these patterns:**
@@ -377,7 +373,7 @@ kurt content get <doc-id-2>
 ### Troubleshooting
 
 **Can't find tutorials?**
-- Check: `kurt content stats`
+- Check: `kurt docs list`
 - Ask user: "I don't see tutorial docs. Can you provide 3-5 URLs?"
 
 **Very few tutorials (<3)?**

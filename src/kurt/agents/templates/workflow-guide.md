@@ -321,23 +321,23 @@ The report should include:
 
 ```bash
 # List workflows
-kurt agents list
-kurt agents list --tag automation
+kurt workflow list
+kurt workflow list --tag automation
 
 # Validate workflow files
-kurt agents validate
-kurt agents validate workflows/my-workflow.toml
+kurt workflow validate
+kurt workflow validate workflows/my-workflow.toml
 
 # Run workflow
-kurt agents run my-workflow
-kurt agents run my-workflow --foreground
-kurt agents run my-workflow --input url="https://example.com"
+kurt workflow run workflows/my-workflow.toml
+kurt workflow run workflows/my-workflow.toml --foreground
+kurt workflow run workflows/my-workflow.toml --input url="https://example.com"
 
 # View history
-kurt agents history my-workflow --limit 10
+kurt workflow history my-workflow --limit 10
 
 # Initialize example workflow
-kurt agents init
+kurt workflow init
 ```
 
 ---

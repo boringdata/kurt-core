@@ -568,8 +568,9 @@ Ask user for:
 
 Or find existing:
 ```bash
-kurt content search "customer"
-kurt content search "case study"
+# Note: search is not yet available in CLI
+# kurt docs search "customer"
+# kurt docs search "case study"
 ```
 
 **Step 2: Analyze Patterns (3-4 hours)**

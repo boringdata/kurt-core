@@ -26,9 +26,9 @@ class TestAnalyticsGroup:
         result = invoke_cli(cli_runner, analytics_group, ["--help"])
         assert_cli_success(result)
         assert_output_contains(result, "onboard")
-        assert_output_contains(result, "sync")
         assert_output_contains(result, "list")
         assert_output_contains(result, "query")
+        # Note: sync command moved to `kurt tool analytics sync`
 
 
 class TestOnboardCommand:
@@ -51,29 +51,6 @@ class TestOnboardCommand:
         """Test onboard command requires domain argument."""
         result = cli_runner.invoke(analytics_group, ["onboard"])
         # Should fail because domain is required
-        assert result.exit_code != 0
-
-
-class TestSyncCommand:
-    """Tests for `analytics sync` command."""
-
-    def test_sync_help(self, cli_runner: CliRunner):
-        """Test sync command shows help."""
-        result = invoke_cli(cli_runner, analytics_group, ["sync", "--help"])
-        assert_cli_success(result)
-        assert_output_contains(result, "Sync analytics data")
-
-    def test_sync_shows_options(self, cli_runner: CliRunner):
-        """Test sync command lists options in help."""
-        result = invoke_cli(cli_runner, analytics_group, ["sync", "--help"])
-        assert_cli_success(result)
-        assert_output_contains(result, "--all")
-        assert_output_contains(result, "--period")
-
-    def test_sync_no_args_shows_error(self, cli_runner: CliRunner, tmp_database):
-        """Test sync without args shows error."""
-        result = cli_runner.invoke(analytics_group, ["sync"])
-        # Should fail because neither --all nor domain provided
         assert result.exit_code != 0
 
 

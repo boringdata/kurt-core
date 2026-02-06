@@ -192,16 +192,16 @@ outline:
 
 ```bash
 # Search for blog content (mapped or fetched)
-kurt content list --url-contains /blog/
+kurt docs list --url-contains /blog/
 
 # Alternative blog locations
-kurt content list --url-contains /articles
-kurt content list --url-contains /insights
+kurt docs list --url-contains /articles
+kurt docs list --url-contains /insights
 ```
 
 **If you see NOT_FETCHED posts, fetch them:**
 ```bash
-kurt content fetch --include "*/blog/*" --limit 10
+kurt tool fetch doc --include "*/blog/*" --limit 10
 ```
 
 ### Step 2: Select 3-5 Examples (Iterative with User)
@@ -218,7 +218,7 @@ Would you like to use these for style analysis, or provide different URLs/paste 
 
 **If user provides URLs:**
 ```bash
-kurt content fetch --urls "<url1>,<url2>,<url3>"
+kurt tool fetch doc --urls "<url1>,<url2>,<url3>"
 ```
 
 **If user pastes text:**
@@ -231,8 +231,8 @@ kurt content fetch --urls "<url1>,<url2>,<url3>"
 
 ```bash
 # Read the examples
-kurt content get <doc-id-1>
-kurt content get <doc-id-2>
+kurt docs get <doc-id-1>
+kurt docs get <doc-id-2>
 # ... etc
 ```
 
@@ -318,7 +318,7 @@ kurt content get <doc-id-2>
 ### Troubleshooting
 
 **Can't find blog posts?**
-- Check: `kurt content stats` to see what's mapped
+- Check: `kurt docs list` to see what's mapped
 - Ask user: "I don't see blog posts. Can you provide 3-5 URLs to analyze?"
 
 **Company has very few blog posts (<3)?**

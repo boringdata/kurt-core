@@ -587,16 +587,18 @@ Ask user:
 
 Find positioning:
 ```bash
-kurt content search "positioning"
-kurt content search "messaging"
+# Note: search is not yet available in CLI
+# kurt content search "positioning"
+# kurt content search "messaging"
 ```
 
 **Step 2: Define Target Audience (1 hour)**
 
 Find persona docs:
 ```bash
-kurt content search "persona"
-kurt content search "audience"
+# Note: search is not yet available in CLI
+# kurt content search "persona"
+# kurt content search "audience"
 ```
 
 Or ask user:
@@ -613,23 +615,24 @@ Ask user for:
 
 Or search for campaign retrospectives:
 ```bash
-kurt content search "campaign"
-kurt content search "retrospective"
+# Note: search is not yet available in CLI
+# kurt content search "campaign"
+# kurt content search "retrospective"
 ```
 
 **Step 4: Inventory Existing Content (30 min)**
 
 ```bash
 # Discover what content pages exist
-kurt content list --url-contains /blog/
+kurt docs list --url-contains /blog/
 
-# Search for content types
-kurt content search "case study"
-kurt content search "guide"
-kurt content search "whitepaper"
+# Note: search is not yet available in CLI
+# kurt content search "case study"
+# kurt content search "guide"
+# kurt content search "whitepaper"
 
 # Check if similar campaigns have been run
-kurt content search "[campaign-topic]"
+# kurt content search "[campaign-topic]"
 ```
 
 **Step 5: Plan Content Gaps (1 hour)**

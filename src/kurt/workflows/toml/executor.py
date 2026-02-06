@@ -29,7 +29,7 @@ from kurt.observability.tracking import track_event
 from kurt.tools.core import ToolCanceledError, ToolContext, ToolError, ToolResult, execute_tool
 from kurt.workflows.toml.dag import build_dag
 from kurt.workflows.toml.interpolation import interpolate_step_config
-from kurt.workflows.toml.parser import StepDef, WorkflowDefinition
+from kurt.workflows.toml.parser import StepDef, WorkflowDefinition, resolve_step_type
 
 logger = logging.getLogger(__name__)
 
@@ -444,7 +444,8 @@ class WorkflowExecutor:
     async def _execute_step(self, step_id: str, step_def: StepDef) -> StepResult:
         """Execute a single step."""
         started_at = datetime.now(timezone.utc)
-        tool_name = step_def.type
+        # Resolve step type aliases (e.g., "llm" -> "batch-llm")
+        tool_name = resolve_step_type(step_def.type)
 
         # Emit step start event
         self._emit_event(

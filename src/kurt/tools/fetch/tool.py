@@ -2,7 +2,7 @@
 
 FetchTool - Content fetching tool for Kurt workflows.
 
-Fetches content from URLs using configurable engines (trafilatura, httpx, tavily, firecrawl).
+Fetches content from URLs using configurable engines (trafilatura, httpx, tavily, firecrawl, apify).
 Supports parallel fetching with concurrency control and exponential backoff retries.
 """
 
@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 from kurt.tools.core import ProgressCallback, Tool, ToolContext, ToolResult, register_tool
 
 from .config import FetchConfig, has_embedding_api_keys
+from .core import MAX_CONTENT_SIZE_BYTES, VALID_CONTENT_TYPES
 from .models import (
     BatchFetcher,
     BatchFetchResult,
@@ -36,23 +37,11 @@ logger = logging.getLogger(__name__)
 # Constants
 # ============================================================================
 
-# Maximum content size (10 MB)
-MAX_CONTENT_SIZE_BYTES = 10 * 1024 * 1024
-
 # HTTP status codes that should trigger a retry
 RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
 # HTTP status codes that should NOT be retried
 NON_RETRYABLE_STATUS_CODES = {400, 401, 403, 404}
-
-# Valid content types for text extraction
-VALID_CONTENT_TYPES = {
-    "text/html",
-    "text/plain",
-    "application/xhtml+xml",
-    "application/xml",
-    "text/xml",
-}
 
 
 # ============================================================================
@@ -88,9 +77,17 @@ class FetchToolConfig(BaseModel):
     Note: This is distinct from FetchConfig (StepConfig) used by workflows.
     """
 
-    engine: Literal["trafilatura", "httpx", "tavily", "firecrawl"] = Field(
+    engine: Literal["trafilatura", "httpx", "tavily", "firecrawl", "apify", "twitterapi"] = Field(
         default="trafilatura",
         description="Fetch engine to use",
+    )
+    platform: str | None = Field(
+        default=None,
+        description="Social platform for apify engine (twitter, linkedin, threads, substack)",
+    )
+    apify_actor: str | None = Field(
+        default=None,
+        description="Specific Apify actor ID (e.g., 'apidojo/tweet-scraper')",
     )
     concurrency: int = Field(
         default=5,
@@ -125,6 +122,18 @@ class FetchToolConfig(BaseModel):
     embed: bool | None = Field(
         default=None,
         description="Generate embeddings after fetch (None = auto-detect from API keys)",
+    )
+    embedding_max_chars: int = Field(
+        default=1000,
+        ge=100,
+        le=5000,
+        description="Maximum characters for embedding generation",
+    )
+    embedding_batch_size: int = Field(
+        default=100,
+        ge=1,
+        le=500,
+        description="Batch size for embedding generation",
     )
     content_dir: str | None = Field(
         default=None,
@@ -187,9 +196,17 @@ class FetchParams(BaseModel):
     )
 
     # Config fields (flattened for executor compatibility)
-    engine: Literal["trafilatura", "httpx", "tavily", "firecrawl"] = Field(
+    engine: Literal["trafilatura", "httpx", "tavily", "firecrawl", "apify", "twitterapi"] = Field(
         default="trafilatura",
         description="Fetch engine to use",
+    )
+    platform: str | None = Field(
+        default=None,
+        description="Social platform for apify engine (twitter, linkedin, threads, substack)",
+    )
+    apify_actor: str | None = Field(
+        default=None,
+        description="Specific Apify actor ID (e.g., 'apidojo/tweet-scraper')",
     )
     concurrency: int = Field(
         default=5,
@@ -225,6 +242,18 @@ class FetchParams(BaseModel):
         default=None,
         description="Generate embeddings after fetch (None = auto-detect from API keys)",
     )
+    embedding_max_chars: int = Field(
+        default=1000,
+        ge=100,
+        le=5000,
+        description="Maximum characters for embedding generation",
+    )
+    embedding_batch_size: int = Field(
+        default=100,
+        ge=1,
+        le=500,
+        description="Batch size for embedding generation",
+    )
     content_dir: str | None = Field(
         default=None,
         description="Directory to save content (relative to project root)",
@@ -248,12 +277,16 @@ class FetchParams(BaseModel):
             return self.config
         return FetchToolConfig(
             engine=self.engine,
+            platform=self.platform,
+            apify_actor=self.apify_actor,
             concurrency=self.concurrency,
             timeout_ms=self.timeout_ms,
             batch_size=self.batch_size,
             retries=self.retries,
             retry_backoff_ms=self.retry_backoff_ms,
             embed=self.embed,
+            embedding_max_chars=self.embedding_max_chars,
+            embedding_batch_size=self.embedding_batch_size,
             content_dir=self.content_dir,
             dry_run=self.dry_run,
         )
@@ -272,10 +305,12 @@ async def _fetch_with_trafilatura(
     """
     Fetch content using trafilatura for extraction.
 
+    Delegates to the consolidated TrafilaturaFetcher engine.
+
     Args:
         url: URL to fetch
-        timeout_s: Timeout in seconds
-        client: Async HTTP client
+        timeout_s: Timeout in seconds (used for config)
+        client: Async HTTP client (unused, kept for interface consistency)
 
     Returns:
         Tuple of (markdown_content, metadata_dict)
@@ -283,28 +318,13 @@ async def _fetch_with_trafilatura(
     Raises:
         ValueError: If fetch or extraction fails
     """
+    from kurt.tools.fetch.engines.trafilatura import TrafilaturaFetcher
 
-    from kurt.tools.fetch.utils import extract_with_trafilatura
-
-    # Use httpx for the download (async-compatible)
-    response = await client.get(url, timeout=timeout_s, follow_redirects=True)
-    response.raise_for_status()
-
-    # Check content type
-    content_type = response.headers.get("content-type", "")
-    if not any(ct in content_type.lower() for ct in VALID_CONTENT_TYPES):
-        raise ValueError(f"invalid_content_type: {content_type}")
-
-    # Check content length
-    content_length = len(response.content)
-    if content_length > MAX_CONTENT_SIZE_BYTES:
-        raise ValueError(f"content_too_large: {content_length} bytes")
-
-    html = response.text
-    if not html:
-        raise ValueError(f"No content from: {url}")
-
-    return extract_with_trafilatura(html, url)
+    fetcher = TrafilaturaFetcher()
+    result = await asyncio.to_thread(fetcher.fetch, url)
+    if not result.success:
+        raise ValueError(result.error or "No result from Trafilatura")
+    return result.content, result.metadata
 
 
 async def _fetch_with_httpx(
@@ -315,10 +335,12 @@ async def _fetch_with_httpx(
     """
     Fetch content using httpx + trafilatura extraction.
 
+    Delegates to the consolidated HttpxFetcher engine.
+
     Args:
         url: URL to fetch
-        timeout_s: Timeout in seconds
-        client: Async HTTP client
+        timeout_s: Timeout in seconds (used for config)
+        client: Async HTTP client (unused, kept for interface consistency)
 
     Returns:
         Tuple of (markdown_content, metadata_dict)
@@ -326,26 +348,15 @@ async def _fetch_with_httpx(
     Raises:
         ValueError: If fetch or extraction fails
     """
-    from kurt.tools.fetch.utils import extract_with_trafilatura
+    from kurt.tools.fetch.core import FetcherConfig
+    from kurt.tools.fetch.engines.httpx import HttpxFetcher
 
-    response = await client.get(url, timeout=timeout_s, follow_redirects=True)
-    response.raise_for_status()
-
-    # Check content type
-    content_type = response.headers.get("content-type", "")
-    if not any(ct in content_type.lower() for ct in VALID_CONTENT_TYPES):
-        raise ValueError(f"invalid_content_type: {content_type}")
-
-    # Check content length
-    content_length = len(response.content)
-    if content_length > MAX_CONTENT_SIZE_BYTES:
-        raise ValueError(f"content_too_large: {content_length} bytes")
-
-    html = response.text
-    if not html:
-        raise ValueError(f"No content from: {url}")
-
-    return extract_with_trafilatura(html, url)
+    config = FetcherConfig(timeout=timeout_s)
+    fetcher = HttpxFetcher(config)
+    result = await asyncio.to_thread(fetcher.fetch, url)
+    if not result.success:
+        raise ValueError(result.error or "No result from httpx")
+    return result.content, result.metadata
 
 
 async def _fetch_with_tavily(
@@ -367,13 +378,13 @@ async def _fetch_with_tavily(
     Raises:
         ValueError: If Tavily returns an error for the URL
     """
-    from kurt.tools.fetch.tavily import fetch_with_tavily
+    from kurt.tools.fetch.engines.tavily import TavilyFetcher
 
-    results = await asyncio.to_thread(fetch_with_tavily, url)
-    result = results.get(url)
-    if isinstance(result, Exception) or result is None:
-        raise ValueError(str(result) if result else "No result from Tavily")
-    return result
+    fetcher = TavilyFetcher()
+    result = await asyncio.to_thread(fetcher.fetch, url)
+    if not result.success:
+        raise ValueError(result.error or "No result from Tavily")
+    return result.content, result.metadata
 
 
 async def _fetch_with_firecrawl(
@@ -395,13 +406,83 @@ async def _fetch_with_firecrawl(
     Raises:
         ValueError: If Firecrawl returns an error for the URL
     """
-    from kurt.tools.fetch.firecrawl import fetch_with_firecrawl
+    from kurt.tools.fetch.engines.firecrawl import FirecrawlFetcher
 
-    results = await asyncio.to_thread(fetch_with_firecrawl, url)
-    result = results.get(url)
-    if isinstance(result, Exception) or result is None:
-        raise ValueError(str(result) if result else "No result from Firecrawl")
-    return result
+    fetcher = FirecrawlFetcher()
+    result = await asyncio.to_thread(fetcher.fetch, url)
+    if not result.success:
+        raise ValueError(result.error or "No result from Firecrawl")
+    return result.content, result.metadata
+
+
+async def _fetch_with_apify(
+    url: str,
+    timeout_s: float,
+    client: httpx.AsyncClient,
+    platform: str | None = None,
+    apify_actor: str | None = None,
+) -> tuple[str, dict[str, Any]]:
+    """
+    Fetch content using Apify for social platforms.
+
+    Delegates to the consolidated ApifyFetcher engine.
+
+    Args:
+        url: URL to fetch (social media profile, post, or newsletter)
+        timeout_s: Timeout in seconds (used for config)
+        client: Async HTTP client (unused, kept for interface consistency)
+        platform: Social platform (twitter, linkedin, threads, substack)
+        apify_actor: Specific Apify actor ID to use
+
+    Returns:
+        Tuple of (markdown_content, metadata_dict)
+
+    Raises:
+        ValueError: If fetch or extraction fails
+    """
+    from kurt.tools.fetch.engines.apify import ApifyFetcher, ApifyFetcherConfig
+
+    config = ApifyFetcherConfig(
+        timeout=timeout_s,
+        platform=platform,
+        apify_actor=apify_actor,
+    )
+    fetcher = ApifyFetcher(config)
+    result = await asyncio.to_thread(fetcher.fetch, url)
+    if not result.success:
+        raise ValueError(result.error or "No result from Apify")
+    return result.content, result.metadata
+
+
+async def _fetch_with_twitterapi(
+    url: str,
+    timeout_s: float,
+    client: Any,
+    **kwargs: Any,
+) -> tuple[str, dict[str, Any]]:
+    """
+    Fetch content using TwitterAPI.io.
+
+    Args:
+        url: Twitter/X URL (tweet or profile)
+        timeout_s: Request timeout in seconds
+        client: HTTP client (unused - twitterapi uses its own)
+        **kwargs: Additional options (ignored)
+
+    Returns:
+        Tuple of (content, metadata)
+
+    Raises:
+        ValueError: If fetch fails
+    """
+    from kurt.tools.fetch.engines.twitterapi import TwitterApiFetcher, TwitterApiFetcherConfig
+
+    config = TwitterApiFetcherConfig(timeout=timeout_s)
+    fetcher = TwitterApiFetcher(config)
+    result = await asyncio.to_thread(fetcher.fetch, url)
+    if not result.success:
+        raise ValueError(result.error or "No result from TwitterAPI")
+    return result.content, result.metadata
 
 
 # Engine dispatcher
@@ -410,6 +491,8 @@ _FETCH_ENGINES = {
     "httpx": _fetch_with_httpx,
     "tavily": _fetch_with_tavily,
     "firecrawl": _fetch_with_firecrawl,
+    "apify": _fetch_with_apify,
+    "twitterapi": _fetch_with_twitterapi,
 }
 
 
@@ -470,6 +553,7 @@ async def _fetch_with_retry(
     retries: int,
     retry_backoff_ms: int,
     client: httpx.AsyncClient,
+    **engine_kwargs: Any,
 ) -> tuple[str, dict[str, Any], int]:
     """
     Fetch a URL with exponential backoff retry.
@@ -481,6 +565,7 @@ async def _fetch_with_retry(
         retries: Maximum retry attempts
         retry_backoff_ms: Base backoff delay in milliseconds
         client: Async HTTP client
+        **engine_kwargs: Additional keyword arguments passed to engine (e.g., platform, apify_actor)
 
     Returns:
         Tuple of (content, metadata, latency_ms)
@@ -494,7 +579,11 @@ async def _fetch_with_retry(
     for attempt in range(retries + 1):
         start_time = time.monotonic()
         try:
-            content, metadata = await fetch_fn(url, timeout_s, client)
+            # Pass extra kwargs for engines that need them (e.g., apify)
+            if engine_kwargs:
+                content, metadata = await fetch_fn(url, timeout_s, client, **engine_kwargs)
+            else:
+                content, metadata = await fetch_fn(url, timeout_s, client)
             latency_ms = int((time.monotonic() - start_time) * 1000)
             return content, metadata, latency_ms
 
@@ -537,46 +626,21 @@ def _generate_content_path(url: str, content_dir: str | None) -> str:
     Uses URL-based path for readability:
     - https://example.com/blog/post -> content_dir/example.com/blog/post.md
 
+    Delegates to the canonical _url_to_path() function in utils.py for the
+    URL-to-path conversion logic, then prepends the content_dir prefix.
+
     Args:
         url: Source URL
-        content_dir: Base directory for content (or None for default)
+        content_dir: Base directory for content (or None for default "sources")
 
     Returns:
         Relative path for the content file
     """
-    from urllib.parse import urlparse
-
-    parsed = urlparse(url)
-    domain = parsed.netloc or "unknown"
-    path = parsed.path.strip("/")
-
-    # Handle empty path (root URL)
-    if not path:
-        path = "index"
-
-    # Remove file extension if present (we'll add .md)
-    if path.endswith(".html") or path.endswith(".htm"):
-        path = path.rsplit(".", 1)[0]
-
-    # Sanitize path components
-    safe_chars = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_/.")
-    sanitized_path = "".join(c if c in safe_chars else "_" for c in path)
-
-    # Collapse multiple underscores
-    while "__" in sanitized_path:
-        sanitized_path = sanitized_path.replace("__", "_")
-
-    # Remove trailing underscores from path segments
-    sanitized_path = "/".join(
-        seg.strip("_") for seg in sanitized_path.split("/") if seg.strip("_")
-    )
-
-    # Handle edge case of empty path after sanitization
-    if not sanitized_path:
-        sanitized_path = "index"
+    from kurt.tools.fetch.utils import _url_to_path
 
     base_dir = content_dir or "sources"
-    return f"{base_dir}/{domain}/{sanitized_path}.md"
+    relative_path = _url_to_path(url)
+    return f"{base_dir}/{relative_path}"
 
 
 def _save_content(content: str, content_path: str, context: ToolContext) -> str:
@@ -624,6 +688,7 @@ class FetchTool(Tool[FetchParams, FetchOutput]):
     - httpx: HTTP fetch + trafilatura extraction (proxy-friendly)
     - tavily: Tavily API (native batch support)
     - firecrawl: Firecrawl API (native batch support)
+    - apify: Apify social platform extraction (twitter, linkedin, threads, substack)
     """
 
     name = "fetch"
@@ -859,8 +924,8 @@ class FetchTool(Tool[FetchParams, FetchOutput]):
             try:
                 from kurt.tools.batch_embedding import embedding_to_bytes, generate_embeddings
 
-                # Prepare texts for embedding (truncate to max chars)
-                max_chars = 1000  # Default, could be configurable
+                # Prepare texts for embedding (truncate to max chars from config)
+                max_chars = config.embedding_max_chars
                 texts = [content[:max_chars] for _, _, content in embedding_content]
 
                 # Generate embeddings in a single batch
@@ -1081,13 +1146,62 @@ class FetchTool(Tool[FetchParams, FetchOutput]):
                 "public_url": None,
             }
 
+    def _fetch_urls_sync(
+        self,
+        urls: list[str],
+        engine: str,
+    ) -> dict[str, tuple[str, dict] | Exception]:
+        """Fetch URLs synchronously using specified engine.
+
+        Args:
+            urls: List of URLs to fetch
+            engine: Engine name ('trafilatura', 'httpx', 'tavily', 'firecrawl')
+
+        Returns:
+            Dict mapping URL -> (content, metadata) tuple or Exception
+        """
+        from kurt.tools.fetch.engines.firecrawl import FirecrawlFetcher
+        from kurt.tools.fetch.engines.httpx import HttpxFetcher
+        from kurt.tools.fetch.engines.tavily import TavilyFetcher
+        from kurt.tools.fetch.engines.trafilatura import TrafilaturaFetcher
+
+        results: dict[str, tuple[str, dict] | Exception] = {}
+
+        if engine == "tavily":
+            fetcher = TavilyFetcher()
+            try:
+                results = fetcher.fetch_raw(urls)
+            except Exception as e:
+                return {url: e for url in urls}
+        elif engine == "firecrawl":
+            fetcher = FirecrawlFetcher()
+            try:
+                results = fetcher.fetch_raw(urls)
+            except Exception as e:
+                return {url: e for url in urls}
+        elif engine == "httpx":
+            fetcher = HttpxFetcher()
+            for url in urls:
+                try:
+                    results[url] = fetcher.fetch_raw(url)
+                except Exception as e:
+                    results[url] = e
+        else:
+            # trafilatura (default)
+            fetcher = TrafilaturaFetcher()
+            for url in urls:
+                try:
+                    results[url] = fetcher.fetch_raw(url)
+                except Exception as e:
+                    results[url] = e
+
+        return results
+
     async def _fetch_web_batch(
         self,
         inputs: list[FetchInput],
         config: FetchToolConfig,
     ) -> dict[str, dict[str, Any]]:
-        from kurt.tools.fetch.web import fetch_from_web
-
         urls = [input_item.url for input_item in inputs]
         if not urls:
             return {}
@@ -1099,7 +1213,9 @@ class FetchTool(Tool[FetchParams, FetchOutput]):
         results_by_url: dict[str, dict[str, Any]] = {}
         for i in range(0, len(urls), batch_size):
             batch_urls = urls[i : i + batch_size]
-            batch_results = await asyncio.to_thread(fetch_from_web, batch_urls, config.engine)
+            batch_results = await asyncio.to_thread(
+                self._fetch_urls_sync, batch_urls, config.engine
+            )
             for url in batch_urls:
                 result = batch_results.get(url)
                 if isinstance(result, Exception) or result is None:
@@ -1156,6 +1272,14 @@ class FetchTool(Tool[FetchParams, FetchOutput]):
         """
         async with semaphore:
             try:
+                # Build engine-specific kwargs
+                engine_kwargs: dict[str, Any] = {}
+                if config.engine == "apify":
+                    if config.platform:
+                        engine_kwargs["platform"] = config.platform
+                    if config.apify_actor:
+                        engine_kwargs["apify_actor"] = config.apify_actor
+
                 content, metadata, latency_ms = await _fetch_with_retry(
                     url=url,
                     engine=config.engine,
@@ -1163,6 +1287,7 @@ class FetchTool(Tool[FetchParams, FetchOutput]):
                     retries=config.retries,
                     retry_backoff_ms=config.retry_backoff_ms,
                     client=client,
+                    **engine_kwargs,
                 )
 
                 content_hash = _compute_content_hash(content)

@@ -7,7 +7,7 @@ registering, and executing tools in Kurt workflows.
 Tool names map to step types in workflow TOML:
 - step.type='map' -> MapTool
 - step.type='fetch' -> FetchTool
-- step.type='write' -> WriteTool
+- step.type='write-db' -> WriteTool
 - step.type='sql' -> SQLTool
 - step.type='batch-embedding' -> BatchEmbeddingTool
 - step.type='batch-llm' -> BatchLLMTool
@@ -115,10 +115,6 @@ from .fetch import (
     FetchParams,
     FetchTool,
     FetchToolConfig,
-    _compute_content_hash,
-    _generate_content_path,
-    _is_retryable_error,
-    _save_content,
 )
 from .map import MapInput, MapOutput, MapTool, normalize_url
 
@@ -130,7 +126,7 @@ FetchConfig = FetchToolConfig
 from .research import CitationOutput, ResearchInput, ResearchOutput, ResearchTool  # noqa: E402
 from .signals import SignalInput, SignalOutput, SignalsTool  # noqa: E402
 from .sql import SQLConfig, SQLInput, SQLOutput, SQLTool  # noqa: E402
-from .write import WriteConfig, WriteInput, WriteOutput, WriteParams, WriteTool  # noqa: E402
+from .write_db import WriteConfig, WriteInput, WriteOutput, WriteParams, WriteTool  # noqa: E402
 
 __all__ = [
     # Base classes
@@ -183,10 +179,6 @@ __all__ = [
     "FetchParams",
     "NON_RETRYABLE_STATUS_CODES",
     "RETRYABLE_STATUS_CODES",
-    "_compute_content_hash",
-    "_generate_content_path",
-    "_is_retryable_error",
-    "_save_content",
     # SQL tool
     "SQLTool",
     "SQLInput",

@@ -432,8 +432,10 @@ class TestDoctorCommand:
                     )
                     result = cli_runner.invoke(doctor_cmd, ["--json"])
 
-        # Should be valid JSON
+        # Should be valid JSON (robot envelope wraps data)
         data = json.loads(result.output)
+        if "data" in data and "error" not in data:
+            data = data["data"]
         assert "checks" in data
         assert data["exit_code"] == 0
 
@@ -442,23 +444,24 @@ class TestDoctorCommand:
         with patch("kurt.cli.doctor._get_git_path", return_value=temp_git_repo):
             with patch("kurt.cli.doctor._get_dolt_path", return_value=temp_git_repo):
                 with patch("kurt.cli.doctor.run_doctor") as mock_run:
-                    mock_run.return_value = DoctorReport(
-                        checks=[
-                            CheckResult(
-                                name="hooks_installed",
-                                status=CheckStatus.PASS,
-                                message="All hooks installed",
-                            ),
-                            CheckResult(
-                                name="branch_sync",
-                                status=CheckStatus.FAIL,
-                                message="Branch mismatch",
-                            ),
-                        ],
-                        summary={"passed": 1, "failed": 1, "warnings": 0},
-                        exit_code=1,
-                    )
-                    result = cli_runner.invoke(doctor_cmd, [])
+                    with patch.dict("os.environ", {"FORCE_TTY": "1"}):  # Force TTY for table output
+                        mock_run.return_value = DoctorReport(
+                            checks=[
+                                CheckResult(
+                                    name="hooks_installed",
+                                    status=CheckStatus.PASS,
+                                    message="All hooks installed",
+                                ),
+                                CheckResult(
+                                    name="branch_sync",
+                                    status=CheckStatus.FAIL,
+                                    message="Branch mismatch",
+                                ),
+                            ],
+                            summary={"passed": 1, "failed": 1, "warnings": 0},
+                            exit_code=1,
+                        )
+                        result = cli_runner.invoke(doctor_cmd, [])
 
         assert "PASS" in result.output
         assert "FAIL" in result.output

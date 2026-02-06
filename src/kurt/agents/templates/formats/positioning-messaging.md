@@ -462,11 +462,11 @@ kurt research search --source reddit --query "best [category] tools"
 
 ```bash
 # Fetch competitor positioning
-kurt content map url https://[competitor1.com]
-kurt content fetch https://[competitor1.com] https://[competitor1.com]/product
+kurt tool map doc https://[competitor1.com]
+kurt tool fetch doc https://[competitor1.com] https://[competitor1.com]/product
 
 # Get their messaging
-kurt content get <competitor-homepage-id>
+kurt docs get <competitor-homepage-id>
 
 # Research comparisons
 kurt research search --source reddit --query "[your-product] vs [competitor]"
@@ -484,20 +484,21 @@ kurt research search --source reddit --query "[your-product] vs [competitor]"
 **Or find existing:**
 ```bash
 # Search for customer-related content
-kurt content search "customer"
-kurt content search "testimonial"
-kurt content search "case study"
+# NOTE: Search is not yet available in CLI
+# kurt docs search "customer"
+# kurt docs search "testimonial"
+# kurt docs search "case study"
 ```
 
 **Step 4: Document Product Capabilities (1 hour)**
 
 ```bash
 # Find product documentation
-kurt content list --url-contains /product
-kurt content list --url-contains /features
+kurt docs list --url-contains /product
+kurt docs list --url-contains /features
 
 # Get the details
-kurt content get <product-doc-id>
+kurt docs get <product-doc-id>
 ```
 
 **Or ask user for:**

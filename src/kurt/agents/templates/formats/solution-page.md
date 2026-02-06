@@ -252,18 +252,19 @@ For [specific customer segment] who [problem statement]
 
 ```bash
 # Search for solution pages
-kurt content list --include "*/solution*"
-kurt content list --include "*/use-case*"
-kurt content list --include "*/for-*"
+kurt docs list --include "*/solution*"
+kurt docs list --include "*/use-case*"
+kurt docs list --include "*/for-*"
 
 # Alternative patterns
-kurt content search "for-|use-case"
+# NOTE: Search is not yet available in CLI
+# kurt content search "for-|use-case"
 ```
 
 **If NOT_FETCHED:**
 ```bash
-kurt content fetch --include "*/solution*" --limit 5
-kurt content fetch --include "*/use-case*" --limit 5
+kurt tool fetch doc --include "*/solution*" --limit 5
+kurt tool fetch doc --include "*/use-case*" --limit 5
 ```
 
 ### Step 2: Select 3-5 Examples (Iterative with User)
@@ -284,8 +285,8 @@ Use these, or provide different URLs?"
 
 ```bash
 # Read pages
-kurt content get <doc-id-1>
-kurt content get <doc-id-2>
+kurt docs get <doc-id-1>
+kurt docs get <doc-id-2>
 ```
 
 **Note these patterns:**

@@ -204,7 +204,7 @@ def build_dag(steps: dict[str, StepDef]) -> ExecutionPlan:
         ...     "a": StepDef(type="map"),
         ...     "b": StepDef(type="fetch", depends_on=["a"]),
         ...     "c": StepDef(type="llm", depends_on=["a"]),
-        ...     "d": StepDef(type="write", depends_on=["b", "c"]),
+        ...     "d": StepDef(type="write-db", depends_on=["b", "c"]),
         ... }
         >>> plan = build_dag(steps)
         >>> plan.levels

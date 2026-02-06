@@ -22,6 +22,8 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
+# Import tools module to ensure all tools are registered via @register_tool
+import kurt.tools  # noqa: F401
 from kurt.tools.core import ToolContext
 from kurt.workflows.toml.executor import execute_workflow
 from kurt.workflows.toml.parser import parse_workflow
@@ -317,7 +319,7 @@ name = { type = "string", required = true }
 value = { type = "string", required = true }
 
 [steps.write]
-type = "write"
+type = "write-db"
 [steps.write.config]
 table = "test_data"
 mode = "insert"
@@ -351,7 +353,7 @@ mode = "insert"
 name = "write-upsert-test"
 
 [steps.write]
-type = "write"
+type = "write-db"
 [steps.write.config]
 table = "test_data"
 mode = "upsert"
@@ -537,7 +539,7 @@ depends_on = ["read"]
 id = 200
 
 [steps.write]
-type = "write"
+type = "write-db"
 depends_on = ["transform"]
 [steps.write.config]
 table = "results"

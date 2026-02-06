@@ -29,18 +29,9 @@ console = Console()
 @click.option("--sitemap-path", help="Override sitemap location (e.g., /custom-sitemap.xml)")
 @click.option(
     "--method",
-    type=click.Choice(["auto", "sitemap", "crawl", "folder", "cms", "apify"], case_sensitive=False),
+    type=click.Choice(["auto", "sitemap", "crawl", "rss", "folder", "cms"], case_sensitive=False),
     default="auto",
     help="Discovery method",
-)
-@click.option(
-    "--platform",
-    type=click.Choice(["twitter", "linkedin", "threads", "substack"], case_sensitive=False),
-    help="Social platform for apify method",
-)
-@click.option(
-    "--apify-actor",
-    help="Specific Apify actor ID (e.g., 'apidojo/tweet-scraper')",
 )
 @click.option("--max-depth", type=int, help="Maximum crawl depth (1-5)")
 @click.option("--allow-external", is_flag=True, help="Allow crawling to external domains")
@@ -58,8 +49,6 @@ def map_cmd(
     cms: str | None,
     sitemap_path: str | None,
     method: str,
-    platform: str | None,
-    apify_actor: str | None,
     max_depth: int | None,
     allow_external: bool,
     include_patterns: str | None,
@@ -75,16 +64,16 @@ def map_cmd(
 
     \b
     Examples:
-        kurt content map https://example.com
-        kurt content map --folder ./docs
-        kurt content map --cms sanity:production
-        kurt content map --url https://example.com --method sitemap
-        kurt content map --dry-run
+        kurt tool map https://example.com
+        kurt tool map --folder ./docs
+        kurt tool map --cms sanity:production
+        kurt tool map --url https://example.com --method sitemap
+        kurt tool map --url https://example.com/feed.xml --method rss
+        kurt tool map --dry-run
 
     \b
-    Apify (Social Platforms):
-        kurt content map --method apify --platform twitter "AI agents"
-        kurt content map --method apify --apify-actor apidojo/tweet-scraper "@username"
+    For social platform content (Twitter, LinkedIn, etc.), use:
+        kurt tool fetch --url URL --engine apify --platform twitter
     """
     # Determine source type
     source_url = url or (source if source and source.startswith(("http://", "https://")) else None)
@@ -105,21 +94,9 @@ def map_cmd(
         parts = source.split(":")
         cms_platform = parts[0]
         cms_instance = parts[1] if len(parts) > 1 else "default"
-    elif method == "apify":
-        # For apify method, source is the query (e.g., "AI agents" or "@username")
-        apify_query = source
-        if not apify_query and not source_url:
-            if output_format == "json":
-                print_json(
-                    {"status": "error", "message": "No query specified for apify method"}
-                )
-            else:
-                console.print("[red]Error:[/red] No query specified")
-                console.print("[dim]Provide a search query or URL for the apify method[/dim]")
-            return
 
     # Validate we have a source
-    if method != "apify" and not any([source_url, source_folder, cms_platform]):
+    if not any([source_url, source_folder, cms_platform]):
         if output_format == "json":
             print_json(
                 {"status": "error", "message": "No source specified. Use --url, --folder, or --cms"}
@@ -129,7 +106,7 @@ def map_cmd(
             console.print("[dim]Use --url, --folder, or --cms to specify a source[/dim]")
         return
 
-    tool_source = "apify" if method == "apify" else "url" if source_url else "file" if source_folder else "cms"
+    tool_source = "url" if source_url else "file" if source_folder else "cms"
 
     from kurt.tools.map.config import MapConfig
     from kurt.tools.map.utils import parse_patterns
@@ -173,9 +150,6 @@ def map_cmd(
         "sitemap_path": config.sitemap_path,
         "allow_external": allow_external or config.allow_external,
         "dry_run": config.dry_run,
-        "platform": platform.lower() if platform else None,
-        "apify_actor": apify_actor,
-        "apify_query": source if method == "apify" else None,
     }
 
     cli_command = "kurt " + " ".join(sys.argv[1:])

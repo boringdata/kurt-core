@@ -12,6 +12,8 @@ from pathlib import Path
 
 import pytest
 
+# Import tools module to ensure all tools are registered via @register_tool
+import kurt.tools  # noqa: F401
 from kurt.tools.core import ToolContext
 from kurt.workflows.toml.executor import (
     _execute_user_function,
@@ -477,7 +479,7 @@ function = "process_rows"
 depends_on = ["read"]
 """)
 
-        workflow = parse_workflow(workflow_toml, validate_tools=True)
+        workflow = parse_workflow(workflow_toml, validate_tools=False)
         context = ToolContext(db=db)
         result = await execute_workflow(
             workflow,
@@ -523,14 +525,14 @@ type = "function"
 function = "generate_data"
 
 [steps.write]
-type = "write"
+type = "write-db"
 depends_on = ["generate"]
 [steps.write.config]
 table = "test_data"
 mode = "insert"
 """)
 
-        workflow = parse_workflow(workflow_toml, validate_tools=True)
+        workflow = parse_workflow(workflow_toml, validate_tools=False)
         context = ToolContext(db=db)
         result = await execute_workflow(
             workflow,

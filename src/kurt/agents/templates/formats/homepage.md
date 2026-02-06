@@ -279,23 +279,23 @@ outline:
 
 ```bash
 # Find homepage
-kurt content list --url-starts-with https://<company-domain> | head -1
+kurt docs list --url-starts-with https://<company-domain> | head -1
 
 # If not fetched:
-kurt content fetch https://<company-domain>
+kurt tool fetch doc https://<company-domain>
 ```
 
 ### Step 2: Analyze Current Homepage (And Competitor References)
 
 **Read current homepage:**
 ```bash
-kurt content get <homepage-doc-id>
+kurt docs get <homepage-doc-id>
 ```
 
 **Optional - analyze 2-3 competitor homepages:**
 ```bash
-kurt content fetch https://<competitor1.com>
-kurt content fetch https://<competitor2.com>
+kurt tool fetch doc https://<competitor1.com>
+kurt tool fetch doc https://<competitor2.com>
 ```
 
 **Maximum: 1 current + 2-3 competitors = 4 examples total**
