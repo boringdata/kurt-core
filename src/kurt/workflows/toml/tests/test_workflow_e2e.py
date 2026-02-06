@@ -9,6 +9,9 @@ Tests the complete workflow system with real database operations:
 - CLI integration tests
 
 Uses DoltDB fixtures for realistic integration testing.
+
+NOTE: These tests require dolt sql-server and are skipped in CI.
+Run locally with a running dolt server for full coverage.
 """
 
 from __future__ import annotations
@@ -20,6 +23,12 @@ import subprocess
 from pathlib import Path
 
 import pytest
+
+# Skip entire module in CI - requires dolt sql-server setup
+pytestmark = pytest.mark.skipif(
+    os.environ.get("CI") == "true",
+    reason="Dolt server e2e tests require manual server setup in CI",
+)
 from click.testing import CliRunner
 
 # Import tools module to ensure all tools are registered via @register_tool

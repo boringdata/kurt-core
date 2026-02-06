@@ -403,6 +403,10 @@ function = "failing_function"
         assert "Something went wrong" in result.step_results["process"].error
 
 
+@pytest.mark.skipif(
+    os.environ.get("CI") == "true",
+    reason="Dolt server tests require manual server setup in CI",
+)
 class TestMixedWorkflowsWithDolt:
     """E2E tests for workflows mixing SQL tools with custom functions."""
 
