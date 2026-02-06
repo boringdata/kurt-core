@@ -664,9 +664,10 @@ const yourProduct = new YourProduct({
 
 1. **Find 2-3 existing integration pages:**
 ```bash
-kurt content search "integration"
-kurt content list --with-entity "Topic:integration"
-kurt content list --url-contains /integrations/
+# Note: search is not yet available in CLI
+# kurt content search "integration"
+kurt docs list --with-entity "Topic:integration"
+kurt docs list --url-contains /integrations/
 ```
 
 2. **Analyze their style:**

@@ -183,8 +183,8 @@ Display final workspace summary:
    Use the Kurt editor to collaboratively edit files with your team.
 
 **Need Help?**
-- View all workspaces: `kurt workspaces list`
-- Invite team member: `kurt workspaces invite {{workspace_slug}} user@example.com`
+- View all workspaces: `kurt cloud workspaces`
+- Invite team member: Use the web UI or API to invite team members
 ```
 
 ## Error Handling
@@ -203,7 +203,7 @@ If API returns 409:
 ### Installation Timeout
 If user doesn't install app within 2 minutes:
 - Provide install URL again
-- Explain they can install later: `kurt workspaces install {{workspace_slug}}`
+- Explain they can install later via the web UI or API
 - Workspace is created but not functional until app is installed
 
 ## Success Criteria
