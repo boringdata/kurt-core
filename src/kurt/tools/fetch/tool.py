@@ -126,6 +126,18 @@ class FetchToolConfig(BaseModel):
         default=None,
         description="Generate embeddings after fetch (None = auto-detect from API keys)",
     )
+    embedding_max_chars: int = Field(
+        default=1000,
+        ge=100,
+        le=5000,
+        description="Maximum characters for embedding generation",
+    )
+    embedding_batch_size: int = Field(
+        default=100,
+        ge=1,
+        le=500,
+        description="Batch size for embedding generation",
+    )
     content_dir: str | None = Field(
         default=None,
         description="Directory to save content (relative to project root)",
@@ -225,6 +237,18 @@ class FetchParams(BaseModel):
         default=None,
         description="Generate embeddings after fetch (None = auto-detect from API keys)",
     )
+    embedding_max_chars: int = Field(
+        default=1000,
+        ge=100,
+        le=5000,
+        description="Maximum characters for embedding generation",
+    )
+    embedding_batch_size: int = Field(
+        default=100,
+        ge=1,
+        le=500,
+        description="Batch size for embedding generation",
+    )
     content_dir: str | None = Field(
         default=None,
         description="Directory to save content (relative to project root)",
@@ -254,6 +278,8 @@ class FetchParams(BaseModel):
             retries=self.retries,
             retry_backoff_ms=self.retry_backoff_ms,
             embed=self.embed,
+            embedding_max_chars=self.embedding_max_chars,
+            embedding_batch_size=self.embedding_batch_size,
             content_dir=self.content_dir,
             dry_run=self.dry_run,
         )
@@ -812,8 +838,8 @@ class FetchTool(Tool[FetchParams, FetchOutput]):
             try:
                 from kurt.tools.batch_embedding import embedding_to_bytes, generate_embeddings
 
-                # Prepare texts for embedding (truncate to max chars)
-                max_chars = 1000  # Default, could be configurable
+                # Prepare texts for embedding (truncate to max chars from config)
+                max_chars = config.embedding_max_chars
                 texts = [content[:max_chars] for _, _, content in embedding_content]
 
                 # Generate embeddings in a single batch
