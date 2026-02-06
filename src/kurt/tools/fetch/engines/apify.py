@@ -29,12 +29,14 @@ class ApifyFetcherConfig(FetcherConfig):
         api_key: Apify API token (uses APIFY_API_KEY env var if not provided)
         platform: Platform name (twitter, linkedin, threads, substack)
         apify_actor: Specific actor ID to use (overrides platform default)
+        content_type: Content type override (auto, doc, profile, post)
         max_items: Maximum items to fetch (for profile posts)
     """
 
     api_key: Optional[str] = None
     platform: Optional[str] = None
     apify_actor: Optional[str] = None
+    content_type: Optional[str] = None  # auto, doc, profile, post
     max_items: int = 20
 
 
@@ -102,7 +104,12 @@ class ApifyFetcher(BaseFetcher):
                 )
 
             # Determine if this is a profile or post URL
-            is_profile = self._is_profile_url(url, platform)
+            # Use explicit content_type if provided, otherwise auto-detect
+            content_type = self._config.content_type
+            if content_type and content_type != "auto":
+                is_profile = content_type == "profile"
+            else:
+                is_profile = self._is_profile_url(url, platform)
 
             # Get actor to use
             actor_id = self._get_actor(platform, is_profile)

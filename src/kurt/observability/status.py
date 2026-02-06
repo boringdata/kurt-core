@@ -6,7 +6,7 @@ and progress information from Dolt tables.
 Usage:
     from kurt.observability.status import get_live_status
 
-    db = DoltDB(".dolt")
+    db = DoltDB(".")  # Project root, not .dolt directory
     status = get_live_status(db, "abc-123")
     print(status["steps"])  # List of step details
     print(status["progress"])  # {current: 10, total: 100}

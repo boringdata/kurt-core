@@ -89,6 +89,10 @@ class FetchToolConfig(BaseModel):
         default=None,
         description="Specific Apify actor ID (e.g., 'apidojo/tweet-scraper')",
     )
+    content_type: Literal["auto", "doc", "profile", "post"] | None = Field(
+        default=None,
+        description="Content type override (auto=detect from URL, doc/profile/post=explicit)",
+    )
     concurrency: int = Field(
         default=5,
         ge=1,
@@ -208,6 +212,10 @@ class FetchParams(BaseModel):
         default=None,
         description="Specific Apify actor ID (e.g., 'apidojo/tweet-scraper')",
     )
+    content_type: Literal["auto", "doc", "profile", "post"] | None = Field(
+        default=None,
+        description="Content type override (auto=detect from URL, doc/profile/post=explicit)",
+    )
     concurrency: int = Field(
         default=5,
         ge=1,
@@ -279,6 +287,7 @@ class FetchParams(BaseModel):
             engine=self.engine,
             platform=self.platform,
             apify_actor=self.apify_actor,
+            content_type=self.content_type,
             concurrency=self.concurrency,
             timeout_ms=self.timeout_ms,
             batch_size=self.batch_size,
@@ -421,6 +430,7 @@ async def _fetch_with_apify(
     client: httpx.AsyncClient,
     platform: str | None = None,
     apify_actor: str | None = None,
+    content_type: str | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """
     Fetch content using Apify for social platforms.
@@ -433,6 +443,7 @@ async def _fetch_with_apify(
         client: Async HTTP client (unused, kept for interface consistency)
         platform: Social platform (twitter, linkedin, threads, substack)
         apify_actor: Specific Apify actor ID to use
+        content_type: Content type override (auto, doc, profile, post)
 
     Returns:
         Tuple of (markdown_content, metadata_dict)
@@ -446,6 +457,7 @@ async def _fetch_with_apify(
         timeout=timeout_s,
         platform=platform,
         apify_actor=apify_actor,
+        content_type=content_type,
     )
     fetcher = ApifyFetcher(config)
     result = await asyncio.to_thread(fetcher.fetch, url)
@@ -1279,6 +1291,8 @@ class FetchTool(Tool[FetchParams, FetchOutput]):
                         engine_kwargs["platform"] = config.platform
                     if config.apify_actor:
                         engine_kwargs["apify_actor"] = config.apify_actor
+                    if config.content_type:
+                        engine_kwargs["content_type"] = config.content_type
 
                 content, metadata, latency_ms = await _fetch_with_retry(
                     url=url,

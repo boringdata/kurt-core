@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
-import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -21,52 +19,11 @@ from kurt.db.dolt import (
     QueryResult,
 )
 
-# =============================================================================
-# Fixtures
-# =============================================================================
-
-
-@pytest.fixture
-def dolt_available() -> bool:
-    """Check if dolt CLI is available."""
-    return shutil.which("dolt") is not None
-
-
-@pytest.fixture
-def tmp_dolt_repo(tmp_path: Path, dolt_available: bool) -> Path | None:
-    """Create a temporary Dolt repository for testing.
-
-    Returns None if dolt is not installed.
-    """
-    if not dolt_available:
-        pytest.skip("Dolt CLI not installed")
-
-    repo_path = tmp_path / "test_repo"
-    repo_path.mkdir()
-
-    # Initialize dolt repo
-    subprocess.run(
-        ["dolt", "init"],
-        cwd=repo_path,
-        check=True,
-        capture_output=True,
-    )
-
-    # Configure git user for commits (--set required in newer Dolt versions)
-    subprocess.run(
-        ["dolt", "config", "--local", "--set", "user.email", "test@example.com"],
-        cwd=repo_path,
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["dolt", "config", "--local", "--set", "user.name", "Test User"],
-        cwd=repo_path,
-        check=True,
-        capture_output=True,
-    )
-
-    return repo_path
+# Fixtures are defined in conftest.py:
+# - dolt_available: Check if dolt CLI is installed
+# - tmp_dolt_repo: Create a temporary Dolt repository
+# - dolt_server: Start a dolt sql-server for integration tests
+# - server_db: DoltDB instance connected to the test server
 
 
 # =============================================================================
@@ -226,22 +183,7 @@ class TestDoltTransaction:
 
 
 class TestDoltDBInit:
-    """Tests for DoltDB initialization."""
-
-    def test_init_embedded_mode_with_dolt(self, dolt_available: bool):
-        """Test embedded mode initialization when dolt is available."""
-        if not dolt_available:
-            pytest.skip("Dolt CLI not installed")
-
-        # Should not raise
-        db = DoltDB("/tmp/test", mode="embedded")
-        assert db.mode == "embedded"
-
-    def test_init_embedded_mode_without_dolt(self):
-        """Test embedded mode raises when dolt is not available."""
-        with patch("shutil.which", return_value=None):
-            with pytest.raises(DoltConnectionError, match="Dolt CLI not found"):
-                DoltDB("/tmp/test", mode="embedded")
+    """Tests for DoltDB initialization (server-only mode)."""
 
     def test_init_server_mode_no_dolt_check(self):
         """Test server mode doesn't check for dolt CLI."""
@@ -250,21 +192,20 @@ class TestDoltDBInit:
             db = DoltDB("/tmp/test", mode="server")
             assert db.mode == "server"
 
-    def test_init_default_settings(self, dolt_available: bool):
-        """Test default initialization settings."""
-        if not dolt_available:
-            pytest.skip("Dolt CLI not installed")
+    def test_init_default_settings(self):
+        """Test default initialization settings (server mode)."""
+        with patch("shutil.which", return_value=None):
+            # Server mode is default and doesn't require dolt CLI
+            db = DoltDB("/tmp/test_repo")
 
-        db = DoltDB("/tmp/test_repo")
-
-        assert db.path == Path("/tmp/test_repo").resolve()
-        assert db.mode == "embedded"
-        assert db._host == "localhost"
-        assert db._port == 3306
-        assert db._user == "root"
-        assert db._password == ""
-        assert db._database == "test_repo"
-        assert db._pool_size == 5
+            assert db.path == Path("/tmp/test_repo").resolve()
+            assert db.mode == "server"
+            assert db._host == "localhost"
+            assert db._port == 3306
+            assert db._user == "root"
+            assert db._password == ""
+            assert db._database == "test_repo"
+            assert db._pool_size == 5
 
     def test_init_custom_server_settings(self):
         """Test custom server mode settings."""
@@ -330,23 +271,25 @@ class TestDoltDBRepository:
 
 
 # =============================================================================
-# DoltDB Query Tests (Embedded Mode)
+# DoltDB Query Tests (Server Mode)
 # =============================================================================
 
 
-class TestDoltDBQueryEmbedded:
-    """Tests for DoltDB query operations in embedded mode."""
+@pytest.mark.integration
+class TestDoltDBQueryServer:
+    """Tests for DoltDB query operations via server mode.
 
-    def test_query_select(self, tmp_dolt_repo: Path):
+    These tests require a running dolt sql-server (provided by server_db fixture).
+    """
+
+    def test_query_select(self, server_db: DoltDB):
         """Test SELECT query returns results."""
-        db = DoltDB(tmp_dolt_repo)
-
         # Create a table and insert data
-        db.execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(100))")
-        db.execute("INSERT INTO users VALUES (1, 'Alice')")
-        db.execute("INSERT INTO users VALUES (2, 'Bob')")
+        server_db.execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(100))")
+        server_db.execute("INSERT INTO users VALUES (1, 'Alice')")
+        server_db.execute("INSERT INTO users VALUES (2, 'Bob')")
 
-        result = db.query("SELECT * FROM users ORDER BY id")
+        result = server_db.query("SELECT * FROM users ORDER BY id")
 
         assert len(result) == 2
         assert result.rows[0]["id"] == 1
@@ -354,182 +297,165 @@ class TestDoltDBQueryEmbedded:
         assert result.rows[1]["id"] == 2
         assert result.rows[1]["name"] == "Bob"
 
-    def test_query_with_parameters(self, tmp_dolt_repo: Path):
-        """Test query with parameter interpolation."""
-        db = DoltDB(tmp_dolt_repo)
+    def test_query_with_parameters(self, server_db: DoltDB):
+        """Test query with parameter substitution."""
+        server_db.execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(100))")
+        server_db.execute("INSERT INTO users VALUES (1, 'Alice')")
+        server_db.execute("INSERT INTO users VALUES (2, 'Bob')")
 
-        db.execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(100))")
-        db.execute("INSERT INTO users VALUES (1, 'Alice')")
-        db.execute("INSERT INTO users VALUES (2, 'Bob')")
-
-        result = db.query("SELECT * FROM users WHERE id = ?", [1])
+        result = server_db.query("SELECT * FROM users WHERE id = ?", [1])
 
         assert len(result) == 1
         assert result.rows[0]["name"] == "Alice"
 
-    def test_query_one_returns_first_row(self, tmp_dolt_repo: Path):
+    def test_query_one_returns_first_row(self, server_db: DoltDB):
         """Test query_one returns first row."""
-        db = DoltDB(tmp_dolt_repo)
+        server_db.execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(100))")
+        server_db.execute("INSERT INTO users VALUES (1, 'Alice')")
+        server_db.execute("INSERT INTO users VALUES (2, 'Bob')")
 
-        db.execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(100))")
-        db.execute("INSERT INTO users VALUES (1, 'Alice')")
-        db.execute("INSERT INTO users VALUES (2, 'Bob')")
-
-        row = db.query_one("SELECT * FROM users ORDER BY id")
+        row = server_db.query_one("SELECT * FROM users ORDER BY id")
 
         assert row is not None
         assert row["id"] == 1
         assert row["name"] == "Alice"
 
-    def test_query_one_returns_none_when_empty(self, tmp_dolt_repo: Path):
+    def test_query_one_returns_none_when_empty(self, server_db: DoltDB):
         """Test query_one returns None for empty result."""
-        db = DoltDB(tmp_dolt_repo)
+        server_db.execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(100))")
 
-        db.execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(100))")
-
-        row = db.query_one("SELECT * FROM users")
+        row = server_db.query_one("SELECT * FROM users")
 
         assert row is None
 
-    def test_execute_create_table(self, tmp_dolt_repo: Path):
+    def test_execute_create_table(self, server_db: DoltDB):
         """Test execute for CREATE TABLE."""
-        db = DoltDB(tmp_dolt_repo)
-
-        result = db.execute("CREATE TABLE test (id INT PRIMARY KEY)")
+        result = server_db.execute("CREATE TABLE test (id INT PRIMARY KEY)")
 
         # Should not raise
         assert result.rows == []
 
-    def test_execute_insert(self, tmp_dolt_repo: Path):
+    def test_execute_insert(self, server_db: DoltDB):
         """Test execute for INSERT."""
-        db = DoltDB(tmp_dolt_repo)
-
-        db.execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(100))")
-        db.execute("INSERT INTO users VALUES (1, 'Alice')")
+        server_db.execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(100))")
+        server_db.execute("INSERT INTO users VALUES (1, 'Alice')")
 
         # Verify data was inserted
-        query_result = db.query("SELECT * FROM users")
+        query_result = server_db.query("SELECT * FROM users")
         assert len(query_result) == 1
 
 
 # =============================================================================
-# DoltDB Parameter Interpolation Tests
+# DoltDB Parameter Types Tests (Server Mode)
 # =============================================================================
 
 
-class TestDoltDBParameterInterpolation:
-    """Tests for parameter interpolation in embedded mode."""
+@pytest.mark.integration
+class TestDoltDBParameterTypes:
+    """Tests for different parameter types via server mode.
 
-    def test_interpolate_string(self, tmp_dolt_repo: Path):
-        """Test string parameter interpolation."""
-        db = DoltDB(tmp_dolt_repo)
+    These tests verify that various SQL parameter types work correctly.
+    """
 
-        db.execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(100))")
-        db.execute("INSERT INTO users VALUES (?, ?)", [1, "Alice"])
+    def test_string_parameter(self, server_db: DoltDB):
+        """Test string parameter handling."""
+        server_db.execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(100))")
+        server_db.execute("INSERT INTO users VALUES (?, ?)", [1, "Alice"])
 
-        result = db.query("SELECT * FROM users")
+        result = server_db.query("SELECT * FROM users")
         assert result.rows[0]["name"] == "Alice"
 
-    def test_interpolate_string_with_quotes(self, tmp_dolt_repo: Path):
+    def test_string_with_quotes(self, server_db: DoltDB):
         """Test string with single quotes is properly escaped."""
-        db = DoltDB(tmp_dolt_repo)
+        server_db.execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(100))")
+        server_db.execute("INSERT INTO users VALUES (?, ?)", [1, "O'Brien"])
 
-        db.execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(100))")
-        db.execute("INSERT INTO users VALUES (?, ?)", [1, "O'Brien"])
-
-        result = db.query("SELECT * FROM users")
+        result = server_db.query("SELECT * FROM users")
         assert result.rows[0]["name"] == "O'Brien"
 
-    def test_interpolate_integer(self, tmp_dolt_repo: Path):
-        """Test integer parameter interpolation."""
-        db = DoltDB(tmp_dolt_repo)
+    def test_integer_parameter(self, server_db: DoltDB):
+        """Test integer parameter handling."""
+        server_db.execute("CREATE TABLE numbers (id INT PRIMARY KEY, value INT)")
+        server_db.execute("INSERT INTO numbers VALUES (1, ?)", [42])
 
-        db.execute("CREATE TABLE numbers (id INT PRIMARY KEY, value INT)")
-        db.execute("INSERT INTO numbers VALUES (1, ?)", [42])
-
-        result = db.query("SELECT * FROM numbers")
+        result = server_db.query("SELECT * FROM numbers")
         assert result.rows[0]["value"] == 42
 
-    def test_interpolate_float(self, tmp_dolt_repo: Path):
-        """Test float parameter interpolation."""
-        db = DoltDB(tmp_dolt_repo)
+    def test_float_parameter(self, server_db: DoltDB):
+        """Test float parameter handling."""
+        server_db.execute("CREATE TABLE numbers (id INT PRIMARY KEY, value DOUBLE)")
+        server_db.execute("INSERT INTO numbers VALUES (1, ?)", [3.14])
 
-        db.execute("CREATE TABLE numbers (id INT PRIMARY KEY, value DOUBLE)")
-        db.execute("INSERT INTO numbers VALUES (1, ?)", [3.14])
-
-        result = db.query("SELECT * FROM numbers")
+        result = server_db.query("SELECT * FROM numbers")
         assert abs(result.rows[0]["value"] - 3.14) < 0.001
 
-    def test_interpolate_null(self, tmp_dolt_repo: Path):
-        """Test NULL parameter interpolation."""
-        db = DoltDB(tmp_dolt_repo)
+    def test_null_parameter(self, server_db: DoltDB):
+        """Test NULL parameter handling."""
+        server_db.execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(100))")
+        server_db.execute("INSERT INTO users VALUES (?, ?)", [1, None])
 
-        db.execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(100))")
-        db.execute("INSERT INTO users VALUES (?, ?)", [1, None])
-
-        result = db.query("SELECT * FROM users")
-        # Dolt JSON output omits NULL columns, so 'name' is not in the result
+        result = server_db.query("SELECT * FROM users")
         assert result.rows[0]["id"] == 1
-        assert "name" not in result.rows[0]  # NULL columns are omitted
+        assert result.rows[0]["name"] is None
 
-    def test_interpolate_boolean(self, tmp_dolt_repo: Path):
-        """Test boolean parameter interpolation."""
-        db = DoltDB(tmp_dolt_repo)
+    def test_boolean_parameter(self, server_db: DoltDB):
+        """Test boolean parameter handling."""
+        server_db.execute("CREATE TABLE flags (id INT PRIMARY KEY, active BOOLEAN)")
+        server_db.execute("INSERT INTO flags VALUES (?, ?)", [1, True])
+        server_db.execute("INSERT INTO flags VALUES (?, ?)", [2, False])
 
-        db.execute("CREATE TABLE flags (id INT PRIMARY KEY, active BOOLEAN)")
-        db.execute("INSERT INTO flags VALUES (?, ?)", [1, True])
-        db.execute("INSERT INTO flags VALUES (?, ?)", [2, False])
-
-        result = db.query("SELECT * FROM flags ORDER BY id")
+        result = server_db.query("SELECT * FROM flags ORDER BY id")
         assert result.rows[0]["active"] == 1  # MySQL stores as 1/0
         assert result.rows[1]["active"] == 0
 
 
 # =============================================================================
-# DoltDB Transaction Tests
+# DoltDB Transaction Tests (Server Mode)
 # =============================================================================
 
 
-class TestDoltDBTransaction:
-    """Tests for DoltDB transaction context manager."""
+@pytest.mark.integration
+class TestDoltDBTransactionServer:
+    """Tests for DoltDB transaction context manager via server mode."""
 
-    def test_transaction_commits_on_success(self, tmp_dolt_repo: Path):
+    def test_transaction_commits_on_success(self, server_db: DoltDB):
         """Test transaction commits on successful exit."""
-        db = DoltDB(tmp_dolt_repo)
-        db.execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(100))")
+        server_db.execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(100))")
 
-        with db.transaction() as tx:
+        with server_db.transaction() as tx:
             tx.execute("INSERT INTO users VALUES (?, ?)", [1, "Alice"])
             tx.execute("INSERT INTO users VALUES (?, ?)", [2, "Bob"])
 
-        result = db.query("SELECT * FROM users ORDER BY id")
+        result = server_db.query("SELECT * FROM users ORDER BY id")
         assert len(result) == 2
 
-    def test_transaction_rollback_on_exception(self, tmp_dolt_repo: Path):
+    def test_transaction_rollback_on_exception(self, server_db: DoltDB):
         """Test transaction rolls back on exception."""
-        db = DoltDB(tmp_dolt_repo)
-        db.execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(100))")
-        db.execute("INSERT INTO users VALUES (1, 'Existing')")
+        server_db.execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(100))")
+        server_db.execute("INSERT INTO users VALUES (1, 'Existing')")
 
         with pytest.raises(Exception):
-            with db.transaction() as tx:
+            with server_db.transaction() as tx:
                 tx.execute("INSERT INTO users VALUES (?, ?)", [2, "New"])
                 raise Exception("Simulated error")
 
         # Only the original row should exist
-        # Note: In embedded mode, statements are executed on commit,
-        # so rollback means statements are discarded before execution
-        result = db.query("SELECT * FROM users")
+        # Statements are discarded on rollback before execution
+        result = server_db.query("SELECT * FROM users")
         assert len(result) == 1
 
 
 # =============================================================================
-# DoltDB Branch Tests
+# DoltDB Branch Tests (CLI-only operations)
 # =============================================================================
 
 
-class TestDoltDBBranch:
-    """Tests for DoltDB branch operations."""
+class TestDoltDBBranchCLI:
+    """Tests for DoltDB branch operations using CLI only.
+
+    Note: dolt checkout/switch commands don't work while sql-server is running,
+    so these tests use tmp_dolt_repo directly without starting a server.
+    """
 
     def test_branch_current_returns_main(self, tmp_dolt_repo: Path):
         """Test branch_current returns main initially."""
@@ -587,71 +513,73 @@ class TestDoltDBBranch:
         names = [b.name for b in branches]
         assert "feature/to-delete" not in names
 
-    def test_branch_create_from_start_point(self, tmp_dolt_repo: Path):
-        """Test creating branch from specific commit."""
-        db = DoltDB(tmp_dolt_repo)
 
+# =============================================================================
+# DoltDB Branch Tests (Server Mode - for SQL-dependent operations)
+# =============================================================================
+
+
+@pytest.mark.integration
+class TestDoltDBBranchServer:
+    """Tests for DoltDB branch operations that require SQL execution."""
+
+    def test_branch_create_from_start_point(self, server_db: DoltDB):
+        """Test creating branch from specific commit."""
         # Create some data and commit
-        db.execute("CREATE TABLE test (id INT PRIMARY KEY)")
-        db.commit("Initial commit")
+        server_db.execute("CREATE TABLE test (id INT PRIMARY KEY)")
+        server_db.commit("Initial commit")
 
         # Create branch from main
-        db.branch_create("feature/from-main", "main")
+        server_db.branch_create("feature/from-main", "main")
 
-        branches = db.branch_list()
+        branches = server_db.branch_list()
         names = [b.name for b in branches]
         assert "feature/from-main" in names
 
 
 # =============================================================================
-# DoltDB Commit Tests
+# DoltDB Commit Tests (Server Mode)
 # =============================================================================
 
 
+@pytest.mark.integration
 class TestDoltDBCommit:
-    """Tests for DoltDB version control commits."""
+    """Tests for DoltDB version control commits via server mode."""
 
-    def test_commit_with_message(self, tmp_dolt_repo: Path):
+    def test_commit_with_message(self, server_db: DoltDB):
         """Test creating a commit with message."""
-        db = DoltDB(tmp_dolt_repo)
-
-        db.execute("CREATE TABLE test (id INT PRIMARY KEY)")
-        commit_hash = db.commit("Add test table")
+        server_db.execute("CREATE TABLE test (id INT PRIMARY KEY)")
+        commit_hash = server_db.commit("Add test table")
 
         # Should return a hash (might be empty string if nothing to commit)
         assert isinstance(commit_hash, str)
 
-    def test_commit_with_author(self, tmp_dolt_repo: Path):
+    def test_commit_with_author(self, server_db: DoltDB):
         """Test creating a commit with custom author."""
-        db = DoltDB(tmp_dolt_repo)
-
-        db.execute("CREATE TABLE test2 (id INT PRIMARY KEY)")
-        commit_hash = db.commit("Add test2 table", author="Custom User <custom@example.com>")
+        server_db.execute("CREATE TABLE test2 (id INT PRIMARY KEY)")
+        commit_hash = server_db.commit("Add test2 table", author="Custom User <custom@example.com>")
 
         assert isinstance(commit_hash, str)
 
 
 # =============================================================================
-# DoltDB Error Handling Tests
+# DoltDB Error Handling Tests (Server Mode)
 # =============================================================================
 
 
+@pytest.mark.integration
 class TestDoltDBErrors:
-    """Tests for DoltDB error handling."""
+    """Tests for DoltDB error handling via server mode."""
 
-    def test_query_invalid_sql_raises(self, tmp_dolt_repo: Path):
+    def test_query_invalid_sql_raises(self, server_db: DoltDB):
         """Test invalid SQL raises DoltQueryError."""
-        db = DoltDB(tmp_dolt_repo)
-
         with pytest.raises(DoltQueryError):
-            db.query("SELECT * FROM nonexistent_table")
+            server_db.query("SELECT * FROM nonexistent_table")
 
-    def test_branch_switch_nonexistent_raises(self, tmp_dolt_repo: Path):
+    def test_branch_switch_nonexistent_raises(self, server_db: DoltDB):
         """Test switching to nonexistent branch raises DoltBranchError."""
-        db = DoltDB(tmp_dolt_repo)
-
         with pytest.raises(DoltBranchError, match="Failed to switch"):
-            db.branch_switch("nonexistent-branch")
+            server_db.branch_switch("nonexistent-branch")
 
 
 # =============================================================================

@@ -143,7 +143,7 @@ class WorkflowLifecycle:
         which handles its own synchronization.
 
     Example:
-        db = DoltDB(".dolt")
+        db = DoltDB(".")  # Project root, not .dolt directory
         lifecycle = WorkflowLifecycle(db)
 
         # Start workflow

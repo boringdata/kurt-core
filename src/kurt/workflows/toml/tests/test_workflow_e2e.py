@@ -9,6 +9,9 @@ Tests the complete workflow system with real database operations:
 - CLI integration tests
 
 Uses DoltDB fixtures for realistic integration testing.
+
+NOTE: These tests require dolt sql-server and are skipped in CI.
+Run locally with a running dolt server for full coverage.
 """
 
 from __future__ import annotations
@@ -27,6 +30,12 @@ import kurt.tools  # noqa: F401
 from kurt.tools.core import ToolContext
 from kurt.workflows.toml.executor import execute_workflow
 from kurt.workflows.toml.parser import parse_workflow
+
+# Skip entire module in CI - requires dolt sql-server setup
+pytestmark = pytest.mark.skipif(
+    os.environ.get("CI") == "true",
+    reason="Dolt server e2e tests require manual server setup in CI",
+)
 
 # ============================================================================
 # DoltDB Fixture

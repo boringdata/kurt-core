@@ -2,12 +2,15 @@
 DoltDB connection management, server lifecycle, and session support.
 
 This module contains the core DoltDB class infrastructure:
-- ConnectionPool for server mode MySQL connections
+- ConnectionPool for MySQL protocol connections to dolt sql-server
 - Server lifecycle management (start/stop dolt sql-server)
 - SQLAlchemy engine and session management (sync and async)
 - Repository management (init, exists)
 - Transaction support
-- CLI helpers
+- CLI helpers (for version control operations only)
+
+Server mode is the only supported runtime for SQL operations.
+Dolt CLI is used only for version control operations (branch, commit, push, pull).
 
 The DoltDB class defined here provides all connection and session
 functionality. Query methods are mixed in from queries.py.
@@ -52,7 +55,7 @@ logger = logging.getLogger(__name__)
 
 
 class ConnectionPool:
-    """Simple connection pool for server mode."""
+    """Simple connection pool for MySQL protocol connections to dolt sql-server."""
 
     def __init__(
         self,
@@ -218,21 +221,24 @@ class DoltDBConnection:
     This class contains all non-query functionality of DoltDB.
     Query methods are provided by DoltDBQueries mixin (see queries.py).
 
+    Server mode is the default and recommended runtime. The server is
+    auto-started for local targets if not already running.
+
     Args:
         path: Path to the Dolt repository (contains .dolt directory)
-        mode: "embedded" (CLI) or "server" (MySQL protocol)
-        host: Server host (server mode only, default: localhost)
-        port: Server port (server mode only, default: 3306)
-        user: Server user (server mode only, default: root)
-        password: Server password (server mode only, default: "")
-        database: Database name (server mode only, default: repo name)
-        pool_size: Connection pool size (server mode only, default: 5)
+        mode: "server" (MySQL protocol) - server mode is the default
+        host: Server host (default: localhost)
+        port: Server port (default: 3306)
+        user: Server user (default: root)
+        password: Server password (default: "")
+        database: Database name (default: repo name)
+        pool_size: Connection pool size (default: 5)
     """
 
     def __init__(
         self,
         path: str | Path,
-        mode: Literal["embedded", "server"] = "embedded",
+        mode: Literal["server"] = "server",
         host: str = "localhost",
         port: int = 3306,
         user: str = "root",
@@ -260,10 +266,6 @@ class DoltDBConnection:
         self._engine: Optional["Engine"] = None
         self._async_engine: Optional[AsyncEngine] = None
 
-        # Verify dolt is available for embedded mode
-        if mode == "embedded":
-            self._verify_dolt_cli()
-
     def _verify_dolt_cli(self) -> None:
         """Verify dolt CLI is available."""
         if not shutil.which("dolt"):
@@ -271,8 +273,38 @@ class DoltDBConnection:
                 "Dolt CLI not found. Install from https://docs.dolthub.com/introduction/installation"
             )
 
+    def _is_local_server_target(self) -> bool:
+        """Whether this client targets a local dolt sql-server that we can manage.
+
+        Returns True only for localhost targets where we can:
+        - Auto-start the server if not running
+        - Write server info files for project verification
+        - Manage server lifecycle
+
+        Remote hosts are never auto-started or managed - they must be running.
+        """
+        return self._host in {"localhost", "127.0.0.1", "::1"}
+
     def _get_pool(self) -> ConnectionPool:
-        """Get or create connection pool for server mode."""
+        """Get or create connection pool for dolt sql-server.
+
+        Auto-starts the server for local targets if not running.
+        Remote servers must be running - we never try to start them.
+
+        For local servers, verifies the running server matches this project
+        to prevent connecting to a stale server from a different project.
+        """
+        if self._auto_start and self._is_local_server_target():
+            if not self._is_server_running():
+                self._start_server()
+            elif not self._is_correct_server():
+                # Server running but for wrong project - restart it
+                logger.warning(
+                    f"Dolt server on port {self._port} is for a different project. Restarting..."
+                )
+                self._stop_server()
+                self._start_server()
+
         if self._pool is None:
             self._pool = ConnectionPool(
                 host=self._host,
@@ -289,7 +321,10 @@ class DoltDBConnection:
     # =========================================================================
 
     def _is_server_running(self) -> bool:
-        """Check if Dolt SQL server is running on configured port."""
+        """Check if Dolt SQL server is running on configured host:port.
+
+        Works for both local and remote servers by attempting a socket connection.
+        """
         try:
             import socket
 
@@ -301,11 +336,83 @@ class DoltDBConnection:
         except Exception:
             return False
 
-    def _start_server(self) -> None:
-        """Start Dolt SQL server in background."""
-        if self._is_server_running():
-            logger.debug(f"Dolt SQL server already running on port {self._port}")
+    def _is_correct_server(self) -> bool:
+        """Check if the running LOCAL server is for THIS project.
+
+        Only meaningful for local servers where we can read the server info file.
+        For remote servers, we always return False (can't verify).
+
+        Reads the server info file written by _start_server to verify the server
+        was started from the correct directory. This prevents connecting to a
+        stale server from a different project that happens to use the same port.
+        """
+        # Can only verify local servers via info file
+        if not self._is_local_server_target():
+            return False
+        info_file = self.path / ".dolt" / "sql-server.info"
+        if not info_file.exists():
+            # No info file - can't verify, assume it's wrong (will restart)
+            return False
+
+        try:
+            import json
+
+            info = json.loads(info_file.read_text())
+            expected_path = str(self.path.resolve())
+            actual_path = info.get("path", "")
+            return actual_path == expected_path
+        except Exception:
+            return False
+
+    def _write_server_info(self) -> None:
+        """Write server info file for later verification.
+
+        Only writes for local servers where we manage the .dolt directory.
+        """
+        # Safety: only write info for local servers
+        if not self._is_local_server_target():
             return
+
+        info_file = self.path / ".dolt" / "sql-server.info"
+        try:
+            import json
+
+            info = {
+                "path": str(self.path.resolve()),
+                "port": self._port,
+                "pid": self._server_process.pid if self._server_process else None,
+            }
+            info_file.write_text(json.dumps(info))
+        except Exception:
+            pass  # Non-fatal
+
+    def _start_server(self) -> None:
+        """Start Dolt SQL server in background.
+
+        Only manages local servers (localhost/127.0.0.1/::1).
+        Should never be called for remote hosts - callers must check _is_local_server_target().
+        """
+        # Defense in depth: never try to start a remote server
+        if not self._is_local_server_target():
+            logger.warning(
+                f"Refusing to auto-start server on remote host {self._host}. "
+                f"Ensure the Dolt SQL server is running on the remote host."
+            )
+            return
+
+        if self._is_server_running():
+            # Server is running - but is it OUR server or another project's?
+            if self._is_correct_server():
+                logger.debug(f"Dolt SQL server already running on port {self._port} for this project")
+                return
+            else:
+                # Wrong server running on our port - this is a conflict
+                # Log a warning but try to proceed (the database name in URL may differ)
+                logger.warning(
+                    f"Dolt SQL server on port {self._port} belongs to a different project. "
+                    f"Consider stopping it or using a different port."
+                )
+                return  # Try to connect anyway - database name mismatch will fail gracefully
 
         if not shutil.which("dolt"):
             raise DoltConnectionError(
@@ -337,6 +444,7 @@ class DoltDBConnection:
         for _ in range(30):  # 3 second timeout
             if self._is_server_running():
                 logger.info(f"Dolt SQL server ready on port {self._port}")
+                self._write_server_info()  # Record which project started this server
                 return
             time.sleep(0.1)
 
@@ -363,7 +471,7 @@ class DoltDBConnection:
     def _get_engine(self) -> "Engine":
         """Get or create SQLAlchemy engine."""
         if self._engine is None:
-            if self._auto_start and not self._is_server_running():
+            if self._auto_start and self._is_local_server_target() and not self._is_server_running():
                 self._start_server()
 
             self._engine = create_engine(
@@ -375,7 +483,7 @@ class DoltDBConnection:
 
     def init_database(self) -> None:
         """Initialize the database and create all SQLModel tables."""
-        if self._auto_start:
+        if self._auto_start and self._is_local_server_target():
             if not self.exists():
                 self.init()
             self._start_server()
@@ -422,7 +530,7 @@ class DoltDBConnection:
     def get_async_engine(self) -> AsyncEngine:
         """Get or create async SQLAlchemy engine."""
         if self._async_engine is None:
-            if self._auto_start and not self._is_server_running():
+            if self._auto_start and self._is_local_server_target() and not self._is_server_running():
                 self._start_server()
 
             async_url = self._make_async_url(self.get_database_url())
@@ -471,8 +579,7 @@ class DoltDBConnection:
         """
         Context manager for transaction-like batch operations.
 
-        In embedded mode, statements are queued and executed on commit.
-        In server mode, uses actual MySQL transactions.
+        Uses MySQL transactions via dolt sql-server.
 
         Example:
             with db.transaction() as tx:
