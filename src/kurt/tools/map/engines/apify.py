@@ -61,22 +61,31 @@ class ApifyEngine(BaseMapper):
         result = engine.map("machine learning", DocType.POSTS)
     """
 
-    def __init__(self, config: Optional[ApifyMapperConfig] = None):
+    def __init__(self, config: Optional[MapperConfig] = None):
         """Initialize Apify engine.
 
         Args:
-            config: Apify mapper configuration
+            config: Mapper configuration (ApifyMapperConfig for full control)
 
         Raises:
             AuthError: If Apify API key not configured
         """
-        super().__init__(config or ApifyMapperConfig())
+        # Convert base MapperConfig to ApifyMapperConfig if needed
+        if config is None:
+            config = ApifyMapperConfig()
+        elif not isinstance(config, ApifyMapperConfig):
+            config = ApifyMapperConfig(**config.model_dump())
+
+        super().__init__(config)
         self._config: ApifyMapperConfig = self.config  # type: ignore
 
         try:
             self._client = ApifyClient(api_key=self._config.api_key)
-        except ApifyAuthError as e:
-            raise AuthError(f"Apify API key not configured: {e}")
+        except ApifyAuthError:
+            raise AuthError(
+                "APIFY_API_KEY environment variable is not set. "
+                "Get your API key from https://console.apify.com/account/integrations"
+            )
 
     def map(
         self,

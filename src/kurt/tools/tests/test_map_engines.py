@@ -115,7 +115,7 @@ class TestApifyEngine:
         with patch.dict(os.environ, {}, clear=True):
             if "APIFY_API_KEY" in os.environ:
                 del os.environ["APIFY_API_KEY"]
-            with pytest.raises(AuthError, match="Apify API key not configured"):
+            with pytest.raises(AuthError, match="APIFY_API_KEY"):
                 ApifyEngine()
 
     def test_apify_engine_with_config_validates_api_key(self):

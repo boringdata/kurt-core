@@ -24,9 +24,10 @@ def analytics_group():
     \b
     Commands:
       onboard   Configure analytics credentials
-      sync      Sync analytics data for a domain
       list      List analytics-enabled domains
       query     Query analytics data
+
+    For syncing analytics data, use: kurt tool analytics sync
     """
     pass
 
@@ -183,46 +184,6 @@ def _run_sync(domain: str, platform: str = None, period: int = 60):
         except Exception as e:
             console.print(f"[red]Sync failed: {e}[/red]")
             raise
-
-
-@analytics_group.command("sync")
-@click.argument("domain", required=False)
-@click.option("--all", "sync_all", is_flag=True, help="Sync all configured domains")
-@click.option("--period", type=int, default=60, help="Days to sync (default: 60)")
-@track_command
-def sync_cmd(domain: str, sync_all: bool, period: int):
-    """
-    Sync analytics data for a domain.
-
-    \b
-    Examples:
-        kurt integrations analytics sync docs.company.com
-        kurt integrations analytics sync --all
-        kurt integrations analytics sync docs.company.com --period 90
-    """
-    from kurt.db import managed_session
-    from kurt.db.models import AnalyticsDomain
-
-    if sync_all:
-        from sqlmodel import select
-
-        with managed_session() as session:
-            domains = session.exec(select(AnalyticsDomain)).all()
-            if not domains:
-                console.print("[yellow]No domains configured[/yellow]")
-                return
-
-            for domain_obj in domains:
-                try:
-                    console.print()
-                    _run_sync(domain_obj.domain, period=period)
-                except Exception:
-                    continue
-    elif domain:
-        _run_sync(domain, period=period)
-    else:
-        console.print("[red]Error: Specify --all or provide a domain[/red]")
-        raise click.Abort()
 
 
 @analytics_group.command("list")

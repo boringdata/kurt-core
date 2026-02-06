@@ -77,7 +77,7 @@ class FetchToolConfig(BaseModel):
     Note: This is distinct from FetchConfig (StepConfig) used by workflows.
     """
 
-    engine: Literal["trafilatura", "httpx", "tavily", "firecrawl", "apify"] = Field(
+    engine: Literal["trafilatura", "httpx", "tavily", "firecrawl", "apify", "twitterapi"] = Field(
         default="trafilatura",
         description="Fetch engine to use",
     )
@@ -196,7 +196,7 @@ class FetchParams(BaseModel):
     )
 
     # Config fields (flattened for executor compatibility)
-    engine: Literal["trafilatura", "httpx", "tavily", "firecrawl", "apify"] = Field(
+    engine: Literal["trafilatura", "httpx", "tavily", "firecrawl", "apify", "twitterapi"] = Field(
         default="trafilatura",
         description="Fetch engine to use",
     )
@@ -454,6 +454,37 @@ async def _fetch_with_apify(
     return result.content, result.metadata
 
 
+async def _fetch_with_twitterapi(
+    url: str,
+    timeout_s: float,
+    client: Any,
+    **kwargs: Any,
+) -> tuple[str, dict[str, Any]]:
+    """
+    Fetch content using TwitterAPI.io.
+
+    Args:
+        url: Twitter/X URL (tweet or profile)
+        timeout_s: Request timeout in seconds
+        client: HTTP client (unused - twitterapi uses its own)
+        **kwargs: Additional options (ignored)
+
+    Returns:
+        Tuple of (content, metadata)
+
+    Raises:
+        ValueError: If fetch fails
+    """
+    from kurt.tools.fetch.engines.twitterapi import TwitterApiFetcher, TwitterApiFetcherConfig
+
+    config = TwitterApiFetcherConfig(timeout=timeout_s)
+    fetcher = TwitterApiFetcher(config)
+    result = await asyncio.to_thread(fetcher.fetch, url)
+    if not result.success:
+        raise ValueError(result.error or "No result from TwitterAPI")
+    return result.content, result.metadata
+
+
 # Engine dispatcher
 _FETCH_ENGINES = {
     "trafilatura": _fetch_with_trafilatura,
@@ -461,6 +492,7 @@ _FETCH_ENGINES = {
     "tavily": _fetch_with_tavily,
     "firecrawl": _fetch_with_firecrawl,
     "apify": _fetch_with_apify,
+    "twitterapi": _fetch_with_twitterapi,
 }
 
 
