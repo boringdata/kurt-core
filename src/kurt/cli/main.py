@@ -11,6 +11,11 @@ Simplified CLI structure with ~13 top-level commands:
 - admin: Administrative commands
 - guides: Interactive guides for agents (project, source, template, etc.)
 - help: Documentation and tool references
+
+Robot Mode (Agent-Friendly Output):
+- Global --json flag for structured JSON output
+- Auto-detects piped output and switches to JSON
+- Command aliases for LLM typo tolerance (e.g., doc -> docs)
 """
 
 
@@ -18,6 +23,9 @@ import click
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Import robot mode utilities for global --json flag
+from kurt.cli.robot import OutputContext
 
 
 def _auto_migrate_schema():
@@ -73,8 +81,40 @@ def _auto_migrate_schema():
         pass  # Silent fail - don't block CLI
 
 
-class LazyGroup(click.Group):
-    """A Click group that lazily loads subcommands."""
+class AliasedLazyGroup(click.Group):
+    """A Click group with lazy loading and command aliases for LLM typo tolerance.
+
+    Command aliases allow agents to use variations like:
+    - kurt doc list -> kurt docs list
+    - kurt stat -> kurt status
+    - kurt wf run -> kurt workflow run
+    """
+
+    # Command aliases for LLM typo tolerance
+    # Maps alias -> canonical command name
+    ALIASES: dict[str, str] = {
+        # docs variations
+        "doc": "docs",
+        "document": "docs",
+        "documents": "docs",
+        # status variations
+        "stat": "status",
+        "st": "status",
+        # workflow variations
+        "wf": "workflow",
+        "workflows": "workflow",
+        # agents variations
+        "agent": "agents",
+        # init variations
+        "initialize": "init",
+        # tool variations
+        "tools": "tool",
+        # config variations
+        "cfg": "config",
+        # sync variations
+        "pull": "sync",  # common git alias
+        "push": "sync",
+    }
 
     def __init__(self, *args, lazy_subcommands=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -87,6 +127,9 @@ class LazyGroup(click.Group):
         return sorted(set(lazy + regular))
 
     def get_command(self, ctx, name):
+        # Resolve alias first (LLM typo tolerance)
+        name = self.ALIASES.get(name, name)
+
         if name in self.commands:
             return self.commands[name]
 
@@ -100,7 +143,7 @@ class LazyGroup(click.Group):
 
 
 @click.group(
-    cls=LazyGroup,
+    cls=AliasedLazyGroup,
     lazy_subcommands={
         # Core command groups
         "workflow": ("kurt.workflows.toml.cli", "workflow_group"),
@@ -112,17 +155,54 @@ class LazyGroup(click.Group):
         "admin": ("kurt.admin.cli", "admin"),
         "guides": ("kurt.cli.guides", "guides_group"),
         "help": ("kurt.cli.show", "show_group"),
+        # Agent workflows
+        "agents": ("kurt.workflows.agents.cli", "agents_group"),
     },
+)
+@click.option(
+    "--json",
+    "json_output",
+    is_flag=True,
+    help="JSON output for AI agents (beads-style structured responses)",
+)
+@click.option(
+    "--robot",
+    "json_output",
+    is_flag=True,
+    hidden=True,
+    help="Alias for --json",
+)
+@click.option(
+    "--quiet",
+    "-q",
+    is_flag=True,
+    help="Minimal output (suppress non-essential messages)",
 )
 @click.version_option(package_name="kurt-core", prog_name="kurt")
 @click.pass_context
-def main(ctx):
+def main(ctx, json_output: bool, quiet: bool):
     """
     Kurt - Document intelligence CLI tool.
 
     Transform documents into structured knowledge graphs.
+
+    \b
+    Robot Mode (for AI agents):
+      --json    Structured JSON output with success/error envelopes
+      Piped output automatically uses JSON (no flag needed)
+
+    \b
+    Command Aliases (typo tolerance):
+      doc, docs, documents -> docs
+      stat, st -> status
+      wf, workflow, workflows -> workflow
     """
     from kurt.config import config_file_exists
+
+    # Initialize Click context with robot mode settings
+    ctx.ensure_object(dict)
+    ctx.obj["output"] = OutputContext(json_output, quiet)
+    ctx.obj["json_output"] = json_output  # Backwards compat for existing commands
 
     # Skip auto-migrate for init command (no DB yet)
     if ctx.invoked_subcommand in ["init", "help"]:

@@ -9,6 +9,7 @@ import click
 from rich.console import Console
 
 from kurt.admin.telemetry.decorators import track_command
+from kurt.cli.robot import OutputContext, robot_success, robot_error, ErrorCode
 
 console = Console()
 
@@ -18,16 +19,17 @@ console = Console()
     "--format",
     "output_format",
     type=click.Choice(["pretty", "json"]),
-    default="pretty",
-    help="Output format",
+    default=None,
+    help="Output format (deprecated: use global --json flag)",
 )
 @click.option(
     "--hook-cc",
     is_flag=True,
     help="Output in Claude Code hook format",
 )
+@click.pass_context
 @track_command
-def status(output_format: str, hook_cc: bool):
+def status(ctx, output_format: str | None, hook_cc: bool):
     """
     Show comprehensive Kurt project status.
 
@@ -35,10 +37,17 @@ def status(output_format: str, hook_cc: bool):
 
     Examples:
         kurt status
+        kurt --json status
         kurt status --format json
         kurt status --hook-cc
     """
     from kurt.config import config_file_exists, load_config
+
+    # Get output context from global --json flag
+    output: OutputContext = ctx.obj.get("output", OutputContext()) if ctx.obj else OutputContext()
+
+    # Hybrid activation: global --json OR local --format json
+    use_json = output.json_mode or output_format == "json"
 
     # Check if Kurt is initialized
     if not config_file_exists():
@@ -46,11 +55,16 @@ def status(output_format: str, hook_cc: bool):
             _auto_init_hook()
             return
 
-        message = "Kurt project not initialized. Run: kurt init"
-        if output_format == "json":
-            print(json.dumps({"initialized": False, "message": message}, indent=2))
+        if use_json:
+            print(
+                robot_error(
+                    ErrorCode.NOT_INITIALIZED,
+                    "Kurt project not initialized",
+                    hint="Run: kurt init",
+                )
+            )
         else:
-            console.print(f"[yellow]{message}[/yellow]")
+            console.print("[yellow]Kurt project not initialized. Run: kurt init[/yellow]")
         return
 
     try:
@@ -63,16 +77,18 @@ def status(output_format: str, hook_cc: bool):
                 _init_database_hook()
                 return
 
-            message = "Database not found. Run: kurt init"
-            if output_format == "json":
+            if use_json:
                 print(
-                    json.dumps(
-                        {"initialized": False, "config_exists": True, "database_exists": False},
-                        indent=2,
+                    robot_error(
+                        ErrorCode.NOT_INITIALIZED,
+                        "Database not found",
+                        hint="Run: kurt init",
+                        config_exists=True,
+                        database_exists=False,
                     )
                 )
             else:
-                console.print(f"[yellow]{message}[/yellow]")
+                console.print("[yellow]Database not found. Run: kurt init[/yellow]")
             return
 
         # Hook mode: generate status
@@ -83,17 +99,20 @@ def status(output_format: str, hook_cc: bool):
         # Get status data (routes to local or cloud)
         status_data = _get_status_data()
 
-        if output_format == "json":
-            print(json.dumps(status_data, indent=2, default=str))
+        if use_json:
+            print(robot_success(status_data))
         else:
             _print_pretty_status(status_data)
 
     except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        if os.environ.get("KURT_DEBUG"):
-            import traceback
+        if use_json:
+            print(robot_error(ErrorCode.EXEC_ERROR, str(e)))
+        else:
+            console.print(f"[red]Error: {e}[/red]")
+            if os.environ.get("KURT_DEBUG"):
+                import traceback
 
-            console.print(f"[dim]{traceback.format_exc()}[/dim]")
+                console.print(f"[dim]{traceback.format_exc()}[/dim]")
         raise click.Abort()
 
 
