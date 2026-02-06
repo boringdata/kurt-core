@@ -27,11 +27,11 @@ from kurt.tools.fetch.engines.apify import ApifyEngine, ApifyFetcher
 from kurt.tools.fetch.engines.firecrawl import FirecrawlEngine, FirecrawlFetcher
 from kurt.tools.fetch.engines.httpx import HttpxEngine, HttpxFetcher
 from kurt.tools.fetch.engines.tavily import TavilyEngine, TavilyFetcher
-from kurt.tools.fetch.engines.twitterapi import TwitterApiEngine, TwitterApiFetcher
 
 # Import engine classes for easy access
 # Primary names are *Fetcher, *Engine aliases exist for backward compatibility
 from kurt.tools.fetch.engines.trafilatura import TrafilaturaEngine, TrafilaturaFetcher
+from kurt.tools.fetch.engines.twitterapi import TwitterApiEngine, TwitterApiFetcher
 
 
 class EngineRegistry:
