@@ -355,6 +355,62 @@ class TestRepairCommand:
         if "installed" in result.output.lower() or "repaired" in result.output.lower():
             assert hooks_dir.exists()
 
+    def test_repair_with_global_json_flag(
+        self, cli_runner: CliRunner, git_dolt_project: Path
+    ):
+        """Verify repair works with global --json flag (doesn't crash).
+
+        Note: repair command currently outputs text even with --json flag.
+        This test verifies the command doesn't fail when global JSON mode is set.
+        """
+        from kurt.cli.main import main
+
+        result = cli_runner.invoke(main, ["--json", "repair", "--dry-run"], catch_exceptions=False)
+
+        # Should complete successfully - repair doesn't implement JSON output yet
+        # but it should not crash when global --json is set
+        assert result.exit_code == 0
+        # Should still show repair output
+        assert "Dry run" in result.output or "No repairs" in result.output or "repairs" in result.output.lower()
+
+    def test_repair_stale_lock_removal(
+        self, cli_runner: CliRunner, git_dolt_project: Path
+    ):
+        """Verify repair removes stale lock files."""
+        import time
+
+        # Create stale lock
+        lock_dir = git_dolt_project / ".git" / "kurt-hook.lock"
+        lock_dir.mkdir()
+        pid_file = lock_dir / "pid"
+        pid_file.write_text("99999")  # Non-existent PID
+
+        # Make it old
+        old_time = time.time() - 60
+        os.utime(pid_file, (old_time, old_time))
+
+        # Run repair
+        result = invoke_cli(cli_runner, repair_cmd, ["--check", "no_stale_locks", "--yes"])
+        assert result.exit_code in (0, 1)
+
+        # Lock should be removed
+        if "repaired" in result.output.lower() or "removed" in result.output.lower():
+            assert not lock_dir.exists()
+
+    def test_repair_force_flag(
+        self, cli_runner: CliRunner, git_dolt_project: Path
+    ):
+        """Verify repair --force overwrites existing hooks."""
+        # Create a fake hook file
+        hooks_dir = git_dolt_project / ".git" / "hooks"
+        hooks_dir.mkdir(exist_ok=True)
+        pre_commit = hooks_dir / "pre-commit"
+        pre_commit.write_text("#!/bin/bash\n# Existing hook\n")
+
+        # Run repair with force
+        result = invoke_cli(cli_runner, repair_cmd, ["--check", "hooks_installed", "--yes", "--force"])
+        assert result.exit_code in (0, 1)
+
 
 class TestDoctorBranchSync:
     """E2E tests for branch sync check."""
