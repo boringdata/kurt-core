@@ -18,7 +18,6 @@ from click.testing import CliRunner
 
 from kurt.cli.doctor import doctor_cmd, repair_cmd
 from kurt.conftest import (
-    assert_cli_success,
     assert_json_output,
     assert_output_contains,
     invoke_cli,
