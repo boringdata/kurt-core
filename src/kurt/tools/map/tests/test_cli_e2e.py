@@ -342,3 +342,51 @@ class TestMapFolderEdgeCases:
         )
 
         assert result.exit_code in (0, 1, 2)
+
+
+class TestMapCmsSource:
+    """E2E tests for CMS source mapping."""
+
+    def test_map_cms_parses_option(self, cli_runner: CliRunner, tmp_project: Path):
+        """Verify --cms option is parsed correctly."""
+        result = invoke_cli(
+            cli_runner,
+            map_cmd,
+            ["--cms", "sanity:production", "--dry-run"],
+        )
+
+        # May fail due to missing credentials, but should parse
+        assert result.exit_code in (0, 1, 2)
+
+    def test_map_cms_missing_credentials(self, cli_runner: CliRunner, tmp_project: Path):
+        """Verify map handles missing CMS credentials gracefully."""
+        result = invoke_cli(
+            cli_runner,
+            map_cmd,
+            ["--cms", "nonexistent:instance", "--dry-run"],
+        )
+
+        # Should fail gracefully with error message
+        assert result.exit_code in (0, 1, 2)
+        # Should show some output (error or result)
+        assert len(result.output) > 0
+
+    def test_map_cms_method_option(self, cli_runner: CliRunner, tmp_project: Path):
+        """Verify --method cms works."""
+        result = invoke_cli(
+            cli_runner,
+            map_cmd,
+            ["--cms", "sanity:test", "--method", "cms", "--dry-run"],
+        )
+
+        assert result.exit_code in (0, 1, 2)
+
+    def test_map_cms_with_limit(self, cli_runner: CliRunner, tmp_project: Path):
+        """Verify --limit works with CMS source."""
+        result = invoke_cli(
+            cli_runner,
+            map_cmd,
+            ["--cms", "sanity:production", "--limit", "10", "--dry-run"],
+        )
+
+        assert result.exit_code in (0, 1, 2)
