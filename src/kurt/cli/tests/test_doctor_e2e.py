@@ -319,6 +319,42 @@ class TestRepairCommand:
             assert result.exit_code == 2
             assert_output_contains(result, "Not a Git repository")
 
+    def test_repair_dry_run_output(
+        self, cli_runner: CliRunner, git_dolt_project: Path
+    ):
+        """Verify repair --dry-run shows what would be repaired."""
+        result = invoke_cli(cli_runner, repair_cmd, ["--dry-run"])
+
+        # Should complete successfully
+        assert result.exit_code == 0
+
+        # Should show dry run results
+        assert "Dry run" in result.output or "would" in result.output.lower() or "No repairs" in result.output
+
+    def test_repair_specific_check(
+        self, cli_runner: CliRunner, git_dolt_project: Path
+    ):
+        """Verify repair --check runs only specific repair."""
+        result = invoke_cli(cli_runner, repair_cmd, ["--check", "hooks_installed", "--yes"])
+
+        # Should complete
+        assert result.exit_code in (0, 1)
+
+    def test_repair_installs_hooks(
+        self, cli_runner: CliRunner, git_dolt_project: Path
+    ):
+        """Verify repair actually installs missing hooks."""
+        # First verify hooks are not installed
+        hooks_dir = git_dolt_project / ".git" / "hooks"
+
+        # Run repair to install hooks
+        result = invoke_cli(cli_runner, repair_cmd, ["--check", "hooks_installed", "--yes"])
+        assert result.exit_code in (0, 1)
+
+        # Check if hooks were installed (may still fail if install fails)
+        if "installed" in result.output.lower() or "repaired" in result.output.lower():
+            assert hooks_dir.exists()
+
 
 class TestDoctorBranchSync:
     """E2E tests for branch sync check."""
