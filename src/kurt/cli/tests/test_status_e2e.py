@@ -226,7 +226,6 @@ class TestStatusJsonOutput:
 
     def test_status_global_json_flag(self, cli_runner: CliRunner, tmp_status_project):
         """Verify global --json flag works with status."""
-        import json
 
         from kurt.cli.main import main
 
