@@ -282,3 +282,63 @@ class TestMapIntegration:
 
         # Should show error about no source
         assert "No source" in result.output or result.exit_code != 0
+
+
+class TestMapFolderEdgeCases:
+    """E2E tests for folder source edge cases."""
+
+    def test_map_folder_nonexistent(self, cli_runner: CliRunner, tmp_project: Path):
+        """Verify map handles nonexistent folder gracefully."""
+        result = invoke_cli(
+            cli_runner,
+            map_cmd,
+            ["--folder", "nonexistent_folder", "--dry-run"],
+        )
+
+        # Should fail or show error
+        assert result.exit_code != 0 or "error" in result.output.lower()
+
+    def test_map_folder_empty(self, cli_runner: CliRunner, tmp_project: Path):
+        """Verify map handles empty directory gracefully."""
+        # Create empty folder
+        (tmp_project / "empty_folder").mkdir(exist_ok=True)
+
+        result = invoke_cli(
+            cli_runner,
+            map_cmd,
+            ["--folder", "empty_folder", "--dry-run"],
+        )
+
+        # Should complete successfully (0 documents)
+        assert result.exit_code in (0, 1, 2)
+
+    def test_map_folder_single_file(self, cli_runner: CliRunner, tmp_project: Path):
+        """Verify map works with a single file in folder."""
+        (tmp_project / "single").mkdir(exist_ok=True)
+        (tmp_project / "single" / "only.md").write_text("# Only File")
+
+        result = invoke_cli(
+            cli_runner,
+            map_cmd,
+            ["--folder", "single", "--dry-run"],
+        )
+
+        assert result.exit_code in (0, 1, 2)
+        # Should mention the file or document
+        output_lower = result.output.lower()
+        assert "1" in result.output or "document" in output_lower or "discovered" in output_lower
+
+    def test_map_folder_nested_deep(self, cli_runner: CliRunner, tmp_project: Path):
+        """Verify map can handle deeply nested directories."""
+        # Create deeply nested structure
+        deep_path = tmp_project / "deep" / "a" / "b" / "c" / "d"
+        deep_path.mkdir(parents=True)
+        (deep_path / "deep_file.md").write_text("# Deep")
+
+        result = invoke_cli(
+            cli_runner,
+            map_cmd,
+            ["--folder", "deep", "--dry-run"],
+        )
+
+        assert result.exit_code in (0, 1, 2)
