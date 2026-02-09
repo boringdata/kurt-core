@@ -758,6 +758,348 @@ jobs:
 
 ---
 
+## Provider-Supplied Mocks
+
+### The Problem
+
+Testing code that uses providers shouldn't require:
+- Real API keys
+- Network access
+- External service availability
+
+### The Solution: Each Provider Ships Its Own Mock
+
+Every provider must expose a `Mock` class that simulates the provider's behavior:
+
+```
+src/kurt/tools/fetch/providers/notion/
+├── provider.py          # Real NotionFetcher
+├── mock.py              # MockNotionFetcher (shipped with provider)
+└── fixtures/            # Sample responses
+    ├── page_simple.json
+    ├── page_with_blocks.json
+    └── error_not_found.json
+```
+
+### Mock Interface
+
+```python
+# src/kurt/tools/fetch/providers/notion/mock.py
+
+from pathlib import Path
+from ..core import BaseFetcher, FetchResult
+
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
+
+
+class MockNotionFetcher(BaseFetcher):
+    """
+    Mock Notion provider for testing.
+
+    Ships with the provider - no external dependencies needed.
+
+    Usage:
+        from kurt.tools.fetch.providers.notion.mock import MockNotionFetcher
+
+        fetcher = MockNotionFetcher()
+        result = fetcher.fetch("https://notion.so/page-123")
+    """
+
+    name = "notion"
+    version = "1.0.0-mock"
+    url_patterns = ["notion.so/*", "*.notion.site/*"]
+    requires_env = []  # Mock doesn't need real token!
+
+    def __init__(
+        self,
+        responses: dict[str, FetchResult] | None = None,
+        default_fixture: str = "page_simple.json",
+    ):
+        """
+        Args:
+            responses: URL -> FetchResult mapping for specific URLs
+            default_fixture: Fixture file to use for unmatched URLs
+        """
+        self._responses = responses or {}
+        self._default_fixture = default_fixture
+        self._call_log: list[str] = []  # Track calls for assertions
+
+    def fetch(self, url: str) -> FetchResult:
+        """Return mocked response."""
+        self._call_log.append(url)
+
+        # Check for specific response
+        if url in self._responses:
+            return self._responses[url]
+
+        # Load from fixture
+        return self._load_fixture(self._default_fixture)
+
+    def _load_fixture(self, name: str) -> FetchResult:
+        """Load response from fixture file."""
+        fixture_path = FIXTURES_DIR / name
+        if fixture_path.exists():
+            import json
+            data = json.loads(fixture_path.read_text())
+            return FetchResult(**data)
+
+        # Default mock response
+        return FetchResult(
+            content="# Mock Notion Page\n\nThis is mock content.",
+            success=True,
+            metadata={
+                "source": "notion",
+                "page_id": "mock-page-id",
+                "title": "Mock Page",
+            },
+        )
+
+    # =========================================================================
+    # Test Helpers
+    # =========================================================================
+
+    @property
+    def calls(self) -> list[str]:
+        """URLs that were fetched (for assertions)."""
+        return self._call_log.copy()
+
+    def was_called_with(self, url: str) -> bool:
+        """Check if a specific URL was fetched."""
+        return url in self._call_log
+
+    def reset(self) -> None:
+        """Clear call log between tests."""
+        self._call_log.clear()
+
+    @classmethod
+    def with_error(cls, error: str = "Mock error") -> "MockNotionFetcher":
+        """Create a mock that always returns an error."""
+        instance = cls()
+        instance._responses["*"] = FetchResult(
+            content="",
+            success=False,
+            error=error,
+        )
+        return instance
+
+    @classmethod
+    def with_content(cls, content: str, **metadata) -> "MockNotionFetcher":
+        """Create a mock with specific content."""
+        instance = cls()
+        instance._responses["*"] = FetchResult(
+            content=content,
+            success=True,
+            metadata={"source": "notion", **metadata},
+        )
+        return instance
+```
+
+### Fixture Format
+
+```json
+// src/kurt/tools/fetch/providers/notion/fixtures/page_simple.json
+{
+  "content": "# Welcome\n\nThis is a Notion page with some content.",
+  "content_html": "<h1>Welcome</h1><p>This is a Notion page with some content.</p>",
+  "success": true,
+  "error": null,
+  "metadata": {
+    "source": "notion",
+    "page_id": "abc123",
+    "title": "Welcome",
+    "last_edited": "2026-02-09T12:00:00Z",
+    "created_by": "user@example.com"
+  }
+}
+```
+
+```json
+// src/kurt/tools/fetch/providers/notion/fixtures/error_not_found.json
+{
+  "content": "",
+  "success": false,
+  "error": "Page not found: The page may have been deleted or you don't have access.",
+  "metadata": {
+    "source": "notion",
+    "error_code": "object_not_found"
+  }
+}
+```
+
+### Using Provider Mocks in Tests
+
+```python
+# tests/workflows/test_my_workflow.py
+
+import pytest
+from kurt.tools.fetch.providers.notion.mock import MockNotionFetcher
+from kurt.tools.fetch.providers.tavily.mock import MockTavilyFetcher
+from kurt.tools.core.provider import ProviderRegistry
+
+
+class TestMyWorkflow:
+    """Tests using provider-supplied mocks."""
+
+    @pytest.fixture
+    def mock_providers(self):
+        """Replace real providers with mocks."""
+        registry = ProviderRegistry()
+
+        # Swap in mocks
+        original_notion = registry._providers["fetch"].get("notion")
+        original_tavily = registry._providers["fetch"].get("tavily")
+
+        registry._providers["fetch"]["notion"] = MockNotionFetcher
+        registry._providers["fetch"]["tavily"] = MockTavilyFetcher
+
+        yield {
+            "notion": MockNotionFetcher,
+            "tavily": MockTavilyFetcher,
+        }
+
+        # Restore originals
+        if original_notion:
+            registry._providers["fetch"]["notion"] = original_notion
+        if original_tavily:
+            registry._providers["fetch"]["tavily"] = original_tavily
+
+    def test_workflow_fetches_notion(self, mock_providers):
+        """Test workflow with mocked Notion."""
+        from my_workflow import run_workflow
+
+        result = run_workflow(url="https://notion.so/my-page")
+
+        assert result["success"]
+        # Mock was used, not real API
+        assert "Mock Notion Page" in result["content"]
+
+    def test_workflow_handles_notion_error(self, mock_providers):
+        """Test error handling with mock."""
+        # Configure mock to return error
+        mock_providers["notion"]._responses["*"] = FetchResult(
+            content="",
+            success=False,
+            error="Page not found",
+        )
+
+        from my_workflow import run_workflow
+
+        result = run_workflow(url="https://notion.so/missing")
+
+        assert result["success"] is False
+        assert "not found" in result["error"]
+```
+
+### Mock Registry Helper
+
+```python
+# src/kurt/tools/core/testing.py
+
+from contextlib import contextmanager
+from typing import Type
+from .provider import ProviderRegistry
+
+
+@contextmanager
+def mock_providers(**providers: Type):
+    """
+    Context manager to temporarily replace providers with mocks.
+
+    Usage:
+        from kurt.tools.fetch.providers.notion.mock import MockNotionFetcher
+        from kurt.tools.core.testing import mock_providers
+
+        with mock_providers(notion=MockNotionFetcher):
+            result = fetch_tool.run(...)
+
+    Args:
+        **providers: provider_name=MockClass pairs
+    """
+    registry = ProviderRegistry()
+    originals = {}
+
+    try:
+        for name, mock_class in providers.items():
+            # Find which tool this provider belongs to
+            for tool_name, tool_providers in registry._providers.items():
+                if name in tool_providers:
+                    originals[(tool_name, name)] = tool_providers[name]
+                    tool_providers[name] = mock_class
+                    break
+
+        yield
+
+    finally:
+        # Restore originals
+        for (tool_name, name), original in originals.items():
+            registry._providers[tool_name][name] = original
+
+
+def get_mock(tool_name: str, provider_name: str):
+    """
+    Get the mock class for a provider.
+
+    Usage:
+        MockNotion = get_mock("fetch", "notion")
+        fetcher = MockNotion.with_content("Hello world")
+    """
+    import importlib
+
+    try:
+        module = importlib.import_module(
+            f"kurt.tools.{tool_name}.providers.{provider_name}.mock"
+        )
+        # Find the Mock class
+        for attr_name in dir(module):
+            if attr_name.startswith("Mock"):
+                return getattr(module, attr_name)
+    except ImportError:
+        raise ValueError(
+            f"No mock found for {tool_name}/{provider_name}. "
+            f"Provider should expose mock at: "
+            f"kurt.tools.{tool_name}.providers.{provider_name}.mock"
+        )
+```
+
+### Provider Mock Checklist
+
+Every provider must include:
+
+| File | Purpose | Required |
+|------|---------|----------|
+| `mock.py` | Mock class with same interface | ✅ Yes |
+| `fixtures/*.json` | Sample responses | ✅ Yes (at least 1) |
+| `fixtures/error_*.json` | Error responses | ✅ Yes (at least 1) |
+
+### Mock Class Requirements
+
+```python
+class MockProvider:
+    # Same metadata as real provider
+    name: str
+    version: str  # Append "-mock" to real version
+    url_patterns: list[str]
+    requires_env: list[str] = []  # Always empty for mocks!
+
+    # Required methods
+    def __init__(self, responses=None, default_fixture=None): ...
+    def fetch(self, url: str) -> FetchResult: ...  # Or map(), parse(), etc.
+
+    # Test helpers
+    @property
+    def calls(self) -> list[str]: ...
+    def was_called_with(self, url: str) -> bool: ...
+    def reset(self) -> None: ...
+
+    # Factory methods
+    @classmethod
+    def with_error(cls, error: str) -> Self: ...
+    @classmethod
+    def with_content(cls, content: str, **metadata) -> Self: ...
+```
+
+---
+
 ## Test Utilities
 
 ### Mock Providers
