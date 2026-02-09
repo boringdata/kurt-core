@@ -410,15 +410,181 @@ max_blocks = 2000
 
 ### How OpenClaw Handles Config
 
-OpenClaw uses a similar hierarchical pattern:
+OpenClaw (Claude Code's extensibility system) uses a multi-level config approach:
 
 ```
-~/.claude/
-├── settings.json         # User preferences
-├── skills/               # Installed skills
-│   └── kurt/
-│       └── SKILL.md
-└── mcp/                  # MCP server configs
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         OPENCLAW CONFIG LEVELS                               │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+1. SKILL.md Frontmatter (skill metadata)
+   ───────────────────────────────────────
+   - Declares skill capabilities
+   - Default values for settings
+   - Input schemas
+
+2. ~/.claude/settings.json (user preferences)
+   ───────────────────────────────────────
+   - User-global skill settings
+   - Overrides SKILL.md defaults
+   - Persists across sessions
+
+3. Project .claude/ directory (project config)
+   ───────────────────────────────────────
+   - Project-specific overrides
+   - .claude/settings.local.json
+   - Team-shared via git
+
+4. Environment variables (secrets)
+   ───────────────────────────────────────
+   - API keys, tokens
+   - Never in config files
+```
+
+### OpenClaw Settings Schema
+
+```json
+// ~/.claude/settings.json
+{
+  // Global Claude Code settings
+  "theme": "dark",
+  "telemetry": true,
+
+  // Per-skill settings
+  "skills": {
+    "kurt": {
+      // Skill-specific config
+      "default_action": "fetch",
+      "timeout": 60,
+      "preferred_providers": {
+        "fetch": "notion",
+        "map": "sitemap"
+      }
+    },
+    "commit": {
+      "sign_commits": true
+    }
+  },
+
+  // MCP server configs
+  "mcp": {
+    "servers": {
+      "database": {
+        "command": "mcp-server-sqlite",
+        "args": ["--db", "data.db"]
+      }
+    }
+  }
+}
+```
+
+### Are We Pluggable?
+
+**Yes.** Kurt integrates with OpenClaw at two levels:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         PLUGGABILITY                                         │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+LEVEL 1: Skill Settings (OpenClaw → Kurt)
+─────────────────────────────────────────
+OpenClaw passes settings to Kurt via skill wrapper:
+
+    ~/.claude/settings.json          skill.py              Kurt CLI
+    ┌──────────────────────┐         ┌─────────────┐       ┌─────────────┐
+    │ "skills": {          │         │             │       │             │
+    │   "kurt": {          │  ───►   │ Read        │  ───► │ --engine    │
+    │     "preferred_      │         │ settings    │       │ --timeout   │
+    │      providers": {   │         │ Pass as     │       │ ...         │
+    │       "fetch":"notion│         │ CLI args    │       │             │
+    │     }                │         │             │       │             │
+    │   }                  │         │             │       │             │
+    │ }                    │         │             │       │             │
+    └──────────────────────┘         └─────────────┘       └─────────────┘
+
+
+LEVEL 2: Config Files (Kurt reads both)
+─────────────────────────────────────────
+Kurt can optionally read OpenClaw settings as fallback:
+
+    Resolution order:
+    1. CLI args (--engine notion)
+    2. kurt.toml ([tool.fetch] default_provider)
+    3. ~/.kurt/config.toml (user defaults)
+    4. ~/.claude/settings.json skills.kurt.* (OpenClaw fallback)  ← NEW
+    5. Provider defaults
+```
+
+### Integration Code
+
+```python
+# src/kurt/config/openclaw.py
+
+from pathlib import Path
+import json
+
+
+def get_openclaw_settings() -> dict:
+    """Load Kurt settings from OpenClaw if available."""
+    settings_path = Path.home() / ".claude" / "settings.json"
+
+    if not settings_path.exists():
+        return {}
+
+    try:
+        settings = json.loads(settings_path.read_text())
+        return settings.get("skills", {}).get("kurt", {})
+    except (json.JSONDecodeError, KeyError):
+        return {}
+
+
+def get_openclaw_provider_preference(tool_name: str) -> str | None:
+    """Get preferred provider from OpenClaw settings."""
+    settings = get_openclaw_settings()
+    providers = settings.get("preferred_providers", {})
+    return providers.get(tool_name)
+```
+
+### Using OpenClaw Settings in Kurt
+
+```python
+# src/kurt/tools/core/provider.py
+
+from kurt.config.openclaw import get_openclaw_provider_preference
+
+
+class ProviderRegistry:
+    def resolve_provider(self, tool_name: str, url: str, explicit: str | None) -> str:
+        """Resolve provider with OpenClaw integration."""
+
+        # 1. Explicit CLI argument
+        if explicit:
+            return explicit
+
+        # 2. URL pattern match
+        matched = self.match_provider(tool_name, url)
+        if matched:
+            return matched
+
+        # 3. Project config (kurt.toml)
+        project_default = self._get_project_default(tool_name)
+        if project_default:
+            return project_default
+
+        # 4. User config (~/.kurt/config.toml)
+        user_default = self._get_user_default(tool_name)
+        if user_default:
+            return user_default
+
+        # 5. OpenClaw settings (NEW)
+        openclaw_pref = get_openclaw_provider_preference(tool_name)
+        if openclaw_pref:
+            return openclaw_pref
+
+        # 6. Tool's default provider
+        tool = get_tool(tool_name)
+        return getattr(tool, "default_provider", None)
 ```
 
 ### Alignment with Kurt
