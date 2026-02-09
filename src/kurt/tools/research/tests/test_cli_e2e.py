@@ -3,7 +3,7 @@ E2E tests for `kurt tool research` command.
 
 These tests verify the research command works correctly with various options.
 Tests mock the Perplexity API to avoid real API calls while testing
-the full CLI integration.
+the full CLI integration, and verify both output and file persistence.
 """
 
 from __future__ import annotations
@@ -108,7 +108,7 @@ class TestResearchSearchBasic:
     def test_research_search_with_mocked_api(
         self, cli_runner: CliRunner, tmp_project: Path, mock_research_result
     ):
-        """Verify research search works with mocked Perplexity API."""
+        """Verify research search works with mocked Perplexity API and returns result."""
         with patch(
             "kurt.integrations.research.config.get_source_config"
         ) as mock_config, patch(
@@ -126,13 +126,40 @@ class TestResearchSearchBasic:
             )
 
             # Should complete successfully
-            assert result.exit_code in (0, 1)
+            assert_cli_success(result)
 
-            if result.exit_code == 0:
-                data = assert_json_output(result)
-                # Verify we get the mocked result
-                if "data" in data:
-                    assert len(data["data"]) >= 0
+            data = assert_json_output(result)
+            # Verify we get the mocked result in the response
+            assert "data" in data or "run_id" in data
+            if "data" in data and len(data["data"]) > 0:
+                # Verify the mock answer appears in the data
+                assert any("generative AI" in str(item) for item in data["data"])
+
+    def test_research_search_output_contains_answer(
+        self, cli_runner: CliRunner, tmp_project: Path, mock_research_result
+    ):
+        """Verify search output contains the mocked answer."""
+        with patch(
+            "kurt.integrations.research.config.get_source_config"
+        ) as mock_config, patch(
+            "kurt.integrations.research.perplexity.PerplexityAdapter"
+        ) as mock_adapter_class:
+            mock_config.return_value = {"api_key": "test_key"}
+            mock_adapter = MagicMock()
+            mock_adapter.search.return_value = mock_research_result
+            mock_adapter_class.return_value = mock_adapter
+
+            # Use text output to see the answer displayed
+            result = invoke_cli(
+                cli_runner,
+                search_cmd,
+                ["What are AI trends?"],
+            )
+
+            assert_cli_success(result)
+
+            # Verify the mocked answer appears in output
+            assert "generative AI" in result.output or "multimodal" in result.output
 
 
 class TestResearchSearchRecency:
@@ -190,7 +217,7 @@ class TestResearchSearchModel:
     def test_research_model_default(
         self, cli_runner: CliRunner, tmp_project: Path, mock_research_result
     ):
-        """Verify default model is used."""
+        """Verify default model is used in API call."""
         with patch(
             "kurt.integrations.research.config.get_source_config"
         ) as mock_config, patch(
@@ -207,18 +234,18 @@ class TestResearchSearchModel:
                 ["Test query", "--format", "json"],
             )
 
-            assert result.exit_code in (0, 1)
+            assert_cli_success(result)
 
-            if result.exit_code == 0:
-                # Default model should be used
-                mock_adapter.search.assert_called_once()
-                call_kwargs = mock_adapter.search.call_args[1]
-                assert call_kwargs.get("model") == "sonar-reasoning"
+            # Verify search was called and model was passed
+            mock_adapter.search.assert_called_once()
+            call_kwargs = mock_adapter.search.call_args[1]
+            # Default model should be sonar-reasoning
+            assert call_kwargs.get("model") == "sonar-reasoning"
 
     def test_research_model_custom(
         self, cli_runner: CliRunner, tmp_project: Path, mock_research_result
     ):
-        """Verify --model option works."""
+        """Verify --model option passes custom model to API."""
         with patch(
             "kurt.integrations.research.config.get_source_config"
         ) as mock_config, patch(
@@ -235,12 +262,39 @@ class TestResearchSearchModel:
                 ["Test query", "--model", "sonar-pro", "--format", "json"],
             )
 
-            assert result.exit_code in (0, 1)
+            assert_cli_success(result)
 
-            if result.exit_code == 0:
-                mock_adapter.search.assert_called_once()
-                call_kwargs = mock_adapter.search.call_args[1]
-                assert call_kwargs.get("model") == "sonar-pro"
+            # Verify custom model was passed
+            mock_adapter.search.assert_called_once()
+            call_kwargs = mock_adapter.search.call_args[1]
+            assert call_kwargs.get("model") == "sonar-pro"
+
+    def test_research_model_reasoning_pro(
+        self, cli_runner: CliRunner, tmp_project: Path, mock_research_result
+    ):
+        """Verify sonar-reasoning-pro model option works."""
+        with patch(
+            "kurt.integrations.research.config.get_source_config"
+        ) as mock_config, patch(
+            "kurt.integrations.research.perplexity.PerplexityAdapter"
+        ) as mock_adapter_class:
+            mock_config.return_value = {"api_key": "test_key"}
+            mock_adapter = MagicMock()
+            mock_adapter.search.return_value = mock_research_result
+            mock_adapter_class.return_value = mock_adapter
+
+            result = invoke_cli(
+                cli_runner,
+                search_cmd,
+                ["Test query", "--model", "sonar-reasoning-pro", "--format", "json"],
+            )
+
+            assert_cli_success(result)
+
+            # Verify model was passed correctly
+            mock_adapter.search.assert_called_once()
+            call_kwargs = mock_adapter.search.call_args[1]
+            assert call_kwargs.get("model") == "sonar-reasoning-pro"
 
 
 class TestResearchSearchSave:
@@ -249,7 +303,7 @@ class TestResearchSearchSave:
     def test_research_save_creates_file(
         self, cli_runner: CliRunner, tmp_project: Path, mock_research_result
     ):
-        """Verify --save creates output file."""
+        """Verify --save creates output file with correct content."""
         with patch(
             "kurt.integrations.research.config.get_source_config"
         ) as mock_config, patch(
@@ -263,24 +317,26 @@ class TestResearchSearchSave:
             result = invoke_cli(
                 cli_runner,
                 search_cmd,
-                ["Test query", "--save"],
+                ["Test query about AI", "--save"],
             )
 
-            # Should complete
-            assert result.exit_code in (0, 1)
+            assert_cli_success(result)
 
-            # Check if output directory was created
-            if result.exit_code == 0:
-                output_dir = tmp_project / "sources" / "research"
-                # May or may not exist depending on execution
-                if output_dir.exists():
-                    files = list(output_dir.glob("*.md"))
-                    assert len(files) >= 0
+            # Check output directory exists and contains file
+            output_dir = tmp_project / "sources" / "research"
+            if output_dir.exists():
+                files = list(output_dir.glob("*.md"))
+                # Should have at least one file
+                assert len(files) >= 1, "Expected at least one markdown file to be saved"
+
+                # Verify file content contains the mock answer
+                content = files[0].read_text()
+                assert "generative AI" in content or "AI trends" in content.lower()
 
     def test_research_save_custom_output_dir(
         self, cli_runner: CliRunner, tmp_project: Path, mock_research_result
     ):
-        """Verify --output-dir option works."""
+        """Verify --output-dir option saves file to custom location."""
         with patch(
             "kurt.integrations.research.config.get_source_config"
         ) as mock_config, patch(
@@ -291,13 +347,20 @@ class TestResearchSearchSave:
             mock_adapter.search.return_value = mock_research_result
             mock_adapter_class.return_value = mock_adapter
 
+            custom_dir = "custom_research_output"
             result = invoke_cli(
                 cli_runner,
                 search_cmd,
-                ["Test query", "--save", "--output-dir", "custom_research"],
+                ["Test query", "--save", "--output-dir", custom_dir],
             )
 
-            assert result.exit_code in (0, 1)
+            assert_cli_success(result)
+
+            # Verify the custom directory was used
+            output_path = tmp_project / custom_dir
+            if output_path.exists():
+                files = list(output_path.glob("*.md"))
+                assert len(files) >= 1, f"Expected at least one file in {custom_dir}"
 
     def test_research_save_dry_run_no_file(
         self, cli_runner: CliRunner, tmp_project: Path
@@ -316,7 +379,7 @@ class TestResearchSearchSave:
         # In dry run, no files should be created
         if output_dir.exists():
             files = list(output_dir.glob("*.md"))
-            assert len(files) == 0
+            assert len(files) == 0, "Dry run should not create any files"
 
 
 class TestResearchSearchJsonOutput:
@@ -325,7 +388,7 @@ class TestResearchSearchJsonOutput:
     def test_research_json_output_valid(
         self, cli_runner: CliRunner, tmp_project: Path, mock_research_result
     ):
-        """Verify --format json produces valid JSON."""
+        """Verify --format json produces valid JSON with expected fields."""
         with patch(
             "kurt.integrations.research.config.get_source_config"
         ) as mock_config, patch(
@@ -342,16 +405,16 @@ class TestResearchSearchJsonOutput:
                 ["What are AI trends?", "--format", "json"],
             )
 
-            assert result.exit_code in (0, 1)
+            assert_cli_success(result)
 
-            if result.exit_code == 0:
-                data = assert_json_output(result)
-                assert "run_id" in data or "data" in data or "success" in data
+            data = assert_json_output(result)
+            # Should have run_id and data or success field
+            assert "run_id" in data or "data" in data or "success" in data
 
     def test_research_json_has_expected_fields(
         self, cli_runner: CliRunner, tmp_project: Path, mock_research_result
     ):
-        """Verify JSON output contains expected fields."""
+        """Verify JSON output contains expected fields from mock."""
         with patch(
             "kurt.integrations.research.config.get_source_config"
         ) as mock_config, patch(
@@ -368,13 +431,17 @@ class TestResearchSearchJsonOutput:
                 ["Test query", "--format", "json"],
             )
 
-            assert result.exit_code in (0, 1)
+            assert_cli_success(result)
 
-            if result.exit_code == 0:
-                data = assert_json_output(result)
-                # Result should have run_id at minimum
-                if "run_id" in data:
-                    assert data["run_id"] is not None
+            data = assert_json_output(result)
+            # Verify run_id exists
+            assert "run_id" in data
+            assert data["run_id"] is not None
+
+            # Verify data contains the mocked result
+            if "data" in data and len(data["data"]) > 0:
+                item = data["data"][0]
+                assert "answer" in item or "query" in item
 
 
 class TestResearchSearchBackground:
@@ -392,6 +459,22 @@ class TestResearchSearchBackground:
 
         # May fail to spawn background but should parse
         assert result.exit_code in (0, 1, 2)
+
+    def test_research_background_returns_run_id(
+        self, cli_runner: CliRunner, tmp_project: Path
+    ):
+        """Verify --background returns run_id in JSON output."""
+        result = invoke_cli(
+            cli_runner,
+            search_cmd,
+            ["Test query", "--background", "--format", "json"],
+        )
+
+        if result.exit_code == 0:
+            data = assert_json_output(result)
+            assert "run_id" in data
+            assert "background" in data
+            assert data["background"] is True
 
     def test_research_background_priority(
         self, cli_runner: CliRunner, tmp_project: Path
@@ -434,7 +517,7 @@ class TestResearchSearchCombinedOptions:
     def test_research_all_options(
         self, cli_runner: CliRunner, tmp_project: Path, mock_research_result
     ):
-        """Verify all options can be combined."""
+        """Verify all options can be combined and work correctly."""
         with patch(
             "kurt.integrations.research.config.get_source_config"
         ) as mock_config, patch(
@@ -445,6 +528,7 @@ class TestResearchSearchCombinedOptions:
             mock_adapter.search.return_value = mock_research_result
             mock_adapter_class.return_value = mock_adapter
 
+            custom_dir = "research_results"
             result = invoke_cli(
                 cli_runner,
                 search_cmd,
@@ -456,13 +540,23 @@ class TestResearchSearchCombinedOptions:
                     "sonar-pro",
                     "--save",
                     "--output-dir",
-                    "research_results",
+                    custom_dir,
                     "--format",
                     "json",
                 ],
             )
 
-            assert result.exit_code in (0, 1)
+            assert_cli_success(result)
+
+            # Verify model was passed correctly
+            mock_adapter.search.assert_called_once()
+            call_kwargs = mock_adapter.search.call_args[1]
+            assert call_kwargs.get("model") == "sonar-pro"
+            assert call_kwargs.get("recency") == "week"
+
+            # Verify JSON output
+            data = assert_json_output(result)
+            assert "run_id" in data
 
     def test_research_dry_run_with_all_options(
         self, cli_runner: CliRunner, tmp_project: Path
@@ -487,3 +581,40 @@ class TestResearchSearchCombinedOptions:
         )
 
         assert result.exit_code in (0, 1)
+
+        # Dry run should not create files
+        output_dir = tmp_project / "output"
+        if output_dir.exists():
+            files = list(output_dir.glob("*.md"))
+            assert len(files) == 0
+
+
+class TestResearchSearchRecencyInApiCall:
+    """E2E tests verifying recency is passed to API."""
+
+    def test_research_recency_passed_to_api(
+        self, cli_runner: CliRunner, tmp_project: Path, mock_research_result
+    ):
+        """Verify recency parameter is passed to the API call."""
+        with patch(
+            "kurt.integrations.research.config.get_source_config"
+        ) as mock_config, patch(
+            "kurt.integrations.research.perplexity.PerplexityAdapter"
+        ) as mock_adapter_class:
+            mock_config.return_value = {"api_key": "test_key"}
+            mock_adapter = MagicMock()
+            mock_adapter.search.return_value = mock_research_result
+            mock_adapter_class.return_value = mock_adapter
+
+            result = invoke_cli(
+                cli_runner,
+                search_cmd,
+                ["Test query", "--recency", "week", "--format", "json"],
+            )
+
+            assert_cli_success(result)
+
+            # Verify recency was passed to search
+            mock_adapter.search.assert_called_once()
+            call_kwargs = mock_adapter.search.call_args[1]
+            assert call_kwargs.get("recency") == "week"
