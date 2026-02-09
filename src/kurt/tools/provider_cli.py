@@ -5,9 +5,12 @@ Provides:
 - kurt tool info <name>: Show detailed tool information
 - kurt tool check [name]: Validate provider requirements
 - kurt tool providers <name>: List providers for a specific tool
+- kurt tool new <name>: Scaffold a new tool from template
+- kurt tool new-provider <tool> <name>: Scaffold a new provider for a tool
 """
 
 import json as json_lib
+from pathlib import Path
 
 import click
 from rich.console import Console
@@ -290,3 +293,141 @@ def _print_tool_check(report: dict) -> None:
             console.print(f"  [red]\u2717[/red] {p['name']} - missing: {missing}")
 
     console.print()
+
+
+# ---------------------------------------------------------------------------
+# Scaffolding commands
+# ---------------------------------------------------------------------------
+
+
+def _find_project_root() -> Path | None:
+    """Find project root by searching up for kurt.toml."""
+    current = Path.cwd()
+    for parent in [current, *current.parents]:
+        if (parent / "kurt.toml").exists():
+            return parent
+    return None
+
+
+@click.command("new")
+@click.argument("name")
+@click.option("--description", "-d", default="", help="Tool description")
+@click.option(
+    "--location",
+    type=click.Choice(["project", "user"]),
+    default="project",
+    help="Where to create the tool",
+)
+def new_tool_cmd(name: str, description: str, location: str):
+    """Create a new tool from template.
+
+    Scaffolds the directory structure and starter files for a new tool
+    with a default provider.
+    """
+    from kurt.tools.templates.scaffolds import (
+        render_base_py,
+        render_init_py,
+        render_provider_config_py,
+        render_provider_py,
+        render_tool_py,
+    )
+
+    # Determine target directory
+    if location == "project":
+        project_root = _find_project_root()
+        if project_root is None:
+            raise click.ClickException(
+                "Not in a Kurt project (no kurt.toml found). Use --location user."
+            )
+        target = project_root / "kurt" / "tools" / name
+    else:
+        target = Path.home() / ".kurt" / "tools" / name
+
+    if target.exists():
+        raise click.ClickException(f"Tool '{name}' already exists at {target}")
+
+    # Create directory structure
+    providers_dir = target / "providers" / "default"
+    providers_dir.mkdir(parents=True)
+    (target / "providers" / "__init__.py").write_text("")
+    (providers_dir / "__init__.py").write_text("")
+
+    # Generate files from templates
+    (target / "tool.py").write_text(render_tool_py(name, description))
+    (target / "base.py").write_text(render_base_py(name))
+    (target / "__init__.py").write_text(render_init_py(name))
+    (providers_dir / "provider.py").write_text(render_provider_py(name, "default"))
+    (providers_dir / "config.py").write_text(render_provider_config_py(name, "default"))
+
+    console.print(f"\n[green]Created tool '{name}' in {target}/[/green]\n")
+
+    for path in sorted(target.rglob("*.py")):
+        rel = path.relative_to(target)
+        console.print(f"  {rel}")
+
+    console.print(f"\n[bold]Next steps:[/bold]")
+    console.print("1. Edit tool.py to define your input/output schemas")
+    console.print("2. Edit base.py to define the provider interface")
+    console.print("3. Implement your provider in providers/default/provider.py")
+    console.print(f"4. Run: kurt tool check {name}")
+
+
+@click.command("new-provider")
+@click.argument("tool_name", metavar="TOOL")
+@click.argument("provider_name", metavar="NAME")
+@click.option(
+    "--location",
+    type=click.Choice(["project", "user"]),
+    default="project",
+    help="Where to create the provider",
+)
+def new_provider_cmd(tool_name: str, provider_name: str, location: str):
+    """Create a new provider for an existing tool.
+
+    Scaffolds a provider directory with a starter provider.py file.
+    """
+    from kurt.tools.templates.scaffolds import (
+        render_provider_config_py,
+        render_provider_py,
+    )
+
+    # Determine target directory
+    if location == "project":
+        project_root = _find_project_root()
+        if project_root is None:
+            raise click.ClickException(
+                "Not in a Kurt project (no kurt.toml found). Use --location user."
+            )
+        target = project_root / "kurt" / "tools" / tool_name / "providers" / provider_name
+    else:
+        target = (
+            Path.home() / ".kurt" / "tools" / tool_name / "providers" / provider_name
+        )
+
+    if target.exists():
+        raise click.ClickException(
+            f"Provider '{provider_name}' already exists at {target}"
+        )
+
+    # Create provider directory
+    target.mkdir(parents=True)
+    (target / "__init__.py").write_text("")
+    (target / "provider.py").write_text(render_provider_py(tool_name, provider_name))
+    (target / "config.py").write_text(
+        render_provider_config_py(tool_name, provider_name)
+    )
+
+    console.print(
+        f"\n[green]Created provider '{provider_name}' "
+        f"for tool '{tool_name}' in {target}/[/green]\n"
+    )
+
+    for path in sorted(target.rglob("*.py")):
+        rel = path.relative_to(target)
+        console.print(f"  {rel}")
+
+    console.print(f"\n[bold]Next steps:[/bold]")
+    console.print("1. Edit provider.py to implement the process() method")
+    console.print("2. Set url_patterns for auto-routing (optional)")
+    console.print("3. Set requires_env if API keys needed")
+    console.print(f"4. Run: kurt tool check {tool_name}")

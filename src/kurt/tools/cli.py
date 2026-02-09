@@ -5,7 +5,14 @@ import click
 from kurt.tools.analytics.cli import analytics_group
 from kurt.tools.fetch.cli import fetch_cmd
 from kurt.tools.map.cli import map_cmd
-from kurt.tools.provider_cli import check_cmd, info_cmd, list_tools_cmd, providers_cmd
+from kurt.tools.provider_cli import (
+    check_cmd,
+    info_cmd,
+    list_tools_cmd,
+    new_provider_cmd,
+    new_tool_cmd,
+    providers_cmd,
+)
 from kurt.tools.research.cli import research_group
 from kurt.tools.signals.cli import signals_group
 
@@ -44,6 +51,8 @@ tools_group.add_command(list_tools_cmd, "list")
 tools_group.add_command(info_cmd, "info")
 tools_group.add_command(providers_cmd, "providers")
 tools_group.add_command(check_cmd, "check")
+tools_group.add_command(new_tool_cmd, "new")
+tools_group.add_command(new_provider_cmd, "new-provider")
 
 # Alias for main CLI registration
 tools_cli = tools_group
