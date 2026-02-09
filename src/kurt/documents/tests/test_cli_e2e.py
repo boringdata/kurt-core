@@ -385,3 +385,366 @@ class TestDocsGlobalJsonFlag:
 
         # Command should complete without crashing
         assert result.exit_code == 0
+
+
+# =============================================================================
+# Enhanced E2E Tests with Database State Verification
+# =============================================================================
+
+
+class TestDocsListVerifyDocumentCounts:
+    """E2E tests verifying actual document counts from database.
+
+    Fixture creates 7 documents:
+    - doc-1, doc-2, doc-3: Mapped via sitemap/crawl, not fetched
+    - doc-4, doc-5: Mapped and fetched successfully
+    - doc-6: Mapped, fetch error
+    - doc-7: Map error
+    """
+
+    def test_docs_list_returns_all_7_documents(
+        self, cli_runner: CliRunner, tmp_project_with_docs: Path
+    ):
+        """Verify docs list returns exactly 7 documents from fixture."""
+        result = invoke_cli(cli_runner, list_cmd, ["--format", "json"])
+
+        assert_cli_success(result)
+        data = assert_json_output(result)
+        docs = data.get("data", data) if isinstance(data, dict) else data
+
+        assert isinstance(docs, list)
+        assert len(docs) == 7, f"Expected 7 documents, got {len(docs)}"
+
+    def test_docs_list_fetched_returns_2_documents(
+        self, cli_runner: CliRunner, tmp_project_with_docs: Path
+    ):
+        """Verify --with-status fetched returns exactly 2 documents (doc-4, doc-5)."""
+        result = invoke_cli(
+            cli_runner, list_cmd, ["--with-status", "fetched", "--format", "json"]
+        )
+
+        assert_cli_success(result)
+        data = assert_json_output(result)
+        docs = data.get("data", data) if isinstance(data, dict) else data
+
+        assert isinstance(docs, list)
+        assert len(docs) == 2, f"Expected 2 fetched documents, got {len(docs)}"
+
+        # Verify these are doc-4 and doc-5
+        doc_ids = [d["document_id"] for d in docs]
+        assert "doc-4" in doc_ids
+        assert "doc-5" in doc_ids
+
+    def test_docs_list_error_returns_1_document(
+        self, cli_runner: CliRunner, tmp_project_with_docs: Path
+    ):
+        """Verify --with-status error returns exactly 1 document (doc-6)."""
+        result = invoke_cli(
+            cli_runner, list_cmd, ["--with-status", "error", "--format", "json"]
+        )
+
+        assert_cli_success(result)
+        data = assert_json_output(result)
+        docs = data.get("data", data) if isinstance(data, dict) else data
+
+        assert isinstance(docs, list)
+        assert len(docs) == 1, f"Expected 1 error document, got {len(docs)}"
+        assert docs[0]["document_id"] == "doc-6"
+
+
+class TestDocsListByKnownIds:
+    """E2E tests using known fixture document IDs."""
+
+    def test_docs_list_by_single_id(
+        self, cli_runner: CliRunner, tmp_project_with_docs: Path
+    ):
+        """Verify --ids with single known ID returns exactly that document."""
+        result = invoke_cli(
+            cli_runner, list_cmd, ["--ids", "doc-1", "--format", "json"]
+        )
+
+        assert_cli_success(result)
+        data = assert_json_output(result)
+        docs = data.get("data", data) if isinstance(data, dict) else data
+
+        assert isinstance(docs, list)
+        assert len(docs) == 1
+        assert docs[0]["document_id"] == "doc-1"
+        assert docs[0]["source_url"] == "https://example.com/docs/intro"
+
+    def test_docs_list_by_multiple_ids(
+        self, cli_runner: CliRunner, tmp_project_with_docs: Path
+    ):
+        """Verify --ids with multiple IDs returns matching documents."""
+        result = invoke_cli(
+            cli_runner, list_cmd, ["--ids", "doc-1,doc-4,doc-7", "--format", "json"]
+        )
+
+        assert_cli_success(result)
+        data = assert_json_output(result)
+        docs = data.get("data", data) if isinstance(data, dict) else data
+
+        assert isinstance(docs, list)
+        assert len(docs) == 3
+        doc_ids = {d["document_id"] for d in docs}
+        assert doc_ids == {"doc-1", "doc-4", "doc-7"}
+
+    def test_docs_list_mixed_existing_nonexisting_ids(
+        self, cli_runner: CliRunner, tmp_project_with_docs: Path
+    ):
+        """Verify --ids with mixed existing/non-existing IDs returns only existing."""
+        result = invoke_cli(
+            cli_runner,
+            list_cmd,
+            ["--ids", "doc-1,nonexistent,doc-2", "--format", "json"],
+        )
+
+        assert_cli_success(result)
+        data = assert_json_output(result)
+        docs = data.get("data", data) if isinstance(data, dict) else data
+
+        assert isinstance(docs, list)
+        assert len(docs) == 2
+        doc_ids = {d["document_id"] for d in docs}
+        assert doc_ids == {"doc-1", "doc-2"}
+
+
+class TestDocsListUrlFilters:
+    """E2E tests for URL-based filters with verification."""
+
+    def test_docs_list_url_contains_docs(
+        self, cli_runner: CliRunner, tmp_project_with_docs: Path
+    ):
+        """Verify --url-contains '/docs/' returns 4 documents."""
+        result = invoke_cli(
+            cli_runner, list_cmd, ["--url-contains", "/docs/", "--format", "json"]
+        )
+
+        assert_cli_success(result)
+        data = assert_json_output(result)
+        docs = data.get("data", data) if isinstance(data, dict) else data
+
+        assert isinstance(docs, list)
+        # doc-1, doc-2, doc-4, doc-5 have /docs/ in URL
+        assert len(docs) == 4, f"Expected 4 /docs/ documents, got {len(docs)}"
+        for doc in docs:
+            assert "/docs/" in doc["source_url"]
+
+    def test_docs_list_url_contains_blog(
+        self, cli_runner: CliRunner, tmp_project_with_docs: Path
+    ):
+        """Verify --url-contains '/blog/' returns 1 document (doc-3)."""
+        result = invoke_cli(
+            cli_runner, list_cmd, ["--url-contains", "/blog/", "--format", "json"]
+        )
+
+        assert_cli_success(result)
+        data = assert_json_output(result)
+        docs = data.get("data", data) if isinstance(data, dict) else data
+
+        assert isinstance(docs, list)
+        assert len(docs) == 1
+        assert docs[0]["document_id"] == "doc-3"
+        assert "/blog/" in docs[0]["source_url"]
+
+
+class TestDocsListCombinedFilters:
+    """E2E tests for combined filter scenarios."""
+
+    def test_docs_list_url_contains_with_limit(
+        self, cli_runner: CliRunner, tmp_project_with_docs: Path
+    ):
+        """Verify --url-contains combined with --limit works correctly."""
+        result = invoke_cli(
+            cli_runner,
+            list_cmd,
+            ["--url-contains", "/docs/", "--limit", "2", "--format", "json"],
+        )
+
+        assert_cli_success(result)
+        data = assert_json_output(result)
+        docs = data.get("data", data) if isinstance(data, dict) else data
+
+        assert isinstance(docs, list)
+        assert len(docs) <= 2
+        for doc in docs:
+            assert "/docs/" in doc["source_url"]
+
+    def test_docs_list_status_with_url_contains(
+        self, cli_runner: CliRunner, tmp_project_with_docs: Path
+    ):
+        """Verify --with-status combined with --url-contains works correctly."""
+        result = invoke_cli(
+            cli_runner,
+            list_cmd,
+            [
+                "--with-status",
+                "fetched",
+                "--url-contains",
+                "/docs/",
+                "--format",
+                "json",
+            ],
+        )
+
+        assert_cli_success(result)
+        data = assert_json_output(result)
+        docs = data.get("data", data) if isinstance(data, dict) else data
+
+        assert isinstance(docs, list)
+        # doc-4 and doc-5 are fetched and have /docs/ in URL
+        assert len(docs) == 2
+        for doc in docs:
+            assert "/docs/" in doc["source_url"]
+            assert doc["document_id"] in ("doc-4", "doc-5")
+
+
+class TestDocsGetByKnownId:
+    """E2E tests for docs get using fixture document IDs."""
+
+    def test_docs_get_fetched_document(
+        self, cli_runner: CliRunner, tmp_project_with_docs: Path
+    ):
+        """Verify get returns full details for fetched document."""
+        result = invoke_cli(cli_runner, get_cmd, ["doc-4", "--format", "json"])
+
+        assert_cli_success(result)
+        data = assert_json_output(result)
+        doc = data.get("data", data) if isinstance(data, dict) else data
+
+        assert doc is not None
+        assert doc["document_id"] == "doc-4"
+        assert doc["source_url"] == "https://example.com/docs/api"
+        # Should have fetch info - status may be enum string or lowercase
+        if "fetch_status" in doc:
+            assert "success" in doc["fetch_status"].lower()
+
+    def test_docs_get_unfetched_document(
+        self, cli_runner: CliRunner, tmp_project_with_docs: Path
+    ):
+        """Verify get returns details for unfetched document."""
+        result = invoke_cli(cli_runner, get_cmd, ["doc-1", "--format", "json"])
+
+        assert_cli_success(result)
+        data = assert_json_output(result)
+        doc = data.get("data", data) if isinstance(data, dict) else data
+
+        assert doc is not None
+        assert doc["document_id"] == "doc-1"
+        assert doc["source_url"] == "https://example.com/docs/intro"
+
+    def test_docs_get_error_document(
+        self, cli_runner: CliRunner, tmp_project_with_docs: Path
+    ):
+        """Verify get returns error info for failed fetch document."""
+        result = invoke_cli(cli_runner, get_cmd, ["doc-6", "--format", "json"])
+
+        assert_cli_success(result)
+        data = assert_json_output(result)
+        doc = data.get("data", data) if isinstance(data, dict) else data
+
+        assert doc is not None
+        assert doc["document_id"] == "doc-6"
+
+
+class TestDocsDeleteDatabaseVerification:
+    """E2E tests verifying actual database state after delete."""
+
+    def test_docs_delete_removes_from_database(
+        self, cli_runner: CliRunner, tmp_project_with_docs: Path
+    ):
+        """Verify delete actually removes document from database."""
+        # Verify document exists before delete
+        with managed_session() as session:
+            assert_map_document_exists(session, "https://example.com/docs/intro")
+            assert_map_document_count(session, 7)
+
+        # Delete doc-1
+        result = invoke_cli(cli_runner, delete_cmd, ["doc-1", "--yes"])
+        assert_cli_success(result)
+
+        # Verify document is removed from database
+        with managed_session() as session:
+            assert_map_document_not_exists(session, "https://example.com/docs/intro")
+            assert_map_document_count(session, 6)
+
+    def test_docs_delete_cascade_removes_fetch(
+        self, cli_runner: CliRunner, tmp_project_with_docs: Path
+    ):
+        """Verify delete removes both MapDocument and FetchDocument."""
+        # Verify both records exist before delete
+        with managed_session() as session:
+            assert_map_document_exists(session, "https://example.com/docs/api")
+            assert_fetch_document_exists(session, "doc-4")
+            assert_fetch_document_count(session, 3)  # doc-4, doc-5, doc-6
+
+        # Delete doc-4
+        result = invoke_cli(cli_runner, delete_cmd, ["doc-4", "--yes"])
+        assert_cli_success(result)
+
+        # Verify both map and fetch records are removed
+        with managed_session() as session:
+            assert_map_document_not_exists(session, "https://example.com/docs/api")
+            assert_fetch_document_not_exists(session, "doc-4")
+            assert_fetch_document_count(session, 2)  # doc-5, doc-6 remain
+
+    def test_docs_delete_with_filter_removes_matching(
+        self, cli_runner: CliRunner, tmp_project_with_docs: Path
+    ):
+        """Verify delete with --url-contains removes only matching documents."""
+        # Verify blog document exists
+        with managed_session() as session:
+            assert_map_document_exists(session, "https://example.com/blog/post-1")
+            assert_map_document_count(session, 7)
+
+        # Delete documents with /blog/ in URL
+        result = invoke_cli(
+            cli_runner, delete_cmd, ["--url-contains", "/blog/", "--yes"]
+        )
+        assert_cli_success(result)
+
+        # Verify only blog document is removed
+        with managed_session() as session:
+            assert_map_document_not_exists(session, "https://example.com/blog/post-1")
+            assert_map_document_count(session, 6)  # Only doc-3 removed
+            # Other documents still exist
+            assert_map_document_exists(session, "https://example.com/docs/intro")
+            assert_map_document_exists(session, "https://example.com/docs/api")
+
+    def test_docs_delete_limit_caps_deletions(
+        self, cli_runner: CliRunner, tmp_project_with_docs: Path
+    ):
+        """Verify --limit caps the number of documents deleted."""
+        with managed_session() as session:
+            assert_map_document_count(session, 7)
+
+        # Delete with limit of 2
+        result = invoke_cli(
+            cli_runner,
+            delete_cmd,
+            ["--url-contains", "example.com", "--limit", "2", "--yes"],
+        )
+        assert_cli_success(result)
+
+        # Verify only 2 documents were deleted
+        with managed_session() as session:
+            assert_map_document_count(session, 5)
+
+    def test_docs_delete_dry_run_no_database_change(
+        self, cli_runner: CliRunner, tmp_project_with_docs: Path
+    ):
+        """Verify --dry-run does not modify database."""
+        with managed_session() as session:
+            assert_map_document_count(session, 7)
+            assert_fetch_document_count(session, 3)
+
+        # Dry run delete all
+        result = invoke_cli(
+            cli_runner, delete_cmd, ["--url-contains", "example.com", "--dry-run"]
+        )
+        assert_cli_success(result)
+
+        # Verify no changes to database
+        with managed_session() as session:
+            assert_map_document_count(session, 7)
+            assert_fetch_document_count(session, 3)
