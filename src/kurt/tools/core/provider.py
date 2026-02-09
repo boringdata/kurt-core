@@ -295,6 +295,73 @@ class ProviderRegistry:
 
         return [var for var in requires_env if not os.environ.get(var)]
 
+    def validate_all(self) -> dict[str, dict[str, list[str]]]:
+        """Validate all providers and return a requirements report.
+
+        Returns:
+            Dict of {tool_name: {provider_name: [missing_env_vars]}}.
+            Only includes providers that have missing requirements.
+        """
+        self.discover()
+        report: dict[str, dict[str, list[str]]] = {}
+
+        for tool_name, providers in self._provider_meta.items():
+            for provider_name, meta in providers.items():
+                missing = [
+                    var
+                    for var in meta.get("requires_env", [])
+                    if not os.environ.get(var)
+                ]
+                if missing:
+                    if tool_name not in report:
+                        report[tool_name] = {}
+                    report[tool_name][provider_name] = missing
+
+        return report
+
+    def get_provider_checked(
+        self, tool_name: str, provider_name: str
+    ) -> Any:
+        """Get provider with requirements validation.
+
+        Like get_provider(), but raises ProviderRequirementsError if
+        the provider's required env vars are missing, and
+        ProviderNotFoundError if the provider doesn't exist.
+
+        Args:
+            tool_name: Tool name
+            provider_name: Provider name
+
+        Returns:
+            Instantiated provider.
+
+        Raises:
+            ProviderNotFoundError: If provider not found.
+            ProviderRequirementsError: If required env vars missing.
+        """
+        from kurt.tools.core.errors import (
+            ProviderNotFoundError,
+            ProviderRequirementsError,
+        )
+
+        self.discover()
+        providers = self._providers.get(tool_name, {})
+        provider_class = providers.get(provider_name)
+
+        if provider_class is None:
+            available = sorted(providers.keys()) if providers else []
+            raise ProviderNotFoundError(tool_name, provider_name, available)
+
+        missing = self.validate_provider(tool_name, provider_name)
+        if missing:
+            raise ProviderRequirementsError(
+                provider_name=provider_name,
+                missing=missing,
+                tool_name=tool_name,
+            )
+
+        return provider_class()
+
     def reset(self) -> None:
         """Reset the registry state. Primarily for testing."""
         with self._lock:

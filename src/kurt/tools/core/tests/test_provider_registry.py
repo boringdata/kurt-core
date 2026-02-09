@@ -8,7 +8,10 @@ from pathlib import Path
 
 import pytest
 
-from kurt.tools.core.errors import ProviderNotFoundError
+from kurt.tools.core.errors import (
+    ProviderNotFoundError,
+    ProviderRequirementsError,
+)
 from kurt.tools.core.provider import ProviderRegistry, get_provider_registry
 
 
@@ -752,3 +755,217 @@ class TestBuiltinProviderDiscovery:
         registry = get_provider_registry()
         missing = registry.validate_provider("fetch", "trafilatura")
         assert missing == []
+
+
+# ============================================================================
+# Validate All Tests
+# ============================================================================
+
+
+class TestValidateAll:
+    """Test validate_all method for bulk requirements checking."""
+
+    def test_validate_all_reports_missing_env(self, tmp_path):
+        """validate_all reports providers with missing env vars."""
+        tools_dir = tmp_path / "tools"
+        providers_dir = tools_dir / "fetch" / "providers"
+
+        # Provider with requirements
+        api_dir = providers_dir / "api"
+        api_dir.mkdir(parents=True)
+        (api_dir / "provider.py").write_text('''
+class ApiFetcher:
+    name = "api"
+    url_patterns = []
+    requires_env = ["API_KEY", "API_SECRET"]
+''')
+
+        # Provider without requirements
+        free_dir = providers_dir / "free"
+        free_dir.mkdir(parents=True)
+        (free_dir / "provider.py").write_text('''
+class FreeFetcher:
+    name = "free"
+    url_patterns = ["*"]
+    requires_env = []
+''')
+
+        registry = get_provider_registry()
+        registry.discover_from([(tools_dir, "test")])
+
+        report = registry.validate_all()
+
+        # Only "api" should be in the report (has missing env vars)
+        assert "fetch" in report
+        assert "api" in report["fetch"]
+        assert "API_KEY" in report["fetch"]["api"]
+        assert "API_SECRET" in report["fetch"]["api"]
+        # "free" should not be in the report
+        assert "free" not in report.get("fetch", {})
+
+    def test_validate_all_empty_when_all_met(self, tmp_path, monkeypatch):
+        """validate_all returns empty dict when all requirements are met."""
+        tools_dir = tmp_path / "tools"
+        providers_dir = tools_dir / "fetch" / "providers"
+
+        api_dir = providers_dir / "api"
+        api_dir.mkdir(parents=True)
+        (api_dir / "provider.py").write_text('''
+class ApiFetcher:
+    name = "api"
+    url_patterns = []
+    requires_env = ["MY_KEY"]
+''')
+
+        monkeypatch.setenv("MY_KEY", "test-value")
+
+        registry = get_provider_registry()
+        registry.discover_from([(tools_dir, "test")])
+
+        report = registry.validate_all()
+        assert report == {}
+
+    def test_validate_all_multiple_tools(self, tmp_path):
+        """validate_all works across multiple tools."""
+        tools_dir = tmp_path / "tools"
+
+        # Fetch provider with missing env
+        fetch_dir = tools_dir / "fetch" / "providers" / "cloud"
+        fetch_dir.mkdir(parents=True)
+        (fetch_dir / "provider.py").write_text('''
+class CloudFetcher:
+    name = "cloud"
+    url_patterns = []
+    requires_env = ["CLOUD_TOKEN"]
+''')
+
+        # Map provider with missing env
+        map_dir = tools_dir / "map" / "providers" / "special"
+        map_dir.mkdir(parents=True)
+        (map_dir / "provider.py").write_text('''
+class SpecialMapper:
+    name = "special"
+    url_patterns = []
+    requires_env = ["SPECIAL_KEY"]
+''')
+
+        registry = get_provider_registry()
+        registry.discover_from([(tools_dir, "test")])
+
+        report = registry.validate_all()
+        assert "fetch" in report
+        assert "map" in report
+        assert "CLOUD_TOKEN" in report["fetch"]["cloud"]
+        assert "SPECIAL_KEY" in report["map"]["special"]
+
+
+# ============================================================================
+# Get Provider Checked Tests
+# ============================================================================
+
+
+class TestGetProviderChecked:
+    """Test get_provider_checked method with validation."""
+
+    def test_get_provider_checked_success(self, tmp_path, monkeypatch):
+        """get_provider_checked returns provider when requirements met."""
+        tools_dir = tmp_path / "tools"
+        provider_dir = tools_dir / "fetch" / "providers" / "test"
+        provider_dir.mkdir(parents=True)
+        (provider_dir / "provider.py").write_text('''
+class TestFetcher:
+    name = "test"
+    url_patterns = []
+    requires_env = ["TEST_KEY"]
+
+    def __init__(self):
+        self.ready = True
+''')
+
+        monkeypatch.setenv("TEST_KEY", "present")
+
+        registry = get_provider_registry()
+        registry.discover_from([(tools_dir, "test")])
+
+        provider = registry.get_provider_checked("fetch", "test")
+        assert provider is not None
+        assert provider.ready is True
+
+    def test_get_provider_checked_raises_not_found(self, tmp_path):
+        """get_provider_checked raises ProviderNotFoundError."""
+        tools_dir = tmp_path / "empty"
+        tools_dir.mkdir()
+
+        registry = get_provider_registry()
+        registry.discover_from([(tools_dir, "test")])
+
+        with pytest.raises(ProviderNotFoundError) as exc_info:
+            registry.get_provider_checked("fetch", "nonexistent")
+
+        assert "nonexistent" in str(exc_info.value)
+        assert exc_info.value.tool_name == "fetch"
+        assert exc_info.value.provider_name == "nonexistent"
+
+    def test_get_provider_checked_raises_requirements_error(self, tmp_path, monkeypatch):
+        """get_provider_checked raises ProviderRequirementsError when env missing."""
+        tools_dir = tmp_path / "tools"
+        provider_dir = tools_dir / "fetch" / "providers" / "paid"
+        provider_dir.mkdir(parents=True)
+        (provider_dir / "provider.py").write_text('''
+class PaidFetcher:
+    name = "paid"
+    url_patterns = []
+    requires_env = ["PAID_API_KEY"]
+''')
+
+        monkeypatch.delenv("PAID_API_KEY", raising=False)
+
+        registry = get_provider_registry()
+        registry.discover_from([(tools_dir, "test")])
+
+        with pytest.raises(ProviderRequirementsError) as exc_info:
+            registry.get_provider_checked("fetch", "paid")
+
+        assert exc_info.value.provider_name == "paid"
+        assert "PAID_API_KEY" in exc_info.value.missing
+
+    def test_get_provider_checked_error_includes_available(self, tmp_path):
+        """ProviderNotFoundError includes list of available providers."""
+        tools_dir = tmp_path / "tools"
+        provider_dir = tools_dir / "fetch" / "providers" / "real"
+        provider_dir.mkdir(parents=True)
+        (provider_dir / "provider.py").write_text('''
+class RealFetcher:
+    name = "real"
+    url_patterns = []
+    requires_env = []
+''')
+
+        registry = get_provider_registry()
+        registry.discover_from([(tools_dir, "test")])
+
+        with pytest.raises(ProviderNotFoundError) as exc_info:
+            registry.get_provider_checked("fetch", "wrong")
+
+        assert "real" in exc_info.value.available
+
+    def test_get_provider_checked_no_env_requirements(self, tmp_path):
+        """get_provider_checked works for providers with no env requirements."""
+        tools_dir = tmp_path / "tools"
+        provider_dir = tools_dir / "fetch" / "providers" / "free"
+        provider_dir.mkdir(parents=True)
+        (provider_dir / "provider.py").write_text('''
+class FreeFetcher:
+    name = "free"
+    url_patterns = ["*"]
+    requires_env = []
+
+    def __init__(self):
+        self.free = True
+''')
+
+        registry = get_provider_registry()
+        registry.discover_from([(tools_dir, "test")])
+
+        provider = registry.get_provider_checked("fetch", "free")
+        assert provider.free is True
