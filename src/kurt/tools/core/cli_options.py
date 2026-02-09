@@ -93,6 +93,25 @@ fetch_engine_option = click.option(
     help="Filter by fetch engine used",
 )
 
+offset_option = click.option(
+    "--offset",
+    type=int,
+    help="Number of documents to skip (for pagination)",
+)
+
+sort_by_option = click.option(
+    "--sort-by",
+    type=click.Choice(["created_at", "source_url", "content_length"], case_sensitive=False),
+    help="Sort results by field (default: created_at)",
+)
+
+sort_order_option = click.option(
+    "--sort-order",
+    type=click.Choice(["asc", "desc"], case_sensitive=False),
+    default="asc",
+    help="Sort order (asc or desc, default: asc)",
+)
+
 # =============================================================================
 # Output Format Options
 # =============================================================================
@@ -167,6 +186,8 @@ def add_filter_options(
     source_type: bool = False,
     has_content: bool = False,
     min_content_length: bool = False,
+    offset: bool = False,
+    sort_by: bool = False,
 ):
     """
     Decorator to add standard filter options to a command.
@@ -179,6 +200,11 @@ def add_filter_options(
     """
 
     def decorator(f):
+        if sort_by:
+            f = sort_order_option(f)
+            f = sort_by_option(f)
+        if offset:
+            f = offset_option(f)
         if min_content_length:
             f = min_content_length_option(f)
         if has_content:
