@@ -376,7 +376,6 @@ class TestFetchApifyEngine:
     def test_fetch_apify_engine_option(self, cli_runner: CliRunner, tmp_project: Path):
         """Verify --engine apify is accepted and stores content."""
         from kurt.db import managed_session
-        from kurt.tools.fetch.core import FetchResult
         from kurt.tools.map.models import MapDocument, MapStatus
 
         with managed_session() as session:
@@ -390,16 +389,16 @@ class TestFetchApifyEngine:
             session.add(doc)
             session.commit()
 
-        # Mock apify fetcher
-        mock_result = FetchResult(
-            content="# Twitter Profile\n\nExample user profile content.",
-            metadata={"engine": "apify", "platform": "twitter"},
-            success=True,
-        )
-        with patch("kurt.tools.fetch.engines.apify.ApifyFetcher.fetch") as mock_fetch, \
-             patch("kurt.tools.fetch.engines.apify.ApifyClient"):
-            mock_fetch.return_value = mock_result
+        # Mock the apify engine in the _FETCH_ENGINES dictionary
+        async def mock_apify_fetch(*args, **kwargs):
+            return (
+                "# Twitter Profile\n\nExample user profile content.",
+                {"engine": "apify", "platform": "twitter"},
+            )
 
+        with patch.dict(
+            "kurt.tools.fetch.tool._FETCH_ENGINES", {"apify": mock_apify_fetch}
+        ):
             result = invoke_cli(
                 cli_runner,
                 fetch_cmd,
@@ -417,7 +416,6 @@ class TestFetchApifyEngine:
     def test_fetch_apify_with_platform(self, cli_runner: CliRunner, tmp_project: Path):
         """Verify --platform option works with apify engine."""
         from kurt.db import managed_session
-        from kurt.tools.fetch.core import FetchResult
         from kurt.tools.map.models import MapDocument, MapStatus
 
         with managed_session() as session:
@@ -431,15 +429,15 @@ class TestFetchApifyEngine:
             session.add(doc)
             session.commit()
 
-        mock_result = FetchResult(
-            content="# Twitter Content\n\nContent with platform option.",
-            metadata={"engine": "apify", "platform": "twitter"},
-            success=True,
-        )
-        with patch("kurt.tools.fetch.engines.apify.ApifyFetcher.fetch") as mock_fetch, \
-             patch("kurt.tools.fetch.engines.apify.ApifyClient"):
-            mock_fetch.return_value = mock_result
+        async def mock_apify_fetch(*args, **kwargs):
+            return (
+                "# Twitter Content\n\nContent with platform option.",
+                {"engine": "apify", "platform": "twitter"},
+            )
 
+        with patch.dict(
+            "kurt.tools.fetch.tool._FETCH_ENGINES", {"apify": mock_apify_fetch}
+        ):
             result = invoke_cli(
                 cli_runner,
                 fetch_cmd,
@@ -464,7 +462,6 @@ class TestFetchApifyEngine:
     def test_fetch_apify_with_actor(self, cli_runner: CliRunner, tmp_project: Path):
         """Verify --apify-actor option is accepted."""
         from kurt.db import managed_session
-        from kurt.tools.fetch.core import FetchResult
         from kurt.tools.map.models import MapDocument, MapStatus
 
         with managed_session() as session:
@@ -478,15 +475,15 @@ class TestFetchApifyEngine:
             session.add(doc)
             session.commit()
 
-        mock_result = FetchResult(
-            content="# Actor Content\n\nContent from custom actor.",
-            metadata={"engine": "apify"},
-            success=True,
-        )
-        with patch("kurt.tools.fetch.engines.apify.ApifyFetcher.fetch") as mock_fetch, \
-             patch("kurt.tools.fetch.engines.apify.ApifyClient"):
-            mock_fetch.return_value = mock_result
+        async def mock_apify_fetch(*args, **kwargs):
+            return (
+                "# Actor Content\n\nContent from custom actor.",
+                {"engine": "apify"},
+            )
 
+        with patch.dict(
+            "kurt.tools.fetch.tool._FETCH_ENGINES", {"apify": mock_apify_fetch}
+        ):
             result = invoke_cli(
                 cli_runner,
                 fetch_cmd,
@@ -513,7 +510,6 @@ class TestFetchApifyEngine:
     ):
         """Verify --content-type option works with apify engine."""
         from kurt.db import managed_session
-        from kurt.tools.fetch.core import FetchResult
         from kurt.tools.map.models import MapDocument, MapStatus
 
         with managed_session() as session:
@@ -527,15 +523,15 @@ class TestFetchApifyEngine:
             session.add(doc)
             session.commit()
 
-        mock_result = FetchResult(
-            content="# Profile Content\n\nProfile-type content.",
-            metadata={"engine": "apify", "content_type": "profile"},
-            success=True,
-        )
-        with patch("kurt.tools.fetch.engines.apify.ApifyFetcher.fetch") as mock_fetch, \
-             patch("kurt.tools.fetch.engines.apify.ApifyClient"):
-            mock_fetch.return_value = mock_result
+        async def mock_apify_fetch(*args, **kwargs):
+            return (
+                "# Profile Content\n\nProfile-type content.",
+                {"engine": "apify", "content_type": "profile"},
+            )
 
+        with patch.dict(
+            "kurt.tools.fetch.tool._FETCH_ENGINES", {"apify": mock_apify_fetch}
+        ):
             result = invoke_cli(
                 cli_runner,
                 fetch_cmd,
