@@ -18,7 +18,16 @@ from kurt.conftest import (
     assert_output_contains,
     invoke_cli,
 )
-from kurt.documents.cli import docs_group, list_cmd, get_cmd, delete_cmd
+from kurt.db import managed_session
+from kurt.documents.cli import delete_cmd, docs_group, get_cmd, list_cmd
+from kurt.testing.assertions import (
+    assert_fetch_document_count,
+    assert_fetch_document_exists,
+    assert_fetch_document_not_exists,
+    assert_map_document_count,
+    assert_map_document_exists,
+    assert_map_document_not_exists,
+)
 
 
 class TestDocsHelp:
