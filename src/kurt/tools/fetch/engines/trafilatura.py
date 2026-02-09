@@ -33,6 +33,9 @@ class TrafilaturaFetcher(BaseFetcher):
     url_patterns = ["*"]
     requires_env: list[str] = []
 
+    from kurt.tools.fetch.providers.trafilatura.config import TrafilaturaProviderConfig
+    ConfigModel = TrafilaturaProviderConfig
+
     def fetch(self, url: str) -> FetchResult:
         """Fetch and extract content using Trafilatura.
 

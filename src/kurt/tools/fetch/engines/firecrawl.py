@@ -54,6 +54,9 @@ class FirecrawlFetcher(BaseFetcher):
     url_patterns = ["*"]
     requires_env = ["FIRECRAWL_API_KEY"]
 
+    from kurt.tools.fetch.providers.firecrawl.config import FirecrawlProviderConfig
+    ConfigModel = FirecrawlProviderConfig
+
     def __init__(self, config: Optional[FetcherConfig] = None, api_key: Optional[str] = None):
         """Initialize Firecrawl fetcher.
 

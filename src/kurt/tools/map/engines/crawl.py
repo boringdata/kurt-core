@@ -244,6 +244,9 @@ class CrawlEngine(BaseMapper):
     url_patterns = ["*"]
     requires_env: list[str] = []
 
+    from kurt.tools.map.providers.crawl.config import CrawlProviderConfig
+    ConfigModel = CrawlProviderConfig
+
     def map(
         self,
         source: str,

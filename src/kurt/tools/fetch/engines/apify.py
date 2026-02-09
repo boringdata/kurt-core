@@ -66,6 +66,9 @@ class ApifyFetcher(BaseFetcher):
     ]
     requires_env = ["APIFY_API_KEY"]
 
+    from kurt.tools.fetch.providers.apify.config import ApifyFetchProviderConfig
+    ConfigModel = ApifyFetchProviderConfig
+
     def __init__(self, config: Optional[FetcherConfig] = None):
         """Initialize Apify fetcher.
 

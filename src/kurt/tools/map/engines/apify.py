@@ -72,6 +72,9 @@ class ApifyEngine(BaseMapper):
     ]
     requires_env = ["APIFY_API_KEY"]
 
+    from kurt.tools.map.providers.apify.config import ApifyMapProviderConfig
+    ConfigModel = ApifyMapProviderConfig
+
     def __init__(self, config: Optional[MapperConfig] = None):
         """Initialize Apify engine.
 

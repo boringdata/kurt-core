@@ -201,6 +201,9 @@ class RssEngine(BaseMapper):
     url_patterns = ["*/feed", "*/feed.xml", "*/rss", "*/rss.xml", "*.xml"]
     requires_env: list[str] = []
 
+    from kurt.tools.map.providers.rss.config import RssProviderConfig
+    ConfigModel = RssProviderConfig
+
     def map(
         self,
         source: str,

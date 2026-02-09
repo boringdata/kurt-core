@@ -185,6 +185,9 @@ class SitemapEngine(BaseMapper):
     url_patterns = ["*/sitemap.xml", "*/sitemap*.xml"]
     requires_env: list[str] = []
 
+    from kurt.tools.map.providers.sitemap.config import SitemapProviderConfig
+    ConfigModel = SitemapProviderConfig
+
     def map(
         self,
         source: str,

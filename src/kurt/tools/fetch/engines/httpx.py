@@ -40,6 +40,9 @@ class HttpxFetcher(BaseFetcher):
     url_patterns = ["*"]
     requires_env: list[str] = []
 
+    from kurt.tools.fetch.providers.httpx.config import HttpxProviderConfig
+    ConfigModel = HttpxProviderConfig
+
     def __init__(self, config: Optional[FetcherConfig] = None):
         """Initialize HTTPX fetcher.
 

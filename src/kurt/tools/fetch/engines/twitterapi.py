@@ -84,6 +84,9 @@ class TwitterApiFetcher(BaseFetcher):
     url_patterns = ["*twitter.com/*", "*x.com/*"]
     requires_env = ["TWITTERAPI_API_KEY"]
 
+    from kurt.tools.fetch.providers.twitterapi.config import TwitterApiProviderConfig
+    ConfigModel = TwitterApiProviderConfig
+
     BASE_URL = "https://api.twitterapi.io"
 
     def __init__(self, config: Optional[FetcherConfig] = None):

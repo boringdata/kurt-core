@@ -63,6 +63,9 @@ class TavilyFetcher(BaseFetcher):
     url_patterns = ["*"]
     requires_env = ["TAVILY_API_KEY"]
 
+    from kurt.tools.fetch.providers.tavily.config import TavilyProviderConfig
+    ConfigModel = TavilyProviderConfig
+
     def __init__(self, config: Optional[FetcherConfig] = None, api_key: Optional[str] = None):
         """Initialize Tavily fetcher.
 

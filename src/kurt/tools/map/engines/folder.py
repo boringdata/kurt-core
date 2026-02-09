@@ -36,6 +36,9 @@ class FolderEngine(BaseMapper):
     url_patterns: list[str] = []
     requires_env: list[str] = []
 
+    from kurt.tools.map.providers.folder.config import FolderProviderConfig
+    ConfigModel = FolderProviderConfig
+
     def __init__(self, config: Optional[FolderMapperConfig] = None):
         """Initialize folder mapper.
 
