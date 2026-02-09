@@ -68,6 +68,17 @@ class ProviderRegistry:
             self._discover_providers()
             self._discovered = True
 
+    def discover_from(self, dirs: list[tuple[Path, str]]) -> None:
+        """Discover providers from explicit directories (for testing).
+
+        Args:
+            dirs: List of (path, source_label) tuples to scan.
+        """
+        with self._lock:
+            for path, source in dirs:
+                self._scan_tools_dir(path, source=source)
+            self._discovered = True
+
     def _discover_providers(self) -> None:
         """Scan all provider locations in priority order."""
         # 1. Built-in tools (lowest priority)

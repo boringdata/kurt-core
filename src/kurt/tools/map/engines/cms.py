@@ -33,6 +33,11 @@ class CmsEngine(BaseMapper):
     Supports CMS platforms like Sanity, with content type and status filtering.
     """
 
+    name = "cms"
+    version = "1.0.0"
+    url_patterns: list[str] = []
+    requires_env: list[str] = []
+
     def __init__(self, config: Optional[CmsMapperConfig] = None):
         """Initialize CMS mapper.
 

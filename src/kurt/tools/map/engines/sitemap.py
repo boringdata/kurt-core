@@ -180,6 +180,11 @@ class SitemapEngine(BaseMapper):
         print(result.urls)
     """
 
+    name = "sitemap"
+    version = "1.0.0"
+    url_patterns = ["*/sitemap.xml", "*/sitemap*.xml"]
+    requires_env: list[str] = []
+
     def map(
         self,
         source: str,

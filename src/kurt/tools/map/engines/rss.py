@@ -196,6 +196,11 @@ class RssEngine(BaseMapper):
         print(result.urls)
     """
 
+    name = "rss"
+    version = "1.0.0"
+    url_patterns = ["*/feed", "*/feed.xml", "*/rss", "*/rss.xml", "*.xml"]
+    requires_env: list[str] = []
+
     def map(
         self,
         source: str,

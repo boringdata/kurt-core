@@ -35,6 +35,11 @@ class HttpxFetcher(BaseFetcher):
     the deprecated fetch_with_httpx() function.
     """
 
+    name = "httpx"
+    version = "1.0.0"
+    url_patterns = ["*"]
+    requires_env: list[str] = []
+
     def __init__(self, config: Optional[FetcherConfig] = None):
         """Initialize HTTPX fetcher.
 

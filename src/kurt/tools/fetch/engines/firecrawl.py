@@ -49,6 +49,11 @@ class FirecrawlFetcher(BaseFetcher):
     the deprecated fetch_with_firecrawl() function.
     """
 
+    name = "firecrawl"
+    version = "1.0.0"
+    url_patterns = ["*"]
+    requires_env = ["FIRECRAWL_API_KEY"]
+
     def __init__(self, config: Optional[FetcherConfig] = None, api_key: Optional[str] = None):
         """Initialize Firecrawl fetcher.
 

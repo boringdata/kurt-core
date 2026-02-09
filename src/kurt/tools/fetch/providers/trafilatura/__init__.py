@@ -1,0 +1,1 @@
+""" Trafilatura fetch provider."""

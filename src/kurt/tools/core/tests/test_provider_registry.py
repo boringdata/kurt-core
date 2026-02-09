@@ -4,6 +4,8 @@ Unit tests for ProviderRegistry and provider discovery.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from kurt.tools.core.errors import ProviderNotFoundError
@@ -234,10 +236,10 @@ class NormalFetcher:
         assert "hidden" not in names
         assert "internal" not in names
 
-    def test_discover_skips_invalid_providers(self, tmp_path, monkeypatch):
+    def test_discover_skips_invalid_providers(self, tmp_path):
         """Discovery skips files that fail to import or have no provider class."""
-        project_dir = tmp_path / "project"
-        providers_dir = project_dir / "kurt" / "tools" / "fetch" / "providers"
+        tools_dir = tmp_path / "tools"
+        providers_dir = tools_dir / "fetch" / "providers"
 
         # Provider with syntax error
         bad_dir = providers_dir / "bad"
@@ -252,19 +254,17 @@ class SomeFetcher:
     pass
 ''')
 
-        monkeypatch.setenv("KURT_PROJECT_ROOT", str(project_dir))
-
         registry = get_provider_registry()
-        registry.discover()  # Should not raise
+        registry.discover_from([(tools_dir, "test")])  # Should not raise
 
         providers = registry.list_providers("fetch")
         assert len(providers) == 0
 
-    def test_discover_is_idempotent(self, tmp_path, monkeypatch):
+    def test_discover_is_idempotent(self, tmp_path):
         """Calling discover() multiple times is safe."""
-        project_dir = tmp_path / "project"
+        tools_dir = tmp_path / "tools"
         self._create_provider(
-            project_dir / "kurt" / "tools" / "fetch" / "providers",
+            tools_dir / "fetch" / "providers",
             "test",
             '''
 class TestFetcher:
@@ -274,10 +274,9 @@ class TestFetcher:
 ''',
         )
 
-        monkeypatch.setenv("KURT_PROJECT_ROOT", str(project_dir))
-
         registry = get_provider_registry()
-        registry.discover()
+        registry.discover_from([(tools_dir, "test")])
+        # Second discover() is a no-op (idempotent flag set by discover_from)
         registry.discover()
         registry.discover()
 
@@ -360,10 +359,10 @@ class TestURLPatternMatching:
     """Test URL pattern matching for provider auto-selection."""
 
     @pytest.fixture
-    def registry_with_providers(self, tmp_path, monkeypatch):
-        """Set up registry with multiple providers with URL patterns."""
-        project_dir = tmp_path / "project"
-        providers_dir = project_dir / "kurt" / "tools" / "fetch" / "providers"
+    def registry_with_providers(self, tmp_path):
+        """Set up registry with only test providers (no built-ins)."""
+        tools_dir = tmp_path / "tools"
+        providers_dir = tools_dir / "fetch" / "providers"
 
         # Notion provider - specific patterns
         notion_dir = providers_dir / "notion"
@@ -395,10 +394,8 @@ class DefaultFetcher:
     requires_env = []
 ''')
 
-        monkeypatch.setenv("KURT_PROJECT_ROOT", str(project_dir))
-
         registry = get_provider_registry()
-        registry.discover()
+        registry.discover_from([(tools_dir, "test")])
         return registry
 
     def test_match_specific_pattern(self, registry_with_providers):
@@ -443,9 +440,13 @@ class DefaultFetcher:
         )
         assert matched is None
 
-    def test_match_no_providers(self):
+    def test_match_no_providers(self, tmp_path):
         """Returns None when tool has no providers."""
+        # Use empty dir to avoid built-in providers
+        tools_dir = tmp_path / "empty_tools"
+        tools_dir.mkdir()
         registry = get_provider_registry()
+        registry.discover_from([(tools_dir, "test")])
         matched = registry.match_provider("fetch", "https://example.com")
         assert matched is None
 
@@ -572,9 +573,13 @@ class TestMapper:
         assert "test" in tools["fetch"]
         assert "test" in tools["map"]
 
-    def test_empty_when_no_providers(self):
+    def test_empty_when_no_providers(self, tmp_path):
         """Returns empty dict when no providers found."""
+        # Use empty dir to avoid built-in providers
+        tools_dir = tmp_path / "empty_tools"
+        tools_dir.mkdir()
         registry = get_provider_registry()
+        registry.discover_from([(tools_dir, "test")])
         tools = registry.list_tools_with_providers()
         assert tools == {}
 
@@ -600,3 +605,150 @@ class TestProviderNotFoundError:
         error = ProviderNotFoundError("map", "custom")
         assert error.details["tool_name"] == "map"
         assert error.details["provider_name"] == "custom"
+
+
+# ============================================================================
+# Integration Tests: Real Built-in Provider Discovery
+# ============================================================================
+
+
+class TestBuiltinProviderDiscovery:
+    """Integration tests for discovering real built-in providers."""
+
+    def test_discovers_fetch_providers(self, monkeypatch):
+        """Discovers all built-in fetch providers."""
+        # Ensure no project/user dirs interfere
+        monkeypatch.setenv("KURT_PROJECT_ROOT", "/nonexistent")
+        monkeypatch.setenv("HOME", "/nonexistent")
+
+        registry = get_provider_registry()
+        registry.discover()
+
+        providers = registry.list_providers("fetch")
+        names = sorted(p["name"] for p in providers)
+        assert names == ["apify", "firecrawl", "httpx", "tavily", "trafilatura", "twitterapi"]
+
+    def test_discovers_map_providers(self, monkeypatch):
+        """Discovers all built-in map providers."""
+        monkeypatch.setenv("KURT_PROJECT_ROOT", "/nonexistent")
+        monkeypatch.setenv("HOME", "/nonexistent")
+
+        registry = get_provider_registry()
+        registry.discover()
+
+        providers = registry.list_providers("map")
+        names = sorted(p["name"] for p in providers)
+        assert names == ["apify", "cms", "crawl", "folder", "rss", "sitemap"]
+
+    def test_fetch_provider_metadata(self, monkeypatch):
+        """Built-in fetch providers have correct metadata."""
+        monkeypatch.setenv("KURT_PROJECT_ROOT", "/nonexistent")
+        monkeypatch.setenv("HOME", "/nonexistent")
+
+        registry = get_provider_registry()
+        registry.discover()
+
+        providers = {p["name"]: p for p in registry.list_providers("fetch")}
+
+        # trafilatura - free, wildcard, no env
+        assert providers["trafilatura"]["url_patterns"] == ["*"]
+        assert providers["trafilatura"]["requires_env"] == []
+        assert providers["trafilatura"]["_source"] == "builtin"
+
+        # tavily - requires API key
+        assert providers["tavily"]["requires_env"] == ["TAVILY_API_KEY"]
+
+        # firecrawl - requires API key
+        assert providers["firecrawl"]["requires_env"] == ["FIRECRAWL_API_KEY"]
+
+        # apify - social platform patterns
+        assert "*twitter.com/*" in providers["apify"]["url_patterns"]
+        assert "*linkedin.com/*" in providers["apify"]["url_patterns"]
+        assert providers["apify"]["requires_env"] == ["APIFY_API_KEY"]
+
+        # twitterapi - twitter-specific patterns
+        assert "*twitter.com/*" in providers["twitterapi"]["url_patterns"]
+        assert "*x.com/*" in providers["twitterapi"]["url_patterns"]
+        assert providers["twitterapi"]["requires_env"] == ["TWITTERAPI_API_KEY"]
+
+    def test_map_provider_metadata(self, monkeypatch):
+        """Built-in map providers have correct metadata."""
+        monkeypatch.setenv("KURT_PROJECT_ROOT", "/nonexistent")
+        monkeypatch.setenv("HOME", "/nonexistent")
+
+        registry = get_provider_registry()
+        registry.discover()
+
+        providers = {p["name"]: p for p in registry.list_providers("map")}
+
+        # sitemap - sitemap-specific patterns
+        assert "*/sitemap.xml" in providers["sitemap"]["url_patterns"]
+
+        # rss - feed-specific patterns
+        assert "*/feed" in providers["rss"]["url_patterns"]
+
+        # crawl - wildcard
+        assert providers["crawl"]["url_patterns"] == ["*"]
+
+        # folder - no URL patterns (local filesystem)
+        assert providers["folder"]["url_patterns"] == []
+
+        # cms - no URL patterns (CMS-specific)
+        assert providers["cms"]["url_patterns"] == []
+
+    def test_url_matching_twitter_prefers_specific(self, monkeypatch):
+        """URL matching finds providers for Twitter URLs."""
+        monkeypatch.setenv("KURT_PROJECT_ROOT", "/nonexistent")
+        monkeypatch.setenv("HOME", "/nonexistent")
+
+        registry = get_provider_registry()
+        registry.discover()
+
+        # Twitter URLs should match a social media provider (apify or twitterapi)
+        matched = registry.match_provider("fetch", "https://twitter.com/user")
+        assert matched in ("apify", "twitterapi")
+
+    def test_url_matching_generic_url_gets_wildcard(self, monkeypatch):
+        """Generic URLs fall back to wildcard providers."""
+        monkeypatch.setenv("KURT_PROJECT_ROOT", "/nonexistent")
+        monkeypatch.setenv("HOME", "/nonexistent")
+
+        registry = get_provider_registry()
+        registry.discover()
+
+        matched = registry.match_provider("fetch", "https://example.com/article")
+        # Should match a wildcard provider (trafilatura, httpx, firecrawl, or tavily)
+        assert matched is not None
+        assert matched in ("trafilatura", "httpx", "firecrawl", "tavily")
+
+    def test_list_tools_shows_fetch_and_map(self, monkeypatch):
+        """list_tools_with_providers includes fetch and map."""
+        monkeypatch.setenv("KURT_PROJECT_ROOT", "/nonexistent")
+        monkeypatch.setenv("HOME", "/nonexistent")
+
+        registry = get_provider_registry()
+        tools = registry.list_tools_with_providers()
+
+        assert "fetch" in tools
+        assert "map" in tools
+        assert len(tools["fetch"]) == 6
+        assert len(tools["map"]) == 6
+
+    def test_validate_builtin_provider_missing_env(self, monkeypatch):
+        """Validates env requirements for built-in providers."""
+        monkeypatch.setenv("KURT_PROJECT_ROOT", "/nonexistent")
+        monkeypatch.setenv("HOME", "/nonexistent")
+        monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+
+        registry = get_provider_registry()
+        missing = registry.validate_provider("fetch", "tavily")
+        assert "TAVILY_API_KEY" in missing
+
+    def test_validate_builtin_provider_no_requirements(self, monkeypatch):
+        """Providers with no env requirements pass validation."""
+        monkeypatch.setenv("KURT_PROJECT_ROOT", "/nonexistent")
+        monkeypatch.setenv("HOME", "/nonexistent")
+
+        registry = get_provider_registry()
+        missing = registry.validate_provider("fetch", "trafilatura")
+        assert missing == []

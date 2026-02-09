@@ -28,6 +28,11 @@ class TrafilaturaFetcher(BaseFetcher):
     the deprecated fetch_with_trafilatura() function.
     """
 
+    name = "trafilatura"
+    version = "1.0.0"
+    url_patterns = ["*"]
+    requires_env: list[str] = []
+
     def fetch(self, url: str) -> FetchResult:
         """Fetch and extract content using Trafilatura.
 

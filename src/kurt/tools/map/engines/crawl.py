@@ -239,6 +239,11 @@ class CrawlEngine(BaseMapper):
         print(result.urls)
     """
 
+    name = "crawl"
+    version = "1.0.0"
+    url_patterns = ["*"]
+    requires_env: list[str] = []
+
     def map(
         self,
         source: str,
