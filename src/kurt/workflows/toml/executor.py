@@ -25,8 +25,11 @@ from enum import IntEnum
 from pathlib import Path
 from typing import Any, Callable, Literal
 
+import warnings
+
 from kurt.observability.tracking import track_event
 from kurt.tools.core import ToolCanceledError, ToolContext, ToolError, ToolResult, execute_tool
+from kurt.tools.core.provider import get_provider_registry
 from kurt.workflows.toml.dag import build_dag
 from kurt.workflows.toml.interpolation import interpolate_step_config
 from kurt.workflows.toml.parser import StepDef, WorkflowDefinition, resolve_step_type
@@ -478,11 +481,16 @@ class WorkflowExecutor:
                     step_id, step_def, input_data, interpolated_config
                 )
             else:
+                # Resolve provider via ProviderRegistry
+                resolved_config = self._resolve_provider_for_step(
+                    tool_name, interpolated_config
+                )
+
                 # Build tool parameters
                 # Tools receive: input_data (from deps) + config
                 params = {
                     "input_data": input_data,
-                    **interpolated_config,
+                    **resolved_config,
                 }
 
                 # Execute tool with progress tracking
@@ -743,6 +751,78 @@ class WorkflowExecutor:
             input_data.extend(dep_output)
 
         return input_data
+
+    def _resolve_provider_for_step(
+        self, tool_name: str, config: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Resolve provider for a step using ProviderRegistry.
+
+        Resolution priority:
+        1. config.provider (new preferred way)
+        2. config.engine (deprecated, with warning)
+        3. URL pattern matching (from config.url or config.source)
+        4. Tool's default_provider
+
+        The resolved provider is injected as 'engine' in the config for
+        backwards compatibility with existing tool implementations.
+        """
+        config = dict(config)  # Don't mutate the original
+        explicit_provider = False
+
+        # 1. Explicit config.provider (highest priority)
+        provider_name = config.pop("provider", None)
+        if provider_name:
+            explicit_provider = True
+
+        # 2. Deprecated config.engine (with warning)
+        if not provider_name:
+            engine = config.get("engine")
+            if engine:
+                warnings.warn(
+                    f"'engine' is deprecated in workflow config, use 'provider' instead. "
+                    f"This will be removed in a future version.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+                provider_name = engine
+
+        # 3. URL pattern matching + 4. Tool's default_provider
+        if not provider_name:
+            registry = get_provider_registry()
+            url = config.get("url") or config.get("source") or config.get("urls", "")
+            if isinstance(url, list) and url:
+                url = url[0]  # Use first URL for pattern matching
+
+            # Get tool's default_provider
+            default_provider = None
+            from kurt.tools.core.registry import get_tool
+
+            try:
+                tool_class = get_tool(tool_name)
+                default_provider = getattr(tool_class, "default_provider", None)
+            except Exception:
+                pass
+
+            resolved = registry.resolve_provider(
+                tool_name,
+                url=url if isinstance(url, str) else None,
+                default_provider=default_provider,
+            )
+            if resolved:
+                provider_name = resolved
+                logger.debug(
+                    "Auto-resolved provider '%s' for tool '%s'",
+                    provider_name,
+                    tool_name,
+                )
+
+        # Inject resolved provider as 'engine' for backward compatibility
+        # Explicit provider always overrides; auto-resolved only fills if absent
+        if provider_name:
+            if explicit_provider or "engine" not in config:
+                config["engine"] = provider_name
+
+        return config
 
     async def _handle_cancellation(self, pending_level: list[str]) -> None:
         """Handle cancellation: cancel running tasks, skip pending steps."""

@@ -1267,3 +1267,196 @@ class TestExecuteWorkflowComplex:
         expected_order = ["map"] * 10  # All use "map" tool type
         assert call_order == expected_order
         assert len(result.step_results) == 10
+
+
+# ============================================================================
+# Provider Resolution Tests
+# ============================================================================
+
+
+class TestResolveProviderForStep:
+    """Tests for _resolve_provider_for_step method."""
+
+    def _make_executor(self) -> WorkflowExecutor:
+        """Create a minimal WorkflowExecutor for unit testing."""
+        workflow = make_workflow(steps={"step1": make_step("fetch")})
+        return WorkflowExecutor(workflow, {})
+
+    def test_explicit_provider_takes_priority(self):
+        """config.provider is used as the provider (highest priority)."""
+        executor = self._make_executor()
+        config = {"provider": "tavily", "url": "https://example.com"}
+
+        with patch("kurt.workflows.toml.executor.get_provider_registry"):
+            result = executor._resolve_provider_for_step("fetch", config)
+
+        assert result["engine"] == "tavily"
+        # 'provider' key should be removed (consumed)
+        assert "provider" not in result
+
+    def test_engine_used_with_deprecation_warning(self):
+        """config.engine works but emits a DeprecationWarning."""
+        executor = self._make_executor()
+        config = {"engine": "firecrawl", "url": "https://example.com"}
+
+        import warnings as _w
+
+        with _w.catch_warnings(record=True) as caught:
+            _w.simplefilter("always")
+            result = executor._resolve_provider_for_step("fetch", config)
+
+        assert result["engine"] == "firecrawl"
+        deprecation_warnings = [w for w in caught if issubclass(w.category, DeprecationWarning)]
+        assert len(deprecation_warnings) == 1
+        assert "deprecated" in str(deprecation_warnings[0].message).lower()
+
+    def test_provider_overrides_engine(self):
+        """config.provider takes priority over config.engine."""
+        executor = self._make_executor()
+        config = {"provider": "tavily", "engine": "httpx"}
+
+        import warnings as _w
+
+        with _w.catch_warnings(record=True) as caught:
+            _w.simplefilter("always")
+            with patch("kurt.workflows.toml.executor.get_provider_registry"):
+                result = executor._resolve_provider_for_step("fetch", config)
+
+        assert result["engine"] == "tavily"
+        # No deprecation warning since provider was used
+        deprecation_warnings = [w for w in caught if issubclass(w.category, DeprecationWarning)]
+        assert len(deprecation_warnings) == 0
+
+    def test_url_pattern_matching_resolves_provider(self):
+        """URL pattern matching auto-selects provider when no explicit config."""
+        executor = self._make_executor()
+        config = {"url": "https://x.com/user/status/123"}
+
+        mock_registry = type("MockRegistry", (), {
+            "resolve_provider": lambda self, tool, url=None, default_provider=None: "twitterapi",
+        })()
+
+        with (
+            patch("kurt.workflows.toml.executor.get_provider_registry", return_value=mock_registry),
+            patch("kurt.tools.core.registry.get_tool", side_effect=Exception("no tool")),
+        ):
+            result = executor._resolve_provider_for_step("fetch", config)
+
+        assert result["engine"] == "twitterapi"
+
+    def test_default_provider_fallback(self):
+        """Tool's default_provider used when no URL match."""
+        executor = self._make_executor()
+        config = {"url": "https://example.com"}
+
+        mock_registry = type("MockRegistry", (), {
+            "resolve_provider": lambda self, tool, url=None, default_provider=None: default_provider,
+        })()
+
+        mock_tool_class = type("MockTool", (), {"default_provider": "trafilatura"})
+
+        with (
+            patch("kurt.workflows.toml.executor.get_provider_registry", return_value=mock_registry),
+            patch("kurt.tools.core.registry.get_tool", return_value=mock_tool_class),
+        ):
+            result = executor._resolve_provider_for_step("fetch", config)
+
+        assert result["engine"] == "trafilatura"
+
+    def test_no_provider_resolved_leaves_config_unchanged(self):
+        """When no provider is resolved, config is returned without engine."""
+        executor = self._make_executor()
+        config = {"url": "https://example.com", "max_pages": 10}
+
+        mock_registry = type("MockRegistry", (), {
+            "resolve_provider": lambda self, tool, url=None, default_provider=None: None,
+        })()
+
+        with (
+            patch("kurt.workflows.toml.executor.get_provider_registry", return_value=mock_registry),
+            patch("kurt.tools.core.registry.get_tool", side_effect=Exception("no tool")),
+        ):
+            result = executor._resolve_provider_for_step("fetch", config)
+
+        assert "engine" not in result
+        assert result["url"] == "https://example.com"
+        assert result["max_pages"] == 10
+
+    def test_does_not_mutate_original_config(self):
+        """Original config dict is not mutated."""
+        executor = self._make_executor()
+        original = {"provider": "tavily", "url": "https://example.com"}
+        config = original.copy()
+
+        with patch("kurt.workflows.toml.executor.get_provider_registry"):
+            executor._resolve_provider_for_step("fetch", config)
+
+        # Original should be unchanged
+        assert config == original
+
+    def test_existing_engine_not_overwritten(self):
+        """If engine already exists and provider resolves, engine is not overwritten."""
+        executor = self._make_executor()
+        config = {"url": "https://example.com", "engine": "httpx"}
+
+        mock_registry = type("MockRegistry", (), {
+            "resolve_provider": lambda self, tool, url=None, default_provider=None: "tavily",
+        })()
+
+        with (
+            patch("kurt.workflows.toml.executor.get_provider_registry", return_value=mock_registry),
+            patch("kurt.tools.core.registry.get_tool", side_effect=Exception("no tool")),
+        ):
+            import warnings as _w
+
+            with _w.catch_warnings(record=True):
+                _w.simplefilter("always")
+                result = executor._resolve_provider_for_step("fetch", config)
+
+        # engine was already set to "httpx" via deprecated path, so it stays
+        assert result["engine"] == "httpx"
+
+    def test_list_urls_uses_first_for_matching(self):
+        """When config.urls is a list, first URL is used for pattern matching."""
+        executor = self._make_executor()
+        config = {"urls": ["https://x.com/status/1", "https://example.com"]}
+
+        captured_url = {}
+
+        class MockRegistry:
+            def resolve_provider(self, tool, url=None, default_provider=None):
+                captured_url["url"] = url
+                return "twitterapi"
+
+        with (
+            patch("kurt.workflows.toml.executor.get_provider_registry", return_value=MockRegistry()),
+            patch("kurt.tools.core.registry.get_tool", side_effect=Exception("no tool")),
+        ):
+            result = executor._resolve_provider_for_step("fetch", config)
+
+        assert captured_url["url"] == "https://x.com/status/1"
+        assert result["engine"] == "twitterapi"
+
+    @pytest.mark.asyncio
+    async def test_provider_resolution_in_workflow_execution(self):
+        """Provider resolution integrates correctly with full workflow execution."""
+        workflow = make_workflow(
+            steps={"step1": make_step("fetch", config={"provider": "tavily"})}
+        )
+
+        captured_params = {}
+
+        async def mock_execute(name, params, ctx=None, on_progress=None):
+            captured_params[name] = params.copy()
+            return make_tool_result(success=True, data=[{"content": "test"}])
+
+        with patch(
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
+        ):
+            result = await execute_workflow(workflow, {})
+
+        assert result.status == "completed"
+        # Provider should be injected as engine
+        assert captured_params["fetch"]["engine"] == "tavily"
+        # provider key should be consumed (not passed to tool)
+        assert "provider" not in captured_params["fetch"]
