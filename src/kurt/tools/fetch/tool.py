@@ -705,6 +705,7 @@ class FetchTool(Tool[FetchParams, FetchOutput]):
 
     name = "fetch"
     description = "Fetch content from URLs with configurable engines and retry"
+    default_provider = "trafilatura"
     InputModel = FetchParams
     OutputModel = FetchOutput
 

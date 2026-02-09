@@ -807,6 +807,7 @@ class MapTool(Tool[MapInput, MapOutput]):
 
     name = "map"
     description = "Discover content sources from URLs, files, or CMS"
+    default_provider = "sitemap"
     InputModel = MapInput
     OutputModel = MapOutput
 

@@ -326,6 +326,53 @@ class ProviderRegistry:
             ],
         }
 
+    def resolve_provider(
+        self,
+        tool_name: str,
+        provider_name: str | None = None,
+        url: str | None = None,
+        default_provider: str | None = None,
+    ) -> str | None:
+        """Resolve a provider using the fallback chain.
+
+        Resolution order:
+        1. Explicit provider_name if given
+        2. URL pattern matching if url is given
+        3. default_provider (from Tool class or caller)
+        4. None if nothing matches
+
+        Args:
+            tool_name: Tool name (e.g., "fetch", "map")
+            provider_name: Explicit provider name (highest priority)
+            url: URL for pattern matching
+            default_provider: Fallback provider name
+
+        Returns:
+            Resolved provider name, or None.
+        """
+        self.discover()
+
+        # 1. Explicit name
+        if provider_name:
+            providers = self._providers.get(tool_name, {})
+            if provider_name in providers:
+                return provider_name
+            return None
+
+        # 2. URL matching
+        if url:
+            matched = self.match_provider(tool_name, url)
+            if matched:
+                return matched
+
+        # 3. Default provider fallback
+        if default_provider:
+            providers = self._providers.get(tool_name, {})
+            if default_provider in providers:
+                return default_provider
+
+        return None
+
     def match_provider(self, tool_name: str, url: str) -> str | None:
         """Find a provider matching a URL pattern.
 

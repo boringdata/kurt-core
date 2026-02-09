@@ -1264,3 +1264,121 @@ class CustomFetcher:
 
         assert registry._tool_sources == {}
         assert registry._provider_sources == {}
+
+
+# ============================================================================
+# Resolve Provider and Default Provider Tests (Phase 3)
+# ============================================================================
+
+
+class TestResolveProvider:
+    """Test resolve_provider fallback chain and default_provider."""
+
+    def _create_provider(self, providers_dir, name, class_content):
+        """Helper to create a provider directory with provider.py."""
+        provider_dir = providers_dir / name
+        provider_dir.mkdir(parents=True, exist_ok=True)
+        (provider_dir / "provider.py").write_text(class_content)
+        (provider_dir / "__init__.py").write_text("")
+        return provider_dir
+
+    @pytest.fixture
+    def registry_with_fetch(self, tmp_path):
+        """Set up registry with fetch providers."""
+        tools_dir = tmp_path / "tools"
+        providers_dir = tools_dir / "fetch" / "providers"
+
+        self._create_provider(
+            providers_dir,
+            "trafilatura",
+            '''
+class TrafilaturaFetcher:
+    name = "trafilatura"
+    url_patterns = ["*"]
+    requires_env = []
+''',
+        )
+
+        self._create_provider(
+            providers_dir,
+            "notion",
+            '''
+class NotionFetcher:
+    name = "notion"
+    url_patterns = ["notion.so/*", "*.notion.site/*"]
+    requires_env = ["NOTION_TOKEN"]
+''',
+        )
+
+        registry = get_provider_registry()
+        registry.discover_from([(tools_dir, "test")])
+        return registry
+
+    def test_resolve_explicit_name(self, registry_with_fetch):
+        """Explicit provider_name takes highest priority."""
+        result = registry_with_fetch.resolve_provider(
+            "fetch",
+            provider_name="trafilatura",
+            url="https://notion.so/page",
+            default_provider="notion",
+        )
+        assert result == "trafilatura"
+
+    def test_resolve_url_matching(self, registry_with_fetch):
+        """URL matching is used when no explicit name."""
+        result = registry_with_fetch.resolve_provider(
+            "fetch",
+            url="https://notion.so/my-page",
+        )
+        assert result == "notion"
+
+    def test_resolve_default_provider_fallback(self, registry_with_fetch):
+        """default_provider is used when URL doesn't match specific patterns."""
+        result = registry_with_fetch.resolve_provider(
+            "fetch",
+            url=None,
+            default_provider="trafilatura",
+        )
+        assert result == "trafilatura"
+
+    def test_resolve_none_when_no_match(self, registry_with_fetch):
+        """Returns None when nothing matches."""
+        result = registry_with_fetch.resolve_provider(
+            "nonexistent-tool",
+            provider_name="fake",
+        )
+        assert result is None
+
+    def test_resolve_explicit_name_not_found(self, registry_with_fetch):
+        """Returns None when explicit name doesn't exist."""
+        result = registry_with_fetch.resolve_provider(
+            "fetch",
+            provider_name="nonexistent",
+        )
+        assert result is None
+
+    def test_resolve_default_not_found(self, registry_with_fetch):
+        """Returns None when default_provider doesn't exist."""
+        result = registry_with_fetch.resolve_provider(
+            "fetch",
+            default_provider="nonexistent-default",
+        )
+        assert result is None
+
+    def test_fetch_tool_has_default_provider(self):
+        """FetchTool sets default_provider to 'trafilatura'."""
+        from kurt.tools.fetch.tool import FetchTool
+
+        assert FetchTool.default_provider == "trafilatura"
+
+    def test_map_tool_has_default_provider(self):
+        """MapTool sets default_provider to 'sitemap'."""
+        from kurt.tools.map.tool import MapTool
+
+        assert MapTool.default_provider == "sitemap"
+
+    def test_tool_base_default_provider_is_none(self):
+        """Tool base class default_provider is None."""
+        from kurt.tools.core.base import Tool
+
+        assert Tool.default_provider is None
