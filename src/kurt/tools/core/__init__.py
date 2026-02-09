@@ -69,6 +69,9 @@ from .context import (
 
 # Error types
 from .errors import (
+    ProviderNotFoundError,
+    ProviderRequirementsError,
+    ProviderValidationError,
     ToolCanceledError,
     ToolConfigError,
     ToolError,
@@ -76,6 +79,12 @@ from .errors import (
     ToolInputError,
     ToolNotFoundError,
     ToolTimeoutError,
+)
+
+# Provider registry
+from .provider import (
+    ProviderRegistry,
+    get_provider_registry,
 )
 
 # Step hooks (moved from kurt.core.hooks)
@@ -131,6 +140,12 @@ __all__ = [
     "ToolExecutionError",
     "ToolTimeoutError",
     "ToolCanceledError",
+    "ProviderNotFoundError",
+    "ProviderRequirementsError",
+    "ProviderValidationError",
+    # Provider registry
+    "ProviderRegistry",
+    "get_provider_registry",
     # Registry
     "TOOLS",
     "register_tool",

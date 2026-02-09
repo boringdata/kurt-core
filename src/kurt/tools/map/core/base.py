@@ -33,7 +33,22 @@ class BaseMapper(ABC):
     """Base class for content mappers.
 
     Mappers discover and enumerate URLs/content from a source.
+
+    Subclasses should set the class-level metadata attributes for
+    provider discovery and validation:
+
+        class MyMapper(BaseMapper):
+            name = "my-mapper"
+            version = "1.0.0"
+            url_patterns = ["*/sitemap.xml"]
+            requires_env = []
     """
+
+    # Provider metadata for discovery and validation
+    name: str = ""
+    version: str = "1.0.0"
+    url_patterns: list[str] = []
+    requires_env: list[str] = []
 
     def __init__(
         self,
@@ -45,6 +60,16 @@ class BaseMapper(ABC):
             config: Mapper configuration
         """
         self.config = config or MapperConfig()
+
+    def validate_requirements(self) -> list[str]:
+        """Check if all required environment variables are set.
+
+        Returns:
+            List of missing environment variable names. Empty if all present.
+        """
+        import os
+
+        return [var for var in self.requires_env if not os.environ.get(var)]
 
     @abstractmethod
     def map(
