@@ -480,16 +480,14 @@ OpenClaw (Claude Code's extensibility system) uses a multi-level config approach
 
 ### Are We Pluggable?
 
-**Yes.** Kurt integrates with OpenClaw at two levels:
+**Yes.** Kurt integrates with OpenClaw via the skill wrapper:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                         PLUGGABILITY                                         │
 └─────────────────────────────────────────────────────────────────────────────┘
 
-LEVEL 1: Skill Settings (OpenClaw → Kurt)
-─────────────────────────────────────────
-OpenClaw passes settings to Kurt via skill wrapper:
+OpenClaw passes settings to Kurt via skill wrapper (CLI args):
 
     ~/.claude/settings.json          skill.py              Kurt CLI
     ┌──────────────────────┐         ┌─────────────┐       ┌─────────────┐
@@ -503,88 +501,46 @@ OpenClaw passes settings to Kurt via skill wrapper:
     │ }                    │         │             │       │             │
     └──────────────────────┘         └─────────────┘       └─────────────┘
 
-
-LEVEL 2: Config Files (Kurt reads both)
-─────────────────────────────────────────
-Kurt can optionally read OpenClaw settings as fallback:
-
-    Resolution order:
-    1. CLI args (--engine notion)
-    2. kurt.toml ([tool.fetch] default_provider)
-    3. ~/.kurt/config.toml (user defaults)
-    4. ~/.claude/settings.json skills.kurt.* (OpenClaw fallback)  ← NEW
-    5. Provider defaults
+Kurt resolution order (no OpenClaw coupling):
+1. CLI args (--engine notion)        ← OpenClaw settings arrive here
+2. URL pattern match
+3. kurt.toml project config
+4. ~/.kurt/config.toml user config
+5. Provider defaults
 ```
 
-### Integration Code
+**Key insight:** Kurt doesn't read OpenClaw config directly. The skill wrapper translates OpenClaw settings → CLI args. This keeps Kurt decoupled and testable.
+
+### Skill Wrapper Handles Translation
 
 ```python
-# src/kurt/config/openclaw.py
+# skill.py (OpenClaw skill wrapper)
 
-from pathlib import Path
-import json
-
-
-def get_openclaw_settings() -> dict:
-    """Load Kurt settings from OpenClaw if available."""
+def get_skill_settings() -> dict:
+    """Load OpenClaw settings for Kurt skill."""
     settings_path = Path.home() / ".claude" / "settings.json"
-
-    if not settings_path.exists():
-        return {}
-
-    try:
+    if settings_path.exists():
         settings = json.loads(settings_path.read_text())
         return settings.get("skills", {}).get("kurt", {})
-    except (json.JSONDecodeError, KeyError):
-        return {}
+    return {}
 
 
-def get_openclaw_provider_preference(tool_name: str) -> str | None:
-    """Get preferred provider from OpenClaw settings."""
-    settings = get_openclaw_settings()
-    providers = settings.get("preferred_providers", {})
-    return providers.get(tool_name)
-```
+def run_kurt(args: list[str]) -> dict:
+    """Execute Kurt with OpenClaw settings as CLI args."""
+    settings = get_skill_settings()
 
-### Using OpenClaw Settings in Kurt
+    # Translate settings to CLI args
+    if "--engine" not in args:
+        action = args[0] if args else "fetch"
+        provider = settings.get("preferred_providers", {}).get(action)
+        if provider:
+            args.extend(["--engine", provider])
 
-```python
-# src/kurt/tools/core/provider.py
+    if "--timeout" not in args and settings.get("timeout"):
+        args.extend(["--timeout", str(settings["timeout"])])
 
-from kurt.config.openclaw import get_openclaw_provider_preference
-
-
-class ProviderRegistry:
-    def resolve_provider(self, tool_name: str, url: str, explicit: str | None) -> str:
-        """Resolve provider with OpenClaw integration."""
-
-        # 1. Explicit CLI argument
-        if explicit:
-            return explicit
-
-        # 2. URL pattern match
-        matched = self.match_provider(tool_name, url)
-        if matched:
-            return matched
-
-        # 3. Project config (kurt.toml)
-        project_default = self._get_project_default(tool_name)
-        if project_default:
-            return project_default
-
-        # 4. User config (~/.kurt/config.toml)
-        user_default = self._get_user_default(tool_name)
-        if user_default:
-            return user_default
-
-        # 5. OpenClaw settings (NEW)
-        openclaw_pref = get_openclaw_provider_preference(tool_name)
-        if openclaw_pref:
-            return openclaw_pref
-
-        # 6. Tool's default provider
-        tool = get_tool(tool_name)
-        return getattr(tool, "default_provider", None)
+    # Kurt receives clean CLI args — no OpenClaw awareness needed
+    return subprocess.run(["kurt"] + args + ["--output", "json"], ...)
 ```
 
 ### Alignment with Kurt
