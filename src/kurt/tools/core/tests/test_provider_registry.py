@@ -969,3 +969,298 @@ class FreeFetcher:
 
         provider = registry.get_provider_checked("fetch", "free")
         assert provider.free is True
+
+
+# ============================================================================
+# Multi-Location Discovery Tests (Phase 3)
+# ============================================================================
+
+
+class TestMultiLocationDiscovery:
+    """Test multi-location tool discovery with precedence."""
+
+    def _create_provider(self, providers_dir, name, class_content):
+        """Helper to create a provider directory with provider.py."""
+        provider_dir = providers_dir / name
+        provider_dir.mkdir(parents=True, exist_ok=True)
+        (provider_dir / "provider.py").write_text(class_content)
+        (provider_dir / "__init__.py").write_text("")
+        return provider_dir
+
+    def test_first_occurrence_wins(self, tmp_path, monkeypatch):
+        """First occurrence wins: project provider is kept, user is skipped."""
+        user_home = tmp_path / "home"
+        project_dir = tmp_path / "project"
+
+        # Project provider (highest priority) - scanned first
+        self._create_provider(
+            project_dir / "kurt" / "tools" / "fetch" / "providers",
+            "shared",
+            '''
+class SharedFetcher:
+    name = "shared"
+    version = "1.0.0"
+    url_patterns = ["project/*"]
+    requires_env = []
+''',
+        )
+
+        # User provider (lower priority) - same name, scanned second
+        self._create_provider(
+            user_home / ".kurt" / "tools" / "fetch" / "providers",
+            "shared",
+            '''
+class SharedFetcher:
+    name = "shared"
+    version = "2.0.0"
+    url_patterns = ["user/*"]
+    requires_env = []
+''',
+        )
+
+        monkeypatch.setenv("HOME", str(user_home))
+        monkeypatch.setenv("KURT_PROJECT_ROOT", str(project_dir))
+
+        registry = get_provider_registry()
+        registry.discover()
+
+        providers = registry.list_providers("fetch")
+        shared = next(p for p in providers if p["name"] == "shared")
+
+        # Project version wins (first occurrence)
+        assert shared["version"] == "1.0.0"
+        assert shared["_source"] == "project"
+        assert "project/*" in shared["url_patterns"]
+
+    def test_project_provider_extends_builtin_tool(self, tmp_path, monkeypatch):
+        """Project providers can extend builtin tools without tool.py."""
+        project_dir = tmp_path / "project"
+
+        # Create a project provider for the builtin "fetch" tool
+        self._create_provider(
+            project_dir / "kurt" / "tools" / "fetch" / "providers",
+            "my-api",
+            '''
+class MyApiFetcher:
+    """Custom API fetcher for our internal service."""
+    name = "my-api"
+    version = "1.0.0"
+    url_patterns = ["api.internal.com/*"]
+    requires_env = ["INTERNAL_API_KEY"]
+''',
+        )
+
+        monkeypatch.setenv("KURT_PROJECT_ROOT", str(project_dir))
+        monkeypatch.setenv("HOME", "/nonexistent")
+
+        registry = get_provider_registry()
+        registry.discover()
+
+        # Should find both builtin and project providers for "fetch"
+        providers = registry.list_providers("fetch")
+        names = [p["name"] for p in providers]
+        assert "my-api" in names
+        # Builtin providers should still be present
+        assert "trafilatura" in names
+
+    def test_tool_source_tracking(self, tmp_path, monkeypatch):
+        """Tool sources are tracked for debugging."""
+        project_dir = tmp_path / "project"
+
+        # Create a project-only tool
+        self._create_provider(
+            project_dir / "kurt" / "tools" / "custom-tool" / "providers",
+            "default",
+            '''
+class DefaultCustom:
+    name = "default"
+    url_patterns = []
+    requires_env = []
+''',
+        )
+
+        monkeypatch.setenv("KURT_PROJECT_ROOT", str(project_dir))
+        monkeypatch.setenv("HOME", "/nonexistent")
+
+        registry = get_provider_registry()
+        registry.discover()
+
+        # custom-tool should be tracked as project source
+        info = registry.get_tool_info("custom-tool")
+        assert info["name"] == "custom-tool"
+        assert info["source"] == "project"
+        assert len(info["providers"]) == 1
+        assert info["providers"][0]["name"] == "default"
+        assert info["providers"][0]["source"] == "project"
+
+    def test_builtin_tool_source_tracking(self, monkeypatch):
+        """Builtin tools are tracked with 'builtin' source."""
+        monkeypatch.setenv("KURT_PROJECT_ROOT", "/nonexistent")
+        monkeypatch.setenv("HOME", "/nonexistent")
+
+        registry = get_provider_registry()
+        registry.discover()
+
+        info = registry.get_tool_info("fetch")
+        assert info["name"] == "fetch"
+        assert info["source"] == "builtin"
+        assert len(info["providers"]) > 0
+
+    def test_get_tool_info_unknown_tool(self):
+        """get_tool_info returns empty dict for unknown tool."""
+        registry = get_provider_registry()
+        info = registry.get_tool_info("nonexistent")
+        assert info == {}
+
+    def test_find_project_root_env_var(self, tmp_path, monkeypatch):
+        """_find_project_root uses KURT_PROJECT_ROOT env var."""
+        project_dir = tmp_path / "my-project"
+        project_dir.mkdir()
+
+        monkeypatch.setenv("KURT_PROJECT_ROOT", str(project_dir))
+
+        registry = get_provider_registry()
+        root = registry._find_project_root()
+        assert root == project_dir
+
+    def test_find_project_root_env_var_nonexistent(self, tmp_path, monkeypatch):
+        """_find_project_root returns None for nonexistent KURT_PROJECT_ROOT."""
+        monkeypatch.setenv("KURT_PROJECT_ROOT", str(tmp_path / "does-not-exist"))
+
+        registry = get_provider_registry()
+        root = registry._find_project_root()
+        assert root is None
+
+    def test_find_project_root_kurt_toml(self, tmp_path, monkeypatch):
+        """_find_project_root finds kurt.toml marker."""
+        monkeypatch.delenv("KURT_PROJECT_ROOT", raising=False)
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / "kurt.toml").write_text("[project]\nname = 'test'\n")
+
+        subdir = project_dir / "deep" / "nested"
+        subdir.mkdir(parents=True)
+        monkeypatch.chdir(subdir)
+
+        registry = get_provider_registry()
+        root = registry._find_project_root()
+        assert root == project_dir
+
+    def test_find_project_root_git(self, tmp_path, monkeypatch):
+        """_find_project_root finds .git marker."""
+        monkeypatch.delenv("KURT_PROJECT_ROOT", raising=False)
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / ".git").mkdir()
+
+        monkeypatch.chdir(project_dir)
+
+        registry = get_provider_registry()
+        root = registry._find_project_root()
+        assert root == project_dir
+
+    def test_skips_template_directory(self, tmp_path, monkeypatch):
+        """Discovery skips the 'templates' directory."""
+        project_dir = tmp_path / "project"
+
+        # Create a templates dir that should be skipped
+        templates_providers = (
+            project_dir / "kurt" / "tools" / "templates" / "providers" / "fake"
+        )
+        templates_providers.mkdir(parents=True)
+        (templates_providers / "provider.py").write_text('''
+class FakeProvider:
+    name = "fake"
+    url_patterns = []
+    requires_env = []
+''')
+
+        monkeypatch.setenv("KURT_PROJECT_ROOT", str(project_dir))
+        monkeypatch.setenv("HOME", "/nonexistent")
+
+        registry = get_provider_registry()
+        registry.discover()
+
+        info = registry.get_tool_info("templates")
+        assert info == {}
+
+    def test_user_provider_extends_builtin_tool(self, tmp_path, monkeypatch):
+        """User providers can extend builtin tools."""
+        user_home = tmp_path / "home"
+
+        self._create_provider(
+            user_home / ".kurt" / "tools" / "fetch" / "providers",
+            "my-fetcher",
+            '''
+class MyFetcher:
+    name = "my-fetcher"
+    version = "1.0.0"
+    url_patterns = []
+    requires_env = []
+''',
+        )
+
+        monkeypatch.setenv("KURT_PROJECT_ROOT", "/nonexistent")
+        monkeypatch.setenv("HOME", str(user_home))
+
+        registry = get_provider_registry()
+        registry.discover()
+
+        providers = registry.list_providers("fetch")
+        names = [p["name"] for p in providers]
+        assert "my-fetcher" in names
+        assert "trafilatura" in names  # builtin still there
+
+        # Check source
+        my_fetcher = next(p for p in providers if p["name"] == "my-fetcher")
+        assert my_fetcher["_source"] == "user"
+
+    def test_provider_sources_tracked(self, tmp_path, monkeypatch):
+        """Provider sources are tracked separately from tool sources."""
+        user_home = tmp_path / "home"
+        project_dir = tmp_path / "project"
+
+        # Project adds a new provider to builtin "fetch" tool
+        self._create_provider(
+            project_dir / "kurt" / "tools" / "fetch" / "providers",
+            "custom",
+            '''
+class CustomFetcher:
+    name = "custom"
+    url_patterns = []
+    requires_env = []
+''',
+        )
+
+        monkeypatch.setenv("KURT_PROJECT_ROOT", str(project_dir))
+        monkeypatch.setenv("HOME", str(user_home))
+
+        registry = get_provider_registry()
+        registry.discover()
+
+        info = registry.get_tool_info("fetch")
+        # fetch tool itself is from project (scanned first)
+        assert info["source"] == "project"
+
+        # custom provider is from project
+        custom = next(p for p in info["providers"] if p["name"] == "custom")
+        assert custom["source"] == "project"
+
+        # builtin providers are from builtin
+        trafilatura = next(
+            p for p in info["providers"] if p["name"] == "trafilatura"
+        )
+        assert trafilatura["source"] == "builtin"
+
+    def test_reset_clears_source_tracking(self):
+        """reset() clears tool and provider source tracking."""
+        registry = get_provider_registry()
+        registry._tool_sources["test"] = "project"
+        registry._provider_sources["test"] = {"p1": "project"}
+
+        registry.reset()
+
+        assert registry._tool_sources == {}
+        assert registry._provider_sources == {}

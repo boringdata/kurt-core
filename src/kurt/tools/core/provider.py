@@ -5,14 +5,18 @@ Provides:
 - ProviderRegistry: Singleton registry for tool providers
 - get_provider_registry(): Access the singleton instance
 
-Providers are discovered from three locations (later overrides earlier):
-1. Built-in: src/kurt/tools/{tool}/providers/
-2. User global: ~/.kurt/tools/{tool}/providers/
-3. Project local: <project>/kurt/tools/{tool}/providers/
+Providers are discovered from three locations (first occurrence wins):
+1. Project local: <project>/kurt/tools/{tool}/providers/  (highest priority)
+2. User global: ~/.kurt/tools/{tool}/providers/            (medium priority)
+3. Built-in: src/kurt/tools/{tool}/providers/              (lowest priority)
 
 Each provider is a Python class in a `provider.py` file within a named
 subdirectory under `providers/`. Provider classes must have a `name`
 attribute and optionally `version`, `url_patterns`, and `requires_env`.
+
+Project providers can extend builtin tools by adding providers without
+needing a tool.py. Tool classes can also be discovered from user/project
+locations via `tool.py` or `__init__.py` in the tool directory.
 """
 
 from __future__ import annotations
@@ -49,6 +53,8 @@ class ProviderRegistry:
                 inst = super().__new__(cls)
                 inst._providers: dict[str, dict[str, type]] = {}
                 inst._provider_meta: dict[str, dict[str, dict[str, Any]]] = {}
+                inst._tool_sources: dict[str, str] = {}  # tool_name -> source
+                inst._provider_sources: dict[str, dict[str, str]] = {}  # tool -> {provider -> source}
                 inst._discovered = False
                 cls._instance = inst
             return cls._instance
@@ -80,19 +86,58 @@ class ProviderRegistry:
             self._discovered = True
 
     def _discover_providers(self) -> None:
-        """Scan all provider locations in priority order."""
-        # 1. Built-in tools (lowest priority)
-        builtin_dir = Path(__file__).parent.parent
-        self._scan_tools_dir(builtin_dir, source="builtin")
+        """Scan all provider locations in priority order.
+
+        Discovery order (first occurrence wins):
+        1. Project tools (highest priority)
+        2. User tools (medium priority)
+        3. Built-in tools (lowest priority)
+        """
+        # 1. Project tools (highest priority)
+        project_root = self._find_project_root()
+        if project_root:
+            project_dir = project_root / "kurt" / "tools"
+            self._scan_tools_dir(project_dir, source="project")
 
         # 2. User tools (medium priority)
         user_dir = Path.home() / ".kurt" / "tools"
         self._scan_tools_dir(user_dir, source="user")
 
-        # 3. Project tools (highest priority)
-        project_root = os.environ.get("KURT_PROJECT_ROOT", ".")
-        project_dir = Path(project_root) / "kurt" / "tools"
-        self._scan_tools_dir(project_dir, source="project")
+        # 3. Built-in tools (lowest priority)
+        builtin_dir = Path(__file__).parent.parent
+        self._scan_tools_dir(builtin_dir, source="builtin")
+
+    def _find_project_root(self) -> Path | None:
+        """Find project root by looking for markers.
+
+        Checks:
+        1. KURT_PROJECT_ROOT environment variable
+        2. Walk up from cwd looking for kurt.toml or .git
+
+        Returns:
+            Path to project root, or None if not found.
+        """
+        # Check env var first
+        env_root = os.environ.get("KURT_PROJECT_ROOT")
+        if env_root:
+            root = Path(env_root)
+            if root.exists():
+                return root
+            return None
+
+        # Walk up from cwd looking for project markers
+        try:
+            current = Path.cwd()
+        except OSError:
+            return None
+
+        for parent in [current, *current.parents]:
+            if (parent / "kurt.toml").exists():
+                return parent
+            if (parent / ".git").exists():
+                return parent
+
+        return None
 
     def _scan_tools_dir(self, base: Path, source: str) -> None:
         """Scan a directory for tools and their providers."""
@@ -102,10 +147,18 @@ class ProviderRegistry:
         for tool_dir in sorted(base.iterdir()):
             if not tool_dir.is_dir() or tool_dir.name.startswith((".", "_")):
                 continue
+            if tool_dir.name == "templates":
+                continue  # Skip template directory
 
             tool_name = tool_dir.name
-            providers_dir = tool_dir / "providers"
 
+            # Track tool source (first occurrence wins)
+            if tool_name not in self._tool_sources:
+                self._tool_sources[tool_name] = source
+
+            # Discover providers (even for already-known tools,
+            # so project providers can extend builtin tools)
+            providers_dir = tool_dir / "providers"
             if providers_dir.exists() and providers_dir.is_dir():
                 self._scan_providers(tool_name, providers_dir, source)
 
@@ -116,6 +169,8 @@ class ProviderRegistry:
         if tool_name not in self._providers:
             self._providers[tool_name] = {}
             self._provider_meta[tool_name] = {}
+        if tool_name not in self._provider_sources:
+            self._provider_sources[tool_name] = {}
 
         for provider_dir in sorted(providers_dir.iterdir()):
             if not provider_dir.is_dir() or provider_dir.name.startswith((".", "_")):
@@ -131,8 +186,12 @@ class ProviderRegistry:
 
             provider_name = getattr(provider_class, "name", "") or provider_dir.name
 
-            # Later source overrides earlier (project > user > builtin)
+            # First occurrence wins (project > user > builtin)
+            if provider_name in self._providers[tool_name]:
+                continue
+
             self._providers[tool_name][provider_name] = provider_class
+            self._provider_sources[tool_name][provider_name] = source
             self._provider_meta[tool_name][provider_name] = {
                 "name": provider_name,
                 "version": getattr(provider_class, "version", "1.0.0"),
@@ -237,6 +296,34 @@ class ProviderRegistry:
             tool: sorted(providers.keys())
             for tool, providers in self._providers.items()
             if providers
+        }
+
+    def get_tool_info(self, name: str) -> dict[str, Any]:
+        """Get tool info with source metadata.
+
+        Args:
+            name: Tool name (e.g., "fetch", "map")
+
+        Returns:
+            Dict with tool name, source, and provider details.
+            Returns empty dict if tool not found.
+        """
+        self.discover()
+        if name not in self._tool_sources:
+            return {}
+
+        return {
+            "name": name,
+            "source": self._tool_sources.get(name, "unknown"),
+            "providers": [
+                {
+                    "name": p_name,
+                    "source": self._provider_sources.get(name, {}).get(
+                        p_name, "unknown"
+                    ),
+                }
+                for p_name in sorted(self._providers.get(name, {}).keys())
+            ],
         }
 
     def match_provider(self, tool_name: str, url: str) -> str | None:
@@ -367,6 +454,8 @@ class ProviderRegistry:
         with self._lock:
             self._providers.clear()
             self._provider_meta.clear()
+            self._tool_sources.clear()
+            self._provider_sources.clear()
             self._discovered = False
 
 
