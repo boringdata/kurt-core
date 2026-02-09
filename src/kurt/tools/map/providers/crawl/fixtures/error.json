@@ -1,0 +1,6 @@
+{
+  "urls": [],
+  "count": 0,
+  "errors": ["Connection timeout: failed to reach https://example.com/"],
+  "metadata": {}
+}

@@ -1,0 +1,15 @@
+{
+  "urls": [
+    "sanity/production/article/getting-started",
+    "sanity/production/article/advanced-usage",
+    "sanity/production/page/about"
+  ],
+  "count": 3,
+  "errors": [],
+  "metadata": {
+    "platform": "sanity",
+    "instance": "production",
+    "content_types": ["article", "page"],
+    "url_count": 3
+  }
+}
