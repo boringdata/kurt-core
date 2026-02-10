@@ -77,15 +77,23 @@ When executing a step/tool, select provider using this priority chain:
 │     → Emit DeprecationWarning                                   │
 │     → Treat as provider name (alias)                            │
 ├─────────────────────────────────────────────────────────────────┤
-│  3. URL PATTERN MATCHING                                        │
+│  3. URL PATTERN MATCHING (specific patterns only)               │
 │     ProviderRegistry.match_provider(tool, url)                  │
 │     → Check config.url, config.source, config.urls[0]           │
 │     → If no URL in config: check upstream input_data URLs       │
 │     → Match against provider url_patterns attributes            │
+│     → ONLY non-wildcard patterns count as a "match"             │
+│     → Wildcard patterns ("*") do NOT override tool default      │
 ├─────────────────────────────────────────────────────────────────┤
 │  4. TOOL DEFAULT                                                │
 │     Tool.default_provider attribute                             │
-│     → Fallback when nothing else matches                        │
+│     → Used when no specific URL pattern matches                 │
+│     → Takes precedence over wildcard-only matches               │
+├─────────────────────────────────────────────────────────────────┤
+│  5. WILDCARD FALLBACK (last resort)                             │
+│     Providers with url_patterns=["*"]                           │
+│     → Only used when tool has NO default_provider               │
+│     → Should be rare in practice                                │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -98,12 +106,43 @@ When executing a step/tool, select provider using this priority chain:
 
 ### 3.2 URL Pattern Matching Algorithm
 
-Two-pass matching for specificity:
+Three-pass matching for specificity:
 
-1. **Pass 1**: Match specific patterns (not `*`)
-2. **Pass 2**: Match wildcard patterns (`*`)
+1. **Pass 1**: Match specific patterns (not `*`) - these are "real" matches
+2. **Pass 2**: If no specific match AND tool has `default_provider` → use default
+3. **Pass 3**: Match wildcard patterns (`*`) - only if no default exists
 
-Within each pass, first match wins (order of discovery).
+Within passes 1 and 3, first match wins (order of discovery).
+
+### 3.3 Wildcard Pattern Semantics (CRITICAL)
+
+**Wildcard patterns (`url_patterns=["*"]`) do NOT count as matches when the tool has a `default_provider`.**
+
+This is critical for usability and safety:
+- A generic URL (e.g., `https://example.com/article`) should use the tool's default provider
+- Wildcard providers often require credentials (e.g., `firecrawl`, `tavily`)
+- Selecting a credentialed provider by default would cause hard failures
+
+**Examples:**
+
+```python
+# Tool: fetch, default_provider="trafilatura"
+
+# Specific match: notion URL matches notion provider
+match_provider("fetch", "https://notion.so/page")  # → "notion"
+
+# Generic URL: no specific match, use tool default
+match_provider("fetch", "https://example.com/article")  # → "trafilatura" (default)
+#   NOT "firecrawl" even though firecrawl has url_patterns=["*"]
+
+# Twitter URL: specific match beats wildcard
+match_provider("fetch", "https://twitter.com/user")  # → "twitterapi" (specific match)
+```
+
+**Rationale:**
+- Providers that want to handle "all URLs" should be tool defaults, not wildcard matchers
+- Wildcard patterns are for providers without better alternatives, not for hijacking selection
+- Users explicitly select credentialed providers; they should never be auto-selected for generic URLs
 
 ---
 
@@ -368,11 +407,26 @@ DBOS.set_event("provider_selected", {
 |-----------|-------------------|
 | Explicit provider specified | Uses that provider |
 | Explicit engine specified | Uses that provider, emits warning |
-| URL matches provider pattern | Auto-selects that provider |
-| No match, tool has default | Uses tool default |
+| URL matches specific pattern | Auto-selects that provider |
+| Generic URL, tool has default | Uses tool default (NOT wildcard provider) |
+| Generic URL, tool has NO default | Uses wildcard provider |
 | Unknown provider specified | Raises ProviderNotFoundError |
 | Missing requirements | Raises ProviderRequirementsError |
 | Custom provider in project dir | Discovered and usable |
+
+### 10.1.1 Wildcard vs Default Precedence Tests (CRITICAL)
+
+These tests verify the core wildcard semantics:
+
+```python
+# fetch default_provider="trafilatura"
+assert resolve("fetch", "https://example.com") == "trafilatura"  # NOT "firecrawl"
+assert resolve("fetch", "https://notion.so/page") == "notion"    # specific match
+
+# map default_provider="sitemap" (or similar)
+assert resolve("map", "https://example.com") == "sitemap"        # NOT "crawl"
+assert resolve("map", "https://example.com/sitemap.xml") == "sitemap"  # specific match
+```
 
 ### 10.2 Integration Tests
 
@@ -394,8 +448,67 @@ DBOS.set_event("provider_selected", {
 | Custom providers | MUST be supported (no Literals) |
 | Config authority | ProviderConfigResolver (TOML) |
 | Validation timing | At resolution, before execution |
+| **Wildcard vs default** | **Tool default takes precedence over wildcard patterns** |
+| **Wildcard usage** | **Avoid wildcards for credentialed providers** |
+
+---
+
+## 12. Provider Pattern Guidelines
+
+### 12.1 When to Use Specific Patterns
+
+Providers SHOULD use specific patterns when they:
+- Handle a particular domain (e.g., `*.notion.so/*`, `*twitter.com/*`)
+- Handle a particular file type (e.g., `*/sitemap.xml`, `*/feed*`)
+- Require specific credentials tied to that service
+
+**Examples:**
+```python
+# Good: specific patterns
+url_patterns = ["*.notion.so/*", "*.notion.site/*"]  # notion provider
+url_patterns = ["*/sitemap.xml", "*/sitemap_*.xml"]  # sitemap provider
+url_patterns = ["*twitter.com/*", "*x.com/*"]        # twitterapi provider
+```
+
+### 12.2 When to Use Wildcard Patterns
+
+Providers SHOULD use wildcard patterns (`["*"]`) ONLY when:
+- They are the designated fallback for a tool that has NO `default_provider`
+- They handle a broad category but are NOT credentialed (rare)
+
+**Generally, wildcard patterns should be AVOIDED.** If a provider wants to handle "any URL", it should be the tool's `default_provider` instead.
+
+### 12.3 Recommended Builtin Provider Patterns
+
+| Tool | Provider | Recommended url_patterns | Notes |
+|------|----------|-------------------------|-------|
+| fetch | trafilatura | `[]` (empty or none) | Is default_provider |
+| fetch | httpx | `[]` | Generic HTTP, use only when requested |
+| fetch | notion | `["*.notion.so/*", "*.notion.site/*"]` | Specific domain |
+| fetch | firecrawl | `[]` | Credentialed, explicit use only |
+| fetch | twitterapi | `["*twitter.com/*", "*x.com/*"]` | Specific domain |
+| map | sitemap | `["*/sitemap.xml", "*/sitemap*.xml"]` | Specific file pattern |
+| map | rss | `["*/feed*", "*/rss*", "*atom*"]` | Specific file pattern |
+| map | crawl | `[]` | Credentialed (often), explicit use only |
+
+### 12.4 Migration: Removing Unsafe Wildcards
+
+Providers with `url_patterns=["*"]` that also require credentials MUST have their wildcards removed:
+
+```python
+# BEFORE (unsafe - can hijack generic URLs)
+class FirecrawlProvider:
+    url_patterns = ["*"]
+    requires_env = ["FIRECRAWL_API_KEY"]
+
+# AFTER (safe - explicit use only)
+class FirecrawlProvider:
+    url_patterns = []  # No auto-selection
+    requires_env = ["FIRECRAWL_API_KEY"]
+```
 
 ---
 
 *Contract finalized: 2026-02-10*
-*Implements: bd-26w.1*
+*Updated: 2026-02-10 (wildcard semantics clarification per bd-21im.1.1)*
+*Implements: bd-26w.1, bd-21im.1.1*
