@@ -19,8 +19,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from kurt.tools.core import ToolResult, ToolResultError
-from kurt.tools.core.errors import ProviderNotFoundError, ProviderRequirementsError
-from kurt.workflows.toml.executor import WorkflowExecutor, execute_workflow
+from kurt.workflows.toml.executor import execute_workflow
 from kurt.workflows.toml.parser import InputDef, StepDef, WorkflowDefinition, WorkflowMeta
 
 # ============================================================================
@@ -1319,8 +1318,6 @@ class TestProviderSelectionContract:
                 return None
 
         # Mock the config resolver to return a known config
-        from unittest.mock import PropertyMock
-
         from pydantic import BaseModel
 
         class FakeResolvedConfig(BaseModel):
