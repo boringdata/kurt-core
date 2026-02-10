@@ -202,6 +202,13 @@ class MapInput(BaseModel):
         description="Glob patterns to exclude (e.g., '*.pdf', '/admin/*')",
     )
 
+    # Provider/engine override (injected by executor from ProviderRegistry)
+    engine: str | None = Field(
+        default=None,
+        description="Provider engine override (e.g., 'sitemap', 'crawl', 'rss'). "
+        "When set by the executor, overrides discovery_method for URL sources.",
+    )
+
     # URL-specific options
     discovery_method: Literal["auto", "sitemap", "crawl", "rss", "folder", "cms"] = Field(
         default="auto",
@@ -831,6 +838,19 @@ class MapTool(Tool[MapInput, MapOutput]):
         result = ToolResult(success=True)
         items: list[dict[str, Any]] = []
         error: str | None = None
+
+        # Apply engine override from provider resolution.
+        # When the executor resolves a provider (e.g., "sitemap", "rss", "crawl"),
+        # it injects it as `engine`. Map this to discovery_method so the tool
+        # actually uses the resolved provider.
+        _VALID_DISCOVERY_METHODS = {"sitemap", "crawl", "rss", "folder", "cms"}
+        if params.engine and params.engine in _VALID_DISCOVERY_METHODS:
+            params.discovery_method = params.engine  # type: ignore[assignment]
+            logger.debug(
+                "Engine '%s' overriding discovery_method to '%s'",
+                params.engine,
+                params.discovery_method,
+            )
 
         # Dispatch based on source type
         if params.source == "url":

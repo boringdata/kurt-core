@@ -1460,3 +1460,235 @@ class TestResolveProviderForStep:
         assert captured_params["fetch"]["engine"] == "tavily"
         # provider key should be consumed (not passed to tool)
         assert "provider" not in captured_params["fetch"]
+
+
+# ============================================================================
+# Input Data URL Matching Tests (bd-285.5.3)
+# ============================================================================
+
+
+class TestResolveProviderWithInputData:
+    """Tests for _resolve_provider_for_step with input_data URLs."""
+
+    def _make_executor(self) -> WorkflowExecutor:
+        workflow = make_workflow(steps={"step1": make_step("fetch")})
+        return WorkflowExecutor(workflow, {})
+
+    def test_input_data_url_used_for_matching(self):
+        """URLs from input_data are used for provider auto-selection."""
+        executor = self._make_executor()
+        config: dict[str, Any] = {}  # No URL in config
+        input_data = [{"url": "https://x.com/user/status/123"}]
+
+        captured_url: dict[str, Any] = {}
+
+        class MockRegistry:
+            def resolve_provider(self, tool, url=None, default_provider=None):
+                captured_url["url"] = url
+                return "twitterapi"
+
+        with (
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=MockRegistry(),
+            ),
+            patch(
+                "kurt.tools.core.registry.get_tool", side_effect=Exception("no tool")
+            ),
+        ):
+            result = executor._resolve_provider_for_step(
+                "fetch", config, input_data=input_data
+            )
+
+        assert captured_url["url"] == "https://x.com/user/status/123"
+        assert result["engine"] == "twitterapi"
+
+    def test_config_url_takes_priority_over_input_data(self):
+        """Config URL is used for matching even when input_data has URLs."""
+        executor = self._make_executor()
+        config = {"url": "https://example.com/page"}
+        input_data = [{"url": "https://x.com/user/status/123"}]
+
+        captured_url: dict[str, Any] = {}
+
+        class MockRegistry:
+            def resolve_provider(self, tool, url=None, default_provider=None):
+                captured_url["url"] = url
+                return "trafilatura"
+
+        with (
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=MockRegistry(),
+            ),
+            patch(
+                "kurt.tools.core.registry.get_tool", side_effect=Exception("no tool")
+            ),
+        ):
+            result = executor._resolve_provider_for_step(
+                "fetch", config, input_data=input_data
+            )
+
+        # Config URL should be used, not input_data URL
+        assert captured_url["url"] == "https://example.com/page"
+
+    def test_first_input_data_url_used(self):
+        """First URL from input_data list is used for matching."""
+        executor = self._make_executor()
+        config: dict[str, Any] = {}
+        input_data = [
+            {"url": "https://x.com/user/status/1"},
+            {"url": "https://example.com/page"},
+        ]
+
+        captured_url: dict[str, Any] = {}
+
+        class MockRegistry:
+            def resolve_provider(self, tool, url=None, default_provider=None):
+                captured_url["url"] = url
+                return "twitterapi"
+
+        with (
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=MockRegistry(),
+            ),
+            patch(
+                "kurt.tools.core.registry.get_tool", side_effect=Exception("no tool")
+            ),
+        ):
+            result = executor._resolve_provider_for_step(
+                "fetch", config, input_data=input_data
+            )
+
+        assert captured_url["url"] == "https://x.com/user/status/1"
+
+    def test_input_data_source_field_used(self):
+        """input_data 'source' field is also checked for URL matching."""
+        executor = self._make_executor()
+        config: dict[str, Any] = {}
+        input_data = [{"source": "https://x.com/user/status/123"}]
+
+        captured_url: dict[str, Any] = {}
+
+        class MockRegistry:
+            def resolve_provider(self, tool, url=None, default_provider=None):
+                captured_url["url"] = url
+                return "twitterapi"
+
+        with (
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=MockRegistry(),
+            ),
+            patch(
+                "kurt.tools.core.registry.get_tool", side_effect=Exception("no tool")
+            ),
+        ):
+            result = executor._resolve_provider_for_step(
+                "fetch", config, input_data=input_data
+            )
+
+        assert captured_url["url"] == "https://x.com/user/status/123"
+        assert result["engine"] == "twitterapi"
+
+    def test_empty_input_data_no_effect(self):
+        """Empty input_data doesn't affect provider resolution."""
+        executor = self._make_executor()
+        config = {"url": "https://example.com"}
+
+        mock_registry = type(
+            "MockRegistry",
+            (),
+            {
+                "resolve_provider": lambda self, tool, url=None, default_provider=None: None,
+            },
+        )()
+
+        with (
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=mock_registry,
+            ),
+            patch(
+                "kurt.tools.core.registry.get_tool", side_effect=Exception("no tool")
+            ),
+        ):
+            result = executor._resolve_provider_for_step(
+                "fetch", config, input_data=[]
+            )
+
+        assert "engine" not in result
+
+    def test_none_input_data_no_effect(self):
+        """None input_data doesn't affect provider resolution."""
+        executor = self._make_executor()
+        config = {"url": "https://example.com"}
+
+        mock_registry = type(
+            "MockRegistry",
+            (),
+            {
+                "resolve_provider": lambda self, tool, url=None, default_provider=None: None,
+            },
+        )()
+
+        with (
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=mock_registry,
+            ),
+            patch(
+                "kurt.tools.core.registry.get_tool", side_effect=Exception("no tool")
+            ),
+        ):
+            result = executor._resolve_provider_for_step(
+                "fetch", config, input_data=None
+            )
+
+        assert "engine" not in result
+
+    def test_input_data_skips_non_string_urls(self):
+        """Non-string URLs in input_data are skipped."""
+        executor = self._make_executor()
+        config: dict[str, Any] = {}
+        input_data = [
+            {"url": 123},  # Not a string
+            {"url": "https://x.com/user/status/456"},
+        ]
+
+        captured_url: dict[str, Any] = {}
+
+        class MockRegistry:
+            def resolve_provider(self, tool, url=None, default_provider=None):
+                captured_url["url"] = url
+                return "twitterapi"
+
+        with (
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=MockRegistry(),
+            ),
+            patch(
+                "kurt.tools.core.registry.get_tool", side_effect=Exception("no tool")
+            ),
+        ):
+            result = executor._resolve_provider_for_step(
+                "fetch", config, input_data=input_data
+            )
+
+        # Should skip the non-string and use the second record
+        assert captured_url["url"] == "https://x.com/user/status/456"
+
+    def test_explicit_provider_ignores_input_data(self):
+        """Explicit config.provider takes priority; input_data is not checked."""
+        executor = self._make_executor()
+        config = {"provider": "tavily"}
+        input_data = [{"url": "https://x.com/user/status/123"}]
+
+        with patch("kurt.workflows.toml.executor.get_provider_registry"):
+            result = executor._resolve_provider_for_step(
+                "fetch", config, input_data=input_data
+            )
+
+        assert result["engine"] == "tavily"

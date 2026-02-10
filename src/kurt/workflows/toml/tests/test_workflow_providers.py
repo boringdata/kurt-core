@@ -490,3 +490,444 @@ class TestProviderEdgeCases:
         assert "engine" not in captured["fetch"]
         assert captured["fetch"]["url"] == "https://example.com"
         assert captured["fetch"]["max_pages"] == 5
+
+
+# ============================================================================
+# Map Engine Override Tests (bd-285.7.5)
+# ============================================================================
+
+
+class TestMapEngineOverride:
+    """Verify engine field on MapInput overrides discovery_method."""
+
+    def test_map_input_accepts_engine_field(self):
+        """MapInput accepts engine field without validation error."""
+        from kurt.tools.map.tool import MapInput
+
+        params = MapInput(source="url", url="https://example.com", engine="sitemap")
+        assert params.engine == "sitemap"
+
+    def test_map_input_engine_defaults_to_none(self):
+        """MapInput engine defaults to None when not set."""
+        from kurt.tools.map.tool import MapInput
+
+        params = MapInput(source="url", url="https://example.com")
+        assert params.engine is None
+
+    @pytest.mark.asyncio
+    async def test_engine_overrides_discovery_method_in_map_tool(self):
+        """Engine field overrides discovery_method in MapTool.run()."""
+        from kurt.tools.map.tool import MapInput, MapTool
+
+        tool = MapTool()
+        params = MapInput(
+            source="url",
+            url="https://example.com/data",
+            discovery_method="auto",
+            engine="rss",  # Force RSS even though URL isn't RSS-like
+        )
+        context = MagicMock()
+        context.http = None
+
+        # Mock the _map_url method to capture what params it receives
+        captured_params = {}
+        original_map_url = tool._map_url
+
+        async def mock_map_url(p, ctx, on_progress):
+            captured_params["discovery_method"] = p.discovery_method
+            captured_params["engine"] = p.engine
+            return [], None
+
+        tool._map_url = mock_map_url
+        await tool.run(params, context)
+
+        # Engine should have overridden discovery_method to "rss"
+        assert captured_params["discovery_method"] == "rss"
+
+    @pytest.mark.asyncio
+    async def test_engine_does_not_override_with_unknown_value(self):
+        """Unknown engine value does not override discovery_method."""
+        from kurt.tools.map.tool import MapInput, MapTool
+
+        tool = MapTool()
+        params = MapInput(
+            source="url",
+            url="https://example.com",
+            discovery_method="auto",
+            engine="custom_provider",  # Not a valid discovery method
+        )
+        context = MagicMock()
+        context.http = None
+
+        captured_params = {}
+
+        async def mock_map_url(p, ctx, on_progress):
+            captured_params["discovery_method"] = p.discovery_method
+            return [], None
+
+        tool._map_url = mock_map_url
+        await tool.run(params, context)
+
+        # discovery_method should remain "auto" (unknown engine ignored)
+        assert captured_params["discovery_method"] == "auto"
+
+    @pytest.mark.asyncio
+    async def test_executor_resolved_provider_reaches_map_as_engine(self):
+        """Provider resolved by executor reaches map tool as engine param."""
+        workflow = make_workflow(
+            steps={
+                "map_step": make_step(
+                    "map",
+                    config={"provider": "rss", "source": "url", "url": "https://example.com"},
+                )
+            }
+        )
+
+        captured = {}
+
+        async def mock_execute(name, params, ctx=None, on_progress=None):
+            captured[name] = params.copy()
+            return make_tool_result(success=True, data=[{"url": "https://example.com/feed"}])
+
+        with patch(
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
+        ):
+            result = await execute_workflow(workflow, {})
+
+        assert result.status == "completed"
+        # The engine should be "rss" (from provider resolution)
+        assert captured["map"]["engine"] == "rss"
+
+    @pytest.mark.asyncio
+    async def test_auto_resolved_provider_reaches_map(self):
+        """URL-based auto-resolved provider reaches map tool as engine."""
+        workflow = make_workflow(
+            steps={
+                "map_step": make_step(
+                    "map",
+                    config={"source": "url", "url": "https://example.com/feed.xml"},
+                )
+            }
+        )
+
+        captured = {}
+
+        async def mock_execute(name, params, ctx=None, on_progress=None):
+            captured[name] = params.copy()
+            return make_tool_result(success=True)
+
+        mock_registry = MagicMock()
+        mock_registry.resolve_provider.return_value = "rss"
+
+        with (
+            patch("kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute),
+            patch("kurt.workflows.toml.executor.get_provider_registry", return_value=mock_registry),
+            patch("kurt.tools.core.registry.get_tool", side_effect=Exception("no tool")),
+        ):
+            result = await execute_workflow(workflow, {})
+
+        assert result.status == "completed"
+        assert captured["map"]["engine"] == "rss"
+
+
+# ============================================================================
+# Upstream Input Data Provider Selection (bd-285.7.4)
+# ============================================================================
+
+
+class TestUpstreamInputDataProviderSelection:
+    """Integration tests for provider auto-selection from upstream URLs."""
+
+    @pytest.mark.asyncio
+    async def test_map_to_fetch_pipeline_uses_upstream_urls(self):
+        """In map → fetch pipeline, fetch resolves provider from upstream URLs."""
+        workflow = make_workflow(
+            steps={
+                "discover": make_step(
+                    "map",
+                    config={"provider": "sitemap", "source": "url", "url": "https://x.com/sitemap.xml"},
+                ),
+                "fetch_content": make_step(
+                    "fetch",
+                    depends_on=["discover"],
+                    config={},  # No URL in config - comes from upstream
+                ),
+            }
+        )
+
+        captured = {}
+
+        async def mock_execute(name, params, ctx=None, on_progress=None):
+            captured[name] = params.copy()
+            if name == "map":
+                return make_tool_result(
+                    success=True,
+                    data=[
+                        {"url": "https://x.com/user/status/123"},
+                        {"url": "https://x.com/user/status/456"},
+                    ],
+                )
+            return make_tool_result(success=True, data=[{"content": "tweet"}])
+
+        mock_registry = MagicMock()
+        mock_registry.resolve_provider.return_value = "twitterapi"
+
+        with (
+            patch("kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute),
+            patch("kurt.workflows.toml.executor.get_provider_registry", return_value=mock_registry),
+            patch("kurt.tools.core.registry.get_tool", side_effect=Exception("no tool")),
+        ):
+            result = await execute_workflow(workflow, {})
+
+        assert result.status == "completed"
+        # Fetch step should get engine from upstream URL matching
+        assert captured["fetch"]["engine"] == "twitterapi"
+
+    @pytest.mark.asyncio
+    async def test_config_url_overrides_upstream_in_pipeline(self):
+        """Fetch step's config.url takes priority over upstream URLs for matching."""
+        workflow = make_workflow(
+            steps={
+                "discover": make_step(
+                    "map",
+                    config={"provider": "sitemap", "source": "url", "url": "https://x.com/sitemap.xml"},
+                ),
+                "fetch_content": make_step(
+                    "fetch",
+                    depends_on=["discover"],
+                    config={"url": "https://docs.example.com/page"},
+                ),
+            }
+        )
+
+        captured = {}
+        captured_urls = []
+
+        async def mock_execute(name, params, ctx=None, on_progress=None):
+            captured[name] = params.copy()
+            if name == "map":
+                return make_tool_result(
+                    success=True,
+                    data=[{"url": "https://x.com/user/status/123"}],
+                )
+            return make_tool_result(success=True)
+
+        class TrackingRegistry:
+            def resolve_provider(self, tool, url=None, default_provider=None):
+                captured_urls.append(url)
+                return "trafilatura"
+
+        with (
+            patch("kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute),
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=TrackingRegistry(),
+            ),
+            patch("kurt.tools.core.registry.get_tool", side_effect=Exception("no tool")),
+        ):
+            result = await execute_workflow(workflow, {})
+
+        assert result.status == "completed"
+        # For the fetch step, config URL (docs.example.com) should be used for matching
+        # not the upstream twitter URL
+        fetch_resolve_url = captured_urls[-1]  # Last resolve call is for fetch step
+        assert "docs.example.com" in fetch_resolve_url
+
+
+# ============================================================================
+# Upstream Input Data URL Matching (bd-285.5.3)
+# ============================================================================
+
+
+class TestUpstreamInputDataURLMatching:
+    """Verify provider auto-selection from upstream input_data URLs."""
+
+    @pytest.mark.asyncio
+    async def test_fetch_resolves_provider_from_upstream_urls(self):
+        """Fetch step auto-selects provider based on URLs from map step output."""
+        workflow = make_workflow(
+            steps={
+                "discover": make_step(
+                    "map",
+                    config={
+                        "provider": "sitemap",
+                        "source": "https://x.com/sitemap.xml",
+                    },
+                ),
+                "fetch_content": make_step(
+                    "fetch",
+                    depends_on=["discover"],
+                    # No URL in config - URLs come from upstream
+                ),
+            }
+        )
+
+        captured = {}
+        call_order = []
+
+        async def mock_execute(name, params, ctx=None, on_progress=None):
+            captured[name] = params.copy()
+            call_order.append(name)
+            if name == "map":
+                return make_tool_result(
+                    success=True,
+                    data=[
+                        {"url": "https://x.com/user/status/123"},
+                        {"url": "https://x.com/user/status/456"},
+                    ],
+                )
+            return make_tool_result(success=True, data=[{"content": "tweet"}])
+
+        mock_registry = MagicMock()
+        mock_registry.resolve_provider.return_value = "twitterapi"
+
+        with (
+            patch(
+                "kurt.workflows.toml.executor.execute_tool",
+                side_effect=mock_execute,
+            ),
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=mock_registry,
+            ),
+            patch(
+                "kurt.tools.core.registry.get_tool",
+                side_effect=Exception("no tool"),
+            ),
+        ):
+            result = await execute_workflow(workflow, {})
+
+        assert result.status == "completed"
+        assert call_order == ["map", "fetch"]
+        # Fetch should have resolved provider from upstream URLs
+        assert captured["fetch"]["engine"] == "twitterapi"
+
+    @pytest.mark.asyncio
+    async def test_config_url_overrides_upstream_urls(self):
+        """Config URL takes priority over upstream input_data URLs."""
+        workflow = make_workflow(
+            steps={
+                "discover": make_step(
+                    "map",
+                    config={"provider": "sitemap", "source": "https://x.com/sitemap.xml"},
+                ),
+                "fetch_content": make_step(
+                    "fetch",
+                    depends_on=["discover"],
+                    config={"url": "https://example.com/override"},
+                ),
+            }
+        )
+
+        captured = {}
+        captured_registry_calls: list[dict[str, Any]] = []
+
+        async def mock_execute(name, params, ctx=None, on_progress=None):
+            captured[name] = params.copy()
+            if name == "map":
+                return make_tool_result(
+                    success=True,
+                    data=[{"url": "https://x.com/user/status/123"}],
+                )
+            return make_tool_result(success=True)
+
+        class TrackingRegistry:
+            def resolve_provider(self, tool, url=None, default_provider=None):
+                captured_registry_calls.append({"tool": tool, "url": url})
+                return "trafilatura" if url and "example.com" in url else "twitterapi"
+
+        with (
+            patch(
+                "kurt.workflows.toml.executor.execute_tool",
+                side_effect=mock_execute,
+            ),
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=TrackingRegistry(),
+            ),
+            patch(
+                "kurt.tools.core.registry.get_tool",
+                side_effect=Exception("no tool"),
+            ),
+        ):
+            result = await execute_workflow(workflow, {})
+
+        assert result.status == "completed"
+        # For the fetch step, config URL should be used for matching
+        fetch_calls = [c for c in captured_registry_calls if c["tool"] == "fetch"]
+        assert any(c["url"] == "https://example.com/override" for c in fetch_calls)
+
+
+# ============================================================================
+# Map Tool Engine Override (bd-285.5.4)
+# ============================================================================
+
+
+class TestMapToolEngineOverride:
+    """Verify engine from provider resolution reaches MapTool."""
+
+    @pytest.mark.asyncio
+    async def test_map_engine_passed_in_params(self):
+        """Resolved engine is included in map tool params."""
+        workflow = make_workflow(
+            steps={
+                "map_step": make_step(
+                    "map",
+                    config={"provider": "rss", "source": "url", "url": "https://example.com/feed"},
+                )
+            }
+        )
+
+        captured = {}
+
+        async def mock_execute(name, params, ctx=None, on_progress=None):
+            captured[name] = params.copy()
+            return make_tool_result(success=True)
+
+        with patch(
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
+        ):
+            result = await execute_workflow(workflow, {})
+
+        assert result.status == "completed"
+        assert captured["map"]["engine"] == "rss"
+
+    @pytest.mark.asyncio
+    async def test_map_engine_from_auto_resolved_provider(self):
+        """Auto-resolved provider reaches map tool as engine."""
+        workflow = make_workflow(
+            steps={
+                "map_step": make_step(
+                    "map",
+                    config={"source": "url", "url": "https://example.com/feed.rss"},
+                )
+            }
+        )
+
+        captured = {}
+
+        async def mock_execute(name, params, ctx=None, on_progress=None):
+            captured[name] = params.copy()
+            return make_tool_result(success=True)
+
+        mock_registry = MagicMock()
+        mock_registry.resolve_provider.return_value = "rss"
+
+        with (
+            patch(
+                "kurt.workflows.toml.executor.execute_tool",
+                side_effect=mock_execute,
+            ),
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=mock_registry,
+            ),
+            patch(
+                "kurt.tools.core.registry.get_tool",
+                side_effect=Exception("no tool"),
+            ),
+        ):
+            result = await execute_workflow(workflow, {})
+
+        assert result.status == "completed"
+        assert captured["map"]["engine"] == "rss"

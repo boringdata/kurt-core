@@ -482,7 +482,7 @@ class WorkflowExecutor:
             else:
                 # Resolve provider via ProviderRegistry
                 resolved_config = self._resolve_provider_for_step(
-                    tool_name, interpolated_config
+                    tool_name, interpolated_config, input_data=input_data
                 )
 
                 # Build tool parameters
@@ -752,14 +752,17 @@ class WorkflowExecutor:
         return input_data
 
     def _resolve_provider_for_step(
-        self, tool_name: str, config: dict[str, Any]
+        self,
+        tool_name: str,
+        config: dict[str, Any],
+        input_data: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """Resolve provider for a step using ProviderRegistry.
 
         Resolution priority:
         1. config.provider (new preferred way)
         2. config.engine (deprecated, with warning)
-        3. URL pattern matching (from config.url or config.source)
+        3. URL pattern matching (from config.url, config.source, or input_data URLs)
         4. Tool's default_provider
 
         The resolved provider is injected as 'engine' in the config for
@@ -791,6 +794,14 @@ class WorkflowExecutor:
             url = config.get("url") or config.get("source") or config.get("urls", "")
             if isinstance(url, list) and url:
                 url = url[0]  # Use first URL for pattern matching
+
+            # Also check upstream input_data URLs when config has no URL
+            if not url and input_data:
+                for record in input_data:
+                    upstream_url = record.get("url") or record.get("source")
+                    if upstream_url and isinstance(upstream_url, str):
+                        url = upstream_url
+                        break
 
             # Get tool's default_provider
             default_provider = None
