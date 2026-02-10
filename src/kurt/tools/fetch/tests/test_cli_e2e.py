@@ -396,7 +396,8 @@ class TestFetchApifyEngine:
             metadata={"engine": "apify", "platform": "twitter"},
             success=True,
         )
-        with patch("kurt.tools.fetch.engines.apify.ApifyFetcher.fetch") as mock_fetch:
+        with patch("kurt.tools.fetch.engines.apify.ApifyFetcher.fetch") as mock_fetch, \
+             patch("kurt.tools.fetch.engines.apify.ApifyClient"):
             mock_fetch.return_value = mock_result
 
             result = invoke_cli(
@@ -435,7 +436,8 @@ class TestFetchApifyEngine:
             metadata={"engine": "apify", "platform": "twitter"},
             success=True,
         )
-        with patch("kurt.tools.fetch.engines.apify.ApifyFetcher.fetch") as mock_fetch:
+        with patch("kurt.tools.fetch.engines.apify.ApifyFetcher.fetch") as mock_fetch, \
+             patch("kurt.tools.fetch.engines.apify.ApifyClient"):
             mock_fetch.return_value = mock_result
 
             result = invoke_cli(
@@ -481,7 +483,8 @@ class TestFetchApifyEngine:
             metadata={"engine": "apify"},
             success=True,
         )
-        with patch("kurt.tools.fetch.engines.apify.ApifyFetcher.fetch") as mock_fetch:
+        with patch("kurt.tools.fetch.engines.apify.ApifyFetcher.fetch") as mock_fetch, \
+             patch("kurt.tools.fetch.engines.apify.ApifyClient"):
             mock_fetch.return_value = mock_result
 
             result = invoke_cli(
@@ -529,7 +532,8 @@ class TestFetchApifyEngine:
             metadata={"engine": "apify", "content_type": "profile"},
             success=True,
         )
-        with patch("kurt.tools.fetch.engines.apify.ApifyFetcher.fetch") as mock_fetch:
+        with patch("kurt.tools.fetch.engines.apify.ApifyFetcher.fetch") as mock_fetch, \
+             patch("kurt.tools.fetch.engines.apify.ApifyClient"):
             mock_fetch.return_value = mock_result
 
             result = invoke_cli(
