@@ -166,6 +166,7 @@ def tmp_project_with_docs(tmp_project: Path):
     - 2 fetched documents
     - 1 document with fetch error
     - 1 document with map error
+    - 1 file-based document
     """
     with managed_session() as session:
         # Discovered, not fetched

@@ -146,8 +146,8 @@ class TestDatabaseAssertions:
         from kurt.testing import assert_map_document_count
 
         with managed_session() as session:
-            # tmp_project_with_docs creates 7 map documents
-            assert_map_document_count(session, 7)
+            # tmp_project_with_docs creates 8 map documents
+            assert_map_document_count(session, 8)
 
     @pytest.mark.integration
     def test_assert_map_document_count_with_status(self, tmp_project_with_docs):
@@ -156,8 +156,8 @@ class TestDatabaseAssertions:
         from kurt.testing import assert_map_document_count
 
         with managed_session() as session:
-            # 6 SUCCESS, 1 ERROR
-            assert_map_document_count(session, 6, status="SUCCESS")
+            # 7 SUCCESS, 1 ERROR
+            assert_map_document_count(session, 7, status="SUCCESS")
             assert_map_document_count(session, 1, status="ERROR")
 
     @pytest.mark.integration
@@ -178,7 +178,7 @@ class TestDatabaseAssertions:
         from kurt.tools.map.models import MapDocument
 
         with managed_session() as session:
-            assert_row_count(session, MapDocument, 7)
+            assert_row_count(session, MapDocument, 8)
 
     @pytest.mark.integration
     def test_assert_table_empty(self, tmp_project):
@@ -213,7 +213,7 @@ class TestCountHelpers:
 
         with managed_session() as session:
             success_count = count_documents_by_status(session, "SUCCESS", "map")
-            assert success_count == 6
+            assert success_count == 7
 
             error_count = count_documents_by_status(session, "ERROR", "map")
             assert error_count == 1
