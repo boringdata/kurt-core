@@ -252,22 +252,49 @@ def _check_tool(
     registry, tool_name: str, providers_meta: list[dict]
 ) -> dict:
     """Check a tool's providers and return a report."""
-    report = {
+    from kurt.config.provider_config import get_provider_config_resolver
+
+    report: dict = {
         "tool": tool_name,
         "providers": [],
         "all_valid": True,
     }
 
+    resolver = get_provider_config_resolver()
+
     for meta in providers_meta:
         pname = meta["name"]
         missing = registry.validate_provider(tool_name, pname)
-        provider_report = {
+        provider_report: dict = {
             "name": pname,
             "valid": len(missing) == 0,
             "missing_env": missing,
+            "config_valid": None,
+            "config_errors": [],
         }
+
+        # Validate provider ConfigModel via ProviderConfigResolver
+        provider_class = registry.get_provider_class(tool_name, pname)
+        config_model = getattr(provider_class, "ConfigModel", None) if provider_class else None
+        if config_model is not None:
+            try:
+                resolver.resolve(tool_name, pname, config_model)
+                provider_report["config_valid"] = True
+            except Exception as exc:
+                provider_report["config_valid"] = False
+                provider_report["valid"] = False
+                if hasattr(exc, "errors"):
+                    for err in exc.errors():
+                        loc = ".".join(str(l) for l in err.get("loc", []))
+                        msg = err.get("msg", str(exc))
+                        provider_report["config_errors"].append(
+                            f"{loc}: {msg}" if loc else msg
+                        )
+                else:
+                    provider_report["config_errors"].append(str(exc))
+
         report["providers"].append(provider_report)
-        if missing:
+        if not provider_report["valid"]:
             report["all_valid"] = False
 
     return report
@@ -286,11 +313,27 @@ def _print_tool_check(report: dict) -> None:
     console.print(f"\n[bold]{tool_name}[/bold]  {status}")
 
     for p in report["providers"]:
-        if p["valid"]:
-            console.print(f"  [green]\u2713[/green] {p['name']}")
-        else:
+        parts = []
+
+        # Env status
+        if not p["valid"]:
             missing = ", ".join(p["missing_env"])
-            console.print(f"  [red]\u2717[/red] {p['name']} - missing: {missing}")
+            parts.append(f"missing: {missing}")
+
+        # Config status
+        config_valid = p.get("config_valid")
+        config_errors = p.get("config_errors", [])
+        if config_valid is False:
+            parts.append(f"config: {'; '.join(config_errors)}")
+
+        if parts:
+            detail = " | ".join(parts)
+            console.print(f"  [red]\u2717[/red] {p['name']} - {detail}")
+        else:
+            config_note = ""
+            if config_valid is True:
+                config_note = " [dim](config ok)[/dim]"
+            console.print(f"  [green]\u2713[/green] {p['name']}{config_note}")
 
     console.print()
 

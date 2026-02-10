@@ -11,11 +11,15 @@ from kurt.tools.core.provider import ProviderRegistry
 
 @pytest.fixture(autouse=True)
 def reset_registry():
-    """Reset the singleton registry before each test."""
+    """Reset the singleton registry and config resolver before each test."""
+    from kurt.config.provider_config import ProviderConfigResolver
+
     registry = ProviderRegistry()
     registry.reset()
+    ProviderConfigResolver().reset()
     yield
     registry.reset()
+    ProviderConfigResolver().reset()
 
 
 @pytest.fixture
@@ -229,8 +233,18 @@ class TestCheckCommand:
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=False)
+def _reset_config_resolver():
+    """Reset ProviderConfigResolver singleton between tests."""
+    from kurt.config.provider_config import ProviderConfigResolver
+
+    ProviderConfigResolver().reset()
+    yield
+    ProviderConfigResolver().reset()
+
+
 @pytest.fixture
-def config_providers(tmp_path):
+def config_providers(tmp_path, _reset_config_resolver):
     """Create mock providers with ConfigModel for config validation tests."""
     fetch_dir = tmp_path / "fetch" / "providers"
 
