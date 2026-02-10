@@ -53,9 +53,9 @@ def _check_engine_status(engine: str) -> tuple[str, str]:
             return "ready", "Apify social platform extraction"
         return "missing", "Set APIFY_API_KEY"
     if engine == "twitterapi":
-        if os.getenv("TWITTER_BEARER_TOKEN"):
-            return "ready", "Twitter API v2 (direct)"
-        return "missing", "Set TWITTER_BEARER_TOKEN"
+        if os.getenv("TWITTERAPI_API_KEY"):
+            return "ready", "TwitterAPI.io extraction"
+        return "missing", "Set TWITTERAPI_API_KEY"
     return "unknown", "Unknown engine"
 
 
