@@ -79,7 +79,7 @@ class FetchToolConfig(BaseModel):
 
     engine: str = Field(
         default="trafilatura",
-        description="Fetch engine to use: trafilatura, httpx, tavily, firecrawl, apify, twitterapi. For custom providers, use 'provider' in workflow config instead.",
+        description="Fetch engine: trafilatura, httpx, tavily, firecrawl, apify, twitterapi",
     )
     platform: str | None = Field(
         default=None,
@@ -202,7 +202,7 @@ class FetchParams(BaseModel):
     # Config fields (flattened for executor compatibility)
     engine: str = Field(
         default="trafilatura",
-        description="Fetch engine to use: trafilatura, httpx, tavily, firecrawl, apify, twitterapi. For custom providers, use 'provider' in workflow config instead.",
+        description="Fetch engine: trafilatura, httpx, tavily, firecrawl, apify, twitterapi",
     )
     platform: str | None = Field(
         default=None,
@@ -590,9 +590,7 @@ async def _fetch_with_retry(
         available = ", ".join(sorted(_FETCH_ENGINES.keys()))
         raise ValueError(
             f"Unknown fetch engine '{engine}'. "
-            f"Available built-in engines: {available}. "
-            f"Custom providers should use 'config.provider' in workflow config "
-            f"so the executor can resolve them via ProviderRegistry."
+            f"Available engines: {available}."
         )
     last_error: Exception | None = None
 

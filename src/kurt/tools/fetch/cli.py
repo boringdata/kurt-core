@@ -106,7 +106,7 @@ def _list_engines(output_format: str) -> None:
 @click.option("--files", "files_paths", help="Comma-separated list of local file paths")
 @click.option(
     "--provider",
-    help="Provider name for fetch (e.g., trafilatura, httpx, tavily, firecrawl, apify, twitterapi, or custom)",
+    help="Provider name for fetch (trafilatura, httpx, tavily, firecrawl, apify, twitterapi)",
 )
 @click.option(
     "--engine",

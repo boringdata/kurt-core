@@ -29,7 +29,7 @@ console = Console()
 @click.option("--sitemap-path", help="Override sitemap location (e.g., /custom-sitemap.xml)")
 @click.option(
     "--provider",
-    help="Provider name for discovery (e.g., sitemap, crawl, rss, folder, cms, or custom)",
+    help="Provider name for discovery (sitemap, crawl, rss, folder, cms)",
 )
 @click.option(
     "--method",
