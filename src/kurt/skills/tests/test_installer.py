@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from kurt.skills.installer import install_skill, is_installed, uninstall_skill

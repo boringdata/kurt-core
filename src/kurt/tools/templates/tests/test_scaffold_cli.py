@@ -91,12 +91,12 @@ class TestNewToolCmd:
 
     def test_user_location(self, runner, tmp_path):
         """--location user creates in ~/.kurt/tools/."""
-        with patch("kurt.tools.provider_cli.Path") as MockPath:
-            MockPath.home.return_value = tmp_path
-            MockPath.cwd = Path.cwd
+        with patch("kurt.tools.provider_cli.Path") as mock_path:
+            mock_path.home.return_value = tmp_path
+            mock_path.cwd = Path.cwd
             # Ensure Path() constructor works normally for non-home calls
-            MockPath.side_effect = lambda *a, **kw: Path(*a, **kw)
-            MockPath.home.return_value = tmp_path
+            mock_path.side_effect = lambda *a, **kw: Path(*a, **kw)
+            mock_path.home.return_value = tmp_path
 
             result = runner.invoke(new_tool_cmd, ["parse", "--location", "user"])
 

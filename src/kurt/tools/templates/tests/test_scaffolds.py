@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import ast
 
-import pytest
-
 from kurt.tools.templates.scaffolds import (
     _capitalize,
     render_base_py,

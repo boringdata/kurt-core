@@ -365,7 +365,7 @@ def new_tool_cmd(name: str, description: str, location: str):
         rel = path.relative_to(target)
         console.print(f"  {rel}")
 
-    console.print(f"\n[bold]Next steps:[/bold]")
+    console.print("\n[bold]Next steps:[/bold]")
     console.print("1. Edit tool.py to define your input/output schemas")
     console.print("2. Edit base.py to define the provider interface")
     console.print("3. Implement your provider in providers/default/provider.py")
@@ -426,7 +426,7 @@ def new_provider_cmd(tool_name: str, provider_name: str, location: str):
         rel = path.relative_to(target)
         console.print(f"  {rel}")
 
-    console.print(f"\n[bold]Next steps:[/bold]")
+    console.print("\n[bold]Next steps:[/bold]")
     console.print("1. Edit provider.py to implement the process() method")
     console.print("2. Set url_patterns for auto-routing (optional)")
     console.print("3. Set requires_env if API keys needed")
