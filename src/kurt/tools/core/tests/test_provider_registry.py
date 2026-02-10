@@ -1586,6 +1586,156 @@ class NotionFetcher:
 
 
 # ============================================================================
+# Regression: generic URLs resolve to defaults (bd-21im.1.2)
+# ============================================================================
+
+
+class TestWildcardVsDefaultRegression:
+    """Regression tests: generic URLs must resolve to tool defaults,
+    NOT to credentialed wildcard providers (bd-21im.1.2).
+
+    Background: multiple builtin providers declare url_patterns=["*"].
+    Without proper handling, match_provider returns one of these for any
+    URL, bypassing the tool's default_provider. This broke basic fetch/map
+    workflows when the wildcard winner required an API key.
+    """
+
+    def _create_provider(self, providers_dir, name, class_content):
+        provider_dir = providers_dir / name
+        provider_dir.mkdir(parents=True, exist_ok=True)
+        (provider_dir / "provider.py").write_text(class_content)
+        (provider_dir / "__init__.py").write_text("")
+
+    @pytest.fixture
+    def registry_multi_wildcard(self, tmp_path):
+        """Registry with multiple wildcard providers (simulates real builtin state)."""
+        tools_dir = tmp_path / "tools"
+        fetch_providers = tools_dir / "fetch" / "providers"
+        map_providers = tools_dir / "map" / "providers"
+
+        # Fetch: 4 wildcard providers + 1 specific
+        self._create_provider(fetch_providers, "trafilatura", '''
+class TrafilaturaFetcher:
+    name = "trafilatura"
+    url_patterns = ["*"]
+    requires_env = []
+''')
+        self._create_provider(fetch_providers, "firecrawl", '''
+class FirecrawlFetcher:
+    name = "firecrawl"
+    url_patterns = ["*"]
+    requires_env = ["FIRECRAWL_API_KEY"]
+''')
+        self._create_provider(fetch_providers, "tavily", '''
+class TavilyFetcher:
+    name = "tavily"
+    url_patterns = ["*"]
+    requires_env = ["TAVILY_API_KEY"]
+''')
+        self._create_provider(fetch_providers, "notion", '''
+class NotionFetcher:
+    name = "notion"
+    url_patterns = ["*.notion.so/*", "*.notion.site/*"]
+    requires_env = ["NOTION_TOKEN"]
+''')
+
+        # Map: 1 wildcard + 1 specific
+        self._create_provider(map_providers, "crawl", '''
+class CrawlMapper:
+    name = "crawl"
+    url_patterns = ["*"]
+    requires_env = []
+''')
+        self._create_provider(map_providers, "sitemap", '''
+class SitemapMapper:
+    name = "sitemap"
+    url_patterns = ["*/sitemap.xml", "*/sitemap*.xml"]
+    requires_env = []
+''')
+
+        registry = get_provider_registry()
+        registry.discover_from([(tools_dir, "builtin")])
+        return registry
+
+    def test_generic_url_uses_fetch_default_not_wildcard(self, registry_multi_wildcard):
+        """Generic URL resolves to trafilatura (default), not firecrawl/tavily."""
+        result = registry_multi_wildcard.resolve_provider(
+            "fetch",
+            url="https://example.com/article",
+            default_provider="trafilatura",
+        )
+        assert result == "trafilatura"
+
+    def test_generic_url_uses_map_default_not_wildcard(self, registry_multi_wildcard):
+        """Generic URL resolves to sitemap (default), not crawl."""
+        result = registry_multi_wildcard.resolve_provider(
+            "map",
+            url="https://example.com",
+            default_provider="sitemap",
+        )
+        assert result == "sitemap"
+
+    def test_specific_url_still_matches_over_default(self, registry_multi_wildcard):
+        """Specific URL pattern wins over default_provider."""
+        result = registry_multi_wildcard.resolve_provider(
+            "fetch",
+            url="https://www.notion.so/my-page",
+            default_provider="trafilatura",
+        )
+        assert result == "notion"
+
+    def test_sitemap_url_still_matches_over_default(self, registry_multi_wildcard):
+        """Sitemap URL matches sitemap provider specifically."""
+        result = registry_multi_wildcard.resolve_provider(
+            "map",
+            url="https://example.com/sitemap.xml",
+            default_provider="sitemap",
+        )
+        assert result == "sitemap"
+
+    def test_no_default_allows_wildcard_fallback(self, registry_multi_wildcard):
+        """Without default_provider, wildcard providers ARE used."""
+        result = registry_multi_wildcard.resolve_provider(
+            "fetch",
+            url="https://example.com/article",
+            default_provider=None,
+        )
+        # Should pick a wildcard provider (any of the ["*"] ones)
+        assert result is not None
+        assert result in ("trafilatura", "firecrawl", "tavily")
+
+    def test_match_provider_excludes_wildcards_by_default(self, registry_multi_wildcard):
+        """match_provider(include_wildcards=False) returns None for generic URLs."""
+        result = registry_multi_wildcard.match_provider(
+            "fetch",
+            "https://example.com/article",
+            include_wildcards=False,
+        )
+        assert result is None
+
+    def test_match_provider_includes_wildcards_when_requested(self, registry_multi_wildcard):
+        """match_provider(include_wildcards=True) returns wildcard match."""
+        result = registry_multi_wildcard.match_provider(
+            "fetch",
+            "https://example.com/article",
+            include_wildcards=True,
+        )
+        assert result is not None
+
+    def test_builtin_fetch_default_is_trafilatura(self):
+        """FetchTool.default_provider is trafilatura (regression guard)."""
+        from kurt.tools.fetch.tool import FetchTool
+
+        assert FetchTool.default_provider == "trafilatura"
+
+    def test_builtin_map_default_is_sitemap(self):
+        """MapTool.default_provider is sitemap (regression guard)."""
+        from kurt.tools.map.tool import MapTool
+
+        assert MapTool.default_provider == "sitemap"
+
+
+# ============================================================================
 # Module Name Collision Tests (bd-285.1.5)
 # ============================================================================
 
