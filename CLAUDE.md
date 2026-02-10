@@ -348,18 +348,32 @@ config.url = "https://notion.so/page"  # Auto-selects notion provider
 
 ### Provider Config (kurt.toml)
 
-Providers can have per-project configuration in `kurt.toml`:
+Providers read configuration from two TOML files via `ProviderConfigResolver`:
+
+| Source | Path | Priority |
+|--------|------|----------|
+| Provider defaults | `ConfigModel` field defaults | Lowest |
+| User config | `~/.kurt/config.toml` | |
+| Project config | `<project>/kurt.toml` | |
+| CLI overrides | `--flag` values | Highest |
+
+TOML sections support both tool-level defaults and provider-specific overrides:
 
 ```toml
-[providers.fetch.firecrawl]
-formats = ["markdown"]
+# Tool-level defaults (apply to all fetch providers that have these fields)
+[tool.fetch]
 timeout = 60
 
-[providers.map.crawl]
+# Provider-specific overrides
+[tool.fetch.providers.firecrawl]
+formats = ["markdown"]
+timeout = 120
+
+[tool.map.providers.crawl]
 max_depth = 3
 ```
 
-Config hierarchy: CLI flags > project `kurt.toml` > user `~/.kurt/config.toml` > provider defaults.
+Providers declare a `ConfigModel` (Pydantic BaseModel) for validation. Use `kurt tool check` to validate configs without running tools.
 
 ### Creating Custom Providers
 

@@ -17,6 +17,28 @@ attribute and optionally `version`, `url_patterns`, and `requires_env`.
 Project providers can extend builtin tools by adding providers without
 needing a tool.py. Tool classes can also be discovered from user/project
 locations via `tool.py` or `__init__.py` in the tool directory.
+
+URL Pattern Matching
+--------------------
+``match_provider(tool_name, url)`` selects a provider based on ``url_patterns``
+using ``fnmatch``-style glob matching against both ``netloc+path`` and the full
+URL.
+
+**Specificity scoring**: Each pattern is scored by counting its literal
+(non-wildcard) characters. More specific patterns always win over less specific
+ones. For example, given these patterns for a ``sitemap.xml`` URL::
+
+    rss provider:     ``*/feed*``, ``*/rss*``       → no match
+    sitemap provider: ``*/sitemap*.xml``             → score 13 (wins)
+    trafilatura:      ``*``                          → wildcard fallback
+
+**Tie-breaking** (when two patterns have equal specificity):
+1. Source priority: project > user > builtin
+2. Lexicographic provider name
+
+**Wildcard fallback**: The ``*`` pattern is treated specially—it only matches
+if no other specific pattern matches. This ensures that broad fallbacks like
+``trafilatura`` don't shadow specialized providers.
 """
 
 from __future__ import annotations
@@ -75,14 +97,35 @@ def _compare_match(
 
 
 class ProviderRegistry:
-    """
-    Singleton registry for tool providers.
+    """Singleton registry for tool providers.
 
     Handles:
     - Provider discovery from built-in, user, and project locations
     - Lazy loading (providers imported on first access)
     - URL pattern matching for auto-selection
     - Environment variable validation
+
+    URL Pattern Matching Semantics
+    ------------------------------
+    Providers declare ``url_patterns`` (glob-style, matched via ``fnmatch``).
+    When ``match_provider()`` is called with a URL, the algorithm:
+
+    1. Strips the URL to ``netloc + path`` (e.g., ``example.com/sitemap.xml``)
+    2. Tests each provider's patterns via ``fnmatch.fnmatch``
+    3. Scores matches by **specificity**: literal (non-wildcard) character count
+    4. The wildcard pattern ``*`` is tracked separately as a fallback
+
+    Tie-breaking (when multiple patterns have the same specificity score):
+    - **Source priority**: project (0) > user (1) > builtin (2)
+    - **Lexicographic order**: earlier name wins (e.g., "httpx" < "tavily")
+
+    Example: For URL ``https://example.com/sitemap.xml``:
+    - ``*/sitemap*.xml`` → specificity 13, matches
+    - ``*/feed*``        → specificity 5, does NOT match
+    - ``*``              → wildcard fallback (only used if nothing else matches)
+
+    The most specific match (sitemap, score 13) wins. A project-level provider
+    with the same score would beat a builtin provider.
     """
 
     _instance: ProviderRegistry | None = None
