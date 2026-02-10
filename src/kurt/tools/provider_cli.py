@@ -252,6 +252,8 @@ def _check_tool(
     registry, tool_name: str, providers_meta: list[dict]
 ) -> dict:
     """Check a tool's providers and return a report."""
+    from pydantic import ValidationError
+
     from kurt.config.provider_config import get_provider_config_resolver
 
     report: dict = {
@@ -280,18 +282,19 @@ def _check_tool(
             try:
                 resolver.resolve(tool_name, pname, config_model)
                 provider_report["config_valid"] = True
+            except ValidationError as exc:
+                provider_report["config_valid"] = False
+                provider_report["valid"] = False
+                for err in exc.errors():
+                    loc = ".".join(str(part) for part in err.get("loc", []))
+                    msg = err.get("msg", str(exc))
+                    provider_report["config_errors"].append(
+                        f"{loc}: {msg}" if loc else msg
+                    )
             except Exception as exc:
                 provider_report["config_valid"] = False
                 provider_report["valid"] = False
-                if hasattr(exc, "errors"):
-                    for err in exc.errors():
-                        loc = ".".join(str(l) for l in err.get("loc", []))
-                        msg = err.get("msg", str(exc))
-                        provider_report["config_errors"].append(
-                            f"{loc}: {msg}" if loc else msg
-                        )
-                else:
-                    provider_report["config_errors"].append(str(exc))
+                provider_report["config_errors"].append(str(exc))
 
         report["providers"].append(provider_report)
         if not provider_report["valid"]:
@@ -316,7 +319,7 @@ def _print_tool_check(report: dict) -> None:
         parts = []
 
         # Env status
-        if not p["valid"]:
+        if p["missing_env"]:
             missing = ", ".join(p["missing_env"])
             parts.append(f"missing: {missing}")
 
