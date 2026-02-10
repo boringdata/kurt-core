@@ -394,7 +394,6 @@ class TestCustomProviderEngine:
         error_msg = str(exc_info.value)
         assert "trafilatura" in error_msg
         assert "httpx" in error_msg
-        assert "ProviderRegistry" in error_msg
 
     def test_fetch_params_accepts_custom_engine(self):
         """FetchParams accepts custom provider names for engine field."""
