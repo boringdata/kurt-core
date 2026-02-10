@@ -3,7 +3,11 @@ Integration tests for workflow executor with provider resolution.
 
 Verifies that the provider system integrates correctly with workflow
 execution: explicit provider selection, deprecated engine, URL pattern
-matching, default provider fallback, and multi-step workflows.
+matching, default provider fallback, multi-step workflows, env validation,
+config resolver wiring, and provider collision semantics.
+
+Related beads:
+- bd-26w.7.1: Provider selection contract integration tests
 """
 
 from __future__ import annotations
@@ -15,7 +19,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from kurt.tools.core import ToolResult, ToolResultError
-from kurt.workflows.toml.executor import execute_workflow
+from kurt.tools.core.errors import ProviderNotFoundError, ProviderRequirementsError
+from kurt.workflows.toml.executor import WorkflowExecutor, execute_workflow
 from kurt.workflows.toml.parser import InputDef, StepDef, WorkflowDefinition, WorkflowMeta
 
 # ============================================================================
@@ -970,3 +975,250 @@ class TestMapToolEngineOverride:
 
         assert result.status == "completed"
         assert captured["map"]["engine"] == "rss"
+
+
+# ============================================================================
+# Provider Selection Contract Tests (bd-26w.7.1)
+# ============================================================================
+
+
+class TestProviderSelectionContract:
+    """Contract-level integration tests spanning executor + registry + validation.
+
+    These tests verify the finalized provider selection contract (bd-26w.1):
+    1. config.provider is canonical (highest priority)
+    2. config.engine is deprecated alias (warns, still works)
+    3. URL auto-selection via ProviderRegistry.match_provider
+    4. Tool default_provider as fallback
+    5. Unknown provider fails fast with ProviderNotFoundError
+    6. Missing env vars fail fast with ProviderRequirementsError
+    """
+
+    @pytest.mark.asyncio
+    async def test_contract_resolution_order(self):
+        """Full resolution priority: provider > engine > URL match > default.
+
+        Exercises the complete resolution chain in a single workflow with
+        four parallel steps, each hitting a different resolution path.
+        """
+        workflow = make_workflow(
+            steps={
+                "explicit": make_step("fetch", config={"provider": "tavily"}),
+                "deprecated": make_step("fetch", config={"engine": "httpx"}),
+                "auto_url": make_step(
+                    "fetch",
+                    config={"url": "https://x.com/user/status/1"},
+                ),
+                "default": make_step(
+                    "fetch",
+                    config={"url": "https://example.com"},
+                ),
+            }
+        )
+
+        captured_engines: list[str] = []
+
+        async def mock_execute(name, params, ctx=None, on_progress=None):
+            engine = params.get("engine")
+            if engine:
+                captured_engines.append(engine)
+            return make_tool_result(success=True)
+
+        class ContractRegistry:
+            def list_providers(self, tool_name):
+                return [
+                    {"name": "tavily"},
+                    {"name": "httpx"},
+                    {"name": "twitterapi"},
+                    {"name": "trafilatura"},
+                ]
+
+            def resolve_provider(self, tool, url=None, default_provider=None):
+                if url and "x.com" in url:
+                    return "twitterapi"
+                return default_provider
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
+        mock_tool = type("MockTool", (), {"default_provider": "trafilatura"})
+
+        with warnings.catch_warnings(record=True):
+            warnings.simplefilter("always")
+            with (
+                patch("kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute),
+                patch(
+                    "kurt.workflows.toml.executor.get_provider_registry",
+                    return_value=ContractRegistry(),
+                ),
+                patch("kurt.tools.core.registry.get_tool", return_value=mock_tool),
+            ):
+                result = await execute_workflow(workflow, {})
+
+        assert result.status == "completed"
+        # All four resolution paths should have produced an engine
+        assert set(captured_engines) == {"tavily", "httpx", "twitterapi", "trafilatura"}
+
+    @pytest.mark.asyncio
+    async def test_contract_unknown_provider_fails_fast(self):
+        """Unknown explicit provider stops workflow before tool execution."""
+        workflow = make_workflow(
+            steps={
+                "step1": make_step("fetch", config={"provider": "nonexistent"}),
+                "step2": make_step("fetch", depends_on=["step1"]),
+            }
+        )
+
+        class ContractRegistry:
+            def list_providers(self, tool_name):
+                return [{"name": "trafilatura"}, {"name": "httpx"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
+        with (
+            patch(
+                "kurt.workflows.toml.executor.execute_tool",
+                new_callable=AsyncMock,
+            ) as mock_execute,
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=ContractRegistry(),
+            ),
+        ):
+            result = await execute_workflow(workflow, {})
+
+        assert result.status == "failed"
+        assert result.step_results["step1"].status == "failed"
+        assert "nonexistent" in result.step_results["step1"].error
+        # Tool should never have been called (fail-fast)
+        mock_execute.assert_not_called()
+        # Step 2 should not have executed
+        assert "step2" not in result.step_results
+
+    @pytest.mark.asyncio
+    async def test_contract_missing_env_fails_fast(self):
+        """Missing env vars stop workflow before tool execution."""
+        workflow = make_workflow(
+            steps={
+                "step1": make_step("fetch", config={"provider": "firecrawl"}),
+            }
+        )
+
+        class ContractRegistry:
+            def list_providers(self, tool_name):
+                return [{"name": "firecrawl"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                if provider_name == "firecrawl":
+                    return ["FIRECRAWL_API_KEY"]
+                return []
+
+        with (
+            patch(
+                "kurt.workflows.toml.executor.execute_tool",
+                new_callable=AsyncMock,
+            ) as mock_execute,
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=ContractRegistry(),
+            ),
+        ):
+            result = await execute_workflow(workflow, {})
+
+        assert result.status == "failed"
+        assert "FIRECRAWL_API_KEY" in result.step_results["step1"].error
+        mock_execute.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_contract_upstream_url_drives_provider_selection(self):
+        """In map->fetch pipeline, upstream URLs auto-select provider for fetch."""
+        workflow = make_workflow(
+            steps={
+                "discover": make_step(
+                    "map",
+                    config={"provider": "sitemap", "source": "url", "url": "https://x.com/sitemap.xml"},
+                ),
+                "fetch_content": make_step(
+                    "fetch",
+                    depends_on=["discover"],
+                    # No URL in config - must resolve from upstream
+                ),
+            }
+        )
+
+        captured: dict[str, dict] = {}
+
+        async def mock_execute(name, params, ctx=None, on_progress=None):
+            captured[name] = params.copy()
+            if name == "map":
+                return make_tool_result(
+                    success=True,
+                    data=[{"url": "https://x.com/user/status/123"}],
+                )
+            return make_tool_result(success=True)
+
+        class ContractRegistry:
+            def list_providers(self, tool_name):
+                return [{"name": "sitemap"}, {"name": "twitterapi"}, {"name": "trafilatura"}]
+
+            def resolve_provider(self, tool, url=None, default_provider=None):
+                if url and "x.com" in url:
+                    return "twitterapi"
+                return default_provider
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
+        with (
+            patch("kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute),
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=ContractRegistry(),
+            ),
+            patch("kurt.tools.core.registry.get_tool", side_effect=Exception("no tool")),
+        ):
+            result = await execute_workflow(workflow, {})
+
+        assert result.status == "completed"
+        assert captured["map"]["engine"] == "sitemap"
+        assert captured["fetch"]["engine"] == "twitterapi"
+
+    @pytest.mark.asyncio
+    async def test_contract_deprecated_engine_warns_and_works(self):
+        """Deprecated config.engine emits warning but still resolves correctly."""
+        workflow = make_workflow(
+            steps={
+                "step1": make_step("fetch", config={"engine": "httpx", "url": "https://example.com"}),
+            }
+        )
+
+        captured: dict[str, dict] = {}
+
+        async def mock_execute(name, params, ctx=None, on_progress=None):
+            captured[name] = params.copy()
+            return make_tool_result(success=True)
+
+        class ContractRegistry:
+            def list_providers(self, tool_name):
+                return [{"name": "httpx"}, {"name": "trafilatura"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            with (
+                patch("kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute),
+                patch(
+                    "kurt.workflows.toml.executor.get_provider_registry",
+                    return_value=ContractRegistry(),
+                ),
+            ):
+                result = await execute_workflow(workflow, {})
+
+        assert result.status == "completed"
+        assert captured["fetch"]["engine"] == "httpx"
+        deprecation_msgs = [w for w in caught if issubclass(w.category, DeprecationWarning)]
+        assert len(deprecation_msgs) >= 1
+        assert "deprecated" in str(deprecation_msgs[0].message).lower()
