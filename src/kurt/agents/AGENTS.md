@@ -53,15 +53,19 @@ Agents should use these commands to dynamically discover options and access work
 - `kurt content list` - List all indexed documents
 - `kurt content list --url-contains "topic"` - Filter by URL substring
 - `kurt map <url>` - Discover content from a URL (crawls site)
-- `kurt fetch` - Fetch and index discovered documents
+- `kurt fetch` - Fetch and index discovered documents (provider auto-selected from URL)
+- `kurt fetch <url> --provider <name>` - Fetch with explicit provider override
 - `kurt content get <doc-id>` - Get document by ID or URL
 
 **Direct Tool Commands (for pipelines):**
 - `kurt map <url>` - Map/discover URLs from a source
 - `kurt fetch` - Fetch content from discovered URLs
+- `kurt fetch <url> --provider notion` - Fetch with explicit provider
 - `kurt llm --prompt "..." ` - Run LLM prompt over documents
 - `kurt embed` - Generate embeddings
 - `kurt sql "SELECT ..."` - Query the Dolt database
+- `kurt tool list` - List tools and providers
+- `kurt tool providers fetch` - Show available providers for a tool
 
 **Format & Options:**
 - `kurt guides formats` - List available format templates
@@ -343,7 +347,9 @@ For detailed discovery methods, run: `kurt guides discovery`
 **✅ Top-level tool commands (recommended):**
 ```bash
 kurt map <url>          # Discover URLs from a source
-kurt fetch              # Fetch discovered documents
+kurt fetch              # Fetch discovered documents (provider auto-selected)
+kurt fetch <url> --provider notion  # Explicit provider
+kurt tool list          # List tools and providers
 kurt sql "SELECT ..."   # Query the database
 ```
 

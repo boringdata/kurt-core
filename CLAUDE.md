@@ -281,6 +281,102 @@ with mock_llm([extract_step], factory):
 
 ---
 
+## Tool & Provider System
+
+Kurt uses a pluggable provider system for tools like `fetch` and `map`.
+
+### Concepts
+
+| Concept | Description | Example |
+|---------|-------------|---------|
+| **Tool** | Category with standard interface | fetch, map, publish, llm |
+| **Provider** | Implementation of a tool | trafilatura, notion, httpx, sitemap |
+| **ProviderRegistry** | Singleton for discovery and URL-based routing | `get_provider_registry()` |
+
+### Provider Discovery
+
+Providers are discovered in priority order (first occurrence wins):
+
+1. **Project**: `<project>/kurt/tools/<tool>/providers/<name>/provider.py`
+2. **User**: `~/.kurt/tools/<tool>/providers/<name>/provider.py`
+3. **Built-in**: `src/kurt/tools/<tool>/providers/<name>/provider.py`
+
+Project providers can extend builtin tools without needing a `tool.py` — just add a `providers/` subdirectory.
+
+### URL Auto-Selection
+
+Providers declare `url_patterns` for automatic selection:
+
+| URL Pattern | Provider | Tool |
+|-------------|----------|------|
+| `*.notion.so/*` | notion | fetch |
+| `*/sitemap.xml` | sitemap | map |
+| `*/feed*`, `*/rss*` | rss | map |
+| `*twitter.com/*` | twitterapi | fetch |
+| `*` (fallback) | trafilatura | fetch |
+
+### Built-in Providers
+
+**Fetch** (6): trafilatura, httpx, tavily, firecrawl, apify, twitterapi
+**Map** (6): sitemap, rss, crawl, cms, folder, apify
+
+### CLI Commands
+
+```bash
+kurt tool list              # List all tools and providers
+kurt tool info fetch        # Show tool details
+kurt tool providers fetch   # List providers for a tool
+kurt tool check fetch       # Validate env requirements
+kurt tool new my-tool       # Scaffold a new tool
+kurt tool new-provider fetch notion  # Add provider to existing tool
+```
+
+### Workflow Configuration
+
+```toml
+# Explicit provider selection:
+[[steps]]
+type = "fetch"
+config.provider = "notion"
+config.url = "https://notion.so/page"
+
+# Auto-selection via URL pattern (no provider needed):
+[[steps]]
+type = "fetch"
+config.url = "https://notion.so/page"  # Auto-selects notion provider
+```
+
+### Provider Config (kurt.toml)
+
+Providers can have per-project configuration in `kurt.toml`:
+
+```toml
+[providers.fetch.firecrawl]
+formats = ["markdown"]
+timeout = 60
+
+[providers.map.crawl]
+max_depth = 3
+```
+
+Config hierarchy: CLI flags > project `kurt.toml` > user `~/.kurt/config.toml` > provider defaults.
+
+### Creating Custom Providers
+
+Use `kurt tool new <name>` for a new tool or `kurt tool new-provider <tool> <name>` for a provider.
+
+Provider classes must be self-contained (no relative imports) since they're loaded via `importlib.util.spec_from_file_location`. Required attributes: `name`, and optionally `version`, `url_patterns`, `requires_env`.
+
+### Files
+
+- `src/kurt/tools/core/provider.py` - ProviderRegistry singleton
+- `src/kurt/tools/core/registry.py` - Tool registry and execution
+- `src/kurt/tools/core/config_resolver.py` - Provider config from TOML
+- `src/kurt/tools/<tool>/providers/<name>/provider.py` - Built-in providers
+- `src/kurt/tools/templates/scaffolds.py` - Tool/provider scaffolding
+
+---
+
 ## Adding a New Workflow
 
 Workflows are self-contained modules in `src/kurt/workflows/<name>/`.
@@ -495,7 +591,7 @@ SQLModel doesn't auto-discover models. Call `register_all_models()` before `crea
 In workflow configs (`StepConfig`), distinguish between:
 
 **Persistent config** (use `ConfigParam`) - settings that make sense in `kurt.config`:
-- `fetch_engine`, `batch_size` - project-wide preferences
+- `provider`, `batch_size` - project-wide preferences
 - `max_pages`, `max_depth` - workflow tuning parameters
 - `model`, `recency` - API configuration
 

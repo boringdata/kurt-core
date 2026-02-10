@@ -127,7 +127,7 @@ continue_on_error = false      # Continue workflow if step fails
 | `llm` | LLM extraction with structured output | `prompt_template`, `output_schema` |
 | `embed` | Generate embeddings | `input_column`, `model` |
 | `map` | Map URLs (sitemap/crawl) | `url`, `depth`, `patterns` |
-| `fetch` | Fetch content from URLs | `engine`, `pending` |
+| `fetch` | Fetch content from URLs | `provider`, `pending` |
 | `sql` | Execute SQL query | `query` |
 | `agent` | Run Claude agent | `prompt`, `model`, `max_turns` |
 | `write` | Write to file | `path`, `content` |
@@ -219,7 +219,7 @@ config.depth = "{{inputs.depth}}"
 [steps.fetch_content]
 type = "fetch"
 depends_on = ["map_site"]
-config.engine = "trafilatura"
+config.provider = "trafilatura"
 
 # Step 3: Analyze with LLM
 [steps.analyze]
