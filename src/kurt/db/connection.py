@@ -258,6 +258,11 @@ class DoltDBConnection:
         self._database = database or self.path.name
         self._pool_size = pool_size
 
+        # Check if this project already has a saved port from a previous run
+        saved_port = self._read_saved_port()
+        if saved_port is not None:
+            self._port = saved_port
+
         # Connection pool (lazy init) - for raw query mode
         self._pool: ConnectionPool | None = None
 
@@ -285,25 +290,47 @@ class DoltDBConnection:
         """
         return self._host in {"localhost", "127.0.0.1", "::1"}
 
+    def _read_saved_port(self) -> int | None:
+        """Read the saved port from this project's server info file.
+
+        Returns the port if this project has a saved server info file,
+        None otherwise.
+        """
+        info_file = self.path / ".dolt" / "kurt-server.json"
+        if not info_file.exists():
+            return None
+
+        try:
+            import json
+
+            info = json.loads(info_file.read_text())
+            # Only use saved port if it's for this project
+            if info.get("path") == str(self.path.resolve()):
+                return info.get("port")
+        except Exception:
+            pass
+        return None
+
+    def _find_free_port(self) -> int:
+        """Find a free TCP port on localhost."""
+        import socket
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("localhost", 0))
+            return s.getsockname()[1]
+
     def _get_pool(self) -> ConnectionPool:
         """Get or create connection pool for dolt sql-server.
 
         Auto-starts the server for local targets if not running.
         Remote servers must be running - we never try to start them.
 
-        For local servers, verifies the running server matches this project
-        to prevent connecting to a stale server from a different project.
+        For local servers, if the port is occupied by another project's server,
+        a new port is automatically selected.
         """
         if self._auto_start and self._is_local_server_target():
-            if not self._is_server_running():
-                self._start_server()
-            elif not self._is_correct_server():
-                # Server running but for wrong project - restart it
-                logger.warning(
-                    f"Dolt server on port {self._port} is for a different project. Restarting..."
-                )
-                self._stop_server()
-                self._start_server()
+            # _start_server handles port conflicts by finding a free port
+            self._start_server()
 
         if self._pool is None:
             self._pool = ConnectionPool(
@@ -330,7 +357,9 @@ class DoltDBConnection:
 
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(1)
-            result = sock.connect_ex((self._host if self._host != "localhost" else "127.0.0.1", self._port))
+            result = sock.connect_ex(
+                (self._host if self._host != "localhost" else "127.0.0.1", self._port)
+            )
             sock.close()
             return result == 0
         except Exception:
@@ -349,7 +378,7 @@ class DoltDBConnection:
         # Can only verify local servers via info file
         if not self._is_local_server_target():
             return False
-        info_file = self.path / ".dolt" / "sql-server.info"
+        info_file = self.path / ".dolt" / "kurt-server.json"
         if not info_file.exists():
             # No info file - can't verify, assume it's wrong (will restart)
             return False
@@ -373,7 +402,7 @@ class DoltDBConnection:
         if not self._is_local_server_target():
             return
 
-        info_file = self.path / ".dolt" / "sql-server.info"
+        info_file = self.path / ".dolt" / "kurt-server.json"
         try:
             import json
 
@@ -403,16 +432,19 @@ class DoltDBConnection:
         if self._is_server_running():
             # Server is running - but is it OUR server or another project's?
             if self._is_correct_server():
-                logger.debug(f"Dolt SQL server already running on port {self._port} for this project")
+                logger.debug(
+                    f"Dolt SQL server already running on port {self._port} for this project"
+                )
                 return
             else:
-                # Wrong server running on our port - this is a conflict
-                # Log a warning but try to proceed (the database name in URL may differ)
-                logger.warning(
-                    f"Dolt SQL server on port {self._port} belongs to a different project. "
-                    f"Consider stopping it or using a different port."
+                # Wrong server running on our port - find a free port instead
+                old_port = self._port
+                self._port = self._find_free_port()
+                logger.info(
+                    f"Port {old_port} in use by another project. "
+                    f"Using port {self._port} instead."
                 )
-                return  # Try to connect anyway - database name mismatch will fail gracefully
+                # Fall through to start server on new port
 
         if not shutil.which("dolt"):
             raise DoltConnectionError(
@@ -471,7 +503,8 @@ class DoltDBConnection:
     def _get_engine(self) -> "Engine":
         """Get or create SQLAlchemy engine."""
         if self._engine is None:
-            if self._auto_start and self._is_local_server_target() and not self._is_server_running():
+            if self._auto_start and self._is_local_server_target():
+                # _start_server handles port conflicts by finding a free port
                 self._start_server()
 
             self._engine = create_engine(
@@ -530,7 +563,8 @@ class DoltDBConnection:
     def get_async_engine(self) -> AsyncEngine:
         """Get or create async SQLAlchemy engine."""
         if self._async_engine is None:
-            if self._auto_start and self._is_local_server_target() and not self._is_server_running():
+            if self._auto_start and self._is_local_server_target():
+                # _start_server handles port conflicts by finding a free port
                 self._start_server()
 
             async_url = self._make_async_url(self.get_database_url())
