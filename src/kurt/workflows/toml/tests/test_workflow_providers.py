@@ -15,9 +15,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from kurt.tools.core import ToolResult, ToolResultError
-from kurt.workflows.toml.executor import WorkflowExecutor, execute_workflow
+from kurt.workflows.toml.executor import execute_workflow
 from kurt.workflows.toml.parser import InputDef, StepDef, WorkflowDefinition, WorkflowMeta
-
 
 # ============================================================================
 # Helpers

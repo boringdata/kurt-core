@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 from click.testing import CliRunner
 
 from kurt.conftest import (
@@ -24,7 +23,6 @@ from kurt.testing.assertions import (
     assert_fetch_document_count,
     assert_fetch_document_exists,
     assert_fetch_document_not_exists,
-    assert_map_document_count,
     assert_map_document_exists,
     assert_map_document_not_exists,
 )
@@ -702,6 +700,7 @@ class TestDocsDeleteDatabaseVerification:
     ):
         """Verify delete actually removes document from database."""
         from sqlmodel import select
+
         from kurt.tools.map.models import MapDocument
 
         # Get count before delete
@@ -744,6 +743,7 @@ class TestDocsDeleteDatabaseVerification:
     ):
         """Verify delete with --url-contains removes only matching documents."""
         from sqlmodel import select
+
         from kurt.tools.map.models import MapDocument
 
         # Get count before delete
@@ -771,6 +771,7 @@ class TestDocsDeleteDatabaseVerification:
     ):
         """Verify --limit caps the number of documents deleted."""
         from sqlmodel import select
+
         from kurt.tools.map.models import MapDocument
 
         with managed_session() as session:
@@ -794,6 +795,7 @@ class TestDocsDeleteDatabaseVerification:
     ):
         """Verify --dry-run does not modify database."""
         from sqlmodel import select
+
         from kurt.tools.map.models import MapDocument
 
         with managed_session() as session:

@@ -10,11 +10,11 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
+from kurt.cli.main import main
 from kurt.conftest import (
     assert_cli_success,
     assert_output_contains,
 )
-from kurt.cli.main import main
 
 
 class TestMainCLIHelp:

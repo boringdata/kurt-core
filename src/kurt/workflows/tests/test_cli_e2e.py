@@ -13,27 +13,28 @@ from click.testing import CliRunner
 
 from kurt.conftest import (
     assert_cli_success,
-    assert_json_output,
     assert_output_contains,
     invoke_cli,
 )
-# Import from toml/cli.py which defines the unified workflow_group
-from kurt.workflows.toml.cli import (
-    workflow_group,
-    run_cmd,
-    status_cmd,
-    logs_cmd,
-    cancel_cmd,
-    test_cmd,
-)
+
 # Import agent workflow commands from agents/cli.py
 from kurt.workflows.agents.cli import (
+    create_cmd,
+    history_cmd,
+    init_cmd,
     list_cmd,
     show_cmd,
     validate_cmd,
-    history_cmd,
-    init_cmd,
-    create_cmd,
+)
+
+# Import from toml/cli.py which defines the unified workflow_group
+from kurt.workflows.toml.cli import (
+    cancel_cmd,
+    logs_cmd,
+    run_cmd,
+    status_cmd,
+    test_cmd,
+    workflow_group,
 )
 
 
@@ -285,7 +286,7 @@ class TestWorkflowInit:
         assert result.exit_code in (0, 1)
 
         # Check if directory was created
-        workflow_dir = tmp_project / ".kurt" / "workflows"
+        tmp_project / ".kurt" / "workflows"
         # May or may not exist depending on implementation
 
 

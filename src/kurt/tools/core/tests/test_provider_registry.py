@@ -4,8 +4,6 @@ Unit tests for ProviderRegistry and provider discovery.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from kurt.tools.core.errors import (

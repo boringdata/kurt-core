@@ -20,10 +20,8 @@ from kurt.conftest import (
 )
 from kurt.testing.assertions import (
     assert_map_document_count,
-    assert_map_document_exists,
 )
 from kurt.tools.map.cli import map_cmd
-
 
 # Sample sitemap response for mocking
 MOCK_SITEMAP_XML = """<?xml version="1.0" encoding="UTF-8"?>
@@ -242,9 +240,10 @@ class TestMapMaxDepth:
 
     def test_map_max_depth_folder(self, cli_runner: CliRunner, tmp_project: Path):
         """Verify --max-depth limits recursion depth in folder mapping."""
+        from sqlmodel import select
+
         from kurt.db import managed_session
         from kurt.tools.map.models import MapDocument
-        from sqlmodel import select
 
         # Create nested directories
         (tmp_project / "depthtest" / "level1" / "level2").mkdir(parents=True)
@@ -293,9 +292,6 @@ class TestMapUrlSource:
 
     def test_map_url_with_mocked_sitemap(self, cli_runner: CliRunner, tmp_project: Path):
         """Verify --url discovers URLs from sitemap and stores in DB."""
-        from kurt.db import managed_session
-        from kurt.tools.map.models import MapDocument
-        from sqlmodel import select
 
         # Mock the httpx.AsyncClient to return sitemap
         mock_response = MagicMock()
@@ -329,16 +325,17 @@ class TestMapUrlSource:
 
     def test_map_url_dry_run_no_persist(self, cli_runner: CliRunner, tmp_project: Path):
         """Verify --url with --dry-run does not persist to database."""
+        from sqlmodel import select
+
         from kurt.db import managed_session
         from kurt.tools.map.models import MapDocument
-        from sqlmodel import select
 
         # Get count before
         with managed_session() as session:
             before_count = len(session.exec(select(MapDocument)).all())
 
         # Even without proper mock, dry-run should not persist
-        result = invoke_cli(
+        invoke_cli(
             cli_runner,
             map_cmd,
             ["--url", "https://example.com", "--method", "sitemap", "--dry-run"],
@@ -372,7 +369,6 @@ class TestMapUrlSource:
 
     def test_map_url_direct_method(self, cli_runner: CliRunner, tmp_project: Path):
         """Verify --url with single URL stores the URL."""
-        from kurt.db import managed_session
 
         # Use dry-run to test CLI parsing without network
         result = invoke_cli(
@@ -450,9 +446,10 @@ class TestMapFolderEdgeCases:
 
     def test_map_folder_empty(self, cli_runner: CliRunner, tmp_project: Path):
         """Verify map handles empty directory with 0 documents."""
+        from sqlmodel import select
+
         from kurt.db import managed_session
         from kurt.tools.map.models import MapDocument
-        from sqlmodel import select
 
         # Create empty folder
         (tmp_project / "empty_folder").mkdir(exist_ok=True)
@@ -477,9 +474,10 @@ class TestMapFolderEdgeCases:
 
     def test_map_folder_single_file(self, cli_runner: CliRunner, tmp_project: Path):
         """Verify map discovers single file and stores in DB."""
+        from sqlmodel import select
+
         from kurt.db import managed_session
         from kurt.tools.map.models import MapDocument
-        from sqlmodel import select
 
         (tmp_project / "single").mkdir(exist_ok=True)
         (tmp_project / "single" / "only.md").write_text("# Only File")
@@ -501,9 +499,10 @@ class TestMapFolderEdgeCases:
 
     def test_map_folder_nested_deep(self, cli_runner: CliRunner, tmp_project: Path):
         """Verify map discovers deeply nested files."""
+        from sqlmodel import select
+
         from kurt.db import managed_session
         from kurt.tools.map.models import MapDocument
-        from sqlmodel import select
 
         # Create deeply nested structure
         deep_path = tmp_project / "deep" / "a" / "b" / "c" / "d"
@@ -620,9 +619,10 @@ class TestMapDbVerification:
 
     def test_map_stores_discovery_method(self, cli_runner: CliRunner, tmp_project: Path):
         """Verify discovery_method is correctly stored in database."""
+        from sqlmodel import select
+
         from kurt.db import managed_session
         from kurt.tools.map.models import MapDocument
-        from sqlmodel import select
 
         (tmp_project / "method_test").mkdir(exist_ok=True)
         (tmp_project / "method_test" / "doc.md").write_text("# Test")
@@ -647,9 +647,10 @@ class TestMapDbVerification:
 
     def test_map_stores_source_type(self, cli_runner: CliRunner, tmp_project: Path):
         """Verify source_type is correctly stored for folder sources."""
+        from sqlmodel import select
+
         from kurt.db import managed_session
         from kurt.tools.map.models import MapDocument
-        from sqlmodel import select
 
         (tmp_project / "source_type_test").mkdir(exist_ok=True)
         (tmp_project / "source_type_test" / "doc.md").write_text("# Test")

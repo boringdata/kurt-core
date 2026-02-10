@@ -8,14 +8,11 @@ This tool parses files into structured data. It shows how to:
 
 from __future__ import annotations
 
-from typing import Any
-
 from pydantic import BaseModel, Field
 
 from kurt.tools.core import (
     ProgressCallback,
     ProviderRegistry,
-    SubstepEvent,
     Tool,
     ToolContext,
     ToolResult,

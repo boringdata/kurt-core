@@ -14,7 +14,6 @@ import pytest
 
 from kurt.tools.core.provider import ProviderRegistry
 
-
 # ---------------------------------------------------------------------------
 # Fixture: load providers via registry (the canonical way)
 # ---------------------------------------------------------------------------

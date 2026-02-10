@@ -10,12 +10,10 @@ Uses Dolt-based fixtures from kurt.conftest (discovered automatically by pytest)
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
 import pytest
 
 from kurt.tools.core.provider import ProviderRegistry
-
 
 # ============================================================================
 # Provider Registry Fixtures
@@ -42,11 +40,11 @@ def mock_fetch_registry(clean_registry):
     Injects mock classes (not instances) into the registry so that
     ``get_provider()`` returns a fresh mock on each call.
     """
-    from kurt.tools.fetch.providers.trafilatura.mock import MockTrafilaturaFetcher
+    from kurt.tools.fetch.providers.apify.mock import MockApifyFetcher
+    from kurt.tools.fetch.providers.firecrawl.mock import MockFirecrawlFetcher
     from kurt.tools.fetch.providers.httpx.mock import MockHttpxFetcher
     from kurt.tools.fetch.providers.tavily.mock import MockTavilyFetcher
-    from kurt.tools.fetch.providers.firecrawl.mock import MockFirecrawlFetcher
-    from kurt.tools.fetch.providers.apify.mock import MockApifyFetcher
+    from kurt.tools.fetch.providers.trafilatura.mock import MockTrafilaturaFetcher
     from kurt.tools.fetch.providers.twitterapi.mock import MockTwitterApiFetcher
 
     clean_registry._providers["fetch"] = {
@@ -79,12 +77,12 @@ def mock_map_registry(clean_registry):
     Injects mock classes (not instances) into the registry so that
     ``get_provider()`` returns a fresh mock on each call.
     """
-    from kurt.tools.map.providers.sitemap.mock import MockSitemapMapper
-    from kurt.tools.map.providers.rss.mock import MockRssMapper
-    from kurt.tools.map.providers.crawl.mock import MockCrawlMapper
-    from kurt.tools.map.providers.cms.mock import MockCmsMapper
-    from kurt.tools.map.providers.folder.mock import MockFolderMapper
     from kurt.tools.map.providers.apify.mock import MockApifyMapper
+    from kurt.tools.map.providers.cms.mock import MockCmsMapper
+    from kurt.tools.map.providers.crawl.mock import MockCrawlMapper
+    from kurt.tools.map.providers.folder.mock import MockFolderMapper
+    from kurt.tools.map.providers.rss.mock import MockRssMapper
+    from kurt.tools.map.providers.sitemap.mock import MockSitemapMapper
 
     clean_registry._providers["map"] = {
         "sitemap": MockSitemapMapper,
@@ -112,18 +110,18 @@ def mock_map_registry(clean_registry):
 @pytest.fixture
 def mock_full_registry(clean_registry):
     """Registry pre-loaded with ALL mock providers (fetch + map)."""
-    from kurt.tools.fetch.providers.trafilatura.mock import MockTrafilaturaFetcher
+    from kurt.tools.fetch.providers.apify.mock import MockApifyFetcher as MockApifyFetchProvider
+    from kurt.tools.fetch.providers.firecrawl.mock import MockFirecrawlFetcher
     from kurt.tools.fetch.providers.httpx.mock import MockHttpxFetcher
     from kurt.tools.fetch.providers.tavily.mock import MockTavilyFetcher
-    from kurt.tools.fetch.providers.firecrawl.mock import MockFirecrawlFetcher
-    from kurt.tools.fetch.providers.apify.mock import MockApifyFetcher as MockApifyFetchProvider
+    from kurt.tools.fetch.providers.trafilatura.mock import MockTrafilaturaFetcher
     from kurt.tools.fetch.providers.twitterapi.mock import MockTwitterApiFetcher
-    from kurt.tools.map.providers.sitemap.mock import MockSitemapMapper
-    from kurt.tools.map.providers.rss.mock import MockRssMapper
-    from kurt.tools.map.providers.crawl.mock import MockCrawlMapper
-    from kurt.tools.map.providers.cms.mock import MockCmsMapper
-    from kurt.tools.map.providers.folder.mock import MockFolderMapper
     from kurt.tools.map.providers.apify.mock import MockApifyMapper as MockApifyMapProvider
+    from kurt.tools.map.providers.cms.mock import MockCmsMapper
+    from kurt.tools.map.providers.crawl.mock import MockCrawlMapper
+    from kurt.tools.map.providers.folder.mock import MockFolderMapper
+    from kurt.tools.map.providers.rss.mock import MockRssMapper
+    from kurt.tools.map.providers.sitemap.mock import MockSitemapMapper
 
     fetch_providers = {
         "trafilatura": MockTrafilaturaFetcher,

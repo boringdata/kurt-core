@@ -3,31 +3,42 @@
 import pytest
 
 from kurt.tools.map.core.base import MapperResult
-from kurt.tools.map.providers.sitemap.mock import (
-    MockSitemapMapper,
-    create_mock as create_sitemap_mock,
+from kurt.tools.map.providers.apify.mock import (
+    MockApifyMapper,
 )
-from kurt.tools.map.providers.rss.mock import (
-    MockRssMapper,
-    create_mock as create_rss_mock,
-)
-from kurt.tools.map.providers.crawl.mock import (
-    MockCrawlMapper,
-    create_mock as create_crawl_mock,
+from kurt.tools.map.providers.apify.mock import (
+    create_mock as create_apify_mock,
 )
 from kurt.tools.map.providers.cms.mock import (
     MockCmsMapper,
+)
+from kurt.tools.map.providers.cms.mock import (
     create_mock as create_cms_mock,
+)
+from kurt.tools.map.providers.crawl.mock import (
+    MockCrawlMapper,
+)
+from kurt.tools.map.providers.crawl.mock import (
+    create_mock as create_crawl_mock,
 )
 from kurt.tools.map.providers.folder.mock import (
     MockFolderMapper,
+)
+from kurt.tools.map.providers.folder.mock import (
     create_mock as create_folder_mock,
 )
-from kurt.tools.map.providers.apify.mock import (
-    MockApifyMapper,
-    create_mock as create_apify_mock,
+from kurt.tools.map.providers.rss.mock import (
+    MockRssMapper,
 )
-
+from kurt.tools.map.providers.rss.mock import (
+    create_mock as create_rss_mock,
+)
+from kurt.tools.map.providers.sitemap.mock import (
+    MockSitemapMapper,
+)
+from kurt.tools.map.providers.sitemap.mock import (
+    create_mock as create_sitemap_mock,
+)
 
 # ---- Parametrized tests across all map mocks ----
 

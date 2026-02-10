@@ -9,14 +9,11 @@ the full CLI integration.
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
-import pytest
 from click.testing import CliRunner
 
 from kurt.conftest import (
     assert_cli_success,
-    assert_json_output,
     assert_output_contains,
     invoke_cli,
 )

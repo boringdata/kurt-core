@@ -768,7 +768,7 @@ class TestHistoryCommand:
         mock_db.query.return_value = MockResult()
 
         with patch("kurt.db.dolt.check_schema_exists", return_value={"workflow_runs": True}):
-            result = cli_runner.invoke(agents_group, ["history", "test", "--limit", "5"])
+            cli_runner.invoke(agents_group, ["history", "test", "--limit", "5"])
 
         # Verify query was called with correct limit
         call_args = mock_db.query.call_args

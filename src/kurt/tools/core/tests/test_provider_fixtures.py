@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import os
 
-import pytest
-
 from kurt.tools.core.provider import ProviderRegistry
 from kurt.tools.fetch.core.base import FetchResult
 from kurt.tools.map.core.base import MapperResult

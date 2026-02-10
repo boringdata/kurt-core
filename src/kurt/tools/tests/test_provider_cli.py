@@ -1,7 +1,6 @@
 """Tests for the provider CLI commands (kurt tool list/info/check/providers)."""
 
 import json
-from pathlib import Path
 
 import pytest
 from click.testing import CliRunner

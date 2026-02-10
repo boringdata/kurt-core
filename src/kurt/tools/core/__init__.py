@@ -81,17 +81,17 @@ from .errors import (
     ToolTimeoutError,
 )
 
-# Provider registry
-from .provider import (
-    ProviderRegistry,
-    get_provider_registry,
-)
-
 # Step hooks (moved from kurt.core.hooks)
 from .hooks import (
     CompositeStepHooks,
     NoopStepHooks,
     StepHooks,
+)
+
+# Provider registry
+from .provider import (
+    ProviderRegistry,
+    get_provider_registry,
 )
 
 # Registry functions

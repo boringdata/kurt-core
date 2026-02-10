@@ -10,7 +10,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 from click.testing import CliRunner
 
 from kurt.conftest import (
@@ -24,7 +23,6 @@ from kurt.testing.assertions import (
     assert_fetch_document_exists,
 )
 from kurt.tools.fetch.cli import fetch_cmd
-
 
 # Sample HTML for mocking trafilatura responses
 MOCK_HTML = """
@@ -326,7 +324,6 @@ class TestFetchTavilyEngine:
     ):
         """Verify --batch-size works with tavily engine."""
         from kurt.db import managed_session
-        from kurt.tools.fetch.core import FetchResult
         from kurt.tools.map.models import MapDocument, MapStatus
 
         with managed_session() as session:
@@ -841,7 +838,6 @@ class TestFetchCombinedOptions:
     ):
         """Verify engine with batch-size option combination works."""
         from kurt.db import managed_session
-        from kurt.tools.fetch.core import FetchResult
         from kurt.tools.map.models import MapDocument, MapStatus
 
         with managed_session() as session:
@@ -995,10 +991,11 @@ class TestFetchContentVerification:
         self, cli_runner: CliRunner, tmp_project: Path
     ):
         """Verify content is stored in FetchDocument after fetch."""
+        from sqlmodel import select
+
         from kurt.db import managed_session
         from kurt.tools.fetch.models import FetchDocument
         from kurt.tools.map.models import MapDocument, MapStatus
-        from sqlmodel import select
 
         with managed_session() as session:
             doc = MapDocument(

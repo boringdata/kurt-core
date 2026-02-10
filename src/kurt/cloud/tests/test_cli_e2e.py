@@ -10,21 +10,20 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 from click.testing import CliRunner
 
-from kurt.conftest import (
-    assert_cli_success,
-    assert_output_contains,
-    invoke_cli,
-)
 from kurt.cloud.cli import (
     cloud_group,
+    cloud_help_cmd,
     login_cmd,
     logout_cmd,
     status_cmd,
     whoami_cmd,
-    cloud_help_cmd,
+)
+from kurt.conftest import (
+    assert_cli_success,
+    assert_output_contains,
+    invoke_cli,
 )
 
 

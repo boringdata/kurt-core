@@ -10,7 +10,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 from click.testing import CliRunner
 
 from kurt.conftest import (
@@ -19,10 +18,10 @@ from kurt.conftest import (
     invoke_cli,
 )
 from kurt.db.isolation.cli import (
-    sync_group,
+    merge_cmd,
     pull_cmd,
     push_cmd,
-    merge_cmd,
+    sync_group,
 )
 
 
@@ -69,7 +68,7 @@ class TestSyncPull:
 
     def test_pull_git_only_dolt_only_mutually_exclusive(self, cli_runner: CliRunner):
         """Verify --git-only and --dolt-only are mutually exclusive."""
-        with patch("kurt.db.isolation.cli._get_dolt_db") as mock_db:
+        with patch("kurt.db.isolation.cli._get_dolt_db"):
             with patch("kurt.db.isolation.cli._get_git_path", return_value=Path("/fake")):
                 result = invoke_cli(
                     cli_runner, pull_cmd, ["--git-only", "--dolt-only"]
@@ -90,7 +89,7 @@ class TestSyncPull:
             "dolt": {"status": "success", "commits_pulled": 1},
         }
 
-        with patch("kurt.db.isolation.cli._get_dolt_db") as mock_db:
+        with patch("kurt.db.isolation.cli._get_dolt_db"):
             with patch("kurt.db.isolation.cli._get_git_path", return_value=Path("/fake")):
                 with patch("kurt.db.isolation.cli.pull", return_value=mock_result):
                     result = invoke_cli(cli_runner, pull_cmd, [])
@@ -108,7 +107,7 @@ class TestSyncPull:
             "git": {"status": "success", "commits_pulled": 0},
         }
 
-        with patch("kurt.db.isolation.cli._get_dolt_db") as mock_db:
+        with patch("kurt.db.isolation.cli._get_dolt_db"):
             with patch("kurt.db.isolation.cli._get_git_path", return_value=Path("/fake")):
                 with patch("kurt.db.isolation.cli.pull", return_value=mock_result) as mock_pull:
                     result = invoke_cli(cli_runner, pull_cmd, ["--git-only"])
@@ -126,7 +125,7 @@ class TestSyncPull:
             "dolt": {"status": "success", "commits_pulled": 0},
         }
 
-        with patch("kurt.db.isolation.cli._get_dolt_db") as mock_db:
+        with patch("kurt.db.isolation.cli._get_dolt_db"):
             with patch("kurt.db.isolation.cli._get_git_path", return_value=Path("/fake")):
                 with patch("kurt.db.isolation.cli.pull", return_value=mock_result):
                     result = invoke_cli(cli_runner, pull_cmd, ["--json"])
@@ -159,7 +158,7 @@ class TestSyncPush:
 
     def test_push_git_only_dolt_only_mutually_exclusive(self, cli_runner: CliRunner):
         """Verify --git-only and --dolt-only are mutually exclusive."""
-        with patch("kurt.db.isolation.cli._get_dolt_db") as mock_db:
+        with patch("kurt.db.isolation.cli._get_dolt_db"):
             with patch("kurt.db.isolation.cli._get_git_path", return_value=Path("/fake")):
                 result = invoke_cli(
                     cli_runner, push_cmd, ["--git-only", "--dolt-only"]
@@ -180,7 +179,7 @@ class TestSyncPush:
             "dolt": {"status": "success", "commits_pushed": 1},
         }
 
-        with patch("kurt.db.isolation.cli._get_dolt_db") as mock_db:
+        with patch("kurt.db.isolation.cli._get_dolt_db"):
             with patch("kurt.db.isolation.cli._get_git_path", return_value=Path("/fake")):
                 with patch("kurt.db.isolation.cli.push", return_value=mock_result):
                     result = invoke_cli(cli_runner, push_cmd, [])
@@ -198,7 +197,7 @@ class TestSyncPush:
             "dolt": {"status": "success", "commits_pushed": 0},
         }
 
-        with patch("kurt.db.isolation.cli._get_dolt_db") as mock_db:
+        with patch("kurt.db.isolation.cli._get_dolt_db"):
             with patch("kurt.db.isolation.cli._get_git_path", return_value=Path("/fake")):
                 with patch("kurt.db.isolation.cli.push", return_value=mock_result) as mock_push:
                     result = invoke_cli(cli_runner, push_cmd, ["--dolt-only"])
@@ -235,7 +234,7 @@ class TestSyncMerge:
 
     def test_merge_requires_branch(self, cli_runner: CliRunner):
         """Verify merge requires branch argument."""
-        with patch("kurt.db.isolation.cli._get_dolt_db") as mock_db:
+        with patch("kurt.db.isolation.cli._get_dolt_db"):
             with patch("kurt.db.isolation.cli._get_git_path", return_value=Path("/fake")):
                 result = invoke_cli(cli_runner, merge_cmd, [])
 
@@ -251,7 +250,7 @@ class TestSyncMerge:
         mock_result.git_commit_hash = "def456789"
         mock_result.message = "Merged feature/test into main"
 
-        with patch("kurt.db.isolation.cli._get_dolt_db") as mock_db:
+        with patch("kurt.db.isolation.cli._get_dolt_db"):
             with patch("kurt.db.isolation.cli._get_git_path", return_value=Path("/fake")):
                 with patch("kurt.db.isolation.cli.merge_branch", return_value=mock_result):
                     result = invoke_cli(cli_runner, merge_cmd, ["feature/test"])
@@ -266,7 +265,7 @@ class TestSyncMerge:
         mock_conflicts.dolt_conflicts = []
         mock_conflicts.git_conflicts = []
 
-        with patch("kurt.db.isolation.cli._get_dolt_db") as mock_db:
+        with patch("kurt.db.isolation.cli._get_dolt_db"):
             with patch("kurt.db.isolation.cli._get_git_path", return_value=Path("/fake")):
                 with patch("kurt.db.isolation.cli.check_conflicts", return_value=mock_conflicts):
                     with patch("kurt.db.isolation.branch._git_current_branch", return_value="main"):
@@ -280,7 +279,7 @@ class TestSyncMerge:
 
     def test_merge_abort(self, cli_runner: CliRunner):
         """Verify merge --abort aborts in-progress merge."""
-        with patch("kurt.db.isolation.cli._get_dolt_db") as mock_db:
+        with patch("kurt.db.isolation.cli._get_dolt_db"):
             with patch("kurt.db.isolation.cli._get_git_path", return_value=Path("/fake")):
                 with patch("kurt.db.isolation.cli.abort_merge", return_value=True):
                     result = invoke_cli(cli_runner, merge_cmd, ["--abort"])
@@ -297,7 +296,7 @@ class TestSyncMerge:
         mock_result.git_commit_hash = "def456789"
         mock_result.message = "Merged"
 
-        with patch("kurt.db.isolation.cli._get_dolt_db") as mock_db:
+        with patch("kurt.db.isolation.cli._get_dolt_db"):
             with patch("kurt.db.isolation.cli._get_git_path", return_value=Path("/fake")):
                 with patch("kurt.db.isolation.cli.merge_branch", return_value=mock_result):
                     result = invoke_cli(
@@ -321,7 +320,7 @@ class TestSyncRemoteOptions:
         mock_result.dolt.commits_pulled = 0
         mock_result.to_dict.return_value = {}
 
-        with patch("kurt.db.isolation.cli._get_dolt_db") as mock_db:
+        with patch("kurt.db.isolation.cli._get_dolt_db"):
             with patch("kurt.db.isolation.cli._get_git_path", return_value=Path("/fake")):
                 with patch("kurt.db.isolation.cli.pull", return_value=mock_result) as mock_pull:
                     result = invoke_cli(
@@ -342,7 +341,7 @@ class TestSyncRemoteOptions:
         mock_result.dolt.commits_pushed = 0
         mock_result.to_dict.return_value = {}
 
-        with patch("kurt.db.isolation.cli._get_dolt_db") as mock_db:
+        with patch("kurt.db.isolation.cli._get_dolt_db"):
             with patch("kurt.db.isolation.cli._get_git_path", return_value=Path("/fake")):
                 with patch("kurt.db.isolation.cli.push", return_value=mock_result) as mock_push:
                     result = invoke_cli(

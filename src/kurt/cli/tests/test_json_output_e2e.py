@@ -14,7 +14,6 @@ from click.testing import CliRunner
 
 from kurt.cli.main import main
 from kurt.conftest import (
-    assert_cli_success,
     invoke_cli,
 )
 

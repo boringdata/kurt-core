@@ -2,17 +2,15 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from kurt.config.provider_config import (
     ProviderConfigResolver,
     get_provider_config_resolver,
 )
-
 
 # ---------------------------------------------------------------------------
 # Test config models

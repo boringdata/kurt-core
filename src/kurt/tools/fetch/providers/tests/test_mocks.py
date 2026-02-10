@@ -3,31 +3,42 @@
 import pytest
 
 from kurt.tools.fetch.core.base import FetchResult
-from kurt.tools.fetch.providers.trafilatura.mock import (
-    MockTrafilaturaFetcher,
-    create_mock as create_trafilatura_mock,
+from kurt.tools.fetch.providers.apify.mock import (
+    MockApifyFetcher,
+)
+from kurt.tools.fetch.providers.apify.mock import (
+    create_mock as create_apify_mock,
+)
+from kurt.tools.fetch.providers.firecrawl.mock import (
+    MockFirecrawlFetcher,
+)
+from kurt.tools.fetch.providers.firecrawl.mock import (
+    create_mock as create_firecrawl_mock,
 )
 from kurt.tools.fetch.providers.httpx.mock import (
     MockHttpxFetcher,
+)
+from kurt.tools.fetch.providers.httpx.mock import (
     create_mock as create_httpx_mock,
 )
 from kurt.tools.fetch.providers.tavily.mock import (
     MockTavilyFetcher,
+)
+from kurt.tools.fetch.providers.tavily.mock import (
     create_mock as create_tavily_mock,
 )
-from kurt.tools.fetch.providers.firecrawl.mock import (
-    MockFirecrawlFetcher,
-    create_mock as create_firecrawl_mock,
+from kurt.tools.fetch.providers.trafilatura.mock import (
+    MockTrafilaturaFetcher,
 )
-from kurt.tools.fetch.providers.apify.mock import (
-    MockApifyFetcher,
-    create_mock as create_apify_mock,
+from kurt.tools.fetch.providers.trafilatura.mock import (
+    create_mock as create_trafilatura_mock,
 )
 from kurt.tools.fetch.providers.twitterapi.mock import (
     MockTwitterApiFetcher,
+)
+from kurt.tools.fetch.providers.twitterapi.mock import (
     create_mock as create_twitterapi_mock,
 )
-
 
 # ---- Parametrized tests across all fetch mocks ----
 

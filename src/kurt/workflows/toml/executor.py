@@ -19,13 +19,12 @@ import asyncio
 import importlib.util
 import logging
 import uuid
+import warnings
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import IntEnum
 from pathlib import Path
 from typing import Any, Callable, Literal
-
-import warnings
 
 from kurt.observability.tracking import track_event
 from kurt.tools.core import ToolCanceledError, ToolContext, ToolError, ToolResult, execute_tool
@@ -779,8 +778,8 @@ class WorkflowExecutor:
             engine = config.get("engine")
             if engine:
                 warnings.warn(
-                    f"'engine' is deprecated in workflow config, use 'provider' instead. "
-                    f"This will be removed in a future version.",
+                    "'engine' is deprecated in workflow config, use 'provider' instead. "
+                    "This will be removed in a future version.",
                     DeprecationWarning,
                     stacklevel=2,
                 )

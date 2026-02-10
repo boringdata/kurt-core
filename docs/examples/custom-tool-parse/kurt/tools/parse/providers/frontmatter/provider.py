@@ -10,10 +10,9 @@ them via importlib.util.spec_from_file_location (no package context).
 
 from pathlib import Path
 
-from pydantic import BaseModel, Field
-
 # yaml is in the standard library since Python 3
 import yaml
+from pydantic import BaseModel, Field
 
 
 class ParseResult(BaseModel):
