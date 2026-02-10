@@ -8,19 +8,44 @@ sources in priority order:
     3. User config (~/.kurt/config.toml)
     4. Provider defaults (from ConfigModel class attribute)
 
-Supports provider-specific sections in TOML:
+TOML Config Format
+------------------
+Provider config lives in two TOML files:
 
+- **Project**: ``<project_root>/kurt.toml`` — per-project settings
+- **User**: ``~/.kurt/config.toml`` — user-wide defaults
+
+Tool-level settings serve as defaults for all providers of that tool.
+Provider-specific settings override tool-level ones::
+
+    # Tool-level defaults apply to all fetch providers
     [tool.fetch]
-    provider = "trafilatura"
     timeout = 30
 
-    [tool.fetch.providers.notion]
-    include_children = true
-    max_depth = 3
+    # Provider-specific overrides for a single provider
+    [tool.fetch.providers.firecrawl]
+    formats = ["markdown"]
+    timeout = 60
 
-Usage:
+    # Map tool example
+    [tool.map.providers.crawl]
+    max_depth = 3
+    max_pages = 500
+
+Precedence (highest to lowest)::
+
+    CLI flags  →  project kurt.toml  →  user ~/.kurt/config.toml  →  ConfigModel defaults
+
+Each provider may declare a ``ConfigModel`` (Pydantic BaseModel) class
+attribute that defines valid fields, types, and constraints. When a
+``ConfigModel`` is provided to ``resolve()``, the merged dict is validated
+against it and returned as a model instance.
+
+Usage::
+
     resolver = get_provider_config_resolver()
-    config = resolver.resolve("fetch", "notion", NotionConfig, cli_overrides={"timeout": 60})
+    config = resolver.resolve("fetch", "firecrawl", FirecrawlConfig,
+                              cli_overrides={"timeout": 120})
 """
 
 from __future__ import annotations
