@@ -113,6 +113,25 @@ async def _execute_user_function(
     return result
 
 
+def _translate_provider_config(tool_name: str, config: dict) -> None:
+    """Translate provider config fields to tool param fields in-place.
+
+    Provider ConfigModels use provider-centric naming (e.g., timeout in seconds,
+    max_urls) while tool params use tool-centric naming (e.g., timeout_ms,
+    max_pages). This bridges the gap so TOML config actually takes effect.
+
+    Only translates when the target field is absent (step config wins).
+    """
+    if tool_name == "fetch":
+        # timeout (seconds) -> timeout_ms (milliseconds)
+        if "timeout" in config and "timeout_ms" not in config:
+            config["timeout_ms"] = int(config["timeout"] * 1000)
+    elif tool_name == "map":
+        # max_urls -> max_pages
+        if "max_urls" in config and "max_pages" not in config:
+            config["max_pages"] = config["max_urls"]
+
+
 # Exit codes for CLI integration
 class ExitCode(IntEnum):
     """Exit codes for workflow execution."""
@@ -874,6 +893,10 @@ class WorkflowExecutor:
                     for key, value in provider_dict.items():
                         if key not in config:
                             config[key] = value
+
+                    # Translate provider config fields to tool param fields
+                    _translate_provider_config(tool_name, config)
+
                     logger.debug(
                         "Loaded provider config for '%s/%s' from TOML",
                         tool_name,

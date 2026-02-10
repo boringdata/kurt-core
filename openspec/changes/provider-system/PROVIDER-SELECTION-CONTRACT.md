@@ -390,12 +390,16 @@ DBOS.set_event("provider_selected", {
 - [ ] Accept `provider` parameter explicitly
 - [ ] Wire ProviderConfigResolver
 
-### 9.4 CLI Changes
+### 9.4 CLI Changes (bd-21im.4.1: RESOLVED)
 
-- [ ] Add `--provider` option alongside `--engine`
-- [ ] Emit deprecation warning for `--engine`
-- [ ] Support dynamic provider choices or free-form validation
-- [ ] Update `kurt tool check` for provider validation
+- [x] Add `--provider` option alongside `--engine` (fetch) and `--method` (map)
+- [x] `--provider` is free-form string (accepts custom provider names)
+- [x] `--engine` (fetch) is deprecated Click.Choice with `[Deprecated: use --provider]` help
+- [x] `--method` (map) is deprecated Click.Choice with `[Deprecated: use --provider]` help
+- [x] Both CLIs: `effective = provider or engine/method` (provider takes precedence)
+- [x] Support dynamic provider choices or free-form validation (`--provider` accepts any string)
+- [x] Update `kurt tool check` for provider validation
+- [ ] Emit runtime deprecation warning for `--engine`/`--method` usage
 
 ---
 
@@ -450,6 +454,8 @@ assert resolve("map", "https://example.com/sitemap.xml") == "sitemap"  # specifi
 | Validation timing | At resolution, before execution |
 | **Wildcard vs default** | **Tool default takes precedence over wildcard patterns** |
 | **Wildcard usage** | **Avoid wildcards for credentialed providers** |
+| **CLI surface** | `--provider` canonical; `--engine`/`--method` deprecated aliases (bd-21im.4.1) |
+| **Config mapping** | ConfigModel fields merged flat; names must match runtime fields (bd-21im.3.1) |
 
 ---
 
@@ -509,6 +515,119 @@ class FirecrawlProvider:
 
 ---
 
+## 13. Config-to-Runtime Mapping Rules (bd-21im.3.1)
+
+### 13.1 Executor Config Injection
+
+The executor merges resolved provider ConfigModel fields into the step config dict:
+
+```python
+provider_dict = resolved_config.model_dump()
+for key, value in provider_dict.items():
+    if key not in config:       # Step config always wins
+        config[key] = value
+```
+
+This is a **flat merge with no conversion**. The executor does not rename fields or convert units.
+
+### 13.2 Field Naming Rules
+
+**Rule 1: Matching fields use runtime names directly.**
+
+Provider ConfigModel fields that correspond 1:1 to runtime config fields pass through
+via flat merge with no translation needed.
+
+| Runtime Field | ConfigModel Field | Status |
+|---------------|-------------------|--------|
+| `batch_size` | `batch_size` | Direct match |
+| `concurrency` | `concurrency` | Direct match |
+| `retries` | `retries` | Direct match |
+| `platform` | `platform` | Direct match (apify) |
+| `apify_actor` | `apify_actor` | Direct match (apify) |
+| `content_type` | `content_type` | Direct match (apify) |
+
+**Rule 2: Known mismatches translated by executor.**
+
+When a ConfigModel uses a human-friendly name (e.g., `timeout` in seconds) that differs
+from the runtime name (e.g., `timeout_ms`), the executor's `_translate_provider_config()`
+bridges the gap AFTER the flat merge:
+
+```python
+def _translate_provider_config(tool_name: str, config: dict) -> None:
+    if tool_name == "fetch":
+        if "timeout" in config and "timeout_ms" not in config:
+            config["timeout_ms"] = int(config["timeout"] * 1000)
+    elif tool_name == "map":
+        if "max_urls" in config and "max_pages" not in config:
+            config["max_pages"] = config["max_urls"]
+```
+
+This keeps TOML human-friendly while ensuring runtime compatibility:
+
+```toml
+[providers.fetch.httpx]
+timeout = 60          # Translated to timeout_ms = 60000
+follow_redirects = true
+```
+
+**Rule 3: Step config always wins.** Both the flat merge (`if key not in config`) and the
+translation (`if target not in config`) respect explicit step-level values.
+
+**Rule 3: Provider-specific fields pass through.**
+
+Fields unique to a provider (not in the runtime config) are passed through in the config dict. Engine wrapper functions read them:
+
+```python
+# trafilatura-specific fields:
+include_comments: bool   # Read by _fetch_with_trafilatura
+include_tables: bool
+favor_precision: bool
+output_format: str
+
+# httpx-specific:
+follow_redirects: bool   # Read by _fetch_with_httpx / HttpxFetcher
+verify_ssl: bool
+max_content_size: int
+
+# firecrawl-specific:
+formats: list[str]       # Read by _fetch_with_firecrawl / FirecrawlFetcher
+poll_interval: int
+```
+
+### 13.3 Precedence
+
+```
+Step config (TOML [[steps]] or CLI flags)    ← Highest
+    ↓ (fills gaps)
+Provider ConfigModel (TOML [providers.tool.name])
+    ↓ (fills gaps)
+ConfigModel defaults (code)                  ← Lowest
+```
+
+The executor's `if key not in config` check enforces this: step-level values are never overwritten.
+
+### 13.4 Current Mismatches to Fix (bd-21im.3.2, bd-21im.3.3)
+
+| Provider | ConfigModel Field | Runtime Field | Action |
+|----------|-------------------|---------------|--------|
+| httpx | `timeout` (float, seconds) | `timeout_ms` (int, ms) | Rename to `timeout_ms` + add alias |
+| firecrawl | `timeout` (float, seconds) | `timeout_ms` (int, ms) | Rename to `timeout_ms` + add alias |
+| tavily | `timeout` (float, seconds) | `timeout_ms` (int, ms) | Rename to `timeout_ms` + add alias |
+| tavily | `batch_size` | `batch_size` | OK (matches) |
+| apify | `platform`, `apify_actor` | `platform`, `apify_actor` | OK (matches) |
+| trafilatura | `include_comments`, etc. | (pass-through) | OK (engine reads from config dict) |
+
+### 13.5 Silent No-Op Prevention
+
+`kurt tool check` validates ConfigModel fields against the runtime schema. Fields that don't match any runtime field AND aren't documented as provider-specific pass-through should trigger a warning.
+
+### 13.6 Adapter Location
+
+All conversion logic lives in the ConfigModel (via `model_validator`), NOT in the executor. The executor is a dumb flat merge.
+
+---
+
 *Contract finalized: 2026-02-10*
 *Updated: 2026-02-10 (wildcard semantics clarification per bd-21im.1.1)*
-*Implements: bd-26w.1, bd-21im.1.1*
+*Updated: 2026-02-10 (CLI surface decision bd-21im.4.1, config mapping rules bd-21im.3.1)*
+*Implements: bd-26w.1, bd-21im.1.1, bd-21im.4.1, bd-21im.3.1*

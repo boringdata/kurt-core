@@ -79,7 +79,7 @@ class FetchToolConfig(BaseModel):
 
     engine: str = Field(
         default="trafilatura",
-        description="Fetch engine/provider to use (e.g., trafilatura, httpx, tavily, firecrawl, apify, twitterapi, or custom provider name)",
+        description="Fetch engine to use: trafilatura, httpx, tavily, firecrawl, apify, twitterapi. For custom providers, use 'provider' in workflow config instead.",
     )
     platform: str | None = Field(
         default=None,
@@ -202,7 +202,7 @@ class FetchParams(BaseModel):
     # Config fields (flattened for executor compatibility)
     engine: str = Field(
         default="trafilatura",
-        description="Fetch engine/provider to use (e.g., trafilatura, httpx, tavily, firecrawl, apify, twitterapi, or custom provider name)",
+        description="Fetch engine to use: trafilatura, httpx, tavily, firecrawl, apify, twitterapi. For custom providers, use 'provider' in workflow config instead.",
     )
     platform: str | None = Field(
         default=None,

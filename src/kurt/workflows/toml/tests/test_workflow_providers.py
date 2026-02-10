@@ -1400,3 +1400,53 @@ class TestProviderSelectionContract:
         assert captured["fetch"]["engine"] == "bare"
         assert captured["fetch"]["url"] == "https://example.com"
         assert "provider" not in captured["fetch"]
+
+
+# ============================================================================
+# Provider Config Translation (bd-21im.3)
+# ============================================================================
+
+
+class TestProviderConfigTranslation:
+    """Verify provider config fields are translated to tool param fields."""
+
+    def test_translate_fetch_timeout_seconds_to_ms(self):
+        """Provider timeout (seconds) is translated to timeout_ms (milliseconds)."""
+        from kurt.workflows.toml.executor import _translate_provider_config
+
+        config: dict[str, Any] = {"timeout": 5.0, "url": "https://example.com"}
+        _translate_provider_config("fetch", config)
+        assert config["timeout_ms"] == 5000
+
+    def test_translate_fetch_timeout_does_not_override_explicit(self):
+        """Explicit timeout_ms in step config wins over translated timeout."""
+        from kurt.workflows.toml.executor import _translate_provider_config
+
+        config: dict[str, Any] = {"timeout": 5.0, "timeout_ms": 10000}
+        _translate_provider_config("fetch", config)
+        assert config["timeout_ms"] == 10000  # Not overridden
+
+    def test_translate_map_max_urls_to_max_pages(self):
+        """Provider max_urls is translated to max_pages."""
+        from kurt.workflows.toml.executor import _translate_provider_config
+
+        config: dict[str, Any] = {"max_urls": 500, "source": "url"}
+        _translate_provider_config("map", config)
+        assert config["max_pages"] == 500
+
+    def test_translate_map_max_urls_does_not_override_explicit(self):
+        """Explicit max_pages in step config wins over translated max_urls."""
+        from kurt.workflows.toml.executor import _translate_provider_config
+
+        config: dict[str, Any] = {"max_urls": 500, "max_pages": 100}
+        _translate_provider_config("map", config)
+        assert config["max_pages"] == 100  # Not overridden
+
+    def test_translate_noop_for_unknown_tool(self):
+        """Translation is a no-op for tools without known mappings."""
+        from kurt.workflows.toml.executor import _translate_provider_config
+
+        config: dict[str, Any] = {"timeout": 5.0, "max_urls": 500}
+        _translate_provider_config("parse", config)
+        assert "timeout_ms" not in config
+        assert "max_pages" not in config
