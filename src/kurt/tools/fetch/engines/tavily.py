@@ -60,7 +60,7 @@ class TavilyFetcher(BaseFetcher):
 
     name = "tavily"
     version = "1.0.0"
-    url_patterns = ["*"]
+    url_patterns = []  # Credentialed; use only when explicitly selected
     requires_env = ["TAVILY_API_KEY"]
 
     from kurt.tools.fetch.providers.tavily.config import TavilyProviderConfig

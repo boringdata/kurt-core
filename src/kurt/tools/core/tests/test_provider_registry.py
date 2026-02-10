@@ -845,8 +845,8 @@ class TestBuiltinProviderDiscovery:
         # firecrawl - requires API key
         assert providers["firecrawl"]["requires_env"] == ["FIRECRAWL_API_KEY"]
 
-        # apify - social platform patterns
-        assert "*twitter.com/*" in providers["apify"]["url_patterns"]
+        # apify - social platform patterns (Twitter/X handled by twitterapi)
+        assert "*twitter.com/*" not in providers["apify"]["url_patterns"]
         assert "*linkedin.com/*" in providers["apify"]["url_patterns"]
         assert providers["apify"]["requires_env"] == ["APIFY_API_KEY"]
 
@@ -880,17 +880,21 @@ class TestBuiltinProviderDiscovery:
         # cms - no URL patterns (CMS-specific)
         assert providers["cms"]["url_patterns"] == []
 
-    def test_url_matching_twitter_prefers_specific(self, monkeypatch):
-        """URL matching finds providers for Twitter URLs."""
+    def test_url_matching_twitter_prefers_twitterapi(self, monkeypatch):
+        """Twitter/X URLs must resolve to twitterapi, not apify (bd-21im.2)."""
         monkeypatch.setenv("KURT_PROJECT_ROOT", "/nonexistent")
         monkeypatch.setenv("HOME", "/nonexistent")
 
         registry = get_provider_registry()
         registry.discover()
 
-        # Twitter URLs should match a social media provider (apify or twitterapi)
+        # twitter.com -> twitterapi (apify excludes twitter patterns)
         matched = registry.match_provider("fetch", "https://twitter.com/user")
-        assert matched in ("apify", "twitterapi")
+        assert matched == "twitterapi"
+
+        # x.com -> twitterapi
+        matched = registry.match_provider("fetch", "https://x.com/user/status/123")
+        assert matched == "twitterapi"
 
     def test_url_matching_generic_url_prefers_default(self, monkeypatch):
         """Generic URLs return None from match_provider (wildcards excluded by default).
@@ -911,11 +915,12 @@ class TestBuiltinProviderDiscovery:
         assert matched is None  # No specific match
 
         # With include_wildcards=True, wildcard providers match
+        # Only trafilatura and httpx retain ["*"] patterns (free, no API key)
         matched = registry.match_provider(
             "fetch", "https://example.com/article", include_wildcards=True
         )
         assert matched is not None
-        assert matched in ("trafilatura", "httpx", "firecrawl", "tavily")
+        assert matched in ("trafilatura", "httpx")
 
         # resolve_provider with default_provider uses the default for generic URLs
         resolved = registry.resolve_provider(

@@ -51,7 +51,7 @@ class FirecrawlFetcher(BaseFetcher):
 
     name = "firecrawl"
     version = "1.0.0"
-    url_patterns = ["*"]
+    url_patterns = []  # Credentialed; use only when explicitly selected
     requires_env = ["FIRECRAWL_API_KEY"]
 
     from kurt.tools.fetch.providers.firecrawl.config import FirecrawlProviderConfig

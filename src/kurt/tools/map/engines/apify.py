@@ -64,8 +64,7 @@ class ApifyEngine(BaseMapper):
     name = "apify"
     version = "1.0.0"
     url_patterns = [
-        "*twitter.com/*",
-        "*x.com/*",
+        # Twitter/X handled by dedicated twitterapi provider (fetch tool)
         "*linkedin.com/*",
         "*threads.net/*",
         "*substack.com/*",

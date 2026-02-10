@@ -58,8 +58,7 @@ class ApifyFetcher(BaseFetcher):
     name = "apify"
     version = "1.0.0"
     url_patterns = [
-        "*twitter.com/*",
-        "*x.com/*",
+        # Twitter/X handled by dedicated twitterapi provider
         "*linkedin.com/*",
         "*threads.net/*",
         "*substack.com/*",

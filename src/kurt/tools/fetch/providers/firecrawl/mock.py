@@ -18,7 +18,7 @@ class MockFirecrawlFetcher:
 
     name = "firecrawl"
     version = "mock"
-    url_patterns = ["*"]
+    url_patterns: list[str] = []  # Credentialed; use only when explicitly selected
     requires_env: list[str] = []
 
     def __init__(self) -> None:
