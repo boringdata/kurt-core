@@ -74,7 +74,7 @@ class TestExplicitProviderSelection:
             steps={
                 "fetch_step": make_step(
                     "fetch",
-                    config={"provider": "tavily", "url": "https://example.com"},
+                    config={"provider": "trafilatura", "url": "https://example.com"},
                 )
             }
         )
@@ -91,7 +91,7 @@ class TestExplicitProviderSelection:
             result = await execute_workflow(workflow, {})
 
         assert result.status == "completed"
-        assert captured["fetch"]["engine"] == "tavily"
+        assert captured["fetch"]["engine"] == "trafilatura"
         assert "provider" not in captured["fetch"]
 
     @pytest.mark.asyncio
@@ -423,7 +423,7 @@ class TestMultiStepWorkflow:
                 "fetch_step": make_step(
                     "fetch",
                     config={
-                        "provider": "tavily",
+                        "provider": "trafilatura",
                         "url": "{{target_url}}",
                     },
                 )
@@ -444,7 +444,7 @@ class TestMultiStepWorkflow:
             )
 
         assert result.status == "completed"
-        assert captured["fetch"]["engine"] == "tavily"
+        assert captured["fetch"]["engine"] == "trafilatura"
         assert captured["fetch"]["url"] == "https://example.com/article"
 
 
