@@ -19,8 +19,20 @@ class GifgrepError(Exception):
     pass
 
 
+class GifgrepAuthError(GifgrepError):
+    """Invalid or missing API key."""
+
+    pass
+
+
 class GifgrepRateLimitError(GifgrepError):
     """Rate limit exceeded error."""
+
+    pass
+
+
+class GifgrepAPIError(GifgrepError):
+    """API returned an error response."""
 
     pass
 
@@ -61,10 +73,15 @@ class GifgrepClient:
         results = client.search("funny cat")
         for gif in results:
             print(gif.url)
+
+    Note:
+        Uses Tenor's public demo API key by default for convenience.
+        For production use, set TENOR_API_KEY env var for higher rate limits.
     """
 
     BASE_URL = "https://tenor.googleapis.com/v2"
-    # Tenor provides a free demo key for testing
+    # Tenor's public demo API key (documented at tenor.com/gifapi)
+    # For production, set TENOR_API_KEY env var
     DEFAULT_API_KEY = "AIzaSyAyimkuYQYF_FXVALexPuGQctUWRURdCYQ"
 
     def __init__(
@@ -77,7 +94,7 @@ class GifgrepClient:
 
         Args:
             api_key: Tenor API key. Falls back to TENOR_API_KEY env var,
-                     then to a public demo key.
+                     then to Tenor's public demo key (rate-limited).
             timeout: Request timeout in seconds.
         """
         self.api_key = (
@@ -107,6 +124,44 @@ class GifgrepClient:
     def __exit__(self, *args: Any) -> None:
         self.close()
 
+    def _make_request(self, endpoint: str, params: dict[str, Any]) -> dict[str, Any]:
+        """Make API request with consistent error handling.
+
+        Args:
+            endpoint: API endpoint path (e.g., "/search", "/featured").
+            params: Query parameters.
+
+        Returns:
+            Parsed JSON response.
+
+        Raises:
+            GifgrepAuthError: If API key is invalid.
+            GifgrepRateLimitError: If rate limit exceeded.
+            GifgrepAPIError: For other API errors.
+            GifgrepError: For connection errors.
+        """
+        try:
+            response = self.client.get(f"{self.BASE_URL}{endpoint}", params=params)
+
+            if response.status_code == 401:
+                raise GifgrepAuthError(
+                    "Invalid Tenor API key. Set TENOR_API_KEY env var."
+                )
+            if response.status_code == 429:
+                raise GifgrepRateLimitError(
+                    "Tenor rate limit exceeded. Try again in 30 seconds."
+                )
+
+            response.raise_for_status()
+            return response.json()
+
+        except httpx.HTTPStatusError as e:
+            raise GifgrepAPIError(
+                f"Tenor API error: {e.response.status_code} - {e.response.text}"
+            )
+        except httpx.RequestError as e:
+            raise GifgrepError(f"Failed to connect to Tenor: {e}")
+
     def search(
         self,
         query: str,
@@ -127,6 +182,7 @@ class GifgrepClient:
             List of GifResult objects.
 
         Raises:
+            GifgrepAuthError: If API key is invalid.
             GifgrepRateLimitError: If rate limit exceeded.
             GifgrepError: For other API errors.
         """
@@ -141,25 +197,8 @@ class GifgrepClient:
             "media_filter": "gif,tinygif,mp4",
         }
 
-        try:
-            response = self.client.get(f"{self.BASE_URL}/search", params=params)
-
-            if response.status_code == 429:
-                raise GifgrepRateLimitError(
-                    "Tenor rate limit exceeded. Try again in 30 seconds."
-                )
-
-            response.raise_for_status()
-            data = response.json()
-
-            return self._parse_results(data.get("results", []))
-
-        except httpx.HTTPStatusError as e:
-            raise GifgrepError(
-                f"Tenor API error: {e.response.status_code} - {e.response.text}"
-            )
-        except httpx.RequestError as e:
-            raise GifgrepError(f"Failed to connect to Tenor: {e}")
+        data = self._make_request("/search", params)
+        return self._parse_results(data.get("results", []))
 
     def trending(
         self,
@@ -188,25 +227,8 @@ class GifgrepClient:
             "media_filter": "gif,tinygif,mp4",
         }
 
-        try:
-            response = self.client.get(f"{self.BASE_URL}/featured", params=params)
-
-            if response.status_code == 429:
-                raise GifgrepRateLimitError(
-                    "Tenor rate limit exceeded. Try again in 30 seconds."
-                )
-
-            response.raise_for_status()
-            data = response.json()
-
-            return self._parse_results(data.get("results", []))
-
-        except httpx.HTTPStatusError as e:
-            raise GifgrepError(
-                f"Tenor API error: {e.response.status_code} - {e.response.text}"
-            )
-        except httpx.RequestError as e:
-            raise GifgrepError(f"Failed to connect to Tenor: {e}")
+        data = self._make_request("/featured", params)
+        return self._parse_results(data.get("results", []))
 
     def random(
         self,
@@ -235,49 +257,41 @@ class GifgrepClient:
             "random": "true",
         }
 
-        try:
-            response = self.client.get(f"{self.BASE_URL}/search", params=params)
-
-            if response.status_code == 429:
-                raise GifgrepRateLimitError(
-                    "Tenor rate limit exceeded. Try again in 30 seconds."
-                )
-
-            response.raise_for_status()
-            data = response.json()
-            results = self._parse_results(data.get("results", []))
-
-            return results[0] if results else None
-
-        except httpx.HTTPStatusError as e:
-            raise GifgrepError(
-                f"Tenor API error: {e.response.status_code} - {e.response.text}"
-            )
-        except httpx.RequestError as e:
-            raise GifgrepError(f"Failed to connect to Tenor: {e}")
+        data = self._make_request("/search", params)
+        results = self._parse_results(data.get("results", []))
+        return results[0] if results else None
 
     def _parse_results(self, results: list[dict]) -> list[GifResult]:
         """Parse Tenor API results into GifResult objects."""
         parsed = []
         for item in results:
-            # Get media formats
-            media = item.get("media_formats", {})
-            gif_media = media.get("gif", {})
-            preview_media = media.get("tinygif", {}) or gif_media
-            mp4_media = media.get("mp4", {})
+            try:
+                # Get media formats
+                media = item.get("media_formats", {})
+                gif_media = media.get("gif", {})
+                preview_media = media.get("tinygif", {}) or gif_media
+                mp4_media = media.get("mp4", {})
 
-            parsed.append(
-                GifResult(
-                    id=item.get("id", ""),
-                    title=item.get("content_description", "") or item.get("title", ""),
-                    url=gif_media.get("url", ""),
-                    preview_url=preview_media.get("url", ""),
-                    mp4_url=mp4_media.get("url"),
-                    width=gif_media.get("dims", [0, 0])[0],
-                    height=gif_media.get("dims", [0, 0])[1] if len(gif_media.get("dims", [])) > 1 else 0,
-                    tags=item.get("tags", []) or [],
+                # Parse dimensions safely
+                dims = gif_media.get("dims", [0, 0])
+                width = dims[0] if dims else 0
+                height = dims[1] if len(dims) > 1 else 0
+
+                parsed.append(
+                    GifResult(
+                        id=item.get("id", ""),
+                        title=item.get("content_description", "") or item.get("title", ""),
+                        url=gif_media.get("url", ""),
+                        preview_url=preview_media.get("url", ""),
+                        mp4_url=mp4_media.get("url"),
+                        width=width,
+                        height=height,
+                        tags=item.get("tags", []) or [],
+                    )
                 )
-            )
+            except (KeyError, IndexError, TypeError):
+                # Skip malformed items
+                continue
 
         return parsed
 

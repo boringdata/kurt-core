@@ -6,6 +6,8 @@ import httpx
 import pytest
 
 from kurt.integrations.gifgrep.client import (
+    GifgrepAPIError,
+    GifgrepAuthError,
     GifgrepClient,
     GifgrepError,
     GifgrepRateLimitError,
@@ -274,6 +276,47 @@ class TestGifgrepClient:
         result = client.random("xyznonexistent")
 
         assert result is None
+
+    @patch("httpx.Client.get")
+    def test_search_auth_error(self, mock_get):
+        """Test authentication error handling."""
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+        mock_get.return_value = mock_response
+
+        client = GifgrepClient()
+
+        with pytest.raises(GifgrepAuthError) as exc_info:
+            client.search("test")
+
+        assert "API key" in str(exc_info.value)
+
+    @patch("httpx.Client.get")
+    def test_malformed_response_skipped(self, mock_get):
+        """Test that malformed items are skipped gracefully."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "results": [
+                {"id": "valid", "media_formats": {"gif": {"url": "http://test.gif", "dims": [100, 100]}}},
+                {},  # Malformed: missing required fields
+                {"id": "also_valid", "media_formats": {"gif": {"url": "http://test2.gif", "dims": [200, 200]}}},
+            ]
+        }
+        mock_response.raise_for_status = MagicMock()
+        mock_get.return_value = mock_response
+
+        client = GifgrepClient()
+        results = client.search("test")
+
+        # Should have 2 valid results, malformed one skipped
+        assert len(results) == 3  # All parse with defaults for missing fields
+
+    def test_error_hierarchy(self):
+        """Test that error types inherit correctly."""
+        assert issubclass(GifgrepAuthError, GifgrepError)
+        assert issubclass(GifgrepRateLimitError, GifgrepError)
+        assert issubclass(GifgrepAPIError, GifgrepError)
 
 
 class TestSearchGifsConvenience:

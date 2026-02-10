@@ -6,6 +6,7 @@ import json
 
 import click
 
+from kurt.admin.telemetry.decorators import track_command
 from kurt.integrations.gifgrep.client import GifgrepClient, GifgrepError
 
 
@@ -55,6 +56,7 @@ def gif_group():
     is_flag=True,
     help="Output only GIF URLs (one per line).",
 )
+@track_command
 def search_cmd(query, limit, content_filter, output_json, urls_only):
     """
     Search for GIFs by keyword.
@@ -69,30 +71,30 @@ def search_cmd(query, limit, content_filter, output_json, urls_only):
     query_str = " ".join(query)
 
     try:
-        client = GifgrepClient()
-        results = client.search(query_str, limit=limit, content_filter=content_filter)
+        with GifgrepClient() as client:
+            results = client.search(query_str, limit=limit, content_filter=content_filter)
 
-        if not results:
+            if not results:
+                if output_json:
+                    click.echo(json.dumps([]))
+                else:
+                    click.echo(f"No GIFs found for '{query_str}'")
+                return
+
             if output_json:
-                click.echo(json.dumps([]))
+                click.echo(json.dumps([r.to_dict() for r in results], indent=2))
+            elif urls_only:
+                for gif in results:
+                    click.echo(gif.url)
             else:
-                click.echo(f"No GIFs found for '{query_str}'")
-            return
-
-        if output_json:
-            click.echo(json.dumps([r.to_dict() for r in results], indent=2))
-        elif urls_only:
-            for gif in results:
-                click.echo(gif.url)
-        else:
-            for i, gif in enumerate(results, 1):
-                click.echo(f"\n{i}. {gif.title or '(no title)'}")
-                click.echo(f"   URL: {gif.url}")
-                if gif.preview_url and gif.preview_url != gif.url:
-                    click.echo(f"   Preview: {gif.preview_url}")
-                click.echo(f"   Size: {gif.width}x{gif.height}")
-                if gif.tags:
-                    click.echo(f"   Tags: {', '.join(gif.tags[:5])}")
+                for i, gif in enumerate(results, 1):
+                    click.echo(f"\n{i}. {gif.title or '(no title)'}")
+                    click.echo(f"   URL: {gif.url}")
+                    if gif.preview_url and gif.preview_url != gif.url:
+                        click.echo(f"   Preview: {gif.preview_url}")
+                    click.echo(f"   Size: {gif.width}x{gif.height}")
+                    if gif.tags:
+                        click.echo(f"   Tags: {', '.join(gif.tags[:5])}")
 
     except GifgrepError as e:
         raise click.ClickException(str(e))
@@ -122,6 +124,7 @@ def search_cmd(query, limit, content_filter, output_json, urls_only):
     is_flag=True,
     help="Output only GIF URLs (one per line).",
 )
+@track_command
 def trending_cmd(limit, content_filter, output_json, urls_only):
     """
     Get trending GIFs.
@@ -132,27 +135,27 @@ def trending_cmd(limit, content_filter, output_json, urls_only):
       kurt integrations gif trending --limit 20 --json
     """
     try:
-        client = GifgrepClient()
-        results = client.trending(limit=limit, content_filter=content_filter)
+        with GifgrepClient() as client:
+            results = client.trending(limit=limit, content_filter=content_filter)
 
-        if not results:
+            if not results:
+                if output_json:
+                    click.echo(json.dumps([]))
+                else:
+                    click.echo("No trending GIFs found")
+                return
+
             if output_json:
-                click.echo(json.dumps([]))
+                click.echo(json.dumps([r.to_dict() for r in results], indent=2))
+            elif urls_only:
+                for gif in results:
+                    click.echo(gif.url)
             else:
-                click.echo("No trending GIFs found")
-            return
-
-        if output_json:
-            click.echo(json.dumps([r.to_dict() for r in results], indent=2))
-        elif urls_only:
-            for gif in results:
-                click.echo(gif.url)
-        else:
-            click.echo("Trending GIFs:")
-            for i, gif in enumerate(results, 1):
-                click.echo(f"\n{i}. {gif.title or '(no title)'}")
-                click.echo(f"   URL: {gif.url}")
-                click.echo(f"   Size: {gif.width}x{gif.height}")
+                click.echo("Trending GIFs:")
+                for i, gif in enumerate(results, 1):
+                    click.echo(f"\n{i}. {gif.title or '(no title)'}")
+                    click.echo(f"   URL: {gif.url}")
+                    click.echo(f"   Size: {gif.width}x{gif.height}")
 
     except GifgrepError as e:
         raise click.ClickException(str(e))
@@ -172,6 +175,7 @@ def trending_cmd(limit, content_filter, output_json, urls_only):
     is_flag=True,
     help="Output as JSON.",
 )
+@track_command
 def random_cmd(query, content_filter, output_json):
     """
     Get a random GIF for a search query.
@@ -184,25 +188,25 @@ def random_cmd(query, content_filter, output_json):
     query_str = " ".join(query)
 
     try:
-        client = GifgrepClient()
-        result = client.random(query_str, content_filter=content_filter)
+        with GifgrepClient() as client:
+            result = client.random(query_str, content_filter=content_filter)
 
-        if not result:
+            if not result:
+                if output_json:
+                    click.echo(json.dumps(None))
+                else:
+                    click.echo(f"No GIF found for '{query_str}'")
+                return
+
             if output_json:
-                click.echo(json.dumps(None))
+                click.echo(json.dumps(result.to_dict(), indent=2))
             else:
-                click.echo(f"No GIF found for '{query_str}'")
-            return
-
-        if output_json:
-            click.echo(json.dumps(result.to_dict(), indent=2))
-        else:
-            click.echo(f"Random GIF for '{query_str}':")
-            click.echo(f"  Title: {result.title or '(no title)'}")
-            click.echo(f"  URL: {result.url}")
-            if result.preview_url and result.preview_url != result.url:
-                click.echo(f"  Preview: {result.preview_url}")
-            click.echo(f"  Size: {result.width}x{result.height}")
+                click.echo(f"Random GIF for '{query_str}':")
+                click.echo(f"  Title: {result.title or '(no title)'}")
+                click.echo(f"  URL: {result.url}")
+                if result.preview_url and result.preview_url != result.url:
+                    click.echo(f"  Preview: {result.preview_url}")
+                click.echo(f"  Size: {result.width}x{result.height}")
 
     except GifgrepError as e:
         raise click.ClickException(str(e))

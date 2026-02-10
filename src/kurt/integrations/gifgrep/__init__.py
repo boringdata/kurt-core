@@ -5,6 +5,8 @@ Provides GIF search functionality for Kurt workflows and CLI.
 """
 
 from kurt.integrations.gifgrep.client import (
+    GifgrepAPIError,
+    GifgrepAuthError,
     GifgrepClient,
     GifgrepError,
     GifgrepRateLimitError,
@@ -14,6 +16,8 @@ from kurt.integrations.gifgrep.client import (
 
 __all__ = [
     "GifgrepClient",
+    "GifgrepAPIError",
+    "GifgrepAuthError",
     "GifgrepError",
     "GifgrepRateLimitError",
     "GifResult",
