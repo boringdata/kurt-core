@@ -33,6 +33,47 @@ from urllib.parse import urlparse
 logger = logging.getLogger(__name__)
 
 
+def _pattern_specificity(pattern: str) -> int:
+    """Score a URL pattern by specificity (higher = more specific).
+
+    Counts literal (non-wildcard) characters. More literal characters means
+    a more specific pattern. For example:
+    - ``*/sitemap*.xml`` has 13 literal chars → score 13
+    - ``*.xml``          has  4 literal chars → score  4
+    - ``*twitter.com/*`` has 12 literal chars → score 12
+
+    Args:
+        pattern: A glob-style URL pattern.
+
+    Returns:
+        Non-negative specificity score.
+    """
+    return sum(1 for c in pattern if c not in ("*", "?"))
+
+
+def _compare_match(
+    a: tuple[int, int, str],
+    b: tuple[int, int, str],
+) -> int:
+    """Compare two match candidates (score, source_rank, name).
+
+    Prefers: higher score → lower source_rank → lexicographically earlier name.
+
+    Returns:
+        Negative if *a* is better, positive if *b* is better, 0 if equal.
+    """
+    # Higher score is better (negate for comparison)
+    if a[0] != b[0]:
+        return -1 if a[0] > b[0] else 1
+    # Lower source_rank is better (project=0 > user=1 > builtin=2)
+    if a[1] != b[1]:
+        return -1 if a[1] < b[1] else 1
+    # Lexicographic tie-breaker on name
+    if a[2] != b[2]:
+        return -1 if a[2] < b[2] else 1
+    return 0
+
+
 class ProviderRegistry:
     """
     Singleton registry for tool providers.
@@ -388,7 +429,12 @@ class ProviderRegistry:
     def match_provider(self, tool_name: str, url: str) -> str | None:
         """Find a provider matching a URL pattern.
 
-        Checks specific patterns first, then falls back to wildcard ("*").
+        Uses specificity scoring to prefer the most specific matching pattern.
+        Falls back to wildcard ("*") only when no specific pattern matches.
+
+        Specificity is determined by counting literal (non-wildcard) characters
+        in matching patterns. Ties are broken by: source priority
+        (project > user > builtin), then provider name (lexicographic).
 
         Args:
             tool_name: Tool name (e.g., "fetch")
@@ -405,21 +451,42 @@ class ProviderRegistry:
         parsed = urlparse(url)
         test_string = f"{parsed.netloc}{parsed.path}"
 
-        # First pass: specific patterns (not "*")
+        # Collect all matching (provider, best_score) pairs
+        source_priority = {"project": 0, "user": 1, "builtin": 2}
+        best_match: tuple[int, int, str] | None = None  # (score, source_rank, name)
+        wildcard_match: tuple[int, str] | None = None  # (source_rank, name)
+
         for name, meta in providers.items():
             patterns = meta.get("url_patterns", [])
+            source = meta.get("_source", "builtin")
+            source_rank = source_priority.get(source, 2)
+
             for pattern in patterns:
                 if pattern == "*":
+                    # Track wildcard fallback separately
+                    candidate = (source_rank, name)
+                    if wildcard_match is None or candidate < wildcard_match:
+                        wildcard_match = candidate
                     continue
-                if fnmatch.fnmatch(test_string, pattern):
-                    return name
-                if fnmatch.fnmatch(url, pattern):
-                    return name
 
-        # Second pass: wildcard fallback
-        for name, meta in providers.items():
-            if "*" in meta.get("url_patterns", []):
-                return name
+                matched = False
+                if fnmatch.fnmatch(test_string, pattern):
+                    matched = True
+                elif fnmatch.fnmatch(url, pattern):
+                    matched = True
+
+                if matched:
+                    score = _pattern_specificity(pattern)
+                    candidate = (score, source_rank, name)
+                    if best_match is None or _compare_match(candidate, best_match) < 0:
+                        best_match = candidate
+
+        if best_match is not None:
+            return best_match[2]
+
+        # Wildcard fallback
+        if wildcard_match is not None:
+            return wildcard_match[1]
 
         return None
 

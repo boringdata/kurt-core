@@ -453,6 +453,177 @@ class DefaultFetcher:
 
 
 # ============================================================================
+# Specificity Scoring Tests
+# ============================================================================
+
+
+class TestPatternSpecificity:
+    """Test _pattern_specificity and match_provider specificity ranking."""
+
+    def test_specificity_scores(self):
+        """Patterns with more literal chars score higher."""
+        from kurt.tools.core.provider import _pattern_specificity
+
+        assert _pattern_specificity("*/sitemap*.xml") > _pattern_specificity("*.xml")
+        assert _pattern_specificity("*twitter.com/*") > _pattern_specificity("*")
+        assert _pattern_specificity("*") == 0
+        assert _pattern_specificity("*.xml") == 4  # . x m l
+
+    def test_sitemap_beats_rss_for_sitemap_xml(self, tmp_path):
+        """sitemap.xml resolves to sitemap, not rss (regression test)."""
+        tools_dir = tmp_path / "tools"
+
+        # Create sitemap provider (more specific pattern)
+        sitemap_dir = tools_dir / "map" / "providers" / "sitemap"
+        sitemap_dir.mkdir(parents=True)
+        (sitemap_dir / "provider.py").write_text('''
+class SitemapProvider:
+    name = "sitemap"
+    url_patterns = ["*/sitemap.xml", "*/sitemap*.xml"]
+    requires_env = []
+''')
+
+        # Create rss provider (broad *.xml pattern)
+        rss_dir = tools_dir / "map" / "providers" / "rss"
+        rss_dir.mkdir(parents=True)
+        (rss_dir / "provider.py").write_text('''
+class RssProvider:
+    name = "rss"
+    url_patterns = ["*/feed", "*/feed.xml", "*/rss", "*/rss.xml", "*.xml"]
+    requires_env = []
+''')
+
+        registry = get_provider_registry()
+        registry.discover_from([(tools_dir, "builtin")])
+
+        matched = registry.match_provider("map", "https://example.com/sitemap.xml")
+        assert matched == "sitemap"
+
+    def test_rss_still_matches_feed_xml(self, tmp_path):
+        """feed.xml resolves to rss."""
+        tools_dir = tmp_path / "tools"
+
+        sitemap_dir = tools_dir / "map" / "providers" / "sitemap"
+        sitemap_dir.mkdir(parents=True)
+        (sitemap_dir / "provider.py").write_text('''
+class SitemapProvider:
+    name = "sitemap"
+    url_patterns = ["*/sitemap.xml", "*/sitemap*.xml"]
+    requires_env = []
+''')
+
+        rss_dir = tools_dir / "map" / "providers" / "rss"
+        rss_dir.mkdir(parents=True)
+        (rss_dir / "provider.py").write_text('''
+class RssProvider:
+    name = "rss"
+    url_patterns = ["*/feed", "*/feed.xml", "*/rss", "*/rss.xml", "*.xml"]
+    requires_env = []
+''')
+
+        registry = get_provider_registry()
+        registry.discover_from([(tools_dir, "builtin")])
+
+        matched = registry.match_provider("map", "https://example.com/feed.xml")
+        assert matched == "rss"
+
+    def test_wildcard_fallback_still_works(self, tmp_path):
+        """Wildcard '*' provider is used when no specific pattern matches."""
+        tools_dir = tmp_path / "tools"
+
+        specific_dir = tools_dir / "fetch" / "providers" / "twitter"
+        specific_dir.mkdir(parents=True)
+        (specific_dir / "provider.py").write_text('''
+class TwitterProvider:
+    name = "twitter"
+    url_patterns = ["*twitter.com/*", "*x.com/*"]
+    requires_env = []
+''')
+
+        fallback_dir = tools_dir / "fetch" / "providers" / "default"
+        fallback_dir.mkdir(parents=True)
+        (fallback_dir / "provider.py").write_text('''
+class DefaultProvider:
+    name = "default"
+    url_patterns = ["*"]
+    requires_env = []
+''')
+
+        registry = get_provider_registry()
+        registry.discover_from([(tools_dir, "builtin")])
+
+        # Specific URL matches specific provider
+        assert registry.match_provider("fetch", "https://twitter.com/user") == "twitter"
+
+        # Generic URL falls back to wildcard
+        assert registry.match_provider("fetch", "https://example.com/page") == "default"
+
+    def test_project_provider_beats_builtin_same_score(self, tmp_path):
+        """Project provider wins over builtin when specificity ties."""
+        tools_dir = tmp_path / "tools"
+
+        # Builtin provider
+        builtin_dir = tools_dir / "fetch" / "providers" / "builtin_fetcher"
+        builtin_dir.mkdir(parents=True)
+        (builtin_dir / "provider.py").write_text('''
+class BuiltinFetcher:
+    name = "builtin_fetcher"
+    url_patterns = ["*example.com/*"]
+    requires_env = []
+''')
+
+        # Project provider with same-specificity pattern
+        project_dir = tmp_path / "project_tools"
+        project_prov = project_dir / "fetch" / "providers" / "project_fetcher"
+        project_prov.mkdir(parents=True)
+        (project_prov / "provider.py").write_text('''
+class ProjectFetcher:
+    name = "project_fetcher"
+    url_patterns = ["*example.com/*"]
+    requires_env = []
+''')
+
+        registry = get_provider_registry()
+        registry.discover_from([
+            (project_dir, "project"),
+            (tools_dir, "builtin"),
+        ])
+
+        matched = registry.match_provider("fetch", "https://example.com/page")
+        assert matched == "project_fetcher"
+
+    def test_more_specific_pattern_wins_regardless_of_order(self, tmp_path):
+        """Provider with more specific pattern wins even if discovered later."""
+        tools_dir = tmp_path / "tools"
+
+        # Provider "alpha" with broad pattern (discovered first alphabetically)
+        alpha_dir = tools_dir / "map" / "providers" / "alpha"
+        alpha_dir.mkdir(parents=True)
+        (alpha_dir / "provider.py").write_text('''
+class AlphaProvider:
+    name = "alpha"
+    url_patterns = ["*.xml"]
+    requires_env = []
+''')
+
+        # Provider "beta" with specific pattern (discovered later)
+        beta_dir = tools_dir / "map" / "providers" / "beta"
+        beta_dir.mkdir(parents=True)
+        (beta_dir / "provider.py").write_text('''
+class BetaProvider:
+    name = "beta"
+    url_patterns = ["*/sitemap*.xml"]
+    requires_env = []
+''')
+
+        registry = get_provider_registry()
+        registry.discover_from([(tools_dir, "builtin")])
+
+        matched = registry.match_provider("map", "https://example.com/sitemap.xml")
+        assert matched == "beta"
+
+
+# ============================================================================
 # Validation Tests
 # ============================================================================
 
