@@ -1222,3 +1222,184 @@ class TestProviderSelectionContract:
         deprecation_msgs = [w for w in caught if issubclass(w.category, DeprecationWarning)]
         assert len(deprecation_msgs) >= 1
         assert "deprecated" in str(deprecation_msgs[0].message).lower()
+
+    @pytest.mark.asyncio
+    async def test_contract_specificity_wins_collision(self):
+        """When multiple providers match a URL, registry specificity determines winner.
+
+        Exercises the case where a broad wildcard (*) and a specific domain
+        (*.notion.so/*) both match the same URL. The registry should return
+        the most specific match.
+        """
+        workflow = make_workflow(
+            steps={
+                "fetch_notion": make_step(
+                    "fetch",
+                    config={"url": "https://www.notion.so/page/abc123"},
+                ),
+            }
+        )
+
+        captured: dict[str, dict] = {}
+
+        async def mock_execute(name, params, ctx=None, on_progress=None):
+            captured[name] = params.copy()
+            return make_tool_result(success=True)
+
+        class SpecificityRegistry:
+            """Registry that simulates specificity-based resolution.
+
+            Two providers match the URL:
+            - trafilatura: wildcard fallback (*) -> low specificity
+            - notion: *.notion.so/* -> high specificity
+            The resolve_provider should return 'notion' (more specific).
+            """
+
+            def resolve_provider(self, tool, url=None, default_provider=None):
+                if url and "notion.so" in url:
+                    return "notion"  # Most specific match wins
+                return default_provider or "trafilatura"
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
+        with (
+            patch("kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute),
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=SpecificityRegistry(),
+            ),
+            patch("kurt.tools.core.registry.get_tool", side_effect=Exception("no tool")),
+        ):
+            result = await execute_workflow(workflow, {})
+
+        assert result.status == "completed"
+        # Specific Notion provider should win over wildcard trafilatura
+        assert captured["fetch"]["engine"] == "notion"
+
+    @pytest.mark.asyncio
+    async def test_contract_toml_config_reaches_tool_params(self):
+        """Provider TOML config is merged into tool params via ProviderConfigResolver.
+
+        Exercises the config resolver wiring added in bd-26w.5.1:
+        executor resolves provider, loads its ConfigModel from TOML,
+        and merges as defaults into the step config (step config wins).
+        """
+        workflow = make_workflow(
+            steps={
+                "fetch_step": make_step(
+                    "fetch",
+                    config={
+                        "provider": "httpx",
+                        "url": "https://example.com",
+                        "timeout": 5,  # Step config should win over TOML
+                    },
+                ),
+            }
+        )
+
+        captured: dict[str, dict] = {}
+
+        async def mock_execute(name, params, ctx=None, on_progress=None):
+            captured[name] = params.copy()
+            return make_tool_result(success=True)
+
+        from kurt.tools.fetch.engines.httpx import HttpxFetcher
+
+        class ConfigWiringRegistry:
+            def list_providers(self, tool_name):
+                return [{"name": "httpx"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
+            def get_provider_class(self, tool_name, provider_name):
+                if provider_name == "httpx":
+                    return HttpxFetcher
+                return None
+
+        # Mock the config resolver to return a known config
+        from unittest.mock import PropertyMock
+
+        from pydantic import BaseModel
+
+        class FakeResolvedConfig(BaseModel):
+            timeout: int = 30
+            follow_redirects: bool = False
+
+        mock_resolver = MagicMock()
+        mock_resolver.resolve.return_value = FakeResolvedConfig(
+            timeout=30, follow_redirects=False
+        )
+
+        with (
+            patch("kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute),
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=ConfigWiringRegistry(),
+            ),
+            patch(
+                "kurt.config.provider_config.get_provider_config_resolver",
+                return_value=mock_resolver,
+            ),
+        ):
+            result = await execute_workflow(workflow, {})
+
+        assert result.status == "completed"
+        # Step config timeout=5 should win over TOML timeout=30
+        assert captured["fetch"]["timeout"] == 5
+        # TOML-only value should be merged in as default
+        assert captured["fetch"]["follow_redirects"] is False
+        assert captured["fetch"]["engine"] == "httpx"
+
+    @pytest.mark.asyncio
+    async def test_contract_toml_config_skipped_when_no_config_model(self):
+        """Provider without ConfigModel doesn't break config wiring.
+
+        When a provider class has no ConfigModel attribute, the executor
+        should skip TOML config loading gracefully and still pass params through.
+        """
+        workflow = make_workflow(
+            steps={
+                "fetch_step": make_step(
+                    "fetch",
+                    config={"provider": "bare", "url": "https://example.com"},
+                ),
+            }
+        )
+
+        captured: dict[str, dict] = {}
+
+        async def mock_execute(name, params, ctx=None, on_progress=None):
+            captured[name] = params.copy()
+            return make_tool_result(success=True)
+
+        class BareProvider:
+            name = "bare"
+            url_patterns = []
+            requires_env = []
+            # No ConfigModel attribute
+
+        class BareRegistry:
+            def list_providers(self, tool_name):
+                return [{"name": "bare"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
+            def get_provider_class(self, tool_name, provider_name):
+                return BareProvider
+
+        with (
+            patch("kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute),
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=BareRegistry(),
+            ),
+        ):
+            result = await execute_workflow(workflow, {})
+
+        assert result.status == "completed"
+        assert captured["fetch"]["engine"] == "bare"
+        assert captured["fetch"]["url"] == "https://example.com"
+        assert "provider" not in captured["fetch"]
