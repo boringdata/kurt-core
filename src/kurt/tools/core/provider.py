@@ -36,9 +36,19 @@ ones. For example, given these patterns for a ``sitemap.xml`` URL::
 1. Source priority: project > user > builtin
 2. Lexicographic provider name
 
-**Wildcard fallback**: The ``*`` pattern is treated specially—it only matches
-if no other specific pattern matches. This ensures that broad fallbacks like
-``trafilatura`` don't shadow specialized providers.
+**Wildcard Pattern Semantics (CRITICAL)**:
+Wildcard patterns (``url_patterns=["*"]``) do NOT override a tool's
+``default_provider``. This ensures generic URLs use the tool default
+(e.g., trafilatura for fetch) instead of credentialed providers (e.g.,
+firecrawl). Resolution order is:
+
+1. Explicit provider name
+2. Specific URL pattern match (non-wildcard)
+3. Tool's default_provider
+4. Wildcard fallback (only if no default_provider exists)
+
+See ``openspec/changes/provider-system/PROVIDER-SELECTION-CONTRACT.md``
+for the full contract.
 """
 
 from __future__ import annotations
@@ -431,11 +441,16 @@ class ProviderRegistry:
     ) -> str | None:
         """Resolve a provider using the fallback chain.
 
-        Resolution order:
+        Resolution order (per PROVIDER-SELECTION-CONTRACT.md):
         1. Explicit provider_name if given
-        2. URL pattern matching if url is given
+        2. URL pattern matching (specific patterns only, NOT wildcards)
         3. default_provider (from Tool class or caller)
-        4. None if nothing matches
+        4. Wildcard fallback (only if no default_provider)
+        5. None if nothing matches
+
+        IMPORTANT: Wildcard patterns ("*") do NOT override default_provider.
+        This ensures generic URLs use the tool's default (e.g., trafilatura)
+        instead of credentialed providers (e.g., firecrawl).
 
         Args:
             tool_name: Tool name (e.g., "fetch", "map")
@@ -447,33 +462,43 @@ class ProviderRegistry:
             Resolved provider name, or None.
         """
         self.discover()
+        providers = self._providers.get(tool_name, {})
 
         # 1. Explicit name
         if provider_name:
-            providers = self._providers.get(tool_name, {})
             if provider_name in providers:
                 return provider_name
             return None
 
-        # 2. URL matching
+        # 2. URL matching (specific patterns only - wildcards excluded)
         if url:
-            matched = self.match_provider(tool_name, url)
+            matched = self.match_provider(tool_name, url, include_wildcards=False)
             if matched:
                 return matched
 
         # 3. Default provider fallback
-        if default_provider:
-            providers = self._providers.get(tool_name, {})
-            if default_provider in providers:
-                return default_provider
+        if default_provider and default_provider in providers:
+            return default_provider
+
+        # 4. Wildcard fallback (only when no default_provider)
+        if url and not default_provider:
+            wildcard_match = self.match_provider(tool_name, url, include_wildcards=True)
+            if wildcard_match:
+                return wildcard_match
 
         return None
 
-    def match_provider(self, tool_name: str, url: str) -> str | None:
+    def match_provider(
+        self,
+        tool_name: str,
+        url: str,
+        include_wildcards: bool = False,
+    ) -> str | None:
         """Find a provider matching a URL pattern.
 
         Uses specificity scoring to prefer the most specific matching pattern.
-        Falls back to wildcard ("*") only when no specific pattern matches.
+        By default, wildcard patterns ("*") are NOT included in results, since
+        they should not override a tool's default_provider.
 
         Specificity is determined by counting literal (non-wildcard) characters
         in matching patterns. Ties are broken by: source priority
@@ -482,6 +507,8 @@ class ProviderRegistry:
         Args:
             tool_name: Tool name (e.g., "fetch")
             url: URL to match against provider patterns
+            include_wildcards: If True, include wildcard ("*") matches as
+                fallback. Default False to prefer tool defaults.
 
         Returns:
             Provider name, or None if no match.
@@ -527,8 +554,8 @@ class ProviderRegistry:
         if best_match is not None:
             return best_match[2]
 
-        # Wildcard fallback
-        if wildcard_match is not None:
+        # Wildcard fallback - only if explicitly requested
+        if include_wildcards and wildcard_match is not None:
             return wildcard_match[1]
 
         return None

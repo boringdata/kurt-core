@@ -428,9 +428,16 @@ class DefaultFetcher:
         assert matched == "twitter"
 
     def test_match_wildcard_fallback(self, registry_with_providers):
-        """Falls back to wildcard provider for unknown URLs."""
+        """Wildcard fallback only when explicitly requested (include_wildcards=True)."""
+        # By default, wildcards are NOT included (to allow tool defaults to take precedence)
         matched = registry_with_providers.match_provider(
             "fetch", "https://random-site.com/article"
+        )
+        assert matched is None  # No specific match, wildcards excluded
+
+        # With include_wildcards=True, wildcard provider is returned
+        matched = registry_with_providers.match_provider(
+            "fetch", "https://random-site.com/article", include_wildcards=True
         )
         assert matched == "default"
 
@@ -528,7 +535,7 @@ class RssProvider:
         assert matched == "rss"
 
     def test_wildcard_fallback_still_works(self, tmp_path):
-        """Wildcard '*' provider is used when no specific pattern matches."""
+        """Wildcard '*' provider is used only when explicitly requested."""
         tools_dir = tmp_path / "tools"
 
         specific_dir = tools_dir / "fetch" / "providers" / "twitter"
@@ -555,8 +562,13 @@ class DefaultProvider:
         # Specific URL matches specific provider
         assert registry.match_provider("fetch", "https://twitter.com/user") == "twitter"
 
-        # Generic URL falls back to wildcard
-        assert registry.match_provider("fetch", "https://example.com/page") == "default"
+        # Generic URL: without include_wildcards, returns None (allows tool default)
+        assert registry.match_provider("fetch", "https://example.com/page") is None
+
+        # Generic URL: with include_wildcards=True, falls back to wildcard
+        assert registry.match_provider(
+            "fetch", "https://example.com/page", include_wildcards=True
+        ) == "default"
 
     def test_project_provider_beats_builtin_same_score(self, tmp_path):
         """Project provider wins over builtin when specificity ties."""
@@ -880,18 +892,38 @@ class TestBuiltinProviderDiscovery:
         matched = registry.match_provider("fetch", "https://twitter.com/user")
         assert matched in ("apify", "twitterapi")
 
-    def test_url_matching_generic_url_gets_wildcard(self, monkeypatch):
-        """Generic URLs fall back to wildcard providers."""
+    def test_url_matching_generic_url_prefers_default(self, monkeypatch):
+        """Generic URLs return None from match_provider (wildcards excluded by default).
+
+        This allows resolve_provider to use the tool's default_provider instead
+        of a wildcard provider. This is intentional per the provider selection
+        contract: generic URLs should use tool defaults (e.g., trafilatura),
+        not credentialed wildcard providers (e.g., firecrawl).
+        """
         monkeypatch.setenv("KURT_PROJECT_ROOT", "/nonexistent")
         monkeypatch.setenv("HOME", "/nonexistent")
 
         registry = get_provider_registry()
         registry.discover()
 
+        # match_provider excludes wildcards by default
         matched = registry.match_provider("fetch", "https://example.com/article")
-        # Should match a wildcard provider (trafilatura, httpx, firecrawl, or tavily)
+        assert matched is None  # No specific match
+
+        # With include_wildcards=True, wildcard providers match
+        matched = registry.match_provider(
+            "fetch", "https://example.com/article", include_wildcards=True
+        )
         assert matched is not None
         assert matched in ("trafilatura", "httpx", "firecrawl", "tavily")
+
+        # resolve_provider with default_provider uses the default for generic URLs
+        resolved = registry.resolve_provider(
+            "fetch",
+            url="https://example.com/article",
+            default_provider="trafilatura",
+        )
+        assert resolved == "trafilatura"  # Tool default, not wildcard
 
     def test_list_tools_shows_fetch_and_map(self, monkeypatch):
         """list_tools_with_providers includes fetch and map."""
