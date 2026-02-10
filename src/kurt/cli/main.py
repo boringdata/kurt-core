@@ -18,7 +18,6 @@ Robot Mode (Agent-Friendly Output):
 - Command aliases for LLM typo tolerance (e.g., doc -> docs)
 """
 
-
 import click
 from dotenv import load_dotenv
 
@@ -53,8 +52,10 @@ def _auto_migrate_schema():
         dolt_path = Path.cwd() / ".dolt"
         if dolt_path.exists():
             from kurt.db.dolt import DoltDB, check_schema_exists, init_observability_schema
+            from kurt.observability.tracking import init_tracking
 
             db = DoltDB(Path.cwd())
+            init_tracking(db)  # Enable global tracking for track_event() calls
             schema_status = check_schema_exists(db)
 
             # Only initialize if any table is missing
@@ -206,8 +207,9 @@ def main(ctx, json_output: bool, quiet: bool):
     ctx.obj["output"] = OutputContext(json_output, quiet)
     ctx.obj["json_output"] = json_output  # Backwards compat for existing commands
 
-    # Skip auto-migrate for init command (no DB yet)
-    if ctx.invoked_subcommand in ["init", "help"]:
+    # Skip auto-migrate for commands that don't need DB or use Dolt CLI directly
+    # doctor/repair use Dolt CLI commands which conflict with the auto-started server
+    if ctx.invoked_subcommand in ["init", "help", "doctor", "repair"]:
         return
 
     # Skip if no project initialized
