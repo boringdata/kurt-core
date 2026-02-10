@@ -380,8 +380,9 @@ class DoltDBConnection:
             return False
         info_file = self.path / ".dolt" / "kurt-server.json"
         if not info_file.exists():
-            # No info file - can't verify, assume it's wrong (will restart)
-            return False
+            # No info file - can't verify ownership, but if server is running
+            # on our port, assume it's usable (e.g., test fixture started it)
+            return True
 
         try:
             import json
