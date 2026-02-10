@@ -360,7 +360,7 @@ max_urls = 1000
 
 
 # ---------------------------------------------------------------------------
-# Test: Runtime wiring integration (THESE SHOULD FAIL BEFORE WIRING)
+# Test: Runtime wiring integration (executor loads provider config from TOML)
 # ---------------------------------------------------------------------------
 
 
@@ -368,25 +368,69 @@ class TestRuntimeWiringIntegration:
     """Integration tests that verify config flows through to runtime.
 
     These tests verify that ProviderConfigResolver is actually used when
-    tools create provider instances. They should FAIL before bd-26w.5.1.1
-    and bd-26w.5.1.2 are implemented.
+    the executor resolves provider configs from TOML files (bd-26w.5.1).
     """
 
-    @pytest.mark.skip(reason="Wiring not yet implemented (bd-26w.5.1.1)")
-    def test_fetch_tool_uses_resolver_for_provider_config(
+    def test_executor_loads_fetch_provider_config_from_toml(
         self, project_dir, user_config_dir
     ):
-        """Fetch tool should load provider config via ProviderConfigResolver.
+        """Executor loads fetch provider config via ProviderConfigResolver."""
+        from unittest.mock import patch
 
-        This test verifies that when FetchTool runs with a specific provider,
-        it uses ProviderConfigResolver to load the provider's ConfigModel
-        from TOML files.
+        from kurt.workflows.toml.executor import WorkflowExecutor
+        from kurt.workflows.toml.parser import StepDef, WorkflowDefinition, WorkflowMeta
 
-        Implementation required in bd-26w.5.1.1:
-        1. FetchTool.run() should call get_provider_config_resolver().resolve()
-        2. Pass resolved config to provider constructor
-        3. Config from kurt.toml should affect provider behavior
-        """
+        write_project_toml(
+            project_dir,
+            """
+[tool.fetch.providers.httpx]
+timeout = 99
+follow_redirects = false
+""",
+        )
+
+        workflow = WorkflowDefinition(
+            workflow=WorkflowMeta(name="test"),
+            inputs={},
+            steps={"fetch1": StepDef(type="fetch", depends_on=[], config={})},
+        )
+        executor = WorkflowExecutor(workflow, {})
+
+        from kurt.tools.fetch.engines.httpx import HttpxFetcher
+
+        class MockRegistry:
+            def list_providers(self, tool_name):
+                return [{"name": "httpx"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
+            def get_provider_class(self, tool_name, provider_name):
+                if provider_name == "httpx":
+                    return HttpxFetcher
+                return None
+
+        with patch(
+            "kurt.workflows.toml.executor.get_provider_registry",
+            return_value=MockRegistry(),
+        ):
+            result = executor._resolve_provider_for_step(
+                "fetch", {"provider": "httpx", "url": "https://example.com"}
+            )
+
+        assert result["engine"] == "httpx"
+        assert result["timeout"] == 99  # From kurt.toml
+        assert result["follow_redirects"] is False  # From kurt.toml
+
+    def test_step_config_overrides_provider_toml(
+        self, project_dir, user_config_dir
+    ):
+        """Step config values take priority over provider TOML config."""
+        from unittest.mock import patch
+
+        from kurt.workflows.toml.executor import WorkflowExecutor
+        from kurt.workflows.toml.parser import StepDef, WorkflowDefinition, WorkflowMeta
+
         write_project_toml(
             project_dir,
             """
@@ -395,41 +439,132 @@ timeout = 99
 """,
         )
 
-        # This would require the FetchTool to use ProviderConfigResolver
-        # Currently it doesn't, so we can't easily verify the config flows through
-        # The test should verify that a provider instantiated by FetchTool
-        # has the config value from TOML
+        workflow = WorkflowDefinition(
+            workflow=WorkflowMeta(name="test"),
+            inputs={},
+            steps={"fetch1": StepDef(type="fetch", depends_on=[], config={})},
+        )
+        executor = WorkflowExecutor(workflow, {})
 
-        # Placeholder assertion - will be implemented with bd-26w.5.1.1
-        assert False, "Implement FetchTool wiring to ProviderConfigResolver"
+        from kurt.tools.fetch.engines.httpx import HttpxFetcher
 
-    @pytest.mark.skip(reason="Wiring not yet implemented (bd-26w.5.1.2)")
-    def test_map_tool_uses_resolver_for_provider_config(
+        class MockRegistry:
+            def list_providers(self, tool_name):
+                return [{"name": "httpx"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
+            def get_provider_class(self, tool_name, provider_name):
+                return HttpxFetcher
+
+        with patch(
+            "kurt.workflows.toml.executor.get_provider_registry",
+            return_value=MockRegistry(),
+        ):
+            result = executor._resolve_provider_for_step(
+                "fetch",
+                {
+                    "provider": "httpx",
+                    "url": "https://example.com",
+                    "timeout": 5,  # Step config wins
+                },
+            )
+
+        assert result["timeout"] == 5  # Step config wins over TOML
+
+    def test_executor_loads_map_provider_config_from_toml(
         self, project_dir, user_config_dir
     ):
-        """Map tool should load provider config via ProviderConfigResolver.
+        """Executor loads map provider config from TOML."""
+        from unittest.mock import patch
 
-        This test verifies that when MapTool runs with a specific provider,
-        it uses ProviderConfigResolver to load the provider's ConfigModel
-        from TOML files.
+        from kurt.workflows.toml.executor import WorkflowExecutor
+        from kurt.workflows.toml.parser import StepDef, WorkflowDefinition, WorkflowMeta
 
-        Implementation required in bd-26w.5.1.2:
-        1. MapTool.run() should call get_provider_config_resolver().resolve()
-        2. Pass resolved config to provider constructor
-        3. Config from kurt.toml should affect provider behavior
-        """
         write_project_toml(
             project_dir,
             """
 [tool.map.providers.sitemap]
-max_pages = 50
+max_urls = 500
 timeout = 10
 """,
         )
 
-        # This would require the MapTool to use ProviderConfigResolver
-        # Placeholder assertion - will be implemented with bd-26w.5.1.2
-        assert False, "Implement MapTool wiring to ProviderConfigResolver"
+        workflow = WorkflowDefinition(
+            workflow=WorkflowMeta(name="test"),
+            inputs={},
+            steps={"map1": StepDef(type="map", depends_on=[], config={})},
+        )
+        executor = WorkflowExecutor(workflow, {})
+
+        from kurt.tools.map.engines.sitemap import SitemapEngine
+
+        class MockRegistry:
+            def list_providers(self, tool_name):
+                return [{"name": "sitemap"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
+            def get_provider_class(self, tool_name, provider_name):
+                if provider_name == "sitemap":
+                    return SitemapEngine
+                return None
+
+        with patch(
+            "kurt.workflows.toml.executor.get_provider_registry",
+            return_value=MockRegistry(),
+        ):
+            result = executor._resolve_provider_for_step(
+                "map", {"provider": "sitemap", "url": "https://example.com"}
+            )
+
+        assert result["engine"] == "sitemap"
+        assert result["max_urls"] == 500  # From kurt.toml
+        assert result["timeout"] == 10  # From kurt.toml
+
+    def test_no_config_model_gracefully_skipped(
+        self, project_dir, user_config_dir
+    ):
+        """Provider without ConfigModel doesn't break the executor."""
+        from unittest.mock import patch
+
+        from kurt.workflows.toml.executor import WorkflowExecutor
+        from kurt.workflows.toml.parser import StepDef, WorkflowDefinition, WorkflowMeta
+
+        workflow = WorkflowDefinition(
+            workflow=WorkflowMeta(name="test"),
+            inputs={},
+            steps={"fetch1": StepDef(type="fetch", depends_on=[], config={})},
+        )
+        executor = WorkflowExecutor(workflow, {})
+
+        class BareProvider:
+            name = "bare"
+            url_patterns = []
+            requires_env = []
+
+        class MockRegistry:
+            def list_providers(self, tool_name):
+                return [{"name": "bare"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
+            def get_provider_class(self, tool_name, provider_name):
+                return BareProvider
+
+        with patch(
+            "kurt.workflows.toml.executor.get_provider_registry",
+            return_value=MockRegistry(),
+        ):
+            result = executor._resolve_provider_for_step(
+                "fetch", {"provider": "bare", "url": "https://example.com"}
+            )
+
+        assert result["engine"] == "bare"
+        assert "provider" not in result
 
 
 # ---------------------------------------------------------------------------
