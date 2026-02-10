@@ -23,16 +23,44 @@ def _extract_firecrawl_metadata(result_item: Any) -> dict:
     """
     metadata = {}
     if hasattr(result_item, "metadata") and result_item.metadata:
-        metadata = result_item.metadata if isinstance(result_item.metadata, dict) else {}
+        meta = result_item.metadata
+        # Handle Pydantic model (new SDK) vs dict (old SDK)
+        if hasattr(meta, "model_dump"):
+            metadata = meta.model_dump(exclude_none=True)
+        elif isinstance(meta, dict):
+            metadata = meta
+        else:
+            metadata = {}
 
     # Normalize title from various OG/meta fields
     if "title" not in metadata and metadata:
-        for key in ["ogTitle", "og:title", "twitter:title", "pageTitle"]:
+        for key in ["og_title", "ogTitle", "og:title", "twitter:title", "pageTitle"]:
             if key in metadata and metadata[key]:
                 metadata["title"] = metadata[key]
                 break
 
     return metadata
+
+
+def _get_doc_url(doc: Any) -> Optional[str]:
+    """Get URL from a Firecrawl document object.
+
+    Handles both old dict-based metadata and new Pydantic models.
+    """
+    if hasattr(doc, "metadata") and doc.metadata:
+        meta = doc.metadata
+        # Try Pydantic model attributes first
+        if hasattr(meta, "source_url") and meta.source_url:
+            return meta.source_url
+        if hasattr(meta, "url") and meta.url:
+            return meta.url
+        # Fall back to dict access
+        if isinstance(meta, dict):
+            return meta.get("sourceURL") or meta.get("source_url") or meta.get("url")
+    # Try direct url attribute on doc
+    if hasattr(doc, "url") and doc.url:
+        return doc.url
+    return None
 
 
 class FirecrawlFetcher(BaseFetcher):
@@ -78,8 +106,8 @@ class FirecrawlFetcher(BaseFetcher):
     def fetch(self, url: str) -> FetchResult:
         """Fetch and extract content using Firecrawl.
 
-        Uses Firecrawl's batch_scrape_urls API for single URL fetching.
-        This provides consistent behavior with batch operations.
+        Uses Firecrawl's scrape API for single URL fetching with
+        JavaScript rendering via headless browser.
 
         Args:
             url: URL to fetch
@@ -111,8 +139,8 @@ class FirecrawlFetcher(BaseFetcher):
 
         try:
             app = FirecrawlApp(api_key=api_key)
-            # Use batch scrape - poll_interval=2 means check every 2 seconds
-            batch_result = app.batch_scrape_urls([url], {"formats": ["markdown", "html"]}, 2)
+            # Use scrape for single URL (simpler than batch for one URL)
+            doc = app.scrape(url, formats=["markdown"])
         except Exception as e:
             return FetchResult(
                 content="",
@@ -121,52 +149,30 @@ class FirecrawlFetcher(BaseFetcher):
                 error=f"[Firecrawl] API error: {type(e).__name__}: {str(e)}",
             )
 
-        # Process results from batch response
-        if hasattr(batch_result, "data") and batch_result.data:
-            for doc in batch_result.data:
-                # Get URL from metadata or document
-                doc_url = None
-                if hasattr(doc, "metadata") and doc.metadata:
-                    doc_url = doc.metadata.get("sourceURL") or doc.metadata.get("url")
-                if not doc_url and hasattr(doc, "url"):
-                    doc_url = doc.url
+        # Process single document result
+        if not hasattr(doc, "markdown") or not doc.markdown:
+            return FetchResult(
+                content="",
+                metadata={"engine": "firecrawl"},
+                success=False,
+                error=f"[Firecrawl] No content from: {url}",
+            )
 
-                # Check if this doc matches our URL
-                if doc_url != url:
-                    continue
+        content = doc.markdown
+        metadata = _extract_firecrawl_metadata(doc)
+        metadata["engine"] = "firecrawl"
 
-                # Check for markdown content
-                if not hasattr(doc, "markdown") or not doc.markdown:
-                    return FetchResult(
-                        content="",
-                        metadata={"engine": "firecrawl"},
-                        success=False,
-                        error=f"[Firecrawl] No content from: {url}",
-                    )
-
-                content = doc.markdown
-                metadata = _extract_firecrawl_metadata(doc)
-                metadata["engine"] = "firecrawl"
-
-                return FetchResult(
-                    content=content,
-                    metadata=metadata,
-                    success=True,
-                )
-
-        # URL not found in results
         return FetchResult(
-            content="",
-            metadata={"engine": "firecrawl"},
-            success=False,
-            error=f"[Firecrawl] No result for: {url}",
+            content=content,
+            metadata=metadata,
+            success=True,
         )
 
     def fetch_batch(self, urls: list[str]) -> dict[str, FetchResult]:
         """Fetch multiple URLs using Firecrawl batch API.
 
         This method provides efficient batch fetching using Firecrawl's
-        native batch_scrape_urls API.
+        native batch_scrape API with automatic polling.
 
         Args:
             urls: List of URLs to fetch
@@ -204,7 +210,8 @@ class FirecrawlFetcher(BaseFetcher):
 
         try:
             app = FirecrawlApp(api_key=api_key)
-            batch_result = app.batch_scrape_urls(urls, {"formats": ["markdown", "html"]}, 2)
+            # Use batch_scrape with new API (keyword args, poll_interval)
+            batch_result = app.batch_scrape(urls, formats=["markdown"], poll_interval=2)
         except Exception as e:
             for url in urls:
                 results[url] = FetchResult(
@@ -218,11 +225,7 @@ class FirecrawlFetcher(BaseFetcher):
         # Process batch results
         if hasattr(batch_result, "data") and batch_result.data:
             for doc in batch_result.data:
-                doc_url = None
-                if hasattr(doc, "metadata") and doc.metadata:
-                    doc_url = doc.metadata.get("sourceURL") or doc.metadata.get("url")
-                if not doc_url and hasattr(doc, "url"):
-                    doc_url = doc.url
+                doc_url = _get_doc_url(doc)
 
                 if not doc_url:
                     continue
