@@ -222,3 +222,204 @@ class TestCheckCommand:
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert data["all_valid"] is True
+
+
+# ---------------------------------------------------------------------------
+# kurt tool check: ConfigModel validation (bd-26w.5.2)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def config_providers(tmp_path):
+    """Create mock providers with ConfigModel for config validation tests."""
+    fetch_dir = tmp_path / "fetch" / "providers"
+
+    # Provider with a ConfigModel that has typed fields
+    typed_dir = fetch_dir / "typed"
+    typed_dir.mkdir(parents=True)
+    (typed_dir / "provider.py").write_text(
+        """
+from pydantic import BaseModel, Field
+
+class TypedConfig(BaseModel):
+    timeout: int = 30
+    retries: int = Field(default=3, ge=0, le=10)
+    format: str = "markdown"
+
+class TypedFetcher:
+    name = "typed"
+    version = "1.0.0"
+    url_patterns = []
+    requires_env = []
+    ConfigModel = TypedConfig
+
+    def fetch(self, url):
+        return {"content": url}
+"""
+    )
+
+    # Provider WITHOUT a ConfigModel (should be gracefully skipped)
+    plain_dir = fetch_dir / "plain"
+    plain_dir.mkdir(parents=True)
+    (plain_dir / "provider.py").write_text(
+        """
+class PlainFetcher:
+    name = "plain"
+    version = "1.0.0"
+    url_patterns = ["*"]
+    requires_env = []
+
+    def fetch(self, url):
+        return {"content": url}
+"""
+    )
+
+    # Register with registry
+    registry = ProviderRegistry()
+    registry.discover_from([(tmp_path, "project")])
+
+    return tmp_path
+
+
+class TestCheckConfigValidation:
+    """Tests for provider ConfigModel validation in 'kurt tool check' (bd-26w.5.2).
+
+    These tests verify that ``check_cmd`` validates provider configuration
+    from TOML files using ProviderConfigResolver + provider ConfigModel.
+    """
+
+    def test_check_config_valid_defaults(self, runner, config_providers):
+        """Provider with ConfigModel and no TOML config uses defaults successfully."""
+        result = runner.invoke(tools_group, ["check", "fetch", "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        typed = next(p for p in data["providers"] if p["name"] == "typed")
+        # Config should validate with defaults (no TOML file)
+        assert typed["config_valid"] is True
+        assert typed["config_errors"] == []
+
+    def test_check_config_invalid_type_in_toml(self, runner, config_providers, monkeypatch):
+        """Invalid TOML value type surfaces as config error."""
+        # Create a project kurt.toml with an invalid timeout (string instead of int)
+        toml_path = config_providers / "kurt.toml"
+        toml_path.write_text(
+            """
+[tool.fetch.providers.typed]
+timeout = "not-an-integer"
+"""
+        )
+        # Point resolver to this project root
+        monkeypatch.chdir(config_providers)
+        from kurt.config.provider_config import ProviderConfigResolver
+
+        ProviderConfigResolver().reset()
+
+        result = runner.invoke(tools_group, ["check", "fetch", "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        typed = next(p for p in data["providers"] if p["name"] == "typed")
+        assert typed["config_valid"] is False
+        assert len(typed["config_errors"]) > 0
+        # Error should mention the field name
+        error_text = " ".join(typed["config_errors"]).lower()
+        assert "timeout" in error_text
+
+    def test_check_config_invalid_range_in_toml(self, runner, config_providers, monkeypatch):
+        """Out-of-range value (retries > 10) surfaces as config error."""
+        toml_path = config_providers / "kurt.toml"
+        toml_path.write_text(
+            """
+[tool.fetch.providers.typed]
+retries = 99
+"""
+        )
+        monkeypatch.chdir(config_providers)
+        from kurt.config.provider_config import ProviderConfigResolver
+
+        ProviderConfigResolver().reset()
+
+        result = runner.invoke(tools_group, ["check", "fetch", "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        typed = next(p for p in data["providers"] if p["name"] == "typed")
+        assert typed["config_valid"] is False
+        error_text = " ".join(typed["config_errors"]).lower()
+        assert "retries" in error_text
+
+    def test_check_config_valid_toml_overrides(self, runner, config_providers, monkeypatch):
+        """Valid TOML config values pass validation."""
+        toml_path = config_providers / "kurt.toml"
+        toml_path.write_text(
+            """
+[tool.fetch.providers.typed]
+timeout = 60
+retries = 5
+format = "html"
+"""
+        )
+        monkeypatch.chdir(config_providers)
+        from kurt.config.provider_config import ProviderConfigResolver
+
+        ProviderConfigResolver().reset()
+
+        result = runner.invoke(tools_group, ["check", "fetch", "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        typed = next(p for p in data["providers"] if p["name"] == "typed")
+        assert typed["config_valid"] is True
+        assert typed["config_errors"] == []
+
+    def test_check_config_skipped_without_config_model(self, runner, config_providers):
+        """Provider without ConfigModel skips config validation gracefully."""
+        result = runner.invoke(tools_group, ["check", "fetch", "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        plain = next(p for p in data["providers"] if p["name"] == "plain")
+        # No ConfigModel -> config_valid should be None (not checked)
+        assert plain["config_valid"] is None
+        assert plain["config_errors"] == []
+
+    def test_check_config_shown_in_text_output(self, runner, config_providers, monkeypatch):
+        """Config errors appear in human-readable text output."""
+        toml_path = config_providers / "kurt.toml"
+        toml_path.write_text(
+            """
+[tool.fetch.providers.typed]
+timeout = "bad"
+"""
+        )
+        monkeypatch.chdir(config_providers)
+        from kurt.config.provider_config import ProviderConfigResolver
+
+        ProviderConfigResolver().reset()
+
+        result = runner.invoke(tools_group, ["check", "fetch"])
+        assert result.exit_code == 0
+        # Should show config error in output
+        assert "config" in result.output.lower()
+
+    def test_check_all_valid_includes_config(self, runner, config_providers):
+        """all_valid is True only when both env AND config are valid."""
+        result = runner.invoke(tools_group, ["check", "fetch", "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["all_valid"] is True
+
+    def test_check_all_valid_false_on_config_error(self, runner, config_providers, monkeypatch):
+        """all_valid is False when config validation fails."""
+        toml_path = config_providers / "kurt.toml"
+        toml_path.write_text(
+            """
+[tool.fetch.providers.typed]
+timeout = "invalid"
+"""
+        )
+        monkeypatch.chdir(config_providers)
+        from kurt.config.provider_config import ProviderConfigResolver
+
+        ProviderConfigResolver().reset()
+
+        result = runner.invoke(tools_group, ["check", "fetch", "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["all_valid"] is False
