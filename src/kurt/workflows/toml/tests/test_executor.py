@@ -1525,7 +1525,7 @@ class TestResolveProviderWithInputData:
                 "kurt.tools.core.registry.get_tool", side_effect=Exception("no tool")
             ),
         ):
-            result = executor._resolve_provider_for_step(
+            executor._resolve_provider_for_step(
                 "fetch", config, input_data=input_data
             )
 
@@ -1557,7 +1557,7 @@ class TestResolveProviderWithInputData:
                 "kurt.tools.core.registry.get_tool", side_effect=Exception("no tool")
             ),
         ):
-            result = executor._resolve_provider_for_step(
+            executor._resolve_provider_for_step(
                 "fetch", config, input_data=input_data
             )
 
@@ -1673,7 +1673,7 @@ class TestResolveProviderWithInputData:
                 "kurt.tools.core.registry.get_tool", side_effect=Exception("no tool")
             ),
         ):
-            result = executor._resolve_provider_for_step(
+            executor._resolve_provider_for_step(
                 "fetch", config, input_data=input_data
             )
 

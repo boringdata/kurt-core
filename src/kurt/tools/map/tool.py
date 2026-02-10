@@ -843,8 +843,8 @@ class MapTool(Tool[MapInput, MapOutput]):
         # When the executor resolves a provider (e.g., "sitemap", "rss", "crawl"),
         # it injects it as `engine`. Map this to discovery_method so the tool
         # actually uses the resolved provider.
-        _VALID_DISCOVERY_METHODS = {"sitemap", "crawl", "rss", "folder", "cms"}
-        if params.engine and params.engine in _VALID_DISCOVERY_METHODS:
+        valid_methods = {"sitemap", "crawl", "rss", "folder", "cms"}
+        if params.engine and params.engine in valid_methods:
             params.discovery_method = params.engine  # type: ignore[assignment]
             logger.debug(
                 "Engine '%s' overriding discovery_method to '%s'",

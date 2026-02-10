@@ -531,7 +531,6 @@ class TestMapEngineOverride:
 
         # Mock the _map_url method to capture what params it receives
         captured_params = {}
-        original_map_url = tool._map_url
 
         async def mock_map_url(p, ctx, on_progress):
             captured_params["discovery_method"] = p.discovery_method
