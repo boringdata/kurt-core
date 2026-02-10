@@ -606,24 +606,27 @@ ConfigModel defaults (code)                  ← Lowest
 
 The executor's `if key not in config` check enforces this: step-level values are never overwritten.
 
-### 13.4 Current Mismatches to Fix (bd-21im.3.2, bd-21im.3.3)
+### 13.4 Known Translations
 
-| Provider | ConfigModel Field | Runtime Field | Action |
-|----------|-------------------|---------------|--------|
-| httpx | `timeout` (float, seconds) | `timeout_ms` (int, ms) | Rename to `timeout_ms` + add alias |
-| firecrawl | `timeout` (float, seconds) | `timeout_ms` (int, ms) | Rename to `timeout_ms` + add alias |
-| tavily | `timeout` (float, seconds) | `timeout_ms` (int, ms) | Rename to `timeout_ms` + add alias |
-| tavily | `batch_size` | `batch_size` | OK (matches) |
-| apify | `platform`, `apify_actor` | `platform`, `apify_actor` | OK (matches) |
-| trafilatura | `include_comments`, etc. | (pass-through) | OK (engine reads from config dict) |
+| Tool | ConfigModel Field | Runtime Field | Translation |
+|------|-------------------|---------------|-------------|
+| fetch | `timeout` (seconds) | `timeout_ms` (ms) | `int(timeout * 1000)` |
+| map | `max_urls` | `max_pages` | Direct assignment |
+
+New translations are added to `_translate_provider_config()` in `executor.py`.
+Direct-match fields (e.g., `batch_size`, `platform`) need no translation.
 
 ### 13.5 Silent No-Op Prevention
 
-`kurt tool check` validates ConfigModel fields against the runtime schema. Fields that don't match any runtime field AND aren't documented as provider-specific pass-through should trigger a warning.
+`kurt tool check` validates ConfigModel fields against the runtime schema. Fields that don't
+match any runtime field AND aren't documented as provider-specific pass-through should trigger
+a warning.
 
 ### 13.6 Adapter Location
 
-All conversion logic lives in the ConfigModel (via `model_validator`), NOT in the executor. The executor is a dumb flat merge.
+Translation logic lives in the executor's `_translate_provider_config()`, called after the
+flat ConfigModel merge. This keeps ConfigModels human-friendly (seconds, not milliseconds)
+while ensuring runtime compatibility.
 
 ---
 
