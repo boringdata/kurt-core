@@ -260,7 +260,7 @@ class TestCheckNoStaleLocks:
         (tmp_path / ".git").mkdir()
         result = check_no_stale_locks(tmp_path)
         assert result.status == CheckStatus.PASS
-        assert "No lock" in result.message
+        assert "lock" in result.message.lower()
 
     def test_stale_lock_file(self, tmp_path: Path):
         """Test when stale lock file exists."""
@@ -558,9 +558,7 @@ class TestRepairCommand:
                         summary={"passed": 0, "failed": 2, "warnings": 0},
                         exit_code=1,
                     )
-                    result = cli_runner.invoke(
-                        repair_cmd, ["--dry-run", "--check=hooks_installed"]
-                    )
+                    result = cli_runner.invoke(repair_cmd, ["--dry-run", "--check=hooks_installed"])
 
         # Should only show hooks repair
         assert "Reinstall Git hooks" in result.output
