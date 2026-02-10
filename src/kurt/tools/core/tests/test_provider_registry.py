@@ -1450,8 +1450,6 @@ class CustomFetcher:
 
     def test_module_names_include_source(self, tmp_path):
         """Module names include source to prevent collisions."""
-        import sys
-
         registry = get_provider_registry()
 
         # Create two provider files with same name but different paths
