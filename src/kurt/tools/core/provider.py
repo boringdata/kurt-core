@@ -180,7 +180,9 @@ class ProviderRegistry:
             if not provider_py.exists():
                 continue
 
-            provider_class = self._import_provider(provider_py)
+            provider_class = self._import_provider(
+                provider_py, tool_name=tool_name, source=source
+            )
             if provider_class is None:
                 continue
 
@@ -202,16 +204,26 @@ class ProviderRegistry:
                 "_source": source,
             }
 
-    def _import_provider(self, path: Path) -> type | None:
+    def _import_provider(
+        self, path: Path, tool_name: str = "", source: str = ""
+    ) -> type | None:
         """Import a provider class from a Python file.
 
         Looks for a class with a `name` attribute that also has
         `url_patterns` or `requires_env` attributes (provider interface).
 
+        Args:
+            path: Path to the provider.py file.
+            tool_name: Tool name (e.g., "fetch") for unique module naming.
+            source: Source location ("project", "user", "builtin") for unique
+                module naming. Prevents sys.modules collisions when same-named
+                providers exist across sources.
+
         Returns None if import fails or no provider class is found.
         """
         try:
-            module_name = f"_kurt_provider_{path.parent.parent.name}_{path.parent.name}"
+            provider_dir_name = path.parent.name
+            module_name = f"_kurt_provider_{source}_{tool_name}_{provider_dir_name}"
             spec = importlib.util.spec_from_file_location(module_name, path)
             if spec is None or spec.loader is None:
                 return None

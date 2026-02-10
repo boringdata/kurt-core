@@ -1380,3 +1380,168 @@ class NotionFetcher:
         from kurt.tools.core.base import Tool
 
         assert Tool.default_provider is None
+
+
+# ============================================================================
+# Module Name Collision Tests (bd-285.1.5)
+# ============================================================================
+
+
+class TestProviderModuleNameCollisions:
+    """Test that same-named providers from different sources don't collide."""
+
+    def _create_provider(self, providers_dir, name, class_content):
+        provider_dir = providers_dir / name
+        provider_dir.mkdir(parents=True, exist_ok=True)
+        (provider_dir / "provider.py").write_text(class_content)
+        (provider_dir / "__init__.py").write_text("")
+        return provider_dir
+
+    def test_same_name_different_sources_no_collision(self, tmp_path, monkeypatch):
+        """Same-named providers from project and user don't corrupt each other."""
+        project_dir = tmp_path / "project"
+        user_home = tmp_path / "home"
+
+        # Project provider (highest priority - wins)
+        self._create_provider(
+            project_dir / "kurt" / "tools" / "fetch" / "providers",
+            "custom",
+            '''
+class CustomFetcher:
+    """Project custom fetcher."""
+    name = "custom"
+    version = "2.0.0"
+    url_patterns = []
+    requires_env = []
+    _marker = "project"
+''',
+        )
+
+        # User provider (lower priority - should NOT replace project)
+        self._create_provider(
+            user_home / ".kurt" / "tools" / "fetch" / "providers",
+            "custom",
+            '''
+class CustomFetcher:
+    """User custom fetcher."""
+    name = "custom"
+    version = "1.0.0"
+    url_patterns = []
+    requires_env = []
+    _marker = "user"
+''',
+        )
+
+        monkeypatch.setenv("KURT_PROJECT_ROOT", str(project_dir))
+        monkeypatch.setenv("HOME", str(user_home))
+
+        registry = get_provider_registry()
+        registry.discover()
+
+        # Project provider should win (first occurrence)
+        provider_class = registry.get_provider_class("fetch", "custom")
+        assert provider_class is not None
+        assert getattr(provider_class, "_marker") == "project"
+
+        # Source should be project
+        providers = registry.list_providers("fetch")
+        custom = next(p for p in providers if p["name"] == "custom")
+        assert custom["_source"] == "project"
+
+    def test_module_names_include_source(self, tmp_path):
+        """Module names include source to prevent collisions."""
+        import sys
+
+        registry = get_provider_registry()
+
+        # Create two provider files with same name but different paths
+        project_providers = tmp_path / "project" / "fetch" / "providers"
+        user_providers = tmp_path / "user" / "fetch" / "providers"
+
+        self._create_provider(
+            project_providers,
+            "myapi",
+            '''
+class MyApiFetcher:
+    name = "myapi"
+    url_patterns = []
+    requires_env = []
+''',
+        )
+
+        self._create_provider(
+            user_providers,
+            "myapi",
+            '''
+class MyApiFetcher:
+    name = "myapi"
+    url_patterns = []
+    requires_env = []
+''',
+        )
+
+        # Import both with different source labels
+        cls1 = registry._import_provider(
+            project_providers / "myapi" / "provider.py",
+            tool_name="fetch",
+            source="project",
+        )
+        cls2 = registry._import_provider(
+            user_providers / "myapi" / "provider.py",
+            tool_name="fetch",
+            source="user",
+        )
+
+        # Both should import successfully
+        assert cls1 is not None
+        assert cls2 is not None
+
+        # They should be different classes (from different files)
+        assert cls1 is not cls2
+
+    def test_module_names_include_tool_name(self, tmp_path):
+        """Module names include tool name so same provider name across tools is safe."""
+        registry = get_provider_registry()
+
+        # Create providers with same name for different tools
+        fetch_providers = tmp_path / "fetch" / "providers"
+        map_providers = tmp_path / "map" / "providers"
+
+        self._create_provider(
+            fetch_providers,
+            "apify",
+            '''
+class ApifyFetcher:
+    name = "apify"
+    url_patterns = []
+    requires_env = []
+''',
+        )
+
+        self._create_provider(
+            map_providers,
+            "apify",
+            '''
+class ApifyMapper:
+    name = "apify"
+    url_patterns = []
+    requires_env = []
+''',
+        )
+
+        cls1 = registry._import_provider(
+            fetch_providers / "apify" / "provider.py",
+            tool_name="fetch",
+            source="builtin",
+        )
+        cls2 = registry._import_provider(
+            map_providers / "apify" / "provider.py",
+            tool_name="map",
+            source="builtin",
+        )
+
+        assert cls1 is not None
+        assert cls2 is not None
+        assert cls1 is not cls2
+        assert cls1.__name__ == "ApifyFetcher"
+        assert cls2.__name__ == "ApifyMapper"
