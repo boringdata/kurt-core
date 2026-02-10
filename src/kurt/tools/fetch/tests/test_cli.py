@@ -342,3 +342,4 @@ class TestCheckEngineStatus:
         """Unknown engine returns 'unknown' status."""
         status, desc = _check_engine_status("nonexistent")
         assert status == "unknown"
+        assert "Unknown" in desc
