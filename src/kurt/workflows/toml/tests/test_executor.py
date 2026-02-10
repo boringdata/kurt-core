@@ -1287,7 +1287,17 @@ class TestResolveProviderForStep:
         executor = self._make_executor()
         config = {"provider": "tavily", "url": "https://example.com"}
 
-        with patch("kurt.workflows.toml.executor.get_provider_registry"):
+        class MockRegistry:
+            def list_providers(self, tool_name):
+                return [{"name": "tavily"}, {"name": "trafilatura"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
+        with patch(
+            "kurt.workflows.toml.executor.get_provider_registry",
+            return_value=MockRegistry(),
+        ):
             result = executor._resolve_provider_for_step("fetch", config)
 
         assert result["engine"] == "tavily"
@@ -1299,11 +1309,22 @@ class TestResolveProviderForStep:
         executor = self._make_executor()
         config = {"engine": "firecrawl", "url": "https://example.com"}
 
+        class MockRegistry:
+            def list_providers(self, tool_name):
+                return [{"name": "firecrawl"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
         import warnings as _w
 
         with _w.catch_warnings(record=True) as caught:
             _w.simplefilter("always")
-            result = executor._resolve_provider_for_step("fetch", config)
+            with patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=MockRegistry(),
+            ):
+                result = executor._resolve_provider_for_step("fetch", config)
 
         assert result["engine"] == "firecrawl"
         deprecation_warnings = [w for w in caught if issubclass(w.category, DeprecationWarning)]
@@ -1315,11 +1336,21 @@ class TestResolveProviderForStep:
         executor = self._make_executor()
         config = {"provider": "tavily", "engine": "httpx"}
 
+        class MockRegistry:
+            def list_providers(self, tool_name):
+                return [{"name": "tavily"}, {"name": "httpx"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
         import warnings as _w
 
         with _w.catch_warnings(record=True) as caught:
             _w.simplefilter("always")
-            with patch("kurt.workflows.toml.executor.get_provider_registry"):
+            with patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=MockRegistry(),
+            ):
                 result = executor._resolve_provider_for_step("fetch", config)
 
         assert result["engine"] == "tavily"
@@ -1334,6 +1365,7 @@ class TestResolveProviderForStep:
 
         mock_registry = type("MockRegistry", (), {
             "resolve_provider": lambda self, tool, url=None, default_provider=None: "twitterapi",
+            "validate_provider": lambda self, tool_name, provider_name: [],
         })()
 
         with (
@@ -1351,6 +1383,7 @@ class TestResolveProviderForStep:
 
         mock_registry = type("MockRegistry", (), {
             "resolve_provider": lambda self, tool, url=None, default_provider=None: default_provider,
+            "validate_provider": lambda self, tool_name, provider_name: [],
         })()
 
         mock_tool_class = type("MockTool", (), {"default_provider": "trafilatura"})
@@ -1388,7 +1421,17 @@ class TestResolveProviderForStep:
         original = {"provider": "tavily", "url": "https://example.com"}
         config = original.copy()
 
-        with patch("kurt.workflows.toml.executor.get_provider_registry"):
+        class MockRegistry:
+            def list_providers(self, tool_name):
+                return [{"name": "tavily"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
+        with patch(
+            "kurt.workflows.toml.executor.get_provider_registry",
+            return_value=MockRegistry(),
+        ):
             executor._resolve_provider_for_step("fetch", config)
 
         # Original should be unchanged
@@ -1401,6 +1444,8 @@ class TestResolveProviderForStep:
 
         mock_registry = type("MockRegistry", (), {
             "resolve_provider": lambda self, tool, url=None, default_provider=None: "tavily",
+            "list_providers": lambda self, tool_name: [{"name": "httpx"}, {"name": "tavily"}],
+            "validate_provider": lambda self, tool_name, provider_name: [],
         })()
 
         with (
@@ -1428,6 +1473,9 @@ class TestResolveProviderForStep:
                 captured_url["url"] = url
                 return "twitterapi"
 
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
         with (
             patch("kurt.workflows.toml.executor.get_provider_registry", return_value=MockRegistry()),
             patch("kurt.tools.core.registry.get_tool", side_effect=Exception("no tool")),
@@ -1450,8 +1498,21 @@ class TestResolveProviderForStep:
             captured_params[name] = params.copy()
             return make_tool_result(success=True, data=[{"content": "test"}])
 
-        with patch(
-            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
+        class MockRegistry:
+            def list_providers(self, tool_name):
+                return [{"name": "tavily"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
+        with (
+            patch(
+                "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
+            ),
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=MockRegistry(),
+            ),
         ):
             result = await execute_workflow(workflow, {})
 
@@ -1487,6 +1548,9 @@ class TestResolveProviderWithInputData:
                 captured_url["url"] = url
                 return "twitterapi"
 
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
         with (
             patch(
                 "kurt.workflows.toml.executor.get_provider_registry",
@@ -1515,6 +1579,9 @@ class TestResolveProviderWithInputData:
             def resolve_provider(self, tool, url=None, default_provider=None):
                 captured_url["url"] = url
                 return "trafilatura"
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
 
         with (
             patch(
@@ -1548,6 +1615,9 @@ class TestResolveProviderWithInputData:
                 captured_url["url"] = url
                 return "twitterapi"
 
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
         with (
             patch(
                 "kurt.workflows.toml.executor.get_provider_registry",
@@ -1575,6 +1645,9 @@ class TestResolveProviderWithInputData:
             def resolve_provider(self, tool, url=None, default_provider=None):
                 captured_url["url"] = url
                 return "twitterapi"
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
 
         with (
             patch(
@@ -1664,6 +1737,9 @@ class TestResolveProviderWithInputData:
                 captured_url["url"] = url
                 return "twitterapi"
 
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
         with (
             patch(
                 "kurt.workflows.toml.executor.get_provider_registry",
@@ -1686,9 +1762,303 @@ class TestResolveProviderWithInputData:
         config = {"provider": "tavily"}
         input_data = [{"url": "https://x.com/user/status/123"}]
 
-        with patch("kurt.workflows.toml.executor.get_provider_registry"):
+        class MockRegistry:
+            def list_providers(self, tool_name):
+                return [{"name": "tavily"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
+        with patch(
+            "kurt.workflows.toml.executor.get_provider_registry",
+            return_value=MockRegistry(),
+        ):
             result = executor._resolve_provider_for_step(
                 "fetch", config, input_data=input_data
             )
 
         assert result["engine"] == "tavily"
+
+
+# ============================================================================
+# Provider Validation Tests (bd-26w.3.2 + bd-26w.3.1)
+# ============================================================================
+
+
+class TestProviderValidationInExecutor:
+    """Tests for provider validation in _resolve_provider_for_step.
+
+    Covers:
+    - bd-26w.3.2: Fail fast on unknown explicit provider/engine
+    - bd-26w.3.1: Validate provider requirements (missing env vars)
+    """
+
+    def _make_executor(self) -> WorkflowExecutor:
+        """Create a minimal WorkflowExecutor for unit testing."""
+        workflow = make_workflow(steps={"step1": make_step("fetch")})
+        return WorkflowExecutor(workflow, {})
+
+    # --- bd-26w.3.2: Unknown provider fails fast ---
+
+    def test_unknown_explicit_provider_raises_error(self):
+        """Explicit config.provider with unknown name raises ProviderNotFoundError."""
+        from kurt.tools.core.errors import ProviderNotFoundError
+
+        executor = self._make_executor()
+        config = {"provider": "nonexistent_provider", "url": "https://example.com"}
+
+        class MockRegistry:
+            def list_providers(self, tool_name):
+                return [
+                    {"name": "trafilatura"},
+                    {"name": "httpx"},
+                    {"name": "tavily"},
+                ]
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
+        with (
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=MockRegistry(),
+            ),
+            pytest.raises(ProviderNotFoundError) as exc_info,
+        ):
+            executor._resolve_provider_for_step("fetch", config)
+
+        assert "nonexistent_provider" in str(exc_info.value)
+        assert exc_info.value.tool_name == "fetch"
+        assert exc_info.value.provider_name == "nonexistent_provider"
+        assert "trafilatura" in exc_info.value.available
+
+    def test_unknown_explicit_engine_raises_error(self):
+        """Explicit config.engine with unknown name also raises ProviderNotFoundError."""
+        from kurt.tools.core.errors import ProviderNotFoundError
+
+        executor = self._make_executor()
+        config = {"engine": "nonexistent_engine", "url": "https://example.com"}
+
+        class MockRegistry:
+            def list_providers(self, tool_name):
+                return [{"name": "trafilatura"}, {"name": "httpx"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
+        import warnings as _w
+
+        with (
+            _w.catch_warnings(record=True),
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=MockRegistry(),
+            ),
+            pytest.raises(ProviderNotFoundError) as exc_info,
+        ):
+            _w.simplefilter("always")
+            executor._resolve_provider_for_step("fetch", config)
+
+        assert exc_info.value.provider_name == "nonexistent_engine"
+
+    def test_known_explicit_provider_passes_validation(self):
+        """Known explicit provider does not raise error."""
+        executor = self._make_executor()
+        config = {"provider": "tavily", "url": "https://example.com"}
+
+        class MockRegistry:
+            def list_providers(self, tool_name):
+                return [{"name": "trafilatura"}, {"name": "tavily"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
+        with patch(
+            "kurt.workflows.toml.executor.get_provider_registry",
+            return_value=MockRegistry(),
+        ):
+            result = executor._resolve_provider_for_step("fetch", config)
+
+        assert result["engine"] == "tavily"
+
+    def test_error_includes_available_providers_list(self):
+        """ProviderNotFoundError includes the list of available providers."""
+        from kurt.tools.core.errors import ProviderNotFoundError
+
+        executor = self._make_executor()
+        config = {"provider": "bad_provider"}
+
+        class MockRegistry:
+            def list_providers(self, tool_name):
+                return [
+                    {"name": "trafilatura"},
+                    {"name": "httpx"},
+                    {"name": "firecrawl"},
+                ]
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
+        with (
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=MockRegistry(),
+            ),
+            pytest.raises(ProviderNotFoundError) as exc_info,
+        ):
+            executor._resolve_provider_for_step("fetch", config)
+
+        assert set(exc_info.value.available) == {"trafilatura", "httpx", "firecrawl"}
+
+    def test_auto_resolved_provider_not_validated_against_list(self):
+        """Auto-resolved providers (via URL matching) are not validated against list."""
+        executor = self._make_executor()
+        config = {"url": "https://example.com"}
+
+        class MockRegistry:
+            def resolve_provider(self, tool, url=None, default_provider=None):
+                return "auto_resolved"
+
+            def validate_provider(self, tool_name, provider_name):
+                return []  # No missing env vars
+
+        with (
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=MockRegistry(),
+            ),
+            patch(
+                "kurt.tools.core.registry.get_tool", side_effect=Exception("no tool")
+            ),
+        ):
+            result = executor._resolve_provider_for_step("fetch", config)
+
+        # Should succeed - auto-resolved providers use registry, not list_providers
+        assert result["engine"] == "auto_resolved"
+
+    # --- bd-26w.3.1: Missing env vars fails fast ---
+
+    def test_missing_env_vars_raises_requirements_error(self):
+        """Provider with missing env vars raises ProviderRequirementsError."""
+        from kurt.tools.core.errors import ProviderRequirementsError
+
+        executor = self._make_executor()
+        config = {"provider": "firecrawl", "url": "https://example.com"}
+
+        class MockRegistry:
+            def list_providers(self, tool_name):
+                return [{"name": "firecrawl"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                return ["FIRECRAWL_API_KEY"]
+
+        with (
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=MockRegistry(),
+            ),
+            pytest.raises(ProviderRequirementsError) as exc_info,
+        ):
+            executor._resolve_provider_for_step("fetch", config)
+
+        assert "FIRECRAWL_API_KEY" in exc_info.value.missing
+        assert exc_info.value.provider_name == "firecrawl"
+
+    def test_auto_resolved_provider_also_validates_env(self):
+        """Even auto-resolved providers get env validation."""
+        from kurt.tools.core.errors import ProviderRequirementsError
+
+        executor = self._make_executor()
+        config = {"url": "https://x.com/user/status/123"}
+
+        class MockRegistry:
+            def resolve_provider(self, tool, url=None, default_provider=None):
+                return "twitterapi"
+
+            def validate_provider(self, tool_name, provider_name):
+                return ["TWITTERAPI_KEY"]
+
+        with (
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=MockRegistry(),
+            ),
+            patch(
+                "kurt.tools.core.registry.get_tool", side_effect=Exception("no tool")
+            ),
+            pytest.raises(ProviderRequirementsError) as exc_info,
+        ):
+            executor._resolve_provider_for_step("fetch", config)
+
+        assert exc_info.value.provider_name == "twitterapi"
+        assert "TWITTERAPI_KEY" in exc_info.value.missing
+
+    def test_multiple_missing_env_vars_all_reported(self):
+        """All missing env vars are included in the error."""
+        from kurt.tools.core.errors import ProviderRequirementsError
+
+        executor = self._make_executor()
+        config = {"provider": "apify"}
+
+        class MockRegistry:
+            def list_providers(self, tool_name):
+                return [{"name": "apify"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                return ["APIFY_API_TOKEN", "APIFY_PROXY_URL"]
+
+        with (
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=MockRegistry(),
+            ),
+            pytest.raises(ProviderRequirementsError) as exc_info,
+        ):
+            executor._resolve_provider_for_step("fetch", config)
+
+        assert "APIFY_API_TOKEN" in exc_info.value.missing
+        assert "APIFY_PROXY_URL" in exc_info.value.missing
+
+    def test_env_vars_present_passes_validation(self):
+        """Provider with all env vars set passes validation."""
+        executor = self._make_executor()
+        config = {"provider": "firecrawl", "url": "https://example.com"}
+
+        class MockRegistry:
+            def list_providers(self, tool_name):
+                return [{"name": "firecrawl"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                return []  # No missing vars
+
+        with patch(
+            "kurt.workflows.toml.executor.get_provider_registry",
+            return_value=MockRegistry(),
+        ):
+            result = executor._resolve_provider_for_step("fetch", config)
+
+        assert result["engine"] == "firecrawl"
+
+    def test_validation_happens_before_engine_injection(self):
+        """Validation errors are raised before engine is injected into config."""
+        from kurt.tools.core.errors import ProviderNotFoundError
+
+        executor = self._make_executor()
+        config = {"provider": "bad", "url": "https://example.com"}
+
+        class MockRegistry:
+            def list_providers(self, tool_name):
+                return [{"name": "trafilatura"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                # Should not reach here for unknown provider
+                raise AssertionError("validate_provider should not be called")
+
+        with (
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=MockRegistry(),
+            ),
+            pytest.raises(ProviderNotFoundError),
+        ):
+            executor._resolve_provider_for_step("fetch", config)

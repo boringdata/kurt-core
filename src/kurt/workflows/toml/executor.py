@@ -767,9 +767,13 @@ class WorkflowExecutor:
 
         The resolved provider is injected as 'engine' in the config for
         backwards compatibility with existing tool implementations.
+
+        Raises:
+            ToolError: If explicit provider is unknown or missing env vars.
         """
         config = dict(config)  # Don't mutate the original
         explicit_provider = False
+        registry = get_provider_registry()
 
         # 1. Explicit config.provider (highest priority)
         provider_name = config.pop("provider", None)
@@ -787,10 +791,22 @@ class WorkflowExecutor:
                     stacklevel=2,
                 )
                 provider_name = engine
+                explicit_provider = True
+
+        # Validate explicit provider exists in registry
+        if explicit_provider and provider_name:
+            available = [
+                p["name"] for p in registry.list_providers(tool_name)
+            ]
+            if available and provider_name not in available:
+                from kurt.tools.core.errors import ProviderNotFoundError
+
+                raise ProviderNotFoundError(
+                    tool_name, provider_name, available
+                )
 
         # 3. URL pattern matching + 4. Tool's default_provider
         if not provider_name:
-            registry = get_provider_registry()
             url = config.get("url") or config.get("source") or config.get("urls", "")
             if isinstance(url, list) and url:
                 url = url[0]  # Use first URL for pattern matching
@@ -824,6 +840,51 @@ class WorkflowExecutor:
                     "Auto-resolved provider '%s' for tool '%s'",
                     provider_name,
                     tool_name,
+                )
+
+        # Validate provider requirements (env vars) before tool execution
+        if provider_name:
+            missing = registry.validate_provider(tool_name, provider_name)
+            if missing:
+                from kurt.tools.core.errors import ProviderRequirementsError
+
+                raise ProviderRequirementsError(
+                    provider_name=provider_name,
+                    missing=missing,
+                    tool_name=tool_name,
+                )
+
+        # Load provider config from TOML via ProviderConfigResolver
+        if provider_name:
+            try:
+                provider_class = registry.get_provider_class(tool_name, provider_name)
+                config_model = (
+                    getattr(provider_class, "ConfigModel", None)
+                    if provider_class
+                    else None
+                )
+                if config_model is not None:
+                    from kurt.config.provider_config import get_provider_config_resolver
+
+                    resolved_config = get_provider_config_resolver().resolve(
+                        tool_name, provider_name, config_model
+                    )
+                    # Merge as defaults: step config values always win
+                    provider_dict = resolved_config.model_dump()
+                    for key, value in provider_dict.items():
+                        if key not in config:
+                            config[key] = value
+                    logger.debug(
+                        "Loaded provider config for '%s/%s' from TOML",
+                        tool_name,
+                        provider_name,
+                    )
+            except Exception:
+                logger.debug(
+                    "Could not load provider config for '%s/%s'",
+                    tool_name,
+                    provider_name,
+                    exc_info=True,
                 )
 
         # Inject resolved provider as 'engine' for backward compatibility

@@ -137,13 +137,26 @@ class TestDeprecatedEngineConfig:
             }
         )
 
+        class MockRegistry:
+            def list_providers(self, tool_name):
+                return [{"name": "firecrawl"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
         async def mock_execute(name, params, ctx=None, on_progress=None):
             return make_tool_result(success=True)
 
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            with patch(
-                "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
+            with (
+                patch(
+                    "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
+                ),
+                patch(
+                    "kurt.workflows.toml.executor.get_provider_registry",
+                    return_value=MockRegistry(),
+                ),
             ):
                 result = await execute_workflow(workflow, {})
 
@@ -210,6 +223,7 @@ class TestURLAutoMatching:
 
         mock_registry = MagicMock()
         mock_registry.resolve_provider.return_value = "twitterapi"
+        mock_registry.validate_provider.return_value = []
 
         with (
             patch("kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute),
@@ -239,6 +253,9 @@ class TestURLAutoMatching:
             def resolve_provider(self, tool, url=None, default_provider=None):
                 captured_url["url"] = url
                 return "rss"
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
 
         captured = {}
 
@@ -286,6 +303,9 @@ class TestDefaultProviderFallback:
         class FakeRegistry:
             def resolve_provider(self, tool, url=None, default_provider=None):
                 return default_provider
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
 
         mock_tool = type("MockTool", (), {"default_provider": "trafilatura"})
 
@@ -376,6 +396,8 @@ class TestMultiStepWorkflow:
 
         mock_registry = MagicMock()
         mock_registry.resolve_provider.return_value = "twitterapi"
+        mock_registry.list_providers.return_value = [{"name": "crawl"}, {"name": "sitemap"}]
+        mock_registry.validate_provider.return_value = []
 
         with (
             patch("kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute),
@@ -617,6 +639,7 @@ class TestMapEngineOverride:
 
         mock_registry = MagicMock()
         mock_registry.resolve_provider.return_value = "rss"
+        mock_registry.validate_provider.return_value = []
 
         with (
             patch("kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute),
@@ -670,6 +693,8 @@ class TestUpstreamInputDataProviderSelection:
 
         mock_registry = MagicMock()
         mock_registry.resolve_provider.return_value = "twitterapi"
+        mock_registry.list_providers.return_value = [{"name": "sitemap"}, {"name": "twitterapi"}]
+        mock_registry.validate_provider.return_value = []
 
         with (
             patch("kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute),
@@ -715,6 +740,12 @@ class TestUpstreamInputDataProviderSelection:
             def resolve_provider(self, tool, url=None, default_provider=None):
                 captured_urls.append(url)
                 return "trafilatura"
+
+            def list_providers(self, tool_name):
+                return [{"name": "sitemap"}, {"name": "trafilatura"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
 
         with (
             patch("kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute),
@@ -779,6 +810,8 @@ class TestUpstreamInputDataURLMatching:
 
         mock_registry = MagicMock()
         mock_registry.resolve_provider.return_value = "twitterapi"
+        mock_registry.list_providers.return_value = [{"name": "sitemap"}, {"name": "twitterapi"}]
+        mock_registry.validate_provider.return_value = []
 
         with (
             patch(
@@ -834,6 +867,12 @@ class TestUpstreamInputDataURLMatching:
             def resolve_provider(self, tool, url=None, default_provider=None):
                 captured_registry_calls.append({"tool": tool, "url": url})
                 return "trafilatura" if url and "example.com" in url else "twitterapi"
+
+            def list_providers(self, tool_name):
+                return [{"name": "sitemap"}, {"name": "trafilatura"}, {"name": "twitterapi"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
 
         with (
             patch(
@@ -911,6 +950,7 @@ class TestMapToolEngineOverride:
 
         mock_registry = MagicMock()
         mock_registry.resolve_provider.return_value = "rss"
+        mock_registry.validate_provider.return_value = []
 
         with (
             patch(
