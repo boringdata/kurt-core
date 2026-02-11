@@ -20,7 +20,7 @@ class TestDocumentRegistry:
         with managed_session() as session:
             docs = registry.list(session)
 
-        assert len(docs) == 7
+        assert len(docs) == 8
         assert all(isinstance(d, DocumentView) for d in docs)
 
     def test_list_returns_document_views(self, tmp_project_with_docs):
@@ -79,7 +79,7 @@ class TestDocumentFiltering:
             success = registry.list(session, DocumentFilters(map_status=MapStatus.SUCCESS))
             errors = registry.list(session, DocumentFilters(map_status=MapStatus.ERROR))
 
-        assert len(success) == 6  # All docs except doc-7 (ERROR)
+        assert len(success) == 7  # All docs except doc-7 (ERROR)
         assert len(errors) == 1  # doc-7
 
     def test_filter_by_fetch_status(self, tmp_project_with_docs):
@@ -100,13 +100,14 @@ class TestDocumentFiltering:
         with managed_session() as session:
             not_fetched = registry.list(session, DocumentFilters(not_fetched=True))
 
-        # doc-1, doc-2, doc-3, doc-7 have no fetch record
-        assert len(not_fetched) == 4
+        # doc-1, doc-2, doc-3, doc-7, doc-8 have no fetch record
+        assert len(not_fetched) == 5
         doc_ids = {d.document_id for d in not_fetched}
         assert "doc-1" in doc_ids
         assert "doc-2" in doc_ids
         assert "doc-3" in doc_ids
         assert "doc-7" in doc_ids
+        assert "doc-8" in doc_ids
 
     def test_filter_has_error(self, tmp_project_with_docs):
         """Test filtering for documents with errors."""
@@ -189,8 +190,8 @@ class TestUrlContainsFiltering:
         with managed_session() as session:
             docs = registry.list(session, DocumentFilters(url_contains="docs"))
 
-        # doc-1, doc-2, doc-4, doc-5 have "docs" in URL
-        assert len(docs) == 4
+        # doc-1, doc-2, doc-4, doc-5, doc-8 have "docs" in URL
+        assert len(docs) == 5
         for doc in docs:
             assert "docs" in doc.source_url
 
@@ -235,8 +236,8 @@ class TestGlobFiltering:
         with managed_session() as session:
             docs = registry.list(session, DocumentFilters(include="*/docs/*"))
 
-        # doc-1, doc-2, doc-4, doc-5 have /docs/ in URL
-        assert len(docs) == 4
+        # doc-1, doc-2, doc-4, doc-5, doc-8 have /docs/ in URL
+        assert len(docs) == 5
         for doc in docs:
             assert "/docs/" in doc.source_url
 
@@ -248,7 +249,7 @@ class TestGlobFiltering:
             docs = registry.list(session, DocumentFilters(exclude="*/blog/*"))
 
         # All except doc-3 (blog post)
-        assert len(docs) == 6
+        assert len(docs) == 7
         for doc in docs:
             assert "/blog/" not in doc.source_url
 
@@ -321,7 +322,7 @@ class TestConvenienceMethods:
             fetchable = registry.list_fetchable(session)
 
         # Documents that are mapped but not fetched
-        assert len(fetchable) == 4
+        assert len(fetchable) == 5
         for doc in fetchable:
             assert (
                 doc.fetch_status in (None, FetchStatus.PENDING, FetchStatus.ERROR)
@@ -347,8 +348,8 @@ class TestConvenienceMethods:
             total = registry.count(session)
             success = registry.count(session, DocumentFilters(map_status=MapStatus.SUCCESS))
 
-        assert total == 7
-        assert success == 6  # All except doc-7 (ERROR)
+        assert total == 8
+        assert success == 7  # All except doc-7 (ERROR)
 
 
 class TestDocumentViewProperties:

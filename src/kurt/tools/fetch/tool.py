@@ -77,9 +77,9 @@ class FetchToolConfig(BaseModel):
     Note: This is distinct from FetchConfig (StepConfig) used by workflows.
     """
 
-    engine: Literal["trafilatura", "httpx", "tavily", "firecrawl", "apify", "twitterapi"] = Field(
+    engine: str = Field(
         default="trafilatura",
-        description="Fetch engine to use",
+        description="Fetch engine: trafilatura, httpx, tavily, firecrawl, apify, twitterapi",
     )
     platform: str | None = Field(
         default=None,
@@ -200,9 +200,9 @@ class FetchParams(BaseModel):
     )
 
     # Config fields (flattened for executor compatibility)
-    engine: Literal["trafilatura", "httpx", "tavily", "firecrawl", "apify", "twitterapi"] = Field(
+    engine: str = Field(
         default="trafilatura",
-        description="Fetch engine to use",
+        description="Fetch engine: trafilatura, httpx, tavily, firecrawl, apify, twitterapi",
     )
     platform: str | None = Field(
         default=None,
@@ -585,7 +585,13 @@ async def _fetch_with_retry(
     Raises:
         Exception: The last error if all retries fail
     """
-    fetch_fn = _FETCH_ENGINES[engine]
+    fetch_fn = _FETCH_ENGINES.get(engine)
+    if fetch_fn is None:
+        available = ", ".join(sorted(_FETCH_ENGINES.keys()))
+        raise ValueError(
+            f"Unknown fetch engine '{engine}'. "
+            f"Available engines: {available}."
+        )
     last_error: Exception | None = None
 
     for attempt in range(retries + 1):
@@ -705,6 +711,7 @@ class FetchTool(Tool[FetchParams, FetchOutput]):
 
     name = "fetch"
     description = "Fetch content from URLs with configurable engines and retry"
+    default_provider = "trafilatura"
     InputModel = FetchParams
     OutputModel = FetchOutput
 

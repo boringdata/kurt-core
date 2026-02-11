@@ -511,3 +511,267 @@ class TestInitCommand:
                 md_content = md_file.read_text()
                 assert "name: example-workflow-md" in md_content
                 assert "{{task}}" in md_content
+
+
+class TestValidateCommand:
+    """Tests for validate command."""
+
+    def test_validate_single_file_valid(self, cli_runner: CliRunner, tmp_path):
+        """Test validate command with a valid workflow file."""
+        from kurt.workflows.agents.cli import agents_group
+
+        # Create a valid workflow file
+        workflow_file = tmp_path / "valid-workflow.md"
+        workflow_file.write_text("""---
+name: valid-workflow
+title: Valid Workflow
+agent:
+  model: claude-sonnet-4-20250514
+  max_turns: 10
+---
+# Task
+
+This is a valid workflow.
+""")
+
+        result = cli_runner.invoke(agents_group, ["validate", str(workflow_file)])
+        assert result.exit_code == 0
+        assert "Validation passed" in result.output
+
+    def test_validate_single_file_invalid_yaml(self, cli_runner: CliRunner, tmp_path):
+        """Test validate command with invalid YAML frontmatter."""
+        from kurt.workflows.agents.cli import agents_group
+
+        # Create an invalid workflow file
+        workflow_file = tmp_path / "invalid-workflow.md"
+        workflow_file.write_text("""---
+name: invalid-workflow
+title: Invalid Workflow
+agent:
+  model: claude-sonnet-4-20250514
+  max_turns: not_a_number  # Invalid - should be int
+---
+# Task
+
+This workflow has invalid config.
+""")
+
+        result = cli_runner.invoke(agents_group, ["validate", str(workflow_file)])
+        # Should fail (non-zero exit code)
+        assert result.exit_code != 0
+
+    def test_validate_single_file_missing_required(self, cli_runner: CliRunner, tmp_path):
+        """Test validate command with missing required body."""
+        from kurt.workflows.agents.cli import agents_group
+
+        # Create workflow missing required body (prompt)
+        workflow_file = tmp_path / "missing-body.md"
+        workflow_file.write_text("""---
+name: missing-body
+title: Missing Body
+agent:
+  model: claude-sonnet-4-20250514
+---
+""")
+
+        result = cli_runner.invoke(agents_group, ["validate", str(workflow_file)])
+        # Should fail
+        assert result.exit_code != 0
+
+    @patch("kurt.workflows.agents.registry.validate_all")
+    def test_validate_all_no_files(self, mock_validate, cli_runner: CliRunner):
+        """Test validate command with no workflow files."""
+        from kurt.workflows.agents.cli import agents_group
+
+        mock_validate.return_value = {"valid": [], "errors": []}
+
+        result = cli_runner.invoke(agents_group, ["validate"])
+        assert result.exit_code == 0
+        assert "No workflow files found" in result.output
+
+    @patch("kurt.workflows.agents.registry.validate_all")
+    def test_validate_all_with_valid_files(self, mock_validate, cli_runner: CliRunner):
+        """Test validate command with all valid files."""
+        from kurt.workflows.agents.cli import agents_group
+
+        mock_validate.return_value = {
+            "valid": ["workflow-1", "workflow-2", "workflow-3"],
+            "errors": [],
+        }
+
+        result = cli_runner.invoke(agents_group, ["validate"])
+        assert result.exit_code == 0
+        assert "Valid: 3 workflow(s)" in result.output
+        assert "workflow-1" in result.output
+        assert "workflow-2" in result.output
+        assert "workflow-3" in result.output
+
+    @patch("kurt.workflows.agents.registry.validate_all")
+    def test_validate_all_with_errors(self, mock_validate, cli_runner: CliRunner):
+        """Test validate command with some errors."""
+        from kurt.workflows.agents.cli import agents_group
+
+        mock_validate.return_value = {
+            "valid": ["workflow-1"],
+            "errors": [
+                {"file": "broken.md", "errors": ["Missing name field", "Invalid model"]},
+            ],
+        }
+
+        result = cli_runner.invoke(agents_group, ["validate"])
+        assert result.exit_code == 0
+        assert "Valid: 1 workflow(s)" in result.output
+        assert "Errors:" in result.output
+        assert "broken.md" in result.output
+        assert "Missing name field" in result.output
+
+
+class TestHistoryCommand:
+    """Tests for history command."""
+
+    @patch("kurt.workflows.agents.registry.get_definition")
+    def test_history_workflow_not_found(self, mock_get, cli_runner: CliRunner):
+        """Test history command when workflow not found."""
+        from kurt.workflows.agents.cli import agents_group
+
+        mock_get.return_value = None
+
+        result = cli_runner.invoke(agents_group, ["history", "nonexistent"])
+        assert result.exit_code != 0
+        assert "Workflow not found" in result.output
+
+    @patch("kurt.workflows.agents.registry.get_definition")
+    @patch("kurt.db.dolt.DoltDB")
+    def test_history_no_database(self, mock_db_class, mock_get, cli_runner: CliRunner):
+        """Test history command when database doesn't exist."""
+        from kurt.workflows.agents.cli import agents_group
+        from kurt.workflows.agents.parser import AgentConfig, GuardrailsConfig, ParsedWorkflow
+
+        mock_get.return_value = ParsedWorkflow(
+            name="test-workflow",
+            title="Test Workflow",
+            body="Body",
+            agent=AgentConfig(model="claude-sonnet-4-20250514"),
+            guardrails=GuardrailsConfig(),
+        )
+
+        mock_db = mock_db_class.return_value
+        mock_db.exists.return_value = False
+
+        result = cli_runner.invoke(agents_group, ["history", "test-workflow"])
+        assert result.exit_code == 0
+        assert "No workflow history database found" in result.output
+
+    @patch("kurt.workflows.agents.registry.get_definition")
+    @patch("kurt.db.dolt.DoltDB")
+    def test_history_no_runs(self, mock_db_class, mock_get, cli_runner: CliRunner):
+        """Test history command when no runs exist."""
+        from kurt.workflows.agents.cli import agents_group
+        from kurt.workflows.agents.parser import AgentConfig, GuardrailsConfig, ParsedWorkflow
+
+        mock_get.return_value = ParsedWorkflow(
+            name="test-workflow",
+            title="Test Workflow",
+            body="Body",
+            agent=AgentConfig(model="claude-sonnet-4-20250514"),
+            guardrails=GuardrailsConfig(),
+        )
+
+        # Mock database that exists but returns empty results
+        class MockResult:
+            rows = []
+
+        mock_db = mock_db_class.return_value
+        mock_db.exists.return_value = True
+        mock_db.query.return_value = MockResult()
+
+        # Mock schema check
+        with patch("kurt.db.dolt.check_schema_exists", return_value={"workflow_runs": True}):
+            result = cli_runner.invoke(agents_group, ["history", "test-workflow"])
+
+        assert result.exit_code == 0
+        assert "No run history found" in result.output
+
+    @patch("kurt.workflows.agents.registry.get_definition")
+    @patch("kurt.db.dolt.DoltDB")
+    def test_history_with_runs(self, mock_db_class, mock_get, cli_runner: CliRunner):
+        """Test history command with existing runs."""
+        from kurt.workflows.agents.cli import agents_group
+        from kurt.workflows.agents.parser import AgentConfig, GuardrailsConfig, ParsedWorkflow
+
+        mock_get.return_value = ParsedWorkflow(
+            name="daily-report",
+            title="Daily Report",
+            body="Body",
+            agent=AgentConfig(model="claude-sonnet-4-20250514"),
+            guardrails=GuardrailsConfig(),
+        )
+
+        # Mock database with run history
+        class MockResult:
+            rows = [
+                {
+                    "id": "abc123-def456-789012",
+                    "workflow": "agent:daily-report",
+                    "status": "completed",
+                    "started_at": "2026-02-01T10:00:00",
+                    "completed_at": "2026-02-01T10:05:00",
+                    "inputs": "{}",
+                    "metadata_json": '{"trigger": "manual"}',
+                    "error": None,
+                },
+                {
+                    "id": "xyz789-uvw456-123456",
+                    "workflow": "agent:daily-report",
+                    "status": "failed",
+                    "started_at": "2026-01-31T09:00:00",
+                    "completed_at": "2026-01-31T09:02:00",
+                    "inputs": "{}",
+                    "metadata_json": '{"trigger": "schedule"}',
+                    "error": "Connection timeout",
+                },
+            ]
+
+        mock_db = mock_db_class.return_value
+        mock_db.exists.return_value = True
+        mock_db.query.return_value = MockResult()
+
+        with patch("kurt.db.dolt.check_schema_exists", return_value={"workflow_runs": True}):
+            result = cli_runner.invoke(agents_group, ["history", "daily-report"])
+
+        assert result.exit_code == 0
+        assert "Run History: daily-report" in result.output
+        # Table should show run IDs
+        assert "abc123" in result.output
+        assert "xyz789" in result.output
+
+    @patch("kurt.workflows.agents.registry.get_definition")
+    @patch("kurt.db.dolt.DoltDB")
+    def test_history_with_limit(self, mock_db_class, mock_get, cli_runner: CliRunner):
+        """Test history command with --limit option."""
+        from kurt.workflows.agents.cli import agents_group
+        from kurt.workflows.agents.parser import AgentConfig, GuardrailsConfig, ParsedWorkflow
+
+        mock_get.return_value = ParsedWorkflow(
+            name="test",
+            title="Test",
+            body="Body",
+            agent=AgentConfig(model="claude-sonnet-4-20250514"),
+            guardrails=GuardrailsConfig(),
+        )
+
+        class MockResult:
+            rows = []
+
+        mock_db = mock_db_class.return_value
+        mock_db.exists.return_value = True
+        mock_db.query.return_value = MockResult()
+
+        with patch("kurt.db.dolt.check_schema_exists", return_value={"workflow_runs": True}):
+            cli_runner.invoke(agents_group, ["history", "test", "--limit", "5"])
+
+        # Verify query was called with correct limit
+        call_args = mock_db.query.call_args
+        assert call_args is not None
+        # Third parameter should be the limit
+        assert 5 in call_args[0][1]

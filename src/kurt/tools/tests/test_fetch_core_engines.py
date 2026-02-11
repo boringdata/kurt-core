@@ -211,6 +211,7 @@ class TestApifyEngine:
             engine = ApifyEngine(config)
             assert engine._config.api_key == "test_key"
 
+    @pytest.mark.integration
     @pytest.mark.skipif(not HAS_APIFY_KEY, reason="APIFY_API_KEY not set")
     def test_apify_fetch_integration(self):
         """Test fetch with Apify (requires API key)."""

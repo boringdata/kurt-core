@@ -136,3 +136,73 @@ class ToolCanceledError(ToolError):
         )
         self.tool_name = tool_name
         self.reason = reason
+
+
+class ProviderNotFoundError(ToolError):
+    """Raised when a provider is not found for a tool."""
+
+    def __init__(
+        self,
+        tool_name: str,
+        provider_name: str,
+        available: list[str] | None = None,
+    ) -> None:
+        self.tool_name = tool_name
+        self.provider_name = provider_name
+        self.available = available or []
+
+        msg = f"Provider '{provider_name}' not found for tool '{tool_name}'"
+        if self.available:
+            msg += f"\n\nAvailable providers: {', '.join(self.available)}"
+        msg += f"\n\nHint: Run 'kurt tool providers {tool_name}' to see all providers"
+
+        super().__init__(
+            msg,
+            details={
+                "tool_name": tool_name,
+                "provider_name": provider_name,
+                "available": self.available,
+            },
+        )
+
+
+class ProviderRequirementsError(ToolError):
+    """Raised when a provider's required environment variables are missing."""
+
+    def __init__(
+        self,
+        provider_name: str,
+        missing: list[str],
+        tool_name: str | None = None,
+    ) -> None:
+        self.provider_name = provider_name
+        self.missing = missing
+        self.tool_name = tool_name
+
+        msg = f"Provider '{provider_name}' missing required environment variables: {', '.join(missing)}"
+        msg += "\n\nSet these environment variables before use."
+
+        super().__init__(
+            msg,
+            details={
+                "provider_name": provider_name,
+                "tool_name": tool_name,
+                "missing_env": missing,
+            },
+        )
+
+
+class ProviderValidationError(ToolError):
+    """Raised when a provider definition is invalid."""
+
+    def __init__(self, provider_name: str, reason: str) -> None:
+        self.provider_name = provider_name
+        self.reason = reason
+
+        super().__init__(
+            f"Invalid provider '{provider_name}': {reason}",
+            details={
+                "provider_name": provider_name,
+                "reason": reason,
+            },
+        )

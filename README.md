@@ -55,7 +55,8 @@ Before getting started, you'll need:
   - Handles JavaScript and dynamic content
   - Best for modern SPAs and interactive sites
   - Get your API key from: https://firecrawl.dev
-  - **Alternative**: Kurt falls back to Trafilatura (free, fast, but no JS rendering)
+  - **Alternative**: Kurt auto-selects trafilatura for standard HTML pages
+  - Run `kurt tool providers fetch` to see all available fetch providers
 
 ## Quick Start
 
@@ -206,12 +207,15 @@ Fetch content from web sources to use as grounding material:
 **Configuration** (edit `kurt.config` in your project root):
 
 ```bash
-# Scraping engine - choose based on your content source
+# Fetch provider - choose based on your content source
 # Options:
 #   - trafilatura (default): Fast, free, static HTML only
 #   - firecrawl: Handles JavaScript/SPAs (requires FIRECRAWL_API_KEY in .env)
 #   - httpx: Proxy-friendly alternative to trafilatura
-INGESTION_FETCH_ENGINE="trafilatura"
+#   - notion: Notion API (requires NOTION_API_KEY)
+#   - apify: Apify web scraping (requires APIFY_API_KEY)
+# Provider is auto-selected from URL when possible (e.g., notion.so → notion)
+FETCH.PROVIDER="trafilatura"
 
 # LLM models (format: provider/model-name)
 # Alternatives: "anthropic/claude-3-haiku", "google/gemini-1.5-flash", "groq/llama-3.1-8b"
@@ -247,6 +251,9 @@ kurt content fetch --url-contains /blog/
 
 # Fetch all discovered URLs
 kurt content fetch --all
+
+# Fetch with explicit provider (auto-selected from URL when possible)
+kurt content fetch https://notion.so/page --provider notion
 ```
 
 Content is stored as markdown in `sources/{domain}/{path}/` with metadata in SQLite.
@@ -508,6 +515,28 @@ kurt logs <run-id> --tail
 
 # Cancel a workflow
 kurt cancel <run-id>
+```
+
+### Tool & Provider Management
+
+```bash
+# List all tools and their providers
+kurt tool list
+
+# Show details for a specific tool
+kurt tool info fetch
+
+# List providers for a tool
+kurt tool providers fetch
+
+# Check provider requirements (env vars)
+kurt tool check fetch
+
+# Scaffold a new tool
+kurt tool new my-tool
+
+# Add a provider to an existing tool
+kurt tool new-provider fetch my-provider
 ```
 
 ### Administrative Commands

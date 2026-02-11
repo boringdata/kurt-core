@@ -412,9 +412,11 @@ class TestMixedWorkflowsWithDolt:
 
     @pytest.fixture
     def dolt_project(self, tmp_path: Path, monkeypatch):
-        """Create a temp project with DoltDB initialized."""
+        """Create a temp project with DoltDB initialized on an isolated port."""
         import shutil
+        import socket
         import subprocess
+        import time
 
         # Skip if dolt not installed
         if not shutil.which("dolt"):
@@ -434,13 +436,43 @@ class TestMixedWorkflowsWithDolt:
             capture_output=True,
         )
 
+        # Find a free port to avoid collision with existing Dolt servers
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", 0))
+            port = s.getsockname()[1]
+
+        # Start dolt sql-server on the isolated port
+        server_proc = subprocess.Popen(
+            ["dolt", "sql-server", "--port", str(port), "--host", "127.0.0.1"],
+            cwd=repo_path,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+
+        # Wait for server to be ready
+        for _ in range(30):
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=0.5):
+                    break
+            except OSError:
+                time.sleep(0.1)
+        else:
+            server_proc.terminate()
+            pytest.fail(f"Dolt server failed to start on port {port}")
+
         # Set up environment
         monkeypatch.setenv("DOLT_PATH", str(repo_path))
+        db_name = repo_path.name
+        monkeypatch.setenv(
+            "DATABASE_URL",
+            f"mysql+pymysql://root@127.0.0.1:{port}/{db_name}",
+        )
         original_cwd = os.getcwd()
         os.chdir(repo_path)
 
-        # Create DoltDB instance and set up tables
-        db = DoltDB(str(repo_path))
+        # Create DoltDB instance on the isolated port
+        db = DoltDB(str(repo_path), port=port)
         db.execute("CREATE TABLE test_data (id INT PRIMARY KEY, name VARCHAR(255), value VARCHAR(255))")
         db.execute("INSERT INTO test_data VALUES (1, 'item1', 'value1')")
         db.execute("INSERT INTO test_data VALUES (2, 'item2', 'value2')")
@@ -448,6 +480,11 @@ class TestMixedWorkflowsWithDolt:
         yield repo_path, db
 
         os.chdir(original_cwd)
+        server_proc.terminate()
+        try:
+            server_proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            server_proc.kill()
 
     @pytest.mark.asyncio
     async def test_sql_then_function_workflow(self, dolt_project):

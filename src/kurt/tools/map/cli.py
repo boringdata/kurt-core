@@ -28,10 +28,14 @@ console = Console()
 @click.option("--cms", help="CMS platform to sync from (e.g., sanity:production)")
 @click.option("--sitemap-path", help="Override sitemap location (e.g., /custom-sitemap.xml)")
 @click.option(
+    "--provider",
+    help="Provider name for discovery (sitemap, crawl, rss, folder, cms)",
+)
+@click.option(
     "--method",
     type=click.Choice(["auto", "sitemap", "crawl", "rss", "folder", "cms"], case_sensitive=False),
     default="auto",
-    help="Discovery method",
+    help="[Deprecated: use --provider] Discovery method",
 )
 @click.option("--max-depth", type=int, help="Maximum crawl depth (1-5)")
 @click.option("--allow-external", is_flag=True, help="Allow crawling to external domains")
@@ -48,6 +52,7 @@ def map_cmd(
     folder: str | None,
     cms: str | None,
     sitemap_path: str | None,
+    provider: str | None,
     method: str,
     max_depth: int | None,
     allow_external: bool,
@@ -75,6 +80,8 @@ def map_cmd(
     For social platform content (Twitter, LinkedIn, etc.), use:
         kurt tool fetch --url URL --engine apify --platform twitter
     """
+    # --provider takes precedence over deprecated --method
+    effective_method = provider or method
     # Determine source type
     source_url = url or (source if source and source.startswith(("http://", "https://")) else None)
     source_folder = folder or (
@@ -88,9 +95,9 @@ def map_cmd(
         cms_platform = parts[0]
         cms_instance = parts[1] if len(parts) > 1 else "default"
 
-    if method == "folder":
+    if effective_method == "folder":
         source_folder = source_folder or source
-    elif method == "cms" and source and not cms_platform:
+    elif effective_method == "cms" and source and not cms_platform:
         parts = source.split(":")
         cms_platform = parts[0]
         cms_instance = parts[1] if len(parts) > 1 else "default"
@@ -117,7 +124,7 @@ def map_cmd(
         source_folder=source_folder,
         cms_platform=cms_platform,
         cms_instance=cms_instance,
-        discovery_method=method.lower(),
+        discovery_method=effective_method.lower(),
         sitemap_path=sitemap_path,
         max_depth=max_depth,
         max_pages=limit or 1000,

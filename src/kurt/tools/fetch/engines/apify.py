@@ -55,6 +55,19 @@ class ApifyFetcher(BaseFetcher):
         result = fetcher.fetch("https://twitter.com/username")
     """
 
+    name = "apify"
+    version = "1.0.0"
+    url_patterns = [
+        # Twitter/X handled by dedicated twitterapi provider
+        "*linkedin.com/*",
+        "*threads.net/*",
+        "*substack.com/*",
+    ]
+    requires_env = ["APIFY_API_KEY"]
+
+    from kurt.tools.fetch.providers.apify.config import ApifyFetchProviderConfig
+    ConfigModel = ApifyFetchProviderConfig
+
     def __init__(self, config: Optional[FetcherConfig] = None):
         """Initialize Apify fetcher.
 

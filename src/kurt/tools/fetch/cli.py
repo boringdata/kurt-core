@@ -53,9 +53,9 @@ def _check_engine_status(engine: str) -> tuple[str, str]:
             return "ready", "Apify social platform extraction"
         return "missing", "Set APIFY_API_KEY"
     if engine == "twitterapi":
-        if os.getenv("TWITTER_BEARER_TOKEN"):
-            return "ready", "Twitter API v2 (direct)"
-        return "missing", "Set TWITTER_BEARER_TOKEN"
+        if os.getenv("TWITTERAPI_API_KEY"):
+            return "ready", "TwitterAPI.io extraction"
+        return "missing", "Set TWITTERAPI_API_KEY"
     return "unknown", "Unknown engine"
 
 
@@ -105,9 +105,13 @@ def _list_engines(output_format: str) -> None:
 @click.option("--file", "single_file", help="Single local file path to fetch")
 @click.option("--files", "files_paths", help="Comma-separated list of local file paths")
 @click.option(
+    "--provider",
+    help="Provider name for fetch (trafilatura, httpx, tavily, firecrawl, apify, twitterapi)",
+)
+@click.option(
     "--engine",
     type=click.Choice(["firecrawl", "trafilatura", "httpx", "tavily", "apify", "twitterapi"], case_sensitive=False),
-    help="Fetch engine to use",
+    help="[Deprecated: use --provider] Fetch engine to use",
 )
 @click.option(
     "--platform",
@@ -160,6 +164,7 @@ def fetch_cmd(
     urls: str | None,
     single_file: str | None,
     files_paths: str | None,
+    provider: str | None,
     engine: str | None,
     platform: str | None,
     content_type: str | None,
@@ -320,8 +325,10 @@ def fetch_cmd(
         return
 
     config_overrides: dict[str, object] = {"dry_run": dry_run}
-    if engine:
-        config_overrides["fetch_engine"] = engine.lower()
+    # --provider takes precedence over deprecated --engine
+    effective_engine = provider or engine
+    if effective_engine:
+        config_overrides["fetch_engine"] = effective_engine.lower()
     if batch_size is not None:
         config_overrides["batch_size"] = batch_size
     if embed is not None:

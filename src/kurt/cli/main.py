@@ -157,6 +157,8 @@ class AliasedLazyGroup(click.Group):
         "help": ("kurt.cli.show", "show_group"),
         # Agent workflows
         "agents": ("kurt.workflows.agents.cli", "agents_group"),
+        # Skill management
+        "skill": ("kurt.cli.skill", "skill"),
     },
 )
 @click.option(

@@ -1,0 +1,13 @@
+{
+  "content": "# Sample Article\n\nThis is a sample article extracted by trafilatura.\n\n## Introduction\n\nLorem ipsum dolor sit amet, consectetur adipiscing elit.",
+  "content_html": "<h1>Sample Article</h1><p>This is a sample article extracted by trafilatura.</p><h2>Introduction</h2><p>Lorem ipsum dolor sit amet, consectetur adipiscing elit.</p>",
+  "metadata": {
+    "title": "Sample Article",
+    "author": "Test Author",
+    "date": "2026-01-15",
+    "description": "A sample article for testing",
+    "sitename": "example.com"
+  },
+  "success": true,
+  "error": null
+}

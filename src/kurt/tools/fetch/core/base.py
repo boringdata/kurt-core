@@ -56,7 +56,22 @@ class BaseFetcher(ABC):
     """Base class for content fetchers.
 
     Fetchers retrieve and extract content from URLs.
+
+    Subclasses should set the class-level metadata attributes for
+    provider discovery and validation:
+
+        class MyFetcher(BaseFetcher):
+            name = "my-fetcher"
+            version = "1.0.0"
+            url_patterns = ["example.com/*"]
+            requires_env = ["MY_API_KEY"]
     """
+
+    # Provider metadata for discovery and validation
+    name: str = ""
+    version: str = "1.0.0"
+    url_patterns: list[str] = []
+    requires_env: list[str] = []
 
     def __init__(
         self,
@@ -68,6 +83,16 @@ class BaseFetcher(ABC):
             config: Fetcher configuration
         """
         self.config = config or FetcherConfig()
+
+    def validate_requirements(self) -> list[str]:
+        """Check if all required environment variables are set.
+
+        Returns:
+            List of missing environment variable names. Empty if all present.
+        """
+        import os
+
+        return [var for var in self.requires_env if not os.environ.get(var)]
 
     @abstractmethod
     def fetch(self, url: str) -> FetchResult:

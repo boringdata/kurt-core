@@ -31,6 +31,14 @@ class FolderEngine(BaseMapper):
     Discovers markdown files from a directory with filtering support.
     """
 
+    name = "folder"
+    version = "1.0.0"
+    url_patterns: list[str] = []
+    requires_env: list[str] = []
+
+    from kurt.tools.map.providers.folder.config import FolderProviderConfig
+    ConfigModel = FolderProviderConfig
+
     def __init__(self, config: Optional[FolderMapperConfig] = None):
         """Initialize folder mapper.
 

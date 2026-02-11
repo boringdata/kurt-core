@@ -61,6 +61,19 @@ class ApifyEngine(BaseMapper):
         result = engine.map("machine learning", DocType.POSTS)
     """
 
+    name = "apify"
+    version = "1.0.0"
+    url_patterns = [
+        # Twitter/X handled by dedicated twitterapi provider (fetch tool)
+        "*linkedin.com/*",
+        "*threads.net/*",
+        "*substack.com/*",
+    ]
+    requires_env = ["APIFY_API_KEY"]
+
+    from kurt.tools.map.providers.apify.config import ApifyMapProviderConfig
+    ConfigModel = ApifyMapProviderConfig
+
     def __init__(self, config: Optional[MapperConfig] = None):
         """Initialize Apify engine.
 

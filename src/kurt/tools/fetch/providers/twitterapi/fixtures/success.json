@@ -1,0 +1,15 @@
+{
+  "content": "## Tweet by @testuser\n\nExciting developments in open source AI! The community continues to push boundaries. #OpenSource #AI\n\n---\n*Posted: 2026-01-15 10:30 UTC | Likes: 128 | Retweets: 34*",
+  "content_html": null,
+  "metadata": {
+    "tweet_id": "1234567890",
+    "author": "testuser",
+    "author_name": "Test User",
+    "likes": 128,
+    "retweets": 34,
+    "created_at": "2026-01-15T10:30:00Z",
+    "url": "https://x.com/testuser/status/1234567890"
+  },
+  "success": true,
+  "error": null
+}

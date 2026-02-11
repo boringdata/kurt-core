@@ -58,6 +58,14 @@ class TavilyFetcher(BaseFetcher):
     the deprecated fetch_with_tavily() function.
     """
 
+    name = "tavily"
+    version = "1.0.0"
+    url_patterns = []  # Credentialed; use only when explicitly selected
+    requires_env = ["TAVILY_API_KEY"]
+
+    from kurt.tools.fetch.providers.tavily.config import TavilyProviderConfig
+    ConfigModel = TavilyProviderConfig
+
     def __init__(self, config: Optional[FetcherConfig] = None, api_key: Optional[str] = None):
         """Initialize Tavily fetcher.
 

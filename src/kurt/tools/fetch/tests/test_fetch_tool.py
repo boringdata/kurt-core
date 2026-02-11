@@ -24,6 +24,7 @@ from kurt.tools.fetch import (
 )
 from kurt.tools.fetch.tool import (
     _compute_content_hash,
+    _fetch_with_retry,
     _generate_content_path,
     _is_retryable_error,
     _save_content,
@@ -159,10 +160,16 @@ class TestFetchConfig:
         FetchConfig(concurrency=1)
         FetchConfig(concurrency=20)
 
-    def test_invalid_engine(self):
-        """Invalid engine raises validation error."""
-        with pytest.raises(ValidationError):
-            FetchConfig(engine="invalid")
+    def test_custom_engine_name_accepted(self):
+        """Custom engine/provider names are accepted (validated at runtime, not schema)."""
+        config = FetchConfig(engine="my_custom_provider")
+        assert config.engine == "my_custom_provider"
+
+    def test_builtin_engine_names_accepted(self):
+        """All built-in engine names are still accepted."""
+        for name in ["trafilatura", "httpx", "tavily", "firecrawl", "apify", "twitterapi"]:
+            config = FetchConfig(engine=name)
+            assert config.engine == name
 
 
 # ============================================================================
@@ -344,6 +351,71 @@ class TestRetryLogic:
         """Content-related errors should NOT be retried."""
         assert _is_retryable_error(ValueError("content_too_large: 15MB")) is False
         assert _is_retryable_error(ValueError("invalid_content_type: image/png")) is False
+
+
+# ============================================================================
+# Custom Provider Engine Tests (bd-26w.4.1)
+# ============================================================================
+
+
+class TestCustomProviderEngine:
+    """Test that custom provider names are accepted and properly validated."""
+
+    @pytest.mark.asyncio
+    async def test_unknown_engine_raises_clear_error(self):
+        """Unknown engine in _fetch_with_retry raises ValueError with helpful message."""
+        client = Mock()
+
+        with pytest.raises(ValueError, match="Unknown fetch engine 'nonexistent'"):
+            await _fetch_with_retry(
+                url="https://example.com",
+                engine="nonexistent",
+                timeout_s=30,
+                retries=0,
+                retry_backoff_ms=1000,
+                client=client,
+            )
+
+    @pytest.mark.asyncio
+    async def test_unknown_engine_error_lists_available(self):
+        """Error message includes available built-in engines."""
+        client = Mock()
+
+        with pytest.raises(ValueError, match="trafilatura") as exc_info:
+            await _fetch_with_retry(
+                url="https://example.com",
+                engine="bad_engine",
+                timeout_s=30,
+                retries=0,
+                retry_backoff_ms=1000,
+                client=client,
+            )
+
+        error_msg = str(exc_info.value)
+        assert "trafilatura" in error_msg
+        assert "httpx" in error_msg
+
+    def test_fetch_params_accepts_custom_engine(self):
+        """FetchParams accepts custom provider names for engine field."""
+        params = FetchParams(
+            inputs=[FetchInput(url="https://example.com")],
+            engine="my_custom_fetcher",
+        )
+        assert params.engine == "my_custom_fetcher"
+
+    def test_fetch_config_accepts_custom_engine(self):
+        """FetchToolConfig accepts custom provider names for engine field."""
+        config = FetchToolConfig(engine="project_custom_fetcher")
+        assert config.engine == "project_custom_fetcher"
+
+    def test_get_config_propagates_custom_engine(self):
+        """FetchParams.get_config() preserves custom engine name."""
+        params = FetchParams(
+            inputs=[FetchInput(url="https://example.com")],
+            engine="custom_provider",
+        )
+        config = params.get_config()
+        assert config.engine == "custom_provider"
 
 
 # ============================================================================

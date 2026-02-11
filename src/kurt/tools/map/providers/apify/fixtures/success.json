@@ -1,0 +1,15 @@
+{
+  "urls": [
+    "https://x.com/testuser/status/1111111111",
+    "https://x.com/testuser/status/2222222222",
+    "https://x.com/testuser/status/3333333333"
+  ],
+  "count": 3,
+  "errors": [],
+  "metadata": {
+    "platform": "twitter",
+    "source": "@testuser",
+    "actor": "apify/twitter-scraper",
+    "url_count": 3
+  }
+}

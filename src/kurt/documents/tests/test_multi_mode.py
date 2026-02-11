@@ -47,8 +47,8 @@ class TestDocumentRegistryAllModes:
         with managed_session() as session:
             docs = registry.list(session)
 
-        # All 7 test documents should be returned
-        assert len(docs) == 7
+        # All 8 test documents should be returned
+        assert len(docs) == 8
 
     def test_list_with_join(self, db_mode_project_with_docs):
         """Test JOIN queries work in all modes."""
@@ -71,8 +71,8 @@ class TestDocumentRegistryAllModes:
         with managed_session() as session:
             docs = registry.list(session, DocumentFilters(not_fetched=True))
 
-        # Should return 4 documents: doc-1, doc-2, doc-3 (not fetched), doc-7 (map error, no fetch)
-        assert len(docs) == 4
+        # Should return 5 documents: doc-1, doc-2, doc-3 (not fetched), doc-7 (map error, no fetch), doc-8 (file)
+        assert len(docs) == 5
         for doc in docs:
             assert doc.fetch_status is None
 
