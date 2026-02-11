@@ -20,7 +20,6 @@ skip_without_apify = pytest.mark.skipif(
     reason="APIFY_API_KEY not set - skipping Apify integration tests",
 )
 
-
 class TestEngineRegistry:
     """Test EngineRegistry."""
 

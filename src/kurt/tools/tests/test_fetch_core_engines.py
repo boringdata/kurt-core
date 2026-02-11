@@ -17,7 +17,6 @@ from kurt.tools.fetch.models import DocType
 # Check if APIFY_API_KEY is available for integration tests
 HAS_APIFY_KEY = bool(os.environ.get("APIFY_API_KEY"))
 
-
 class TestFetcherConfig:
     """Test FetcherConfig."""
 
