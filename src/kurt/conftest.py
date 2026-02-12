@@ -125,17 +125,23 @@ def assert_json_output(result) -> dict:
 # ============================================================================
 
 
-@pytest.fixture
-def tmp_database(tmp_path: Path, monkeypatch):
+@pytest.fixture(scope="session")
+def tmp_database(tmp_path_factory):
     """
     Fixture for a temporary Dolt database with its own server.
 
-    Creates a fresh Dolt database for each test on a unique port.
+    Creates ONE shared Dolt database for the entire session.
     Sets DATABASE_URL environment variable.
+
+    Using session scope dramatically speeds up tests by avoiding
+    repeated server startup/shutdown. All tests share one server.
     """
     # Skip if dolt is not installed
     if not shutil.which("dolt"):
         pytest.skip("Dolt CLI not installed")
+
+    # Create temp directory for this session
+    tmp_path = tmp_path_factory.mktemp("dolt_session")
 
     # Change to temp directory
     original_cwd = os.getcwd()
@@ -165,10 +171,11 @@ def tmp_database(tmp_path: Path, monkeypatch):
         os.chdir(original_cwd)
         pytest.fail(f"Dolt server failed to start on port {port}")
 
-    # Set DATABASE_URL to connect to this test's Dolt server
+    # Set DATABASE_URL to connect to this session's Dolt server
     # Database name is the directory name (created by dolt init)
     database_name = tmp_path.name
-    monkeypatch.setenv("DATABASE_URL", f"mysql+pymysql://root@127.0.0.1:{port}/{database_name}")
+    database_url = f"mysql+pymysql://root@127.0.0.1:{port}/{database_name}"
+    os.environ["DATABASE_URL"] = database_url
 
     # Initialize the database
     from kurt.db import init_database
@@ -188,14 +195,17 @@ def tmp_database(tmp_path: Path, monkeypatch):
             pass
 
     os.chdir(original_cwd)
+    # Restore original DATABASE_URL if it existed
+    if "DATABASE_URL" in os.environ:
+        del os.environ["DATABASE_URL"]
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def tmp_database_with_data(tmp_database: Path):
     """
     Fixture with a temporary database pre-populated with sample data.
 
-    Use when tests need existing data.
+    Use when tests need existing data. Session-scoped for performance.
     """
     from sqlalchemy import text
 
