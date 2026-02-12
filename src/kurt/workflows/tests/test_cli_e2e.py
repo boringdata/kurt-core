@@ -285,9 +285,7 @@ class TestWorkflowInit:
         # Should complete - creates example workflows
         assert result.exit_code in (0, 1)
 
-        # Check if directory was created
-        tmp_project / ".kurt" / "workflows"
-        # May or may not exist depending on implementation
+        # Command completed - init creates example workflows in .kurt/workflows/
 
 
 class TestWorkflowCreate:
