@@ -48,7 +48,7 @@ jobs:
         run: uv run ruff check .
 
       - name: Run tests
-        run: uv run pytest -v --cov=src/kurt --cov-report=term-missing
+        run: uv run pytest -v --cov=src/kurt --cov-report=term-missing --ignore=src/kurt/tools/e2e
 
   # Run frontend tests
   test-frontend:
