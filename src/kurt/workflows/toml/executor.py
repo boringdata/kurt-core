@@ -26,6 +26,7 @@ from enum import IntEnum
 from pathlib import Path
 from typing import Any, Callable, Literal
 
+from kurt.db.dolt import DoltDB
 from kurt.observability.tracking import track_event
 from kurt.tools.core import ToolCanceledError, ToolContext, ToolError, ToolResult, execute_tool
 from kurt.tools.core.provider import get_provider_registry
@@ -68,9 +69,7 @@ def _load_user_function(tools_path: Path, function_name: str) -> Callable:
     spec.loader.exec_module(module)
 
     if not hasattr(module, function_name):
-        raise AttributeError(
-            f"Function '{function_name}' not found in {tools_path}"
-        )
+        raise AttributeError(f"Function '{function_name}' not found in {tools_path}")
 
     return getattr(module, function_name)
 
@@ -263,6 +262,7 @@ class WorkflowExecutor:
         inputs: dict[str, Any],
         context: ToolContext | None = None,
         *,
+        db: DoltDB | None = None,
         continue_on_error: bool = False,
         run_id: str | None = None,
         tools_path: Path | str | None = None,
@@ -274,6 +274,7 @@ class WorkflowExecutor:
             workflow: Parsed workflow definition.
             inputs: Input values for the workflow (merged with defaults).
             context: Tool execution context.
+            db: Optional DoltDB for event tracking. If None, uses global tracking DB.
             continue_on_error: If True, continue workflow on step failure.
                               Failed step's dependents receive empty input.
             run_id: Optional run ID. If not provided, generates a UUID.
@@ -283,6 +284,7 @@ class WorkflowExecutor:
         self.workflow = workflow
         self.inputs = inputs
         self.context = context or ToolContext()
+        self._db = db
         self.continue_on_error = continue_on_error
         self.run_id = run_id or str(uuid.uuid4())
         self.tools_path = Path(tools_path) if tools_path else Path("tools.py")
@@ -932,9 +934,7 @@ class WorkflowExecutor:
         if tasks_to_cancel:
             try:
                 await asyncio.wait_for(
-                    asyncio.gather(
-                        *[t for _, t in tasks_to_cancel], return_exceptions=True
-                    ),
+                    asyncio.gather(*[t for _, t in tasks_to_cancel], return_exceptions=True),
                     timeout=self.CANCEL_TIMEOUT,
                 )
             except asyncio.TimeoutError:
@@ -960,9 +960,7 @@ class WorkflowExecutor:
             metadata={"canceled_steps": pending_level},
         )
 
-    def _create_result(
-        self, started_at: datetime, error: str | None = None
-    ) -> WorkflowResult:
+    def _create_result(self, started_at: datetime, error: str | None = None) -> WorkflowResult:
         """Create the final WorkflowResult."""
         completed_at = datetime.now(timezone.utc)
         duration_ms = int((completed_at - started_at).total_seconds() * 1000)
@@ -1021,6 +1019,7 @@ class WorkflowExecutor:
                 total=total,
                 message=message,
                 metadata=metadata,
+                db=self._db,
             )
         except Exception:
             # Event tracking should not break execution
@@ -1032,6 +1031,7 @@ async def execute_workflow(
     inputs: dict[str, Any],
     context: ToolContext | None = None,
     *,
+    db: DoltDB | None = None,
     continue_on_error: bool = False,
     run_id: str | None = None,
     tools_path: Path | str | None = None,
@@ -1050,6 +1050,7 @@ async def execute_workflow(
         workflow: Parsed workflow definition.
         inputs: Input values for the workflow. Must include all required inputs.
         context: Optional tool execution context.
+        db: Optional DoltDB for event tracking. If None, uses global tracking DB.
         continue_on_error: If True, continue workflow on step failure.
                           Failed step's dependents receive empty input.
         run_id: Optional run ID. If not provided, generates a UUID.
@@ -1080,6 +1081,7 @@ async def execute_workflow(
         workflow=workflow,
         inputs=inputs,
         context=context,
+        db=db,
         continue_on_error=continue_on_error,
         run_id=run_id,
         tools_path=tools_path,

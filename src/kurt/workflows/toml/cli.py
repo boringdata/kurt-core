@@ -72,7 +72,9 @@ def _get_dolt_db():
     help="Parse and validate workflow without executing",
 )
 @track_command
-def run_cmd(workflow_path: Path, inputs: tuple[str, ...], background: bool, foreground: bool, dry_run: bool):
+def run_cmd(
+    workflow_path: Path, inputs: tuple[str, ...], background: bool, foreground: bool, dry_run: bool
+):
     """Run a workflow from a TOML or Markdown file.
 
     Supports both workflow types:
@@ -97,6 +99,7 @@ def run_cmd(workflow_path: Path, inputs: tuple[str, ...], background: bool, fore
     if suffix == ".toml" and not dry_run:
         try:
             from kurt.workflows.agents.parser import parse_workflow as parse_agent_workflow
+
             parsed = parse_agent_workflow(workflow_path)
             # If it has agent config but no steps, treat as agent workflow
             if parsed.agent is not None and not parsed.steps:
@@ -140,14 +143,14 @@ def run_cmd(workflow_path: Path, inputs: tuple[str, ...], background: bool, fore
         else:
             console.print("[green]Workflow completed[/green]")
             console.print(f"  Status: {result.get('status')}")
-            if result.get('turns'):
+            if result.get("turns"):
                 console.print(f"  Turns: {result.get('turns')}")
-            if result.get('tool_calls'):
+            if result.get("tool_calls"):
                 console.print(f"  Tool Calls: {result.get('tool_calls')}")
-            tokens = (result.get('tokens_in', 0) or 0) + (result.get('tokens_out', 0) or 0)
+            tokens = (result.get("tokens_in", 0) or 0) + (result.get("tokens_out", 0) or 0)
             if tokens:
                 console.print(f"  Tokens: {tokens:,}")
-            if result.get('duration_seconds'):
+            if result.get("duration_seconds"):
                 console.print(f"  Duration: {result.get('duration_seconds')}s")
         return
 
@@ -243,20 +246,20 @@ def run_cmd(workflow_path: Path, inputs: tuple[str, ...], background: bool, fore
         # Note: Actual background execution would require a separate process
         # For now, we just create the record. Full implementation would use
         # subprocess or a task queue.
-        console.print(
-            "\n[yellow]Note: Background execution creates run record only.[/yellow]"
-        )
+        console.print("\n[yellow]Note: Background execution creates run record only.[/yellow]")
         console.print("[dim]Use 'kurt logs {run_id}' to check progress.[/dim]")
         return
 
     # Foreground execution
     # Look for tools.py in the same directory as the workflow file
     tools_path = workflow_path.parent / "tools.py"
+    db = _get_dolt_db()
     result = asyncio.run(
         execute_workflow(
             workflow=workflow_def,
             inputs=merged_inputs,
             context=context,
+            db=db,
             tools_path=tools_path if tools_path.exists() else None,
         )
     )
@@ -315,7 +318,9 @@ def status_cmd(run_id: str, output_json: bool, follow: bool):
 
     if run is None:
         if output_json:
-            print(json.dumps({"run_id": run_id, "status": "not_found", "error": "Workflow not found"}))
+            print(
+                json.dumps({"run_id": run_id, "status": "not_found", "error": "Workflow not found"})
+            )
         else:
             console.print(f"[red]Workflow not found: {run_id}[/red]")
         return
@@ -324,7 +329,9 @@ def status_cmd(run_id: str, output_json: bool, follow: bool):
     step_logs = lifecycle.get_step_logs(run_id)
 
     # Calculate completed steps
-    completed_steps = sum(1 for s in step_logs if s.get("status") in ("completed", "failed", "canceled"))
+    completed_steps = sum(
+        1 for s in step_logs if s.get("status") in ("completed", "failed", "canceled")
+    )
     total_steps = len(step_logs)
 
     if output_json:
@@ -438,7 +445,12 @@ def _follow_workflow(db, run_id: str):
 @click.argument("run_id")
 @click.option("--step", "step_filter", default=None, help="Filter by step name")
 @click.option("--substep", "substep_filter", default=None, help="Filter by substep name")
-@click.option("--status", "status_filter", default=None, help="Filter by status (running|progress|completed|failed)")
+@click.option(
+    "--status",
+    "status_filter",
+    default=None,
+    help="Filter by status (running|progress|completed|failed)",
+)
 @click.option("--json", "output_json", is_flag=True, help="Output as JSON lines")
 @click.option("--tail", "-f", is_flag=True, help="Stream new events as they arrive (like tail -f)")
 @click.option("--limit", default=100, help="Maximum number of log entries to show")
@@ -487,9 +499,7 @@ def logs_cmd(
     step_logs = _fetch_step_logs(db, run_id, step_filter)
 
     # Fetch step events
-    step_events = _fetch_step_events(
-        db, run_id, step_filter, substep_filter, status_filter, limit
-    )
+    step_events = _fetch_step_events(db, run_id, step_filter, substep_filter, status_filter, limit)
 
     if output_json:
         _output_logs_json(step_logs, step_events)
@@ -497,9 +507,7 @@ def logs_cmd(
         _output_logs_text(run, step_logs, step_events)
 
 
-def _fetch_step_logs(
-    db, run_id: str, step_filter: str | None
-) -> list[dict[str, Any]]:
+def _fetch_step_logs(db, run_id: str, step_filter: str | None) -> list[dict[str, Any]]:
     """Fetch step logs from the database."""
     sql = "SELECT * FROM step_logs WHERE run_id = ?"
     params: list[Any] = [run_id]
@@ -545,9 +553,7 @@ def _fetch_step_events(
     return list(reversed(result.rows))
 
 
-def _output_logs_json(
-    step_logs: list[dict[str, Any]], step_events: list[dict[str, Any]]
-):
+def _output_logs_json(step_logs: list[dict[str, Any]], step_events: list[dict[str, Any]]):
     """Output logs as JSON lines."""
     for event in step_events:
         output = {
@@ -600,14 +606,18 @@ def _output_logs_text(
             if step.get("started_at") and step.get("completed_at"):
                 try:
                     started = datetime.fromisoformat(str(step["started_at"]).replace("Z", "+00:00"))
-                    completed = datetime.fromisoformat(str(step["completed_at"]).replace("Z", "+00:00"))
+                    completed = datetime.fromisoformat(
+                        str(step["completed_at"]).replace("Z", "+00:00")
+                    )
                     duration = completed - started
                     duration_str = f"{duration.total_seconds():.1f}s"
                 except (ValueError, TypeError):
                     pass
 
             input_str = str(step.get("input_count")) if step.get("input_count") is not None else "-"
-            output_str = str(step.get("output_count")) if step.get("output_count") is not None else "-"
+            output_str = (
+                str(step.get("output_count")) if step.get("output_count") is not None else "-"
+            )
             error_str = str(step.get("error_count")) if step.get("error_count") else "-"
 
             table.add_row(
@@ -739,9 +749,7 @@ def _tail_logs(
                     _print_event(row)
 
             # Check if workflow terminated
-            run_result = db.query_one(
-                "SELECT status FROM workflow_runs WHERE id = ?", [run_id]
-            )
+            run_result = db.query_one("SELECT status FROM workflow_runs WHERE id = ?", [run_id])
             if run_result and run_result.get("status") in TERMINAL_STATUSES:
                 # Fetch any final events
                 final_result = db.query(sql, params)
@@ -749,7 +757,9 @@ def _tail_logs(
                     if row.get("id", 0) > cursor_id:
                         if output_json:
                             output = {
-                                "timestamp": str(row.get("created_at")) if row.get("created_at") else None,
+                                "timestamp": str(row.get("created_at"))
+                                if row.get("created_at")
+                                else None,
                                 "step": row.get("step_id"),
                                 "substep": row.get("substep"),
                                 "status": row.get("status"),
@@ -912,6 +922,7 @@ def _build_dry_run_output(
     if tools_path and tools_path.exists():
         try:
             import importlib.util
+
             spec = importlib.util.spec_from_file_location("tools", tools_path)
             if spec and spec.loader:
                 tools_module = importlib.util.module_from_spec(spec)
@@ -1096,22 +1107,30 @@ def test_cmd(
         )
     except FixtureNotFoundError as e:
         if output_json:
-            print(json.dumps({
-                "success": False,
-                "error": str(e),
-                "step": e.step_name,
-            }))
+            print(
+                json.dumps(
+                    {
+                        "success": False,
+                        "error": str(e),
+                        "step": e.step_name,
+                    }
+                )
+            )
         else:
             console.print(f"[red]Error: {e}[/red]")
         raise click.Abort()
     except FixtureLoadError as e:
         if output_json:
-            print(json.dumps({
-                "success": False,
-                "error": str(e),
-                "step": e.step_name,
-                "path": str(e.path),
-            }))
+            print(
+                json.dumps(
+                    {
+                        "success": False,
+                        "error": str(e),
+                        "step": e.step_name,
+                        "path": str(e.path),
+                    }
+                )
+            )
         else:
             console.print(f"[red]Error loading fixture: {e}[/red]")
         raise click.Abort()
@@ -1150,7 +1169,10 @@ def test_cmd(
                     "fixture_records": len(fixture_set.get_output_data(name)),
                     "would_execute": name in coverage.steps_without_fixtures,
                     "tool": workflow_def.steps[name].type,
-                    "config_valid": dry_run_output.get("steps", {}).get(name, {}).get("validation", {}).get("valid", False),
+                    "config_valid": dry_run_output.get("steps", {})
+                    .get(name, {})
+                    .get("validation", {})
+                    .get("valid", False),
                 }
                 for name in step_names
             },
@@ -1184,9 +1206,16 @@ def test_cmd(
             step_def = workflow_def.steps[step_name]
             has_fixture = step_name in coverage.steps_with_fixtures
             records = len(fixture_set.get_output_data(step_name))
-            config_valid = dry_run_output.get("steps", {}).get(step_name, {}).get("validation", {}).get("valid", False)
+            config_valid = (
+                dry_run_output.get("steps", {})
+                .get(step_name, {})
+                .get("validation", {})
+                .get("valid", False)
+            )
 
-            fixture_display = "[green]Yes[/green]" if has_fixture else "[yellow]No (would execute)[/yellow]"
+            fixture_display = (
+                "[green]Yes[/green]" if has_fixture else "[yellow]No (would execute)[/yellow]"
+            )
             records_display = str(records) if has_fixture else "-"
             valid_display = "[green]Yes[/green]" if config_valid else "[red]No[/red]"
 
