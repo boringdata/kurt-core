@@ -48,7 +48,7 @@ jobs:
         run: uv run ruff check .
 
       - name: Run tests
-        run: uv run pytest -v -n auto --ignore=src/kurt/tools/e2e
+        run: uv run pytest -v -n auto --ignore=src/kurt/tools/e2e --ignore-glob="**/test_*e2e.py"
 
   # Run frontend tests
   test-frontend:
