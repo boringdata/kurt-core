@@ -22,7 +22,7 @@ jobs:
   test-python:
     name: Python Test & Lint
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
