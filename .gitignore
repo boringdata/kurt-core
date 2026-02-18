@@ -125,3 +125,7 @@ test-feature/
 kurt-core-45f/
 # bd worktree
 kurt-core-1uhd/
+
+# Agent evidence (not committed to git)
+.agent-evidence/
+.evidence/

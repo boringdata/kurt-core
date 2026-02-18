@@ -1,99 +1,73 @@
-<!-- OPENSPEC:START -->
-# OpenSpec Instructions
-
-These instructions are for AI assistants working in this project.
-
-Always open `@/openspec/AGENTS.md` when the request:
-- Mentions planning or proposals (words like proposal, spec, change, plan)
-- Introduces new capabilities, breaking changes, architecture shifts, or big performance/security work
-- Sounds ambiguous and you need the authoritative spec before coding
-
-Use `@/openspec/AGENTS.md` to learn:
-- How to create and apply change proposals
-- Spec format and conventions
-- Project structure and guidelines
-
-Keep this managed block so 'openspec update' can refresh the instructions.
-
-<!-- OPENSPEC:END -->
-
-# kurt-core: Agent Index
+# AGENTS.md
 
 Read this first. Re-read after compaction.
 
-## Safety (Non-Negotiable)
+## Safety (non-negotiable)
 
-- No destructive ops without explicit instruction (no `rm -rf`, `git reset --hard`, `git clean -fd`, force-push).
-- No secrets in git. Do not paste tokens into commits, logs, or issues.
+- No destructive ops without explicit instruction (no `rm -rf`, `reset --hard`, `clean -fd`, force-push).
+- No secrets in git. Do not paste tokens into commits or logs.
 - No broad rewrite scripts (codemods, "fix everything") without approval.
-- No file variants (`*_v2.*`) or "backup copies" checked into git; edit in place.
-- Never delete files unless you have explicit written permission. Prefer `git mv` into `archive/`.
+- No file variants (`*_v2.*`) — edit in place.
+- Never delete files unless you have explicit written permission.
 
-## Core Entrypoints
+## Shared Conventions
 
-- Repo overview: `README.md`
-- Docs index: `docs/README.md`
-- Project context (agents): `docs/PROJECT_CONTEXT.md`
-- Architecture map: `docs/ARCHITECTURE.md`
-- OpenSpec (proposals/specs/tasks): `openspec/AGENTS.md`, `openspec/changes/`
-- Workflow + evidence conventions: `docs/workflow/`
+These docs define the boring-coding workflow. Read local copy if available; fall back to GitHub.
 
-## Beads (br)
+| Doc | Local | GitHub |
+| --- | --- | --- |
+| Workflow | `/home/ubuntu/projects/boring-coding/docs/workflow/` | [workflow/](https://github.com/boringdata/boring-coding/blob/main/docs/workflow/) |
 
-**Note:** `br` is non-invasive and never executes git commands. After `br sync --flush-only`, you must manually run `git add` and `git commit`.
+## Where to Find What
 
-Common commands:
-```bash
-br ready
-br list --status=open
-br show <id>
-br create --title="..." --description="..." --type=task --priority=2
-br update <id> --status=in_progress
-br close <id> --reason="..."
-```
-
-If this repo's `.beads/` is not currently tracked in git, see `docs/runbooks/beads.md` before relying on `br sync`.
+| Topic | Doc |
+| --- | --- |
+| Project context | `docs/PROJECT_CONTEXT.md` |
+| Architecture map | `docs/ARCHITECTURE.md` |
+| Core beliefs | `docs/design-docs/core-beliefs.md` |
+| Hard constraints | `docs/design-docs/boundaries.md` |
+| Design decisions (ADRs) | `docs/design-docs/decisions/` |
+| Domain deep-dives | `docs/domains/` |
+| Workflow (planning + impl) | `docs/workflow-symlinked/` |
+| Role prompts | `docs/workflow-symlinked/prompts/` |
+| Beads reference | `docs/workflow-symlinked/beads.md` |
+| Evidence conventions | `docs/workflow-symlinked/EVIDENCE.md` |
+| Session lifecycle | `docs/workflow-symlinked/OPERATIONS.md` |
+| Agent tools | `docs/workflow-symlinked/tools/` |
+| Execution plans | `docs/exec-plans/` |
+| Product specs | `docs/product-specs/` |
+| References | `docs/references/` |
+| Quality grades | `docs/QUALITY.md` |
+| Runbooks | `docs/runbooks/` |
+| Gates | `scripts/gates/` |
 
 ## Session Startup
 
 1. Read `AGENTS.md` end-to-end.
 2. Read `docs/PROJECT_CONTEXT.md`.
-3. Find how to run: tests, lint/format, dev server (see Project Commands below).
-4. If doing a spec/proposal: open `openspec/AGENTS.md` and follow the conventions there.
+3. Find how to run tests, lint, dev server (see Project Commands below).
+4. Pick next bead: `bv --robot-next` or `br list --status=open`.
 
-For full session lifecycle (blocked protocol, compaction/restart, end-of-session), see `docs/workflow/OPERATIONS.md`.
+For full session lifecycle (compaction, blocked, end-of-session): see `docs/workflow-symlinked/OPERATIONS.md`.
+
+## Bead Startup (per bead)
+
+1. `br show <bead-id>` — goal, scope, gates, checklist, latest comments.
+2. Find latest `EVIDENCE:` path in bead comments.
+3. Inspect `.agent-evidence/beads/<bead-id>/...` for prior work.
+4. Confirm STATE + NEXT match your role.
 
 ## Project Commands
 
-```bash
-# Install (uses uv.lock)
-uv sync --all-extras
+- Install: `uv sync --all-extras`
+- Tests: `uv run pytest -q`
+- Lint: `uv run ruff check .`
+- Dev server: `uv run kurt --help` (CLI tool, no persistent dev server)
+- Smoke gate: `scripts/gates/smoke.sh`
 
-# Tests
-uv run pytest -q
+## Credentials
 
-# Lint
-uv run ruff check .
-```
+Fetch from Vault:
+- `secret/agent/boringdata-agent` (GitHub token, username, email)
 
-Smoke gate: `scripts/gates/smoke.sh`
-
-## Landing The Plane (Session Completion)
-
-Work is not complete until `git push` succeeds.
-
-1. File issues for any follow-up work (or document TODOs with a clear owner and next step).
-2. Run quality gates (tests/lints) if code changed.
-3. Sync beads export (if used):
-   ```bash
-   br sync --flush-only
-   ```
-4. Commit and push:
-   ```bash
-   git pull --rebase
-   git add .
-   git commit -m "..."   # keep commits scoped; include bead-id when applicable
-   git push
-   git status            # must show "up to date with origin"
-   ```
-5. Hand off: write a short status note (what changed, what remains, next command to run).
+Never commit secrets. Use env vars or `.env` (gitignored).
