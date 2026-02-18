@@ -559,12 +559,13 @@ kurt admin migrate downgrade
 
 ## Documentation
 
+- Repo docs index: `docs/README.md`
+- Repo agent index: `AGENTS.md`
 - **Agent Instructions**: Run `kurt show` to see available workflow commands
   - `kurt show format-templates` - View all 17 content templates
   - `kurt show project-workflow` - Guide to creating writing projects
   - `kurt show source-workflow` - How to add sources and content
   - See `.agents/AGENTS.md` in your workspace for complete instructions
-- **[INDEXING-AND-SEARCH.md](INDEXING-AND-SEARCH.md)**: Content indexing and discovery features
 - **[Template Files](src/kurt/agents/templates/formats/)**: Browse the 17 built-in content templates
 - **[CLI Reference](src/kurt/README.md)**: Detailed CLI command documentation
 

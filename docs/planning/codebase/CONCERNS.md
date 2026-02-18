@@ -46,7 +46,7 @@
 - **Issue Details:** Commands instantiate parameter messages but never invoke `MapDocSubcommand`, `FetchDocSubcommand`, or other subcommand implementations
 - **Impact:** All CLI-based content discovery and extraction workflows are completely non-functional
 - **Workaround:** None available; commands must be fixed to invoke subcommands
-- **Status:** Identified in Codex review (CODEX_REVIEW_SUMMARY.md, P1 priority)
+- **Status:** Identified in Codex review (`archive/CODEX_REVIEW_SUMMARY.md`, P1 priority)
 
 ### Platform Parameter Ignored in Apify Profile Mapping
 - **Symptoms:** `map profile "query" --platform linkedin` returns Twitter data instead of LinkedIn profiles
@@ -55,7 +55,7 @@
 - **Issue Details:** Method always infers platform from query keywords (`_detect_platform(query)`) and ignores the `platform` parameter
 - **Example:** Query "data scientist" with `--platform linkedin` returns Twitter results (no "linkedin" keyword in query)
 - **Impact:** Wrong data returned to users; platform mismatches in downstream fetch operations
-- **Status:** Identified in Codex review (CODEX_REVIEW_SUMMARY.md, P2 priority)
+- **Status:** Identified in Codex review (`archive/CODEX_REVIEW_SUMMARY.md`, P2 priority)
 
 ### Bare `pass` Statements After Exception Handling
 - **Issue:** Code catches exceptions then does nothing with them

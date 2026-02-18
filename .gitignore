@@ -107,6 +107,7 @@ vscode-source/**
 # Temporary/test files
 perm-test.txt
 reverse_vscode.md
+excalidraw.log
 
 content/
 .dolt/noms/
