@@ -74,28 +74,25 @@ Before getting started, you'll need:
 2. **Initialize your project:**
    ```bash
    cd your-project-directory
-   kurt init  # Installs both Claude Code and Cursor support by default
+   kurt init
    ```
 
    This creates:
-   - `.kurt/` directory with SQLite database
-   - `.agents/` directory with unified agent instructions (AGENTS.md)
-   - `.claude/` directory with Claude Code setup (symlinks to `.agents/`)
-   - `.cursor/` directory with Cursor setup (symlinks to `.agents/`)
-   - `kurt/` directory for customized templates (created on first use)
-   - `.env.example` with API key placeholders
-
-   **Note:** You can also install for a specific IDE only:
-   - `kurt init --ide claude` - Claude Code only
-   - `kurt init --ide cursor` - Cursor only
-
-   **Keeping up to date:**
-   - Run `kurt update` after upgrading kurt via pip to get the latest agent instructions
+   - `.dolt/` Dolt database (project-local, Git-like versioning)
+   - `kurt.toml` project configuration
+   - `sources/` content directory (gitignored by default)
+   - `workflows/` workflow definitions
+   - `.agents/AGENTS.md` agent instructions (for IDE assistants)
+   - `.claude/CLAUDE.md` symlink to `.agents/AGENTS.md` (Claude Code)
 
 3. **Configure API keys:**
    ```bash
-   cp .env.example .env
-   # Edit .env and add your API keys
+   # Option A: export in your shell
+   export OPENAI_API_KEY=...
+
+   # Option B: put them in a local .env file
+   # (Kurt loads .env via python-dotenv)
+   echo 'OPENAI_API_KEY=...' >> .env
    ```
 
    **Required:**
@@ -115,14 +112,9 @@ Before getting started, you'll need:
    - Claude will guide you through template selection, source gathering, and writing
    - Run `kurt show format-templates` to see available content formats
 
-   **With Cursor:**
-   - Open your project in [Cursor](https://cursor.com)
-   - Cursor automatically loads Kurt's rules from `.cursor/rules/KURT.mdc` (symlinked to `.agents/AGENTS.md`)
-   - Ask the AI: *"Create a blog post project about [topic]"*
-   - The AI will guide you through template selection, source gathering, and writing
-   - Run `kurt show format-templates` to see available content formats
-
-   **Switch between IDEs anytime** - both share the same database and templates!
+   **Other IDEs/editors:**
+   - Use `.agents/AGENTS.md` as the canonical instruction source.
+   - (If you're working from source) this repo includes `scripts/convert_to_cursor.py` for generating Cursor rules from a Claude-style plugin.
 
 ### Use Kurt CLI Standalone
 
@@ -204,31 +196,24 @@ View available templates:
 
 Fetch content from web sources to use as grounding material:
 
-**Configuration** (edit `kurt.config` in your project root):
+**Configuration** (edit `kurt.toml` in your project root):
 
-```bash
-# Fetch provider - choose based on your content source
-# Options:
-#   - trafilatura (default): Fast, free, static HTML only
-#   - firecrawl: Handles JavaScript/SPAs (requires FIRECRAWL_API_KEY in .env)
-#   - httpx: Proxy-friendly alternative to trafilatura
-#   - notion: Notion API (requires NOTION_API_KEY)
-#   - apify: Apify web scraping (requires APIFY_API_KEY)
-# Provider is auto-selected from URL when possible (e.g., notion.so → notion)
-FETCH.PROVIDER="trafilatura"
+```toml
+[tool.fetch]
+# Fetch provider - choose based on your content source.
+# Examples: trafilatura (default), firecrawl, httpx, notion, apify
+fetch_engine = "trafilatura"
 
-# LLM models (format: provider/model-name)
-# Alternatives: "anthropic/claude-3-haiku", "google/gemini-1.5-flash", "groq/llama-3.1-8b"
-LLM_MODEL="openai/gpt-4o-mini"                       # Global LLM model
-EMBEDDING_MODEL="openai/text-embedding-3-small"      # For embeddings
+[agent]
+# Default LLM model used by agent workflows (format: provider/model).
+model = "openai/gpt-4o"
 
-# Optional: Module-specific overrides (see src/kurt/config/README.md for details)
-# INDEXING.LLM_MODEL="openai/gpt-4o-mini"            # For metadata extraction
-# ANSWER.LLM_MODEL="openai/gpt-4o"                   # For answering questions
+[tool.batch-llm]
+model = "openai/gpt-4o-mini"
+concurrency = 50
 
-# Optional: Local LLM server (Ollama, vLLM, llama.cpp, etc.)
-# LLM_API_BASE="http://localhost:8080/v1/"
-# LLM_API_KEY="not_needed"
+[tool.batch-embedding]
+model = "openai/text-embedding-3-small"
 ```
 
 **API Keys** (add to `.env` file):
@@ -256,7 +241,7 @@ kurt content fetch --all
 kurt content fetch https://notion.so/page --provider notion
 ```
 
-Content is stored as markdown in `sources/{domain}/{path}/` with metadata in SQLite.
+Content is stored as markdown in `sources/`, and workflow metadata + observability live in the project Dolt database under `.dolt/`.
 
 
 ### 🔍 Content Discovery & Gap Analysis
@@ -347,24 +332,28 @@ All work is organized in `/projects/{project-name}/` directories with a `plan.md
 ### Project Setup
 
 ```bash
-# Initialize new Kurt project (installs both Claude Code and Cursor support by default)
+# Initialize a new Kurt project in the current directory
 kurt init
 
-# Or install for a specific IDE only
-kurt init --ide claude   # Claude Code only
-kurt init --ide cursor   # Cursor only
+# Initialize into a specific directory
+kurt init ./my-kurt-project
 
-# Initialize with custom database path
-kurt init --db-path data/my-project.db
+# Git-only mode (skip Dolt initialization)
+kurt init --no-dolt
 
-# What gets created by default:
-# - .kurt/ directory with SQLite database
-# - .claude/ directory with Claude Code instructions
-# - .cursor/ directory with Cursor rules
-# - kurt/ directory with 22 content templates (shared by both)
-# - .env.example with API key placeholders
-#
-# Both IDEs share the same database and templates!
+# Skip Git hooks (Dolt still initialized)
+kurt init --no-hooks
+
+# Force initialization even if partially initialized
+kurt init --force
+
+# What gets created by default (with Dolt enabled):
+# - .dolt/ Dolt database
+# - kurt.toml configuration
+# - sources/ content directory (gitignored by default)
+# - workflows/ workflow definitions
+# - .agents/AGENTS.md agent instructions
+# - .claude/CLAUDE.md -> .agents/AGENTS.md (symlink)
 ```
 
 ### Content Ingestion
@@ -632,40 +621,8 @@ See [eval/scenarios/](eval/scenarios/) for scenario definitions.
 ### Architecture
 
 **Content Storage:**
-- Metadata stored in SQLite (`Document` table)
-- Content stored as markdown files in `sources/{domain}/{path}/`
-- Metadata extracted with Trafilatura and LLM-based indexing
-
-**Database Schema:**
-```sql
-CREATE TABLE documents (
-    id TEXT PRIMARY KEY,              -- UUID
-    title TEXT NOT NULL,
-    source_type TEXT,                 -- URL, FILE_UPLOAD, API
-    source_url TEXT UNIQUE,
-    content_path TEXT,                -- Relative path to markdown file
-    ingestion_status TEXT,            -- NOT_FETCHED, FETCHED, ERROR
-    content_hash TEXT,                -- Trafilatura fingerprint
-    description TEXT,
-    author JSON,
-    published_date DATETIME,
-    categories JSON,
-    language TEXT,
-
-    -- Indexed metadata (from LLM)
-    content_type TEXT,                -- tutorial, guide, blog, reference, etc.
-    primary_topics JSON,              -- List of topics
-    tools_technologies JSON,          -- List of tools/technologies
-    has_code_examples BOOLEAN,
-    has_step_by_step_procedures BOOLEAN,
-    has_narrative_structure BOOLEAN,
-    indexed_with_hash TEXT,
-    indexed_with_git_commit TEXT,
-
-    created_at DATETIME,
-    updated_at DATETIME
-);
-```
+- Content stored as markdown files under `sources/` (project-local; typically gitignored).
+- Metadata/observability stored in Dolt tables under `.dolt/` (see `src/kurt/db/` and `src/kurt/documents/models.py`).
 
 **Batch Fetching:**
 - Uses `httpx` with async/await for parallel downloads
@@ -729,6 +686,6 @@ MIT
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/kurt-core/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/kurt-core/discussions)
+- **Issues**: [GitHub Issues](https://github.com/boringdata/kurt-core/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/boringdata/kurt-core/discussions)
 - **Documentation**: Run `kurt show` commands or see `.agents/AGENTS.md` in your workspace for full usage guide
