@@ -380,9 +380,10 @@ class DoltDBConnection:
             return False
         info_file = self.path / ".dolt" / "kurt-server.json"
         if not info_file.exists():
-            # No info file - can't verify ownership, but if server is running
-            # on our port, assume it's usable (e.g., test fixture started it)
-            return True
+            # No info file - check if the server actually has our database.
+            # Without this check, we'd blindly connect to another project's
+            # server (e.g., port 3306 shared by multiple kurt projects).
+            return self._server_has_database()
 
         try:
             import json
@@ -391,6 +392,27 @@ class DoltDBConnection:
             expected_path = str(self.path.resolve())
             actual_path = info.get("path", "")
             return actual_path == expected_path
+        except Exception:
+            return False
+
+    def _server_has_database(self) -> bool:
+        """Check if the running server has this project's database."""
+        try:
+            import pymysql
+
+            conn = pymysql.connect(
+                host=self._host,
+                port=self._port,
+                user=self._user,
+                password=self._password,
+            )
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("SHOW DATABASES")
+                    databases = {row[0] for row in cur.fetchall()}
+                    return self._database in databases
+            finally:
+                conn.close()
         except Exception:
             return False
 
