@@ -1,0 +1,17 @@
+{
+  "content": "# Tweet by Test User (@testuser)\n\n**Date:** 2026-02-15T10:00:00Z\n**URL:** https://x.com/testuser/status/123456789\n\nThis is a test tweet with some content.\n\n**Engagement:** 100 likes · 50 retweets · 10 replies · 5,000 views\n",
+  "metadata": {
+    "engine": "composio",
+    "url": "https://x.com/testuser/status/123456789",
+    "tweet_id": "123456789",
+    "author": "testuser",
+    "created_at": "2026-02-15T10:00:00Z",
+    "like_count": 100,
+    "retweet_count": 50,
+    "reply_count": 10,
+    "impression_count": 5000,
+    "fetched_at": "2026-02-15T12:00:00Z"
+  },
+  "success": true,
+  "error": null
+}

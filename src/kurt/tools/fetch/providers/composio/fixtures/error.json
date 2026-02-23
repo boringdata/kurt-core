@@ -1,0 +1,8 @@
+{
+  "content": "",
+  "metadata": {
+    "engine": "composio"
+  },
+  "success": false,
+  "error": "[Composio] Credentials not configured. Set COMPOSIO_API_KEY and COMPOSIO_CONNECTION_ID."
+}
