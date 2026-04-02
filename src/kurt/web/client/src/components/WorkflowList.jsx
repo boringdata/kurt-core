@@ -1,5 +1,18 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import WorkflowRow from './WorkflowRow'
+import WorkflowMetrics from './WorkflowMetrics'
+
+// Polling intervals in milliseconds
+const POLLING_FAST = 2000   // When workflows are running
+const POLLING_SLOW = 10000  // When all workflows are idle
+const POLLING_NONE = null   // Stop polling when no workflows
+
+// Check if a workflow has an error status that should trigger auto-expand
+const hasErrorStatus = (workflow) => {
+  return workflow.status === 'ERROR' ||
+    workflow.status === 'RETRIES_EXCEEDED' ||
+    (workflow.error_count && workflow.error_count > 0)
+}
 
 const STATUS_OPTIONS = [
   { value: '', label: 'All' },
@@ -16,34 +29,58 @@ const TYPE_OPTIONS = [
   { value: 'tool', label: 'Tool' },
 ]
 
+const PAGE_SIZE = 50
+
 const apiBase = import.meta.env.VITE_API_URL || ''
 const apiUrl = (path) => `${apiBase}${path}`
 
-export default function WorkflowList({ onAttachWorkflow }) {
+// Debounce delay for search input (in milliseconds)
+const SEARCH_DEBOUNCE_MS = 300
+
+export default function WorkflowList({ onAttachWorkflow, onOpenWorkflowDetail }) {
   const [workflows, setWorkflows] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [statusFilter, setStatusFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('')
   const [expandedId, setExpandedId] = useState(null)
   const [error, setError] = useState(null)
+  const [hasMore, setHasMore] = useState(false)
+  const [offset, setOffset] = useState(0)
+  // Track workflows that have been auto-expanded (to avoid re-expanding after manual collapse)
+  const autoExpandedRef = useRef(new Set())
+  // Track if user has manually collapsed a workflow
+  const userCollapsedRef = useRef(new Set())
 
-  const fetchWorkflows = useCallback(async () => {
+  const fetchWorkflows = useCallback(async (loadMore = false) => {
     setIsLoading(true)
     setError(null)
     try {
       const params = new URLSearchParams()
       if (statusFilter) params.set('status', statusFilter)
       if (typeFilter) params.set('workflow_type', typeFilter)
-      if (searchQuery) params.set('search', searchQuery)
-      params.set('limit', '50')
+      if (debouncedSearchQuery) params.set('search', debouncedSearchQuery)
+      params.set('limit', String(PAGE_SIZE))
+      params.set('offset', String(loadMore ? offset : 0))
 
       const response = await fetch(apiUrl(`/api/workflows?${params}`))
       if (!response.ok) {
         throw new Error(`Failed to fetch: ${response.status}`)
       }
       const data = await response.json()
-      setWorkflows(data.workflows || [])
+      const newWorkflows = data.workflows || []
+
+      if (loadMore) {
+        setWorkflows(prev => [...prev, ...newWorkflows])
+        setOffset(prev => prev + newWorkflows.length)
+      } else {
+        setWorkflows(newWorkflows)
+        setOffset(newWorkflows.length)
+      }
+
+      setHasMore(newWorkflows.length === PAGE_SIZE)
+
       if (data.error) {
         setError(data.error)
       } else {
@@ -55,14 +92,88 @@ export default function WorkflowList({ onAttachWorkflow }) {
     } finally {
       setIsLoading(false)
     }
-  }, [statusFilter, typeFilter, searchQuery])
+  }, [statusFilter, typeFilter, debouncedSearchQuery, offset])
 
-  // Initial fetch and polling
+  // Determine if any workflow is actively running
+  const hasRunningWorkflows = useMemo(() => {
+    return workflows.some(
+      (w) => w.status === 'PENDING' || w.status === 'ENQUEUED'
+    )
+  }, [workflows])
+
+  // Calculate optimal polling interval based on workflow states
+  const pollingInterval = useMemo(() => {
+    if (workflows.length === 0) {
+      // No workflows loaded yet - poll at slow interval to check for new ones
+      return POLLING_SLOW
+    }
+    if (hasRunningWorkflows) {
+      // Active workflows - poll fast for real-time updates
+      return POLLING_FAST
+    }
+    // All workflows completed/idle - poll slowly or stop
+    // Continue slow polling to detect new workflows
+    return POLLING_SLOW
+  }, [workflows.length, hasRunningWorkflows])
+
+  // Track polling interval changes for logging (debug)
+  const prevIntervalRef = useRef(pollingInterval)
+
+  // Debounce search query to avoid excessive API calls
   useEffect(() => {
-    fetchWorkflows()
-    const interval = setInterval(fetchWorkflows, 3000)
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery)
+    }, SEARCH_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+  }, [searchQuery])
+
+  // Initial fetch and adaptive polling
+  useEffect(() => {
+    fetchWorkflows(false)
+  }, [statusFilter, typeFilter, debouncedSearchQuery])
+
+  // Adaptive polling based on workflow state
+  useEffect(() => {
+    if (pollingInterval === POLLING_NONE) {
+      return // No polling needed
+    }
+
+    const interval = setInterval(() => {
+      fetchWorkflows(false)
+    }, pollingInterval)
+
+    // Update ref for tracking
+    prevIntervalRef.current = pollingInterval
+
     return () => clearInterval(interval)
-  }, [fetchWorkflows])
+  }, [pollingInterval, statusFilter, typeFilter, debouncedSearchQuery, fetchWorkflows])
+
+  // Auto-expand workflows with error status on first load
+  useEffect(() => {
+    if (workflows.length === 0) return
+
+    // Find the first error workflow that hasn't been auto-expanded yet
+    // and hasn't been manually collapsed by the user
+    for (const workflow of workflows) {
+      const workflowId = workflow.workflow_uuid
+      if (
+        hasErrorStatus(workflow) &&
+        !autoExpandedRef.current.has(workflowId) &&
+        !userCollapsedRef.current.has(workflowId)
+      ) {
+        // Mark as auto-expanded so we don't re-expand on refresh
+        autoExpandedRef.current.add(workflowId)
+        // Expand this workflow
+        setExpandedId(workflowId)
+        // Only auto-expand one workflow at a time
+        break
+      }
+    }
+  }, [workflows])
+
+  const handleLoadMore = () => {
+    fetchWorkflows(true)
+  }
 
   const handleCancel = async (workflowId) => {
     try {
@@ -73,9 +184,26 @@ export default function WorkflowList({ onAttachWorkflow }) {
         throw new Error(`Cancel failed: ${response.status}`)
       }
       // Refresh list after cancel
-      fetchWorkflows()
+      fetchWorkflows(false)
     } catch (err) {
       console.error('Failed to cancel workflow:', err)
+    }
+  }
+
+  const handleRetry = async (workflowId) => {
+    try {
+      const response = await fetch(apiUrl(`/api/workflows/${workflowId}/retry`), {
+        method: 'POST',
+      })
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(data.detail || `Retry failed: ${response.status}`)
+      }
+      // Refresh list after retry to show the new workflow
+      fetchWorkflows(false)
+    } catch (err) {
+      console.error('Failed to retry workflow:', err)
+      // Could show error to user here
     }
   }
 
@@ -84,7 +212,16 @@ export default function WorkflowList({ onAttachWorkflow }) {
   }
 
   const handleToggleExpand = (workflowId) => {
-    setExpandedId(expandedId === workflowId ? null : workflowId)
+    const isCurrentlyExpanded = expandedId === workflowId
+    if (isCurrentlyExpanded) {
+      // User is collapsing - track this to prevent re-auto-expand
+      userCollapsedRef.current.add(workflowId)
+      setExpandedId(null)
+    } else {
+      // User is expanding - remove from collapsed set if present
+      userCollapsedRef.current.delete(workflowId)
+      setExpandedId(workflowId)
+    }
   }
 
   const getStatusBadgeClass = (status) => {
@@ -145,13 +282,15 @@ export default function WorkflowList({ onAttachWorkflow }) {
         <button
           type="button"
           className="workflow-refresh"
-          onClick={fetchWorkflows}
+          onClick={() => fetchWorkflows(false)}
           disabled={isLoading}
           title="Refresh"
         >
           {isLoading ? '...' : '↻'}
         </button>
       </div>
+
+      <WorkflowMetrics workflows={workflows} />
 
       <div className="workflow-list">
         {error && (
@@ -164,17 +303,31 @@ export default function WorkflowList({ onAttachWorkflow }) {
             {isLoading ? 'Loading...' : 'No workflows found'}
           </div>
         ) : (
-          workflows.map((workflow) => (
-            <WorkflowRow
-              key={workflow.workflow_uuid}
-              workflow={workflow}
-              isExpanded={expandedId === workflow.workflow_uuid}
-              onToggleExpand={() => handleToggleExpand(workflow.workflow_uuid)}
-              onAttach={() => handleAttach(workflow.workflow_uuid)}
-              onCancel={() => handleCancel(workflow.workflow_uuid)}
-              getStatusBadgeClass={getStatusBadgeClass}
-            />
-          ))
+          <>
+            {workflows.map((workflow) => (
+              <WorkflowRow
+                key={workflow.workflow_uuid}
+                workflow={workflow}
+                isExpanded={expandedId === workflow.workflow_uuid}
+                onToggleExpand={() => handleToggleExpand(workflow.workflow_uuid)}
+                onAttach={() => handleAttach(workflow.workflow_uuid)}
+                onCancel={() => handleCancel(workflow.workflow_uuid)}
+                onRetry={() => handleRetry(workflow.workflow_uuid)}
+                onOpenDetail={() => onOpenWorkflowDetail?.(workflow.workflow_uuid)}
+                getStatusBadgeClass={getStatusBadgeClass}
+              />
+            ))}
+            {hasMore && (
+              <button
+                type="button"
+                className="workflow-load-more"
+                onClick={handleLoadMore}
+                disabled={isLoading}
+              >
+                {isLoading ? 'Loading...' : 'Load more'}
+              </button>
+            )}
+          </>
         )}
       </div>
     </div>

@@ -1,0 +1,73 @@
+═══════════════════════════════════════════════════════════════════
+KURT CLOUD SETUP
+═══════════════════════════════════════════════════════════════════
+
+Kurt uses Dolt as its database backend - a SQL database with Git-like
+version control features. Cloud collaboration features are planned.
+
+Current state:
+  • Local Dolt database with Git-like versioning
+  • Cloud authentication infrastructure (for future sync)
+  • Workspace tracking for team collaboration prep
+
+═══════════════════════════════════════════════════════════════════
+AUTHENTICATION
+═══════════════════════════════════════════════════════════════════
+
+LOGIN (for future cloud features):
+  kurt cloud login
+
+  Opens browser for authentication via Kurt Cloud.
+  Stores credentials in ~/.kurt/credentials.json
+
+CHECK STATUS:
+  kurt cloud status
+
+LOGOUT:
+  kurt cloud logout
+
+═══════════════════════════════════════════════════════════════════
+DATABASE: DOLT
+═══════════════════════════════════════════════════════════════════
+
+Kurt uses Dolt for all data storage. Key features:
+
+  • Git-like versioning: branch, commit, merge, diff on your data
+  • MySQL protocol: standard SQL via SQLModel/SQLAlchemy
+  • Local-first: works offline, sync capabilities planned
+
+LOCATION:
+  .dolt/           - Dolt repository
+  .kurt/           - Kurt configuration and cache
+
+DOLT OPERATIONS:
+  dolt status      - Show uncommitted changes
+  dolt diff        - Show data differences
+  dolt log         - View commit history
+  dolt branch      - List/create branches
+
+═══════════════════════════════════════════════════════════════════
+DATA MANAGEMENT
+═══════════════════════════════════════════════════════════════════
+
+EXPORT DATA (backup):
+  kurt db export --output my-backup.json --pretty
+
+IMPORT DATA:
+  kurt db import my-backup.json
+
+═══════════════════════════════════════════════════════════════════
+TEAM COLLABORATION (PLANNED)
+═══════════════════════════════════════════════════════════════════
+
+Team collaboration features are planned:
+
+  • DoltHub remote sync for team collaboration
+  • Kurt Cloud with managed hosting
+  • GitHub App integration for repo access
+  • Web dashboard for team management
+  • Scheduled agent workflows
+
+For now, use Git + Dolt for local version control of your data.
+
+═══════════════════════════════════════════════════════════════════

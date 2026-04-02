@@ -1,13 +1,15 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
+import { Search, X, Folder, FolderOpen, File, FolderInput, RefreshCw, ChevronRight, ChevronDown, MoreHorizontal, Settings } from 'lucide-react'
 
 const apiBase = import.meta.env.VITE_API_URL || ''
 const apiUrl = (path) => `${apiBase}${path}`
 
 // Section icons by config key (not path name)
 const SECTION_ICONS = {
-  projects: '📁',
-  sources: '📥',
-  workflows: '🔄',
+  projects: Folder,
+  sources: FolderInput,
+  workflows: RefreshCw,
 }
 
 // Capitalize first letter for display
@@ -525,7 +527,7 @@ export default function FileTree({ onOpen, onOpenToSide, onOpenImageEditor, onOp
         className="file-item file-item-new"
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
       >
-        <span className="file-item-icon">📄</span>
+        <span className="file-item-icon"><File size={14} /></span>
         <input
           ref={newFileInputRef}
           type="text"
@@ -563,7 +565,7 @@ export default function FileTree({ onOpen, onOpenToSide, onOpenImageEditor, onOp
             onDrop={(event) => handleDrop(event, e)}
           >
             <span className="file-item-icon">
-              {e.is_dir ? (expandedDirs[e.path] ? '📂' : '📁') : '📄'}
+              {e.is_dir ? (expandedDirs[e.path] ? <FolderOpen size={14} /> : <Folder size={14} />) : <File size={14} />}
             </span>
             {isRenaming ? (
               <input
@@ -647,7 +649,7 @@ export default function FileTree({ onOpen, onOpenToSide, onOpenImageEditor, onOp
         sections[key] = {
           path,
           label: formatSectionLabel(path),
-          icon: SECTION_ICONS[key] || '📁',
+          icon: SECTION_ICONS[key] || Folder,
           entries: [],
         }
         usedPaths.add(path)
@@ -684,7 +686,7 @@ export default function FileTree({ onOpen, onOpenToSide, onOpenImageEditor, onOp
       sections.other = {
         path: null,
         label: 'Other',
-        icon: '···',
+        icon: MoreHorizontal,
         entries: otherEntries,
       }
     }
@@ -704,8 +706,8 @@ export default function FileTree({ onOpen, onOpenToSide, onOpenImageEditor, onOp
           className={`file-tree-section-header ${hasChanges ? 'has-changes' : ''}`}
           onClick={() => toggleSection(sectionKey)}
         >
-          <span className="section-collapse-icon">{isCollapsed ? '▶' : '▼'}</span>
-          <span className="section-icon">{section.icon}</span>
+          <span className="section-collapse-icon">{isCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}</span>
+          <span className="section-icon">{React.createElement(section.icon, { size: 14 })}</span>
           <span className="section-label">{section.label}</span>
           {hasChanges && <span className="dir-changes-dot" title="Contains changes" />}
         </div>
@@ -731,7 +733,7 @@ export default function FileTree({ onOpen, onOpenToSide, onOpenImageEditor, onOp
                       if (entry) handleClick(entry)
                     }}
                   >
-                    <span className="file-item-icon">📂</span>
+                    <span className="file-item-icon"><FolderOpen size={14} /></span>
                     <span className="file-item-name">Loading...</span>
                   </div>
                 )}
@@ -757,10 +759,7 @@ export default function FileTree({ onOpen, onOpenToSide, onOpenImageEditor, onOp
   return (
     <div className="file-tree" onContextMenu={handleRootContextMenu}>
       <div className="search-box">
-        <svg className="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <circle cx="11" cy="11" r="8"/>
-          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-        </svg>
+        <Search className="search-icon" size={14} />
         <input
           type="text"
           className="search-input"
@@ -774,10 +773,7 @@ export default function FileTree({ onOpen, onOpenToSide, onOpenImageEditor, onOp
             className="search-clear"
             onClick={() => setSearchQuery('')}
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="18" y1="6" x2="6" y2="18"/>
-              <line x1="6" y1="6" x2="18" y2="18"/>
-            </svg>
+            <X size={12} />
           </button>
         )}
       </div>
@@ -816,7 +812,7 @@ export default function FileTree({ onOpen, onOpenToSide, onOpenImageEditor, onOp
               onClick={() => onOpen(configFile.path)}
               onContextMenu={(event) => handleContextMenu(event, configFile)}
             >
-              <span className="file-item-icon">⚙️</span>
+              <span className="file-item-icon"><Settings size={14} /></span>
               <span className="file-item-name">{configFile.name}</span>
               {renderStatusBadge(getFileStatus(configFile.path))}
             </div>
@@ -850,7 +846,7 @@ export default function FileTree({ onOpen, onOpenToSide, onOpenImageEditor, onOp
         </>
       )}
 
-      {contextMenu && (
+      {contextMenu && createPortal(
         <div
           className="context-menu"
           style={{ top: contextMenu.y, left: contextMenu.x }}
@@ -858,9 +854,28 @@ export default function FileTree({ onOpen, onOpenToSide, onOpenImageEditor, onOp
         >
           {/* Root-level context menu (no entry) */}
           {!contextMenu.entry ? (
-            <div className="context-menu-item" onClick={() => handleNewFile('')}>
-              New File
-            </div>
+            <>
+              <div className="context-menu-item" onClick={() => handleNewFile('')}>
+                New File
+              </div>
+              {projectRoot && (
+                <>
+                  <div className="context-menu-separator" />
+                  <div className="context-menu-item" onClick={() => {
+                    navigator.clipboard.writeText('.').catch(() => {})
+                    setContextMenu(null)
+                  }}>
+                    Copy Relative Path
+                  </div>
+                  <div className="context-menu-item" onClick={() => {
+                    navigator.clipboard.writeText(projectRoot).catch(() => {})
+                    setContextMenu(null)
+                  }}>
+                    Copy Path
+                  </div>
+                </>
+              )}
+            </>
           ) : (
             <>
               {!contextMenu.entry.is_dir && (
@@ -906,7 +921,8 @@ export default function FileTree({ onOpen, onOpenToSide, onOpenImageEditor, onOp
               </div>
             </>
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )

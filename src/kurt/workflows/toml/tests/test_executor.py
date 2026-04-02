@@ -1,0 +1,2064 @@
+"""
+Tests for the async workflow executor.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from typing import Any
+from unittest.mock import AsyncMock, patch
+
+import pytest
+
+from kurt.tools.core import (
+    ToolContext,
+    ToolExecutionError,
+    ToolNotFoundError,
+    ToolResult,
+    ToolResultError,
+)
+from kurt.workflows.toml.executor import (
+    ExitCode,
+    StepResult,
+    WorkflowExecutor,
+    WorkflowResult,
+    execute_workflow,
+)
+from kurt.workflows.toml.parser import InputDef, StepDef, WorkflowDefinition, WorkflowMeta
+
+# ============================================================================
+# Helper Functions
+# ============================================================================
+
+
+def make_workflow(
+    name: str = "test_workflow",
+    inputs: dict[str, InputDef] | None = None,
+    steps: dict[str, StepDef] | None = None,
+) -> WorkflowDefinition:
+    """Create a WorkflowDefinition for testing."""
+    return WorkflowDefinition(
+        workflow=WorkflowMeta(name=name),
+        inputs=inputs or {},
+        steps=steps or {},
+    )
+
+
+def make_step(
+    step_type: str = "map",
+    depends_on: list[str] | None = None,
+    config: dict[str, Any] | None = None,
+    continue_on_error: bool = False,
+) -> StepDef:
+    """Create a StepDef for testing."""
+    return StepDef(
+        type=step_type,
+        depends_on=depends_on or [],
+        config=config or {},
+        continue_on_error=continue_on_error,
+    )
+
+
+def make_tool_result(
+    success: bool = True,
+    data: list[dict[str, Any]] | None = None,
+    errors: list[ToolResultError] | None = None,
+) -> ToolResult:
+    """Create a ToolResult for testing."""
+    return ToolResult(
+        success=success,
+        data=data or [],
+        errors=errors or [],
+    )
+
+
+# ============================================================================
+# WorkflowResult Tests
+# ============================================================================
+
+
+class TestWorkflowResult:
+    """Tests for WorkflowResult dataclass."""
+
+    def test_default_values(self):
+        """WorkflowResult has sensible defaults."""
+        result = WorkflowResult(run_id="test-123", status="completed")
+
+        assert result.run_id == "test-123"
+        assert result.status == "completed"
+        assert result.step_results == {}
+        assert result.error is None
+        assert result.exit_code == ExitCode.SUCCESS
+
+    def test_to_dict(self):
+        """WorkflowResult serializes to dict correctly."""
+        result = WorkflowResult(
+            run_id="test-123",
+            status="failed",
+            error="Something went wrong",
+            exit_code=ExitCode.FAILED,
+        )
+
+        d = result.to_dict()
+
+        assert d["run_id"] == "test-123"
+        assert d["status"] == "failed"
+        assert d["error"] == "Something went wrong"
+        assert d["exit_code"] == 1
+
+
+class TestStepResult:
+    """Tests for StepResult dataclass."""
+
+    def test_default_values(self):
+        """StepResult has sensible defaults."""
+        result = StepResult(step_id="step1", status="completed", tool_name="map")
+
+        assert result.step_id == "step1"
+        assert result.status == "completed"
+        assert result.tool_name == "map"
+        assert result.output_data == []
+        assert result.error is None
+
+    def test_to_dict(self):
+        """StepResult serializes to dict correctly."""
+        result = StepResult(
+            step_id="step1",
+            status="failed",
+            tool_name="fetch",
+            error="Timeout",
+            error_type="TimeoutError",
+        )
+
+        d = result.to_dict()
+
+        assert d["step_id"] == "step1"
+        assert d["status"] == "failed"
+        assert d["tool_name"] == "fetch"
+        assert d["error"] == "Timeout"
+        assert d["error_type"] == "TimeoutError"
+
+
+# ============================================================================
+# Empty Workflow Tests
+# ============================================================================
+
+
+class TestExecuteWorkflowEmpty:
+    """Tests for empty workflows."""
+
+    @pytest.mark.asyncio
+    async def test_empty_workflow(self):
+        """Empty workflow completes successfully."""
+        workflow = make_workflow(steps={})
+
+        result = await execute_workflow(workflow, {})
+
+        assert result.status == "completed"
+        assert result.exit_code == ExitCode.SUCCESS
+        assert result.step_results == {}
+
+
+# ============================================================================
+# Single Step Tests
+# ============================================================================
+
+
+class TestExecuteWorkflowSingleStep:
+    """Tests for single-step workflows."""
+
+    @pytest.mark.asyncio
+    async def test_single_step_success(self):
+        """Single successful step."""
+        workflow = make_workflow(
+            steps={"step1": make_step("map")}
+        )
+
+        mock_result = make_tool_result(
+            success=True, data=[{"url": "https://example.com"}]
+        )
+
+        with patch(
+            "kurt.workflows.toml.executor.execute_tool", new_callable=AsyncMock
+        ) as mock_execute:
+            mock_execute.return_value = mock_result
+
+            result = await execute_workflow(workflow, {})
+
+        assert result.status == "completed"
+        assert result.exit_code == ExitCode.SUCCESS
+        assert "step1" in result.step_results
+        assert result.step_results["step1"].status == "completed"
+        assert result.step_results["step1"].output_data == [{"url": "https://example.com"}]
+
+    @pytest.mark.asyncio
+    async def test_single_step_failure(self):
+        """Single failing step."""
+        workflow = make_workflow(
+            steps={"step1": make_step("map")}
+        )
+
+        mock_result = make_tool_result(
+            success=False,
+            errors=[ToolResultError(row_idx=None, error_type="fetch_error", message="Network error")],
+        )
+
+        with patch(
+            "kurt.workflows.toml.executor.execute_tool", new_callable=AsyncMock
+        ) as mock_execute:
+            mock_execute.return_value = mock_result
+
+            result = await execute_workflow(workflow, {})
+
+        assert result.status == "failed"
+        assert result.exit_code == ExitCode.FAILED
+        assert result.step_results["step1"].status == "failed"
+        assert result.step_results["step1"].error == "Network error"
+
+    @pytest.mark.asyncio
+    async def test_single_step_tool_exception(self):
+        """Tool raises exception."""
+        workflow = make_workflow(
+            steps={"step1": make_step("map")}
+        )
+
+        with patch(
+            "kurt.workflows.toml.executor.execute_tool", new_callable=AsyncMock
+        ) as mock_execute:
+            mock_execute.side_effect = ToolExecutionError("map", "Connection refused")
+
+            result = await execute_workflow(workflow, {})
+
+        assert result.status == "failed"
+        assert result.exit_code == ExitCode.FAILED
+        assert result.step_results["step1"].status == "failed"
+        assert "Connection refused" in result.step_results["step1"].error
+
+    @pytest.mark.asyncio
+    async def test_single_step_tool_not_found(self):
+        """Tool not found in registry."""
+        workflow = make_workflow(
+            steps={"step1": make_step("nonexistent")}
+        )
+
+        with patch(
+            "kurt.workflows.toml.executor.execute_tool", new_callable=AsyncMock
+        ) as mock_execute:
+            mock_execute.side_effect = ToolNotFoundError("nonexistent")
+
+            result = await execute_workflow(workflow, {})
+
+        assert result.status == "failed"
+        assert "step1" in result.step_results
+        assert result.step_results["step1"].status == "failed"
+
+
+# ============================================================================
+# Sequential Steps Tests
+# ============================================================================
+
+
+class TestExecuteWorkflowSequential:
+    """Tests for sequential (dependent) steps."""
+
+    @pytest.mark.asyncio
+    async def test_two_sequential_steps(self):
+        """Two dependent steps execute in order."""
+        workflow = make_workflow(
+            steps={
+                "fetch": make_step("fetch"),
+                "process": make_step("llm", depends_on=["fetch"]),
+            }
+        )
+
+        call_order = []
+
+        async def mock_execute(name, params, context=None, on_progress=None):
+            call_order.append(name)
+            return make_tool_result(success=True, data=[{"processed": True}])
+
+        with patch(
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
+        ):
+            result = await execute_workflow(workflow, {})
+
+        assert result.status == "completed"
+        # Note: "llm" is resolved to "batch-llm" by the executor
+        assert call_order == ["fetch", "batch-llm"]
+
+    @pytest.mark.asyncio
+    async def test_data_passes_between_steps(self):
+        """Output from first step is input to second step."""
+        workflow = make_workflow(
+            steps={
+                "fetch": make_step("fetch"),
+                "process": make_step("llm", depends_on=["fetch"]),
+            }
+        )
+
+        captured_params = {}
+
+        async def mock_execute(name, params, context=None, on_progress=None):
+            captured_params[name] = params.copy()
+            if name == "fetch":
+                return make_tool_result(success=True, data=[{"url": "https://example.com"}])
+            else:
+                return make_tool_result(success=True, data=[{"result": "processed"}])
+
+        with patch(
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
+        ):
+            await execute_workflow(workflow, {"query": "test"})
+
+        # First step gets workflow inputs
+        assert captured_params["fetch"]["input_data"] == [{"query": "test"}]
+
+        # Second step gets output from first step (llm resolved to batch-llm)
+        assert captured_params["batch-llm"]["input_data"] == [{"url": "https://example.com"}]
+
+
+# ============================================================================
+# Parallel Steps Tests
+# ============================================================================
+
+
+class TestExecuteWorkflowParallel:
+    """Tests for parallel step execution."""
+
+    @pytest.mark.asyncio
+    async def test_parallel_steps_execute_concurrently(self):
+        """Steps in same level execute in parallel."""
+        workflow = make_workflow(
+            steps={
+                "step_a": make_step("map"),
+                "step_b": make_step("fetch"),
+                "step_c": make_step("llm"),
+            }
+        )
+
+        # Track concurrent execution
+        active_tasks = 0
+        max_concurrent = 0
+
+        async def mock_execute(name, params, context=None, on_progress=None):
+            nonlocal active_tasks, max_concurrent
+            active_tasks += 1
+            max_concurrent = max(max_concurrent, active_tasks)
+            await asyncio.sleep(0.01)  # Simulate work
+            active_tasks -= 1
+            return make_tool_result(success=True, data=[{"step": name}])
+
+        with patch(
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
+        ):
+            result = await execute_workflow(workflow, {})
+
+        assert result.status == "completed"
+        # All three steps should run concurrently
+        assert max_concurrent == 3
+
+    @pytest.mark.asyncio
+    async def test_diamond_pattern_execution(self):
+        """Diamond pattern: fan-out then fan-in."""
+        #     source
+        #    /      \
+        #  left    right
+        #    \      /
+        #     merge
+        workflow = make_workflow(
+            steps={
+                "source": make_step("map"),
+                "left": make_step("fetch", depends_on=["source"]),
+                "right": make_step("llm", depends_on=["source"]),
+                "merge": make_step("sql", depends_on=["left", "right"]),
+            }
+        )
+
+        execution_order = []
+
+        async def mock_execute(name, params, context=None, on_progress=None):
+            execution_order.append(name)
+            await asyncio.sleep(0.01)
+            return make_tool_result(success=True, data=[{"from": name}])
+
+        with patch(
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
+        ):
+            result = await execute_workflow(workflow, {})
+
+        assert result.status == "completed"
+        # source must be first, merge must be last
+        assert execution_order[0] == "map"
+        assert execution_order[-1] == "sql"
+        # left and right can be in any order but between source and merge
+        # Note: llm resolves to batch-llm
+        assert set(execution_order[1:3]) == {"fetch", "batch-llm"}
+
+
+# ============================================================================
+# Fan-In Tests
+# ============================================================================
+
+
+class TestExecuteWorkflowFanIn:
+    """Tests for fan-in (multiple dependencies)."""
+
+    @pytest.mark.asyncio
+    async def test_fan_in_concatenates_outputs(self):
+        """Fan-in step receives concatenated outputs in depends_on order."""
+        workflow = make_workflow(
+            steps={
+                "source_a": make_step("map"),
+                "source_b": make_step("fetch"),
+                "merge": make_step("sql", depends_on=["source_a", "source_b"]),
+            }
+        )
+
+        captured_params = {}
+
+        async def mock_execute(name, params, context=None, on_progress=None):
+            captured_params[name] = params.copy()
+            if name == "map":
+                return make_tool_result(success=True, data=[{"a": 1}, {"a": 2}])
+            elif name == "fetch":
+                return make_tool_result(success=True, data=[{"b": 3}])
+            else:
+                return make_tool_result(success=True, data=[])
+
+        with patch(
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
+        ):
+            result = await execute_workflow(workflow, {})
+
+        assert result.status == "completed"
+        # Fan-in: outputs concatenated in depends_on order
+        assert captured_params["sql"]["input_data"] == [{"a": 1}, {"a": 2}, {"b": 3}]
+
+    @pytest.mark.asyncio
+    async def test_fan_in_empty_outputs_contribute_nothing(self):
+        """Dependencies with empty output contribute nothing to fan-in."""
+        workflow = make_workflow(
+            steps={
+                "source_a": make_step("map"),
+                "source_b": make_step("fetch"),
+                "merge": make_step("sql", depends_on=["source_a", "source_b"]),
+            }
+        )
+
+        captured_params = {}
+
+        async def mock_execute(name, params, context=None, on_progress=None):
+            captured_params[name] = params.copy()
+            if name == "map":
+                return make_tool_result(success=True, data=[{"a": 1}])
+            elif name == "fetch":
+                return make_tool_result(success=True, data=[])  # Empty output
+            else:
+                return make_tool_result(success=True, data=[])
+
+        with patch(
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
+        ):
+            result = await execute_workflow(workflow, {})
+
+        assert result.status == "completed"
+        # Fan-in: source_b contributes nothing
+        assert captured_params["sql"]["input_data"] == [{"a": 1}]
+
+
+# ============================================================================
+# Partial Failure Tests
+# ============================================================================
+
+
+class TestExecuteWorkflowPartialFailure:
+    """Tests for partial failure handling."""
+
+    @pytest.mark.asyncio
+    async def test_default_stops_on_failure(self):
+        """Default behavior: workflow stops on first step failure."""
+        workflow = make_workflow(
+            steps={
+                "step1": make_step("map"),
+                "step2": make_step("fetch", depends_on=["step1"]),
+            }
+        )
+
+        async def mock_execute(name, params, context=None, on_progress=None):
+            if name == "map":
+                return make_tool_result(
+                    success=False,
+                    errors=[ToolResultError(None, "error", "Step 1 failed")],
+                )
+            return make_tool_result(success=True)
+
+        with patch(
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
+        ):
+            result = await execute_workflow(workflow, {})
+
+        assert result.status == "failed"
+        assert result.step_results["step1"].status == "failed"
+        # Step 2 should not have run
+        assert "step2" not in result.step_results or result.step_results.get("step2") is None
+
+    @pytest.mark.asyncio
+    async def test_continue_on_error_proceeds(self):
+        """With continue_on_error=True, workflow continues after failure."""
+        workflow = make_workflow(
+            steps={
+                "step1": make_step("map"),
+                "step2": make_step("fetch"),  # No dependency, runs in parallel
+            }
+        )
+
+        async def mock_execute(name, params, context=None, on_progress=None):
+            if name == "map":
+                return make_tool_result(
+                    success=False,
+                    errors=[ToolResultError(None, "error", "Step 1 failed")],
+                )
+            return make_tool_result(success=True, data=[{"result": "ok"}])
+
+        with patch(
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
+        ):
+            result = await execute_workflow(workflow, {}, continue_on_error=True)
+
+        # Workflow fails overall but step2 still ran
+        assert result.status == "failed"
+        assert result.step_results["step1"].status == "failed"
+        assert result.step_results["step2"].status == "completed"
+
+    @pytest.mark.asyncio
+    async def test_continue_on_error_dependent_gets_empty_input(self):
+        """With continue_on_error, dependent of failed step gets empty input."""
+        workflow = make_workflow(
+            steps={
+                "step1": make_step("map"),
+                "step2": make_step("fetch", depends_on=["step1"]),
+            }
+        )
+
+        captured_params = {}
+
+        async def mock_execute(name, params, context=None, on_progress=None):
+            captured_params[name] = params.copy()
+            if name == "map":
+                return make_tool_result(
+                    success=False,
+                    errors=[ToolResultError(None, "error", "Step 1 failed")],
+                )
+            return make_tool_result(success=True, data=[{"result": "ok"}])
+
+        with patch(
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
+        ):
+            result = await execute_workflow(workflow, {}, continue_on_error=True)
+
+        assert result.status == "failed"
+        # Step 2 should have received empty input (failed step contributes nothing)
+        assert captured_params["fetch"]["input_data"] == []
+
+
+# ============================================================================
+# Cancellation Tests
+# ============================================================================
+
+
+class TestExecuteWorkflowCancellation:
+    """Tests for workflow cancellation."""
+
+    @pytest.mark.asyncio
+    async def test_cancel_before_start(self):
+        """Canceling before execution starts."""
+        workflow = make_workflow(
+            steps={"step1": make_step("map")}
+        )
+
+        executor = WorkflowExecutor(workflow, {})
+        await executor.cancel()  # Cancel before run
+
+        # Should not actually execute anything since we didn't call run()
+        # But this tests the cancel method can be called safely
+
+    @pytest.mark.asyncio
+    async def test_cancel_during_execution(self):
+        """Canceling during execution."""
+        workflow = make_workflow(
+            steps={
+                "slow_step": make_step("map"),
+                "after_slow": make_step("fetch", depends_on=["slow_step"]),
+            }
+        )
+
+        execution_started = asyncio.Event()
+        can_complete = asyncio.Event()
+
+        async def mock_execute(name, params, context=None, on_progress=None):
+            if name == "map":
+                execution_started.set()
+                # Wait until canceled or allowed to complete
+                try:
+                    await asyncio.wait_for(can_complete.wait(), timeout=10)
+                except asyncio.TimeoutError:
+                    pass
+                # Check if we were canceled
+                raise asyncio.CancelledError()
+            return make_tool_result(success=True)
+
+        with patch(
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
+        ):
+            executor = WorkflowExecutor(workflow, {})
+
+            # Start execution in background
+            task = asyncio.create_task(executor.run())
+
+            # Wait for execution to start
+            await asyncio.wait_for(execution_started.wait(), timeout=1.0)
+
+            # Request cancellation
+            await executor.cancel()
+
+            # Allow the mock to complete (it will raise CancelledError)
+            can_complete.set()
+
+            # Wait for result
+            result = await asyncio.wait_for(task, timeout=5.0)
+
+        assert result.status == "canceled"
+        assert result.exit_code == ExitCode.CANCELED
+
+    @pytest.mark.asyncio
+    async def test_cancel_marks_pending_as_canceled(self):
+        """Pending steps are marked as canceled."""
+        workflow = make_workflow(
+            steps={
+                "step1": make_step("map"),
+                "step2": make_step("fetch", depends_on=["step1"]),
+                "step3": make_step("llm", depends_on=["step2"]),
+            }
+        )
+
+        step1_started = asyncio.Event()
+        can_complete = asyncio.Event()
+
+        async def mock_execute(name, params, context=None, on_progress=None):
+            if name == "map":
+                step1_started.set()
+                # Wait until canceled
+                try:
+                    await asyncio.wait_for(can_complete.wait(), timeout=10)
+                except asyncio.TimeoutError:
+                    pass
+                raise asyncio.CancelledError()
+            return make_tool_result(success=True)
+
+        with patch(
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
+        ):
+            executor = WorkflowExecutor(workflow, {})
+            task = asyncio.create_task(executor.run())
+
+            await asyncio.wait_for(step1_started.wait(), timeout=1.0)
+            await executor.cancel()
+            can_complete.set()
+
+            result = await asyncio.wait_for(task, timeout=5.0)
+
+        assert result.status == "canceled"
+        # Step 1 should be canceled (was running)
+        assert result.step_results["step1"].status == "canceled"
+
+
+# ============================================================================
+# Input Interpolation Tests
+# ============================================================================
+
+
+class TestExecuteWorkflowInputs:
+    """Tests for input handling and interpolation."""
+
+    @pytest.mark.asyncio
+    async def test_inputs_passed_to_first_step(self):
+        """Workflow inputs are passed to first step."""
+        workflow = make_workflow(
+            inputs={"url": InputDef(type="string", required=True)},
+            steps={"step1": make_step("map")},
+        )
+
+        captured_params = {}
+
+        async def mock_execute(name, params, context=None, on_progress=None):
+            captured_params[name] = params.copy()
+            return make_tool_result(success=True)
+
+        with patch(
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
+        ):
+            await execute_workflow(workflow, {"url": "https://example.com"})
+
+        assert captured_params["map"]["input_data"] == [{"url": "https://example.com"}]
+
+    @pytest.mark.asyncio
+    async def test_config_interpolation(self):
+        """Step config values are interpolated with inputs."""
+        workflow = make_workflow(
+            inputs={"model": InputDef(type="string", required=True)},
+            steps={
+                "step1": make_step(
+                    "llm",
+                    config={"model": "{{model}}", "temperature": 0.7},
+                )
+            },
+        )
+
+        captured_params = {}
+
+        async def mock_execute(name, params, context=None, on_progress=None):
+            captured_params[name] = params.copy()
+            return make_tool_result(success=True)
+
+        with patch(
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
+        ):
+            await execute_workflow(workflow, {"model": "gpt-4"})
+
+        # Note: llm resolves to batch-llm
+        assert captured_params["batch-llm"]["model"] == "gpt-4"
+        assert captured_params["batch-llm"]["temperature"] == 0.7
+
+
+# ============================================================================
+# Progress Events Tests
+# ============================================================================
+
+
+class TestExecuteWorkflowEvents:
+    """Tests for progress event emission."""
+
+    @pytest.mark.asyncio
+    async def test_emits_workflow_start_event(self):
+        """Workflow emits start event."""
+        workflow = make_workflow(
+            name="test_workflow",
+            steps={"step1": make_step("map")},
+        )
+
+        events = []
+
+        def capture_event(*args, **kwargs):
+            events.append(kwargs)
+
+        with (
+            patch("kurt.workflows.toml.executor.execute_tool", new_callable=AsyncMock) as mock_execute,
+            patch("kurt.workflows.toml.executor.track_event", side_effect=capture_event),
+        ):
+            mock_execute.return_value = make_tool_result(success=True)
+            await execute_workflow(workflow, {})
+
+        # Find workflow start event
+        start_events = [e for e in events if e.get("step_id") == "workflow" and e.get("status") == "running"]
+        assert len(start_events) >= 1
+        assert "test_workflow" in start_events[0].get("message", "")
+
+    @pytest.mark.asyncio
+    async def test_emits_step_events(self):
+        """Workflow emits step start/complete events."""
+        workflow = make_workflow(
+            steps={"step1": make_step("map")},
+        )
+
+        events = []
+
+        def capture_event(*args, **kwargs):
+            events.append(kwargs)
+
+        with (
+            patch("kurt.workflows.toml.executor.execute_tool", new_callable=AsyncMock) as mock_execute,
+            patch("kurt.workflows.toml.executor.track_event", side_effect=capture_event),
+        ):
+            mock_execute.return_value = make_tool_result(success=True)
+            await execute_workflow(workflow, {})
+
+        # Find step events
+        step_events = [e for e in events if e.get("step_id") == "step1"]
+        assert len(step_events) >= 2  # start + complete
+
+        statuses = [e.get("status") for e in step_events]
+        assert "running" in statuses
+        assert "completed" in statuses
+
+
+# ============================================================================
+# Exit Code Tests
+# ============================================================================
+
+
+class TestExecuteWorkflowExitCodes:
+    """Tests for exit codes."""
+
+    @pytest.mark.asyncio
+    async def test_success_exit_code(self):
+        """Successful workflow has exit code 0."""
+        workflow = make_workflow(steps={"step1": make_step("map")})
+
+        with patch(
+            "kurt.workflows.toml.executor.execute_tool", new_callable=AsyncMock
+        ) as mock_execute:
+            mock_execute.return_value = make_tool_result(success=True)
+            result = await execute_workflow(workflow, {})
+
+        assert result.exit_code == ExitCode.SUCCESS
+        assert result.exit_code == 0
+
+    @pytest.mark.asyncio
+    async def test_failed_exit_code(self):
+        """Failed workflow has exit code 1."""
+        workflow = make_workflow(steps={"step1": make_step("map")})
+
+        with patch(
+            "kurt.workflows.toml.executor.execute_tool", new_callable=AsyncMock
+        ) as mock_execute:
+            mock_execute.return_value = make_tool_result(
+                success=False,
+                errors=[ToolResultError(None, "error", "Failed")],
+            )
+            result = await execute_workflow(workflow, {})
+
+        assert result.exit_code == ExitCode.FAILED
+        assert result.exit_code == 1
+
+    @pytest.mark.asyncio
+    async def test_canceled_exit_code(self):
+        """Canceled workflow has exit code 2."""
+        workflow = make_workflow(
+            steps={"step1": make_step("map")},
+        )
+
+        started = asyncio.Event()
+        can_complete = asyncio.Event()
+
+        async def slow_execute(*args, **kwargs):
+            started.set()
+            try:
+                await asyncio.wait_for(can_complete.wait(), timeout=10)
+            except asyncio.TimeoutError:
+                pass
+            raise asyncio.CancelledError()
+
+        with patch(
+            "kurt.workflows.toml.executor.execute_tool", side_effect=slow_execute
+        ):
+            executor = WorkflowExecutor(workflow, {})
+            task = asyncio.create_task(executor.run())
+
+            await asyncio.wait_for(started.wait(), timeout=1.0)
+            await executor.cancel()
+            can_complete.set()
+
+            result = await asyncio.wait_for(task, timeout=5.0)
+
+        assert result.exit_code == ExitCode.CANCELED
+        assert result.exit_code == 2
+
+
+# ============================================================================
+# Run ID Tests
+# ============================================================================
+
+
+class TestExecuteWorkflowRunId:
+    """Tests for run ID handling."""
+
+    @pytest.mark.asyncio
+    async def test_generates_run_id(self):
+        """Workflow generates a run ID if not provided."""
+        workflow = make_workflow(steps={})
+
+        result = await execute_workflow(workflow, {})
+
+        assert result.run_id is not None
+        assert len(result.run_id) > 0
+
+    @pytest.mark.asyncio
+    async def test_uses_provided_run_id(self):
+        """Workflow uses provided run ID."""
+        workflow = make_workflow(steps={})
+
+        result = await execute_workflow(workflow, {}, run_id="custom-run-123")
+
+        assert result.run_id == "custom-run-123"
+
+
+# ============================================================================
+# Context Tests
+# ============================================================================
+
+
+class TestExecuteWorkflowContext:
+    """Tests for tool context handling."""
+
+    @pytest.mark.asyncio
+    async def test_passes_context_to_tool(self):
+        """Workflow passes context to tool execution."""
+        workflow = make_workflow(steps={"step1": make_step("map")})
+        context = ToolContext(settings={"custom": "value"})
+
+        captured_context = None
+
+        async def mock_execute(name, params, ctx=None, on_progress=None):
+            nonlocal captured_context
+            captured_context = ctx
+            return make_tool_result(success=True)
+
+        with patch(
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
+        ):
+            await execute_workflow(workflow, {}, context=context)
+
+        assert captured_context is context
+        assert captured_context.settings["custom"] == "value"
+
+    @pytest.mark.asyncio
+    async def test_default_context_created_if_not_provided(self):
+        """Default ToolContext is created if none provided."""
+        workflow = make_workflow(steps={"step1": make_step("map")})
+
+        captured_context = None
+
+        async def mock_execute(name, params, ctx=None, on_progress=None):
+            nonlocal captured_context
+            captured_context = ctx
+            return make_tool_result(success=True)
+
+        with patch(
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
+        ):
+            await execute_workflow(workflow, {})
+
+        assert captured_context is not None
+        assert isinstance(captured_context, ToolContext)
+
+
+# ============================================================================
+# Duration and Timestamp Tests
+# ============================================================================
+
+
+class TestExecuteWorkflowTiming:
+    """Tests for timing information in results."""
+
+    @pytest.mark.asyncio
+    async def test_workflow_result_has_timestamps(self):
+        """Workflow result includes start and completion timestamps."""
+        workflow = make_workflow(steps={"step1": make_step("map")})
+
+        with patch(
+            "kurt.workflows.toml.executor.execute_tool", new_callable=AsyncMock
+        ) as mock_execute:
+            mock_execute.return_value = make_tool_result(success=True)
+            result = await execute_workflow(workflow, {})
+
+        assert result.started_at is not None
+        assert result.completed_at is not None
+        # Timestamps should be ISO format
+        assert "T" in result.started_at
+        assert "T" in result.completed_at
+
+    @pytest.mark.asyncio
+    async def test_workflow_result_has_duration(self):
+        """Workflow result includes duration in milliseconds."""
+        workflow = make_workflow(steps={"step1": make_step("map")})
+
+        with patch(
+            "kurt.workflows.toml.executor.execute_tool", new_callable=AsyncMock
+        ) as mock_execute:
+            mock_execute.return_value = make_tool_result(success=True)
+            result = await execute_workflow(workflow, {})
+
+        assert result.duration_ms is not None
+        assert result.duration_ms >= 0
+
+    @pytest.mark.asyncio
+    async def test_step_result_has_timestamps(self):
+        """Step result includes start and completion timestamps."""
+        workflow = make_workflow(steps={"step1": make_step("map")})
+
+        with patch(
+            "kurt.workflows.toml.executor.execute_tool", new_callable=AsyncMock
+        ) as mock_execute:
+            mock_execute.return_value = make_tool_result(success=True)
+            result = await execute_workflow(workflow, {})
+
+        step_result = result.step_results["step1"]
+        assert step_result.started_at is not None
+        assert step_result.completed_at is not None
+        assert step_result.duration_ms is not None
+        assert step_result.duration_ms >= 0
+
+
+# ============================================================================
+# Progress Callback Tests
+# ============================================================================
+
+
+class TestExecuteWorkflowProgressCallback:
+    """Tests for progress callback invocation."""
+
+    @pytest.mark.asyncio
+    async def test_on_progress_callback_called(self):
+        """on_progress callback is invoked by tool execution."""
+        workflow = make_workflow(steps={"step1": make_step("map")})
+
+        progress_callback = None
+
+        async def mock_execute(name, params, ctx=None, on_progress=None):
+            nonlocal progress_callback
+            progress_callback = on_progress
+            return make_tool_result(success=True)
+
+        with patch(
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
+        ):
+            await execute_workflow(workflow, {})
+
+        # Executor should pass a callback to the tool
+        assert progress_callback is not None
+        assert callable(progress_callback)
+
+
+# ============================================================================
+# Internal Error Tests
+# ============================================================================
+
+
+class TestExecuteWorkflowInternalError:
+    """Tests for internal executor errors."""
+
+    @pytest.mark.asyncio
+    async def test_internal_error_exit_code(self):
+        """Internal executor error has exit code 3."""
+        workflow = make_workflow(steps={"step1": make_step("map")})
+
+        # Patch build_dag to raise an internal error
+        with patch(
+            "kurt.workflows.toml.executor.build_dag", side_effect=RuntimeError("Internal failure")
+        ):
+            result = await execute_workflow(workflow, {})
+
+        assert result.status == "failed"
+        assert result.exit_code == ExitCode.INTERNAL_ERROR
+        assert result.exit_code == 3
+        assert "Internal error" in result.error
+
+
+# ============================================================================
+# ToolCanceledError Tests
+# ============================================================================
+
+
+class TestExecuteWorkflowToolCanceled:
+    """Tests for ToolCanceledError handling."""
+
+    @pytest.mark.asyncio
+    async def test_tool_canceled_error_marks_step_canceled(self):
+        """ToolCanceledError marks step as canceled (not failed)."""
+        from kurt.tools.core import ToolCanceledError
+
+        workflow = make_workflow(steps={"step1": make_step("map")})
+
+        with patch(
+            "kurt.workflows.toml.executor.execute_tool", new_callable=AsyncMock
+        ) as mock_execute:
+            mock_execute.side_effect = ToolCanceledError("map", reason="User requested cancel")
+
+            result = await execute_workflow(workflow, {})
+
+        # Canceled steps don't cause workflow failure - only "failed" status does
+        # This is intentional: cancellation is a graceful stop, not an error
+        assert result.status == "completed"
+        assert result.step_results["step1"].status == "canceled"
+        assert result.step_results["step1"].error_type == "ToolCanceledError"
+
+    @pytest.mark.asyncio
+    async def test_tool_canceled_in_chain_stops_workflow(self):
+        """Canceled step with dependencies causes workflow to stop (no dependent execution)."""
+        from kurt.tools.core import ToolCanceledError
+
+        workflow = make_workflow(
+            steps={
+                "step1": make_step("map"),
+                "step2": make_step("fetch", depends_on=["step1"]),
+            }
+        )
+
+        with patch(
+            "kurt.workflows.toml.executor.execute_tool", new_callable=AsyncMock
+        ) as mock_execute:
+            mock_execute.side_effect = ToolCanceledError("map", reason="Canceled")
+
+            result = await execute_workflow(workflow, {})
+
+        # step1 canceled, step2 gets empty input (canceled step produces no output)
+        assert result.step_results["step1"].status == "canceled"
+
+
+# ============================================================================
+# Step Skipping Tests
+# ============================================================================
+
+
+class TestExecuteWorkflowStepSkipping:
+    """Tests for step skipping with failed dependencies."""
+
+    @pytest.mark.asyncio
+    async def test_dependent_skipped_when_dependency_fails(self):
+        """Dependent steps are skipped when dependency fails (default mode)."""
+        workflow = make_workflow(
+            steps={
+                "step1": make_step("map"),
+                "step2": make_step("fetch", depends_on=["step1"]),
+                "step3": make_step("llm", depends_on=["step2"]),
+            }
+        )
+
+        async def mock_execute(name, params, ctx=None, on_progress=None):
+            if name == "map":
+                return make_tool_result(
+                    success=False,
+                    errors=[ToolResultError(None, "error", "Step 1 failed")],
+                )
+            return make_tool_result(success=True)
+
+        with patch(
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
+        ):
+            result = await execute_workflow(workflow, {})
+
+        assert result.status == "failed"
+        assert result.step_results["step1"].status == "failed"
+        # Steps 2 and 3 should not have run
+        assert "step2" not in result.step_results
+        assert "step3" not in result.step_results
+
+
+# ============================================================================
+# Workflow Executor State Tests
+# ============================================================================
+
+
+class TestWorkflowExecutorState:
+    """Tests for WorkflowExecutor state management."""
+
+    def test_initial_state(self):
+        """WorkflowExecutor starts in pending state."""
+        workflow = make_workflow(steps={"step1": make_step("map")})
+        executor = WorkflowExecutor(workflow, {})
+
+        assert executor._status == "pending"
+        assert executor._step_outputs == {}
+        assert executor._step_results == {}
+
+    @pytest.mark.asyncio
+    async def test_cancel_idempotent_when_completed(self):
+        """Calling cancel on completed workflow is a no-op."""
+        workflow = make_workflow(steps={})
+
+        executor = WorkflowExecutor(workflow, {})
+        result = await executor.run()
+
+        assert result.status == "completed"
+
+        # Calling cancel after completion should do nothing
+        await executor.cancel()
+        # No assertion needed - just verify it doesn't raise
+
+
+# ============================================================================
+# Complex Workflow Tests
+# ============================================================================
+
+
+class TestExecuteWorkflowComplex:
+    """Tests for complex workflow scenarios."""
+
+    @pytest.mark.asyncio
+    async def test_mixed_success_and_failure_with_continue(self):
+        """Mixed success/failure with continue_on_error=True."""
+        workflow = make_workflow(
+            steps={
+                "step_ok_1": make_step("map"),
+                "step_fail": make_step("fetch"),
+                "step_ok_2": make_step("llm"),
+            }
+        )
+
+        async def mock_execute(name, params, ctx=None, on_progress=None):
+            if name == "fetch":
+                return make_tool_result(
+                    success=False,
+                    errors=[ToolResultError(None, "error", "Fetch failed")],
+                )
+            return make_tool_result(success=True, data=[{"result": name}])
+
+        with patch(
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
+        ):
+            result = await execute_workflow(workflow, {}, continue_on_error=True)
+
+        # Overall workflow fails but all steps executed
+        assert result.status == "failed"
+        assert result.step_results["step_ok_1"].status == "completed"
+        assert result.step_results["step_fail"].status == "failed"
+        assert result.step_results["step_ok_2"].status == "completed"
+
+    @pytest.mark.asyncio
+    async def test_large_parallel_workflow(self):
+        """Large workflow with many parallel steps."""
+        # Create 20 parallel steps
+        steps = {f"step_{i}": make_step("map") for i in range(20)}
+        workflow = make_workflow(steps=steps)
+
+        execution_count = 0
+
+        async def mock_execute(name, params, ctx=None, on_progress=None):
+            nonlocal execution_count
+            execution_count += 1
+            await asyncio.sleep(0.001)  # Small delay
+            return make_tool_result(success=True, data=[{"step": name}])
+
+        with patch(
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
+        ):
+            result = await execute_workflow(workflow, {})
+
+        assert result.status == "completed"
+        assert execution_count == 20
+        assert len(result.step_results) == 20
+
+    @pytest.mark.asyncio
+    async def test_deep_dependency_chain(self):
+        """Deep dependency chain executes in correct order."""
+        # Create 10-step chain
+        steps = {}
+        prev = None
+        for i in range(10):
+            name = f"step_{i}"
+            deps = [prev] if prev else []
+            steps[name] = make_step("map", depends_on=deps)
+            prev = name
+
+        workflow = make_workflow(steps=steps)
+        call_order = []
+
+        async def mock_execute(name, params, ctx=None, on_progress=None):
+            call_order.append(name)
+            return make_tool_result(success=True, data=[{"step": name}])
+
+        with patch(
+            "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
+        ):
+            result = await execute_workflow(workflow, {})
+
+        assert result.status == "completed"
+        # Verify execution order matches dependency order
+        expected_order = ["map"] * 10  # All use "map" tool type
+        assert call_order == expected_order
+        assert len(result.step_results) == 10
+
+
+# ============================================================================
+# Provider Resolution Tests
+# ============================================================================
+
+
+class TestResolveProviderForStep:
+    """Tests for _resolve_provider_for_step method."""
+
+    def _make_executor(self) -> WorkflowExecutor:
+        """Create a minimal WorkflowExecutor for unit testing."""
+        workflow = make_workflow(steps={"step1": make_step("fetch")})
+        return WorkflowExecutor(workflow, {})
+
+    def test_explicit_provider_takes_priority(self):
+        """config.provider is used as the provider (highest priority)."""
+        executor = self._make_executor()
+        config = {"provider": "tavily", "url": "https://example.com"}
+
+        class MockRegistry:
+            def list_providers(self, tool_name):
+                return [{"name": "tavily"}, {"name": "trafilatura"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
+        with patch(
+            "kurt.workflows.toml.executor.get_provider_registry",
+            return_value=MockRegistry(),
+        ):
+            result = executor._resolve_provider_for_step("fetch", config)
+
+        assert result["engine"] == "tavily"
+        # 'provider' key should be removed (consumed)
+        assert "provider" not in result
+
+    def test_engine_used_with_deprecation_warning(self):
+        """config.engine works but emits a DeprecationWarning."""
+        executor = self._make_executor()
+        config = {"engine": "firecrawl", "url": "https://example.com"}
+
+        class MockRegistry:
+            def list_providers(self, tool_name):
+                return [{"name": "firecrawl"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
+        import warnings as _w
+
+        with _w.catch_warnings(record=True) as caught:
+            _w.simplefilter("always")
+            with patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=MockRegistry(),
+            ):
+                result = executor._resolve_provider_for_step("fetch", config)
+
+        assert result["engine"] == "firecrawl"
+        deprecation_warnings = [w for w in caught if issubclass(w.category, DeprecationWarning)]
+        assert len(deprecation_warnings) == 1
+        assert "deprecated" in str(deprecation_warnings[0].message).lower()
+
+    def test_provider_overrides_engine(self):
+        """config.provider takes priority over config.engine."""
+        executor = self._make_executor()
+        config = {"provider": "tavily", "engine": "httpx"}
+
+        class MockRegistry:
+            def list_providers(self, tool_name):
+                return [{"name": "tavily"}, {"name": "httpx"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
+        import warnings as _w
+
+        with _w.catch_warnings(record=True) as caught:
+            _w.simplefilter("always")
+            with patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=MockRegistry(),
+            ):
+                result = executor._resolve_provider_for_step("fetch", config)
+
+        assert result["engine"] == "tavily"
+        # No deprecation warning since provider was used
+        deprecation_warnings = [w for w in caught if issubclass(w.category, DeprecationWarning)]
+        assert len(deprecation_warnings) == 0
+
+    def test_url_pattern_matching_resolves_provider(self):
+        """URL pattern matching auto-selects provider when no explicit config."""
+        executor = self._make_executor()
+        config = {"url": "https://x.com/user/status/123"}
+
+        mock_registry = type("MockRegistry", (), {
+            "resolve_provider": lambda self, tool, url=None, default_provider=None: "twitterapi",
+            "validate_provider": lambda self, tool_name, provider_name: [],
+        })()
+
+        with (
+            patch("kurt.workflows.toml.executor.get_provider_registry", return_value=mock_registry),
+            patch("kurt.tools.core.registry.get_tool", side_effect=Exception("no tool")),
+        ):
+            result = executor._resolve_provider_for_step("fetch", config)
+
+        assert result["engine"] == "twitterapi"
+
+    def test_default_provider_fallback(self):
+        """Tool's default_provider used when no URL match."""
+        executor = self._make_executor()
+        config = {"url": "https://example.com"}
+
+        mock_registry = type("MockRegistry", (), {
+            "resolve_provider": lambda self, tool, url=None, default_provider=None: default_provider,
+            "validate_provider": lambda self, tool_name, provider_name: [],
+        })()
+
+        mock_tool_class = type("MockTool", (), {"default_provider": "trafilatura"})
+
+        with (
+            patch("kurt.workflows.toml.executor.get_provider_registry", return_value=mock_registry),
+            patch("kurt.tools.core.registry.get_tool", return_value=mock_tool_class),
+        ):
+            result = executor._resolve_provider_for_step("fetch", config)
+
+        assert result["engine"] == "trafilatura"
+
+    def test_no_provider_resolved_leaves_config_unchanged(self):
+        """When no provider is resolved, config is returned without engine."""
+        executor = self._make_executor()
+        config = {"url": "https://example.com", "max_pages": 10}
+
+        mock_registry = type("MockRegistry", (), {
+            "resolve_provider": lambda self, tool, url=None, default_provider=None: None,
+        })()
+
+        with (
+            patch("kurt.workflows.toml.executor.get_provider_registry", return_value=mock_registry),
+            patch("kurt.tools.core.registry.get_tool", side_effect=Exception("no tool")),
+        ):
+            result = executor._resolve_provider_for_step("fetch", config)
+
+        assert "engine" not in result
+        assert result["url"] == "https://example.com"
+        assert result["max_pages"] == 10
+
+    def test_does_not_mutate_original_config(self):
+        """Original config dict is not mutated."""
+        executor = self._make_executor()
+        original = {"provider": "tavily", "url": "https://example.com"}
+        config = original.copy()
+
+        class MockRegistry:
+            def list_providers(self, tool_name):
+                return [{"name": "tavily"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
+        with patch(
+            "kurt.workflows.toml.executor.get_provider_registry",
+            return_value=MockRegistry(),
+        ):
+            executor._resolve_provider_for_step("fetch", config)
+
+        # Original should be unchanged
+        assert config == original
+
+    def test_existing_engine_not_overwritten(self):
+        """If engine already exists and provider resolves, engine is not overwritten."""
+        executor = self._make_executor()
+        config = {"url": "https://example.com", "engine": "httpx"}
+
+        mock_registry = type("MockRegistry", (), {
+            "resolve_provider": lambda self, tool, url=None, default_provider=None: "tavily",
+            "list_providers": lambda self, tool_name: [{"name": "httpx"}, {"name": "tavily"}],
+            "validate_provider": lambda self, tool_name, provider_name: [],
+        })()
+
+        with (
+            patch("kurt.workflows.toml.executor.get_provider_registry", return_value=mock_registry),
+            patch("kurt.tools.core.registry.get_tool", side_effect=Exception("no tool")),
+        ):
+            import warnings as _w
+
+            with _w.catch_warnings(record=True):
+                _w.simplefilter("always")
+                result = executor._resolve_provider_for_step("fetch", config)
+
+        # engine was already set to "httpx" via deprecated path, so it stays
+        assert result["engine"] == "httpx"
+
+    def test_list_urls_uses_first_for_matching(self):
+        """When config.urls is a list, first URL is used for pattern matching."""
+        executor = self._make_executor()
+        config = {"urls": ["https://x.com/status/1", "https://example.com"]}
+
+        captured_url = {}
+
+        class MockRegistry:
+            def resolve_provider(self, tool, url=None, default_provider=None):
+                captured_url["url"] = url
+                return "twitterapi"
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
+        with (
+            patch("kurt.workflows.toml.executor.get_provider_registry", return_value=MockRegistry()),
+            patch("kurt.tools.core.registry.get_tool", side_effect=Exception("no tool")),
+        ):
+            result = executor._resolve_provider_for_step("fetch", config)
+
+        assert captured_url["url"] == "https://x.com/status/1"
+        assert result["engine"] == "twitterapi"
+
+    @pytest.mark.asyncio
+    async def test_provider_resolution_in_workflow_execution(self):
+        """Provider resolution integrates correctly with full workflow execution."""
+        workflow = make_workflow(
+            steps={"step1": make_step("fetch", config={"provider": "tavily"})}
+        )
+
+        captured_params = {}
+
+        async def mock_execute(name, params, ctx=None, on_progress=None):
+            captured_params[name] = params.copy()
+            return make_tool_result(success=True, data=[{"content": "test"}])
+
+        class MockRegistry:
+            def list_providers(self, tool_name):
+                return [{"name": "tavily"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
+        with (
+            patch(
+                "kurt.workflows.toml.executor.execute_tool", side_effect=mock_execute
+            ),
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=MockRegistry(),
+            ),
+        ):
+            result = await execute_workflow(workflow, {})
+
+        assert result.status == "completed"
+        # Provider should be injected as engine
+        assert captured_params["fetch"]["engine"] == "tavily"
+        # provider key should be consumed (not passed to tool)
+        assert "provider" not in captured_params["fetch"]
+
+
+# ============================================================================
+# Input Data URL Matching Tests (bd-285.5.3)
+# ============================================================================
+
+
+class TestResolveProviderWithInputData:
+    """Tests for _resolve_provider_for_step with input_data URLs."""
+
+    def _make_executor(self) -> WorkflowExecutor:
+        workflow = make_workflow(steps={"step1": make_step("fetch")})
+        return WorkflowExecutor(workflow, {})
+
+    def test_input_data_url_used_for_matching(self):
+        """URLs from input_data are used for provider auto-selection."""
+        executor = self._make_executor()
+        config: dict[str, Any] = {}  # No URL in config
+        input_data = [{"url": "https://x.com/user/status/123"}]
+
+        captured_url: dict[str, Any] = {}
+
+        class MockRegistry:
+            def resolve_provider(self, tool, url=None, default_provider=None):
+                captured_url["url"] = url
+                return "twitterapi"
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
+        with (
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=MockRegistry(),
+            ),
+            patch(
+                "kurt.tools.core.registry.get_tool", side_effect=Exception("no tool")
+            ),
+        ):
+            result = executor._resolve_provider_for_step(
+                "fetch", config, input_data=input_data
+            )
+
+        assert captured_url["url"] == "https://x.com/user/status/123"
+        assert result["engine"] == "twitterapi"
+
+    def test_config_url_takes_priority_over_input_data(self):
+        """Config URL is used for matching even when input_data has URLs."""
+        executor = self._make_executor()
+        config = {"url": "https://example.com/page"}
+        input_data = [{"url": "https://x.com/user/status/123"}]
+
+        captured_url: dict[str, Any] = {}
+
+        class MockRegistry:
+            def resolve_provider(self, tool, url=None, default_provider=None):
+                captured_url["url"] = url
+                return "trafilatura"
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
+        with (
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=MockRegistry(),
+            ),
+            patch(
+                "kurt.tools.core.registry.get_tool", side_effect=Exception("no tool")
+            ),
+        ):
+            executor._resolve_provider_for_step(
+                "fetch", config, input_data=input_data
+            )
+
+        # Config URL should be used, not input_data URL
+        assert captured_url["url"] == "https://example.com/page"
+
+    def test_first_input_data_url_used(self):
+        """First URL from input_data list is used for matching."""
+        executor = self._make_executor()
+        config: dict[str, Any] = {}
+        input_data = [
+            {"url": "https://x.com/user/status/1"},
+            {"url": "https://example.com/page"},
+        ]
+
+        captured_url: dict[str, Any] = {}
+
+        class MockRegistry:
+            def resolve_provider(self, tool, url=None, default_provider=None):
+                captured_url["url"] = url
+                return "twitterapi"
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
+        with (
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=MockRegistry(),
+            ),
+            patch(
+                "kurt.tools.core.registry.get_tool", side_effect=Exception("no tool")
+            ),
+        ):
+            executor._resolve_provider_for_step(
+                "fetch", config, input_data=input_data
+            )
+
+        assert captured_url["url"] == "https://x.com/user/status/1"
+
+    def test_input_data_source_field_used(self):
+        """input_data 'source' field is also checked for URL matching."""
+        executor = self._make_executor()
+        config: dict[str, Any] = {}
+        input_data = [{"source": "https://x.com/user/status/123"}]
+
+        captured_url: dict[str, Any] = {}
+
+        class MockRegistry:
+            def resolve_provider(self, tool, url=None, default_provider=None):
+                captured_url["url"] = url
+                return "twitterapi"
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
+        with (
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=MockRegistry(),
+            ),
+            patch(
+                "kurt.tools.core.registry.get_tool", side_effect=Exception("no tool")
+            ),
+        ):
+            result = executor._resolve_provider_for_step(
+                "fetch", config, input_data=input_data
+            )
+
+        assert captured_url["url"] == "https://x.com/user/status/123"
+        assert result["engine"] == "twitterapi"
+
+    def test_empty_input_data_no_effect(self):
+        """Empty input_data doesn't affect provider resolution."""
+        executor = self._make_executor()
+        config = {"url": "https://example.com"}
+
+        mock_registry = type(
+            "MockRegistry",
+            (),
+            {
+                "resolve_provider": lambda self, tool, url=None, default_provider=None: None,
+            },
+        )()
+
+        with (
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=mock_registry,
+            ),
+            patch(
+                "kurt.tools.core.registry.get_tool", side_effect=Exception("no tool")
+            ),
+        ):
+            result = executor._resolve_provider_for_step(
+                "fetch", config, input_data=[]
+            )
+
+        assert "engine" not in result
+
+    def test_none_input_data_no_effect(self):
+        """None input_data doesn't affect provider resolution."""
+        executor = self._make_executor()
+        config = {"url": "https://example.com"}
+
+        mock_registry = type(
+            "MockRegistry",
+            (),
+            {
+                "resolve_provider": lambda self, tool, url=None, default_provider=None: None,
+            },
+        )()
+
+        with (
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=mock_registry,
+            ),
+            patch(
+                "kurt.tools.core.registry.get_tool", side_effect=Exception("no tool")
+            ),
+        ):
+            result = executor._resolve_provider_for_step(
+                "fetch", config, input_data=None
+            )
+
+        assert "engine" not in result
+
+    def test_input_data_skips_non_string_urls(self):
+        """Non-string URLs in input_data are skipped."""
+        executor = self._make_executor()
+        config: dict[str, Any] = {}
+        input_data = [
+            {"url": 123},  # Not a string
+            {"url": "https://x.com/user/status/456"},
+        ]
+
+        captured_url: dict[str, Any] = {}
+
+        class MockRegistry:
+            def resolve_provider(self, tool, url=None, default_provider=None):
+                captured_url["url"] = url
+                return "twitterapi"
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
+        with (
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=MockRegistry(),
+            ),
+            patch(
+                "kurt.tools.core.registry.get_tool", side_effect=Exception("no tool")
+            ),
+        ):
+            executor._resolve_provider_for_step(
+                "fetch", config, input_data=input_data
+            )
+
+        # Should skip the non-string and use the second record
+        assert captured_url["url"] == "https://x.com/user/status/456"
+
+    def test_explicit_provider_ignores_input_data(self):
+        """Explicit config.provider takes priority; input_data is not checked."""
+        executor = self._make_executor()
+        config = {"provider": "tavily"}
+        input_data = [{"url": "https://x.com/user/status/123"}]
+
+        class MockRegistry:
+            def list_providers(self, tool_name):
+                return [{"name": "tavily"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
+        with patch(
+            "kurt.workflows.toml.executor.get_provider_registry",
+            return_value=MockRegistry(),
+        ):
+            result = executor._resolve_provider_for_step(
+                "fetch", config, input_data=input_data
+            )
+
+        assert result["engine"] == "tavily"
+
+
+# ============================================================================
+# Provider Validation Tests (bd-26w.3.2 + bd-26w.3.1)
+# ============================================================================
+
+
+class TestProviderValidationInExecutor:
+    """Tests for provider validation in _resolve_provider_for_step.
+
+    Covers:
+    - bd-26w.3.2: Fail fast on unknown explicit provider/engine
+    - bd-26w.3.1: Validate provider requirements (missing env vars)
+    """
+
+    def _make_executor(self) -> WorkflowExecutor:
+        """Create a minimal WorkflowExecutor for unit testing."""
+        workflow = make_workflow(steps={"step1": make_step("fetch")})
+        return WorkflowExecutor(workflow, {})
+
+    # --- bd-26w.3.2: Unknown provider fails fast ---
+
+    def test_unknown_explicit_provider_raises_error(self):
+        """Explicit config.provider with unknown name raises ProviderNotFoundError."""
+        from kurt.tools.core.errors import ProviderNotFoundError
+
+        executor = self._make_executor()
+        config = {"provider": "nonexistent_provider", "url": "https://example.com"}
+
+        class MockRegistry:
+            def list_providers(self, tool_name):
+                return [
+                    {"name": "trafilatura"},
+                    {"name": "httpx"},
+                    {"name": "tavily"},
+                ]
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
+        with (
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=MockRegistry(),
+            ),
+            pytest.raises(ProviderNotFoundError) as exc_info,
+        ):
+            executor._resolve_provider_for_step("fetch", config)
+
+        assert "nonexistent_provider" in str(exc_info.value)
+        assert exc_info.value.tool_name == "fetch"
+        assert exc_info.value.provider_name == "nonexistent_provider"
+        assert "trafilatura" in exc_info.value.available
+
+    def test_unknown_explicit_engine_raises_error(self):
+        """Explicit config.engine with unknown name also raises ProviderNotFoundError."""
+        from kurt.tools.core.errors import ProviderNotFoundError
+
+        executor = self._make_executor()
+        config = {"engine": "nonexistent_engine", "url": "https://example.com"}
+
+        class MockRegistry:
+            def list_providers(self, tool_name):
+                return [{"name": "trafilatura"}, {"name": "httpx"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
+        import warnings as _w
+
+        with (
+            _w.catch_warnings(record=True),
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=MockRegistry(),
+            ),
+            pytest.raises(ProviderNotFoundError) as exc_info,
+        ):
+            _w.simplefilter("always")
+            executor._resolve_provider_for_step("fetch", config)
+
+        assert exc_info.value.provider_name == "nonexistent_engine"
+
+    def test_known_explicit_provider_passes_validation(self):
+        """Known explicit provider does not raise error."""
+        executor = self._make_executor()
+        config = {"provider": "tavily", "url": "https://example.com"}
+
+        class MockRegistry:
+            def list_providers(self, tool_name):
+                return [{"name": "trafilatura"}, {"name": "tavily"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
+        with patch(
+            "kurt.workflows.toml.executor.get_provider_registry",
+            return_value=MockRegistry(),
+        ):
+            result = executor._resolve_provider_for_step("fetch", config)
+
+        assert result["engine"] == "tavily"
+
+    def test_error_includes_available_providers_list(self):
+        """ProviderNotFoundError includes the list of available providers."""
+        from kurt.tools.core.errors import ProviderNotFoundError
+
+        executor = self._make_executor()
+        config = {"provider": "bad_provider"}
+
+        class MockRegistry:
+            def list_providers(self, tool_name):
+                return [
+                    {"name": "trafilatura"},
+                    {"name": "httpx"},
+                    {"name": "firecrawl"},
+                ]
+
+            def validate_provider(self, tool_name, provider_name):
+                return []
+
+        with (
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=MockRegistry(),
+            ),
+            pytest.raises(ProviderNotFoundError) as exc_info,
+        ):
+            executor._resolve_provider_for_step("fetch", config)
+
+        assert set(exc_info.value.available) == {"trafilatura", "httpx", "firecrawl"}
+
+    def test_auto_resolved_provider_not_validated_against_list(self):
+        """Auto-resolved providers (via URL matching) are not validated against list."""
+        executor = self._make_executor()
+        config = {"url": "https://example.com"}
+
+        class MockRegistry:
+            def resolve_provider(self, tool, url=None, default_provider=None):
+                return "auto_resolved"
+
+            def validate_provider(self, tool_name, provider_name):
+                return []  # No missing env vars
+
+        with (
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=MockRegistry(),
+            ),
+            patch(
+                "kurt.tools.core.registry.get_tool", side_effect=Exception("no tool")
+            ),
+        ):
+            result = executor._resolve_provider_for_step("fetch", config)
+
+        # Should succeed - auto-resolved providers use registry, not list_providers
+        assert result["engine"] == "auto_resolved"
+
+    # --- bd-26w.3.1: Missing env vars fails fast ---
+
+    def test_missing_env_vars_raises_requirements_error(self):
+        """Provider with missing env vars raises ProviderRequirementsError."""
+        from kurt.tools.core.errors import ProviderRequirementsError
+
+        executor = self._make_executor()
+        config = {"provider": "firecrawl", "url": "https://example.com"}
+
+        class MockRegistry:
+            def list_providers(self, tool_name):
+                return [{"name": "firecrawl"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                return ["FIRECRAWL_API_KEY"]
+
+        with (
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=MockRegistry(),
+            ),
+            pytest.raises(ProviderRequirementsError) as exc_info,
+        ):
+            executor._resolve_provider_for_step("fetch", config)
+
+        assert "FIRECRAWL_API_KEY" in exc_info.value.missing
+        assert exc_info.value.provider_name == "firecrawl"
+
+    def test_auto_resolved_provider_also_validates_env(self):
+        """Even auto-resolved providers get env validation."""
+        from kurt.tools.core.errors import ProviderRequirementsError
+
+        executor = self._make_executor()
+        config = {"url": "https://x.com/user/status/123"}
+
+        class MockRegistry:
+            def resolve_provider(self, tool, url=None, default_provider=None):
+                return "twitterapi"
+
+            def validate_provider(self, tool_name, provider_name):
+                return ["TWITTERAPI_KEY"]
+
+        with (
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=MockRegistry(),
+            ),
+            patch(
+                "kurt.tools.core.registry.get_tool", side_effect=Exception("no tool")
+            ),
+            pytest.raises(ProviderRequirementsError) as exc_info,
+        ):
+            executor._resolve_provider_for_step("fetch", config)
+
+        assert exc_info.value.provider_name == "twitterapi"
+        assert "TWITTERAPI_KEY" in exc_info.value.missing
+
+    def test_multiple_missing_env_vars_all_reported(self):
+        """All missing env vars are included in the error."""
+        from kurt.tools.core.errors import ProviderRequirementsError
+
+        executor = self._make_executor()
+        config = {"provider": "apify"}
+
+        class MockRegistry:
+            def list_providers(self, tool_name):
+                return [{"name": "apify"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                return ["APIFY_API_TOKEN", "APIFY_PROXY_URL"]
+
+        with (
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=MockRegistry(),
+            ),
+            pytest.raises(ProviderRequirementsError) as exc_info,
+        ):
+            executor._resolve_provider_for_step("fetch", config)
+
+        assert "APIFY_API_TOKEN" in exc_info.value.missing
+        assert "APIFY_PROXY_URL" in exc_info.value.missing
+
+    def test_env_vars_present_passes_validation(self):
+        """Provider with all env vars set passes validation."""
+        executor = self._make_executor()
+        config = {"provider": "firecrawl", "url": "https://example.com"}
+
+        class MockRegistry:
+            def list_providers(self, tool_name):
+                return [{"name": "firecrawl"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                return []  # No missing vars
+
+        with patch(
+            "kurt.workflows.toml.executor.get_provider_registry",
+            return_value=MockRegistry(),
+        ):
+            result = executor._resolve_provider_for_step("fetch", config)
+
+        assert result["engine"] == "firecrawl"
+
+    def test_validation_happens_before_engine_injection(self):
+        """Validation errors are raised before engine is injected into config."""
+        from kurt.tools.core.errors import ProviderNotFoundError
+
+        executor = self._make_executor()
+        config = {"provider": "bad", "url": "https://example.com"}
+
+        class MockRegistry:
+            def list_providers(self, tool_name):
+                return [{"name": "trafilatura"}]
+
+            def validate_provider(self, tool_name, provider_name):
+                # Should not reach here for unknown provider
+                raise AssertionError("validate_provider should not be called")
+
+        with (
+            patch(
+                "kurt.workflows.toml.executor.get_provider_registry",
+                return_value=MockRegistry(),
+            ),
+            pytest.raises(ProviderNotFoundError),
+        ):
+            executor._resolve_provider_for_step("fetch", config)

@@ -107,13 +107,15 @@ describe('WorkflowRow', () => {
     it('shows expand icon in collapsed state', () => {
       render(<WorkflowRow {...defaultProps} isExpanded={false} />)
 
-      expect(screen.getByText('▶')).toBeInTheDocument()
+      // ChevronRight Lucide icon renders as SVG
+      expect(document.querySelector('.workflow-expand-icon svg')).toBeInTheDocument()
     })
 
     it('shows collapse icon in expanded state', () => {
       render(<WorkflowRow {...defaultProps} isExpanded={true} />)
 
-      expect(screen.getByText('▼')).toBeInTheDocument()
+      // ChevronDown Lucide icon renders as SVG
+      expect(document.querySelector('.workflow-expand-icon svg')).toBeInTheDocument()
     })
   })
 
@@ -393,6 +395,30 @@ describe('WorkflowRow', () => {
       render(<WorkflowRow {...defaultProps} workflow={workflowNoDate} />)
 
       expect(screen.getByText('-')).toBeInTheDocument()
+    })
+  })
+
+  describe('Agent Workflow Summary', () => {
+    it('shows inline summary for agent workflows with tokens and cost', () => {
+      render(<WorkflowRow {...defaultProps} workflow={workflows.agentSuccess} />)
+
+      // Should show token counts and cost inline
+      expect(document.querySelector('.workflow-summary-inline')).toBeInTheDocument()
+      expect(screen.getByText(/50\.0k/)).toBeInTheDocument() // 50000 tokens formatted as 50.0k
+      expect(screen.getByText(/\$0\.12/)).toBeInTheDocument() // cost
+      expect(screen.getByText(/5t/)).toBeInTheDocument() // agent turns
+    })
+
+    it('does not show summary for non-agent workflows', () => {
+      render(<WorkflowRow {...defaultProps} workflow={workflows.success} />)
+
+      expect(document.querySelector('.workflow-summary-inline')).not.toBeInTheDocument()
+    })
+
+    it('does not show summary for agent workflows without token data', () => {
+      render(<WorkflowRow {...defaultProps} workflow={workflows.agentPending} />)
+
+      expect(document.querySelector('.workflow-summary-inline')).not.toBeInTheDocument()
     })
   })
 })

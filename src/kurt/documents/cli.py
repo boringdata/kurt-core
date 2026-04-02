@@ -12,13 +12,13 @@ from rich.console import Console
 from rich.table import Table
 
 from kurt.admin.telemetry.decorators import track_command
-from kurt.cli.options import (
+from kurt.tools.core import (
     add_confirmation_options,
     add_filter_options,
     format_option,
     format_table_option,
+    print_json,
 )
-from kurt.cli.output import print_json
 
 console = Console()
 
@@ -33,8 +33,9 @@ def content_group():
       list     List documents with filters
       get      Get document details
       delete   Delete documents
-      map      Discover content sources
-      fetch    Fetch and index documents
+
+    \b
+    Note: Use 'kurt tool map' and 'kurt tool fetch' for content discovery and fetching.
     """
     pass
 
@@ -45,7 +46,7 @@ def content_group():
 
 
 @content_group.command("list")
-@add_filter_options()
+@add_filter_options(source_type=True, offset=True, sort_by=True)
 @format_table_option
 @track_command
 def list_cmd(
@@ -56,6 +57,10 @@ def list_cmd(
     with_status: str | None,
     with_content_type: str | None,
     limit: int | None,
+    source_type: str | None,
+    offset: int | None,
+    sort_by: str | None,
+    sort_order: str,
     output_format: str,
 ):
     """
@@ -66,11 +71,13 @@ def list_cmd(
         kurt content list                           # List all documents
         kurt content list --limit 10                # List first 10
         kurt content list --with-status FETCHED     # List fetched documents
+        kurt content list --source-type url         # List URL-sourced documents
+        kurt content list --limit 10 --offset 5     # Paginate results
+        kurt content list --sort-by created_at      # Sort by creation date
         kurt content list --format json             # JSON output for agents
     """
-    from kurt.db import managed_session
-    from kurt.documents import DocumentFilters, DocumentRegistry
-    from kurt.workflows.fetch.models import FetchStatus
+    from kurt.documents import DocumentFilters
+    from kurt.tools.fetch.models import FetchStatus
 
     # Build filters
     filters = DocumentFilters(
@@ -78,6 +85,10 @@ def list_cmd(
         include=include_pattern,
         url_contains=url_contains,
         limit=limit,
+        source_type=source_type,
+        offset=offset,
+        order_by=sort_by,
+        order_desc=(sort_order == "desc"),
     )
 
     # Map CLI status to internal status
@@ -92,10 +103,8 @@ def list_cmd(
         else:
             filters.fetch_status = status_map.get(with_status.upper())
 
-    # Query documents
-    registry = DocumentRegistry()
-    with managed_session() as session:
-        docs = registry.list(session, filters)
+    # Query documents (routes to local or cloud)
+    docs = _list_documents(filters)
 
     if output_format == "json":
         print_json([_doc_to_dict(d) for d in docs])
@@ -139,33 +148,8 @@ def get_cmd(identifier: str, output_format: str):
         kurt content get abc123              # Get by partial ID
         kurt content get https://example.com # Get by URL
     """
-    from kurt.db import managed_session
-    from kurt.documents import DocumentFilters, DocumentRegistry
-
-    # Try to find by ID or URL
-    registry = DocumentRegistry()
-    with managed_session() as session:
-        # First try exact ID match
-        doc = registry.get(session, identifier)
-
-        # If not found, try URL match or partial ID
-        if not doc:
-            if identifier.startswith(("http://", "https://")):
-                # URL match
-                filters = DocumentFilters(url_contains=identifier, limit=1)
-                docs = registry.list(session, filters)
-            else:
-                # Partial document ID match - query directly with LIKE
-                from sqlmodel import select
-
-                from kurt.workflows.map.models import MapDocument
-
-                query = (
-                    select(MapDocument).where(MapDocument.document_id.contains(identifier)).limit(1)
-                )
-                map_doc = session.exec(query).first()
-                docs = [registry.get(session, map_doc.document_id)] if map_doc else []
-            doc = docs[0] if docs else None
+    # Query document (routes to local or cloud)
+    doc = _get_document(identifier)
 
     if not doc:
         if output_format == "json":
@@ -221,10 +205,7 @@ def delete_cmd(
         kurt content delete --ids a,b,c      # Delete multiple IDs
         kurt content delete --include "*test*" --dry-run  # Preview deletion
     """
-    from kurt.db import managed_session
     from kurt.documents import DocumentFilters, DocumentRegistry
-    from kurt.workflows.fetch.models import FetchDocument
-    from kurt.workflows.map.models import MapDocument
 
     # Build filters
     filters = DocumentFilters(
@@ -236,8 +217,7 @@ def delete_cmd(
 
     # Get documents to delete
     registry = DocumentRegistry()
-    with managed_session() as session:
-        docs = registry.list(session, filters)
+    docs = registry.list(filters=filters)
 
     if not docs:
         console.print("[dim]No documents found matching criteria[/dim]")
@@ -258,38 +238,41 @@ def delete_cmd(
             console.print("[dim]Cancelled[/dim]")
             return
 
-    # Delete documents
+    # Delete documents using DocumentRegistry
+    registry = DocumentRegistry()
     deleted_count = 0
-    with managed_session() as session:
-        for doc in docs:
-            # Delete from fetch table first (FK constraint)
-            session.exec(
-                FetchDocument.__table__.delete().where(FetchDocument.document_id == doc.document_id)
-            )
-            # Delete from map table
-            session.exec(
-                MapDocument.__table__.delete().where(MapDocument.document_id == doc.document_id)
-            )
-            deleted_count += 1
-        session.commit()
+    for doc in docs:
+        registry.delete(document_id=doc.document_id)
+        deleted_count += 1
 
     console.print(f"[green]✓[/green] Deleted {deleted_count} document(s)")
 
 
 # =============================================================================
-# Register Workflow Commands
-# =============================================================================
-
-from kurt.workflows.fetch.cli import fetch_cmd  # noqa: E402
-from kurt.workflows.map.cli import map_cmd  # noqa: E402
-
-content_group.add_command(fetch_cmd, "fetch")
-content_group.add_command(map_cmd, "map")
-
-
-# =============================================================================
 # Helpers
 # =============================================================================
+
+
+def _list_documents(filters):
+    """
+    List documents from database.
+
+    Uses DocumentRegistry for unified document view.
+    """
+    from kurt.documents.registry import DocumentRegistry
+
+    return DocumentRegistry().list(filters=filters)
+
+
+def _get_document(identifier: str):
+    """
+    Get document by ID from Dolt database.
+
+    In Dolt-only architecture, we query directly from Dolt tables.
+    """
+    from kurt.documents.registry import DocumentRegistry
+
+    return DocumentRegistry().get(document_id=identifier)
 
 
 def _doc_to_dict(doc) -> dict:
@@ -329,3 +312,27 @@ def _status_style(status) -> str:
     if "PENDING" in s:
         return f"[yellow]{s}[/yellow]"
     return s
+
+
+# =============================================================================
+# Command Groups
+# =============================================================================
+
+
+@click.group(name="docs")
+def docs_group():
+    """
+    Document management commands.
+
+    \b
+    Commands:
+      list     List documents with filters
+      get      Get document details
+      delete   Delete documents
+    """
+    pass
+
+
+docs_group.add_command(list_cmd, name="list")
+docs_group.add_command(get_cmd, name="get")
+docs_group.add_command(delete_cmd, name="delete")

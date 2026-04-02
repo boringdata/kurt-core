@@ -1,0 +1,12 @@
+{
+  "content": "# Firecrawl Rendered Page\n\nThis content was rendered via headless browser and extracted.\n\n## Dynamic Content\n\nJavaScript-rendered content is fully captured.",
+  "content_html": "<h1>Firecrawl Rendered Page</h1><p>This content was rendered via headless browser and extracted.</p><h2>Dynamic Content</h2><p>JavaScript-rendered content is fully captured.</p>",
+  "metadata": {
+    "title": "Firecrawl Rendered Page",
+    "url": "https://example.com/dynamic-page",
+    "statusCode": 200,
+    "sourceURL": "https://example.com/dynamic-page"
+  },
+  "success": true,
+  "error": null
+}

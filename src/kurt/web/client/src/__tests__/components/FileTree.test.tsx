@@ -155,7 +155,8 @@ describe('FileTree', () => {
 
       await waitFor(() => {
         // Should have at least one collapsed folder icon (src and docs dirs)
-        expect(screen.getAllByText('📁').length).toBeGreaterThan(0)
+        // Icons are rendered as SVG via Lucide React components
+        expect(document.querySelectorAll('.file-item-icon svg').length).toBeGreaterThan(0)
       })
     })
 
@@ -180,7 +181,8 @@ describe('FileTree', () => {
       fireEvent.click(screen.getByText('src'))
 
       await waitFor(() => {
-        expect(screen.getByText('📂')).toBeInTheDocument()
+        // Expanded folder uses FolderOpen Lucide icon (SVG)
+        expect(document.querySelectorAll('.file-item-icon svg').length).toBeGreaterThan(0)
       })
     })
   })
@@ -835,8 +837,8 @@ describe('FileTree', () => {
       fireEvent.click(screen.getByText('docs'))
 
       await waitFor(() => {
-        // docs is expanded (shows open folder icon)
-        expect(screen.getByText('📂')).toBeInTheDocument()
+        // docs is expanded (shows open folder icon via Lucide SVG)
+        expect(document.querySelectorAll('.file-item-icon svg').length).toBeGreaterThan(0)
       })
 
       // Initially README.md is in root, not in docs

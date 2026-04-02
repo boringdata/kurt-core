@@ -1,0 +1,15 @@
+{
+  "urls": [
+    "file:///docs/README.md",
+    "file:///docs/getting-started.md",
+    "file:///docs/api-reference.md"
+  ],
+  "count": 3,
+  "errors": [],
+  "metadata": {
+    "source": "./docs",
+    "format": "folder",
+    "file_count": 3,
+    "extensions": [".md"]
+  }
+}

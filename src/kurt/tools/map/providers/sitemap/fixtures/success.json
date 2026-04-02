@@ -1,0 +1,17 @@
+{
+  "urls": [
+    "https://example.com/",
+    "https://example.com/about",
+    "https://example.com/blog",
+    "https://example.com/blog/post-1",
+    "https://example.com/blog/post-2",
+    "https://example.com/contact"
+  ],
+  "count": 6,
+  "errors": [],
+  "metadata": {
+    "source": "https://example.com/sitemap.xml",
+    "format": "sitemap",
+    "url_count": 6
+  }
+}

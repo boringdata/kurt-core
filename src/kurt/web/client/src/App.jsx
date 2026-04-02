@@ -1,7 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { DockviewReact, DockviewDefaultTab } from 'dockview-react'
 import 'dockview-react/dist/styles/dockview.css'
+import { ChevronDown, ChevronUp } from 'lucide-react'
 
+import { ThemeProvider } from './hooks/useTheme'
+import ThemeToggle from './components/ThemeToggle'
+import UserMenu from './components/UserMenu'
 import FileTreePanel from './panels/FileTreePanel'
 import EditorPanel from './panels/EditorPanel'
 import TerminalPanel from './panels/TerminalPanel'
@@ -12,10 +16,10 @@ import WorkflowsPanel from './panels/WorkflowsPanel'
 import WorkflowTerminalPanel from './panels/WorkflowTerminalPanel'
 import ImageEditorPanel from './panels/ImageEditorPanel'
 import VideoEditorPanel from './panels/VideoEditorPanel'
-import DiffHighlightPOC from './components/DiffHighlightPOC'
-import TiptapDiffPOC from './components/TiptapDiffPOC'
+import WorkflowDetailPanel from './panels/WorkflowDetailPanel'
+import ClaudeStreamChat from './components/chat/ClaudeStreamChat'
 
-// POC mode - add ?poc=diff or ?poc=tiptap-diff to URL to test
+// POC mode - add ?poc=chat, ?poc=diff, or ?poc=tiptap-diff to URL to test
 const POC_MODE = new URLSearchParams(window.location.search).get('poc')
 
 const apiBase = import.meta.env.VITE_API_URL || ''
@@ -32,6 +36,7 @@ const components = {
   workflowTerminal: WorkflowTerminalPanel,
   imageEditor: ImageEditorPanel,
   videoEditor: VideoEditorPanel,
+  workflowDetail: WorkflowDetailPanel,
 }
 
 const KNOWN_COMPONENTS = new Set(Object.keys(components))
@@ -153,18 +158,6 @@ const getFileName = (path) => {
   return parts[parts.length - 1]
 }
 
-// Media file type detection
-const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'tiff', 'tif', 'bmp', 'svg']
-const VIDEO_EXTENSIONS = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'm4v', 'ogv']
-
-const getFileExtension = (path) => {
-  const parts = path.split('.')
-  return parts.length > 1 ? parts.pop().toLowerCase() : ''
-}
-
-const isImageFile = (path) => IMAGE_EXTENSIONS.includes(getFileExtension(path))
-const isVideoFile = (path) => VIDEO_EXTENSIONS.includes(getFileExtension(path))
-
 const LAYOUT_VERSION = 21 // Increment to force layout reset
 
 // Generate a short hash from the project root path for localStorage keys
@@ -189,7 +182,7 @@ const loadSavedTabs = (projectRoot) => {
     if (saved) {
       return JSON.parse(saved)
     }
-  } catch (e) {
+  } catch {
     // Ignore parse errors
   }
   return []
@@ -199,7 +192,7 @@ const loadSavedTabs = (projectRoot) => {
 const saveTabs = (projectRoot, paths) => {
   try {
     localStorage.setItem(getStorageKey(projectRoot, 'tabs'), JSON.stringify(paths))
-  } catch (e) {
+  } catch {
     // Ignore storage errors
   }
 }
@@ -239,7 +232,7 @@ const loadLayout = (projectRoot) => {
     }
 
     return parsed
-  } catch (e) {
+  } catch {
     return null
   }
 }
@@ -272,7 +265,7 @@ const saveLayout = (projectRoot, layout) => {
   try {
     const layoutWithVersion = { ...layout, version: LAYOUT_VERSION }
     localStorage.setItem(getStorageKey(projectRoot, 'layout'), JSON.stringify(layoutWithVersion))
-  } catch (e) {
+  } catch {
     // Ignore storage errors
   }
 }
@@ -287,7 +280,7 @@ const loadCollapsedState = () => {
     if (saved) {
       return JSON.parse(saved)
     }
-  } catch (e) {
+  } catch {
     // Ignore parse errors
   }
   return { filetree: false, terminal: false, workflows: false }
@@ -296,7 +289,7 @@ const loadCollapsedState = () => {
 const saveCollapsedState = (state) => {
   try {
     localStorage.setItem(SIDEBAR_COLLAPSED_KEY, JSON.stringify(state))
-  } catch (e) {
+  } catch {
     // Ignore storage errors
   }
 }
@@ -307,7 +300,7 @@ const loadPanelSizes = () => {
     if (saved) {
       return JSON.parse(saved)
     }
-  } catch (e) {
+  } catch {
     // Ignore parse errors
   }
   return { filetree: 280, terminal: 400, workflows: 250 }
@@ -316,7 +309,7 @@ const loadPanelSizes = () => {
 const savePanelSizes = (sizes) => {
   try {
     localStorage.setItem(PANEL_SIZES_KEY, JSON.stringify(sizes))
-  } catch (e) {
+  } catch {
     // Ignore storage errors
   }
 }
@@ -326,7 +319,6 @@ export default function App() {
   const [tabs, setTabs] = useState({}) // path -> { content, isDirty }
   const [approvals, setApprovals] = useState([])
   const [approvalsLoaded, setApprovalsLoaded] = useState(false)
-  const [gitStatus, setGitStatus] = useState({})
   const [activeFile, setActiveFile] = useState(null)
   const [activeDiffFile, setActiveDiffFile] = useState(null)
   const [collapsed, setCollapsed] = useState(loadCollapsedState)
@@ -336,8 +328,10 @@ export default function App() {
   const centerGroupRef = useRef(null)
   const isInitialized = useRef(false)
   const layoutRestored = useRef(false)
+  const ensureCorePanelsRef = useRef(null)
   const [projectRoot, setProjectRoot] = useState(null) // null = not loaded yet, '' = loaded but empty
   const projectRootRef = useRef(null) // Stable ref for callbacks
+  const [userContext, setUserContext] = useState(null)
 
   // Toggle sidebar collapse - capture size before collapsing
   const toggleFiletree = useCallback(() => {
@@ -423,13 +417,11 @@ export default function App() {
           title={collapsed.workflows ? 'Expand panel' : 'Collapse panel'}
           aria-label={collapsed.workflows ? 'Expand panel' : 'Collapse panel'}
         >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-            {collapsed.workflows ? (
-              <path d="M3.5 6L8 10.5L12.5 6H3.5Z" />
-            ) : (
-              <path d="M3.5 10L8 5.5L12.5 10H3.5Z" />
-            )}
-          </svg>
+          {collapsed.workflows ? (
+            <ChevronDown size={14} />
+          ) : (
+            <ChevronUp size={14} />
+          )}
         </button>
       )
     },
@@ -537,23 +529,7 @@ export default function App() {
     }
   }, [dockApi, collapsed])
 
-  // Fetch git status
-  const fetchGitStatus = useCallback(() => {
-    fetch(apiUrl('/api/git/status'))
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.available && data.files) {
-          setGitStatus(data.files)
-        }
-      })
-      .catch(() => {})
-  }, [])
-
-  useEffect(() => {
-    fetchGitStatus()
-    const interval = setInterval(fetchGitStatus, 5000)
-    return () => clearInterval(interval)
-  }, [fetchGitStatus])
+  // Git status polling removed - not currently used in UI
 
   // Fetch approvals
   useEffect(() => {
@@ -800,7 +776,7 @@ export default function App() {
   )
 
   const openDiff = useCallback(
-    (path, status) => {
+    (path, _status) => {
       if (!dockApi) return
 
       const panelId = `editor-${path}`
@@ -835,142 +811,6 @@ export default function App() {
       setActiveDiffFile(path)
     },
     [dockApi, openFileAtPosition]
-  )
-
-  // Open image file in image editor panel
-  const openImageEditor = useCallback(
-    (path) => {
-      if (!dockApi) return
-
-      const panelId = `imageEditor-${path}`
-      const existingPanel = dockApi.getPanel(panelId)
-
-      if (existingPanel) {
-        existingPanel.api.setActive()
-        return
-      }
-
-      const emptyPanel = dockApi.getPanel('empty-center')
-      const workflowsPanel = dockApi.getPanel('workflows')
-      const centerGroup = centerGroupRef.current
-
-      // Find existing editor panels to add as sibling tab
-      const allPanels = Array.isArray(dockApi.panels) ? dockApi.panels : []
-      const existingEditorPanel = allPanels.find(p =>
-        p.id.startsWith('editor-') || p.id.startsWith('imageEditor-') || p.id.startsWith('videoEditor-')
-      )
-
-      let position
-      if (existingEditorPanel?.group) {
-        position = { referenceGroup: existingEditorPanel.group }
-      } else if (centerGroup) {
-        position = { referenceGroup: centerGroup }
-      } else if (emptyPanel?.group) {
-        position = { referenceGroup: emptyPanel.group }
-      } else if (workflowsPanel?.group) {
-        position = { direction: 'above', referenceGroup: workflowsPanel.group }
-      } else {
-        position = { direction: 'right', referencePanel: 'filetree' }
-      }
-
-      const panel = dockApi.addPanel({
-        id: panelId,
-        component: 'imageEditor',
-        title: `🖼 ${getFileName(path)}`,
-        position,
-        params: { path },
-      })
-
-      if (emptyPanel) {
-        emptyPanel.api.close()
-      }
-
-      if (panel?.group) {
-        panel.group.header.hidden = false
-        centerGroupRef.current = panel.group
-        panel.group.api.setConstraints({
-          minimumHeight: 200,
-          maximumHeight: Infinity,
-        })
-      }
-    },
-    [dockApi]
-  )
-
-  // Open video file in video editor panel
-  const openVideoEditor = useCallback(
-    (path) => {
-      if (!dockApi) return
-
-      const panelId = `videoEditor-${path}`
-      const existingPanel = dockApi.getPanel(panelId)
-
-      if (existingPanel) {
-        existingPanel.api.setActive()
-        return
-      }
-
-      const emptyPanel = dockApi.getPanel('empty-center')
-      const workflowsPanel = dockApi.getPanel('workflows')
-      const centerGroup = centerGroupRef.current
-
-      // Find existing editor panels to add as sibling tab
-      const allPanels = Array.isArray(dockApi.panels) ? dockApi.panels : []
-      const existingEditorPanel = allPanels.find(p =>
-        p.id.startsWith('editor-') || p.id.startsWith('imageEditor-') || p.id.startsWith('videoEditor-')
-      )
-
-      let position
-      if (existingEditorPanel?.group) {
-        position = { referenceGroup: existingEditorPanel.group }
-      } else if (centerGroup) {
-        position = { referenceGroup: centerGroup }
-      } else if (emptyPanel?.group) {
-        position = { referenceGroup: emptyPanel.group }
-      } else if (workflowsPanel?.group) {
-        position = { direction: 'above', referenceGroup: workflowsPanel.group }
-      } else {
-        position = { direction: 'right', referencePanel: 'filetree' }
-      }
-
-      const panel = dockApi.addPanel({
-        id: panelId,
-        component: 'videoEditor',
-        title: `🎬 ${getFileName(path)}`,
-        position,
-        params: { path },
-      })
-
-      if (emptyPanel) {
-        emptyPanel.api.close()
-      }
-
-      if (panel?.group) {
-        panel.group.header.hidden = false
-        centerGroupRef.current = panel.group
-        panel.group.api.setConstraints({
-          minimumHeight: 200,
-          maximumHeight: Infinity,
-        })
-      }
-    },
-    [dockApi]
-  )
-
-  // Smart file opener that routes to appropriate editor based on file type
-  const openMediaFile = useCallback(
-    (path) => {
-      if (isImageFile(path)) {
-        openImageEditor(path)
-        return true
-      }
-      if (isVideoFile(path)) {
-        openVideoEditor(path)
-        return true
-      }
-      return false
-    },
-    [openImageEditor, openVideoEditor]
   )
 
   useEffect(() => {
@@ -1216,6 +1056,7 @@ export default function App() {
     // We check localStorage directly since projectRoot isn't available yet
     // Look for any layout key that might match
     let hasSavedLayout = false
+    let invalidLayoutFound = false
     try {
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i)
@@ -1223,10 +1064,27 @@ export default function App() {
           const raw = localStorage.getItem(key)
           if (raw) {
             const parsed = JSON.parse(raw)
-            // Check version, panels exist, and structure is valid
-            if (parsed?.version >= LAYOUT_VERSION && parsed?.panels && validateLayoutStructure(parsed)) {
+            const hasValidVersion = parsed?.version >= LAYOUT_VERSION
+            const hasPanels = !!parsed?.panels
+            const hasValidStructure = validateLayoutStructure(parsed)
+
+            // Check if layout is valid
+            if (hasValidVersion && hasPanels && hasValidStructure) {
               hasSavedLayout = true
               break
+            }
+
+            // Invalid layout detected - clean up and reload
+            if (!hasValidStructure || !hasValidVersion || !hasPanels) {
+              console.warn('[Layout] Invalid layout detected in onReady, clearing and reloading:', key)
+              localStorage.removeItem(key)
+              // Clear related session storage
+              const prefix = key.replace('-layout', '')
+              localStorage.removeItem(`${prefix}-tabs`)
+              localStorage.removeItem('kurt-web-terminal-sessions')
+              localStorage.removeItem('kurt-web-terminal-active')
+              localStorage.removeItem('kurt-web-terminal-chat-interface')
+              invalidLayoutFound = true
             }
           }
         }
@@ -1237,8 +1095,12 @@ export default function App() {
 
     // Only create fresh panels if no saved layout exists
     // Otherwise, layout restoration will handle panel creation
-    if (!hasSavedLayout) {
+    if (!hasSavedLayout || invalidLayoutFound) {
       ensureCorePanels()
+    }
+    ensureCorePanelsRef.current = () => {
+      ensureCorePanels()
+      applyLockedPanels()
     }
 
     // Apply initial panel sizes for fresh layout
@@ -1407,6 +1269,29 @@ export default function App() {
     fetchProjectRoot()
   }, [])
 
+  // Fetch user context for cloud mode detection and user menu
+  useEffect(() => {
+    fetch(apiUrl('/api/me'))
+      .then((res) => res.json())
+      .then((data) => setUserContext(data))
+      .catch(() => setUserContext({ is_cloud_mode: false }))
+  }, [])
+
+  // Set browser tab title to workspace name or folder name
+  useEffect(() => {
+    const workspaceName = userContext?.workspace?.name
+    // Use workspace name if available and not a UUID
+    if (workspaceName && !workspaceName.includes('-')) {
+      document.title = `${workspaceName} - Kurt`
+    } else if (projectRoot) {
+      // Fallback to folder name from projectRoot
+      const folderName = projectRoot.split('/').filter(Boolean).pop() || 'Kurt'
+      document.title = `${folderName} - Kurt`
+    } else {
+      document.title = 'Kurt'
+    }
+  }, [userContext?.workspace?.name, projectRoot])
+
   // Restore layout once projectRoot is loaded and dockApi is available
   const layoutRestorationRan = useRef(false)
   useEffect(() => {
@@ -1416,6 +1301,72 @@ export default function App() {
     layoutRestorationRan.current = true
 
     const savedLayout = loadLayout(projectRoot)
+    if (!savedLayout) {
+      if (ensureCorePanelsRef.current) {
+        ensureCorePanelsRef.current()
+        layoutRestored.current = true
+        requestAnimationFrame(() => {
+          const ftGroup = dockApi.getPanel('filetree')?.group
+          const tGroup = dockApi.getPanel('terminal')?.group
+          const wGroup = dockApi.getPanel('workflows')?.group
+
+          if (ftGroup) {
+            const ftApi = dockApi.getGroup(ftGroup.id)?.api
+            if (ftApi) {
+              if (collapsed.filetree) {
+                ftApi.setConstraints({ minimumWidth: 48, maximumWidth: 48 })
+                ftApi.setSize({ width: 48 })
+              } else {
+                ftApi.setConstraints({ minimumWidth: 180, maximumWidth: Infinity })
+                ftApi.setSize({ width: panelSizesRef.current.filetree })
+              }
+            }
+          }
+          if (tGroup) {
+            const tApi = dockApi.getGroup(tGroup.id)?.api
+            if (tApi) {
+              if (collapsed.terminal) {
+                tApi.setConstraints({ minimumWidth: 48, maximumWidth: 48 })
+                tApi.setSize({ width: 48 })
+              } else {
+                tApi.setConstraints({ minimumWidth: 250, maximumWidth: Infinity })
+                tApi.setSize({ width: panelSizesRef.current.terminal })
+              }
+            }
+          }
+          if (wGroup) {
+            const wApi = dockApi.getGroup(wGroup.id)?.api
+            if (wApi) {
+              if (collapsed.workflows) {
+                wApi.setConstraints({ minimumHeight: 36, maximumHeight: 36 })
+                wApi.setSize({ height: 36 })
+              } else {
+                wApi.setConstraints({ minimumHeight: 100, maximumHeight: Infinity })
+                wApi.setSize({ height: panelSizesRef.current.workflows })
+              }
+            }
+          }
+
+          const shellPanel = dockApi.getPanel('shell')
+          const shellGroup = shellPanel?.group
+          if (shellGroup && shellGroup !== wGroup) {
+            const sApi = dockApi.getGroup(shellGroup.id)?.api
+            if (sApi) {
+              if (collapsed.workflows) {
+                sApi.setConstraints({ minimumHeight: 36, maximumHeight: 36 })
+                sApi.setSize({ height: 36 })
+              } else {
+                sApi.setConstraints({ minimumHeight: 100, maximumHeight: Infinity })
+                sApi.setSize({ height: panelSizesRef.current.workflows })
+              }
+            }
+          }
+
+          collapsedEffectRan.current = true
+        })
+      }
+      return
+    }
     if (savedLayout && typeof dockApi.fromJSON === 'function') {
       // Since onReady skips panel creation when a saved layout exists,
       // we can directly call fromJSON without clearing first
@@ -1568,7 +1519,7 @@ export default function App() {
           // Reset the collapsed effect flag so it doesn't override on first toggle
           collapsedEffectRan.current = true
         })
-      } catch (error) {
+      } catch {
         layoutRestored.current = false
       }
     }
@@ -1608,9 +1559,6 @@ export default function App() {
         onOpenFile: openFile,
         onOpenFileToSide: openFileToSide,
         onOpenDiff: openDiff,
-        onOpenImageEditor: openImageEditor,
-        onOpenVideoEditor: openVideoEditor,
-        onOpenMediaFile: openMediaFile,
         projectRoot,
         activeFile,
         activeDiffFile,
@@ -1618,7 +1566,7 @@ export default function App() {
         onToggleCollapse: toggleFiletree,
       })
     }
-  }, [dockApi, openFile, openFileToSide, openDiff, openImageEditor, openVideoEditor, openMediaFile, projectRoot, activeFile, activeDiffFile, collapsed.filetree, toggleFiletree])
+  }, [dockApi, openFile, openFileToSide, openDiff, projectRoot, activeFile, activeDiffFile, collapsed.filetree, toggleFiletree])
 
   // Helper to focus a review panel
   const focusReviewPanel = useCallback(
@@ -1684,6 +1632,72 @@ export default function App() {
     [dockApi]
   )
 
+  // Open a workflow detail panel
+  const openWorkflowDetail = useCallback(
+    (workflowId) => {
+      if (!dockApi) return
+
+      const panelId = `workflow-detail-${workflowId}`
+      const existingPanel = dockApi.getPanel(panelId)
+
+      if (existingPanel) {
+        existingPanel.api.setActive()
+        return
+      }
+
+      // Add in center area
+      const position = centerGroupRef.current
+        ? { referenceGroup: centerGroupRef.current }
+        : { direction: 'right', referencePanel: 'filetree' }
+
+      // Close empty panel if present
+      const emptyPanel = dockApi.getPanel('empty-center')
+
+      const panel = dockApi.addPanel({
+        id: panelId,
+        component: 'workflowDetail',
+        title: `Workflow: ${workflowId.slice(0, 8)}`,
+        position,
+        params: {
+          workflowId,
+          onClose: () => {
+            const p = dockApi.getPanel(panelId)
+            if (p) p.api.close()
+          },
+          onAttach: openWorkflowTerminal,
+          onCancel: async (wfId) => {
+            try {
+              await fetch(apiUrl(`/api/workflows/${wfId}/cancel`), { method: 'POST' })
+            } catch (err) {
+              console.error('Failed to cancel workflow:', err)
+            }
+          },
+          onRetry: async (wfId) => {
+            try {
+              await fetch(apiUrl(`/api/workflows/${wfId}/retry`), { method: 'POST' })
+            } catch (err) {
+              console.error('Failed to retry workflow:', err)
+            }
+          },
+        },
+      })
+
+      if (emptyPanel) {
+        emptyPanel.api.close()
+      }
+
+      if (panel?.group) {
+        panel.group.header.hidden = false
+        centerGroupRef.current = panel.group
+        panel.group.api.setConstraints({
+          minimumHeight: 200,
+          maximumHeight: Infinity,
+        })
+      }
+    },
+    [dockApi, openWorkflowTerminal]
+  )
+
   // Update workflows panel params
   // projectRoot dependency ensures this runs after layout restoration
   useEffect(() => {
@@ -1694,6 +1708,7 @@ export default function App() {
         collapsed: collapsed.workflows,
         onToggleCollapse: toggleWorkflows,
         onAttachWorkflow: openWorkflowTerminal,
+        onOpenWorkflowDetail: openWorkflowDetail,
       })
     }
     // Also update shell panel with collapse state for the tab button
@@ -1704,7 +1719,7 @@ export default function App() {
         onToggleCollapse: toggleWorkflows,
       })
     }
-  }, [dockApi, collapsed.workflows, toggleWorkflows, openWorkflowTerminal, projectRoot])
+  }, [dockApi, collapsed.workflows, toggleWorkflows, openWorkflowTerminal, openWorkflowDetail, projectRoot])
 
   // Restore saved tabs when dockApi and projectRoot become available
   const hasRestoredTabs = useRef(false)
@@ -1790,17 +1805,17 @@ export default function App() {
       }
 
       openFileAtPosition(path, dropPosition)
-    } catch (e) {
+    } catch {
       // Ignore parse errors
     }
   }
 
-  // POC mode for testing diff highlighting
-  if (POC_MODE === 'diff') {
-    return <DiffHighlightPOC />
-  }
-  if (POC_MODE === 'tiptap-diff') {
-    return <TiptapDiffPOC />
+  if (POC_MODE === 'chat') {
+    return (
+      <ThemeProvider>
+        <ClaudeStreamChat />
+      </ThemeProvider>
+    )
   }
 
   // Build className with collapsed state flags for CSS targeting
@@ -1812,14 +1827,34 @@ export default function App() {
   ].filter(Boolean).join(' ')
 
   return (
-    <DockviewReact
-      className={dockviewClassName}
-      components={components}
-      tabComponents={tabComponents}
-      rightHeaderActionsComponent={RightHeaderActions}
-      onReady={onReady}
-      showDndOverlay={showDndOverlay}
-      onDidDrop={onDidDrop}
-    />
+    <ThemeProvider>
+      <div className="app-container">
+        <header className="app-header">
+          <div className="app-header-brand">
+            <div className="app-header-logo">K</div>
+            <span className="app-header-title">Kurt</span>
+          </div>
+          <div className="app-header-controls">
+            <ThemeToggle />
+            {userContext?.is_cloud_mode && userContext?.user && (
+              <UserMenu
+                email={userContext.user.email}
+                workspaceName={userContext.workspace?.name || 'Workspace'}
+                workspaceId={userContext.workspace?.id || ''}
+              />
+            )}
+          </div>
+        </header>
+        <DockviewReact
+          className={dockviewClassName}
+          components={components}
+          tabComponents={tabComponents}
+          rightHeaderActionsComponent={RightHeaderActions}
+          onReady={onReady}
+          showDndOverlay={showDndOverlay}
+          onDidDrop={onDidDrop}
+        />
+      </div>
+    </ThemeProvider>
   )
 }

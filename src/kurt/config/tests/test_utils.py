@@ -1,6 +1,5 @@
 """Tests for config utilities (utils.py)."""
 
-from kurt.config.base import get_config_file_path
 from kurt.config.utils import (
     config_exists_for_prefix,
     get_available_keys,
@@ -15,10 +14,8 @@ from kurt.config.utils import (
 class TestLoadPrefixedConfig:
     """Test load_prefixed_config function."""
 
-    def test_load_prefixed_config_cms_2_levels(self, tmp_project):
+    def test_load_prefixed_config_cms_2_levels(self, config_file):
         """Test loading CMS config with 2 levels."""
-        config_file = get_config_file_path()
-
         with open(config_file, "a") as f:
             f.write('CMS_SANITY_PROD_PROJECT_ID="abc123"\n')
             f.write('CMS_SANITY_PROD_TOKEN="sk_prod"\n')
@@ -33,10 +30,8 @@ class TestLoadPrefixedConfig:
         assert "staging" in result["sanity"]
         assert result["sanity"]["staging"]["project_id"] == "xyz789"
 
-    def test_load_prefixed_config_analytics_1_level(self, tmp_project):
+    def test_load_prefixed_config_analytics_1_level(self, config_file):
         """Test loading Analytics config with 1 level."""
-        config_file = get_config_file_path()
-
         with open(config_file, "a") as f:
             f.write('ANALYTICS_POSTHOG_PROJECT_ID="phc_123"\n')
             f.write('ANALYTICS_POSTHOG_API_KEY="phx_456"\n')
@@ -55,10 +50,8 @@ class TestLoadPrefixedConfig:
         result = load_prefixed_config("NONEXISTENT", levels=2)
         assert result == {}
 
-    def test_load_prefixed_config_json_values(self, tmp_project):
+    def test_load_prefixed_config_json_values(self, config_file):
         """Test loading config with JSON-encoded values."""
-        config_file = get_config_file_path()
-
         with open(config_file, "a") as f:
             f.write('CMS_SANITY_PROD_MAPPINGS={"page": "document", "post": "article"}\n')
 

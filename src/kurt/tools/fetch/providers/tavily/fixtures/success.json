@@ -1,0 +1,12 @@
+{
+  "content": "# Tavily Extracted Content\n\nHigh-quality content extracted via the Tavily API.\n\n## Key Points\n\n- Point one about the topic\n- Point two with additional detail\n- Point three summarizing findings",
+  "content_html": null,
+  "metadata": {
+    "title": "Tavily Extracted Content",
+    "url": "https://example.com/article",
+    "images": ["https://example.com/image1.jpg"],
+    "extract_depth": "full"
+  },
+  "success": true,
+  "error": null
+}

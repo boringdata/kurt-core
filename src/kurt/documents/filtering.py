@@ -16,8 +16,8 @@ from sqlalchemy import or_
 from sqlalchemy.sql import Select
 from sqlmodel import select
 
-from kurt.workflows.fetch.models import FetchDocument, FetchStatus
-from kurt.workflows.map.models import MapDocument, MapStatus
+from kurt.tools.fetch.models import FetchDocument, FetchStatus
+from kurt.tools.map.models import MapDocument, MapStatus
 
 if TYPE_CHECKING:
     from kurt.documents.models import DocumentView
@@ -116,53 +116,6 @@ def build_map_query(filters: DocumentFilters) -> Select:
     return query
 
 
-def build_fetch_query(filters: DocumentFilters) -> Select:
-    """Build SQLModel query for FetchDocument table."""
-    query = select(FetchDocument)
-
-    if filters.ids:
-        query = query.where(FetchDocument.document_id.in_(filters.ids))
-
-    if filters.fetch_status:
-        query = query.where(FetchDocument.status == filters.fetch_status)
-
-    if filters.fetch_engine:
-        query = query.where(FetchDocument.fetch_engine == filters.fetch_engine)
-
-    if filters.has_content is True:
-        query = query.where(FetchDocument.content_length > 0)
-    elif filters.has_content is False:
-        query = query.where(FetchDocument.content_length == 0)
-
-    if filters.min_content_length:
-        query = query.where(FetchDocument.content_length >= filters.min_content_length)
-
-    if filters.has_error is True:
-        query = query.where(FetchDocument.error.isnot(None))
-    elif filters.has_error is False:
-        query = query.where(FetchDocument.error.is_(None))
-
-    if filters.user_id:
-        query = query.where(FetchDocument.user_id == filters.user_id)
-
-    if filters.workspace_id:
-        query = query.where(FetchDocument.workspace_id == filters.workspace_id)
-
-    if filters.created_after:
-        query = query.where(FetchDocument.created_at >= filters.created_after)
-
-    if filters.created_before:
-        query = query.where(FetchDocument.created_at <= filters.created_before)
-
-    if filters.offset:
-        query = query.offset(filters.offset)
-
-    if filters.limit:
-        query = query.limit(filters.limit)
-
-    return query
-
-
 def build_joined_query(filters: DocumentFilters) -> Select:
     """Build query joining map and fetch tables for full lifecycle view."""
     query = select(MapDocument, FetchDocument).outerjoin(
@@ -240,6 +193,21 @@ def build_joined_query(filters: DocumentFilters) -> Select:
 
     if filters.created_before:
         query = query.where(MapDocument.created_at <= filters.created_before)
+
+    # Ordering
+    if filters.order_by:
+        # Map field names to actual columns
+        order_columns = {
+            "created_at": MapDocument.created_at,
+            "source_url": MapDocument.source_url,
+            "content_length": FetchDocument.content_length,
+        }
+        order_col = order_columns.get(filters.order_by)
+        if order_col is not None:
+            if filters.order_desc:
+                query = query.order_by(order_col.desc())
+            else:
+                query = query.order_by(order_col.asc())
 
     # Pagination
     if filters.offset:

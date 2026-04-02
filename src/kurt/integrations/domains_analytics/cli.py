@@ -11,7 +11,7 @@ from rich.console import Console
 from rich.table import Table
 
 from kurt.admin.telemetry.decorators import track_command
-from kurt.cli.options import format_option, limit_option
+from kurt.tools.core import format_option, limit_option
 
 console = Console()
 
@@ -24,7 +24,6 @@ def analytics_group():
     \b
     Commands:
       onboard   Configure analytics credentials
-      sync      Sync analytics data for a domain
       list      List analytics-enabled domains
       query     Query analytics data
     """
@@ -110,11 +109,15 @@ def onboard_cmd(domain: str, platform: str, sync_now: bool):
     # Register domain in database
     console.print("\n[dim]Registering domain...[/dim]")
 
+    from sqlmodel import select
+
     from kurt.db import managed_session
     from kurt.db.models import AnalyticsDomain
 
     with managed_session() as session:
-        existing = session.query(AnalyticsDomain).filter(AnalyticsDomain.domain == domain).first()
+        existing = session.exec(
+            select(AnalyticsDomain).where(AnalyticsDomain.domain == domain)
+        ).first()
         if existing:
             console.print(f"[yellow]Domain already registered: {domain}[/yellow]")
             if not click.confirm("Update registration?", default=False):
@@ -135,6 +138,8 @@ def onboard_cmd(domain: str, platform: str, sync_now: bool):
 
 def _run_sync(domain: str, platform: str = None, period: int = 60):
     """Internal helper to sync analytics for a domain."""
+    from sqlmodel import select
+
     from kurt.db import managed_session
     from kurt.db.models import AnalyticsDomain
 
@@ -142,7 +147,9 @@ def _run_sync(domain: str, platform: str = None, period: int = 60):
     from .config import get_platform_config, platform_configured
 
     with managed_session() as session:
-        domain_obj = session.query(AnalyticsDomain).filter(AnalyticsDomain.domain == domain).first()
+        domain_obj = session.exec(
+            select(AnalyticsDomain).where(AnalyticsDomain.domain == domain)
+        ).first()
         if not domain_obj:
             console.print(f"[red]Domain not configured: {domain}[/red]")
             return
@@ -177,44 +184,6 @@ def _run_sync(domain: str, platform: str = None, period: int = 60):
             raise
 
 
-@analytics_group.command("sync")
-@click.argument("domain", required=False)
-@click.option("--all", "sync_all", is_flag=True, help="Sync all configured domains")
-@click.option("--period", type=int, default=60, help="Days to sync (default: 60)")
-@track_command
-def sync_cmd(domain: str, sync_all: bool, period: int):
-    """
-    Sync analytics data for a domain.
-
-    \b
-    Examples:
-        kurt integrations analytics sync docs.company.com
-        kurt integrations analytics sync --all
-        kurt integrations analytics sync docs.company.com --period 90
-    """
-    from kurt.db import managed_session
-    from kurt.db.models import AnalyticsDomain
-
-    if sync_all:
-        with managed_session() as session:
-            domains = session.query(AnalyticsDomain).all()
-            if not domains:
-                console.print("[yellow]No domains configured[/yellow]")
-                return
-
-            for domain_obj in domains:
-                try:
-                    console.print()
-                    _run_sync(domain_obj.domain, period=period)
-                except Exception:
-                    continue
-    elif domain:
-        _run_sync(domain, period=period)
-    else:
-        console.print("[red]Error: Specify --all or provide a domain[/red]")
-        raise click.Abort()
-
-
 @analytics_group.command("list")
 @format_option
 @track_command
@@ -227,11 +196,13 @@ def list_cmd(output_format: str):
         kurt integrations analytics list
         kurt integrations analytics list --format json
     """
+    from sqlmodel import select
+
     from kurt.db import managed_session
     from kurt.db.models import AnalyticsDomain
 
     with managed_session() as session:
-        domains = session.query(AnalyticsDomain).all()
+        domains = session.exec(select(AnalyticsDomain)).all()
 
         if not domains:
             console.print("[yellow]No domains configured[/yellow]")
@@ -279,6 +250,61 @@ def list_cmd(output_format: str):
                 console.print()
 
 
+@analytics_group.command("help")
+@track_command
+def help_cmd():
+    """
+    Show analytics integration setup instructions.
+
+    Displays detailed instructions for configuring and using
+    domain analytics integrations (PostHog, GA4, Plausible).
+
+    Example:
+        kurt connect analytics help
+    """
+    content = """
+===============================================================
+ANALYTICS INTEGRATION
+===============================================================
+
+Kurt can analyze web analytics to assist with project planning and
+content performance analysis (currently supports PostHog).
+
+===============================================================
+SETUP
+===============================================================
+
+CHECK EXISTING:
+kurt connect analytics list
+
+CONFIGURE NEW:
+kurt connect analytics onboard [domain] --platform {platform}
+
+===============================================================
+USAGE
+===============================================================
+
+SYNC DATA:
+kurt connect analytics sync [domain]
+
+QUERY ANALYTICS:
+kurt connect analytics query [domain]
+
+  - Filter by traffic, trends, URL patterns
+  - Find high-traffic pages not yet indexed:
+    kurt connect analytics query [domain] --missing-docs
+
+QUERY WITH DOCUMENTS:
+kurt docs list --with-analytics
+
+  - Documents enriched with analytics data
+  - Useful for prioritization and performance analysis
+
+===============================================================
+"""
+    click.echo(content.strip())
+
+
 @analytics_group.command("query")
 @click.argument("domain")
 @click.option("--url-contains", help="Filter by URL pattern")
@@ -316,11 +342,15 @@ def query_cmd(
         kurt integrations analytics query docs.company.com --trend increasing
         kurt integrations analytics query docs.company.com --url-contains "/docs/"
     """
+    from sqlmodel import func, select
+
     from kurt.db import managed_session
     from kurt.db.models import AnalyticsDomain, PageAnalytics
 
     with managed_session() as session:
-        domain_obj = session.query(AnalyticsDomain).filter(AnalyticsDomain.domain == domain).first()
+        domain_obj = session.exec(
+            select(AnalyticsDomain).where(AnalyticsDomain.domain == domain)
+        ).first()
         if not domain_obj:
             console.print(f"[red]Domain not configured: {domain}[/red]")
             raise click.Abort()
@@ -331,16 +361,16 @@ def query_cmd(
             return
 
         # Build query
-        query = session.query(PageAnalytics).filter(PageAnalytics.domain == domain)
+        query = select(PageAnalytics).where(PageAnalytics.domain == domain)
 
         if url_contains:
-            query = query.filter(PageAnalytics.url.ilike(f"%{url_contains}%"))
+            query = query.where(PageAnalytics.url.ilike(f"%{url_contains}%"))
         if min_pageviews is not None:
-            query = query.filter(PageAnalytics.pageviews_30d >= min_pageviews)
+            query = query.where(PageAnalytics.pageviews_30d >= min_pageviews)
         if max_pageviews is not None:
-            query = query.filter(PageAnalytics.pageviews_30d <= max_pageviews)
+            query = query.where(PageAnalytics.pageviews_30d <= max_pageviews)
         if trend:
-            query = query.filter(PageAnalytics.pageviews_trend == trend.lower())
+            query = query.where(PageAnalytics.pageviews_trend == trend.lower())
 
         # Order
         if order_by == "pageviews_30d":
@@ -350,11 +380,25 @@ def query_cmd(
         elif order_by == "trend_percentage":
             query = query.order_by(PageAnalytics.trend_percentage.desc().nullslast())
 
-        total_count = query.count()
+        # Count total
+        count_query = (
+            select(func.count()).select_from(PageAnalytics).where(PageAnalytics.domain == domain)
+        )
+        if url_contains:
+            count_query = count_query.where(PageAnalytics.url.ilike(f"%{url_contains}%"))
+        if min_pageviews is not None:
+            count_query = count_query.where(PageAnalytics.pageviews_30d >= min_pageviews)
+        if max_pageviews is not None:
+            count_query = count_query.where(PageAnalytics.pageviews_30d <= max_pageviews)
+        if trend:
+            count_query = count_query.where(PageAnalytics.pageviews_trend == trend.lower())
+
+        total_count = session.exec(count_query).one()
+
         if limit:
             query = query.limit(limit)
 
-        pages = query.all()
+        pages = session.exec(query).all()
 
         if not pages:
             console.print("[yellow]No pages found matching filters[/yellow]")

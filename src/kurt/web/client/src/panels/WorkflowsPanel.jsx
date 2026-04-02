@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react'
+import { ChevronDown, ChevronUp } from 'lucide-react'
 import WorkflowList from '../components/WorkflowList'
 
 export default function WorkflowsPanel({ params }) {
@@ -6,6 +6,7 @@ export default function WorkflowsPanel({ params }) {
     collapsed,
     onToggleCollapse,
     onAttachWorkflow,
+    onOpenWorkflowDetail,
   } = params || {}
 
   if (collapsed) {
@@ -18,9 +19,7 @@ export default function WorkflowsPanel({ params }) {
           title="Expand workflows panel"
           aria-label="Expand workflows panel"
         >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M3.5 6L8 10.5L12.5 6H3.5Z" />
-          </svg>
+          <ChevronDown size={16} />
         </button>
         <span className="workflows-collapsed-label">Workflows</span>
       </div>
@@ -37,9 +36,7 @@ export default function WorkflowsPanel({ params }) {
           title="Collapse workflows panel"
           aria-label="Collapse workflows panel"
         >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M3.5 10L8 5.5L12.5 10H3.5Z" />
-          </svg>
+          <ChevronUp size={16} />
         </button>
         <div className="workflows-title">
           <span className="status-dot" />
@@ -48,7 +45,10 @@ export default function WorkflowsPanel({ params }) {
       </div>
 
       <div className="workflows-content">
-        <WorkflowList onAttachWorkflow={onAttachWorkflow} />
+        <WorkflowList
+          onAttachWorkflow={onAttachWorkflow}
+          onOpenWorkflowDetail={onOpenWorkflowDetail}
+        />
       </div>
     </div>
   )

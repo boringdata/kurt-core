@@ -1,0 +1,14 @@
+{
+  "urls": [
+    "https://example.com/entries/2026/01/new-year",
+    "https://example.com/entries/2025/12/year-review"
+  ],
+  "count": 2,
+  "errors": [],
+  "metadata": {
+    "source": "https://example.com/atom.xml",
+    "format": "atom",
+    "feed_title": "Example Atom Feed",
+    "url_count": 2
+  }
+}

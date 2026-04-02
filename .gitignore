@@ -1,13 +1,13 @@
 # Python
 
-**pycache**/  
-\*.py\[cod\]  
-\*$py.class  
-\*.so  
-.Python  
-build/  
-develop-eggs/  
-dist/  
+**pycache**/
+\*.py\[cod\]
+\*$py.class
+\*.so
+.Python
+build/
+develop-eggs/
+dist/
 downloads/  
 eggs/  
 .eggs/  
@@ -28,13 +28,15 @@ venv/
 ENV/  
 env/
 .env
+*.env.local
 
 # IDEs
 
-.vscode/  
-.idea/  
-\*.swp  
-\*.swo  
+.vscode/
+.idea/
+.claude/
+\*.swp
+\*.swo
 \*~
 
 # Testing
@@ -82,7 +84,7 @@ yarn-error.log\*
 kurt-demo/
 kurt-demo2/
 
-# Agent workflow definitions (user-specific, top-level only)
+# Agent workflow definitions (user-specific, root directory only)
 /workflows/
 
 # Reports (local demo reports)
@@ -91,3 +93,39 @@ reports/
 # Specs (local workflow specs)
 specs/
 claude-webview-poc/
+.vercel
+test.db
+
+# BD (Beads) workflow tool
+.beads/
+
+# NTM runtime data (logs, pids)
+.ntm/
+
+vscode-source/**
+
+# Temporary/test files
+perm-test.txt
+reverse_vscode.md
+excalidraw.log
+
+content/
+.dolt/noms/
+
+# Project-specific files (not code)
+.dolt/
+.doltcfg/
+/config.yaml
+kurt.toml
+sources/
+test-feature/
+
+# bv (beads viewer) local config and caches
+.bv/
+kurt-core-45f/
+# bd worktree
+kurt-core-1uhd/
+
+# Agent evidence (not committed to git)
+.agent-evidence/
+.evidence/
