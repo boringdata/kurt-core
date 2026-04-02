@@ -168,7 +168,7 @@ class MediaEditService:
 
         input_p = Path(input_path)
         if suffix:
-            return str(input_p.parent / f"{input_p.stem}_edited{suffix}")
+            return str(input_p.parent / f"{input_p.stem}{suffix}")
         return str(input_p.parent / f"{input_p.stem}_edited{input_p.suffix}")
 
     # -------------------------------------------------------------------------
