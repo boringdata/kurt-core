@@ -305,7 +305,7 @@ def generate_video(
         Path(output).write_bytes(response.content)
         console.print(f"[green]Saved to:[/green] {output}")
     else:
-        console.print(f"[green]Video generated[/green]")
+        console.print("[green]Video generated[/green]")
         console.print(f"  URL: {result.url}")
 
     console.print(f"[dim]Provider: {result.provider} | Model: {result.model}[/dim]")
