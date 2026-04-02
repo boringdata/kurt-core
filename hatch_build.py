@@ -53,17 +53,21 @@ class FrontendBuildHook(BuildHookInterface):
 
         self.app.display_info("Building frontend client...")
 
+        # Prefer the lockfile for reproducible CI/frontend packaging.
+        install_cmd = ["npm", "ci"] if (client_dir / "package-lock.json").exists() else ["npm", "install"]
+
         # Install dependencies
         self.app.display_info("Installing npm dependencies...")
         result = subprocess.run(
-            ["npm", "install"],
+            install_cmd,
             cwd=client_dir,
             capture_output=True,
             text=True,
         )
         if result.returncode != 0:
-            self.app.display_error(f"npm install failed: {result.stderr}")
-            raise RuntimeError(f"npm install failed: {result.stderr}")
+            cmd_name = " ".join(install_cmd)
+            self.app.display_error(f"{cmd_name} failed: {result.stderr}")
+            raise RuntimeError(f"{cmd_name} failed: {result.stderr}")
 
         # Build the frontend
         self.app.display_info("Running npm build...")
