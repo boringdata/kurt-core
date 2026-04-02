@@ -265,9 +265,9 @@ def get_definition_for_workflow(workflow_id: str) -> Optional[dict]:
         Workflow definition as dict, or None if not found.
     """
     try:
-        from kurt.db.utils import get_dolt_db
-
         import json
+
+        from kurt.db.utils import get_dolt_db
 
         db = get_dolt_db(return_none_if_missing=True)
         if not db:

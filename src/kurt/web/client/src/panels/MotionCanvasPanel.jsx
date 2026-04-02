@@ -78,7 +78,7 @@ export default function MotionCanvasPanel({ params }) {
       videoRef.current.load()
     }
     if (iframeRef.current) {
-      iframeRef.current.src = iframeRef.current.src
+      iframeRef.current.contentWindow?.location.reload()
     }
   }
 
