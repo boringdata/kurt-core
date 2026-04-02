@@ -1,4 +1,4 @@
-"""Workflows for kurt - agent (.md) and YAML (.yaml) based pipelines."""
+"""Workflow registry exports for branches without YAML workflow modules."""
 
 from .registry import (
     discover_yaml_workflows,
@@ -13,18 +13,17 @@ from .registry import (
     list_yaml_workflows,
     validate_all_workflows,
 )
-from .yaml_executor import execute_yaml_workflow, run_yaml_definition
-from .yaml_parser import ParsedYamlWorkflow, parse_yaml_workflow, validate_yaml_workflow
-from .yaml_tables import (
-    clear_generated_models,
-    generate_sqlmodel_class,
-    generate_workflow_tables,
-    get_generated_model,
-    list_generated_models,
-)
+
+DBOS_AVAILABLE = False
+
+
+def get_dbos():
+    """Return the DBOS handle when available."""
+    raise RuntimeError("DBOS is not available on this branch")
 
 __all__ = [
-    # Registry
+    "DBOS_AVAILABLE",
+    "get_dbos",
     "get_workflows_dir",
     "list_agent_workflows",
     "get_agent_workflow",
@@ -36,17 +35,4 @@ __all__ = [
     "validate_all_workflows",
     "ensure_workflows_dir",
     "discover_yaml_workflows",
-    # YAML Parser
-    "ParsedYamlWorkflow",
-    "parse_yaml_workflow",
-    "validate_yaml_workflow",
-    # YAML Tables
-    "generate_sqlmodel_class",
-    "generate_workflow_tables",
-    "get_generated_model",
-    "list_generated_models",
-    "clear_generated_models",
-    # YAML Executor
-    "execute_yaml_workflow",
-    "run_yaml_definition",
 ]
