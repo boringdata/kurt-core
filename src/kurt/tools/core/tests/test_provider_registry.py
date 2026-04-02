@@ -810,7 +810,7 @@ class TestBuiltinProviderDiscovery:
 
         providers = registry.list_providers("fetch")
         names = sorted(p["name"] for p in providers)
-        assert names == ["apify", "firecrawl", "httpx", "tavily", "trafilatura", "twitterapi"]
+        assert names == ["apify", "composio", "firecrawl", "httpx", "tavily", "trafilatura", "twitterapi"]
 
     def test_discovers_map_providers(self, monkeypatch):
         """Discovers all built-in map providers."""
@@ -855,6 +855,13 @@ class TestBuiltinProviderDiscovery:
         assert "*x.com/*" in providers["twitterapi"]["url_patterns"]
         assert providers["twitterapi"]["requires_env"] == ["TWITTERAPI_API_KEY"]
 
+        # composio - explicit-only Twitter/X provider
+        assert providers["composio"]["url_patterns"] == []
+        assert providers["composio"]["requires_env"] == [
+            "COMPOSIO_API_KEY",
+            "COMPOSIO_CONNECTION_ID",
+        ]
+
     def test_map_provider_metadata(self, monkeypatch):
         """Built-in map providers have correct metadata."""
         monkeypatch.setenv("KURT_PROJECT_ROOT", "/nonexistent")
@@ -881,7 +888,7 @@ class TestBuiltinProviderDiscovery:
         assert providers["cms"]["url_patterns"] == []
 
     def test_url_matching_twitter_prefers_twitterapi(self, monkeypatch):
-        """Twitter/X URLs must resolve to twitterapi, not apify (bd-21im.2)."""
+        """Twitter/X URLs resolve to twitterapi by default; composio is explicit-only."""
         monkeypatch.setenv("KURT_PROJECT_ROOT", "/nonexistent")
         monkeypatch.setenv("HOME", "/nonexistent")
 
@@ -940,7 +947,7 @@ class TestBuiltinProviderDiscovery:
 
         assert "fetch" in tools
         assert "map" in tools
-        assert len(tools["fetch"]) == 6
+        assert len(tools["fetch"]) == 7
         assert len(tools["map"]) == 6
 
     def test_validate_builtin_provider_missing_env(self, monkeypatch):

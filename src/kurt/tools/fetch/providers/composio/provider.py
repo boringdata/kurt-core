@@ -74,7 +74,9 @@ class ComposioFetcher(BaseFetcher):
 
     name = "composio"
     version = "1.0.0"
-    url_patterns = ["*twitter.com/*", "*x.com/*"]
+    # Keep Composio explicit-only for now so adding a second Twitter provider
+    # does not change existing auto-selection behavior or require its creds.
+    url_patterns: list[str] = []
     requires_env = ["COMPOSIO_API_KEY", "COMPOSIO_CONNECTION_ID"]
 
     ConfigModel = ComposioProviderConfig

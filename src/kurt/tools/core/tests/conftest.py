@@ -41,6 +41,7 @@ def mock_fetch_registry(clean_registry):
     ``get_provider()`` returns a fresh mock on each call.
     """
     from kurt.tools.fetch.providers.apify.mock import MockApifyFetcher
+    from kurt.tools.fetch.providers.composio.mock import MockComposioFetcher
     from kurt.tools.fetch.providers.firecrawl.mock import MockFirecrawlFetcher
     from kurt.tools.fetch.providers.httpx.mock import MockHttpxFetcher
     from kurt.tools.fetch.providers.tavily.mock import MockTavilyFetcher
@@ -54,6 +55,7 @@ def mock_fetch_registry(clean_registry):
         "firecrawl": MockFirecrawlFetcher,
         "apify": MockApifyFetcher,
         "twitterapi": MockTwitterApiFetcher,
+        "composio": MockComposioFetcher,
     }
     clean_registry._provider_meta["fetch"] = {
         name: {
@@ -111,6 +113,7 @@ def mock_map_registry(clean_registry):
 def mock_full_registry(clean_registry):
     """Registry pre-loaded with ALL mock providers (fetch + map)."""
     from kurt.tools.fetch.providers.apify.mock import MockApifyFetcher as MockApifyFetchProvider
+    from kurt.tools.fetch.providers.composio.mock import MockComposioFetcher
     from kurt.tools.fetch.providers.firecrawl.mock import MockFirecrawlFetcher
     from kurt.tools.fetch.providers.httpx.mock import MockHttpxFetcher
     from kurt.tools.fetch.providers.tavily.mock import MockTavilyFetcher
@@ -130,6 +133,7 @@ def mock_full_registry(clean_registry):
         "firecrawl": MockFirecrawlFetcher,
         "apify": MockApifyFetchProvider,
         "twitterapi": MockTwitterApiFetcher,
+        "composio": MockComposioFetcher,
     }
     map_providers = {
         "sitemap": MockSitemapMapper,
@@ -173,6 +177,8 @@ def clean_env(monkeypatch):
         "FIRECRAWL_API_KEY",
         "APIFY_API_KEY",
         "TWITTERAPI_API_KEY",
+        "COMPOSIO_API_KEY",
+        "COMPOSIO_CONNECTION_ID",
         "NOTION_TOKEN",
         "SANITY_TOKEN",
     ]:
@@ -186,6 +192,8 @@ def all_provider_env(monkeypatch):
     monkeypatch.setenv("FIRECRAWL_API_KEY", "test-firecrawl-key")
     monkeypatch.setenv("APIFY_API_KEY", "test-apify-key")
     monkeypatch.setenv("TWITTERAPI_API_KEY", "test-twitterapi-key")
+    monkeypatch.setenv("COMPOSIO_API_KEY", "test-composio-key")
+    monkeypatch.setenv("COMPOSIO_CONNECTION_ID", "test-composio-connection")
 
 
 # ============================================================================

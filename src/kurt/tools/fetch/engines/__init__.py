@@ -10,6 +10,7 @@ Available engines:
 - FirecrawlFetcher: Firecrawl API-based content extraction (handles JS rendering)
 - ApifyFetcher: Apify-based social media content extraction
 - TwitterApiFetcher: TwitterAPI.io-based Twitter/X content extraction (pay-as-you-go)
+- ComposioFetcher: Composio-based Twitter/X content extraction
 
 Usage:
     from kurt.tools.fetch.engines import TrafilaturaFetcher
@@ -32,6 +33,7 @@ from kurt.tools.fetch.engines.tavily import TavilyEngine, TavilyFetcher
 # Primary names are *Fetcher, *Engine aliases exist for backward compatibility
 from kurt.tools.fetch.engines.trafilatura import TrafilaturaEngine, TrafilaturaFetcher
 from kurt.tools.fetch.engines.twitterapi import TwitterApiEngine, TwitterApiFetcher
+from kurt.tools.fetch.providers.composio.provider import ComposioFetcher
 
 
 class EngineRegistry:
@@ -95,6 +97,7 @@ EngineRegistry.register("tavily", TavilyFetcher)
 EngineRegistry.register("firecrawl", FirecrawlFetcher)
 EngineRegistry.register("apify", ApifyFetcher)
 EngineRegistry.register("twitterapi", TwitterApiFetcher)
+EngineRegistry.register("composio", ComposioFetcher)
 
 
 __all__ = [
@@ -107,6 +110,7 @@ __all__ = [
     "FirecrawlFetcher",
     "ApifyFetcher",
     "TwitterApiFetcher",
+    "ComposioFetcher",
     # Backward compatibility aliases (*Engine names)
     "TrafilaturaEngine",
     "HttpxEngine",

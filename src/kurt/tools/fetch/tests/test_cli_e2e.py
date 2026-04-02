@@ -49,7 +49,7 @@ class TestFetchListEngines:
         assert_cli_success(result)
 
         # Should list all engines
-        engines = ["trafilatura", "httpx", "firecrawl", "tavily", "apify", "twitterapi"]
+        engines = ["trafilatura", "httpx", "firecrawl", "tavily", "apify", "twitterapi", "composio"]
         for engine in engines:
             assert_output_contains(result, engine)
 
@@ -60,7 +60,7 @@ class TestFetchListEngines:
 
         data = assert_json_output(result)
         assert "engines" in data
-        assert len(data["engines"]) >= 6
+        assert len(data["engines"]) >= 7
 
         # Each engine should have required fields
         for engine_info in data["engines"]:
@@ -79,6 +79,7 @@ class TestFetchListEngines:
         engine_map = {e["engine"]: e for e in data["engines"]}
         assert engine_map["trafilatura"]["status"] == "ready"
         assert engine_map["httpx"]["status"] == "ready"
+        assert "composio" in engine_map
 
 
 class TestFetchTrafilaturaEngine:
@@ -614,6 +615,72 @@ class TestFetchTwitterApiEngine:
             data = assert_json_output(result)
             engine_map = {e["engine"]: e for e in data["engines"]}
             assert engine_map["twitterapi"]["status"] == "missing"
+
+
+class TestFetchComposioEngine:
+    """E2E tests for composio engine."""
+
+    def test_fetch_composio_engine_option(
+        self, cli_runner: CliRunner, tmp_project: Path
+    ):
+        """Verify --engine composio is accepted and stores content."""
+        from kurt.db import managed_session
+        from kurt.tools.map.models import MapDocument, MapStatus
+
+        with managed_session() as session:
+            doc = MapDocument(
+                document_id="test-composio-1",
+                source_url="https://x.com/openai/status/1234567890",
+                source_type="url",
+                discovery_method="test",
+                status=MapStatus.SUCCESS,
+            )
+            session.add(doc)
+            session.commit()
+
+        from kurt.tools.fetch.core.base import FetchResult
+
+        mock_result = FetchResult(
+            content="# Tweet by OpenAI\n\nHello from Composio.",
+            metadata={"engine": "composio", "platform": "twitter"},
+            success=True,
+        )
+
+        with patch(
+            "kurt.tools.fetch.providers.composio.provider.ComposioFetcher.fetch"
+        ) as mock_fetch:
+            mock_fetch.return_value = mock_result
+
+            result = invoke_cli(
+                cli_runner,
+                fetch_cmd,
+                ["--ids", "test-composio-1", "--engine", "composio"],
+            )
+
+            assert_cli_success(result)
+
+            with managed_session() as session:
+                assert_fetch_document_exists(
+                    session, "test-composio-1", status="SUCCESS", engine="composio"
+                )
+
+    def test_fetch_composio_missing_credentials(
+        self, cli_runner: CliRunner, tmp_project: Path
+    ):
+        """Verify composio reports missing credentials in engine listing."""
+        with patch.dict(
+            "os.environ",
+            {"COMPOSIO_API_KEY": "", "COMPOSIO_CONNECTION_ID": ""},
+            clear=False,
+        ):
+            result = invoke_cli(
+                cli_runner, fetch_cmd, ["--list-engines", "--format", "json"]
+            )
+            assert_cli_success(result)
+
+            data = assert_json_output(result)
+            engine_map = {e["engine"]: e for e in data["engines"]}
+            assert engine_map["composio"]["status"] == "missing"
 
 
 class TestFetchWithUrl:

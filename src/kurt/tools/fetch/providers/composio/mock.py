@@ -18,7 +18,7 @@ class MockComposioFetcher:
 
     name = "composio"
     version = "mock"
-    url_patterns = ["*twitter.com/*", "*x.com/*"]
+    url_patterns: list[str] = []
     requires_env: list[str] = []
 
     def __init__(self) -> None:

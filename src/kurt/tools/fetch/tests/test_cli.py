@@ -244,6 +244,11 @@ class TestFetchCommand:
         result = invoke_cli(cli_runner, fetch_cmd, ["--engine", "firecrawl", "--dry-run"])
         assert_cli_success(result)
 
+    def test_fetch_with_engine_composio(self, cli_runner: CliRunner, mock_resolve_documents):
+        """Test fetch --engine composio option."""
+        result = invoke_cli(cli_runner, fetch_cmd, ["--engine", "composio", "--dry-run"])
+        assert_cli_success(result)
+
     def test_fetch_with_refetch(self, cli_runner: CliRunner, mock_resolve_documents):
         """Test fetch --refetch option."""
         result = invoke_cli(cli_runner, fetch_cmd, ["--refetch", "--dry-run"])
@@ -298,6 +303,23 @@ class TestCheckEngineStatus:
         status, desc = _check_engine_status("twitterapi")
         assert status == "missing"
         assert "TWITTERAPI_API_KEY" in desc
+
+    def test_composio_ready_with_env(self, monkeypatch):
+        """composio is ready when both COMPOSIO vars are set."""
+        monkeypatch.setenv("COMPOSIO_API_KEY", "test-key")
+        monkeypatch.setenv("COMPOSIO_CONNECTION_ID", "test-connection")
+        status, desc = _check_engine_status("composio")
+        assert status == "ready"
+        assert "Composio" in desc
+
+    def test_composio_missing_without_env(self, monkeypatch):
+        """composio reports missing when required vars are absent."""
+        monkeypatch.delenv("COMPOSIO_API_KEY", raising=False)
+        monkeypatch.delenv("COMPOSIO_CONNECTION_ID", raising=False)
+        status, desc = _check_engine_status("composio")
+        assert status == "missing"
+        assert "COMPOSIO_API_KEY" in desc
+        assert "COMPOSIO_CONNECTION_ID" in desc
 
     def test_firecrawl_ready_with_env(self, monkeypatch):
         """firecrawl is ready when FIRECRAWL_API_KEY is set."""

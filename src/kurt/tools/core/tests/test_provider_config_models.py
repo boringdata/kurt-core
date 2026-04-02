@@ -49,6 +49,12 @@ class TestFetchProviderConfigModels:
         assert hasattr(TwitterApiFetcher, "ConfigModel")
         assert issubclass(TwitterApiFetcher.ConfigModel, BaseModel)
 
+    def test_composio_has_config_model(self):
+        from kurt.tools.fetch.providers.composio.provider import ComposioFetcher
+
+        assert hasattr(ComposioFetcher, "ConfigModel")
+        assert issubclass(ComposioFetcher.ConfigModel, BaseModel)
+
 
 class TestMapProviderConfigModels:
     """Verify all map providers have ConfigModel."""
@@ -102,6 +108,7 @@ class TestConfigModelDefaults:
             "kurt.tools.fetch.providers.firecrawl.config.FirecrawlProviderConfig",
             "kurt.tools.fetch.providers.apify.config.ApifyFetchProviderConfig",
             "kurt.tools.fetch.providers.twitterapi.config.TwitterApiProviderConfig",
+            "kurt.tools.fetch.providers.composio.config.ComposioProviderConfig",
             "kurt.tools.map.providers.sitemap.config.SitemapProviderConfig",
             "kurt.tools.map.providers.rss.config.RssProviderConfig",
             "kurt.tools.map.providers.crawl.config.CrawlProviderConfig",
@@ -131,6 +138,7 @@ class TestConfigModelDefaults:
             "kurt.tools.fetch.providers.firecrawl.config.FirecrawlProviderConfig",
             "kurt.tools.fetch.providers.apify.config.ApifyFetchProviderConfig",
             "kurt.tools.fetch.providers.twitterapi.config.TwitterApiProviderConfig",
+            "kurt.tools.fetch.providers.composio.config.ComposioProviderConfig",
             "kurt.tools.map.providers.sitemap.config.SitemapProviderConfig",
             "kurt.tools.map.providers.rss.config.RssProviderConfig",
             "kurt.tools.map.providers.crawl.config.CrawlProviderConfig",
