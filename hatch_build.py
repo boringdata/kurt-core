@@ -50,44 +50,45 @@ class FrontendBuildHook(BuildHookInterface):
         dist_dir = client_dir / "dist"
         if dist_dir.exists() and (dist_dir / "index.html").exists():
             self.app.display_info("Frontend already built - skipping build")
-            return
+        else:
+            # Check if npm is available
+            if not shutil.which("npm"):
+                self.app.display_info("npm not found - skipping frontend build")
+                return
 
-        # Check if npm is available
-        if not shutil.which("npm"):
-            self.app.display_info("npm not found - skipping frontend build")
-            return
+            self.app.display_info("Building frontend client...")
 
-        self.app.display_info("Building frontend client...")
+            # Prefer the lockfile for reproducible CI/frontend packaging.
+            install_cmd = (
+                ["npm", "ci"] if (client_dir / "package-lock.json").exists() else ["npm", "install"]
+            )
 
-        # Prefer the lockfile for reproducible CI/frontend packaging.
-        install_cmd = ["npm", "ci"] if (client_dir / "package-lock.json").exists() else ["npm", "install"]
+            # Install dependencies
+            self.app.display_info("Installing npm dependencies...")
+            result = subprocess.run(
+                install_cmd,
+                cwd=client_dir,
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0:
+                cmd_name = " ".join(install_cmd)
+                self.app.display_error(f"{cmd_name} failed: {result.stderr}")
+                raise RuntimeError(f"{cmd_name} failed: {result.stderr}")
 
-        # Install dependencies
-        self.app.display_info("Installing npm dependencies...")
-        result = subprocess.run(
-            install_cmd,
-            cwd=client_dir,
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            cmd_name = " ".join(install_cmd)
-            self.app.display_error(f"{cmd_name} failed: {result.stderr}")
-            raise RuntimeError(f"{cmd_name} failed: {result.stderr}")
+            # Build the frontend
+            self.app.display_info("Running npm build...")
+            result = subprocess.run(
+                ["npm", "run", "build"],
+                cwd=client_dir,
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0:
+                self.app.display_error(f"npm build failed: {result.stderr}")
+                raise RuntimeError(f"npm build failed: {result.stderr}")
 
-        # Build the frontend
-        self.app.display_info("Running npm build...")
-        result = subprocess.run(
-            ["npm", "run", "build"],
-            cwd=client_dir,
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            self.app.display_error(f"npm build failed: {result.stderr}")
-            raise RuntimeError(f"npm build failed: {result.stderr}")
-
-        # Verify build output exists
+        # Non-editable wheel builds should leave the built assets in-package.
         dist_dir = client_dir / "dist"
         if not dist_dir.exists() or not (dist_dir / "index.html").exists():
             raise RuntimeError(f"Build output not found at {dist_dir}")
